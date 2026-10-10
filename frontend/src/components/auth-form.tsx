@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
+  isGenericOidc,
+  OIDC_DISPLAY_NAME,
   startCognitoLogin,
   type CognitoProvider,
 } from "@/services/auth/cognito-oauth";
@@ -26,6 +28,9 @@ export interface AuthFormProps {
  * email/password screen (which also offers sign-up + password reset). The
  * social buttons jump straight to the corresponding federated IdP. There is no
  * local password form — the app never sees the user's password.
+ *
+ * With a generic OIDC issuer configured (`NEXT_PUBLIC_OIDC_ISSUER`) there is a
+ * single button: the issuer's own sign-in page decides which methods exist.
  */
 export function AuthForm({ next }: AuthFormProps) {
   // Which redirect is in flight (disables all buttons + shows which one is
@@ -55,6 +60,26 @@ export function AuthForm({ next }: AuthFormProps) {
   };
 
   const busy = pending !== null;
+
+  if (isGenericOidc()) {
+    return (
+      <div className="space-y-4">
+        <Button
+          type="button"
+          className="w-full"
+          disabled={busy}
+          onClick={() => beginLogin()}
+        >
+          {pending === "email"
+            ? "Redirecting..."
+            : `Continue with ${OIDC_DISPLAY_NAME}`}
+        </Button>
+        <p className="text-center text-xs text-muted-foreground">
+          Sign-in is handled by your organization&apos;s identity provider.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

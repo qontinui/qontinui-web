@@ -19,6 +19,15 @@
  * Config defaults to the production app client / pool; everything is
  * overridable via `NEXT_PUBLIC_COGNITO_*` env vars so non-prod deployments can
  * point at a different pool without code changes.
+ *
+ * **Generic OpenID Connect.** Setting `NEXT_PUBLIC_OIDC_ISSUER` (plus
+ * `NEXT_PUBLIC_OIDC_CLIENT_ID`) points the same Authorization Code + PKCE flow
+ * at any OIDC issuer — Entra ID, Keycloak, Okta — instead of the Cognito
+ * hosted UI. Its endpoints come from the issuer's discovery document
+ * (`<issuer>/.well-known/openid-configuration`), whose `issuer` must equal the
+ * configured one. The backend must accept the same issuer and client id
+ * (`OIDC_PROVIDERS`). In that mode there is no `identity_provider` hint, no
+ * separate sign-up screen and no Cognito-native identity linking.
  */
 
 // Public Cognito web app client (no secret → PKCE mandatory).
@@ -41,15 +50,139 @@ export const COGNITO_SCOPES =
  */
 export type CognitoProvider = "Google" | "MicrosoftEntra" | "GitHub";
 
+// Generic OIDC issuer. Empty = the Cognito hosted UI above.
+export const OIDC_ISSUER = (process.env.NEXT_PUBLIC_OIDC_ISSUER || "")
+  .trim()
+  .replace(/\/+$/, "");
+
+// Public client id registered at the generic issuer (PKCE, no secret).
+export const OIDC_CLIENT_ID = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID || "";
+
+// Scopes requested from the generic issuer. `offline_access` asks for the
+// refresh token that silent renewal spends (Entra ID / Okta issue none without
+// it; Keycloak ignores it).
+export const OIDC_SCOPES =
+  process.env.NEXT_PUBLIC_OIDC_SCOPES || "openid email profile offline_access";
+
+// What the sign-in button calls the generic issuer.
+export const OIDC_DISPLAY_NAME =
+  process.env.NEXT_PUBLIC_OIDC_DISPLAY_NAME || "single sign-on";
+
+/** Whether sign-in goes to a generic OIDC issuer rather than Cognito. */
+export function isGenericOidc(): boolean {
+  return OIDC_ISSUER !== "";
+}
+
+/** The endpoints and client the flow talks to, for whichever mode is active. */
+export interface OAuthEndpoints {
+  mode: "cognito" | "oidc";
+  clientId: string;
+  scopes: string;
+  authorize: string;
+  token: string;
+  /** Registration screen; `null` where the issuer has none (generic OIDC). */
+  signup: string | null;
+  /** RP-initiated logout endpoint; `null` when the issuer advertises none. */
+  logout: string | null;
+}
+
 /** Endpoints derived from the hosted-UI domain. */
-const AUTHORIZE_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/authorize`;
-const TOKEN_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/token`;
-const LOGOUT_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/logout`;
-// Hosted-UI registration screen. Same OAuth2 params as `/oauth2/authorize`
-// (and the same `/auth/callback` round-trip), but lands the user directly on
-// the "create account" form instead of the sign-in form — the right
-// destination for a "Get started"/new-user CTA.
-const SIGNUP_ENDPOINT = `${COGNITO_HOSTED_UI_DOMAIN}/signup`;
+const COGNITO_ENDPOINTS: OAuthEndpoints = {
+  mode: "cognito",
+  clientId: COGNITO_CLIENT_ID,
+  scopes: COGNITO_SCOPES,
+  authorize: `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/authorize`,
+  token: `${COGNITO_HOSTED_UI_DOMAIN}/oauth2/token`,
+  logout: `${COGNITO_HOSTED_UI_DOMAIN}/logout`,
+  // Hosted-UI registration screen. Same OAuth2 params as `/oauth2/authorize`
+  // (and the same `/auth/callback` round-trip), but lands the user directly on
+  // the "create account" form instead of the sign-in form — the right
+  // destination for a "Get started"/new-user CTA.
+  signup: `${COGNITO_HOSTED_UI_DOMAIN}/signup`,
+};
+
+let discoveredEndpoints: Promise<OAuthEndpoints> | null = null;
+
+/** An absolute URL no weaker than the issuer's own scheme, or an error. */
+function requireEndpoint(doc: Record<string, unknown>, key: string): string {
+  const value = doc[key];
+  const issuerScheme = new URL(OIDC_ISSUER).protocol;
+  if (typeof value === "string" && value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:" || url.protocol === issuerScheme) {
+        return value;
+      }
+    } catch {
+      // fall through to the error below
+    }
+  }
+  throw new Error(
+    `The identity provider's discovery document has no usable ${key}.`
+  );
+}
+
+async function discoverOidcEndpoints(): Promise<OAuthEndpoints> {
+  if (!OIDC_CLIENT_ID) {
+    throw new Error(
+      "NEXT_PUBLIC_OIDC_ISSUER is set but NEXT_PUBLIC_OIDC_CLIENT_ID is not."
+    );
+  }
+  const url = `${OIDC_ISSUER}/.well-known/openid-configuration`;
+  let doc: Record<string, unknown>;
+  try {
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    doc = (await response.json()) as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(
+      `Sign-in is unavailable: the identity provider's discovery document ` +
+        `could not be read (${error instanceof Error ? error.message : String(error)}).`
+    );
+  }
+  // OIDC Discovery §4.3: a document for another issuer must be refused.
+  const advertised =
+    typeof doc.issuer === "string" ? doc.issuer.trim().replace(/\/+$/, "") : "";
+  if (advertised !== OIDC_ISSUER) {
+    throw new Error(
+      "Sign-in is unavailable: the identity provider's discovery document " +
+        "names a different issuer."
+    );
+  }
+  const endSession = doc.end_session_endpoint;
+  return {
+    mode: "oidc",
+    clientId: OIDC_CLIENT_ID,
+    scopes: OIDC_SCOPES,
+    authorize: requireEndpoint(doc, "authorization_endpoint"),
+    token: requireEndpoint(doc, "token_endpoint"),
+    signup: null,
+    logout:
+      typeof endSession === "string" && endSession
+        ? requireEndpoint(doc, "end_session_endpoint")
+        : null,
+  };
+}
+
+/**
+ * The endpoints for the active mode. Cognito's are static; a generic issuer's
+ * come from its discovery document, fetched once per page load (a failed
+ * fetch is not cached, so the next attempt retries).
+ */
+export async function resolveOAuthEndpoints(): Promise<OAuthEndpoints> {
+  if (!isGenericOidc()) {
+    return COGNITO_ENDPOINTS;
+  }
+  if (!discoveredEndpoints) {
+    discoveredEndpoints = discoverOidcEndpoints().catch((error: unknown) => {
+      discoveredEndpoints = null;
+      throw error;
+    });
+  }
+  return discoveredEndpoints;
+}
 
 // sessionStorage keys for the in-flight PKCE values. Tab-scoped, single-use:
 // cleared by `consumePkceState()` as soon as the callback reads them.
@@ -116,15 +249,18 @@ export class CognitoRefreshError extends Error {
 }
 
 /**
- * Cognito token endpoint response for the **refresh_token** grant.
+ * Token endpoint response for the **refresh_token** grant.
  *
- * Deliberately has no `refresh_token`: Cognito does NOT rotate/return a refresh
- * token on this grant, so the caller must keep the one it already holds (it
- * stays valid for the app client's much longer `RefreshTokenValidity`).
+ * Cognito does NOT rotate/return a refresh token on this grant, so the caller
+ * keeps the one it already holds (it stays valid for the app client's much
+ * longer `RefreshTokenValidity`). Generic issuers commonly DO rotate (Okta,
+ * Keycloak, Entra ID): when `refresh_token` is present it replaces the old
+ * one, which a rotating issuer has just invalidated.
  */
 export interface CognitoRefreshResponse {
   id_token: string;
   access_token: string;
+  refresh_token?: string;
   expires_in: number;
   token_type: string;
 }
@@ -265,11 +401,9 @@ export async function startCognitoLogin(
  *             through `state` exactly as in the login flow.
  */
 export async function startCognitoSignup(next?: string): Promise<void> {
-  await beginAuthorize(
-    undefined,
-    buildLoginState(generateState(), next),
-    SIGNUP_ENDPOINT
-  );
+  // A generic issuer has no separate registration screen in OIDC; its own
+  // sign-in page offers registration where the deployment enables it.
+  await beginAuthorize(undefined, buildLoginState(generateState(), next), "signup");
 }
 
 /**
@@ -327,8 +461,12 @@ export async function startCognitoLink(
 async function beginAuthorize(
   provider: CognitoProvider | undefined,
   stateValue: string,
-  endpoint: string = AUTHORIZE_ENDPOINT
+  screen: "authorize" | "signup" = "authorize"
 ): Promise<void> {
+  const endpoints = await resolveOAuthEndpoints();
+  const endpoint =
+    screen === "signup" && endpoints.signup ? endpoints.signup : endpoints.authorize;
+
   const verifier = generateCodeVerifier();
   const challenge = await deriveCodeChallenge(verifier);
 
@@ -337,14 +475,16 @@ async function beginAuthorize(
 
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: COGNITO_CLIENT_ID,
+    client_id: endpoints.clientId,
     redirect_uri: getRedirectUri(),
-    scope: COGNITO_SCOPES,
+    scope: endpoints.scopes,
     code_challenge: challenge,
     code_challenge_method: "S256",
     state: stateValue,
   });
-  if (provider) {
+  // `identity_provider` is a Cognito hosted-UI extension; a generic issuer
+  // federates (if at all) behind its own sign-in page.
+  if (provider && endpoints.mode === "cognito") {
     params.set("identity_provider", provider);
   }
 
@@ -410,15 +550,16 @@ export async function exchangeCodeForTokens(
     );
   }
 
+  const endpoints = await resolveOAuthEndpoints();
   const body = new URLSearchParams({
     grant_type: "authorization_code",
-    client_id: COGNITO_CLIENT_ID,
+    client_id: endpoints.clientId,
     code,
     redirect_uri: getRedirectUri(),
     code_verifier: verifier,
   });
 
-  const response = await fetch(TOKEN_ENDPOINT, {
+  const response = await fetch(endpoints.token, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -451,15 +592,26 @@ export async function exchangeCodeForTokens(
 export async function refreshCognitoTokens(
   refreshToken: string
 ): Promise<CognitoRefreshResponse> {
+  let endpoints: OAuthEndpoints;
+  try {
+    endpoints = await resolveOAuthEndpoints();
+  } catch (error) {
+    // The issuer's discovery document is unreachable: no verdict on the
+    // refresh token itself, so keep the session.
+    throw new CognitoRefreshError(
+      `Token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      "transient"
+    );
+  }
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    client_id: COGNITO_CLIENT_ID,
+    client_id: endpoints.clientId,
     refresh_token: refreshToken,
   });
 
   let response: Response;
   try {
-    response = await fetch(TOKEN_ENDPOINT, {
+    response = await fetch(endpoints.token, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
@@ -538,20 +690,45 @@ export function consumePkceState(): void {
 }
 
 /**
- * Sign the user out of the Cognito hosted-UI session (true SSO logout) by
- * navigating to the hosted `/logout` endpoint. This revokes the Cognito
- * session cookie so a subsequent sign-in re-prompts for credentials instead of
- * silently re-federating. Cognito then redirects the browser to
- * `logout_uri` (the app's `/login` page).
+ * Sign the user out at the issuer (true SSO logout) by navigating to its
+ * logout endpoint, which then redirects back to the app's `/login` page.
  *
- * The hosted `/logout` endpoint is a top-level navigation (no CORS) — it cannot
- * be called via fetch, so this performs a full-page redirect and never returns.
- * Local token state should already be cleared by the caller before invoking it.
+ * Cognito: the hosted `/logout` endpoint with `client_id` + `logout_uri`.
+ * Generic OIDC: the discovered `end_session_endpoint` (RP-Initiated Logout
+ * 1.0) with `client_id`, `post_logout_redirect_uri` and, when supplied, the
+ * `id_token_hint` some issuers (Okta) require. An issuer that advertises no
+ * end-session endpoint — or whose discovery document cannot be read — gets a
+ * local sign-out only: straight to `/login`, the tokens already cleared.
+ *
+ * A top-level navigation (no CORS); never returns on success. Local token
+ * state should already be cleared by the caller before invoking it.
  */
-export function startCognitoLogout(): void {
-  const params = new URLSearchParams({
-    client_id: COGNITO_CLIENT_ID,
-    logout_uri: getLogoutRedirectUri(),
-  });
-  window.location.assign(`${LOGOUT_ENDPOINT}?${params.toString()}`);
+export async function startCognitoLogout(
+  idTokenHint?: string | null
+): Promise<void> {
+  let endpoints: OAuthEndpoints | null = null;
+  try {
+    endpoints = await resolveOAuthEndpoints();
+  } catch {
+    endpoints = null;
+  }
+  if (!endpoints?.logout) {
+    window.location.assign(getLogoutRedirectUri());
+    return;
+  }
+  const params = new URLSearchParams({ client_id: endpoints.clientId });
+  if (endpoints.mode === "cognito") {
+    params.set("logout_uri", getLogoutRedirectUri());
+  } else {
+    params.set("post_logout_redirect_uri", getLogoutRedirectUri());
+    if (idTokenHint) {
+      params.set("id_token_hint", idTokenHint);
+    }
+  }
+  window.location.assign(`${endpoints.logout}?${params.toString()}`);
+}
+
+/** Forget the discovered endpoints (tests; a changed issuer configuration). */
+export function resetOAuthEndpointCache(): void {
+  discoveredEndpoints = null;
 }
