@@ -16946,8 +16946,9 @@
           "dispatch_role": {
             "enum": [
               "workhorse",
-              "bench",
-              "ci_node"
+              "testbed",
+              "ci_node",
+              "bench"
             ],
             "title": "Dispatch Role",
             "type": "string"
