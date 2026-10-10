@@ -140,9 +140,23 @@ async def _user_by_oidc_identity(
 
 
 async def _user_by_email(session: AsyncSession, email: str | None) -> User | None:
+    """The account holding ``email``, ROW-LOCKED for the rest of the transaction.
+
+    Only the linking path calls this, and it decides on what the row says
+    (``cognito_sub``) and on the account's identity rows. ``FOR UPDATE`` makes
+    a concurrent first link for the same account wait until this transaction
+    ends; it then re-reads the row (``populate_existing``) and the identity
+    rows the winner committed, and is refused — so two identities can never
+    both attach to one identity-less account.
+    """
     if not email:
         return None
-    found = await session.execute(select(User).where(func.lower(User.email) == email))
+    found = await session.execute(
+        select(User)
+        .where(func.lower(User.email) == email)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     return found.scalar_one_or_none()
 
 
@@ -349,9 +363,8 @@ async def resolve_user_for_oidc_claims(
 
     1. An ``auth.user_oidc_identities`` row for ``(issuer, sub)`` -> its user.
     2. A user with the same email -> link, ONLY when the issuer opted in
-       (``link_existing_by_email``), the email is verified (an issuer that
-       emits no ``email_verified`` claim — Entra ID commonly does not — never
-       links), the account is not a superuser, and it holds no identity yet
+       (``link_existing_by_email``), the email is verified (a token without a
+       true ``email_verified`` claim never links), the account is not a superuser, and it holds no identity yet
        (no ``cognito_sub``, no identity at any generic issuer); otherwise
        refused.
     3. Otherwise create the user and its identity row.

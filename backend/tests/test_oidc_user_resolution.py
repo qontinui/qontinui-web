@@ -526,3 +526,73 @@ async def test_an_invalid_token_is_an_auth_error(
     token = issuers["keycloak"].mint("k1", **_unique(aud="another-app"))
     with pytest.raises(CognitoAuthError, match="Invalid token"):
         await verify_cognito_token_and_resolve_user(token, async_db_session)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_links_attach_exactly_one_identity(
+    issuers: dict[str, LocalIssuer],
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two first sign-ins (different subs, same verified email) race to link
+    one identity-less account, in separate transactions: the row lock makes
+    exactly one win and the other a 409 — never two identities on one
+    account."""
+    import asyncio
+
+    from sqlalchemy import delete
+
+    from app.services import cognito_provision
+
+    email = f"race-link-{uuid.uuid4().hex[:8]}@example.test"
+    async with AsyncSession(test_engine, expire_on_commit=False) as setup:
+        local = await _local_account(setup, email)
+        await setup.commit()
+
+    real = cognito_provision._holds_oidc_identity
+
+    async def slow_check(session: AsyncSession, user: User) -> bool:
+        # Widen the window between "no identity yet" and the insert, so an
+        # unlocked implementation lets BOTH transactions through.
+        held = await real(session, user)
+        await asyncio.sleep(0.3)
+        return held
+
+    monkeypatch.setattr(cognito_provision, "_holds_oidc_identity", slow_check)
+
+    async def attempt(fields: dict[str, Any]) -> uuid.UUID | IdentityConflictError:
+        async with AsyncSession(test_engine, expire_on_commit=False) as session:
+            try:
+                user = await verify_cognito_token_and_resolve_user(
+                    issuers["okta"].mint("k1", **fields), session
+                )
+                await session.commit()
+                return user.id
+            except IdentityConflictError as exc:
+                await session.rollback()
+                return exc
+
+    try:
+        results = await asyncio.gather(
+            attempt(_unique(email=email, email_verified=True)),
+            attempt(_unique(email=email, email_verified=True)),
+        )
+        wins = [r for r in results if isinstance(r, uuid.UUID)]
+        refusals = [r for r in results if isinstance(r, IdentityConflictError)]
+        assert wins == [local.id]
+        assert len(refusals) == 1 and refusals[0].status_code == 409
+
+        async with AsyncSession(test_engine) as check:
+            count = await check.scalar(
+                select(func.count())
+                .select_from(UserOIDCIdentity)
+                .where(UserOIDCIdentity.user_id == local.id)
+            )
+        assert count == 1
+    finally:
+        async with AsyncSession(test_engine) as cleanup:
+            await cleanup.execute(
+                delete(UserOIDCIdentity).where(UserOIDCIdentity.user_id == local.id)
+            )
+            await cleanup.execute(delete(User).where(User.id == local.id))
+            await cleanup.commit()

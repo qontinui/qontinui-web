@@ -31,7 +31,9 @@ Caching:
   JWKS keeps being served (logged), so a transient issuer outage does not log
   every user out at each TTL boundary. On a cold start (no JWKS) every
   verification during the back-off fails closed at once — never "trust the
-  token" — without dialling the issuer again.
+  token" — without dialling the issuer again. Held keys stop being served
+  once they are ``_MAX_STALENESS_TTLS`` TTLs old: from then on, a continuing
+  outage fails verification closed, as on a cold start.
 
 Verification gates (all must pass): asymmetric JWS signature against the JWK
 selected by ``kid`` (``HS*`` and ``none`` are never accepted), ``iss`` equal
@@ -67,6 +69,12 @@ _FORCED_REFRESH_COOLDOWN_S = 30
 # start (verification fails closed without re-dialling). Bounds the outbound
 # rate and the per-request stall during an issuer outage.
 _FAILURE_BACKOFF_S = 30
+
+# Held keys older than this many TTLs are no longer served, even while
+# refreshes keep failing: verification fails closed instead. Bounds how long
+# a key the issuer has since revoked (dropped from its JWKS) stays trusted
+# through an outage of the issuer — or of the path to it.
+_MAX_STALENESS_TTLS = 4
 
 # Cap on attacker-controlled header/claim values (``kid``, unverified ``iss``)
 # where they reach an exception message that is logged on a PRE-AUTH path.
@@ -313,7 +321,7 @@ class OIDCIssuerClient:
         task that every waiter awaits.
         """
         now = self._now()
-        held = self._jwks
+        held = self._servable_jwks(now)
         fresh = (
             held is not None
             and self._fetched_at is not None
@@ -355,6 +363,19 @@ class OIDCIssuerClient:
         # others are waiting on.
         return await asyncio.shield(task)
 
+    def _servable_jwks(self, now: float) -> dict[str, Any] | None:
+        """The held JWKS while still within the max staleness, else ``None``.
+
+        Past ``_MAX_STALENESS_TTLS`` TTLs the held keys are treated as absent:
+        the caller waits on a fetch (or fails closed during the back-off) just
+        as on a cold start.
+        """
+        if self._jwks is None or self._fetched_at is None:
+            return None
+        if (now - self._fetched_at) >= self._metadata_ttl_s * _MAX_STALENESS_TTLS:
+            return None
+        return self._jwks
+
     def _start_refresh(self, *, forced: bool) -> asyncio.Task[dict[str, Any]]:
         """The in-flight refresh task, starting one if none is usable.
 
@@ -380,14 +401,15 @@ class OIDCIssuerClient:
             except OIDCJWKSUnavailableError as exc:
                 self._failed_at = self._now()
                 self._last_error = exc
-                if self._jwks is None:
+                servable = self._servable_jwks(self._failed_at)
+                if servable is None:
                     raise
                 logger.warning(
                     "oidc_jwks_refresh_failed_serving_cached",
                     forced=forced,
                     **oidc_jwks_failure_log_fields(exc),
                 )
-                return self._jwks
+                return servable
             self._jwks_uri = jwks_uri
             self._jwks = jwks
             self._fetched_at = self._now()
@@ -434,7 +456,11 @@ class OIDCIssuerClient:
         kid = header.get("kid")
         if not kid:
             raise OIDCTokenInvalidError("token header missing 'kid'")
-        kid = str(kid)[:_MAX_KID_CHARS]
+        kid = str(kid)
+        # The FULL kid selects the key (a legitimately long kid must still
+        # match); only the copy that reaches a logged message is capped,
+        # because the header is unverified and attacker-sized.
+        kid_shown = kid[:_MAX_KID_CHARS]
 
         jwks = await self._get_jwks(force_refresh=False)
         jwk_dict = self._find_jwk(jwks, kid)
@@ -443,14 +469,14 @@ class OIDCIssuerClient:
             jwk_dict = self._find_jwk(jwks, kid)
         if jwk_dict is None:
             raise OIDCTokenInvalidError(
-                f"no JWK with kid={kid!r} in the JWKS of {self._provider.issuer}"
+                f"no JWK with kid={kid_shown!r} in the JWKS of {self._provider.issuer}"
             )
 
         jwk_alg = jwk_dict.get("alg")
         if jwk_alg is not None:
             if jwk_alg not in _ALLOWED_ALGORITHMS:
                 raise OIDCTokenInvalidError(
-                    f"JWK kid={kid!r} declares a disallowed alg {str(jwk_alg)[:16]!r}"
+                    f"JWK kid={kid_shown!r} declares a disallowed alg {str(jwk_alg)[:16]!r}"
                 )
             algorithms = [str(jwk_alg)]
         else:

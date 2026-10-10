@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from app.core.config import OIDCProviderSetting, Settings
 from app.services.oidc_jwks import (
     _FAILURE_BACKOFF_S,
+    _MAX_STALENESS_TTLS,
     DISCOVERY_PATH,
     OIDCIssuerClient,
     OIDCJWKSUnavailableError,
@@ -447,6 +448,51 @@ def test_a_refresh_task_from_another_loop_is_not_awaited(issuer: LocalIssuer) ->
         return await asyncio.wait_for(client.verify_token(issuer.mint("k1")), 2)
 
     assert asyncio.run(verify())["iss"] == _ISSUER
+
+
+@pytest.mark.asyncio
+async def test_held_keys_stop_being_served_past_the_max_staleness(
+    issuer: LocalIssuer,
+) -> None:
+    """A continuing outage may not keep a (possibly revoked) key trusted
+    forever: past _MAX_STALENESS_TTLS TTLs verification fails closed."""
+    clock = {"now": 1000.0}
+    ttl = 300
+    client = OIDCIssuerClient(
+        _provider(), metadata_ttl_s=ttl, clock=lambda: clock["now"]
+    )
+    token = issuer.mint("k1")
+    await client.verify_token(token)
+
+    issuer.down = True
+    clock["now"] += ttl * _MAX_STALENESS_TTLS - 1
+    assert (await client.verify_token(token))["iss"] == _ISSUER  # still served
+    await _settle(client)
+
+    clock["now"] += 2  # now past the max staleness, still inside a back-off
+    with pytest.raises(OIDCJWKSUnavailableError):
+        await client.verify_token(token)
+
+    clock["now"] += _FAILURE_BACKOFF_S  # back-off over, issuer still down
+    with pytest.raises(OIDCJWKSUnavailableError):
+        await client.verify_token(token)
+
+    issuer.down = False
+    clock["now"] += _FAILURE_BACKOFF_S
+    assert (await client.verify_token(token))["iss"] == _ISSUER  # recovers
+
+
+@pytest.mark.asyncio
+async def test_a_long_kid_still_selects_its_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The kid is capped only where it is logged, never for the lookup."""
+    local = LocalIssuer()
+    long_kid = "k" * 200
+    local.add_rsa_key(long_kid)
+    _route(monkeypatch, local)
+    claims = await OIDCIssuerClient(_provider()).verify_token(local.mint(long_kid))
+    assert claims["iss"] == _ISSUER
 
 
 @pytest.mark.asyncio
