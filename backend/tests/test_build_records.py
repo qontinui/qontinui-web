@@ -4113,6 +4113,26 @@ class TestExcludedNameExemptions:
             "work_units[0].title: contains an invisible, control or overlay character"
         ]
 
+    @pytest.mark.parametrize("symbol", ["\U0001d159", "\U0001f4a0", "\u266a", "\u02c2"])
+    def test_no_symbol_next_to_a_slash_can_split_a_repo_token(
+        self, symbol: str
+    ) -> None:
+        """Structural: every So/Sk symbol and separator at a slash is
+        transparent, so ``acme<sym>/<sym>secret`` scans as ``acme/secret``
+        (U+1D159 is additionally refused as a blank-rendering glyph)."""
+        from app.services.build_record_allowlist import normalize_for_scan
+
+        assert normalize_for_scan(f"acme{symbol}/{symbol}secret") == "acme/secret"
+        doc = _document()
+        doc["work_units"][0]["title"] = f"port acme{symbol}/{symbol}secret"
+        assert build_record_violations(doc)
+
+    @pytest.mark.parametrize("title", ["50/50", "50 / 50", "(lint)/(test)"])
+    def test_ordinary_titles_stay_publishable(self, title: str) -> None:
+        doc = _document()
+        doc["work_units"][0]["title"] = title
+        assert build_record_violations(doc) == []
+
     def test_free_text_is_still_scanned(self) -> None:
         doc = _document()
         doc["work_units"][0]["title"] = "tokens for review"

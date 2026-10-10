@@ -1,7 +1,7 @@
 {
  "generator": "backend/scripts/gen_build_record_scan_vectors.py",
  "generator_command": "python -I backend/scripts/gen_build_record_scan_vectors.py",
- "allowlist_version": 17,
+ "allowlist_version": 18,
  "unidata_version": "15.0.0",
  "excluded_name_exempt_paths": [
   "generated_at",
@@ -122,7 +122,8 @@
   8422
  ],
  "blank_rendering_glyphs": [
-  10240
+  10240,
+  119129
  ],
  "category_overrides": {
   "method": "web's own category membership as inclusive code point ranges (no Unicode 17 UnicodeData.txt is fetched); diff against your tables",
@@ -5217,6 +5218,528 @@
    ]
   },
   {
+   "id": "null_notehead_split_repo_token",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "acme\ud834\udd59/\ud834\udd59secret",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": [
+    "work_units[0].title: contains an invisible, control or overlay character"
+   ]
+  },
+  {
+   "id": "so_symbol_next_to_slash_repo_token",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "acme\ud83d\udca0/\ud83d\udca0secret",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": [
+    "work_units[0].title: names an owner/name not in product.repos"
+   ]
+  },
+  {
+   "id": "guard_read_write",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "read/write",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": [
+    "work_units[0].title: names an owner/name not in product.repos"
+   ]
+  },
+  {
+   "id": "guard_spaced_a_b",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "a / b",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": [
+    "work_units[0].title: names an owner/name not in product.repos"
+   ]
+  },
+  {
+   "id": "guard_ci_lint_test",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "CI (lint/test)",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": [
+    "work_units[0].title: names an owner/name not in product.repos"
+   ]
+  },
+  {
+   "id": "guard_fifty_fifty",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "50/50",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": []
+  },
+  {
+   "id": "guard_spaced_fifty_fifty",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "50 / 50",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": []
+  },
+  {
+   "id": "guard_bracketed_words",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/public-app"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "(lint)/(test)",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/public-app",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [],
+   "excluded_names": [],
+   "violations": []
+  },
+  {
    "id": "f3_product_slug_equals_excluded_name",
    "document": {
     "schema": "build-record/1",
@@ -5600,6 +6123,16 @@
    "id": "fullwidth",
    "input": "\uff41cme\uff0fsecret",
    "normalized": "acme/secret"
+  },
+  {
+   "id": "so_symbol_transparent_at_slash",
+   "input": "acme\ud83d\udca0/\ud83d\udca0secret",
+   "normalized": "acme/secret"
+  },
+  {
+   "id": "punctuation_not_transparent",
+   "input": "(lint) / (test)",
+   "normalized": "(lint)/(test)"
   },
   {
    "id": "combining_acute",
