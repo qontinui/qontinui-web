@@ -29,10 +29,10 @@ The Workflow Documentation Service automatically generates comprehensive documen
 ### Auto-Generate Documentation
 
 ```typescript
-import { workflowDocumentationService } from '@/services/workflow-documentation-service';
+import { workflowDocumentation } from '@/services/workflow-documentation';
 
 // Generate documentation for a workflow
-const docs = workflowDocumentationService.generateDocumentation(workflow);
+const docs = workflowDocumentation.generateDocumentation(workflow);
 
 console.log(docs);
 ```

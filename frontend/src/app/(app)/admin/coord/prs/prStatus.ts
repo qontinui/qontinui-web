@@ -71,6 +71,7 @@ import type { PrMergeStatus } from "@/services/admin-dev-service";
  * | `review-required` | `author` | `requirements` | A required review or ruleset condition is unmet. Nothing dispatches the reviewer for you. |
  * | `blast-radius-block` | `author` | `requirements` | Over the repo's line budget: coord parks it and waits for a human decision. No timer clears it. |
  * | `ready-but-unlanded` | `author` | `conflict-stranded` (same class) | coord says ready and it has not landed — a wedge. The promise that something else would land it is demonstrably false. |
+ * | `dependency-upstream-closed` | `author` | (none — see why) | A `coord:stacked-on=` / `coord:downstream-of=` label names an upstream PR that is CLOSED and did not land (qontinui-coord#2819). Unlike its `has-cross-repo-dependency` sibling inside `predicate-blocked`, no other party is coming: the edge never clears on its own, and coord classifies it `AuthorActs`. The move is to re-anchor the label onto the successor PR, or remove it if the upstream's content already landed — coord's `blocking_summary` names the dead parent. No `prPipeline` counterpart: its `blocked` row carries the "lands after the other PR" promise this state exists to retract. |
  * | `repo-unreachable` | `author` | `not-mergeable` | coord cannot clone the repo (deleted/renamed, or App access revoked). Not fixable by a rebase or a re-evaluate; a human must restore access. |
  * | `predicate-blocked` | `waiting` | (none — see why) | coord's merge predicate is holding the PR with no more specific token. A real block, so never calm. But it is a RESIDUE bucket spanning states with OPPOSITE readings: `main-red` and `has-cross-repo-dependency` clear themselves with no author action, while `has-blocking-label` needs a human and `dry-run-mode` is operator config. Red would assert "someone must act now", false for at least two members; plain `WAITING_AMBER` would promise "something else will clear this", false for at least two others. So it sits at the IGNORANCE FLOOR alongside `unknown` — we cannot say whose move it is. It differs from `unknown` in that coord DID diagnose it and names the specific code in `blocking_summary`, which `derivePrStatus` already surfaces as the badge's `reason`/`title`, so the operator can read the real cause off the row. No `prPipeline` counterpart genuinely fits: `blocked` (`waiting`) covers only the cross-repo-dependency member and carries the "lands after the other PR" promise this bucket cannot make, so naming it would be an invented alignment. |
  * | `terminal-proposal-held` | `waiting` | (none — see why) | Green + CLEAN + open, but the train's only proposal at this head is TERMINAL and HELD, so coord will not re-cut it (already-landed, merge-resolution-discarded, reap-hardcap, superseded-empty candidate, merged, plain cancelled). Split out of `ready-but-unlanded`, which keeps the no-proposal stall and every terminal coord re-cuts or re-probes itself (infra / transient errors, content and textual conflicts, shadow-landed). Like `predicate-blocked` it is a real block whose members disagree about whose move it is — linearize / close / push a new head are the AUTHOR's, a hardcap cancel-unblock is the OPERATOR's — so red would name the wrong actor for half of it and `WAITING_AMBER` would promise a self-clearing that never comes. It sits at the IGNORANCE FLOOR with `UNKNOWN_AMBER`, and coord's `blocking_summary` (the badge's `reason`/`title`) names the actual move. No `prPipeline` counterpart: `conflict-stranded` is `author`, which is the misreading this row exists to avoid. |
@@ -102,6 +103,9 @@ export const PR_ATTENTION_BY_MERGE_STATUS: Record<PrMergeStatus, Attention> = {
   "blast-radius-block": "author",
   "ready-but-unlanded": "author",
   "repo-unreachable": "author",
+  // A dep edge onto a CLOSED, unlanded upstream: no other party will clear
+  // it, so it leaves the `predicate-blocked` floor for author red.
+  "dependency-upstream-closed": "author",
   // --- we do not know → the ignorance floor, amber's lighter sibling --------
   // coord's residue token: a real block whose members disagree about whose
   // move it is, so neither red nor the self-clearing promise is honest.
@@ -129,6 +133,7 @@ export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   "blast-radius-block": AUTHOR_RED,
   "ready-but-unlanded": AUTHOR_RED,
   "repo-unreachable": AUTHOR_RED,
+  "dependency-upstream-closed": AUTHOR_RED,
   // The ignorance floor is still amber (never calm) but a step lighter than
   // the self-clearing promise — see `UNKNOWN_AMBER`'s own doc.
   "predicate-blocked": UNKNOWN_AMBER,

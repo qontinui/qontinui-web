@@ -8,7 +8,7 @@
  */
 
 import type { Workflow } from "@/lib/action-schema/action-types";
-import { WorkflowDocumentationService } from "../workflow-documentation-service";
+import { WorkflowDocumentationService } from "../workflow-documentation";
 import { getWorkflowTestingService } from "../workflow-testing-service";
 import type { CoverageReport } from "./types";
 

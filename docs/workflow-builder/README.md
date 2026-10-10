@@ -391,4 +391,4 @@ When extending the Workflow Builder:
 
 ## License
 
-Copyright © 2024 Qontinui. All rights reserved.
+Licensed under AGPL-3.0-or-later, as part of qontinui-web — see the repository [LICENSE](../../LICENSE).
