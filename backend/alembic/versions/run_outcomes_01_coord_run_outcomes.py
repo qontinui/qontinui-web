@@ -1,7 +1,7 @@
 """coord.run_outcomes: the durable store behind the run_outcome anchor's metric arm
 
 Revision ID: run_outcomes_01
-Revises: coord_wt_cargo_lock_01
+Revises: devcred_01_credential_deny_and_bound_pair_codes
 Create Date: 2026-10-10
 
 Plan ``2026-10-09-spec-front-end-of-the-software-factory`` Phase 2, step 2.
@@ -96,12 +96,18 @@ No SQLAlchemy model: the table is coord-only.
 alembic in qontinui-web is the SOLE author of ``coord.*`` schema; the
 ``qontinui-coord`` binary authors zero ``coord.*`` DDL. The coord writer and
 resolver land after this revision is applied in production, and degrade on
-SQLSTATE 42P01 until then (the resolver reads it as unknown, never as a verdict).
+SQLSTATE 42P01 (no table) and 42703 (a missing column) alike until then: the
+writer answers ``table_absent`` and the resolver reads unknown, never a verdict.
+A database that applied the PRE-amendment shape of this revision (before
+``check_name`` was added) has the table but not that column, so it reads
+``table_absent`` / unknown until the column exists. No shared database has
+applied that earlier shape: this revision has never been on any main, so only
+local throwaway databases can carry it.
 
 ## Head choice
 
-``down_revision`` is ``coord_wt_cargo_lock_01``, the single head of
-``origin/main`` at ``96e5e4ff8`` (``alembic heads`` printed exactly that one head). If main has moved before it lands, re-point
+``down_revision`` is ``devcred_01_credential_deny_and_bound_pair_codes``, the single
+head of ``origin/main`` at ``eb54e0bb9`` (``alembic heads`` printed exactly that one head). If main has moved before it lands, re-point
 ``down_revision``, the ``Revises:`` header and ``_PARENT_REVISION_ID`` in the
 migration test at the new single head. Do not add an ``alembic merge``.
 
@@ -120,7 +126,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "run_outcomes_01"
-down_revision: str | Sequence[str] | None = "coord_wt_cargo_lock_01"
+down_revision: str | Sequence[str] | None = "devcred_01_credential_deny_and_bound_pair_codes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
