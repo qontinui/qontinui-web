@@ -1,6 +1,6 @@
 # Qontinui Web Builder
 
-**Private Repository** - Closed-source configuration UI for GUI automation projects.
+Open-source (AGPL-3.0-or-later) configuration UI for GUI automation projects.
 
 ## Overview
 
@@ -131,7 +131,7 @@ Please note that this project is released with a [Code of Conduct](CODE_OF_CONDU
 
 ## License
 
-Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE) for full terms. Contributing requires signing the [CLA](CLA.md) — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE) for full terms. Contributions are accepted under the Developer Certificate of Origin (DCO) — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contact
 

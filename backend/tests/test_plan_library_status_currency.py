@@ -291,6 +291,7 @@ class TestSchemaHasNoDefault:
         from app.api.v1.endpoints.plan_library import _work_unit_candidate
 
         unit = crud.CandidateWorkUnit(
+            id=uuid4(),
             slug="2026-09-29-x",
             status="",
             title=None,
@@ -657,7 +658,7 @@ class TestSingleRowRoutesDegradeRatherThanFail:
 
         # The write landed.
         rows, total = await crud.list_artifacts(
-            async_db_session, org_id=None, slug=slug, offset=0, limit=10
+            async_db_session, org_id=None, slug=slug, limit=10
         )
         assert total == 1
         assert rows[0].title == "Posted"

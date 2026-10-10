@@ -1152,7 +1152,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
   it("keeps (and still sends) a value typed before the profile read lands", async () => {
     const get = deferred<Response>();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        (init?.method ?? "GET") === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return get.promise;
       }
       return Promise.resolve(route(url, init, STORED));
@@ -1182,7 +1185,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
       auto_merge_label_budget: 9,
     };
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        (init?.method ?? "GET") === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return get.promise;
       }
       return Promise.resolve(route(url, init, STORED, saved));
@@ -1314,7 +1320,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     const get = deferred<Response>();
     const saved: Raw = { ...STORED, confidence_threshold_override: 0.6 };
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        (init?.method ?? "GET") === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return get.promise;
       }
       return Promise.resolve(route(url, init, STORED, saved));
@@ -1341,7 +1350,10 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
 
   it("shows a notice when the profile read fails, and clears it once a save adopts a response", async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      if (
+        (init?.method ?? "GET") === "GET" &&
+        url.includes(`/pr-merge/repos/${REPO}/profile`)
+      ) {
         return Promise.resolve(new Response("boom", { status: 500 }));
       }
       return Promise.resolve(route(url, init, STORED));
@@ -1359,6 +1371,23 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     ).toBeNull();
     expect(screen.queryByText("HTTP 500")).toBeNull();
     expect(input("repo-confidence").value).toBe("0.9");
+  });
+
+  it("shows a network failure on the merge-enabled write unwrapped, not as 'merge-enabled: …'", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    fireEvent.change(input("repo-merge-enabled"), {
+      target: { value: "false" },
+    });
+    await clickSaveAndSettle();
+    expect(screen.getByText("Failed to fetch")).toBeInTheDocument();
+    expect(screen.queryByText(/merge-enabled: /)).toBeNull();
   });
 
   it("keeps the edits dirty when the PATCH fails", async () => {
@@ -1759,5 +1788,112 @@ describe("<MergeOrchestrationSettings> pinned-ON repo under a tenant pause", () 
     expect(screen.getByTestId(`repo-card-${REPO}`)).toHaveTextContent(
       /tenant is paused/i
     );
+  });
+});
+
+describe("<MergeOrchestrationSettings> top-level read errors", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  /** Answer each read with `settings` / `repos` / `slo`, whatever order they resolve in. */
+  function answerReads(answers: {
+    settings: () => Promise<Response>;
+    repos: () => Promise<Response>;
+    slo: () => Promise<Response>;
+  }) {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/pr-merge/settings")) return answers.settings();
+      if (url.includes("/pr-merge/repos")) return answers.repos();
+      return answers.slo();
+    });
+  }
+
+  it("names settings first when both settings and repos are refused, even if repos answers first", async () => {
+    answerReads({
+      settings: () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve(new Response("a", { status: 500 })), 20)
+        ),
+      repos: () => Promise.resolve(new Response("b", { status: 502 })),
+      slo: () => Promise.resolve(jsonResponse({})),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("settings: HTTP 500")).toBeInTheDocument();
+    expect(screen.queryByText("repos: HTTP 502")).toBeNull();
+  });
+
+  it("names repos when only repos is refused", async () => {
+    answerReads({
+      settings: () => Promise.resolve(routeGet("/pr-merge/settings", {})),
+      repos: () => Promise.resolve(new Response("b", { status: 502 })),
+      slo: () => Promise.resolve(jsonResponse({})),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("repos: HTTP 502")).toBeInTheDocument();
+  });
+
+  it("shows a network failure as its own message, unprefixed", async () => {
+    answerReads({
+      settings: () => Promise.reject(new TypeError("Failed to fetch")),
+      repos: () => Promise.resolve(routeGet("/pr-merge/repos", {})),
+      slo: () => Promise.resolve(jsonResponse({})),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+  });
+
+  it("leaves profile and repos unset when only the SLO read fails on the network", async () => {
+    answerReads({
+      settings: () => Promise.resolve(routeGet("/pr-merge/settings", {})),
+      repos: () => Promise.resolve(routeGet("/pr-merge/repos", {})),
+      slo: () => Promise.reject(new TypeError("slo down")),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("slo down")).toBeInTheDocument();
+    // Skeleton state, as when the old Promise.all rejected: nothing was set.
+    expect(screen.queryByTestId("settings-auto-fix-red-main")).toBeNull();
+  });
+
+  it("shows the network error when settings is refused and the SLO read never answered", async () => {
+    answerReads({
+      settings: () => Promise.resolve(new Response("a", { status: 500 })),
+      repos: () => Promise.resolve(routeGet("/pr-merge/repos", {})),
+      slo: () => Promise.reject(new TypeError("slo down")),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("slo down")).toBeInTheDocument();
+    expect(screen.queryByText("settings: HTTP 500")).toBeNull();
+  });
+
+  it("checks every status before any body: an unparseable settings body with repos refused says repos", async () => {
+    answerReads({
+      settings: () =>
+        Promise.resolve(new Response("not json", { status: 200 })),
+      repos: () => Promise.resolve(new Response("b", { status: 502 })),
+      slo: () => Promise.resolve(jsonResponse({})),
+    });
+    render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("repos: HTTP 502")).toBeInTheDocument();
+  });
+
+  it("raises an SLO network failure to the top-level error, but not an SLO refusal", async () => {
+    answerReads({
+      settings: () => Promise.resolve(routeGet("/pr-merge/settings", {})),
+      repos: () => Promise.resolve(routeGet("/pr-merge/repos", {})),
+      slo: () => Promise.reject(new TypeError("slo down")),
+    });
+    const { unmount } = render(<MergeOrchestrationSettings />);
+    expect(await screen.findByText("slo down")).toBeInTheDocument();
+    unmount();
+
+    answerReads({
+      settings: () => Promise.resolve(routeGet("/pr-merge/settings", {})),
+      repos: () => Promise.resolve(routeGet("/pr-merge/repos", {})),
+      slo: () => Promise.resolve(new Response("down", { status: 503 })),
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId("settings-auto-fix-red-main");
+    expect(screen.queryByText(/HTTP 503/)).toBeNull();
   });
 });

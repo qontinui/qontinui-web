@@ -111,6 +111,22 @@ describe("useAccountSelectionPolicy", () => {
     expect(result.current.unrecognizedLevel).toBeNull();
   });
 
+  it("trims resolved_scope before reading it as no row, as the runner does", async () => {
+    // A padded `none` is still no fleet opinion: the runner trims before it
+    // compares, so an untrimmed check would show a row nobody wrote.
+    getMock.mockResolvedValue({
+      ...NO_ROW,
+      effective_level: "round_robin",
+      resolved_scope: " none\n",
+    });
+    const { result } = renderHook(() => useAccountSelectionPolicy());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.displayLevel).toBe("off");
+    expect(result.current.isDefaulted).toBe(true);
+    expect(result.current.unrecognizedLevel).toBeNull();
+  });
+
   it("shows an unrecognised level as UNKNOWN, never as a known level", async () => {
     getMock.mockResolvedValue({
       ...NO_ROW,

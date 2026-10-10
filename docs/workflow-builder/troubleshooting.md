@@ -6,7 +6,6 @@ Common issues and solutions for the Workflow Builder.
 
 - [Organization Issues](#organization-issues)
 - [Dependency Issues](#dependency-issues)
-- [Version Control Issues](#version-control-issues)
 - [Testing Issues](#testing-issues)
 - [Performance Issues](#performance-issues)
 - [Component Issues](#component-issues)
@@ -156,86 +155,6 @@ console.log(`Found ${broken.length} workflows with broken dependencies`);
 // 3. Restoring the missing workflow
 ```
 
-## Version Control Issues
-
-### Version History Missing
-
-**Problem:** No versions shown for workflow
-
-**Solution:**
-```typescript
-// Check if branches exist
-const branches = workflowVersionControl.getAllBranches(workflowId);
-
-if (branches.length === 0) {
-  console.log('No branches found, creating main branch');
-
-  // Create main branch
-  const branch = workflowVersionControl.createBranch(
-    workflowId,
-    'main',
-    undefined,
-    'Main branch'
-  );
-
-  // Save initial version
-  workflowVersionControl.saveVersion(
-    workflowId,
-    branch.id,
-    workflow,
-    'Initial version'
-  );
-}
-
-// Check versions
-const versions = workflowVersionControl.getVersionHistory(workflowId);
-console.log(`Found ${versions.length} versions`);
-```
-
-### Cannot Merge Branches
-
-**Problem:** Merge fails with conflicts
-
-**Solution:**
-```typescript
-// Check for conflicts
-const conflicts = workflowVersionControl.detectConflicts(
-  sourceBranchId,
-  targetBranchId
-);
-
-if (conflicts.length > 0) {
-  console.log('Conflicts detected:');
-  conflicts.forEach(conflict => {
-    console.log(`  ${conflict.type}: ${conflict.description}`);
-  });
-
-  // Resolve manually:
-  // 1. Review changes in both branches
-  // 2. Create new version with resolved changes
-  // 3. Merge to target branch
-}
-```
-
-### Tag Already Exists
-
-**Problem:** Cannot create tag with existing name
-
-**Solution:**
-```typescript
-// Check existing tags
-const tags = workflowVersionControl.getAllTags(workflowId);
-const existingTag = tags.find(t => t.name === 'v1.0.0');
-
-if (existingTag) {
-  // Option 1: Delete old tag
-  workflowVersionControl.deleteTag(existingTag.id);
-
-  // Option 2: Use different name
-  workflowVersionControl.createTag(workflowId, versionId, 'v1.0.1');
-}
-```
-
 ## Testing Issues
 
 ### Test Fails Unexpectedly
@@ -326,74 +245,13 @@ const testCase = workflowTestingService.createTestCase({
 
 ## Performance Issues
 
-### Low Performance Score
-
-**Problem:** Workflow has poor performance score
-
-**Solution:**
-```typescript
-// Analyze performance
-const analysis = workflowPerformanceAnalyzer.analyzePerformance(workflow);
-
-console.log(`Performance Score: ${analysis.performanceScore}/100`);
-console.log(`Bottleneck Score: ${analysis.bottleneckScore}/100`);
-
-// Review bottlenecks
-analysis.bottlenecks.forEach(bottleneck => {
-  console.log(`${bottleneck.type} (${bottleneck.severity}): ${bottleneck.description}`);
-});
-
-// Review suggestions
-analysis.suggestions.forEach(suggestion => {
-  console.log(`[Priority ${suggestion.priority}] ${suggestion.title}`);
-});
-
-// Apply top suggestions
-const topSuggestion = analysis.suggestions[0];
-// Implement the suggestion
-```
-
-### Workflow Runs Too Slow
-
-**Problem:** Execution takes too long
-
-**Solution:**
-```typescript
-// Analyze wait actions
-const waitAnalysis = analysis.waitAnalysis;
-
-console.log(`Total wait time: ${waitAnalysis.totalWaitTime}ms`);
-console.log(`Fixed waits: ${waitAnalysis.fixedWaits.length}`);
-
-// Replace fixed waits with dynamic waits
-waitAnalysis.fixedWaits.forEach(wait => {
-  console.log(`Replace WAIT at ${wait.actionId} with FIND action`);
-});
-
-// Check parallelization opportunities
-const opportunities = analysis.parallelizationOpportunities;
-
-opportunities.forEach(opp => {
-  console.log(`Can parallelize ${opp.groups.length} action groups`);
-  console.log(`Estimated speedup: ${opp.estimatedSpeedup}ms`);
-});
-```
-
 ### Memory Issues
 
 **Problem:** Browser runs out of memory
 
 **Solution:**
 ```typescript
-// Check resource usage
-const resourceAnalysis = analysis.resourceAnalysis;
-
-if (resourceAnalysis.screenshotCount > 10) {
-  console.log('Too many screenshots, reduce count');
-}
-
 // Clear caches
-workflowPerformanceAnalyzer.clearCache();
 workflowAnalyticsService.clearOldData();
 
 // Reduce workflow size
@@ -462,9 +320,8 @@ console.log('LocalStorage keys:', Object.keys(localStorage));
 
 // Verify data exists
 const folders = localStorage.getItem('workflow-folders');
-const versions = localStorage.getItem('workflow-versions');
 
-if (!folders || !versions) {
+if (!folders) {
   console.error('Data missing from localStorage');
 
   // Restore from backup
@@ -478,58 +335,11 @@ if (!folders || !versions) {
 setInterval(() => {
   const backup = {
     folders: workflowFolderManager.exportFolderStructure(),
-    versions: workflowVersionControl.exportVersionHistory(workflowId),
     timestamp: new Date().toISOString()
   };
 
   localStorage.setItem('workflow-backup', JSON.stringify(backup));
 }, 5 * 60 * 1000); // Every 5 minutes
-```
-
-### Export/Import Fails
-
-**Problem:** Cannot export or import data
-
-**Solution:**
-```typescript
-// Export with error handling
-try {
-  const json = workflowVersionControl.exportVersionHistory(workflowId);
-
-  if (!json) {
-    console.error('Export returned null');
-    return;
-  }
-
-  // Validate JSON
-  JSON.parse(json);
-
-  // Save
-  downloadFile(new Blob([json]), 'export.json');
-} catch (error) {
-  console.error('Export failed:', error);
-}
-
-// Import with validation
-try {
-  const content = await file.text();
-
-  // Validate before import
-  const data = JSON.parse(content);
-
-  if (!data.workflowId || !data.branches) {
-    throw new Error('Invalid export format');
-  }
-
-  // Import
-  const success = workflowVersionControl.importVersionHistory(content);
-
-  if (!success) {
-    console.error('Import failed');
-  }
-} catch (error) {
-  console.error('Import failed:', error);
-}
 ```
 
 ## Getting Help
