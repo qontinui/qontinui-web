@@ -16,9 +16,10 @@
 # `tee`/`grep`/`sed` into $GITHUB_OUTPUT across two steps, which the
 # runner-as-CI-node lane (.qontinui/ci.toml, argv-only, deliberately
 # shell-free) could not mirror — so the manifest header recorded it as
-# inexpressible. Two lanes now invoke the one script:
+# inexpressible. Four lanes now invoke the one script:
 #
 #   * this workflow, step "Count alembic heads"
+#   * .github/workflows/web-guards.yml, the consolidated guard job
 #   * .qontinui/ci.toml, step `alembic-single-head`
 #   * .pre-commit-config.yaml, hook `alembic-single-head` (shift-left only —
 #     it would have caught 0 of the 3 forks on record, all post-authoring
@@ -96,8 +97,8 @@ permissions:
 #
 # `cancel-in-progress` is an EXPRESSION, not `true`: only a `pull_request` run
 # is ever superseded. A run on a `push` or `schedule` lane is never cancelled
-# by this block, though note that a still-PENDING run in a group IS reaped when
-# a newer run enters it -- GitHub keeps at most one pending run per group.
+# by this block, and since 2026-10-05 it is not reaped while PENDING either:
+# the per-run suffix below makes it the only member of its group.
 #
 # NOTE this workflow has no `push` lane on the DEFAULT branch, and that is what
 # makes a group safe here. A top-level group on a workflow that runs on
@@ -105,9 +106,21 @@ permissions:
 # blocking set from soft (relaxable by the optimism gate) to a hard block --
 # see `merge_safety_from_observation`, whose soft-blocking arm requires those
 # runs to share NO concurrency group.
+#
+# PR-SCOPED SUPERSESSION, re-run- and push-safe (shared hosted-job cap relief,
+# 2026-10-05; pattern: qontinui-claude-config#1475). Only a FIRST-attempt
+# `pull_request` run uses the bare per-PR group below and cancels within it.
+# Every other run -- push (incl. merge-candidate*/**, coord's candidate CI),
+# schedule, workflow_dispatch, and EVERY re-run (run_attempt > 1) -- appends
+# `-run-<id>-<attempt>`, so it is the sole member of its group: never
+# cancelled, never reaped while pending, and a re-run of an older head can no
+# longer cancel the current head's run. The existing literal prefix is kept
+# because coord models a template by interpolating only `github.event_name` /
+# `github.ref` and collapsing every other expression (the suffix included) to
+# "" -- so coord's modelled group is byte-identical to before the suffix.
 concurrency:
-  group: alembic-graph-pr-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: alembic-graph-pr-${{ github.event_name }}-${{ github.ref }}${{ !(github.event_name == 'pull_request' && github.run_attempt == 1) && format('-run-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 
 jobs:
   alembic-heads-pr:

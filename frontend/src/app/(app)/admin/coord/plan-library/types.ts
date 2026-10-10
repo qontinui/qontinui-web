@@ -25,6 +25,8 @@
  *   row" (`none`) from "off because someone turned it off".
  */
 
+import type { BoundedReadMeta } from "@/components/admin/coord/cursorPager";
+
 // ───────────────────────────── artifacts ─────────────────────────────
 
 export const WORK_ARTIFACT_KINDS = [
@@ -56,15 +58,6 @@ export const KIND_LABELS: Record<WorkArtifactKind, string> = {
 export function kindLabel(kind: string): string {
   return KIND_LABELS[kind as WorkArtifactKind] ?? kind;
 }
-
-export const CAPTURE_DOORS = ["runner_scan", "agent", "operator"] as const;
-export type CaptureDoor = (typeof CAPTURE_DOORS)[number];
-
-export const CAPTURE_DOOR_LABELS: Record<CaptureDoor, string> = {
-  runner_scan: "Runner scan",
-  agent: "Agent write door",
-  operator: "Operator",
-};
 
 export type WorkArtifactRelation =
   | "produced_report"
@@ -204,61 +197,16 @@ export interface CorpusHealth {
   scan_roots: ScanRootListResponse;
 }
 
-export interface WorkArtifactListResponse {
-  items: WorkArtifactSummary[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  corpus_health: CorpusHealth;
-}
-
-// ───────────────────────────── divergence ─────────────────────────────
-
-export interface DivergentVariant {
-  id: string;
-  kind: string;
-  kind_locked: boolean;
-  content_sha256: string;
-  source_repo: string | null;
-  source_path: string | null;
-  title: string;
-  status: string;
-  current_version: number;
-  updated_at: string;
-}
-
-/** Same `(kind, slug)`, different content digest. */
-export interface DivergentGroup {
-  kind: string;
-  slug: string;
-  variant_count: number;
-  variants: DivergentVariant[];
-}
-
 /**
- * Same `(slug, source_repo)`, DIFFERENT kind — a fork whose whole
- * distinguishing feature is the kind, which grouping by `(kind, slug)`
- * structurally cannot see.
- *
- * `resolvable: false` means no single corrected (`kind_locked`) row exists to
- * prefer, so the scanner refuses to pick and an operator must correct one.
+ * `GET /api/v1/plan-library` — the all-kinds artifact list. A keyset walk,
+ * newest captured first: the shared bounded-read keys describe `items`, and
+ * `total` counts from THIS page's start (the whole filtered corpus on the
+ * first page). Pass `next_cursor` back as `cursor` for the next page.
  */
-export interface KindForkGroup {
-  slug: string;
-  source_repo: string | null;
-  kinds: string[];
-  variant_count: number;
-  resolvable: boolean;
-  variants: DivergentVariant[];
-}
-
-export interface DivergentResponse {
-  groups: DivergentGroup[];
-  total: number;
-  kind_forks: KindForkGroup[];
-  kind_fork_total: number;
+export interface WorkArtifactListResponse extends BoundedReadMeta {
+  items: WorkArtifactSummary[];
+  ordering: "newest_captured_first";
+  corpus_health: CorpusHealth;
 }
 
 // ─────────────────────────── capture health ───────────────────────────
@@ -307,9 +255,11 @@ export type DocumentState = "present" | "unsynced" | "absent";
  * `unavailable` means `total` counts the document layer only — UNKNOWN,
  * never "coord has no work units". Distinct from `coord_available`, which
  * reports the page-wide circuit: a 4xx on the population door is coord
- * ANSWERING and leaves that flag true.
+ * ANSWERING and leaves that flag true. `truncated` means the arm was read
+ * but coord's list did not end within web's page cap: the work-unit half is
+ * a LOWER BOUND and the page's bound is never `exact`.
  */
-export type WorkUnitPopulationState = "included" | "unavailable";
+export type WorkUnitPopulationState = "included" | "truncated" | "unavailable";
 
 export interface CandidateLinkedPr {
   repo: string | null;
@@ -372,14 +322,14 @@ export interface PlanCandidate {
   status_currency: StatusCurrency | null;
 }
 
-export interface PlanCandidateResponse {
+/**
+ * `GET /plan-library/candidates` — a keyset walk, oldest captured first. The
+ * shared bounded-read keys describe `items`; pass `next_cursor` back as
+ * `cursor`.
+ */
+export interface PlanCandidateResponse extends BoundedReadMeta {
   items: PlanCandidate[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  ordering: "oldest_vetted_first";
+  ordering: "oldest_captured_first";
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;

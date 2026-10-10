@@ -1,15 +1,15 @@
 /**
- * usePlanLibrary / useDivergentArtifacts / useCaptureHealth / useScanRoots /
+ * usePlanLibrary (the all-kinds artifact list) / useScanRoots /
  * usePlanCoverage.
  *
- * The list hook is mostly plumbing; what is worth pinning is the behaviour
- * that is wrong in a way nobody notices:
+ * For the list: a filter change must reset the cursor walk (page 3 of a new query
+ * reads as "no matches"), and the facet chips come from the LOADED page, not
+ * a fixed vocabulary.
  *
- * * A filter change must reset the offset. Staying on page 3 of the previous
- *   query renders an empty page and reads as "no matches".
- * * A failed load must not blank the rows into a confident empty state.
- * * The facet chips are derived from the LOADED page, not the corpus — the
- *   hook must not pretend otherwise by returning a fixed vocabulary.
+ * What is worth pinning is the behaviour that is wrong in a way nobody
+ * notices: a failed read must not blank rows into a confident empty state,
+ * and an overlapping read must neither paint over a newer answer nor be
+ * thrown away when a newer read failed.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -38,8 +38,6 @@ vi.mock("sonner", () => ({
 }));
 
 import {
-  useCaptureHealth,
-  useDivergentArtifacts,
   usePlanCoverage,
   usePlanLibrary,
   useScanRoots,
@@ -82,7 +80,7 @@ beforeEach(() => {
 
 describe("usePlanLibrary — filters", () => {
   it("puts every filter on the query string", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
 
     const { result } = renderHook(() => usePlanLibrary());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -102,7 +100,7 @@ describe("usePlanLibrary — filters", () => {
   });
 
   it("debounces typed text but applies the kind dropdown at once", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
 
     const { result } = renderHook(() => usePlanLibrary());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -132,20 +130,45 @@ describe("usePlanLibrary — filters", () => {
     getMock.mockResolvedValue({
       items: [row()],
       total: 500,
-      offset: 0,
       limit: 50,
     });
 
     const { result } = renderHook(() => usePlanLibrary());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => result.current.setOffset(100));
-    await waitFor(() => expect(result.current.offset).toBe(100));
+    act(() => result.current.pager.next("cursor-at-100", 100));
+    await waitFor(() => expect(result.current.pager.start).toBe(100));
 
     act(() => result.current.updateFilter("kind", "plan"));
 
     // Staying on page 3 of a NEW query renders empty and reads as "no matches".
-    await waitFor(() => expect(result.current.offset).toBe(0));
+    await waitFor(() => expect(result.current.pager.start).toBe(0));
+    expect(String(getMock.mock.calls.at(-1)?.[0])).not.toContain("cursor=");
+  });
+
+  it("pages by the route's cursor, never an offset", async () => {
+    getMock.mockResolvedValue({
+      items: [row()],
+      total: 500,
+      truncated: true,
+      next_cursor: "opaque-token",
+      limit: 50,
+    });
+
+    const { result } = renderHook(() => usePlanLibrary());
+    await waitFor(() => expect(result.current.window?.hasMore).toBe(true));
+    expect(String(getMock.mock.calls.at(-1)?.[0])).not.toContain("offset=");
+
+    act(() => result.current.pager.next("opaque-token", 1));
+    await waitFor(() =>
+      expect(String(getMock.mock.calls.at(-1)?.[0])).toContain(
+        "cursor=opaque-token"
+      )
+    );
+    // `total` counts from the page's own start; the population adds the walk.
+    await waitFor(() =>
+      expect(result.current.window?.populationTotal).toBe(501)
+    );
   });
 
   it("derives the facet chips from the loaded page only", async () => {
@@ -160,7 +183,6 @@ describe("usePlanLibrary — filters", () => {
         }),
       ],
       total: 2,
-      offset: 0,
       limit: 50,
     });
 
@@ -182,7 +204,6 @@ describe("usePlanLibrary — failure is not emptiness", () => {
     getMock.mockResolvedValueOnce({
       items: [row()],
       total: 1,
-      offset: 0,
       limit: 50,
     });
 
@@ -214,14 +235,15 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
     return { promise, resolve, reject };
   }
 
-  const page = (title: string, offset: number) => ({
+  const page = (title: string, start: number) => ({
     items: [row({ title })],
-    total: 200,
-    offset,
+    total: 200 - start,
+    truncated: true,
+    next_cursor: `after-${start}`,
     limit: 50,
   });
 
-  // `load` is recreated on [applied, offset] and fired by an effect, so two
+  // `load` is recreated on [applied, cursor] and fired by an effect, so two
   // of it are in flight whenever the operator pages or retypes faster than
   // the backend answers. The hook passes no abort signal, so both settle and
   // it carries a generation counter; each of these tests pins one of its four
@@ -235,7 +257,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
     const { result } = renderHook(() => usePlanLibrary());
     // Page forward before page 1 has landed.
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
     await waitFor(() =>
       expect(result.current.items[0]?.title).toBe("page two")
     );
@@ -247,7 +269,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
     // Page 1's rows under a "51–100 of 200" pager is the visible symptom.
     expect(result.current.items[0]?.title).toBe("page two");
-    expect(result.current.offset).toBe(50);
+    expect(result.current.pager.start).toBe(50);
   });
 
   it("does not paint a late FAILURE banner over fresh rows", async () => {
@@ -259,7 +281,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
       .mockResolvedValueOnce(page("fresh", 50));
 
     const { result } = renderHook(() => usePlanLibrary());
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
     await waitFor(() => expect(result.current.items[0]?.title).toBe("fresh"));
 
     await act(async () => {
@@ -280,7 +302,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
       .mockRejectedValueOnce(new Error("backend down"));
 
     const { result } = renderHook(() => usePlanLibrary());
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
     await waitFor(() => expect(result.current.error).toContain("backend down"));
 
     await act(async () => {
@@ -301,7 +323,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
       .mockImplementationOnce(() => second.promise);
 
     const { result } = renderHook(() => usePlanLibrary());
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
 
     await act(async () => {
       first.resolve(page("page one", 0));
@@ -320,7 +342,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
 describe("usePlanLibrary — kind correction", () => {
   it("patches the kind and reloads the list", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
     patchMock.mockResolvedValue({ ...row(), kind: "handoff" });
 
     const { result } = renderHook(() => usePlanLibrary());
@@ -346,7 +368,7 @@ describe("usePlanLibrary — kind correction", () => {
   });
 
   it("surfaces a 409 identity collision instead of guessing a merge", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
     patchMock.mockRejectedValue(new Error("kind_identity_conflict"));
 
     const { result } = renderHook(() => usePlanLibrary());
@@ -361,164 +383,6 @@ describe("usePlanLibrary — kind correction", () => {
     expect(toastError).toHaveBeenCalledWith(
       expect.stringContaining("kind_identity_conflict")
     );
-  });
-});
-
-describe("useDivergentArtifacts", () => {
-  it("keeps content drift and kind forks as separate findings", async () => {
-    getMock.mockResolvedValue({
-      groups: [{ kind: "plan", slug: "s1", variant_count: 2, variants: [] }],
-      total: 1,
-      kind_forks: [
-        {
-          slug: "s2",
-          source_repo: "qontinui-web",
-          kinds: ["plan", "handoff"],
-          variant_count: 2,
-          resolvable: false,
-          variants: [],
-        },
-      ],
-      kind_fork_total: 1,
-    });
-
-    const { result } = renderHook(() => useDivergentArtifacts());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.data?.total).toBe(1);
-    // A kind fork is invisible to `(kind, slug)` grouping — it must not be
-    // folded into `groups`.
-    expect(result.current.data?.kind_fork_total).toBe(1);
-    expect(result.current.data?.kind_forks[0].resolvable).toBe(false);
-  });
-
-  it("reports a failed read rather than an empty result", async () => {
-    getMock.mockRejectedValue(new Error("boom"));
-
-    const { result } = renderHook(() => useDivergentArtifacts());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.error).toContain("boom");
-    expect(result.current.data).toBeNull();
-  });
-});
-
-describe("useCaptureHealth", () => {
-  it("passes through the zero-count doors the backend returns", async () => {
-    getMock.mockResolvedValue({
-      total: 12,
-      doors: [
-        {
-          captured_by: "runner_scan",
-          count: 12,
-          known: true,
-          first_at: "2026-08-01T00:00:00Z",
-          last_touched_at: "2026-08-14T00:00:00Z",
-        },
-        {
-          captured_by: "agent",
-          count: 0,
-          known: true,
-          first_at: null,
-          last_touched_at: null,
-        },
-        {
-          captured_by: "operator",
-          count: 0,
-          known: true,
-          first_at: null,
-          last_touched_at: null,
-        },
-      ],
-    });
-
-    const { result } = renderHook(() => useCaptureHealth());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    // "The agent door has written nothing" is the finding this panel exists
-    // for — it must survive as an explicit zero, not be filtered out.
-    const agent = result.current.data?.doors.find(
-      (d) => d.captured_by === "agent"
-    );
-    expect(agent?.count).toBe(0);
-    expect(result.current.data?.doors).toHaveLength(3);
-  });
-});
-
-describe("useCaptureHealth — a failed read is not a corpus of zero", () => {
-  it("leaves `data` null rather than synthesising empty doors", async () => {
-    getMock.mockRejectedValue(new Error("backend down"));
-
-    const { result } = renderHook(() => useCaptureHealth());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    // Rendering three zeroed doors here would state "the agent door has never
-    // been used" on the evidence of a network failure.
-    expect(result.current.data).toBeNull();
-    expect(result.current.error).toContain("backend down");
-  });
-});
-
-describe("useCaptureHealth — a wired reload must not blank, and must not invert", () => {
-  const census = {
-    total: 1,
-    doors: [
-      {
-        captured_by: "runner_scan",
-        count: 1,
-        known: true,
-        first_at: null,
-        last_touched_at: null,
-      },
-    ],
-  };
-
-  it("keeps the doors a successful load produced when a reload fails", async () => {
-    getMock.mockResolvedValueOnce(census);
-
-    const { result } = renderHook(() => useCaptureHealth());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    getMock.mockRejectedValueOnce(new Error("backend down"));
-    await act(async () => {
-      await result.current.reload();
-    });
-
-    // The panel's error copy promises "the counts below are the last ones read
-    // and may be stale" — blanking `data` would make that a lie about nothing.
-    expect(result.current.data).toEqual(census);
-    expect(result.current.error).toContain("backend down");
-  });
-
-  it("a late response never overwrites a newer one", async () => {
-    const fresh = { ...census, total: 2 };
-    let failSlow: (e: unknown) => void = () => {};
-    getMock
-      .mockImplementationOnce(
-        () =>
-          new Promise((_resolve, reject) => {
-            failSlow = reject;
-          })
-      )
-      .mockResolvedValueOnce(fresh);
-
-    const { result } = renderHook(() => useCaptureHealth());
-    // The second read starts and lands while the first is still out.
-    await act(async () => {
-      void result.current.reload();
-    });
-    await waitFor(() => expect(result.current.data).toEqual(fresh));
-
-    await act(async () => {
-      failSlow(new Error("backend down"));
-      await Promise.resolve();
-    });
-
-    // Without the request-id guard the superseded read's FAILURE lands last
-    // and paints "may be stale" over counts that were just refreshed.
-    expect(result.current.data).toEqual(fresh);
-    expect(result.current.error).toBeNull();
-    expect(result.current.loading).toBe(false);
   });
 });
 
@@ -654,7 +518,19 @@ describe("useScanRoots — a failed reload must not blank, and must not invert",
 // success after a newer one — a newest-id guard gets right, and it is here to
 // catch the opposite mistake: a hook that applies whatever lands last.
 describe.each([
-  ["useCaptureHealth", () => useCaptureHealth(), { total: 1, doors: [] }],
+  [
+    "usePlanCoverage",
+    () => usePlanCoverage(),
+    {
+      state: "reported",
+      detail: null,
+      fresh_within_secs: 2700,
+      count: 1,
+      fresh_count: 1,
+      rows: [],
+      coverage: [],
+    },
+  ],
   [
     "useScanRoots",
     () => useScanRoots(),

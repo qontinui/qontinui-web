@@ -36,6 +36,13 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.strict_query import StrictQueryRoute, accepted_query_keys
+from app.api.v1.endpoints.plan_library import (
+    candidates_fingerprint,
+    followups_fingerprint,
+    list_fingerprint,
+    reconciliation_fingerprint,
+)
+from app.core.bounded_read import KeysetPosition
 from app.crud import work_artifact as crud
 from app.models.work_artifact import WorkArtifact, WorkArtifactVersion
 
@@ -747,11 +754,21 @@ class TestFilters:
             await _upsert(
                 async_db_session, org_id=org, slug=_slug(f"page{i}"), body=f"b{i}"
             )
-        page, total = await crud.list_artifacts(
-            async_db_session, org_id=org, offset=0, limit=2
-        )
+        page, total = await crud.list_artifacts(async_db_session, org_id=org, limit=2)
         assert total == 5
         assert len(page) == 2
+        # Keyset: the next page resumes strictly after the last row, and its
+        # count is from its own start — the pages tile the corpus exactly once.
+        last = page[-1]
+        rest, rest_total = await crud.list_artifacts(
+            async_db_session,
+            org_id=org,
+            after=KeysetPosition(at=last.created_at, id=last.id),
+            limit=10,
+        )
+        assert rest_total == 3
+        assert {r.id for r in page}.isdisjoint({r.id for r in rest})
+        assert len(page) + len(rest) == 5
 
 
 class TestDivergence:
@@ -1061,8 +1078,9 @@ class TestHttpSurface:
     ) -> None:
         """``count`` is ``len(items)`` for THIS page (plan
         ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero`` D4);
-        ``total`` stays the unpaged total. A bounded page must say how long
-        it is, and an empty page must say ``0``."""
+        ``total`` counts from the page's start (the shared bounded-read
+        contract), so on the first page it is the whole filter. A bounded page
+        must say how long it is, and an empty page must say ``0``."""
         stem = _slug("count")
         for n in range(3):
             resp = await client.post(
@@ -1077,12 +1095,21 @@ class TestHttpSurface:
         body = page.json()
         assert body["count"] == len(body["items"]) == 2
         assert body["total"] == 3
+        assert body["truncated"] is True
+        assert body["next_cursor"]
 
         rest = await client.get(
-            API_PREFIX, params={"work_unit_slug": stem, "limit": "2", "offset": "2"}
+            API_PREFIX,
+            params={
+                "work_unit_slug": stem,
+                "limit": "2",
+                "cursor": body["next_cursor"],
+            },
         )
         assert rest.json()["count"] == len(rest.json()["items"]) == 1
-        assert rest.json()["total"] == 3
+        assert rest.json()["total"] == 1
+        assert rest.json()["truncated"] is False
+        assert rest.json()["next_cursor"] is None
 
         empty = await client.get(
             API_PREFIX, params={"work_unit_slug": f"{stem}-absent"}
@@ -1248,6 +1275,37 @@ class TestHttpSurface:
         groups = [g for g in resp.json()["groups"] if g["slug"] == slug]
         assert len(groups) == 1
         assert groups[0]["variant_count"] == 2
+
+    async def test_divergent_variants_carry_their_capture_source(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Each copy says HOW it got into the store — the fork view's
+        "scanner copy vs. hand-posted copy" cue reads it off the wire."""
+        slug = _slug("captured-by-drift")
+        await client.post(
+            API_PREFIX,
+            json=_payload(
+                slug=slug,
+                body="scanned copy",
+                source_repo="qontinui-web",
+                captured_by="runner_scan",
+            ),
+        )
+        await client.post(
+            API_PREFIX,
+            json=_payload(
+                slug=slug,
+                body="operator copy",
+                source_repo="qontinui-runner",
+                captured_by="operator",
+            ),
+        )
+
+        resp = await client.get(f"{API_PREFIX}/divergent")
+        assert resp.status_code == 200, resp.text
+        (group,) = [g for g in resp.json()["groups"] if g["slug"] == slug]
+        by_repo = {v["source_repo"]: v["captured_by"] for v in group["variants"]}
+        assert by_repo == {"qontinui-web": "runner_scan", "qontinui-runner": "operator"}
 
     async def test_get_missing_artifact_is_404(self, client: httpx.AsyncClient) -> None:
         resp = await client.get(f"{API_PREFIX}/{uuid4()}")
@@ -1456,9 +1514,10 @@ class TestWorkUnitSlugIsExact:
             body["items"],
             body["count"],
             body["total"],
-            body["offset"],
+            body["truncated"],
+            body["next_cursor"],
             body["limit"],
-        ) == ([], 0, 0, 0, 50)
+        ) == ([], 0, 0, False, None, 50)
         # The zero is not the whole answer: the corpus is NOT empty, so this
         # reads as "no such stem" rather than "no plans at all" (D1 of
         # 2026-08-27-plan-corpus-read-path-is-dark).
@@ -1474,7 +1533,7 @@ class TestWorkUnitSlugIsExact:
             params={"kind": "plan", "work_unit_slug": short_stem},
         )
         assert resp.status_code == 200, resp.text
-        assert resp.headers["x-export-artifact-count"] == "1"
+        assert json.loads(resp.headers["x-bounded-read"])["count"] == 1
         manifest = json.loads(
             zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
         )
@@ -1494,7 +1553,7 @@ class TestWorkUnitSlugIsExact:
             },
         )
         assert resp.status_code == 200, resp.text
-        assert resp.headers["x-export-artifact-count"] == "0"
+        assert json.loads(resp.headers["x-bounded-read"])["count"] == 0
         manifest = json.loads(
             zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
         )
@@ -1593,7 +1652,7 @@ class TestSlugFilter:
         _, posted = await self._scanner_and_hand_posted(async_db_session)
         resp = await client.get(f"{API_PREFIX}/export", params={"slug": posted})
         assert resp.status_code == 200, resp.text
-        assert resp.headers["x-export-artifact-count"] == "1"
+        assert json.loads(resp.headers["x-bounded-read"])["count"] == 1
         manifest = json.loads(
             zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
         )
@@ -1980,6 +2039,13 @@ class TestStrictQueryKeepsEveryDeclaredKey:
         created = await client.post(API_PREFIX, json=_payload(body="strict keys"))
         assert created.status_code == 201, created.text
         artifact_id = created.json()["artifact"]["id"]
+        org_id = created.json()["artifact"]["organization_id"]
+        org = UUID(org_id) if org_id else None
+        # ``cursor`` is a declared key on every paged route, and a token is
+        # bound to the filters it was minted under — so each route gets a
+        # REAL token for exactly the filters sent beside it (the position is
+        # arbitrary: past it there are simply no rows).
+        position = KeysetPosition(at=datetime(2000, 1, 1, tzinfo=UTC), id=uuid4())
 
         # Real values for every declared key, per route. ``since`` is a
         # datetime, the ints have bounds, ``include_coord`` is a bool — a
@@ -1998,23 +2064,42 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             f"{API_PREFIX}": {
                 **corpus_filter,
                 "intent_ref": "success_metric/development-speed",
-                "offset": "0",
+                "cursor": list_fingerprint(
+                    org,
+                    kind="plan",
+                    status="VETTED",
+                    repo="qontinui-web",
+                    q="strict",
+                    since=datetime.fromisoformat(since),
+                    work_unit_slug="any-stem",
+                    intent_ref="success_metric/development-speed",
+                    slug="any-slug",
+                ).encode(position),
                 "limit": "5",
             },
             f"{API_PREFIX}/divergent": {"kind": "plan"},
             f"{API_PREFIX}/capture-health": {},
             f"{API_PREFIX}/export": {**corpus_filter, "limit": "5"},
             f"{API_PREFIX}/candidates": {
-                "offset": "0",
+                "cursor": candidates_fingerprint(org, include_coord=False).encode(
+                    position
+                ),
                 "limit": "5",
                 "include_coord": "false",
             },
             f"{API_PREFIX}/reconciliation": {
-                "offset": "0",
+                "cursor": reconciliation_fingerprint(
+                    org, include_coord=False, q="strict"
+                ).encode(position),
                 "limit": "5",
                 "include_coord": "false",
+                "q": "strict",
+                "include_custody": "true",
             },
-            f"{API_PREFIX}/followups": {"offset": "0", "limit": "5"},
+            f"{API_PREFIX}/followups": {
+                "cursor": followups_fingerprint(org).encode(position),
+                "limit": "5",
+            },
             f"{API_PREFIX}/difficulty": {},
             f"{API_PREFIX}/vocabulary": {},
             f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},

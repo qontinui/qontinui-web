@@ -121,7 +121,7 @@ import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import get_args
+from typing import cast, get_args
 from urllib.parse import quote
 from uuid import UUID
 
@@ -151,6 +151,13 @@ from app.api.v1.endpoints.operations import (
     _proxy_coord_get,
     capture_caller_bearer,
     get_tenant_id,
+)
+from app.core import bounded_read
+from app.core.bounded_read import (
+    BoundedReadMeta,
+    CursorScope,
+    KeysetPosition,
+    ScopeFingerprint,
 )
 from app.crud import plan_scan_root as scan_root_crud
 from app.crud import work_artifact as crud
@@ -186,9 +193,12 @@ from app.schemas.plan_library import (
     ReconciliationAxisA,
     ReconciliationAxisB,
     ReconciliationAxisC,
+    ReconciliationCustody,
     ReconciliationFacets,
+    ReconciliationLiveSession,
     ReconciliationResponse,
     ReconciliationRow,
+    ReconciliationStatusClass,
     ReconciliationVerdict,
     StatusCurrency,
     WorkArtifactDetail,
@@ -250,11 +260,12 @@ _COORD_UNIT_PAGE_LIMIT = 500
 #: rows (1,550 after the ``shepherd-*`` exclusion) on this fleet on
 #: 2026-09-03 — generous rather than binding.
 #:
-#: Reaching it is a TRUNCATED population, which is why it is logged rather
-#: than absorbed. It cannot make the read return fewer rows than it did before
-#: the union — the artifact arm is unaffected — but it can make ``total``
-#: short, and a count that quietly stopped counting is the defect class this
-#: whole plan is about.
+#: Reaching it is a TRUNCATED population, and it is DISCLOSED on the wire, not
+#: just logged (plan ``2026-09-05-every-bounded-read-…`` Phase 4): the route
+#: reads ``work_unit_population_state: "truncated"`` and its bound drops to
+#: ``at_least`` / ``unknown`` with ``total: null``. It used to be absorbed —
+#: the partial population served with an exact-looking ``total`` — and a count
+#: that quietly stopped counting is the defect class that plan is about.
 _COORD_UNIT_MAX_PAGES = 20
 
 #: Hard ceiling on artifacts in one bulk export (Phase 4 of plan
@@ -262,7 +273,8 @@ _COORD_UNIT_MAX_PAGES = 20
 #: memory, so the bound exists to keep one request from pinning the process; at
 #: the measured corpus size (~1000 plans across two directories) it is generous
 #: rather than binding. It is NEVER applied silently — ``list_for_export``
-#: reports truncation and the route emits ``X-Export-Truncated``, because an
+#: reports truncation and the route states it in the shared bounded-read
+#: envelope (the ``X-Bounded-Read`` header and ``manifest.json``), because an
 #: export that stopped short reads exactly like a corpus that is short.
 _EXPORT_MAX_ARTIFACTS = 5000
 
@@ -305,17 +317,22 @@ ARTIFACT_EXPORT_HEADERS: tuple[str, ...] = (
 
 #: The custom response headers the whole-corpus ZIP export carries.
 #:
-#: ``X-Export-Truncated`` is the reason this set must be CORS-published rather
-#: than merely sent. It is emitted on BOTH branches precisely so a reader
-#: cannot mistake its absence for "nothing went wrong" — and a cross-origin
-#: browser reads ``null`` for an unpublished header, which is exactly the
-#: absence that reasoning rules out. Unpublished, the deliberate design of the
-#: header is defeated by the transport and an INCOMPLETE archive reads as
-#: complete.
-CORPUS_EXPORT_HEADERS: tuple[str, ...] = (
-    "X-Export-Artifact-Count",
-    "X-Export-Truncated",
-)
+#: ONE header, :data:`~app.core.bounded_read.BOUNDED_READ_HEADER`: the
+#: archive's bound in the shared ``BoundedReadMeta`` vocabulary (plan
+#: ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+#: Phase 4), which replaced the bespoke ``X-Export-Truncated`` /
+#: ``X-Export-Artifact-Count`` pair. It is the reason this set must be
+#: CORS-published rather than merely sent: it is emitted on BOTH branches
+#: precisely so a reader cannot mistake its absence for "nothing went wrong",
+#: and a cross-origin browser reads ``null`` for an unpublished header — the
+#: absence that reasoning rules out. Unpublished, an INCOMPLETE archive reads
+#: as complete.
+CORPUS_EXPORT_HEADERS: tuple[str, ...] = (bounded_read.BOUNDED_READ_HEADER,)
+
+#: The walk an export that hit its bound points at: the list route takes the
+#: same filters and pages the same corpus by keyset, while the archive itself
+#: is one sorted slice with no cursor.
+_EXPORT_ENUMERATE_VIA = "GET /api/v1/plan-library"
 
 
 def _artifact_export_provenance(
@@ -334,18 +351,26 @@ def _artifact_export_provenance(
     }
 
 
-def _corpus_export_provenance(
-    *, artifact_count: int, truncated: bool
-) -> dict[str, str]:
+def _corpus_export_meta(
+    *, artifact_count: int, truncated: bool, limit: int
+) -> BoundedReadMeta:
+    """The archive's bound: a ``limit + 1`` probe over a sorted slice that
+    has no cursor, so a cut archive is ``truncated: true`` with
+    ``enumerate_via`` naming the keyset walk over the same filters."""
+    return bounded_read.not_pageable(
+        artifact_count + (1 if truncated else 0),
+        limit,
+        _EXPORT_ENUMERATE_VIA,
+    )
+
+
+def _corpus_export_provenance(meta: BoundedReadMeta) -> dict[str, str]:
     """The ZIP export's headers, keyed by :data:`CORPUS_EXPORT_HEADERS`.
 
     Explicit on BOTH branches. A header present only when something went wrong
     trains readers to ignore its absence.
     """
-    return {
-        "X-Export-Artifact-Count": str(artifact_count),
-        "X-Export-Truncated": "true" if truncated else "false",
-    }
+    return {bounded_read.BOUNDED_READ_HEADER: bounded_read.header_value(meta)}
 
 
 def _export_archive_name(row: WorkArtifact, used: set[str]) -> str:
@@ -1351,6 +1376,18 @@ def _coord_datetime(raw: object) -> datetime | None:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
+def _coord_uuid(raw: object) -> UUID | None:
+    """Parse coord's ``work_units.id`` off a list row; ``None`` when absent or
+    unparsable — treated like an unparsable ``created_at`` (the row cannot be
+    placed in a stable page), never raised on."""
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return UUID(raw)
+    except ValueError:
+        return None
+
+
 def _coord_candidate_unit(raw: object) -> crud.CandidateWorkUnit | None:
     """Project ONE row of coord's work-unit list onto the candidate arm.
 
@@ -1362,8 +1399,8 @@ def _coord_candidate_unit(raw: object) -> crud.CandidateWorkUnit | None:
     * the slug is not plan-shaped (:func:`~app.crud.work_artifact.is_plan_shaped_slug`
       — date-slugged, and not one of coord's own ``shepherd-*`` merge
       escalations);
-    * it carries no ``created_at`` this read can parse, leaving nothing to
-      order it by;
+    * it carries no ``created_at`` or ``id`` this read can parse, leaving
+      nothing to order it by;
     * its status reads as terminal.
 
     The terminal test is :func:`~app.crud.work_artifact.is_terminal_status` —
@@ -1393,10 +1430,11 @@ def _coord_candidate_unit(raw: object) -> crud.CandidateWorkUnit | None:
         return None
 
     created_at = _coord_datetime(raw.get("created_at"))
-    if created_at is None:
-        # Every ordering this row could take is anchored on ``created_at``
-        # (``first_in_progress_at`` is explicitly absent-not-zero), so a row
-        # without one cannot be placed in a stable page at all.
+    unit_id = _coord_uuid(raw.get("id"))
+    if created_at is None or unit_id is None:
+        # The walk is keyed on ``(created_at, id)`` (``CANDIDATE_SORT_KEY``),
+        # so a row missing either cannot be placed in a stable page at all.
+        # coord's ``WorkUnitRow`` declares both non-optional.
         return None
 
     metadata = raw.get("metadata")
@@ -1406,6 +1444,7 @@ def _coord_candidate_unit(raw: object) -> crud.CandidateWorkUnit | None:
 
     title = raw.get("title")
     return crud.CandidateWorkUnit(
+        id=unit_id,
         slug=slug,
         status=status,
         title=title if isinstance(title, str) else None,
@@ -1415,7 +1454,7 @@ def _coord_candidate_unit(raw: object) -> crud.CandidateWorkUnit | None:
         updated_at=_coord_datetime(raw.get("updated_at")) or created_at,
         # coord derives ``first_in_progress_at`` from its status history and
         # reports it ABSENT — not zero — when no transition was recorded, so
-        # the fallback is spelled here rather than left to the sort.
+        # the fallback is spelled here. Display only (``age_days``).
         order_key=_coord_datetime(raw.get("first_in_progress_at")) or created_at,
     )
 
@@ -1455,7 +1494,7 @@ def _reconcile_work_unit(raw: object) -> crud.CandidateWorkUnit | None:
     plan at all" rather than "this plan is done": a row that is not an object
     or carries no usable ``slug``; a slug that is not plan-shaped
     (:func:`~app.crud.work_artifact.is_plan_shaped_slug`); and a row with no
-    parsable ``created_at``, which cannot be placed in a stable page.
+    parsable ``created_at``.
     """
     if not isinstance(raw, dict):
         return None
@@ -1474,6 +1513,8 @@ def _reconcile_work_unit(raw: object) -> crud.CandidateWorkUnit | None:
     repo = metadata.get("repo")
     title = raw.get("title")
     return crud.CandidateWorkUnit(
+        # Kept when absent: this walk keys on the STEM (``stem_position``).
+        id=_coord_uuid(raw.get("id")),
         slug=slug,
         # OPAQUE, and the empty string is a REAL value here rather than a
         # missing one: coord accepted it silently (its Free transition tier)
@@ -1487,6 +1528,172 @@ def _reconcile_work_unit(raw: object) -> crud.CandidateWorkUnit | None:
         created_at=created_at,
         updated_at=_coord_datetime(raw.get("updated_at")) or created_at,
         order_key=_coord_datetime(raw.get("first_in_progress_at")) or created_at,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ReconcileUnitExtras:
+    """Axis-A annotations read off ONE coord list row, beside its projection.
+
+    Kept out of :class:`~app.crud.work_artifact.CandidateWorkUnit` because only
+    reconciliation reads them, and that type is the CRUD layer's shape for
+    both candidate arms. Every field is coord's, forwarded; ``None`` is
+    UNKNOWN throughout (see :class:`ReconciliationAxisA`).
+    """
+
+    status_class: ReconciliationStatusClass | None = None
+    vet_state: str | None = None
+    vet_checked_at: datetime | None = None
+    live_sessions: list[ReconciliationLiveSession] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _CoordUnitWalk:
+    """One walk of coord's work-unit list (:meth:`_CoordProbe._unit_rows`)."""
+
+    #: The raw rows, de-duplicated on coord's ``id``; ``None`` when coord could
+    #: not be read (UNKNOWN, never an empty population).
+    rows: list[object] | None
+    #: Why ``rows`` is ``None``; ``None`` whenever the walk read.
+    reason: str | None = None
+    custody_echoed: bool = False
+    #: The walk hit :data:`_COORD_UNIT_MAX_PAGES` with coord still serving
+    #: full pages: ``rows`` is a LOWER BOUND on the population.
+    truncated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _ReconcileUnits:
+    """Axis A's population plus the per-slug annotations and the custody echo."""
+
+    units: list[crud.CandidateWorkUnit]
+    extras: dict[str, _ReconcileUnitExtras]
+    #: ``None`` when custody was not requested; otherwise whether coord echoed
+    #: ``resolve_session_names: true`` on every page read.
+    custody_resolved: bool | None
+    #: Whether the walk stopped at :data:`_COORD_UNIT_MAX_PAGES` with coord
+    #: still serving full pages — the population is then a LOWER BOUND.
+    truncated: bool = False
+
+
+def _coord_custody(raw: object) -> ReconciliationCustody | None:
+    """coord's ``custody`` object for one live session, or ``None`` (UNKNOWN).
+
+    Faithful to ``work_unit_custody.rs`` ``Custody::to_value``: ``sole``
+    carries ``session_name`` (a ``null`` there is an UNNAMED session, kept as
+    ``None``), ``ambiguous`` carries ``live_session_count``, ``unresolved``
+    carries nothing. A missing object, a state outside those three, or an
+    ``ambiguous`` with no integer count is NOT coerced into one of them — it is
+    ``None``, and the console renders it UNKNOWN.
+    """
+    if not isinstance(raw, dict):
+        return None
+    state = raw.get("state")
+    if state == "sole":
+        name = raw.get("session_name")
+        return ReconciliationCustody(
+            state="sole", session_name=name if isinstance(name, str) else None
+        )
+    if state == "ambiguous":
+        count = raw.get("live_session_count")
+        if isinstance(count, bool) or not isinstance(count, int):
+            return None
+        return ReconciliationCustody(state="ambiguous", live_session_count=count)
+    if state == "unresolved":
+        return ReconciliationCustody(state="unresolved")
+    return None
+
+
+def _coord_live_sessions(
+    raw: object, *, custody_resolved: bool = True
+) -> list[ReconciliationLiveSession] | None:
+    """A unit row's ``live_sessions`` list, or ``None`` when it is UNKNOWN.
+
+    coord attaches the key ONLY when the join was asked for and succeeded
+    (``WorkUnitRow::live_sessions`` is ``skip_serializing_if = is_none``), so
+    an absent key is UNKNOWN and ``[]`` is a real zero. A list holding any
+    entry this read cannot parse (no string ``device_id``) is also ``None``
+    rather than the parseable remainder: a partial list would undercount the
+    sessions and read as a smaller, confident answer.
+
+    ``custody_resolved=False`` keeps every session row but drops its
+    ``custody`` to ``None``: when coord did not echo name resolution on EVERY
+    page, no custody object in the response may read as resolved — the
+    response-level ``custody_resolved: false`` is then true of every row.
+    """
+    if not isinstance(raw, list):
+        return None
+    sessions: list[ReconciliationLiveSession] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        device_id = entry.get("device_id")
+        if not isinstance(device_id, str) or not device_id:
+            return None
+        topic = entry.get("correlation_topic")
+        sessions.append(
+            ReconciliationLiveSession(
+                device_id=device_id,
+                correlation_topic=topic if isinstance(topic, str) else None,
+                updated_at=_coord_datetime(entry.get("updated_at")),
+                expires_at=_coord_datetime(entry.get("expires_at")),
+                custody=(
+                    _coord_custody(entry.get("custody")) if custody_resolved else None
+                ),
+            )
+        )
+    return sessions
+
+
+#: coord's five ``status_class`` words, read off the schema's own ``Literal``.
+_STATUS_CLASSES: frozenset[str] = frozenset(get_args(ReconciliationStatusClass))
+
+
+def _coord_status_class(raw: dict[str, object]) -> ReconciliationStatusClass | None:
+    """coord's ``status_class`` for one list row, or ``None`` (UNKNOWN).
+
+    Forwarded, never computed: coord's ``WorkUnitRow`` carries the class on
+    every list row, derived by its own ``work_unit_status_class::classify``.
+    A row with no ``status`` string, a missing ``status_class``, or a word
+    outside the five is ``None`` — a coord that predates the field or a value
+    this build does not know is UNKNOWN, never coerced into a confident class.
+    """
+    if not isinstance(raw.get("status"), str):
+        return None
+    status_class = raw.get("status_class")
+    if isinstance(status_class, str) and status_class in _STATUS_CLASSES:
+        return cast(ReconciliationStatusClass, status_class)
+    return None
+
+
+def _reconcile_unit_extras(
+    raw: object, *, include_custody: bool, custody_resolved: bool = True
+) -> _ReconcileUnitExtras:
+    """The axis-A annotations on one raw coord list row.
+
+    ``status_class`` is coord's own (:func:`_coord_status_class`).
+    ``vet_state`` / ``vet_checked_at`` are on every list row coord serves
+    (``WorkUnitRow``, filled by ``attach_vet_state``); a coord predating them,
+    or a page whose freshness surface was unreadable, yields ``None``.
+    ``live_sessions`` is read only when this request asked for custody — a key
+    coord sent unasked would be another caller's concern, not this one's —
+    and ``custody_resolved=False`` (coord did not echo name resolution on
+    every page) nulls each session's ``custody`` while keeping the rows.
+    """
+    if not isinstance(raw, dict):
+        return _ReconcileUnitExtras()
+    vet_state = raw.get("vet_state")
+    return _ReconcileUnitExtras(
+        status_class=_coord_status_class(raw),
+        vet_state=vet_state if isinstance(vet_state, str) else None,
+        vet_checked_at=_coord_datetime(raw.get("vet_checked_at")),
+        live_sessions=(
+            _coord_live_sessions(
+                raw.get("live_sessions"), custody_resolved=custody_resolved
+            )
+            if include_custody
+            else None
+        ),
     )
 
 
@@ -1717,7 +1924,7 @@ class _CoordProbe:
 
     async def candidate_units(
         self,
-    ) -> tuple[list[crud.CandidateWorkUnit] | None, str | None]:
+    ) -> tuple[list[crud.CandidateWorkUnit] | None, str | None, bool]:
         """coord's whole plan-shaped, non-terminal work-unit population.
 
         The OTHER half of the candidate population, and the reason this plan
@@ -1727,11 +1934,12 @@ class _CoordProbe:
         *which plan still needs work?*, which is answered by fields the
         operational layer owns, so the population is read from there too.
 
-        Returns ``(units, reason)``. ``units is None`` means coord could not
-        be read and the caller must degrade to the artifact-only population —
-        **UNKNOWN, never an empty population**; ``reason`` then says what
-        happened, in the same whitelisted form the per-row
-        ``unavailable_reason`` carries.
+        Returns ``(units, reason, truncated)``. ``units is None`` means coord
+        could not be read and the caller must degrade to the artifact-only
+        population — **UNKNOWN, never an empty population**; ``reason`` then
+        says what happened, in the same whitelisted form the per-row
+        ``unavailable_reason`` carries. ``truncated`` is :meth:`_unit_rows`'
+        page-cap flag, and the route DISCLOSES it on the wire.
 
         ONE read per page, not one per row. It is paged to exhaustion against
         coord's own cap (:data:`_COORD_UNIT_PAGE_LIMIT`), filtered
@@ -1755,15 +1963,17 @@ class _CoordProbe:
         A short page ends the paging: coord clamps ``limit`` itself and
         returns what it has, so fewer rows than asked for is the last page.
         """
-        rows, reason = await self._unit_rows()
-        if rows is None:
-            return None, reason
+        walk = await self._unit_rows()
+        if walk.rows is None:
+            return None, walk.reason, False
         units = [
-            unit for raw in rows if (unit := _coord_candidate_unit(raw)) is not None
+            unit
+            for raw in walk.rows
+            if (unit := _coord_candidate_unit(raw)) is not None
         ]
-        return units, None
+        return units, None, walk.truncated
 
-    async def _unit_rows(self) -> tuple[list[object] | None, str | None]:
+    async def _unit_rows(self, *, include_custody: bool = False) -> _CoordUnitWalk:
         """Coord's whole work-unit list, paged to exhaustion and UNPROJECTED.
 
         The paging half of :meth:`candidate_units`, lifted out because
@@ -1772,38 +1982,83 @@ class _CoordProbe:
         projection drops, since a plan coord stored as ``shipped`` while its
         document still says ``draft`` is that surface's headline finding.
 
-        Returns ``(rows, reason)``. ``rows is None`` means coord could not be
-        read — **UNKNOWN, never an empty population** — and ``reason`` says
-        what happened, in the same whitelisted form the per-row
-        ``unavailable_reason`` carries.
+        ``rows is None`` means coord could not be read — **UNKNOWN, never an
+        empty population** — and ``reason`` says what happened, in the same
+        whitelisted form the per-row ``unavailable_reason`` carries.
+
+        **The walk is coord's, and so is its paging parameter.** coord's
+        work-unit list pages by ``limit``/``offset`` over ``updated_at DESC,
+        id DESC`` and has no keyset cursor (plan
+        ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus`` D2
+        lists that ``list_work_units`` offset as coord's own deletion). Until
+        it serves one, a unit coord restamps mid-walk can shift a page
+        boundary: the rows ahead of it repeat, which is why rows are
+        DE-DUPLICATED here on coord's ``id``, and one row may be skipped, which
+        no client-side walk can see. Web's own walks over this population are
+        keyset (``CANDIDATE_SORT_KEY``), so nothing web serves pages by offset.
 
         A short page ends the paging: coord clamps ``limit`` itself and returns
         what it has, so fewer rows than asked for is the last page. Reaching
-        :data:`_COORD_UNIT_MAX_PAGES` is a TRUNCATED population, which is why
-        it is logged rather than absorbed.
+        :data:`_COORD_UNIT_MAX_PAGES` with coord still serving full pages is a
+        TRUNCATED population: ``truncated`` is set and every route that reads
+        this walk DISCLOSES it on the wire (``work_unit_population_state:
+        "truncated"`` and a non-exact bound) — a log line is not a disclosure.
+
+        ``include_custody`` forwards ``include_live_sessions=true`` and
+        ``resolve_session_names=true`` so each row carries its
+        ``live_sessions`` annotated with coord's ``custody`` object.
+        ``custody_echoed`` is whether coord ECHOED ``resolve_session_names:
+        true`` on EVERY page read — coord sets that echo only when it actually
+        resolved names, so an older coord (or a page whose live-session join
+        failed) reads ``False`` and its custody is UNKNOWN, never "no holder".
+        It is ``False`` whenever ``include_custody`` was not asked for.
         """
         rows_all: list[object] = []
+        seen_ids: set[str] = set()
+        custody_echoed = include_custody
         offset = 0
         for _ in range(_COORD_UNIT_MAX_PAGES):
+            params = {
+                "limit": str(_COORD_UNIT_PAGE_LIMIT),
+                "offset": str(offset),
+                "exclude_slug_prefix": crud.COORD_SHEPHERD_SLUG_PREFIX,
+            }
+            if include_custody:
+                # ``true``, never ``1`` — see ``_presence_params`` for why the
+                # value is the one coord's two flag grammars both accept.
+                params["include_live_sessions"] = "true"
+                params["resolve_session_names"] = "true"
             payload, http_status, error = await self._get(
-                self._coord_base,
-                params={
-                    "limit": str(_COORD_UNIT_PAGE_LIMIT),
-                    "offset": str(offset),
-                    "exclude_slug_prefix": crud.COORD_SHEPHERD_SLUG_PREFIX,
-                },
+                self._coord_base, params=params
             )
             if payload is None:
-                return None, error or f"coord returned {http_status} for work units"
+                return _CoordUnitWalk(
+                    rows=None,
+                    reason=error or f"coord returned {http_status} for work units",
+                )
             rows = _coord_unit_rows(payload)
             if rows is None:
-                return None, (
-                    "coord's work-unit list carried no `work_units` array; "
-                    "the candidate population could not be read"
+                return _CoordUnitWalk(
+                    rows=None,
+                    reason=(
+                        "coord's work-unit list carried no `work_units` array; "
+                        "the candidate population could not be read"
+                    ),
                 )
-            rows_all.extend(rows)
+            if include_custody and not (
+                isinstance(payload, dict)
+                and payload.get("resolve_session_names") is True
+            ):
+                custody_echoed = False
+            for raw in rows:
+                raw_id = raw.get("id") if isinstance(raw, dict) else None
+                if isinstance(raw_id, str):
+                    if raw_id in seen_ids:
+                        continue
+                    seen_ids.add(raw_id)
+                rows_all.append(raw)
             if len(rows) < _COORD_UNIT_PAGE_LIMIT:
-                return rows_all, None
+                return _CoordUnitWalk(rows=rows_all, custody_echoed=custody_echoed)
             offset += len(rows)
 
         logger.warning(
@@ -1812,13 +2067,15 @@ class _CoordProbe:
             page_limit=_COORD_UNIT_PAGE_LIMIT,
             kept=len(rows_all),
             detail="coord's work-unit list did not terminate within the page cap; "
-            "`total` counts only what was read",
+            "the population is disclosed as truncated on the wire",
         )
-        return rows_all, None
+        return _CoordUnitWalk(
+            rows=rows_all, custody_echoed=custody_echoed, truncated=True
+        )
 
     async def reconciliation_units(
-        self,
-    ) -> tuple[list[crud.CandidateWorkUnit] | None, str | None]:
+        self, *, include_custody: bool = False
+    ) -> tuple[_ReconcileUnits | None, str | None]:
         """Axis A's population: coord's plan-shaped work units, ALL statuses.
 
         The same list read :meth:`candidate_units` makes, projected through
@@ -1831,14 +2088,42 @@ class _CoordProbe:
 
         ``None`` means coord could not be read, and axis A is then UNKNOWN for
         every row — never "coord holds no work units".
+
+        Beside the projected units it carries, per slug, the axis-A
+        annotations coord's list row already holds — ``vet_state`` /
+        ``vet_checked_at`` and, under ``include_custody``, the
+        ``live_sessions`` with their ``custody`` objects — read off the SAME
+        raw row, so no second coord read is made for them.
         """
-        rows, reason = await self._unit_rows()
-        if rows is None:
-            return None, reason
-        units = [
-            unit for raw in rows if (unit := _reconcile_work_unit(raw)) is not None
-        ]
-        return units, None
+        walk = await self._unit_rows(include_custody=include_custody)
+        if walk.rows is None:
+            return None, walk.reason
+        custody_echoed = walk.custody_echoed
+        units: list[crud.CandidateWorkUnit] = []
+        extras: dict[str, _ReconcileUnitExtras] = {}
+        for raw in walk.rows:
+            unit = _reconcile_work_unit(raw)
+            if unit is None:
+                continue
+            units.append(unit)
+            extras[unit.slug] = _reconcile_unit_extras(
+                raw,
+                include_custody=include_custody,
+                # One page without coord's echo makes the whole read
+                # unresolved: no custody object may survive from the pages
+                # that did echo, or ``custody_resolved: false`` would be
+                # contradicted row by row.
+                custody_resolved=custody_echoed,
+            )
+        return (
+            _ReconcileUnits(
+                units=units,
+                extras=extras,
+                custody_resolved=custody_echoed if include_custody else None,
+                truncated=walk.truncated,
+            ),
+            None,
+        )
 
     async def delivery_for(self, slug: str) -> _ReconcileDelivery:
         """Axis C for ONE stem: coord's DERIVED delivery verdict, forwarded.
@@ -2222,6 +2507,131 @@ async def _coord_links(
     return dict(zip(slugs, results, strict=True))
 
 
+# ───────────────────── keyset cursors (bounded reads) ─────────────────────
+#
+# Plan ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+# Phase 4: every paged route here walks an IMMUTABLE key with the shared codec
+# (``app.core.bounded_read``, byte-identical to Rust ``page.rs``) and states
+# its bound in the generated ``BoundedReadMeta`` keys. ``offset`` is gone —
+# deleted, not deprecated: an offset over a live corpus silently skips a row
+# for every row removed ahead of the window.
+
+#: Description shared by every route's ``cursor`` parameter.
+_CURSOR_DESCRIPTION = (
+    "The previous page's `next_cursor`, verbatim; omit for the first page. A "
+    "token is bound to the filters it was minted under: replayed under other "
+    "filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, "
+    "never a silently different page."
+)
+
+
+def _since_scope(since: datetime | None) -> str | None:
+    """``since`` as one canonical string for a cursor scope — UTC, micros."""
+    if since is None:
+        return None
+    aware = since if since.tzinfo is not None else since.replace(tzinfo=UTC)
+    return aware.astimezone(UTC).isoformat(timespec="microseconds")
+
+
+def _walk_meta(
+    *,
+    shown: int,
+    limit: int,
+    total: int,
+    last: KeysetPosition | None,
+    fingerprint: ScopeFingerprint,
+    lower_bound: bool = False,
+) -> BoundedReadMeta:
+    """The bounded-read keys for one page of a keyset walk.
+
+    ``total`` is the count from the page's start position (exact unless
+    ``lower_bound``: an upstream read stopped at its cap, so ``total`` only
+    counts what was read and the bound is ``at_least`` / ``unknown``).
+    ``last`` is the last served row's position, from which ``next_cursor`` is
+    minted when rows remain.
+
+    An empty page beside a positive count is a row that vanished between the
+    count and the read: there is no position to resume from, so the bound did
+    not resolve (``unknown``) rather than a cursor-less ``truncated: true``.
+    """
+    if last is None and total > shown:
+        return bounded_read.unknown(shown, limit)
+    cursor = fingerprint.encode(last) if last is not None else None
+    if lower_bound:
+        return bounded_read.from_lower_bound(
+            shown, limit, more_read=total > shown, next_cursor=cursor
+        )
+    return bounded_read.from_count(
+        shown, limit, total, next_cursor=cursor, enumerate_via=None
+    )
+
+
+def list_fingerprint(
+    org_id: UUID | None,
+    *,
+    kind: str | None = None,
+    status: str | None = None,
+    repo: str | None = None,
+    q: str | None = None,
+    since: datetime | None = None,
+    work_unit_slug: str | None = None,
+    intent_ref: str | None = None,
+    slug: str | None = None,
+) -> ScopeFingerprint:
+    """``GET /plan-library``'s cursor scope: the org and EVERY filter, as
+    applied. A cursor minted under one filter set is refused under another."""
+    return (
+        CursorScope(crud.ARTIFACT_LIST_SORT_KEY)
+        .opt_uuid("org", org_id)
+        .opt_str("kind", kind)
+        .opt_str("status", status)
+        .opt_str("repo", repo)
+        .opt_str("q", q)
+        .opt_str("since", _since_scope(since))
+        .opt_str("work_unit_slug", work_unit_slug)
+        .opt_str("intent_ref", intent_ref)
+        .opt_str("slug", slug)
+        .finish()
+    )
+
+
+def candidates_fingerprint(
+    org_id: UUID | None, *, include_coord: bool
+) -> ScopeFingerprint:
+    """``/candidates``' cursor scope — ``include_coord`` changes the population."""
+    return (
+        CursorScope(crud.CANDIDATE_SORT_KEY)
+        .opt_uuid("org", org_id)
+        .boolean("include_coord", include_coord)
+        .finish()
+    )
+
+
+def followups_fingerprint(org_id: UUID | None) -> ScopeFingerprint:
+    """``/followups``' cursor scope."""
+    return CursorScope(crud.FOLLOWUP_SORT_KEY).opt_uuid("org", org_id).finish()
+
+
+def reconciliation_fingerprint(
+    org_id: UUID | None, *, include_coord: bool, q: str | None
+) -> ScopeFingerprint:
+    """``/reconciliation``'s cursor scope. ``include_custody`` is NOT in it:
+    it annotates rows and never changes which stems the walk contains."""
+    return (
+        CursorScope(crud.RECONCILIATION_SORT_KEY)
+        .opt_uuid("org", org_id)
+        .boolean("include_coord", include_coord)
+        .opt_str("q", q)
+        .finish()
+    )
+
+
+def _artifact_position(row: WorkArtifact) -> KeysetPosition:
+    """A list row's :data:`~app.crud.work_artifact.ARTIFACT_LIST_SORT_KEY`
+    position."""
+    return KeysetPosition(at=row.created_at, id=row.id)
+
+
 # ───────────────────────────── reads ─────────────────────────────
 
 
@@ -2266,7 +2676,7 @@ async def list_work_artifacts(
         "citation such as success_metric/<name>. Not resolved; a citation "
         "no artifact carries simply returns an empty page.",
     ),
-    offset: int = Query(0, ge=0),
+    cursor: str | None = Query(None, description=_CURSOR_DESCRIPTION),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
@@ -2289,8 +2699,29 @@ async def list_work_artifacts(
     ``slug`` is a QUERY key, not a path segment: this adds no route, so the
     literal-before-pattern ordering below (``/divergent``, ``/capture-health``
     … declared before ``/{artifact_id}``) is untouched.
+
+    **A keyset walk, newest captured first** (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+    Phase 4). The page states its bound in the shared ``BoundedReadMeta``
+    keys — ``total`` (exact, from this page's start), ``truncated`` and
+    ``next_cursor``, which the next request passes back as ``cursor``. A
+    ``?q=`` search is the same walk, so a search page that filled up says
+    ``truncated: true`` and carries the cursor to the rest: a capped search
+    page is never evidence that a plan is absent.
     """
     org_id = await _resolve_org_id(db, current_user)
+    fingerprint = list_fingerprint(
+        org_id,
+        kind=kind,
+        status=artifact_status,
+        repo=repo,
+        q=q,
+        since=since,
+        work_unit_slug=work_unit_slug,
+        intent_ref=intent_ref,
+        slug=slug,
+    )
+    after = fingerprint.decode_param(cursor, surface="GET /plan-library")
     rows, total = await crud.list_artifacts(
         db,
         org_id=org_id,
@@ -2302,7 +2733,7 @@ async def list_work_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
-        offset=offset,
+        after=after,
         limit=limit,
     )
     # BEFORE the items: each row's ``status_currency`` is a lookup into this
@@ -2310,12 +2741,16 @@ async def list_work_artifacts(
     corpus_health = await _load_corpus_health(db, org_id=org_id)
     inputs = status_currency_inputs(corpus_health.scan_roots)
     items = [_summary(r, _currency(r, inputs)) for r in rows]
-    return WorkArtifactListResponse(
-        items=items,
-        count=len(items),
-        total=total,
-        offset=offset,
+    meta = _walk_meta(
+        shown=len(items),
         limit=limit,
+        total=total,
+        last=_artifact_position(rows[-1]) if rows else None,
+        fingerprint=fingerprint,
+    )
+    return WorkArtifactListResponse(
+        **meta.model_dump(),
+        items=items,
         corpus_health=corpus_health,
         # Byte-identical on all three routes — one source, copied per response.
         model_tiers=dict(MODEL_TIERS),
@@ -2626,6 +3061,8 @@ def _reconcile_row(
     artifact: crud.ReconcileArtifact | None,
     variant_count: int,
     unit: crud.CandidateWorkUnit | None,
+    unit_extras: _ReconcileUnitExtras | None,
+    custody_resolved: bool | None,
     units_readable: bool,
     population_reason: str | None,
     delivery: _ReconcileDelivery | None,
@@ -2667,10 +3104,17 @@ def _reconcile_row(
             present=unit is not None,
             status=unit.status if unit is not None else None,
         )
+        extras = unit_extras or _ReconcileUnitExtras()
         axis_a_model = ReconciliationAxisA(
             readable=True,
             present=unit is not None,
             status=unit.status if unit is not None else None,
+            # coord's own class, forwarded — never re-derived here.
+            status_class=extras.status_class if unit is not None else None,
+            vet_state=extras.vet_state if unit is not None else None,
+            vet_checked_at=extras.vet_checked_at if unit is not None else None,
+            live_sessions=extras.live_sessions if unit is not None else None,
+            custody_resolved=custody_resolved,
         )
     else:
         reason = population_reason or "coord's work-unit list could not be read"
@@ -2894,13 +3338,29 @@ def _reconciliation_contract_violations(
 )
 async def reconcile_plan_status(
     request: Request,
-    offset: int = Query(0, ge=0),
+    cursor: str | None = Query(None, description=_CURSOR_DESCRIPTION),
     limit: int = Query(25, ge=1, le=100),
     include_coord: bool = Query(
         True,
         description="Read coord's work-unit list (axis A) and its derived "
         "delivery verdict (axis C). Set false for a document-layer-only read, "
         "in which BOTH coord axes report UNKNOWN — never agreement.",
+    ),
+    q: str | None = Query(
+        None,
+        max_length=200,
+        description="Narrow the stem population BEFORE paging. A stem matches "
+        "when its slug contains `q` (case-insensitive, literal — `%` and `_` "
+        "are not wildcards) OR one of its plan artifacts matches the list "
+        "route's full-text arm over title and body (`-`, `_`, `/` read as word "
+        "breaks). `total` and the facets then describe the FILTERED "
+        "population, and the response echoes `q`.",
+    ),
+    include_custody: bool = Query(
+        False,
+        description="Ask coord for each unit's live sessions with their "
+        "resolved custody (`include_live_sessions` + `resolve_session_names`), "
+        "carried on axis A as `live_sessions` and `custody_resolved`.",
     ),
     db: AsyncSession = Depends(get_async_db),
     principal: ActorPrincipal = Depends(get_audit_actor_principal),
@@ -2954,12 +3414,41 @@ async def reconcile_plan_status(
     a ``422 status_is_derived`` on coord's side. Where the reconciler finds
     drift, the correction path is the existing ``plan-steward`` (D5).
 
+    **``q`` narrows the population, not the page.** The stem population is
+    coord units ∪ artifacts, so the list route's ``q`` cannot be applied as a
+    single SQL predicate. It is applied with the SAME semantics in two halves
+    before paging: the slug arm (:func:`~app.crud.work_artifact.stem_matches_q`,
+    a literal case-insensitive substring of the stem) and the full-text arm
+    over the stem's artifacts
+    (:func:`~app.crud.work_artifact.plan_artifact_ids_matching_q`). A stem
+    coord knows about but the artifact store does not is therefore matchable
+    by slug only — there is no body for the full-text arm to read. Under
+    ``q``, ``total``, every facet and every completeness count describe the
+    FILTERED population; the response echoes ``q`` so a consumer can tell.
+
+    **Axis A carries coord's per-unit annotations.** ``status_class``,
+    ``vet_state`` and ``vet_checked_at`` are forwarded from coord's list row; under
+    ``include_custody`` the unit's ``live_sessions`` arrive with coord's
+    ``custody`` resolution, and ``custody_resolved`` says whether coord
+    actually resolved them. Each absent value is UNKNOWN, never a default.
+
     Coord is reached over its HTTP API only; nothing here touches coord's
     Postgres (module invariant 4, enforced by
     ``tests/test_coord_schema_boundary_guard.py``).
+
+    **The page is a keyset walk over the stems** (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+    Phase 4): each stem's position is a pure function of the stem
+    (:func:`~app.crud.work_artifact.stem_position` — its date prefix, then a
+    uuid5 tiebreak), so a stem added or removed between two requests can no
+    longer shift the window the way ``offset`` did. The facets still cover
+    the WHOLE population on every page; ``facets.denominator`` is its size,
+    and ``total`` counts the stems from this page's start.
     """
     current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
+    fingerprint = reconciliation_fingerprint(org_id, include_coord=include_coord, q=q)
+    after = fingerprint.decode_param(cursor, surface="GET /plan-library/reconciliation")
 
     # ── the document layer (axis B), whole ──
     artifacts, artifacts_truncated = await crud.list_plan_artifacts_for_reconciliation(
@@ -2969,13 +3458,27 @@ async def reconcile_plan_status(
     # ── coord's work-unit list (axis A's population), whole ──
     probe: _CoordProbe | None = None
     units: list[crud.CandidateWorkUnit] | None = None
+    unit_extras: dict[str, _ReconcileUnitExtras] = {}
+    custody_resolved: bool | None = None
+    units_truncated = False
     population_reason: str | None = "not fetched (include_coord=false)"
     if include_coord:
         tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
         probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
-        units, population_reason = await probe.reconciliation_units()
+        population, population_reason = await probe.reconciliation_units(
+            include_custody=include_custody
+        )
+        if population is not None:
+            units = population.units
+            unit_extras = population.extras
+            custody_resolved = population.custody_resolved
+            units_truncated = population.truncated
     population_state: WorkUnitPopulationState = (
-        "included" if units is not None else "unavailable"
+        "unavailable"
+        if units is None
+        else "truncated"
+        if units_truncated
+        else "included"
     )
 
     # ── the join, on the STEM ──
@@ -2992,9 +3495,31 @@ async def reconcile_plan_status(
         )
     unit_by_stem = {unit.slug: unit for unit in (units or ())}
 
-    stems = sorted(set(by_stem) | set(unit_by_stem))
+    positions = {
+        stem: crud.stem_position(stem) for stem in set(by_stem) | set(unit_by_stem)
+    }
+    stems = sorted(positions, key=lambda stem: (positions[stem].at, positions[stem].id))
+    if q:
+        # The list route's own ``q``, applied to the STEM population before
+        # paging (see the docstring): slug arm in memory, full-text arm in SQL.
+        matching_ids = await crud.plan_artifact_ids_matching_q(db, org_id=org_id, q=q)
+        stems = [
+            stem
+            for stem in stems
+            if crud.stem_matches_q(q, stem)
+            or any(artifact.id in matching_ids for artifact in by_stem.get(stem, ()))
+        ]
     total = len(stems)
-    page = stems[offset : offset + limit]
+    remaining = (
+        stems
+        if after is None
+        else [
+            stem
+            for stem in stems
+            if (positions[stem].at, positions[stem].id) > (after.at, after.id)
+        ]
+    )
+    page = remaining[:limit]
     page_set = set(page)
 
     # Newest wins where a stem has divergent copies, ties broken on id so the
@@ -3036,6 +3561,8 @@ async def reconcile_plan_status(
             artifact=chosen.get(stem),
             variant_count=len(by_stem.get(stem, ())),
             unit=unit_by_stem.get(stem),
+            unit_extras=unit_extras.get(stem),
+            custody_resolved=custody_resolved,
             units_readable=units is not None,
             population_reason=population_reason,
             delivery=deliveries.get(stem),
@@ -3066,6 +3593,12 @@ async def reconcile_plan_status(
             f"the document-layer read stopped at its "
             f"{crud.RECONCILE_MAX_ARTIFACTS}-artifact cap, so the population "
             "is short by an unknown amount"
+        )
+    if units_truncated:
+        incomplete.append(
+            f"coord's work-unit list did not end within {_COORD_UNIT_MAX_PAGES} "
+            f"pages of {_COORD_UNIT_PAGE_LIMIT}, so the population is short by "
+            "an unknown amount"
         )
     if units is None:
         incomplete.append(
@@ -3111,11 +3644,19 @@ async def reconcile_plan_status(
             },
         )
 
-    return ReconciliationResponse(
-        items=rows[offset : offset + limit],
-        total=total,
-        offset=offset,
+    items = [row for row in rows if row.slug in page_set]
+    meta = _walk_meta(
+        shown=len(items),
         limit=limit,
+        total=len(remaining),
+        last=positions[page[-1]] if page else None,
+        fingerprint=fingerprint,
+        lower_bound=artifacts_truncated or units_truncated,
+    )
+    return ReconciliationResponse(
+        **meta.model_dump(),
+        items=items,
+        q=q,
         document_axis_complete=document_missing == 0,
         document_present_count=document_present,
         document_missing_count=document_missing,
@@ -3182,8 +3723,10 @@ async def export_corpus(
         ge=1,
         le=_EXPORT_MAX_ARTIFACTS,
         description="Hard bound on archived artifacts. When it truncates, the "
-        "response says so in `X-Export-Truncated` — a silently short export is "
-        "indistinguishable from a short corpus.",
+        "response says so in the `X-Bounded-Read` header and `manifest.json` "
+        "(the shared bounded-read keys: `truncated`, `bound_kind`, "
+        "`enumerate_via`, ...) — a silently short export is indistinguishable "
+        "from a short corpus.",
     ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
@@ -3235,6 +3778,9 @@ async def export_corpus(
         slug=slug,
         limit=limit,
     )
+    meta = _corpus_export_meta(
+        artifact_count=len(rows), truncated=truncated, limit=limit
+    )
 
     buffer = io.BytesIO()
     # ZIP_DEFLATED: markdown compresses ~4x and the archive is streamed to a
@@ -3273,16 +3819,20 @@ async def export_corpus(
         # whether a checked-out copy has drifted from the authority without
         # re-hashing anything. It is deliberately a sibling file rather than a
         # header injected into the bodies — see the verbatim rule above.
+        # The archive's bound rides in the manifest as the SAME shared keys the
+        # header carries (``count``, ``truncated``, ``bound_kind``,
+        # ``enumerate_via`` …), so an extracted archive still says whether it
+        # is the whole corpus.
         archive.writestr(
             "manifest.json",
             json.dumps(
-                {
-                    "exported_at": datetime.now(UTC).isoformat(),
-                    "artifact_count": len(rows),
-                    "truncated": truncated,
-                    "limit": limit,
-                    "artifacts": manifest,
-                },
+                bounded_read.merge_into(
+                    {
+                        "exported_at": datetime.now(UTC).isoformat(),
+                        "artifacts": manifest,
+                    },
+                    meta,
+                ),
                 indent=2,
             ).encode("utf-8"),
         )
@@ -3302,9 +3852,9 @@ async def export_corpus(
             "Content-Disposition": (f'attachment; filename="plan-library-{stamp}.zip"'),
             # Built from CORPUS_EXPORT_HEADERS, which app.main publishes in
             # Access-Control-Expose-Headers — without that a cross-origin
-            # browser reads None for X-Export-Truncated, the one answer the
+            # browser reads None for X-Bounded-Read, the one answer the
             # both-branches rule exists to make impossible.
-            **_corpus_export_provenance(artifact_count=len(rows), truncated=truncated),
+            **_corpus_export_provenance(meta),
         },
     )
 
@@ -3316,7 +3866,7 @@ async def export_corpus(
 )
 async def list_plan_candidates(
     request: Request,
-    offset: int = Query(0, ge=0),
+    cursor: str | None = Query(None, description=_CURSOR_DESCRIPTION),
     limit: int = Query(25, ge=1, le=100),
     include_coord: bool = Query(
         True,
@@ -3355,13 +3905,22 @@ async def list_plan_candidates(
 
     **There is no criticality score** (design decision D6). A hardcoded score
     would be a guess frozen into SQL; the read exposes the evidence and the
-    agent ranks. The only ordering is a stable default — oldest-vetted-first
-    (``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit
-    rows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to
-    an artifact so a page without them is unchanged) — with no weighting of any
-    kind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:
-    411 of the 635 carried an empty status, which would make that a guess over
-    the least-known rows.
+    agent ranks. The only ordering is a stable default — oldest CAPTURED first,
+    a keyset walk over every row's immutable ``(created_at, id)``, both arms
+    compared as one order (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+    Phase 4: the old ``coalesce(authored_at, …)`` /
+    ``coalesce(first_in_progress_at, …)`` keys both move, and ``offset``
+    over them dropped rows) — with no weighting of any kind. Work-unit rows
+    are neither capped nor re-weighted toward ``vetted``: 411 of the 635
+    carried an empty status, which would make that a guess over the
+    least-known rows.
+
+    **The bound is on the wire.** ``total`` / ``truncated`` / ``next_cursor``
+    describe ``items``. When coord's work-unit walk stops at its page cap the
+    population is a lower bound: ``work_unit_population_state`` reads
+    ``truncated`` and the page is ``at_least`` / ``unknown`` with
+    ``total: null`` — never an exact count that quietly stopped counting.
 
     Coord-owned fields (the work unit and its PR citations) come over coord's
     HTTP API, never from coord's Postgres schema. Two things the payload is
@@ -3395,20 +3954,30 @@ async def list_plan_candidates(
     """
     current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
+    fingerprint = candidates_fingerprint(org_id, include_coord=include_coord)
+    after = fingerprint.decode_param(cursor, surface="GET /plan-library/candidates")
 
     # The coord half of the POPULATION, read once, before the population query
     # that consumes it. ``None`` degrades the union to the artifact-only
     # population — never to an empty one.
     probe: _CoordProbe | None = None
     units: list[crud.CandidateWorkUnit] | None = None
+    units_truncated = False
     population_reason: str | None = "not fetched (include_coord=false)"
     if include_coord:
         tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
         probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
-        units, population_reason = await probe.candidate_units()
-    population_state: WorkUnitPopulationState = (
-        "included" if units is not None else "unavailable"
-    )
+        units, population_reason, units_truncated = await probe.candidate_units()
+    population_state: WorkUnitPopulationState = "included"
+    if units is None:
+        population_state = "unavailable"
+    elif units_truncated:
+        population_state = "truncated"
+        population_reason = (
+            f"coord's work-unit list did not end within {_COORD_UNIT_MAX_PAGES} "
+            f"pages of {_COORD_UNIT_PAGE_LIMIT}; the work-unit half is a lower "
+            "bound, so this page's bound is not exact"
+        )
 
     # Rate any plan whose rating predates the running rubric, so the
     # ``difficulty`` a sweep routes on is current. Best-effort: a failure
@@ -3417,7 +3986,7 @@ async def list_plan_candidates(
     await _rerate_best_effort(db, org_id=org_id, route="candidates")
 
     rows, total = await crud.list_plan_candidates(
-        db, org_id=org_id, offset=offset, limit=limit, work_units=units
+        db, org_id=org_id, after=after, limit=limit, work_units=units
     )
 
     artifacts = [row.artifact for row in rows if row.artifact is not None]
@@ -3445,10 +4014,11 @@ async def list_plan_candidates(
     # Additive (Phase 7): work that has no plan yet. An unwritten follow-up is
     # not an artifact, so it can NEVER appear in ``items`` — and before this it
     # was invisible to the one read whose whole job is "what should I pick up
-    # next". Bounded by the same ``limit`` and reported alongside its own
-    # unpaged total; ``items`` keeps its shape exactly.
+    # next". The FIRST page of the follow-up walk, bounded by the same
+    # ``limit`` and reported alongside the whole queue's count;
+    # ``GET /plan-library/followups`` walks the rest.
     followup_rows, followup_total = await crud.list_open_followups(
-        db, org_id=org_id, offset=0, limit=limit
+        db, org_id=org_id, limit=limit
     )
 
     # Report-only on THIS route: before it carried the block, /candidates read
@@ -3568,16 +4138,21 @@ async def list_plan_candidates(
             )
         )
 
-    return PlanCandidateResponse(
-        items=items,
-        count=len(items),
-        total=total,
-        offset=offset,
+    meta = _walk_meta(
+        shown=len(items),
         limit=limit,
+        total=total,
+        last=crud.candidate_position(rows[-1]) if rows else None,
+        fingerprint=fingerprint,
+        lower_bound=units_truncated,
+    )
+    return PlanCandidateResponse(
+        **meta.model_dump(),
+        items=items,
         coord_available=coord_available,
         work_unit_population_state=population_state,
-        # ``None`` whenever the arm ran — ``candidate_units`` pairs a reason
-        # with a failure and never with a result.
+        # ``None`` whenever the arm ran in full — a reason is paired with a
+        # failure or a truncated walk, never with a whole result.
         work_unit_population_reason=population_reason,
         open_followups=[
             _open_followup(edge, origin, now) for edge, origin in followup_rows
@@ -3685,7 +4260,7 @@ async def list_plan_difficulty(
     summary="Follow-ups a plan identified but nobody owns yet",
 )
 async def list_open_followups(
-    offset: int = Query(0, ge=0),
+    cursor: str | None = Query(None, description=_CURSOR_DESCRIPTION),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
@@ -3707,22 +4282,32 @@ async def list_open_followups(
 
     **Oldest first**, and that is the useful default rather than an arbitrary
     one: an old unowned follow-up is work the fleet has known about and
-    repeatedly not picked up. ``total`` is the unpaged count, so a bounded page
-    can never be mistaken for the whole queue.
+    repeatedly not picked up. A keyset walk over the edge's immutable
+    ``(created_at, id)``: ``total`` counts the open follow-ups from this
+    page's start and ``next_cursor`` reaches the rest, so a bounded page can
+    never be mistaken for the whole queue.
     """
     org_id = await _resolve_org_id(db, current_user)
+    fingerprint = followups_fingerprint(org_id)
+    after = fingerprint.decode_param(cursor, surface="GET /plan-library/followups")
     rows, total = await crud.list_open_followups(
-        db, org_id=org_id, offset=offset, limit=limit
+        db, org_id=org_id, after=after, limit=limit
     )
     now = datetime.now(UTC)
     items = [_open_followup(edge, origin, now) for edge, origin in rows]
-    return OpenFollowupResponse(
-        items=items,
-        count=len(items),
-        total=total,
-        offset=offset,
+    last_edge = rows[-1][0] if rows else None
+    meta = _walk_meta(
+        shown=len(items),
         limit=limit,
+        total=total,
+        last=(
+            KeysetPosition(at=last_edge.created_at, id=last_edge.id)
+            if last_edge is not None
+            else None
+        ),
+        fingerprint=fingerprint,
     )
+    return OpenFollowupResponse(**meta.model_dump(), items=items)
 
 
 # NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.

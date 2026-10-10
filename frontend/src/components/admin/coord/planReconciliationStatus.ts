@@ -73,6 +73,7 @@ import {
   type StatusPalette,
 } from "@/components/console";
 import type { DisclosureLevel, DisclosureLine } from "./disclosureLines";
+import { describeBoundedWindow, type BoundedReadMeta } from "./cursorPager";
 
 // ---------------------------------------------------------------------------
 // The wire shape. Mirrors `backend/app/schemas/plan_library.py`
@@ -88,12 +89,65 @@ export type DocumentState = "present" | "unsynced" | "absent";
 export type ReconciliationVerdict = "agree" | "disagree" | "unknown";
 
 /** Whether coord's work-unit list — the population's axis-A arm — was read. */
-export type WorkUnitPopulationState = "included" | "unavailable";
+export type WorkUnitPopulationState = "included" | "truncated" | "unavailable";
+
+/**
+ * coord's derived `status_class` over the stored status — five members,
+ * exhaustive (`backend/app/schemas/plan_library.py`
+ * `ReconciliationStatusClass`). `null` on the wire means axis A is unreadable
+ * or no unit exists for the stem; ABSENT means a backend that predates the
+ * field. Both read UNKNOWN, never as a class.
+ */
+export type ReconciliationStatusClass =
+  | "free_known"
+  | "attested"
+  | "derived"
+  | "off_vocabulary"
+  | "unset";
+
+/** coord's `work_unit_custody::Custody` states, exactly as it emits them. */
+export type ReconciliationCustodyState = "sole" | "ambiguous" | "unresolved";
+
+/**
+ * Who holds a live session's device, as coord resolved it. `session_name:
+ * null` on `sole` means the session has NO name — not that it is unknown.
+ */
+export interface ReconciliationCustody {
+  state: ReconciliationCustodyState;
+  session_name?: string | null;
+  live_session_count?: number | null;
+}
+
+/**
+ * One non-expired `coord.agent_status` row naming the unit's slug. `custody:
+ * null` is UNKNOWN (not requested, an older coord, or an unrecognised state).
+ */
+export interface ReconciliationLiveSession {
+  device_id: string;
+  correlation_topic?: string | null;
+  updated_at?: string | null;
+  expires_at?: string | null;
+  custody?: ReconciliationCustody | null;
+}
 
 export interface ReconciliationAxisA {
   readable: boolean;
   present: boolean;
   status?: string | null;
+  /** See {@link ReconciliationStatusClass}. Absent = older backend. */
+  status_class?: ReconciliationStatusClass | null;
+  /** coord's vet-freshness verdict (`fresh` / `moved` / `gone` / `none`).
+   *  `null` or absent is UNKNOWN — never "fresh". */
+  vet_state?: string | null;
+  vet_checked_at?: string | null;
+  /** Populated only under `include_custody=true`. `null`/absent is UNKNOWN;
+   *  `[]` is a real zero. */
+  live_sessions?: ReconciliationLiveSession[] | null;
+  /** Did coord echo `resolve_session_names: true` on every page? `false` =
+   *  coord did not resolve names (older coord or a failed join), and every
+   *  `custody` is then null; `null`/absent = custody not asked for on this
+   *  read, or a backend that does not report it. */
+  custody_resolved?: boolean | null;
   unreadable_reason?: string | null;
 }
 
@@ -147,11 +201,17 @@ export interface ReconciliationFacets {
   corpus_incomplete_reasons?: string[];
 }
 
-export interface ReconciliationResponse {
+/**
+ * A keyset walk over the stems: the shared bounded-read keys describe
+ * `items` — `total` counts the stems from THIS page's start and
+ * `next_cursor` is passed back as `cursor`. The whole population's size is
+ * `facets.denominator`. There is no `offset`.
+ */
+export interface ReconciliationResponse extends Partial<
+  Omit<BoundedReadMeta, "total">
+> {
   items?: ReconciliationRowData[];
-  total?: number;
-  offset?: number;
-  limit?: number;
+  total?: number | null;
   ordering?: string;
   document_axis_source?: string;
   document_axis_complete?: boolean;
@@ -163,6 +223,12 @@ export interface ReconciliationResponse {
   axis_c_scope?: string;
   axis_c_computed_count?: number;
   facets?: ReconciliationFacets;
+  /**
+   * The search the route actually applied, echoed. ABSENT on a backend that
+   * predates server-side search — which then ignored a sent `q`, so the rows
+   * are NOT filtered by it. `null` means no search was applied.
+   */
+  q?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -456,17 +522,20 @@ export function isDivergent(row: ReconciliationRowData): boolean {
 // ---------------------------------------------------------------------------
 
 export interface WindowReading {
-  /** `null` when the route served no total — UNKNOWN, never `items.length`. */
+  /** The population (`facets.denominator`); `null` when the route served
+   *  none — UNKNOWN, never `items.length`. */
   total: number | null;
-  offset: number;
+  /** Stems served before this page, from the cursor walk. */
+  start: number;
   limit: number | null;
   shown: number;
   /** The route's DECLARED ordering, so a consumer can assert it. */
   ordering: string | null;
   firstStem: string | null;
   lastStem: string | null;
-  /** Can the operator page further forward? UNKNOWN total ⇒ page-full test. */
+  /** `truncated: true` beside a cursor — never inferred from a full page. */
   hasMore: boolean;
+  nextCursor: string | null;
   /**
    * Is `total` a count of PLAN STEMS, or of whatever population this read
    * happened to reach?
@@ -482,23 +551,31 @@ export interface WindowReading {
   totalAdmissible: boolean;
 }
 
-export function describeWindow(res: ReconciliationResponse): WindowReading {
+/** The population size: the facets' denominator, never a page count. */
+export function populationSize(res: ReconciliationResponse): number | null {
+  const denominator = res.facets?.denominator;
+  return typeof denominator === "number" ? denominator : null;
+}
+
+export function describeWindow(
+  res: ReconciliationResponse,
+  start = 0
+): WindowReading {
   const items = res.items ?? [];
-  const total = typeof res.total === "number" ? res.total : null;
-  const offset = typeof res.offset === "number" ? res.offset : 0;
-  const limit = typeof res.limit === "number" ? res.limit : null;
+  const window = describeBoundedWindow(
+    { ...res, total: typeof res.total === "number" ? res.total : null },
+    start
+  );
   return {
-    total,
-    offset,
-    limit,
+    total: populationSize(res),
+    start,
+    limit: typeof res.limit === "number" ? res.limit : null,
     shown: items.length,
     ordering: typeof res.ordering === "string" ? res.ordering : null,
     firstStem: items[0]?.slug ?? null,
     lastStem: items[items.length - 1]?.slug ?? null,
-    hasMore:
-      total !== null
-        ? offset + items.length < total
-        : limit !== null && items.length >= limit,
+    hasMore: window.hasMore,
+    nextCursor: window.nextCursor,
     totalAdmissible: documentAxisAdmissible(res),
   };
 }
@@ -585,7 +662,7 @@ export function deriveDisclosure(
   // 3. Axis C's denominator — a DIFFERENT denominator from the document one.
   const asked = res.axis_c_computed_count;
   if (typeof asked === "number") {
-    const total = typeof res.total === "number" ? res.total : null;
+    const total = populationSize(res);
     lines.push({
       key: "axis-c-scope",
       level: "caveat",
@@ -817,7 +894,7 @@ export function deriveReconciliationHealth(
   const byVerdict = res.facets?.by_verdict;
   const disagree = byVerdict?.disagree;
   const unknown = byVerdict?.unknown;
-  const total = res.total;
+  const total = populationSize(res);
 
   if (!admissible) {
     return {

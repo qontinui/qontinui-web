@@ -12,7 +12,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import { ContextMenuIcons } from "./ContextMenu";
 import { createLogger } from "@/lib/logger";
 

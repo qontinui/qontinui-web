@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
 import { useRetainedValue } from "@/components/console";
+import { useArtifactDocument } from "../../plans/useArtifactDocument";
+import {
+  describeBoundedWindow,
+  useCursorPager,
+  type BoundedWindow,
+} from "@/components/admin/coord/cursorPager";
 import type {
-  CaptureHealthResponse,
-  DivergentResponse,
   ScanRootListResponse,
-  WorkArtifactDetail,
   WorkArtifactKind,
   WorkArtifactListResponse,
   WorkArtifactSummary,
@@ -17,6 +19,10 @@ import type {
 const API = "/api/v1/plan-library";
 
 export const PAGE_SIZE = 50;
+
+function message(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
 
 export interface PlanLibraryFilters {
   /** Closed vocabulary — the schema backs it with a Postgres CHECK. */
@@ -37,17 +43,15 @@ export const EMPTY_FILTERS: PlanLibraryFilters = {
   q: "",
 };
 
-function message(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback;
-}
-
-function toQuery(filters: PlanLibraryFilters, offset: number): string {
+function toQuery(filters: PlanLibraryFilters, cursor: string | null): string {
   const qs = new URLSearchParams();
   if (filters.kind) qs.set("kind", filters.kind);
   if (filters.status.trim()) qs.set("status", filters.status.trim());
   if (filters.repo.trim()) qs.set("repo", filters.repo.trim());
   if (filters.q.trim()) qs.set("q", filters.q.trim());
-  qs.set("offset", String(offset));
+  // Keyset paging: the previous page's `next_cursor`, verbatim. The route
+  // has no `offset` (deleted, plan 2026-09-05-every-bounded-read-… Phase 4).
+  if (cursor !== null) qs.set("cursor", cursor);
   qs.set("limit", String(PAGE_SIZE));
   return qs.toString();
 }
@@ -64,8 +68,14 @@ function toQuery(filters: PlanLibraryFilters, offset: number): string {
 const TEXT_FILTER_DEBOUNCE_MS = 300;
 
 /**
- * The filtered corpus list, plus the single-artifact read and the inline kind
- * correction.
+ * The ALL-KINDS artifact list (`/admin/coord/plan-library/artifacts`), plus
+ * the single-artifact read and the inline kind correction.
+ *
+ * `/admin/coord/plans` reads `kind = 'plan'` only, so this is the one surface
+ * where a prompt, findings report, handoff or any other captured kind is
+ * browsable. The document read and the kind correction are
+ * `useArtifactDocument`'s — one spelling for both pages — with this list's
+ * own reload as the post-correction refresh.
  *
  * A note on the facets. `kind` is a real closed vocabulary (a Postgres CHECK
  * backs it), so it is a dropdown. `status` and `repo` are NOT — status mirrors
@@ -80,9 +90,10 @@ export function usePlanLibrary() {
   const [filters, setFilters] = useState<PlanLibraryFilters>(EMPTY_FILTERS);
   //: What has actually been sent — trails `filters` by the debounce.
   const [applied, setApplied] = useState<PlanLibraryFilters>(EMPTY_FILTERS);
-  const [offset, setOffset] = useState(0);
+  const pager = useCursorPager();
+  const { cursor, start, reset: resetPager } = pager;
   const [items, setItems] = useState<WorkArtifactSummary[]>([]);
-  const [total, setTotal] = useState(0);
+  const [window, setWindow] = useState<BoundedWindow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,23 +120,12 @@ export function usePlanLibrary() {
    * rows, the total, both branches of the error state and `loading` — is
    * gated on still owning it.
    *
-   * `load` is recreated on `[applied, offset]` and fired by the effect below,
+   * `load` is recreated on `[applied, cursor]` and fired by the effect below,
    * so overlapping filter or page changes are ordinary, not exotic. Ungated,
-   * all four writes race:
-   *
-   * * Next then Prev, and the offset-50 response can land last — page 2's rows
-   *   rendered under "1–50 of 200".
-   * * An honesty INVERSION on the error state, which is the worst of the four.
-   *   A late failure runs `setError(...)` and paints the amber "these may be
-   *   out of date" banner over rows that are in fact fresh; a late success
-   *   runs `setError(null)` and clears a banner that was telling the truth.
-   * * `finally { setLoading(false) }` re-enables the pager while the live
-   *   request is still out.
-   *
-   * Cancelling the superseded request would not do this job: `http-client.ts`
-   * honours a caller's `signal`, but aborting stops a read from running, while
-   * these writes need to know which settled read still owns the state. This is
-   * the same counter pattern `ArtifactDetailDialog` uses.
+   * a late page lands under the wrong pager, a late failure paints "may be out
+   * of date" over fresh rows, a late success clears a banner that was telling
+   * the truth, and `finally { setLoading(false) }` re-enables the pager while
+   * the live request is still out.
    */
   const requestIdRef = useRef(0);
 
@@ -134,13 +134,13 @@ export function usePlanLibrary() {
     setLoading(true);
     try {
       const data = await httpClient.get<WorkArtifactListResponse>(
-        `${API}?${toQuery(applied, offset)}`
+        `${API}?${toQuery(applied, cursor)}`
       );
       // Superseded: write NOTHING. Not the rows, not the error state, and not
       // `loading` — the live request owns that and clears it when it lands.
       if (reqId !== requestIdRef.current) return;
       setItems(data.items ?? []);
-      setTotal(data.total ?? 0);
+      setWindow(describeBoundedWindow(data, start));
       setError(null);
     } catch (err) {
       if (reqId !== requestIdRef.current) return;
@@ -148,7 +148,7 @@ export function usePlanLibrary() {
     } finally {
       if (reqId === requestIdRef.current) setLoading(false);
     }
-  }, [applied, offset]);
+  }, [applied, cursor, start]);
 
   useEffect(() => {
     load();
@@ -161,18 +161,18 @@ export function usePlanLibrary() {
       key: K,
       value: PlanLibraryFilters[K]
     ) => {
-      setOffset(0);
+      resetPager();
       setFilters((prev) => ({ ...prev, [key]: value }));
     },
-    []
+    [resetPager]
   );
 
   const resetFilters = useCallback(() => {
-    setOffset(0);
+    resetPager();
     setFilters(EMPTY_FILTERS);
     // Clearing is a discrete action, so it skips the debounce entirely.
     setApplied(EMPTY_FILTERS);
-  }, []);
+  }, [resetPager]);
 
   /** Distinct statuses/repos on the LOADED page — suggestions, not a ceiling. */
   const seen = useMemo(() => {
@@ -189,50 +189,9 @@ export function usePlanLibrary() {
     };
   }, [items]);
 
-  const fetchDetail = useCallback(
-    async (id: string): Promise<WorkArtifactDetail | null> => {
-      try {
-        return await httpClient.get<WorkArtifactDetail>(`${API}/${id}`);
-      } catch (err) {
-        toast.error(message(err, "Failed to load the artifact"));
-        return null;
-      }
-    },
-    []
-  );
-
-  /**
-   * Correct one artifact's kind. The write also LOCKS the kind, so the next
-   * runner scan cannot silently put its guess back — and because `kind` is
-   * part of the artifact's identity, an un-locked correction would fork the
-   * document into a second row rather than merely re-label it.
-   *
-   * A 409 here is a genuine identity collision (another artifact already
-   * occupies `(kind, slug, source_repo)`); merging the two is an operator
-   * decision, so this surfaces the error rather than guessing.
-   */
-  const correctKind = useCallback(
-    async (id: string, kind: WorkArtifactKind): Promise<boolean> => {
-      try {
-        await httpClient.patch<WorkArtifactSummary>(
-          `${API}/${id}/kind`,
-          { kind },
-          {
-            // Safe to re-issue: `patch_work_artifact_kind` SETS kind and
-            // kind_locked to the given value; repeat is a no-op, 409 is stable.
-            idempotent: true,
-          }
-        );
-        toast.success(`Kind set to "${kind}" and locked against re-scans.`);
-        await load();
-        return true;
-      } catch (err) {
-        toast.error(message(err, "Failed to correct the kind"));
-        return false;
-      }
-    },
-    [load]
-  );
+  // A kind is part of the artifact's identity: a correction must re-read
+  // THIS list, or the row would show the correction as not having happened.
+  const { fetchDetail, correctKind } = useArtifactDocument(load);
 
   return {
     filters,
@@ -240,9 +199,9 @@ export function usePlanLibrary() {
     resetFilters,
     seen,
     items,
-    total,
-    offset,
-    setOffset,
+    /** The page's bound: rows before it, the population total, more-or-not. */
+    window,
+    pager,
     loading,
     error,
     reload: load,
@@ -252,40 +211,8 @@ export function usePlanLibrary() {
 }
 
 /**
- * The two divergence classes, side by side.
- *
- * `groups` is same-`(kind, slug)` content drift. `kind_forks` is a *different*
- * failure — same `(slug, source_repo)` with disagreeing kinds — that grouping
- * by `(kind, slug)` structurally cannot see, which is why the API reports it
- * separately and why this hook keeps it separate too.
- */
-export function useDivergentArtifacts() {
-  const [data, setData] = useState<DivergentResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      setData(await httpClient.get<DivergentResponse>(`${API}/divergent`));
-      setError(null);
-    } catch (err) {
-      setError(message(err, "Failed to load divergent copies"));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  return { data, loading, error, reload: load };
-}
-
-/**
  * One route, read on mount and again on every `reload`, whose last good answer
- * is KEPT across a failed read — the plumbing both health panels share.
+ * is KEPT across a failed read — the plumbing the scan-source and coverage panels share.
  *
  * Built on the console's `useRetainedValue` rather than a private newest-id
  * guard, which is what each hook carried before. Reads DO overlap, even with a
@@ -358,25 +285,15 @@ function useRetainedRead<T>(url: string, failureMessage: string) {
   };
 }
 
-/** Corpus census by capture door — is the agent door being used at all? */
-export function useCaptureHealth() {
-  // No `fetchedAt`: this panel's recency is day-granular and computed at
-  // render, so it renders no read-at stamp to feed.
-  const { data, loading, error, reload } =
-    useRetainedRead<CaptureHealthResponse>(
-      `${API}/capture-health`,
-      "Failed to load capture health"
-    );
-  return { data, loading, error, reload };
-}
-
 /**
  * Every reporting device's latest reading of the tree its body sync scans.
  *
- * Deliberately the same shape as [`useCaptureHealth`] — one read, no
- * polling — because the two panels answer halves of one question ("where is
- * the corpus coming from" / "how current is what it was read from"), and an
- * operator re-asks either with the Refresh on its panel.
+ * One read, no polling — it answers half of one question ("where is the
+ * corpus coming from" / "how current is what it was read from"; the capture
+ * census on `/admin/coord/plans` answers the other half), and an operator
+ * re-asks it with the Refresh on its panel. `/admin/coord/plans`' corpus-health
+ * summary is a second consumer of this cheap `coverage=false` read; the costly
+ * coverage read stays single-consumer.
  *
  * On failure `data` is left at whatever was last read and `error` is set, so
  * the panel can say the rows may be stale rather than blanking them. The
@@ -411,7 +328,7 @@ export function useScanRoots() {
  *
  * Reads the same route as [`useScanRoots`] and is deliberately a separate
  * hook rather than a second consumer of one shared read, so this is still TWO
- * HTTP round trips per mount of `/admin/coord/plan-library` — but only ONE of
+ * HTTP round trips per mount of the corpus-health strip — but only ONE of
  * them pays the server-side coverage computation. `GET /scan-roots` is the
  * one route that computes the set difference, and serving it means: the
  * census-LOADING observation read, which UNDEFERS the two stem JSONB columns

@@ -28,6 +28,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 API_PREFIX = "/api/v1/operations"
 
 COORD_BODY = {
@@ -95,12 +97,12 @@ def _patch_identity(is_admin: bool = True, effective_roles=("admin",)):
     identity = MagicMock()
     identity.is_admin = is_admin
     with (
-        patch(
-            "app.api.v1.endpoints.operations.get_coord_identity",
+        patch_ops(
+            "get_coord_identity",
             AsyncMock(return_value=identity),
         ),
-        patch(
-            "app.api.v1.endpoints.operations._effective_tenant_roles",
+        patch_ops(
+            "_effective_tenant_roles",
             MagicMock(return_value=tuple(effective_roles)),
         ),
     ):

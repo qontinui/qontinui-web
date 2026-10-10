@@ -589,3 +589,94 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     expect(calls).toBeGreaterThan(1);
   });
 });
+
+/**
+ * Decision effects in the inbox — plan
+ * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+ * Phases 2–3. A gate or proposal mirror row is decided HERE (one inbox), so it
+ * has to be recognisable in the list; a row from a coord build that omits the
+ * columns must render exactly as it did before.
+ */
+describe("/admin/coord/questions — decision effect chips", () => {
+  const MIXED = [
+    {
+      question_id: "00000000-0000-0000-0000-00000000e001",
+      question: "Approve phase 2 of wu-42?",
+      created_at: "2026-09-26T09:00:00Z",
+      options: ["met", "not_met"],
+      effect_kind: "gate",
+      effect_ref: {
+        id: "gate-7",
+        gate_id: "gate-7",
+        work_unit_id: "wu-42",
+        phase_name: "Phase 2",
+      },
+    },
+    {
+      question_id: "00000000-0000-0000-0000-00000000e002",
+      question: "Loosen escalation-bar?",
+      created_at: "2026-09-26T08:59:00Z",
+      options: ["approve", "reject"],
+      effect_kind: "proposal",
+      effect_ref: { id: "p-1", proposal_id: "p-1" },
+    },
+    {
+      question_id: "00000000-0000-0000-0000-00000000e003",
+      question: "Confirm the proposed testing clause?",
+      created_at: "2026-09-26T08:58:00Z",
+      effect_kind: "clause",
+      effect_ref: { id: "c-1", kind: "policy", name: "testing", clause_id: "c-1" },
+    },
+    {
+      question_id: "00000000-0000-0000-0000-00000000e004",
+      question: "An ordinary question, explicitly effect-less",
+      created_at: "2026-09-26T08:57:00Z",
+      effect_kind: "none",
+      effect_ref: null,
+    },
+    // No effect fields at all — the shape an older coord serves.
+    ...PENDING,
+  ];
+
+  function serve(rows: unknown[]) {
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) return { questions: [] };
+      if (url.includes("/pending")) return { questions: rows };
+      return { questions: [] };
+    });
+  }
+
+  it("renders one chip per effect row, of the right kind, and none on the rest", async () => {
+    serve(MIXED);
+    render(<CoordQuestionsPage />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-question-card")).toHaveLength(5)
+    );
+
+    const kinds = screen
+      .getAllByTestId("coord-question-effect-chip")
+      .map((c) => c.getAttribute("data-effect-kind"));
+    expect(kinds).toEqual(["gate", "proposal", "clause"]);
+
+    const cards = screen.getAllByTestId("coord-question-card");
+    // The gate chip carries its work unit and phase.
+    expect(cards[0].textContent).toContain("wu-42 · Phase 2");
+    // `none` and absent render with no chip at all.
+    for (const plain of cards.slice(3)) {
+      expect(
+        plain.querySelector('[data-testid="coord-question-effect-chip"]')
+      ).toBeNull();
+    }
+    // The inbox still counts every row, effect or not.
+    expect(
+      screen.getByTestId("coord-questions-pending-count")
+    ).toHaveTextContent("5 pending");
+  });
+
+  it("renders an all-legacy inbox with no chip", async () => {
+    serve(PENDING);
+    render(<CoordQuestionsPage />);
+    await screen.findByTestId("coord-question-card");
+    expect(screen.queryByTestId("coord-question-effect-chip")).toBeNull();
+  });
+});

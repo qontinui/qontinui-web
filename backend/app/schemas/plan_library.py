@@ -25,9 +25,17 @@ The runner's ``ArtifactUpsert`` (``plan_workunit_adapter/body_push.rs``) and
 its ``:9876/plan-library`` door (``mcp/plan_library.rs``) send only declared
 fields, checked against qontinui-runner ``origin/main`` on 2026-09-03.
 
-Every list response carries ``count`` = ``len(items)`` for THIS page (D4 of
-the same plan); ``total`` stays the unpaged total. Both are required and
-un-defaulted so a handler cannot ship a page without saying how big it is.
+Every PAGED list response (the list route, ``/candidates``, ``/followups``,
+``/reconciliation``) subclasses the GENERATED shared envelope
+:class:`~app.core.bounded_read.BoundedReadMeta` (plan
+``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus`` Phase 4):
+``count`` / ``limit`` / ``shown`` / ``total`` / ``truncated`` / ``bound_kind``
+/ ``next_cursor`` / ``available`` / ``filter_narrowed`` / ``enumerate_via``,
+every key always serialized, ``null`` included. ``total`` there is the exact
+match count FROM THIS PAGE'S START POSITION (the whole corpus on the first
+page), and ``next_cursor`` is the opaque keyset token the next request passes
+back as ``cursor``. There is no ``offset`` anywhere: it was deleted, not
+deprecated.
 """
 
 from typing import Literal
@@ -35,6 +43,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.bounded_read import BoundedReadMeta
 from app.schemas.base import BaseORMSchema, IsoDatetime
 from app.schemas.plan_library_scan_roots import ScanRootListResponse
 
@@ -274,7 +283,12 @@ DocumentState = Literal["present", "unsynced", "absent"]
 #:   The population fell back to the document layer alone, which is exactly
 #:   what this route returned before the union. **UNKNOWN, not "there are no
 #:   work units".**
-WorkUnitPopulationState = Literal["included", "unavailable"]
+#: * ``truncated``   — it was read, but the walk stopped at its page cap with
+#:   coord still serving full pages, so the coord half is a LOWER BOUND. The
+#:   response's bound is then never ``exact`` (``at_least`` / ``unknown``,
+#:   ``total: null``) — plan ``2026-09-05-every-bounded-read-…`` Phase 4: the
+#:   cap used to be logged and the partial population served as whole.
+WorkUnitPopulationState = Literal["included", "truncated", "unavailable"]
 
 
 class CandidateCoordLink(BaseModel):
@@ -472,6 +486,10 @@ class DivergentVariant(BaseORMSchema):
     status: str
     current_version: int
     updated_at: IsoDatetime
+    #: How this copy got into the store — ``runner_scan`` / ``agent`` /
+    #: ``operator`` (the row's ``captured_by`` column). ``None`` only if a
+    #: projection ever omits it, and then it is UNKNOWN, not a default.
+    captured_by: str | None = None
 
 
 class DivergentGroup(BaseModel):
@@ -599,20 +617,27 @@ class CorpusHealth(BaseModel):
     scan_roots: ScanRootListResponse
 
 
-class WorkArtifactListResponse(BaseModel):
+class WorkArtifactListResponse(BoundedReadMeta):
     """A page of list rows, plus the health of the corpus it was drawn from.
+
+    A keyset walk, newest-CAPTURED first (``created_at DESC, id DESC`` — the
+    immutable capture time, never ``updated_at``, which every upsert moves).
+    The bounded-read keys describe ``items``: ``total`` is exact from this
+    page's start, ``truncated`` is ``total > shown``, and ``next_cursor`` is
+    passed back as ``cursor``. That holds for ``?q=`` searches too — a search
+    page that filled up says so, and a content search with ``truncated: true``
+    is not evidence of absence.
 
     ``corpus_health`` is reported on EVERY page, filtered or not, so an
     empty ``items`` can always be read against ``plan_count`` — a zero on a
     frozen corpus and a zero on a real absence are different findings.
     """
 
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     items: list[WorkArtifactSummary]
-    #: This page's length; ``total`` is the unpaged total.
-    count: int
-    total: int
-    offset: int
-    limit: int
+    #: Named so a consumer can assert it did not silently change.
+    ordering: Literal["newest_captured_first"] = "newest_captured_first"
     corpus_health: CorpusHealth
     #: The level → model maps, served on every page so a consumer routing on
     #: an item's ``difficulty`` reads the map in the same call. Corpus
@@ -831,33 +856,41 @@ class OpenFollowup(BaseModel):
     age_days: float
 
 
-class OpenFollowupResponse(BaseModel):
-    """A page of open (unclaimed) follow-ups. ``count`` is this page's length;
-    ``total`` is the unpaged total."""
+class OpenFollowupResponse(BoundedReadMeta):
+    """A page of open (unclaimed) follow-ups — a keyset walk over the edge's
+    immutable ``(created_at, id)``, oldest first. The bounded-read keys
+    describe ``items``; ``next_cursor`` is passed back as ``cursor``."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     items: list[OpenFollowup]
-    count: int
-    total: int
-    offset: int
-    limit: int
     #: Named so a consumer can assert it did not silently change. Oldest first
     #: is the useful default here, not an arbitrary one.
     ordering: Literal["oldest_first"] = "oldest_first"
 
 
-class PlanCandidateResponse(BaseModel):
+class PlanCandidateResponse(BoundedReadMeta):
     """A page of candidates plus the honesty flags for the whole read.
-    ``count`` is this page's length; ``total`` is the unpaged total."""
+
+    The bounded-read keys describe ``items``: a keyset walk over BOTH arms'
+    immutable ``(created_at, id)``, oldest first; ``next_cursor`` is passed
+    back as ``cursor``. ``bound_kind`` is ``exact`` (``total`` from this
+    page's start) unless the coord work-unit walk hit its page cap
+    (``work_unit_population_state: "truncated"``) — then the population is a
+    lower bound and the page reads ``at_least`` (more rows were read than
+    shown) or ``unknown`` (``truncated: null``: everything read is shown, and
+    nothing proves the population whole)."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     items: list[PlanCandidate]
-    count: int
-    total: int
-    offset: int
-    limit: int
     #: The stable default ordering, named so a consumer can assert it did not
     #: silently become something else. There is no alternative ordering and no
-    #: scoring pass.
-    ordering: Literal["oldest_vetted_first"] = "oldest_vetted_first"
+    #: scoring pass. Oldest CAPTURED first: the walk is on ``created_at``,
+    #: which never moves (``authored_at`` is rewritten by the upsert, so it
+    #: could not key a cursor); each row's ``age_days`` still reads from its
+    #: authored / first-in-progress anchor.
+    ordering: Literal["oldest_captured_first"] = "oldest_captured_first"
     #: ``False`` when ANY coord read degraded on this page. Per-row detail is
     #: in each item's ``coord`` block.
     coord_available: bool = True
@@ -865,13 +898,16 @@ class PlanCandidateResponse(BaseModel):
     #: :data:`WorkUnitPopulationState`. ``unavailable`` means ``total`` counts
     #: the DOCUMENT layer only, which on this fleet has been a ~2% view of the
     #: addressable corpus; it is UNKNOWN, never "coord has no work units".
+    #: ``truncated`` means the coord half is a lower bound (see the class doc).
     work_unit_population_state: WorkUnitPopulationState = "included"
     #: Why the population arm degraded, when it did. Free-form, for the
     #: operator; ``None`` whenever the arm ran.
     work_unit_population_reason: str | None = None
     #: **Additive (Phase 7).** Work that has no plan yet — open
     #: ``spawned_followup`` edges, oldest first, bounded by the same ``limit``
-    #: the candidate page uses. "What should I pick up next" is not answerable
+    #: the candidate page uses. Always the FIRST page of the follow-up walk;
+    #: ``open_followup_total`` says how many exist and
+    #: ``GET /plan-library/followups`` walks the rest. "What should I pick up next" is not answerable
     #: from ``items`` alone: an unwritten follow-up is not an artifact, so it
     #: can never appear there, and before this field it was invisible to the
     #: only read whose job is answering that question. ``items`` keeps its
@@ -945,6 +981,57 @@ ReconciliationVerdict = Literal["agree", "disagree", "unknown"]
 AxisCScope = Literal["page"]
 
 
+#: coord's derived ``status_class`` wire vocabulary — five members, exhaustive.
+#: FORWARDED from coord's work-unit list row (``WorkUnitRow::status_class``,
+#: computed by coord's ``work_unit_status_class::classify``) — never derived
+#: web-side, so there is no second copy of coord's word list to drift.
+ReconciliationStatusClass = Literal[
+    "free_known", "attested", "derived", "off_vocabulary", "unset"
+]
+
+#: coord's ``work_unit_custody::Custody`` states, exactly as it emits them.
+ReconciliationCustodyState = Literal["sole", "ambiguous", "unresolved"]
+
+
+class ReconciliationCustody(BaseModel):
+    """Who holds a live session's device, as coord resolved it.
+
+    Forwarded from coord's ``custody`` object (``work_unit_custody.rs``); never
+    derived here.
+
+    * ``sole`` — exactly one live session on the device in this tenant.
+      ``session_name`` is its display name, and ``None`` there means the
+      session has NO name — not that the name is unknown.
+    * ``ambiguous`` — ``live_session_count`` (≥ 2) sessions share the device,
+      so naming any one would be a guess. Render "N sessions".
+    * ``unresolved`` — coord could not establish custody (a failed count, a
+      race, or a session in another tenant). UNKNOWN, never "nobody".
+
+    A custody object coord sent in a state this model does not recognise is
+    dropped to ``None`` on the session row (UNKNOWN) rather than coerced.
+    """
+
+    state: ReconciliationCustodyState
+    session_name: str | None = None
+    live_session_count: int | None = None
+
+
+class ReconciliationLiveSession(BaseModel):
+    """One non-expired ``coord.agent_status`` row naming this unit's slug.
+
+    A session drops out within ``STATUS_TTL`` of its last heartbeat, not when
+    it ends — compare ``expires_at``, never read membership as proof of life.
+    """
+
+    device_id: str
+    correlation_topic: str | None = None
+    updated_at: IsoDatetime | None = None
+    expires_at: IsoDatetime | None = None
+    #: ``None`` when custody was not resolved for this page (not requested, an
+    #: older coord, or a state this model does not recognise) — UNKNOWN.
+    custody: ReconciliationCustody | None = None
+
+
 class ReconciliationAxisA(BaseModel):
     """Axis A — coord's STORED ``work_units.status``.
 
@@ -952,11 +1039,40 @@ class ReconciliationAxisA(BaseModel):
     OPAQUE here as everywhere else in this module: coord accepts an
     off-vocabulary status deliberately (its Free transition tier), so a word in
     no vocabulary reads as OPEN rather than as an error.
+
+    ``status_class`` is that status's derived class (coord's five-member
+    vocabulary), forwarded verbatim from coord's list row. It is ``None``
+    (UNKNOWN) when axis A is unreadable, no unit exists for the stem, coord's
+    row omitted the field or carried a word outside the five, or the row
+    carried no ``status`` string at all — a missing status is never given a
+    confident class.
+
+    ``vet_state`` / ``vet_checked_at`` are coord's derived vet-freshness
+    verdict for the unit (``fresh`` / ``moved`` / ``gone`` / ``none``),
+    forwarded from coord's list row. ``None`` is UNKNOWN — never checked, a
+    coord that predates the field, or an unreadable freshness surface — and
+    never "fresh".
+
+    ``live_sessions`` / ``custody_resolved`` are populated only when the
+    request asked for ``include_custody``. ``live_sessions`` is ``None`` when
+    not requested or when coord did not answer the field for this unit
+    (UNKNOWN); ``[]`` is a real zero. ``custody_resolved`` is whether coord
+    echoed ``resolve_session_names: true`` on every page it read — ``False``
+    means an older coord (or a failed live-session join) on at least one page,
+    and EVERY ``custody`` in the response is then ``None``, including those
+    from pages that did echo, so no row reads as resolved when the read as a
+    whole was not; the ``live_sessions`` rows themselves are kept. ``None``
+    means custody was not requested.
     """
 
     readable: bool
     present: bool
     status: str | None = None
+    status_class: ReconciliationStatusClass | None = None
+    vet_state: str | None = None
+    vet_checked_at: IsoDatetime | None = None
+    live_sessions: list[ReconciliationLiveSession] | None = None
+    custody_resolved: bool | None = None
     unreadable_reason: str | None = None
 
 
@@ -1080,19 +1196,30 @@ class ReconciliationFacets(BaseModel):
     corpus_incomplete_reasons: list[str] = Field(default_factory=list)
 
 
-class ReconciliationResponse(BaseModel):
-    """A page of reconciled plan stems plus the honesty flags for the read."""
+class ReconciliationResponse(BoundedReadMeta):
+    """A page of reconciled plan stems plus the honesty flags for the read.
+
+    The bounded-read keys describe ``items``: a keyset walk over each stem's
+    immutable position (see ``ordering``); ``total`` counts the stems from
+    this page's start, and ``next_cursor`` is passed back as ``cursor``. The
+    WHOLE population's size is ``facets.denominator`` — the denominator the
+    facets are over, not a page count. When ``q`` is set both describe the
+    FILTERED population."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     items: list[ReconciliationRow]
-    #: The whole population's size — the facets' denominator, not ``len(items)``.
-    total: int
-    offset: int
-    limit: int
+    #: The ``q`` filter this page answered, echoed verbatim; ``None`` when the
+    #: request carried none. A consumer reads it to tell a filtered
+    #: denominator from the whole corpus.
+    q: str | None = None
     #: The stable default ordering, named so a consumer can assert it did not
-    #: silently become something else. Plan stems are date-prefixed, so slug
-    #: order is chronological order, and it is stable across requests in a way
-    #: a mutable timestamp is not.
-    ordering: Literal["slug_asc"] = "slug_asc"
+    #: silently become something else. A stem's position is derived from the
+    #: stem ALONE — its ``YYYY-MM-DD`` prefix (plan stems are date-prefixed),
+    #: then a uuid5 of the stem as the tiebreak — so it is immutable and the
+    #: walk is chronological by authoring day. Within one day the order is
+    #: stable but not alphabetical.
+    ordering: Literal["stem_date_asc"] = "stem_date_asc"
     #: **Stated on every response.** Axis B here is the artifact store, not a
     #: git ref — see :class:`ReconciliationAxisB`.
     document_axis_source: DocumentAxisSource = "artifact_store"

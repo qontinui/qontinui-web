@@ -1,7 +1,7 @@
 """API v1 router configuration.
 
 This file mounts every router that ships with the OSS qontinui-web. The
-qontinui.cloud deployment additionally attaches its proprietary cloud-only
+qontinui.cloud deployment additionally attaches its cloud-only
 routers (billing, cloud-admin, organizations multi-tenant, fleet-health,
 beta-signup, cross-tenant audit-logs) by registering them with the
 extension hook ``register_cloud_extensions(api_router)`` called at the
@@ -13,7 +13,7 @@ mid-3b), some cloud-only routers are still imported directly here as well
 qontinui-cloud-control and they go away from this file. The hook call at
 the bottom is already in place so the move is a delete-only diff in OSS.
 
-See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
+See: D:/qontinui-root/qontinui-cloud-control/  (separate repo)
      D:/qontinui-root/tmp_cloud_control_carve_out.md  §3 (register-hook
      surface) and §2 (file-by-file split).
 """
@@ -103,6 +103,7 @@ from app.api.v1.endpoints import (
     recordings,
     releases,
     render_logs,
+    repo_followup_dials,
     runner_chat,
     runner_chat_ws,
     runner_command_ws,
@@ -234,6 +235,14 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Per-repo follow-up dials (post-merge follow-up scope, continuation-delivery
+# mode) — proxies of coord's two per-repo `tenant_repo_profiles` dials, under
+# the same `/operations` prefix as the fleet-policy proxy they copy, so the
+# frontend's `/api/v1/operations/` active-tenant prefix already covers them.
+# Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` 4b.
+api_router.include_router(
+    repo_followup_dials.router, prefix="/operations", tags=["operations"]
+)
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
 # ``2026-08-10-plan-and-prompt-library-in-web``.

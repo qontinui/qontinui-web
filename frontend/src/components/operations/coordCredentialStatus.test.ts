@@ -38,6 +38,7 @@ import {
   resolveCoordCredential,
   summarizeCoordCredentials,
   COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS,
+  COORD_CREDENTIAL_STALE_AFTER_MAX_SECS,
   type CoordCredentialInput,
 } from "./coordCredentialStatus";
 
@@ -497,7 +498,7 @@ describe("coordDeviceHostKey / reportedCoordCredential", () => {
     );
   });
 
-  it("reads the bag verbatim, with the row's updated_at, and yields undefined for every absence", () => {
+  it("reads the bag verbatim, with the row's updated_at on an unstamped row, and yields undefined for every absence", () => {
     const bag = { ok: true, reason: null };
     const found = reportedCoordCredential({
       details: { coord_credential: bag },
@@ -514,6 +515,87 @@ describe("coordDeviceHostKey / reportedCoordCredential", () => {
         reportedCoordCredential({ details, updated_at: FRESH_AT }).reported
       ).toBeUndefined();
     }
+  });
+
+  describe("the bag's age is coord's per-key receipt stamp, not the row's updated_at", () => {
+    // Plan `2026-09-20-the-second-ratchet-…` Phase 5 made `POST /coord/status`
+    // merge `details` per key, so `updated_at` is bumped by EVERY writer.
+    // A dead runner's last `ok: true` beside a skill's fresh post must not
+    // read as fresh — that is the whole reason this module exists.
+    it("reads `_coord_received_at.coord_credential` when coord stamped the row", () => {
+      const receivedAt = secondsAgo(2_000);
+      const found = reportedCoordCredential({
+        details: {
+          coord_credential: { ok: true },
+          step: "vet",
+          _coord_received_at: {
+            coord_credential: receivedAt,
+            step: FRESH_AT,
+          },
+        },
+        // Bumped seconds ago by the `/vet-plan` post of `step`.
+        updated_at: FRESH_AT,
+      });
+      expect(found.reportedAt).toBe(receivedAt);
+      // …and so the bag is past its 900 s bound: unknown, never live.
+      const resolved = resolveCoordCredential({ ...found, now: NOW });
+      expect(resolved.kind).toBe("unknown");
+      expect(resolved.measured).toBe(false);
+    });
+
+    it("treats a stamped row with NO stamp for the credential as undatable (stale)", () => {
+      const found = reportedCoordCredential({
+        details: {
+          coord_credential: { ok: true },
+          _coord_received_at: { step: FRESH_AT },
+        },
+        updated_at: FRESH_AT,
+      });
+      expect(found.reportedAt).toBeUndefined();
+      expect(resolveCoordCredential({ ...found, now: NOW }).kind).toBe(
+        "unknown"
+      );
+    });
+
+    it("treats a non-string stamp as undatable", () => {
+      const found = reportedCoordCredential({
+        details: {
+          coord_credential: { ok: true },
+          _coord_received_at: { coord_credential: 1_789_000_000 },
+        },
+        updated_at: FRESH_AT,
+      });
+      expect(found.reportedAt).toBeUndefined();
+    });
+
+    it("falls back to updated_at only on a row no merging coord has written", () => {
+      // A pre-merge coord REPLACED `details` and stamped `updated_at` in one
+      // write, so on such a row `updated_at` is the bag's age.
+      const found = reportedCoordCredential({
+        details: { coord_credential: { ok: true } },
+        updated_at: FRESH_AT,
+      });
+      expect(found.reportedAt).toBe(FRESH_AT);
+      expect(resolveCoordCredential({ ...found, now: NOW }).kind).toBe("live");
+    });
+  });
+
+  it("clamps a self-declared `stale_after_secs` to coord's 3600 s ceiling", () => {
+    const bag = { ok: true, stale_after_secs: 86_400 };
+    expect(
+      resolveCoordCredential({
+        reported: bag,
+        reportedAt: secondsAgo(COORD_CREDENTIAL_STALE_AFTER_MAX_SECS - 60),
+        now: NOW,
+      }).kind
+    ).toBe("live");
+    expect(
+      resolveCoordCredential({
+        reported: bag,
+        reportedAt: secondsAgo(COORD_CREDENTIAL_STALE_AFTER_MAX_SECS + 60),
+        now: NOW,
+      }).kind
+    ).toBe("unknown");
   });
 
   it("reads a row's bag only for the device that row belongs to", () => {

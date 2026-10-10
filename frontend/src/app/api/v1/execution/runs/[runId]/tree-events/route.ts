@@ -1,68 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import { backendBaseOrResponse } from "@/lib/errors/endpoint-response";
-import { cookies } from "next/headers";
+import { NextRequest } from "next/server";
+import { proxyToBackend } from "@/lib/server/proxyToBackend";
 
-/**
- * API Route Handler for /api/v1/execution/runs/[runId]/tree-events
- *
- * This route reads the access token from HttpOnly cookies and forwards
- * requests to the backend with proper Bearer authentication.
- */
-
-async function getAccessToken(request: NextRequest): Promise<string | null> {
-  const cookieStore = await cookies();
-  const accessTokenCookie = cookieStore.get("access_token");
-  const authorizationHeader = request.headers.get("Authorization");
-
-  if (accessTokenCookie?.value) {
-    return accessTokenCookie.value;
-  } else if (authorizationHeader?.startsWith("Bearer ")) {
-    return authorizationHeader.substring(7);
-  }
-  return null;
-}
-
-interface RouteParams {
-  params: Promise<{ runId: string }>;
-}
-
-export async function GET(request: NextRequest, { params }: RouteParams) {
-  try {
-    const accessToken = await getAccessToken(request);
-    const { runId } = await params;
-
-    if (!accessToken) {
-      return NextResponse.json(
-        { detail: "Not authenticated" },
-        { status: 401 }
-      );
+/** /api/v1/execution/runs/[runId]/tree-events — proxied via `proxyToBackend`. */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ runId: string }> }
+) {
+  const { runId } = await params;
+  return proxyToBackend(
+    request,
+    `/api/v1/execution/runs/${encodeURIComponent(runId)}/tree-events`,
+    {
+      tokenSources: ["cookie", "header"],
+      onMissingToken: "401",
+      unauthorizedBodyKey: "detail",
+      query: "raw",
+      errorBody: "detail",
     }
-
-    // Forward query parameters
-    const url = new URL(request.url);
-    const queryString = url.search;
-    const base = backendBaseOrResponse();
-    if (base instanceof NextResponse) return base;
-    const backendUrl = `${base}/api/v1/execution/runs/${runId}/tree-events${queryString}`;
-
-    const response = await fetch(backendUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error("[Execution Tree Events API Route] Error:", error);
-    return NextResponse.json(
-      {
-        detail: "Failed to proxy request to backend",
-        error: (error as Error).message,
-      },
-      { status: 500 }
-    );
-  }
+  );
 }
