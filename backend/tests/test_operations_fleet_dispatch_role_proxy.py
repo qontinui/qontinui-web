@@ -12,7 +12,8 @@ The properties pinned here:
    re-checks (§D9), but a proxy forwarding any member's write would make coord
    the only gate.
 2. **The write body is CLOSED**: exactly one machine key, no client-asserted
-   author, one of the three roles the table CHECKs.
+   author, one of the three roles the table CHECKs (or `bench`, the legacy
+   spelling of `testbed`, forwarded verbatim).
 3. **Coord's typed refusals survive the hop as STRUCTURED objects** with
    coord's own status — ``last_open_lane`` and ``no_agent_host`` call for
    different operator actions (one admits Force, the other does not), so the
@@ -170,14 +171,18 @@ class TestWriteBody:
     ):
         resp, mock_instance = _put(
             auth_client,
-            {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": " rebuild "},
+            {
+                "device_id": DEVICE_ID,
+                "dispatch_role": "testbed",
+                "reason": " rebuild ",
+            },
         )
         assert resp.status_code == 200
         assert mock_instance.put.call_args[0][0].endswith("/coord/fleet/dispatch-role")
         sent = mock_instance.put.call_args.kwargs["json"]
         assert sent == {
             "device_id": DEVICE_ID,
-            "dispatch_role": "bench",
+            "dispatch_role": "testbed",
             "reason": "rebuild",
             "force": False,
         }
@@ -206,9 +211,30 @@ class TestWriteBody:
             "force": True,
         }
 
+    @pytest.mark.parametrize("role", ["testbed", "bench"])
+    def test_both_spellings_of_the_no_lanes_role_are_forwarded_verbatim(
+        self, auth_client: TestClient, role: str
+    ):
+        """``testbed`` is the name; ``bench`` is its legacy input spelling.
+
+        Plan Amendment 2026-10-10 A2/A6. Neither is rewritten into the other:
+        coord is the authority on spelling while the rename is in flight (a
+        coord predating it refuses ``testbed``; one carrying it parses both),
+        so the proxy forwards what the client sent.
+        """
+        resp, mock_instance = _put(
+            auth_client,
+            {"device_id": DEVICE_ID, "dispatch_role": role, "reason": "ui testing"},
+        )
+        assert resp.status_code == 200
+        assert mock_instance.put.call_args.kwargs["json"]["dispatch_role"] == role
+
     @pytest.mark.parametrize(
         "payload",
         [
+            # near-spellings of testbed are typos, not aliases
+            {"device_id": DEVICE_ID, "dispatch_role": "Testbed", "reason": "r"},
+            {"device_id": DEVICE_ID, "dispatch_role": "test_bed", "reason": "r"},
             # neither key
             {"dispatch_role": "bench", "reason": "r"},
             # both keys

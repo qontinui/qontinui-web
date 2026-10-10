@@ -5076,8 +5076,9 @@ async def post_fleet_undrain(
 # ---- Machine dispatch roles (plan 2026-10-02 fleet machine roles, Phase 6) --
 #
 # The operator door for a machine's standing DISPATCH ROLE — which kind of work
-# coord may send it (§D1): ``workhorse`` (CI + agent sessions), ``bench``
-# (nothing) or ``ci_node`` (CI only). Same three shapes as the drain pair above,
+# coord may send it (§D1): ``workhorse`` (CI + agent sessions), ``testbed``
+# (nothing — the machine kept for hand-driven UI testing; formerly ``bench``,
+# plan Amendment 2026-10-10 A2) or ``ci_node`` (CI only). Same three shapes as the drain pair above,
 # and the same auth path: the read rides ``get_tenant_id`` (bearer forwarded so
 # coord scopes it), the write rides ``require_coord_tenant_admin`` and coord
 # re-checks with its own operator-only gate (§D9). A role is NOT a drain: it is
@@ -5098,9 +5099,19 @@ async def post_fleet_undrain(
 #    coord's own status, so the console renders a sentence and offers Force
 #    only for the refusal that admits it — never a raw error string.
 
-#: The three roles the table's CHECK admits (``mdroles_01``). Pinned here so a
-#: typo is a local 422 rather than a coord round trip.
-DispatchRoleName = Literal["workhorse", "bench", "ci_node"]
+#: The three roles the table's CHECK admits (``mdroles_02``), plus ``bench``:
+#: the pre-rename spelling of ``testbed`` (plan Amendment 2026-10-10 A2/A6).
+#: Pinned here so a typo is a local 422 rather than a coord round trip.
+#:
+#: ``bench`` is accepted as LEGACY INPUT and forwarded VERBATIM, never
+#: rewritten to ``testbed`` here. During the rename coord is the authority on
+#: spelling: a coord predating the rename (qontinui-coord#3015) parses only
+#: ``bench`` and refuses ``testbed`` with a 422, and a coord carrying the
+#: rename parses both as one role. Forwarding what the client sent keeps
+#: either skew working for a client that sends the spelling its coord knows,
+#: and a translation here would break the older one. Drop ``bench`` from this
+#: Literal at the plan's contract step, when coord stops parsing it.
+DispatchRoleName = Literal["workhorse", "testbed", "ci_node", "bench"]
 
 #: The character class ``mdroles_01`` CHECKs ``ci_host_name`` against: printable
 #: ASCII with no whitespace. Mirrored so a pasted name with a trailing newline is
