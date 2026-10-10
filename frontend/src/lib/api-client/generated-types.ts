@@ -15085,6 +15085,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/project-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project State
+         * @description Return coord's project-state synthesis for the operator's tenant.
+         *
+         *     Plan
+         *     ``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``
+         *     Phase 4. A plain pass-through of coord's operator route
+         *     ``GET /coord/project-state`` — the same shared core that serves the
+         *     ``coord_project_state`` MCP tool and its device/agent twin
+         *     ``GET /coord/agent-project-state``, so the page and every agent read one
+         *     answer. No composition and no reshaping here: ``/admin/coord/home`` and
+         *     the ``/overview`` progress panel render coord's bytes.
+         *
+         *     The wire, as coord serves it (``schema: 1``): ``generated_at``,
+         *     ``tenant_id``, ``scope`` (``"operator"``, the one built scope), and four
+         *     blocks — ``on_track``, ``correctness``, ``needs_me``, ``degradations`` —
+         *     each carrying a ``state`` in ``read | could_not_read | stale |
+         *     not_implemented | unknown`` that is DISTINCT from its counts. A block
+         *     whose state is not ``read`` carries no counts, and a caller must render
+         *     it as unknown rather than as zero (``[policy: silent-empty-is-unknown]``)
+         *     — with ONE exception: a ``stale`` ``degradations`` block still carries its
+         *     ``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault
+         *     stays true behind a lagging watcher. Those rows are real but are not known
+         *     to be all of them, so no count may be taken from them.
+         *     ``does_not_know`` lists every source the door read, with ``state``,
+         *     ``as_of``, ``freshness_bound_secs``, rows considered / excluded and why.
+         *
+         *     ``on_track.totals`` is ``{row_count, classes}`` over a closed,
+         *     exhaustive-with-zeros class set (``shipped``, ``in_flight``,
+         *     ``stalled``, ``blocked_on_dependency``, ``waiting_on_gate``,
+         *     ``not_started``, ``closed_other``, ``off_vocabulary``, ``unset``) whose
+         *     sum coord asserts equals ``row_count``. ``stalled`` is a MECHANICAL
+         *     absence-of-recorded-change class (``stall_rule`` /
+         *     ``stall_window_secs`` ride the wire); it is not a verdict and the page
+         *     does not render the word.
+         *
+         *     Declares no ``response_model``, so nothing here filters a field coord
+         *     adds. This docstring is what FastAPI renders into the committed,
+         *     drift-gated OpenAPI snapshots, so it is this repo's contract of record
+         *     for the route.
+         */
+        get: operations["api_v1_operations_project_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
         parameters: {
             query?: never;
@@ -74842,6 +74899,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_project_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
