@@ -197,6 +197,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
+                "error": "invalid_device_machine_key",
                 "code": "invalid_device_machine_key",
                 "message": "Missing or malformed device machine key.",
             },
@@ -206,6 +207,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
+                "error": "invalid_device_machine_key",
                 "code": "invalid_device_machine_key",
                 "message": "Device machine key not recognized.",
             },
@@ -214,6 +216,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_machine_key_revoked",
                 "code": "device_machine_key_revoked",
                 "message": "This device machine key has been revoked.",
             },
@@ -224,6 +227,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_machine_key_expired",
                 "code": "device_machine_key_expired",
                 "message": "This device machine key has expired.",
             },
@@ -869,6 +873,7 @@ async def pair_confirm(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
+                "error": "device_id_malformed",
                 "code": "device_id_malformed",
                 "message": "device_id must be a UUID.",
             },
@@ -1240,6 +1245,7 @@ async def _operator_tenant_device(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
+                    "error": "device_not_found",
                     "code": "device_not_found",
                     "message": "No such device among yours.",
                 },
@@ -1249,6 +1255,7 @@ async def _operator_tenant_device(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
+                "error": "coord_device_state_malformed",
                 "code": "coord_device_state_malformed",
                 "message": "Coord answered for a different device.",
             },
@@ -1258,6 +1265,7 @@ async def _operator_tenant_device(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_not_in_tenant",
                 "code": "device_not_in_tenant",
                 "message": "This device is not in any of your tenants.",
             },
@@ -1370,6 +1378,7 @@ async def authorize_redeem(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
+                "error": "device_not_found",
                 "code": "device_not_found",
                 "message": "No device row to authorize; nothing was changed.",
             },
@@ -1406,7 +1415,8 @@ async def authorize_redeem(
 
 def _poll_refusal(status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(
-        status_code=status_code, detail={"code": code, "message": message}
+        status_code=status_code,
+        detail={"error": code, "code": code, "message": message},
     )
 
 
@@ -1586,6 +1596,7 @@ async def revoke_device_credentials(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
+                "error": "device_not_found",
                 "code": "device_not_found",
                 "message": "No device row to revoke; nothing was changed.",
             },
@@ -1597,6 +1608,7 @@ async def revoke_device_credentials(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
+                "error": "device_not_found",
                 "code": "device_not_found",
                 "message": "No device row to revoke; nothing was changed.",
             },
@@ -1699,6 +1711,7 @@ async def dispatch_to_device(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
+                "error": "device_offline",
                 "code": "device_offline",
                 "message": "Device is not connected via WebSocket.",
             },
@@ -1718,6 +1731,7 @@ async def dispatch_to_device(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
+                "error": "dispatch_failed",
                 "code": "dispatch_failed",
                 "message": "Could not relay dispatch over WebSocket.",
             },
@@ -1779,6 +1793,7 @@ async def mint_device_machine_credential(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
+                    "error": "device_not_owned",
                     "code": "device_not_owned",
                     "message": "You do not own this device.",
                 },
@@ -1807,6 +1822,7 @@ async def mint_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_credential_revoked",
                 "code": "device_credential_revoked",
                 "message": (
                     "This device's credentials were revoked. Only an "
@@ -1941,6 +1957,7 @@ async def self_mint_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_mismatch",
                 "code": "device_mismatch",
                 "message": "Device token does not match this device.",
             },
@@ -1964,6 +1981,7 @@ async def self_mint_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_machine_key_revoked",
                 "code": "device_machine_key_revoked",
                 "message": (
                     "This device's machine key was revoked; re-mint it with "
@@ -1975,6 +1993,7 @@ async def self_mint_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
+                "error": "machine_key_still_usable",
                 "code": "machine_key_still_usable",
                 "message": (
                     "This device already holds a machine key usable for more "
@@ -2014,6 +2033,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
+                "error": "coord_device_lookup_unavailable",
                 "code": "coord_device_lookup_unavailable",
                 "message": (
                     "Coord could not confirm this device; nothing was minted. "
@@ -2025,6 +2045,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "coord_refused_device_token",
                 "code": "coord_refused_device_token",
                 "message": f"Coord refused this device token ({exc.status_code}).",
             },
@@ -2036,6 +2057,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_not_owned",
                 "code": "device_not_owned",
                 "message": "Coord does not know this device.",
             },
@@ -2044,6 +2066,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_mismatch",
                 "code": "device_mismatch",
                 "message": "Coord answered for a different device.",
             },
@@ -2062,7 +2085,11 @@ async def _self_mint_device_tenant(
 def _coord_state_malformed(message: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"code": "coord_device_state_malformed", "message": message},
+        detail={
+            "error": "coord_device_state_malformed",
+            "code": "coord_device_state_malformed",
+            "message": message,
+        },
     )
 
 
@@ -2140,6 +2167,7 @@ async def exchange_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_mismatch",
                 "code": "device_mismatch",
                 "message": "Device machine key does not match this device.",
             },
@@ -2187,6 +2215,7 @@ async def exchange_device_machine_credential(
             raise HTTPException(
                 status_code=coord_status,
                 detail={
+                    "error": "coord_mint_rejected",
                     "code": "coord_mint_rejected",
                     "message": "Coord rejected the device-token mint.",
                 },

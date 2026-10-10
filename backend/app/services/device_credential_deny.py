@@ -43,6 +43,7 @@ async def refuse_if_credential_revoked(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
+                "error": "device_credential_state_unavailable",
                 "code": "device_credential_state_unavailable",
                 "message": (
                     "Could not confirm this device's credentials are not "
@@ -60,6 +61,7 @@ async def refuse_if_credential_revoked(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_credential_revoked",
                 "code": "device_credential_revoked",
                 "message": (
                     "An operator revoked this device's credentials. Only an "
