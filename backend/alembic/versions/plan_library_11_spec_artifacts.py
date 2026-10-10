@@ -82,6 +82,15 @@ versions and edges cascade through the phase-1 FKs), the ``spec_ref`` column
 and the counters table are dropped. The pre-revision vocabularies admit none
 of those rows.
 
+⚠️ Refs RESTART after a downgrade followed by an upgrade: the counters table
+is dropped with everything it numbered and re-created empty, so the next
+requirement is ``REQ-0001`` again. That does not break "never reused" in any
+observable way — every artifact that held a ref was deleted by the same
+downgrade — but a ref recorded OUTSIDE this store (a ticket, a PR body, an
+exported trace matrix) would then name a different artifact. Downgrade a
+deployment that has exported refs only if those external copies are
+disposable.
+
 Idempotency: CHECKs are discovered-and-dropped from ``pg_constraint`` rather
 than dropped by an assumed name; column, index and table statements are
 ``IF [NOT] EXISTS``. Hand-authored — ``alembic revision --autogenerate`` is
@@ -282,7 +291,7 @@ def upgrade() -> None:
 
     # ── 4. The never-reused counter ─────────────────────────────────────
     op.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS agent.work_artifact_spec_ref_counters (
             organization_scope UUID NOT NULL,
             kind TEXT NOT NULL,
@@ -290,7 +299,9 @@ def upgrade() -> None:
             CONSTRAINT pk_work_artifact_spec_ref_counters
                 PRIMARY KEY (organization_scope, kind),
             CONSTRAINT ck_spec_ref_counters_positive
-                CHECK (last_number >= 1)
+                CHECK (last_number >= 1),
+            CONSTRAINT ck_spec_ref_counters_kind
+                CHECK (kind IN ({_in_list(_SPEC_KINDS)}))
         )
         """
     )

@@ -31,11 +31,11 @@ from app.core.evidence_posture import (
     correction_sentences,
 )
 from app.schemas.plan_library import (
+    SPEC_KIND_STATUS_LITERALS,
     CapturedBy,
     ClosedFieldVocabulary,
     DifficultyLevel,
     DifficultySource,
-    SPEC_KIND_STATUS_LITERALS,
     PlanLibraryVocabularyResponse,
     VocabularyTerm,
     WorkArtifactKind,
