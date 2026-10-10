@@ -159,6 +159,7 @@ async def redeem_pair_code_endpoint(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
+                    "error": "pair_code_not_found",
                     "code": "pair_code_not_found",
                     "message": "Pair code not found.",
                 },
@@ -167,6 +168,7 @@ async def redeem_pair_code_endpoint(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
+                    "error": "pair_code_already_redeemed",
                     "code": "pair_code_already_redeemed",
                     "message": "Pair code has already been redeemed.",
                 },
@@ -174,7 +176,11 @@ async def redeem_pair_code_endpoint(
         # Expired (the only remaining failure case from get_redeemable).
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail={"code": "pair_code_expired", "message": "Pair code has expired."},
+            detail={
+                "error": "pair_code_expired",
+                "code": "pair_code_expired",
+                "message": "Pair code has expired.",
+            },
         )
 
     # A code an operator's ``authorize-redeem`` bound to one device exists,
@@ -185,7 +191,11 @@ async def redeem_pair_code_endpoint(
     if row.bound_device_id is not None and row.delivered_at is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "pair_code_not_found", "message": "Pair code not found."},
+            detail={
+                "error": "pair_code_not_found",
+                "code": "pair_code_not_found",
+                "message": "Pair code not found.",
+            },
         )
 
     # A bound code is redeemable for its device only. Checked before any
@@ -201,6 +211,7 @@ async def redeem_pair_code_endpoint(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "pair_code_bound_to_other_device",
                 "code": "pair_code_bound_to_other_device",
                 "message": "This pair code was issued for a different device.",
             },
@@ -298,6 +309,7 @@ async def redeem_pair_code_endpoint(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
+                "error": "coord_device_mismatch",
                 "code": "coord_device_mismatch",
                 "message": "Coord paired a different device than the code is bound to.",
             },

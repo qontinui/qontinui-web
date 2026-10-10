@@ -1645,3 +1645,87 @@ class TestFailClosedEdges:
         assert resp.json()["detail"]["code"] == "coord_device_mismatch"
         assert "jwt" not in resp.text
         consumed.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Wire shape through the REAL app (app.main.app, with its registered
+# ``http_exception_handler``). Every other test here mounts the router on a
+# bare FastAPI, where a refusal answers ``{"detail": {...}}``; the real handler
+# instead flattens a dict detail into the TOP LEVEL — and only when it carries
+# an ``error`` key. These pin what a client (runner / frontend) actually sees:
+#
+#     {"error": "<code>", "code": "<code>", "message": "...",
+#      "timestamp": <float>, "path": "<url>"}
+# ---------------------------------------------------------------------------
+
+
+class TestRefusalCodesReachTheClient:
+    @contextmanager
+    def _real_app(self) -> Iterator[TestClient]:
+        from app.api.deps import get_async_db
+        from app.main import app
+
+        app.dependency_overrides[get_async_db] = _fake_db
+        try:
+            yield TestClient(app)
+        finally:
+            app.dependency_overrides.pop(get_async_db, None)
+
+    def test_pending_redeem_revoked_device(self) -> None:
+        device_id = uuid4()
+        coord = _Coord()
+        with (
+            self._real_app() as client,
+            coord.installed(),
+            patch.object(
+                device_crud,
+                "get_credential_revoked_at",
+                AsyncMock(return_value=datetime.now(UTC)),
+            ),
+            patch.object(pair_code_crud, "claim_undelivered_for_device", AsyncMock()),
+        ):
+            resp = client.get(
+                f"{API_PREFIX}/{device_id}/pending-redeem",
+                headers={"Authorization": f"Bearer {coord.token(device_id)}"},
+            )
+        assert resp.status_code == 403, resp.text
+        body = resp.json()
+        assert body["error"] == "device_credential_revoked"
+        assert body["code"] == "device_credential_revoked"
+        assert isinstance(body["message"], str) and "revoked" in body["message"]
+        assert "detail" not in body
+
+    def test_pending_redeem_token_past_grace(self) -> None:
+        device_id = uuid4()
+        coord = _Coord()
+        with self._real_app() as client, coord.installed():
+            resp = client.get(
+                f"{API_PREFIX}/{device_id}/pending-redeem",
+                headers={
+                    "Authorization": (
+                        f"Bearer {coord.token(device_id, expired_ago_s=31 * _DAY_S)}"
+                    )
+                },
+            )
+        assert resp.status_code == 401, resp.text
+        assert resp.json()["error"] == "device_token_expired_beyond_grace"
+
+    def test_pair_code_bound_to_other_device(self) -> None:
+        bound = uuid4()
+        code = _code_row(bound)
+        code.delivered_at = datetime.now(UTC)
+        with (
+            self._real_app() as client,
+            patch.object(
+                pair_code_crud, "get_redeemable", AsyncMock(return_value=code)
+            ),
+            patch("app.api.v1.endpoints.pair_codes.post_to_coord", AsyncMock()),
+        ):
+            resp = client.post(
+                f"{API_PREFIX}/pair-codes/{code.code}/redeem",
+                json={"device_id": str(uuid4()), "hostname": "h"},
+            )
+        assert resp.status_code == 403, resp.text
+        body = resp.json()
+        assert body["error"] == "pair_code_bound_to_other_device"
+        assert body["code"] == "pair_code_bound_to_other_device"
