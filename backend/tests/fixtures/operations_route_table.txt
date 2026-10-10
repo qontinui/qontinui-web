@@ -65,6 +65,7 @@ GET /api/v1/operations/coord/session-compliance/config get_session_compliance_co
 GET /api/v1/operations/coord/session-compliance/config/versions list_session_compliance_config_versions Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/coord/session-compliance/outstanding list_session_compliance_outstanding Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/coord/session-compliance/sessions list_session_compliance_sessions Any None True tags=operations [get_tenant_id]
+GET /api/v1/operations/coord/verification/metrics get_coord_verification_metrics Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/deploys get_deploys Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/deploys/{deploy_id} get_deploy Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/deploys/{deploy_id}/rollback-proposal get_deploy_rollback_proposal Any None True tags=operations [get_tenant_id]
