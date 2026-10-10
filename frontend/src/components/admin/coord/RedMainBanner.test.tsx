@@ -12,7 +12,10 @@ vi.mock("@/services/service-factory", () => ({
 
 import {
   RedMainBanner,
+  bannerHeadline,
+  blockingSinceLabel,
   compactPrincipal,
+  deployRedHeadline,
   parseAlertClaim,
   parseFixSession,
   parseRedMainAlerts,
@@ -55,6 +58,7 @@ describe("parseRedMainAlerts", () => {
     expect(got).toEqual<RedMainAlert[]>([
       {
         alertKey: "red_main:jspinak/qontinui-runner",
+        kind: "red_main",
         repo: "jspinak/qontinui-runner",
         workflows: ["CI", "release"],
         blockedPrCount: 8,
@@ -63,6 +67,9 @@ describe("parseRedMainAlerts", () => {
         fixSession: { kind: "none" },
         // No `claimed` / `claim` on the row: an older coord.
         claim: { kind: "unknown", cause: "not-reported" },
+        // Never read off a red_main row.
+        blocksMerging: null,
+        blockingWorkflows: [],
       },
     ]);
   });
@@ -577,5 +584,432 @@ describe("<RedMainBanner> reachability", () => {
     }
     // An outage in the READ path is not evidence that main went green.
     expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 2026-09-13-a-push-only-deploy-workflow-reds-main-and-no-pr-can-clear-it
+// Phase 2 (Option A) — coord raises `deploy_red:<repo>` INSTEAD of
+// `red_main:<repo>` for a repo whose only red is a push-only deploy workflow.
+// Without this, such a repo silently lost its banner.
+// ---------------------------------------------------------------------------
+
+describe("deploy_red alerts", () => {
+  const REPO = "portofino-pizzeria/backend";
+  const NOW = Date.parse("2026-09-12T12:00:00Z");
+
+  function deployRow(extra: Record<string, unknown> = {}) {
+    return {
+      id: 7,
+      alert_key: `deploy_red:${REPO}`,
+      severity: "critical",
+      kind: "deploy_red",
+      summary: `Deploy-side CI for ${REPO} is RED (Deploy backend)`,
+      first_seen_at: "2026-09-12T04:31:00Z",
+      detail: {
+        repo: REPO,
+        workflows: ["Deploy backend"],
+        blocks_merging: false,
+        fix_session: "none",
+      },
+      ...extra,
+    };
+  }
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("parses a deploy_red row with its own kind", () => {
+    const [a] = parseRedMainAlerts([deployRow()]);
+    expect(a.kind).toBe("deploy_red");
+    expect(a.alertKey).toBe(`deploy_red:${REPO}`);
+    expect(a.repo).toBe(REPO);
+    expect(a.workflows).toEqual(["Deploy backend"]);
+  });
+
+  it("falls back to the deploy_red key suffix for the repo", () => {
+    const [a] = parseRedMainAlerts([
+      { alert_key: "deploy_red:owner/repo", detail: undefined },
+    ]);
+    expect(a.kind).toBe("deploy_red");
+    expect(a.repo).toBe("owner/repo");
+  });
+
+  it("orders a repo's red main above its red deploy, and keeps both", () => {
+    const got = parseRedMainAlerts([
+      deployRow(),
+      {
+        alert_key: `red_main:${REPO}`,
+        kind: "red_main",
+        detail: { repo: REPO },
+      },
+    ]);
+    expect(got.map((a) => a.kind)).toEqual(["red_main", "deploy_red"]);
+  });
+
+  it("says the deploy is red AND that this failure does not block merges", () => {
+    const [a] = parseRedMainAlerts([deployRow()]);
+    const headline = deployRedHeadline(a, NOW);
+    expect(headline).toBe(
+      `Deploy is red on ${REPO} for 7h 29m — this deploy failure does not ` +
+        "block merges; the fix may be outside this repo (see the coord diagnosis)"
+    );
+    // One em dash at most.
+    expect(headline.split("—")).toHaveLength(2);
+    // Scoped to the alert: never a blanket claim that merges are open.
+    expect(headline).not.toMatch(/merges are NOT blocked/i);
+    expect(headline).not.toContain("coord_diagnose");
+    // It must not borrow the red-main wording, which describes a hold.
+    expect(headline).not.toMatch(/main is RED/);
+    expect(headline).not.toMatch(/main-red/);
+    expect(bannerHeadline(a, NOW)).toBe(headline);
+  });
+
+  it("leaves the red-main headline unchanged", () => {
+    const [a] = parseRedMainAlerts([
+      {
+        alert_key: `red_main:${REPO}`,
+        detail: { repo: REPO, blocked_pr_count: 1, queued_proposal_count: 0 },
+      },
+    ]);
+    expect(bannerHeadline(a, NOW)).toBe(redMainHeadline(a, NOW));
+    expect(bannerHeadline(a, NOW)).toContain(`${REPO} main is RED`);
+  });
+
+  it("asks coord for BOTH kinds in one poll", async () => {
+    getMock.mockResolvedValue([deployRow()]);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner");
+    const url = String(getMock.mock.calls[0][0]);
+    expect(url).toContain("kind=red_main");
+    expect(url).toContain("kind=deploy_red");
+  });
+
+  it("renders a deploy_red row distinctly, with the not-blocking wording", async () => {
+    getMock.mockResolvedValue([deployRow()]);
+    render(<RedMainBanner />);
+
+    const row = await screen.findByTestId("red-main-banner-row");
+    expect(row).toHaveAttribute("data-alert-kind", "deploy_red");
+    expect(row.className).toContain("border-dashed");
+    expect(row.textContent).toContain(`Deploy is red on ${REPO}`);
+    expect(row.textContent).toContain(
+      "this deploy failure does not block merges;"
+    );
+    expect(row.textContent).toContain("failing: Deploy backend");
+    expect(row.textContent).not.toContain("main is RED");
+  });
+});
+
+describe("deploy_red beside a red_main for the same repo", () => {
+  const REPO = "portofino-pizzeria/backend";
+  const NOW = Date.parse("2026-09-12T12:00:00Z");
+
+  // coord's `Red` carries its deploy-side rows too, so
+  // Red{workflows:[CI], deploy_red:[Deploy backend]} opens BOTH alerts.
+  const both = [
+    {
+      alert_key: `deploy_red:${REPO}`,
+      kind: "deploy_red",
+      first_seen_at: "2026-09-12T04:31:00Z",
+      detail: {
+        repo: REPO,
+        workflows: ["Deploy backend"],
+        blocks_merging: false,
+      },
+      claimed: false,
+      claim: null,
+    },
+    {
+      alert_key: `red_main:${REPO}`,
+      kind: "red_main",
+      first_seen_at: "2026-09-12T04:31:00Z",
+      detail: { repo: REPO, workflows: ["CI"], blocked_pr_count: 2 },
+      claimed: false,
+      claim: null,
+    },
+  ];
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("says merges ARE held by the red main, never that they are open", () => {
+    const [, deploy] = parseRedMainAlerts(both);
+    expect(deploy.kind).toBe("deploy_red");
+    const headline = bannerHeadline(deploy, NOW, true);
+    expect(headline).toContain(
+      "this deploy failure does not block merges, but the red main above does"
+    );
+    expect(headline).not.toMatch(/merges are NOT blocked/i);
+  });
+
+  it("renders both rows without contradicting each other", async () => {
+    getMock.mockResolvedValue(both);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner");
+    const rows = screen.getAllByTestId("red-main-banner-row");
+    expect(rows.map((r) => r.getAttribute("data-alert-kind"))).toEqual([
+      "red_main",
+      "deploy_red",
+    ]);
+    expect(rows[0].textContent).toContain(`${REPO} main is RED`);
+    expect(rows[1].textContent).toContain("but the red main above does");
+  });
+
+  it("names the alert kind in the unclaimed tooltip", async () => {
+    getMock.mockResolvedValue(both);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner");
+    const chips = screen.getAllByTestId("red-main-claim");
+    expect(chips[0].getAttribute("title")).toBe(
+      "No agent holds a claim on this red main yet."
+    );
+    expect(chips[1].getAttribute("title")).toBe(
+      "No agent holds a claim on this deploy alert yet."
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// coord's live `detail.blocks_merging` on a deploy_red row. Right after a land
+// or a coord restart, coord cannot yet prove the workflow push-only, keeps
+// counting it red (merges ARE blocked), and leaves only the deploy_red alert
+// open — so "does not block merges" would be false there.
+// ---------------------------------------------------------------------------
+
+describe("deploy_red blocks_merging states", () => {
+  const REPO = "portofino-pizzeria/backend";
+  const NOW = Date.parse("2026-09-12T12:00:00Z");
+
+  function row(detail: Record<string, unknown>) {
+    return {
+      alert_key: `deploy_red:${REPO}`,
+      kind: "deploy_red",
+      first_seen_at: "2026-09-12T04:31:00Z",
+      detail: { repo: REPO, workflows: ["Deploy backend"], ...detail },
+    };
+  }
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("true: says merges ARE blocked, styled as blocking", async () => {
+    const blocking = row({
+      blocks_merging: true,
+      blocking_reason: "push_only_proof_pending",
+      blocking_since: "2026-09-12T11:58:00Z",
+    });
+    const [a] = parseRedMainAlerts([blocking]);
+    expect(a.blocksMerging).toBe(true);
+    const headline = deployRedHeadline(a, NOW);
+    expect(headline).toBe(
+      `Deploy is red on ${REPO} for 7h 29m — merges are currently BLOCKED ` +
+        "on it until coord re-proves it push-only; see the coord diagnosis"
+    );
+    expect(headline).not.toMatch(/does not block/);
+    // Even beside a red main it never says "does not block".
+    expect(deployRedHeadline(a, NOW, true)).toBe(headline);
+
+    getMock.mockResolvedValue([blocking]);
+    render(<RedMainBanner />);
+    const el = await screen.findByTestId("red-main-banner-row");
+    expect(el).toHaveAttribute("data-alert-kind", "deploy_red");
+    expect(el).toHaveAttribute("data-blocks-merging", "true");
+    // The red main's severity treatment, not the dashed not-blocking look.
+    expect(el.className).toContain("bg-red-900");
+    expect(el.className).not.toContain("border-dashed");
+    // Coord's reason rides the tooltip, not the headline (R8).
+    expect(el.textContent).not.toContain("push_only_proof_pending");
+    expect(
+      el.querySelector("[title*='push_only_proof_pending']")
+    ).not.toBeNull();
+  });
+
+  it("false: keeps the scoped not-blocking wording and dashed look", async () => {
+    const open = row({ blocks_merging: false });
+    const [a] = parseRedMainAlerts([open]);
+    expect(a.blocksMerging).toBe(false);
+    expect(deployRedHeadline(a, NOW)).toContain(
+      "this deploy failure does not block merges;"
+    );
+
+    getMock.mockResolvedValue([open]);
+    render(<RedMainBanner />);
+    const el = await screen.findByTestId("red-main-banner-row");
+    expect(el).toHaveAttribute("data-blocks-merging", "false");
+    expect(el.className).toContain("border-dashed");
+  });
+
+  it("absent or non-boolean: makes NO merge claim either way", async () => {
+    for (const detail of [
+      {},
+      { blocks_merging: "false" },
+      { blocks_merging: null },
+    ]) {
+      const [a] = parseRedMainAlerts([row(detail)]);
+      expect(a.blocksMerging).toBeNull();
+      const headline = deployRedHeadline(a, NOW);
+      expect(headline).toBe(
+        `Deploy is red on ${REPO} for 7h 29m; see the coord diagnosis`
+      );
+      expect(headline).not.toMatch(/block/i);
+      // The red-main-beside variant makes no claim either.
+      expect(deployRedHeadline(a, NOW, true)).toBe(headline);
+    }
+
+    getMock.mockResolvedValue([row({})]);
+    render(<RedMainBanner />);
+    const el = await screen.findByTestId("red-main-banner-row");
+    expect(el).toHaveAttribute("data-blocks-merging", "unknown");
+    // Never the not-blocking look on an unknown.
+    expect(el.className).not.toContain("border-dashed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `detail.blocking_workflows` and `detail.blocking_since` — coord
+// `deploy_red_blocking_patch`. What blocks can differ from what fires the row.
+// ---------------------------------------------------------------------------
+
+describe("deploy_red blocking workflows and blocking_since", () => {
+  const REPO = "portofino-pizzeria/backend";
+  const NOW = Date.parse("2026-09-12T12:00:00Z");
+
+  // coord's mixed case: a proven "Deploy backend" fires the row while an
+  // unproven "Deploy web" is what blocks merging.
+  const mixed = {
+    alert_key: `deploy_red:${REPO}`,
+    kind: "deploy_red",
+    first_seen_at: "2026-09-12T04:31:00Z",
+    detail: {
+      repo: REPO,
+      workflows: ["Deploy backend"],
+      blocks_merging: true,
+      blocking_reason: "push_only_proof_pending",
+      blocking_workflows: ["Deploy web", 7, null],
+      blocking_since: "2026-09-12T09:59:59.123456+00:00",
+    },
+  };
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("names the BLOCKING workflow, not the failing one", () => {
+    const [a] = parseRedMainAlerts([mixed]);
+    // Non-strings are dropped.
+    expect(a.blockingWorkflows).toEqual(["Deploy web"]);
+    const headline = deployRedHeadline(a, NOW);
+    expect(headline).toBe(
+      `Deploy is red on ${REPO} for 7h 29m — merges are currently BLOCKED ` +
+        "on Deploy web until coord re-proves it push-only; see the coord diagnosis"
+    );
+    expect(headline).not.toContain("Deploy backend");
+  });
+
+  it("uses the plural for several blocking workflows", () => {
+    const [a] = parseRedMainAlerts([
+      {
+        ...mixed,
+        detail: {
+          ...mixed.detail,
+          blocking_workflows: ["Deploy web", "Deploy api"],
+        },
+      },
+    ]);
+    expect(deployRedHeadline(a, NOW)).toContain(
+      "BLOCKED on Deploy web, Deploy api until coord re-proves them push-only"
+    );
+  });
+
+  it("keeps the generic wording when the blocking list is empty or absent", () => {
+    for (const blocking_workflows of [[], undefined, "Deploy web"]) {
+      const [a] = parseRedMainAlerts([
+        { ...mixed, detail: { ...mixed.detail, blocking_workflows } },
+      ]);
+      expect(a.blockingWorkflows).toEqual([]);
+      expect(deployRedHeadline(a, NOW)).toContain(
+        "merges are currently BLOCKED on it until coord re-proves it push-only"
+      );
+    }
+  });
+
+  it("labels the failing and blocking lists apart", async () => {
+    getMock.mockResolvedValue([mixed]);
+    render(<RedMainBanner />);
+
+    const row = await screen.findByTestId("red-main-banner-row");
+    expect(row.textContent).toContain("failing: Deploy backend");
+    expect(
+      screen.getByTestId("deploy-red-blocking-workflows").textContent
+    ).toBe("blocking: Deploy web");
+  });
+
+  it("shows no blocking chip on a non-blocking row", async () => {
+    getMock.mockResolvedValue([
+      {
+        ...mixed,
+        detail: {
+          ...mixed.detail,
+          blocks_merging: false,
+          blocking_workflows: [],
+        },
+      },
+    ]);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner-row");
+    expect(screen.queryByTestId("deploy-red-blocking-workflows")).toBeNull();
+  });
+
+  it("ages blocking_since alike in coord's chrono and Postgres spellings", () => {
+    // The same instant, give or take a second, in both spellings.
+    expect(blockingSinceLabel("2026-09-12T10:00:00Z", NOW)).toBe(
+      "blocking for 2h 0m"
+    );
+    expect(blockingSinceLabel("2026-09-12T09:59:59.123456+00:00", NOW)).toBe(
+      "blocking for 2h 0m"
+    );
+  });
+
+  it("shows an unparseable blocking_since verbatim", () => {
+    expect(blockingSinceLabel("not-a-time", NOW)).toBe(
+      "blocking since not-a-time"
+    );
+  });
+
+  it("drops a non-string blocking_since", () => {
+    for (const blocking_since of [1726138800, null, {}, ""]) {
+      const [a] = parseRedMainAlerts([
+        { ...mixed, detail: { ...mixed.detail, blocking_since } },
+      ]);
+      expect(a.blockingSince).toBeUndefined();
+    }
+  });
+
+  it("puts the aged blocking_since in the headline's tooltip", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(NOW);
+    try {
+      getMock.mockResolvedValue([mixed]);
+      render(<RedMainBanner />);
+      const row = await screen.findByTestId("red-main-banner-row");
+      const titled = row.querySelector("[title*='blocking for']");
+      expect(titled?.getAttribute("title")).toBe(
+        "reason: push_only_proof_pending, blocking for 2h 0m"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
