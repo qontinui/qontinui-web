@@ -73,8 +73,15 @@ leaks nothing. Violation messages name the SLOT, never the offending value
 itself leak what it refused.
 
 Known false-positive class, accepted fail-closed: a title containing a
-non-repo ``a/b`` token (``CI/CD``) is refused. Two all-digit segments
-(``2026/10``) are exempt.
+non-repo ``a/b`` token (``CI/CD``, ``read/write``) is refused. Two all-digit
+segments (``2026/10``) are exempt.
+
+Accepted residual risk, out of scope: visible spelling tricks inside a word.
+The scanner folds what RENDERS as a slash (TR39 slash confusables, infix
+symbols) and what is invisible or transparent next to one; it does not try to
+recognise a private repo name spelled with visible substitutions mid-word
+(``s3cret``, ``se-cret``, letters from other scripts beyond the confusable
+skeleton).
 """
 
 from __future__ import annotations
@@ -86,6 +93,10 @@ from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
 from typing import Any, Final
+
+from app.services.build_record_slash_confusables import (
+    TR39_SLASH_CONFUSABLES,
+)
 
 #: The one schema id this allowlist describes.
 BUILD_RECORD_SCHEMA: Final = "build-record/1"
@@ -119,7 +130,7 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
 #: version it was validated under at publish; the public route re-validates
 #: only a snapshot stored under a different version. BUMP IT on any change to
 #: the key set, a slot rule, a pattern, normalisation or a cap.
-ALLOWLIST_VERSION: Final = 18
+ALLOWLIST_VERSION: Final = 19
 
 #: Longest string the content scan will read — measured on the string AND on
 #: its NFKD decomposition (which can be ~18× longer for one code point, e.g.
@@ -155,16 +166,19 @@ _UUID_RE: Final = re.compile(
 #: O(n²) — every regex in this module is written to stay linear; see the
 #: adversarial timing test in ``tests/test_build_records.py``.
 _EMAIL_RE: Final = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]++@[A-Za-z0-9-]")
-#: Characters that render as ``/`` but are not it (NFKC already folds U+FF0F
-#: and U+FF89 to U+30CE, both listed anyway). Any OTHER non-ASCII math symbol
-#: or "other punctuation" sitting between two ASCII alphanumerics is treated
-#: as a slash too (:data:`_INFIX_SYMBOL_RE`).
+#: Lookalikes TR39 does not list as slash confusables but that render as a
+#: slash in common fonts, found in review: U+141F CANADIAN SYLLABICS FINAL
+#: ACUTE (not in confusables.txt at all).
+SLASH_LOOKALIKE_SUPPLEMENT: Final[tuple[int, ...]] = (0x141F,)
+#: Characters that render as ``/`` but are not it, folded to ``/``: every code
+#: point Unicode TR39 ``confusables.txt`` maps to U+002F (vendored, with its
+#: version and date, in :mod:`app.services.build_record_slash_confusables` by
+#: ``backend/scripts/vendor_slash_confusables.py`` — no hand-picking), plus
+#: :data:`SLASH_LOOKALIKE_SUPPLEMENT`. Any OTHER non-ASCII math symbol or
+#: "other punctuation" sitting between two ASCII alphanumerics is treated as a
+#: slash too (:data:`_INFIX_SYMBOL_RE`).
 _LOOKALIKE_SLASHES: Final = dict.fromkeys(
-    map(
-        ord,
-        "\u2215\u2044\u29f8\u2571\u1735\u27cb\u2afb\u2afd\u30ce\uff89\u4e3f\u2f03",
-    ),
-    "/",
+    sorted({*TR39_SLASH_CONFUSABLES, *SLASH_LOOKALIKE_SUPPLEMENT}), "/"
 )
 #: A non-ASCII character between two ASCII alphanumerics (spaces allowed);
 #: :func:`_infix_to_slash` keeps it only when it is ``Sm`` or ``Po``.
@@ -570,19 +584,32 @@ def _infix_to_slash(match: re.Match[str]) -> str:
 
 #: Character categories that are TRANSPARENT at a slash: stripped from the
 #: slash-adjacent edge of each piece by :func:`_collapse_spaced_slashes`.
-#: Separators (``Zs Zl Zp``) and the symbol classes ``So`` (other symbol) and
-#: ``Sk`` (modifier symbol), none of which can be part of a repo name, and some
-#: of which render as blank space in common fonts (U+2800, U+1D159, …). A
+#: Separators (``Zs Zl Zp``), the symbol classes ``So`` (other symbol) and
+#: ``Sk`` (modifier symbol), modifier letters ``Lm`` (``ʼ`` U+02BC, ``ː``
+#: U+02D0) and spacing marks ``Mc`` (U+1D165), plus non-ASCII ``Po``
+#: (:data:`SLASH_TRANSPARENT_NON_ASCII_CATEGORIES`) — none can be part of a
+#: repo name, and some render as blank space in common fonts (U+2800, U+1D159). A
 #: symbol next to a slash therefore cannot keep an ``owner / name`` apart:
 #: the scan sees exactly what it would see had the symbol not been typed.
 #: Letters, digits and punctuation (``(``, ``)``, ``,`` …) are NOT transparent:
 #: they are what a reader sees ending a token, so ``(lint)/(test)`` stays two
 #: bracketed words. Python whitespace (``str.isspace``) is transparent too.
-SLASH_TRANSPARENT_CATEGORIES: Final = frozenset({"Zs", "Zl", "Zp", "So", "Sk"})
+SLASH_TRANSPARENT_CATEGORIES: Final = frozenset(
+    {"Lm", "Mc", "Sk", "So", "Zl", "Zp", "Zs"}
+)
+#: Transparent at a slash only when NON-ASCII: ``Po`` (other punctuation) —
+#: ``·`` U+00B7, ``‧`` U+2027 … — while ASCII ``Po`` (``. , : ; ! ? ' "`` …)
+#: stays a visible token end.
+SLASH_TRANSPARENT_NON_ASCII_CATEGORIES: Final = frozenset({"Po"})
 
 
 def _slash_transparent(ch: str) -> bool:
-    return ch.isspace() or unicodedata.category(ch) in SLASH_TRANSPARENT_CATEGORIES
+    category = unicodedata.category(ch)
+    return (
+        ch.isspace()
+        or category in SLASH_TRANSPARENT_CATEGORIES
+        or (category in SLASH_TRANSPARENT_NON_ASCII_CATEGORIES and ord(ch) > 0x7F)
+    )
 
 
 def _strip_edge(piece: str, *, left: bool, right: bool) -> str:

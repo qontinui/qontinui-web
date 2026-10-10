@@ -4127,6 +4127,48 @@ class TestExcludedNameExemptions:
         doc["work_units"][0]["title"] = f"port acme{symbol}/{symbol}secret"
         assert build_record_violations(doc)
 
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "acme\u2cc6secret",  # TR39 slash confusables, no longer hand-picked
+            "acme\u3033secret",
+            "acme\u31d3secret",
+            "acme\U0001d23asecret",
+            "acme\u141fsecret",  # SLASH_LOOKALIKE_SUPPLEMENT (not in TR39)
+            "acme\u00b7/secret",  # non-ASCII Po: transparent at a slash
+            "acme\u2027/secret",
+            "acme\u02bc/secret",  # Lm
+            "acme\u02d0/secret",
+            "acme\U0001d165/secret",  # Mc
+        ],
+    )
+    def test_lookalike_and_transparent_slashes_reach_the_token_scan(
+        self, title: str
+    ) -> None:
+        from app.services.build_record_allowlist import normalize_for_scan
+
+        assert normalize_for_scan(title) == "acme/secret"
+        doc = _document()
+        doc["work_units"][0]["title"] = title
+        assert build_record_violations(doc) == [
+            "work_units[0].title: names an owner/name not in product.repos"
+        ]
+
+    def test_the_lookalike_table_is_tr39_plus_the_supplement(self) -> None:
+        from app.services import build_record_allowlist as al
+        from app.services import build_record_slash_confusables as tr39
+
+        assert set(al._LOOKALIKE_SLASHES) == {
+            *tr39.TR39_SLASH_CONFUSABLES,
+            *al.SLASH_LOOKALIKE_SUPPLEMENT,
+        }
+        # Every entry the hand-picked table used to carry is still folded.
+        for (
+            ch
+        ) in "\u2215\u2044\u29f8\u2571\u1735\u27cb\u2afb\u2afd\u30ce\uff89\u4e3f\u2f03":
+            assert ord(ch) in al._LOOKALIKE_SLASHES, hex(ord(ch))
+        assert tr39.CONFUSABLES_VERSION and tr39.CONFUSABLES_DATE
+
     @pytest.mark.parametrize("title", ["50/50", "50 / 50", "(lint)/(test)"])
     def test_ordinary_titles_stay_publishable(self, title: str) -> None:
         doc = _document()
