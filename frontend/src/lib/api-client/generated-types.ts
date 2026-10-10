@@ -39758,12 +39758,6 @@ export interface components {
              */
             email_shares: boolean;
             /**
-             * Email Team Invites
-             * @description Email for team invites
-             * @default true
-             */
-            email_team_invites: boolean;
-            /**
              * Id
              * Format: uuid
              */
@@ -39781,12 +39775,6 @@ export interface components {
              */
             in_app_mentions: boolean;
             /**
-             * In App Project Updates
-             * @description In-app for project updates
-             * @default true
-             */
-            in_app_project_updates: boolean;
-            /**
              * In App Replies
              * @description In-app for replies
              * @default true
@@ -39798,12 +39786,6 @@ export interface components {
              * @default true
              */
             in_app_shares: boolean;
-            /**
-             * In App Team Invites
-             * @description In-app for team invites
-             * @default true
-             */
-            in_app_team_invites: boolean;
             /** Updated At */
             updated_at: string;
             /**
@@ -39825,20 +39807,14 @@ export interface components {
             email_replies?: boolean | null;
             /** Email Shares */
             email_shares?: boolean | null;
-            /** Email Team Invites */
-            email_team_invites?: boolean | null;
             /** In App Comments */
             in_app_comments?: boolean | null;
             /** In App Mentions */
             in_app_mentions?: boolean | null;
-            /** In App Project Updates */
-            in_app_project_updates?: boolean | null;
             /** In App Replies */
             in_app_replies?: boolean | null;
             /** In App Shares */
             in_app_shares?: boolean | null;
-            /** In App Team Invites */
-            in_app_team_invites?: boolean | null;
         };
         /**
          * NotificationResponse
