@@ -5706,7 +5706,7 @@ async def get_claude_accounts(
             {
               "device_id": "<uuid>",
               "account_label": ".claude-gmail",
-              "weekly_utilization": 0.34,
+              "weekly_utilization": 0.34,   // null = NO READING (probe failed)
               "weekly_resets_at": "<iso8601|null>",
               "session_utilization": 0.11,
               "session_resets_at": "<iso8601|null>",
@@ -5746,8 +5746,17 @@ async def get_claude_accounts(
     account posture — plan
     ``2026-09-12-prepaid-balance-is-a-fleet-fact-with-no-ingest``, which also
     records why these are NOT two extra columns on ``claude_account_usage``
-    (that table's ``weekly_utilization`` is ``NOT NULL DEFAULT 0``, so every
-    prepaid row would read as a Claude account at 0%).
+    (a prepaid row there would read as a Claude account, not a balance).
+
+    **A ``null`` ``weekly_utilization`` is NOT zero either.** Since alembic
+    ``coord_claude_acct_usage_03`` the column is nullable: ``null`` means the
+    device's probe failed and there is NO READING for that account — plan
+    ``2026-10-07-mobile-account-usage-stale-tenant-feed-remediation`` #6. Rows
+    are forwarded untouched, so a null reaches the client as null; consumers
+    must render it as unknown, never coerce it to 0% or 100%. (Rows written by
+    a runner predating that plan still carry a placeholder ``0.0``/``1.0`` with
+    ``error: true`` and a null ``weekly_resets_at`` — the same "not a reading"
+    predicate applies to them.)
 
     **A ``null`` money field is NOT zero.** It means the device's runner build
     predates the report, or its probe errored — UNKNOWN. A real ``0`` means the

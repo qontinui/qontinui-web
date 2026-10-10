@@ -227,6 +227,35 @@ class TestGetClaudeAccounts:
         assert body["table_provisioned"] is False
         assert body["columns_provisioned"] is False
 
+    def test_null_weekly_utilization_is_forwarded_as_null(self, client: TestClient):
+        # Alembic `coord_claude_acct_usage_03` made the column nullable: a
+        # failed probe is NO READING, and must reach the client as null — not
+        # coerced to 0% (or anything else) on the way through.
+        coord_payload = {
+            "accounts": [
+                _account(
+                    _DEVICE_A,
+                    ".claude-gmail",
+                    weekly_utilization=None,
+                    weekly_resets_at=None,
+                    error=True,
+                )
+            ],
+            "table_provisioned": True,
+            "columns_provisioned": True,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+
+            body = client.get(f"{API_PREFIX}/claude-accounts").json()
+
+        row = body["accounts"][0]
+        assert "weekly_utilization" in row
+        assert row["weekly_utilization"] is None
+        assert row["error"] is True
+
     def test_missing_columns_still_serves_usage_rows(self, client: TestClient):
         # Coord deployed ahead of alembic `coord_claude_acct_usage_02`: the
         # usage half is real, the selection half is null.
