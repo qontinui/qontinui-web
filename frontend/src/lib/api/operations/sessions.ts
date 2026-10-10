@@ -1,41 +1,54 @@
-// ============================================================================
-// Sessions panel — API client
-//
-// Thin wrapper around the web-backend session proxy
-// (`/api/v1/operations/sessions*`). Centralizes URL building, fetch
-// options (credentials, error mapping), and SSE subscription so
-// `page.tsx` stays declarative.
-//
-// All requests are routed through the shared `httpClient` (from
-// `@/services/service-factory`) which automatically attaches the
-// Bearer token, handles 401-refresh, and adds CSRF headers. SSE
-// streams use `httpClient.getAuthToken()` to build auth headers
-// manually (httpClient.fetch's internal AbortController would
-// conflict with the caller's long-lived signal).
-// ============================================================================
+/**
+ * `/operations/sessions*` — the session-lifecycle proxy: the session list
+ * (plain and consolidated), one session, its output, its restore record,
+ * claims, agent status and lineage, the steal / handoff / close writes, and
+ * the two SSE readers over `/sessions/{id}/events`.
+ *
+ * Part of the typed `/operations` client (plan
+ * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`,
+ * D5, Phase 7 batch 1). MOVED here from `components/sessions/api.ts` together
+ * with `tenants.ts` (the tenant and registered-repo routes that file also
+ * carried). The behaviour is that file's, with two changes: the base is the
+ * RELATIVE `OPERATIONS_BASE` (D6 — a transport change from the absolute
+ * `OPERATIONS_BASE`, for the SSE readers too), and every call states its retry
+ * policy (`idempotent`).
+ *
+ * All request/response calls go through the shared `httpClient`, which
+ * attaches the Bearer token, handles 401-refresh, and adds CSRF headers. The
+ * SSE streams keep their own streaming `fetch` and build the auth header from
+ * `httpClient.getAuthToken()` themselves (httpClient.fetch's internal
+ * AbortController would conflict with the caller's long-lived signal) — that
+ * transport is unchanged by the move.
+ *
+ * Errors stay the typed {@link SessionsApiError} (status-carrying) rather
+ * than `readJson`'s shape: `LiveTailPane`, `ResumePanel`, `TranscriptPane` and
+ * `sessionKeyResolution` branch on `instanceof SessionsApiError` + `status`.
+ *
+ * The wire types live in `components/sessions/types.ts` and
+ * `components/sessions/sessionConsoleStatus.ts`; the handlers they mirror are
+ * `list_coord_sessions`, `get_coord_session`, `get_coord_session_output`,
+ * `get_coord_session_restore_record`, `get_session_claims`,
+ * `get_session_agent_status`, `get_session_lineage`, `close_coord_session`,
+ * `steal_coord_session`, `handoff_coord_session` and
+ * `stream_coord_session_events` in
+ * `backend/app/api/v1/endpoints/operations/__init__.py`.
+ */
 
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../operations/utils";
-import type { ConsolidatedSessionsResponse } from "./sessionConsoleStatus";
+import type { ConsolidatedSessionsResponse } from "@/components/sessions/sessionConsoleStatus";
 import type {
   AgentStatusResponse,
   LineageResponse,
   OutputChunkFrame,
   OutputHistoryResponse,
   OutputStream,
-  RegisteredRepo,
-  RegisteredReposResponse,
   SessionClaimsResponse,
   SessionEventRow,
   SessionListResponse,
   SessionRestoreRecordResponse,
   SessionRow,
-  TenantCreateRequest,
-  TenantCreateResponse,
-  TenantListResponse,
-  TenantRenameRequest,
-  TenantRenameResponse,
-} from "./types";
+} from "@/components/sessions/types";
+import { httpClient } from "@/services/service-factory";
+import { OPERATIONS_BASE } from "./base";
 
 export type ListSessionsScope = "active" | "all";
 
@@ -65,9 +78,12 @@ export async function listSessions(
   if (opts.since) params.set("since", opts.since);
 
   const qs = params.toString();
-  const url = `${OPERATIONS_API}/sessions${qs ? `?${qs}` : ""}`;
+  const url = `${OPERATIONS_BASE}/sessions${qs ? `?${qs}` : ""}`;
 
-  const res = await httpClient.fetch(url, { signal: opts.signal });
+  const res = await httpClient.fetch(url, {
+    signal: opts.signal,
+    idempotent: true,
+  });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -111,8 +127,11 @@ export async function listConsolidatedSessions(
   if (opts.status) params.set("status", opts.status);
   if (opts.tenantScope) params.set("tenant_scope", opts.tenantScope);
 
-  const url = `${OPERATIONS_API}/sessions?${params.toString()}`;
-  const res = await httpClient.fetch(url, { signal: opts.signal });
+  const url = `${OPERATIONS_BASE}/sessions?${params.toString()}`;
+  const res = await httpClient.fetch(url, {
+    signal: opts.signal,
+    idempotent: true,
+  });
   if (!res.ok) {
     // `<verb> <url> failed: <status> - <body>` — the shape `httpClient` itself
     // formats, and the ONE shape `console/readFailure.ts::isNotFoundError`
@@ -132,8 +151,8 @@ export async function getSession(
   id: string,
   signal?: AbortSignal
 ): Promise<SessionRow> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}`;
+  const res = await httpClient.fetch(url, { signal, idempotent: true });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -177,10 +196,13 @@ export async function getSessionOutput(
   if (opts.limit !== undefined) params.set("limit", String(opts.limit));
 
   const qs = params.toString();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/output${
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/output${
     qs ? `?${qs}` : ""
   }`;
-  const res = await httpClient.fetch(url, { signal: opts.signal });
+  const res = await httpClient.fetch(url, {
+    signal: opts.signal,
+    idempotent: true,
+  });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -188,8 +210,11 @@ export async function getSessionOutput(
 }
 
 export async function closeSession(id: string): Promise<SessionRow> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await httpClient.fetch(url, { method: "DELETE" });
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    idempotent: true,
+  });
   if (!res.ok) {
     throw new SessionsApiError(
       `DELETE ${url} failed: ${res.status}`,
@@ -215,10 +240,11 @@ export async function stealSession(
   id: string,
   body: StealSessionRequest
 ): Promise<unknown> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/steal`;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/steal`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    idempotent: false,
     noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
@@ -248,10 +274,11 @@ export async function handoffSession(
   id: string,
   body: HandoffSessionRequest
 ): Promise<unknown> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/handoff`;
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/handoff`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    idempotent: false,
     noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
@@ -271,8 +298,8 @@ export async function getSessionRestoreRecord(
   id: string,
   signal?: AbortSignal
 ): Promise<SessionRestoreRecordResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/restore-record`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(id)}/restore-record`;
+  const res = await httpClient.fetch(url, { signal, idempotent: true });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -283,8 +310,8 @@ export async function getSessionClaims(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<SessionClaimsResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/claims`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/claims`;
+  const res = await httpClient.fetch(url, { signal, idempotent: true });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -295,8 +322,8 @@ export async function getSessionAgentStatus(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<AgentStatusResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/agent-status`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/agent-status`;
+  const res = await httpClient.fetch(url, { signal, idempotent: true });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
@@ -314,283 +341,20 @@ export async function getSessionLineage(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<LineageResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/lineage`;
-  const res = await httpClient.fetch(url, { signal });
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/lineage`;
+  const res = await httpClient.fetch(url, { signal, idempotent: true });
   if (!res.ok) {
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
   return (await res.json()) as LineageResponse;
 }
 
-export async function listTenants(
-  signal?: AbortSignal
-): Promise<TenantListResponse> {
-  const url = `${OPERATIONS_API}/tenants`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as TenantListResponse;
-}
-
-/**
- * Error from `POST /api/v1/operations/tenants`, carrying enough for the
- * caller to say something TRUE about what went wrong.
- *
- * The web proxy re-raises coord's status and puts coord's raw response text
- * in FastAPI's `detail`, so the machine-readable reason survives the two
- * hops — but only if we unwrap both layers. `code` is coord's own error
- * token when one was found (`slug_taken`, `invalid_name`, …) and `null`
- * when coord answered something we cannot parse; `detail` is always the
- * most specific human-readable text we could recover, so an unrecognized
- * failure is surfaced verbatim rather than as "something went wrong".
- *
- * `cap`/`created`/`slug` are coord's STRUCTURED operands (see
- * `TenantCreateErrorFields`). Each is `undefined` when coord did not send it
- * or sent a value of the wrong type, so every renderer must have a sentence
- * that works without them — they enrich a message, they never gate one.
- */
-export class TenantCreateError extends Error {
-  status: number;
-  code: string | null;
-  detail: string;
-  /** Coord's per-operator creation cap (`tenant_cap_reached`). */
-  cap?: number;
-  /** How many projects the operator has created (`tenant_cap_reached`). */
-  created?: number;
-  /** The derived slug coord rejected (`slug_taken` / `reserved_name`). */
-  slug?: string;
-  constructor(
-    status: number,
-    code: string | null,
-    detail: string,
-    fields: TenantCreateErrorFields = {}
-  ) {
-    super(detail || `POST tenants failed: ${status}`);
-    this.status = status;
-    this.code = code;
-    this.detail = detail;
-    this.cap = fields.cap;
-    this.created = fields.created;
-    this.slug = fields.slug;
-    this.name = "TenantCreateError";
-  }
-}
-
-/**
- * The structured operands coord puts NEXT TO its error token.
- *
- * Coord's bodies are not `{error, message}` pairs — they carry the numbers and
- * ids the message is about:
- *
- *     {"error":"tenant_cap_reached","cap":5,"created":5}
- *     {"error":"slug_taken","slug":"my-pizzeria"}
- *     {"error":"reserved_name","reason":"group_mapped","slug":"acme"}
- *
- * `parseTenantCreateError` used to read only `error`/`code` and
- * `message`/`detail`/`reason` and threw the rest away, so the cap message
- * could only say "you've reached the limit" — never *what* the limit is, which
- * is the one fact that makes it actionable. Every field is optional and
- * type-checked at the parse boundary: coord owns these bodies, so a missing or
- * renamed field must degrade the sentence, not break the dialog.
- */
-export interface TenantCreateErrorFields {
-  cap?: number;
-  created?: number;
-  slug?: string;
-}
-
-/**
- * Pull coord's error code + message out of the doubly-wrapped failure body.
- *
- * Two envelopes, because there are two hops:
- *   1. FastAPI's `{ "detail": <x> }` from the web proxy's `HTTPException`;
- *   2. coord's own JSON, which arrives as a STRING inside that `detail`
- *      (`_proxy_coord_post` passes `resp.text`, not `resp.json()`).
- *
- * Every layer is optional: a plain-text body, a non-JSON coord answer, or a
- * FastAPI 422 validation list all degrade to "no code, here is the text".
- * Exported for unit tests — the parsing, not the copy, is where this breaks.
- *
- * Alongside the code and the text it returns coord's structured operands
- * (`TenantCreateErrorFields`) when they are present AND of the right type, so
- * the cap message can name the cap and the collision message can name the id.
- */
-export function parseTenantCreateError(rawBody: string): {
-  code: string | null;
-  detail: string;
-} & TenantCreateErrorFields {
-  const unwrapped = unwrapProxiedCoordError(rawBody);
-  if (unwrapped.kind === "non_string") {
-    // A FastAPI 422 validation list, or any object body. No coord code to
-    // find; stringify so the operator still sees the real answer.
-    return { code: null, detail: unwrapped.text };
-  }
-
-  let code: string | null = null;
-  let text = unwrapped.text;
-  const fields: TenantCreateErrorFields = {};
-  // `inner` is null when coord answered plain text — `text` is already it.
-  const obj = unwrapped.inner;
-  if (obj) {
-    const rawCode = obj.error ?? obj.code;
-    if (typeof rawCode === "string") code = rawCode;
-    const rawMessage = obj.message ?? obj.detail ?? obj.reason;
-    if (typeof rawMessage === "string") text = rawMessage;
-    else if (code) text = code;
-    // The structured operands. Type-checked one at a time and dropped
-    // individually — coord sending `cap` but not `created` (or a future
-    // coord sending a string where a number was) must cost the numbers in
-    // one sentence, never the whole parse.
-    if (typeof obj.cap === "number" && Number.isFinite(obj.cap)) {
-      fields.cap = obj.cap;
-    }
-    if (typeof obj.created === "number" && Number.isFinite(obj.created)) {
-      fields.created = obj.created;
-    }
-    if (typeof obj.slug === "string" && obj.slug !== "") {
-      fields.slug = obj.slug;
-    }
-  }
-  return { code, detail: text, ...fields };
-}
-
-/**
- * The two-layer unwrap shared by every tenant write's error parser.
- *
- * Two envelopes, because there are two hops:
- *   1. the web proxy's `HTTPException`, in EITHER of its two shapes:
- *      - FastAPI's bare `{ "detail": <x> }` (what a router mounted without
- *        the app's handlers — every unit test — returns), or
- *      - the app's standardized envelope `{ "error": <STATUS_CODE_NAME>,
- *        "message": <x>, "timestamp", "path" }`, which is what production
- *        serves: `app/main.py` registers `http_exception_handler` for every
- *        route, and it moves a string `detail` into `message`. Reading only
- *        `detail` would take the envelope's generic status token for coord's
- *        code and never reach coord's body;
- *   2. coord's own JSON, which arrives as a STRING inside that layer
- *      (the proxies pass `resp.text`, not `resp.json()`).
- *
- * `kind: "non_string"` is a detail that was not a string at all (a FastAPI 422
- * validation list) — `text` is its JSON. Otherwise `text` is the detail string
- * and `inner` is coord's parsed object when that string was a JSON object.
- */
-function unwrapProxiedCoordError(rawBody: string):
-  | { kind: "non_string"; text: string; envelopeCode: string | null }
-  | {
-      kind: "string";
-      text: string;
-      inner: Record<string, unknown> | null;
-      envelopeCode: string | null;
-    } {
-  let detail: unknown = rawBody;
-  // The production envelope's own status token (`CONFLICT`, `BAD_GATEWAY`).
-  // Kept apart from coord's code on purpose: it is a fallback label for the
-  // STATUS, and reporting it as coord's code would claim coord said it.
-  let envelopeCode: string | null = null;
-  try {
-    const outer: unknown = JSON.parse(rawBody);
-    if (outer && typeof outer === "object" && "detail" in outer) {
-      detail = (outer as { detail: unknown }).detail;
-    } else if (outer && typeof outer === "object") {
-      const envelope = outer as Record<string, unknown>;
-      // The production envelope — see above. `path` is what distinguishes it
-      // from coord's own `{error, message}` body arriving unwrapped.
-      if (
-        "error" in envelope &&
-        "path" in envelope &&
-        typeof envelope.message === "string"
-      ) {
-        detail = envelope.message;
-        if (typeof envelope.error === "string" && envelope.error !== "") {
-          envelopeCode = envelope.error;
-        }
-      }
-    }
-  } catch {
-    // Not JSON at all — keep the raw text.
-  }
-  if (typeof detail !== "string") {
-    return { kind: "non_string", text: JSON.stringify(detail), envelopeCode };
-  }
-  let inner: Record<string, unknown> | null = null;
-  try {
-    const parsed: unknown = JSON.parse(detail);
-    if (parsed && typeof parsed === "object") {
-      inner = parsed as Record<string, unknown>;
-    }
-  } catch {
-    // coord answered plain text.
-  }
-  return { kind: "string", text: detail, inner, envelopeCode };
-}
-
-/**
- * Error from `PATCH /api/v1/operations/tenants/{tenant_id}`.
- *
- * `code` is coord's error token (`invalid_slug`, `reserved_name`,
- * `slug_pinned`, `slug_taken`, `tenant_mismatch`, …) or `null` when none could
- * be recovered. `reason` is coord's SECOND-level discriminator, carried
- * separately rather than folded into `detail`, because three of the rename's
- * codes mean nothing actionable without it (`invalid_slug` → which rule,
- * `reserved_name` → which list, `slug_pinned` → which pin). `detail` is the
- * most specific human-readable text recovered, for the verbatim fallback.
- */
-export class TenantRenameError extends Error {
-  status: number;
-  code: string | null;
-  reason: string | null;
-  detail: string;
-  /** The slug coord named, when it named one (`slug_taken`). */
-  slug?: string;
-  /** The production error envelope's status token (`BAD_GATEWAY`, …), when
-   *  the body came through it — the fallback label when coord sent no code. */
-  envelopeCode: string | null;
-  constructor(
-    status: number,
-    code: string | null,
-    reason: string | null,
-    detail: string,
-    slug?: string,
-    envelopeCode: string | null = null
-  ) {
-    super(detail || `PATCH tenant failed: ${status}`);
-    this.status = status;
-    this.code = code;
-    this.reason = reason;
-    this.detail = detail;
-    this.slug = slug;
-    this.envelopeCode = envelopeCode;
-    this.name = "TenantRenameError";
-  }
-}
-
-/**
- * Parse a rename failure body: `parseTenantCreateError`'s code/detail/slug
- * (the same two-layer unwrap), plus coord's `reason` when it sent a string
- * one. Exported for unit tests.
- */
-export function parseTenantRenameError(rawBody: string): {
-  code: string | null;
-  reason: string | null;
-  detail: string;
-  slug?: string;
-  envelopeCode: string | null;
-} {
-  const { code, detail, slug } = parseTenantCreateError(rawBody);
-  const unwrapped = unwrapProxiedCoordError(rawBody);
-  const rawReason =
-    unwrapped.kind === "string" ? unwrapped.inner?.reason : undefined;
-  const reason =
-    typeof rawReason === "string" && rawReason !== "" ? rawReason : null;
-  return { code, reason, detail, slug, envelopeCode: unwrapped.envelopeCode };
-}
-
 /**
  * Statuses a **non-idempotent POST** must NOT be retried on.
  *
- * Shared by every POST in this module whose effect is not a free repeat of the
- * same question: `createTenant`, `handoffSession` and `stealSession`.
+ * Shared by every POST in this module and `tenants.ts` whose effect is not a
+ * free repeat of the same question: `createTenant` (and `renameTenant`'s
+ * PATCH), `handoffSession` and `stealSession`.
  * (`closeSession` is a DELETE to a terminal state — genuinely idempotent — and
  * every other call here is a GET, where retry is the correct behaviour.)
  *
@@ -639,128 +403,6 @@ export const NON_IDEMPOTENT_POST_NO_RETRY_STATUSES: number[] = [
   429, 500, 501, 502, 503, 504,
 ];
 
-/**
- * Create a new tenant ("Project") owned by the calling operator.
- *
- * POSTs `/api/v1/operations/tenants`, which proxies coord's
- * `POST /coord/tenants` (plan
- * `2026-08-25-self-service-tenant-project-creation`). Coord creates the
- * tenant, seeds its policy row and grants the caller `admin` in it in ONE
- * transaction, so the membership is readable on the very next
- * `GET /operations/tenants`.
- *
- * **Never retried.** See `NON_IDEMPOTENT_POST_NO_RETRY_STATUSES`.
- */
-export async function createTenant(
-  body: TenantCreateRequest
-): Promise<TenantCreateResponse> {
-  const url = `${OPERATIONS_API}/tenants`;
-  const res = await httpClient.fetch(url, {
-    method: "POST",
-    body: JSON.stringify(body),
-    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
-  });
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "");
-    const { code, detail, ...fields } = parseTenantCreateError(raw);
-    throw new TenantCreateError(res.status, code, detail, fields);
-  }
-  return (await res.json()) as TenantCreateResponse;
-}
-
-/**
- * Rename a tenant ("Project") — its display name, its slug, or both.
- *
- * PATCHes `/api/v1/operations/tenants/{tenant_id}`, which proxies coord's
- * `PATCH /coord/tenants/:tenant_id` (plan `2026-09-17-tenant-rename`). Send
- * only the fields that changed. Coord allows it only for an `admin` of that
- * tenant; the web proxy sets the active-tenant header to the path tenant.
- *
- * **Never retried**, for the same reason as `createTenant`: a rename that
- * committed at 5.1s answers 504, and a retry is then judged against the NEW
- * slug — a no-op at best, a false failure the operator acts on at worst.
- */
-export async function renameTenant(
-  tenantId: string,
-  body: TenantRenameRequest
-): Promise<TenantRenameResponse> {
-  const url = `${OPERATIONS_API}/tenants/${encodeURIComponent(tenantId)}`;
-  const res = await httpClient.fetch(url, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
-    // Longer than the default 60s ceiling, on purpose. A rename that changes
-    // the slug is followed on the backend by the home-group migration, which
-    // costs one Cognito write per member of the old group and is bounded by
-    // its own budget. If the browser gives up first, the operator is told the
-    // outcome is UNKNOWN for work the backend went on to finish and report —
-    // the answer exists, we just stopped listening for it. This ceiling sits
-    // above the backend's own so the report wins that race.
-    timeoutMs: 120_000,
-  });
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "");
-    const { code, reason, detail, slug, envelopeCode } =
-      parseTenantRenameError(raw);
-    throw new TenantRenameError(
-      res.status,
-      code,
-      reason,
-      detail,
-      slug,
-      envelopeCode
-    );
-  }
-  return (await res.json()) as TenantRenameResponse;
-}
-
-// ---- Registered repos (module-level cache) --------------------------------
-
-let _repoCache: { repos: RegisteredRepo[]; fetchedAt: number } | null = null;
-let _repoInflight: Promise<RegisteredRepo[]> | null = null;
-const REPO_CACHE_TTL_MS = 30_000;
-
-export async function listRegisteredRepos(
-  signal?: AbortSignal
-): Promise<RegisteredRepo[]> {
-  if (_repoCache && Date.now() - _repoCache.fetchedAt < REPO_CACHE_TTL_MS) {
-    return _repoCache.repos;
-  }
-  if (_repoInflight) return _repoInflight;
-
-  _repoInflight = (async () => {
-    try {
-      const url = `${OPERATIONS_API}/repos`;
-      const res = await httpClient.fetch(url, { signal });
-      if (!res.ok) {
-        throw new SessionsApiError(
-          `GET ${url} failed: ${res.status}`,
-          res.status
-        );
-      }
-      const data = (await res.json()) as RegisteredReposResponse;
-      const repos = data.repos ?? [];
-      _repoCache = { repos, fetchedAt: Date.now() };
-      return repos;
-    } finally {
-      _repoInflight = null;
-    }
-  })();
-
-  return _repoInflight;
-}
-
-export function registeredRepoSlugs(repos: RegisteredRepo[]): Set<string> {
-  return new Set(repos.map((r) => r.repo));
-}
-
-export function findRegisteredRepo(
-  repos: RegisteredRepo[],
-  slug: string
-): RegisteredRepo | undefined {
-  return repos.find((r) => r.repo === slug);
-}
-
 // ---- SSE subscription ---------------------------------------------------
 
 /**
@@ -790,7 +432,7 @@ export function subscribeSessionEvents(
   handlers: SessionEventStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(
     sessionId
   )}/events`;
 
@@ -806,6 +448,10 @@ export function subscribeSessionEvents(
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
+      // A streaming read, so not `httpClient.fetch`: its per-request timeout
+      // and internal AbortController would cut a long-lived SSE body. The
+      // bearer is attached above, by hand (D6: the transport is kept).
+      // eslint-disable-next-line no-restricted-syntax -- streaming SSE reader, bearer attached by hand
       const res = await fetch(url, {
         credentials: "include",
         cache: "no-store",
@@ -923,7 +569,7 @@ export function subscribeSessionOutput(
   handlers: SessionOutputStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(
     sessionId
   )}/events`;
 
@@ -938,6 +584,10 @@ export function subscribeSessionOutput(
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
+      // A streaming read, so not `httpClient.fetch`: its per-request timeout
+      // and internal AbortController would cut a long-lived SSE body. The
+      // bearer is attached above, by hand (D6: the transport is kept).
+      // eslint-disable-next-line no-restricted-syntax -- streaming SSE reader, bearer attached by hand
       const res = await fetch(url, {
         credentials: "include",
         cache: "no-store",
