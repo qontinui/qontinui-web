@@ -23,9 +23,16 @@ broker's one durable store, and it carries two properties at once:
   ``minted`` or the typed refusal code coord answered), the installation the
   token was minted on, and the token's expiry. The token VALUE is never stored.
 
-Only verified tokens get a row: a request whose signature, issuer, audience or
-expiry fails is refused before the insert, so an unauthenticated caller cannot
-grow this table.
+Who can add a row, stated exactly. A request whose signature, issuer, audience
+or expiry fails is refused before the insert. That alone does NOT bound the
+table: GitHub issues a validly signed OIDC token for coord's audience to ANY
+GitHub Actions job that asks for one, in any repository on github.com. So coord
+also refuses, before the insert, every token whose ``repository_owner`` maps to
+no tenant (``coord.tenant_github_accounts``). A row is therefore written only
+for a token from a repo under an owner some tenant has bound, and coord's
+retention sweep (``table_retention``) deletes rows whose ``oidc_expires_at`` is
+more than 90 days old — hence ``idx_ci_repo_read_token_requests_oidc_expires_at``.
+A replayed ``jti`` needs only that window: GitHub's tokens expire in minutes.
 
 ``outcome`` is TEXT without a CHECK on purpose: its vocabulary is coord's typed
 refusal set, which grows with the broker, and a CHECK here would make every new
@@ -90,9 +97,18 @@ def upgrade() -> None:
             ON coord.ci_repo_read_token_requests (target_repo, created_at DESC)
         """
     )
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_ci_repo_read_token_requests_oidc_expires_at
+            ON coord.ci_repo_read_token_requests (oidc_expires_at)
+        """
+    )
 
 
 def downgrade() -> None:
+    op.execute(
+        "DROP INDEX IF EXISTS coord.idx_ci_repo_read_token_requests_oidc_expires_at"
+    )
     op.execute("DROP INDEX IF EXISTS coord.idx_ci_repo_read_token_requests_target")
     op.execute("DROP INDEX IF EXISTS coord.idx_ci_repo_read_token_requests_consumer")
     op.execute("DROP TABLE IF EXISTS coord.ci_repo_read_token_requests")

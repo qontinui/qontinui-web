@@ -42,6 +42,8 @@ _TABLE = "ci_repo_read_token_requests"
 _INDEXES = (
     "idx_ci_repo_read_token_requests_consumer",
     "idx_ci_repo_read_token_requests_target",
+    # coord's 90-day retention sweep walks ``oidc_expires_at < cutoff``.
+    "idx_ci_repo_read_token_requests_oidc_expires_at",
 )
 
 # (name, information_schema data_type, nullable, default-substring or None).
