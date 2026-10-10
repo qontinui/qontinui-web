@@ -263,13 +263,21 @@ def _build_app(
     read and write lands in) runs for real, so the gates are tested rather
     than assumed. A non-admin is a coord ``operator``.
     """
-    from app.api.deps import current_active_user, get_async_db
+    from app.api.deps import (
+        current_active_user,
+        current_active_user_optional,
+        get_async_db,
+    )
     from app.api.v1.endpoints.overview import router as overview_router
     from app.overview.permissions import OverviewCaller, get_overview_caller
     from app.overview.router import router as authoring_router
 
     app = FastAPI()
-    app.dependency_overrides[current_active_user] = lambda: user
+    # The overview principal resolves a Cognito user through the OPTIONAL
+    # dependency (a device JWT is its other arm), so both are stood in for.
+    app.dependency_overrides[current_active_user] = app.dependency_overrides[
+        current_active_user_optional
+    ] = lambda: user
 
     async def _db_override():
         yield db_session
@@ -1986,7 +1994,8 @@ class TestTenantResolution:
         monkeypatch.setattr(permissions, "get_coord_identity", _identity)
 
         caller = await permissions.get_overview_caller(
-            _FakeRequest({"X-Qontinui-Active-Tenant": str(TENANT_B)})
+            _FakeRequest({"X-Qontinui-Active-Tenant": str(TENANT_B)}),  # type: ignore[arg-type]
+            _user_principal(),
         )
         assert caller.tenant_id == TENANT_B
         # Admin of A, operator of B, and B is selected: the roles are B's.
@@ -2017,7 +2026,8 @@ class TestTenantResolution:
 
         monkeypatch.setattr(permissions, "get_coord_identity", _identity)
         caller = await permissions.get_overview_caller(
-            _FakeRequest({"X-Qontinui-Active-Tenant": str(uuid4())})
+            _FakeRequest({"X-Qontinui-Active-Tenant": str(uuid4())}),  # type: ignore[arg-type]
+            _user_principal(),
         )
         assert caller.tenant_id == TENANT_A
 
@@ -2041,8 +2051,18 @@ class TestTenantResolution:
 
         monkeypatch.setattr(permissions, "get_coord_identity", _identity)
         with pytest.raises(HTTPException) as excinfo:
-            await permissions.get_overview_caller(_FakeRequest({}))
+            await permissions.get_overview_caller(
+                _FakeRequest({}),  # type: ignore[arg-type]
+                _user_principal(),
+            )
         assert excinfo.value.status_code == 403
+
+
+def _user_principal():
+    """A Cognito user's principal — the operator path these tests pin."""
+    from app.overview.permissions import OverviewPrincipal
+
+    return OverviewPrincipal(kind="user", user=object())  # type: ignore[arg-type]
 
 
 class _FakeRequest:
@@ -2149,7 +2169,11 @@ class TestBaselineUnderConcurrency:
 
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
-        from app.api.deps import current_active_user, get_async_db
+        from app.api.deps import (
+            current_active_user,
+            current_active_user_optional,
+            get_async_db,
+        )
         from app.models.overview import ChangeLog
         from app.overview.permissions import OverviewCaller, get_overview_caller
         from app.overview.router import router as authoring_router
@@ -2177,9 +2201,11 @@ class TestBaselineUnderConcurrency:
                 yield session
 
         app = FastAPI()
-        app.dependency_overrides[current_active_user] = lambda: SimpleNamespace(
-            id=uuid4(), email="racer@example.com"
-        )
+        # The overview principal resolves a Cognito user through the OPTIONAL
+        # dependency (a device JWT is its other arm), so both are stood in for.
+        app.dependency_overrides[current_active_user] = app.dependency_overrides[
+            current_active_user_optional
+        ] = lambda: SimpleNamespace(id=uuid4(), email="racer@example.com")
         app.dependency_overrides[get_async_db] = _fresh_session
         app.dependency_overrides[get_overview_caller] = lambda: OverviewCaller(
             tenant_id=self.TENANT, roles=("admin",)
