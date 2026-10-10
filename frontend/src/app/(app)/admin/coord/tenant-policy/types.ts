@@ -1,10 +1,81 @@
 /**
- * Level vocabularies for the tenant-policy page's fleet-policy dials (the
- * command-safety rewrite, permission-prompt capture, the account-selection
- * mode and image generation).
- * The wire shapes — the fleet-policy view and the transcript-sync consent
- * proxy — live with their client in `@/lib/api/operations/tenantPolicy`.
+ * Level vocabularies for the tenant-policy page's fleet-policy dials: the
+ * egress switches, the command-safety rewrite, permission-prompt capture, the
+ * account-selection mode and image generation. All are coord fleet-policy
+ * domains; the wire shape — the fleet-policy view — lives with its client in
+ * `@/lib/api/operations/tenantPolicy`.
  */
+
+// ────────────────────────────── egress switches ──────────────────────────────
+
+/**
+ * The six outbound data flows a runner can send off its machine, each a
+ * tenant-band coord fleet-policy domain with levels `on` | `off` (plan
+ * `2026-10-10-spec-front-end-phase-9-generic-boundary`, C4). Coord's no-row
+ * default is `on` for a hosted deployment and `off` for a coord started with
+ * `COORD_DEPLOYMENT_PROFILE=self_hosted`; the read's `default_source` says
+ * which.
+ *
+ * The runner enforces each switch where the flow's bytes would leave (C5), so a
+ * flow that is off sends nothing — coord's ingest refusal is only a second
+ * line. `appliesAtNextStart` marks the flows a runner reads at boot.
+ */
+export const EGRESS_FLOWS = [
+  {
+    flow: "transcript_sync",
+    domain: "egress_transcript_sync",
+    label: "Transcript sync",
+    description:
+      "Claude Code session transcripts, and the tenant memory sync and memory queries that ride the same consent, are sent from each runner to this project's coord.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "code_mirror",
+    domain: "egress_code_mirror",
+    label: "Code mirror",
+    description:
+      "Each runner pushes its agents' working branches to coord's git mirror about every five minutes. Turning this off also removes that protection against losing unpushed work with a machine.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "terminal_stream",
+    domain: "egress_terminal_stream",
+    label: "Terminal streaming",
+    description:
+      "Live terminal output from runner sessions is streamed to coord and to this web console, and the console can attach to a runner's terminal.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "telemetry",
+    domain: "egress_telemetry",
+    label: "Telemetry",
+    description:
+      "Crash reports, OpenTelemetry traces and UI error reports are sent from runners to the configured error-reporting and tracing services.",
+    appliesAtNextStart: true,
+  },
+  {
+    flow: "update_check",
+    domain: "egress_update_check",
+    label: "Update check",
+    description:
+      "Runners ask GitHub's release feed whether a newer runner version exists, at startup and when asked.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "skill_mirror",
+    domain: "egress_skill_mirror",
+    label: "Skill mirror",
+    description:
+      "Runners fetch the latest Claude skills and commands from the public qontinui-claude-config repository on GitHub; when off they serve the bundle built into the runner.",
+    appliesAtNextStart: false,
+  },
+] as const;
+
+export type EgressFlow = (typeof EGRESS_FLOWS)[number]["flow"];
+export type EgressFlowSpec = (typeof EGRESS_FLOWS)[number];
+
+export const EGRESS_LEVELS = ["on", "off"] as const;
+export type EgressLevel = (typeof EGRESS_LEVELS)[number];
 
 // ──────────────────────── command-safety rewrite dial ────────────────────────
 
