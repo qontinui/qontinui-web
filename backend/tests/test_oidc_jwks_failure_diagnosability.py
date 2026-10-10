@@ -1,16 +1,11 @@
-"""The Cognito-JWKS failure path must be diagnosable from the log alone.
+"""The OIDC-JWKS failure path must be diagnosable from the log alone.
 
-The Cognito twin of ``test_coord_jwks_failure_diagnosability.py``. W2 of
-``plans/2026-08-27-mobile-cloud-relay-unreachable-remediation.md`` repaired
-the coord door: a fetch failure names the URL dialled and the concrete
-transport class, and every terminating handler logs one shared field set.
-``cognito_jwks.py`` is a hand-copy of that client, and it kept the pre-fix
-shape — a transport raise of ``f"...: {exc}"`` with no URL, and both
-handlers logging ``error=str(exc)`` alone — because the guard that caught
-the coord drift only knew the coord class. Same defect, one door over.
-
-These tests pin the raise site and the shared field set; the handler walk
-itself lives in the coord file and now covers both doors.
+The OIDC twin of ``test_coord_jwks_failure_diagnosability.py``. A fetch
+failure names the URL dialled (the discovery document or the JWKS it points
+at) and the concrete transport class, and every terminating handler logs one
+shared field set — issuer, URL, the setting that configured the issuer, and
+the chained cause. The handler walk itself lives in the coord file and covers
+this door too.
 """
 
 from __future__ import annotations
@@ -21,23 +16,34 @@ import httpx
 import pytest
 
 from app.core.config import (
+    OIDCProviderSetting,
     Settings,
     cognito_issuer_setting_name,
     derived_cognito_issuer,
     settings,
 )
-from app.services.cognito_jwks import (
-    CognitoJWKSClient,
-    CognitoJWKSUnavailableError,
-    cognito_jwks_client,
-    cognito_jwks_failure_log_fields,
+from app.services.oidc_jwks import (
+    OIDCIssuerClient,
+    OIDCJWKSUnavailableError,
+    OIDCProvider,
+    build_providers,
+    oidc_jwks_failure_log_fields,
 )
 
 _ISSUER = "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_TESTPOOL"
+_DISCOVERY = f"{_ISSUER}/.well-known/openid-configuration"
 
 
-def _client(**kw) -> CognitoJWKSClient:
-    return CognitoJWKSClient(issuer=_ISSUER, allowed_audiences=["aud-1"], **kw)
+def _client(**kw) -> OIDCIssuerClient:
+    provider = OIDCProvider(
+        issuer=_ISSUER,
+        audiences=frozenset({"aud-1"}),
+        audience_claims=("aud", "client_id"),
+        groups_claim="cognito:groups",
+        issuer_setting="COGNITO_ISSUER",
+        kind="cognito",
+    )
+    return OIDCIssuerClient(provider, **kw)
 
 
 @pytest.mark.asyncio
@@ -60,25 +66,25 @@ async def test_transport_failure_names_url_timeout_and_exception_class(
         async def get(self, url):
             raise httpx.ConnectTimeout("timed out")
 
-    monkeypatch.setattr(
-        "app.services.cognito_jwks.httpx.AsyncClient", _FailingAsyncClient
-    )
+    monkeypatch.setattr("app.services.oidc_jwks.httpx.AsyncClient", _FailingAsyncClient)
 
-    with pytest.raises(CognitoJWKSUnavailableError) as excinfo:
-        await client._fetch_jwks()
+    with pytest.raises(OIDCJWKSUnavailableError) as excinfo:
+        await client._fetch_metadata()
 
     message = str(excinfo.value)
-    assert f"{_ISSUER}/.well-known/jwks.json" in message, (
-        "the resolved JWKS URL is the half that distinguishes a wrong issuer "
-        "from an outage; it must be in the message."
+    assert _DISCOVERY in message, (
+        "the dialled URL is the half that distinguishes a wrong issuer from "
+        "an outage; it must be in the message."
     )
     assert "ConnectTimeout" in message, (
         "the concrete exception class must be named — httpx renders many "
         "transport faults with an empty str()."
     )
     assert "3.5" in message, "the timeout actually applied must be readable."
-    # The original exception stays chained so the handler can name the cause.
     assert isinstance(excinfo.value.__cause__, httpx.ConnectTimeout)
+    assert excinfo.value.url == _DISCOVERY
+    assert excinfo.value.issuer == _ISSUER
+    assert excinfo.value.issuer_setting == "COGNITO_ISSUER"
 
 
 @pytest.mark.asyncio
@@ -112,27 +118,26 @@ async def test_non_200_and_bad_body_failures_also_name_the_url(monkeypatch):
 
         return _C
 
-    url_fragment = f"{_ISSUER}/.well-known/jwks.json"
-
     for resp in (
         _Resp(503, text="upstream down"),
         _Resp(200, payload=None, text="<html>"),
-        _Resp(200, payload={"not_keys": []}),
+        _Resp(200, payload=["not", "an", "object"]),
+        _Resp(200, payload={"issuer": _ISSUER}),  # no jwks_uri
+        _Resp(200, payload={"issuer": "https://other.example", "jwks_uri": "x"}),
     ):
         monkeypatch.setattr(
-            "app.services.cognito_jwks.httpx.AsyncClient", _client_returning(resp)
+            "app.services.oidc_jwks.httpx.AsyncClient", _client_returning(resp)
         )
-        with pytest.raises(CognitoJWKSUnavailableError) as excinfo:
-            await _client()._fetch_jwks()
-        assert url_fragment in str(excinfo.value)
+        with pytest.raises(OIDCJWKSUnavailableError) as excinfo:
+            await _client()._fetch_metadata()
+        assert _DISCOVERY in str(excinfo.value)
 
 
-def test_client_exposes_the_dialled_jwks_url() -> None:
-    """Handlers need the dialled URL without re-deriving it from settings."""
-    assert _client().jwks_url == f"{_ISSUER}/.well-known/jwks.json"
-    assert _client(jwks_url="https://keys.example.test/x").jwks_url == (
-        "https://keys.example.test/x"
-    ), "an explicit jwks_url override is what was dialled, so it is what is named"
+def test_client_exposes_the_dialled_urls() -> None:
+    """Handlers need the dialled URLs without re-deriving them from settings."""
+    client = _client()
+    assert client.discovery_url == _DISCOVERY
+    assert client.jwks_url is None, "no jwks_uri is known before discovery runs"
 
 
 def test_the_shared_field_set_names_url_class_and_chained_cause() -> None:
@@ -141,36 +146,59 @@ def test_the_shared_field_set_names_url_class_and_chained_cause() -> None:
         try:
             raise httpx.ConnectTimeout("timed out")
         except httpx.ConnectTimeout as transport_exc:
-            raise CognitoJWKSUnavailableError("boom") from transport_exc
-    except CognitoJWKSUnavailableError as exc:
-        fields = cognito_jwks_failure_log_fields(exc)
+            raise OIDCJWKSUnavailableError(
+                "boom",
+                issuer=_ISSUER,
+                url=_DISCOVERY,
+                issuer_setting="COGNITO_ISSUER",
+            ) from transport_exc
+    except OIDCJWKSUnavailableError as exc:
+        fields = oidc_jwks_failure_log_fields(exc)
 
     assert fields["error"] == "boom"
-    assert fields["failure"] == "CognitoJWKSUnavailableError"
+    assert fields["failure"] == "OIDCJWKSUnavailableError"
     assert fields["cause"] == "ConnectTimeout", (
         "the chained transport class is the half that says WHICH fault it was."
     )
-    assert fields["jwks_url"] == cognito_jwks_client.jwks_url
-    assert fields["issuer_setting"] == cognito_issuer_setting_name(), (
-        "the log must name the SETTING that produced the URL, not just the URL."
-    )
+    assert fields["url"] == _DISCOVERY
+    assert fields["issuer"] == _ISSUER
+    assert fields["issuer_setting"] == "COGNITO_ISSUER"
 
 
-def test_the_setting_name_is_derived_not_written_out() -> None:
-    """``issuer_setting`` is pinned for the same reason the coord field is:
-    TWO spellings produce the issuer (an explicit ``COGNITO_ISSUER``, or
-    ``COGNITO_REGION`` + ``COGNITO_USER_POOL_ID``) and they are not
-    interchangeable. It must be DERIVED — a literal in the field set is right
-    for one deployment only, which is the drift this pin exists to catch."""
-    source = inspect.getsource(cognito_jwks_failure_log_fields)
-    assert '"issuer_setting": cognito_issuer_setting_name()' in source
+@pytest.mark.usefixtures("_no_cognito_env")
+def test_the_cognito_provider_names_its_setting_by_derivation() -> None:
+    """The Cognito provider's ``issuer_setting`` is DERIVED, not written out.
+
+    Two spellings produce the Cognito issuer (an explicit ``COGNITO_ISSUER``,
+    or ``COGNITO_REGION`` + ``COGNITO_USER_POOL_ID``) and they are not
+    interchangeable, so the field the failure log carries must come from
+    :func:`cognito_issuer_setting_name`. Generic issuers name their
+    ``OIDC_PROVIDERS`` index.
+    """
+    source = inspect.getsource(build_providers)
+    assert "issuer_setting=cognito_issuer_setting_name(cfg)" in source
     assert '"COGNITO_ISSUER"' not in source
-    assert '"COGNITO_REGION' not in source
+
+    cfg = Settings(
+        _env_file=None,
+        DATABASE_URL=_ISOLATED_DB,
+        COGNITO_REGION="eu-west-1",
+        COGNITO_USER_POOL_ID="eu-west-1_TESTPOOL",
+        OIDC_PROVIDERS=[
+            OIDCProviderSetting(
+                issuer="https://login.example.com/realms/acme",
+                audiences=["qontinui-web"],
+            )
+        ],
+    )
+    cognito, generic = build_providers(cfg)
+    assert cognito.issuer_setting == cognito_issuer_setting_name(cfg)
+    assert generic.issuer_setting == "OIDC_PROVIDERS[0]"
 
 
 def test_the_shared_field_set_tolerates_an_unchained_error() -> None:
     """A raise with no ``from`` reports ``cause=None``, not a crash."""
-    fields = cognito_jwks_failure_log_fields(CognitoJWKSUnavailableError("no chain"))
+    fields = oidc_jwks_failure_log_fields(OIDCJWKSUnavailableError("no chain"))
     assert fields["cause"] is None
 
 

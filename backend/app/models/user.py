@@ -6,6 +6,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.auth.identity_roles import IdentityRole
 from app.db.base import Base
 
 
@@ -224,3 +225,21 @@ class User(Base):
         "RenderLog",
         back_populates="user",
     )
+
+    # Roles derived from the issuer groups of the token that authenticated
+    # THIS request (``OIDC_GROUP_ROLE_MAP``; see app/auth/identity_roles.py).
+    # Deliberately NOT a column: the issuer is the authority on group
+    # membership, so the roles are re-derived from every verified token and a
+    # membership revoked at the issuer is gone by the next token. Kept in the
+    # instance ``__dict__`` (not a mapped attribute), so it never reaches SQL;
+    # a User loaded without a token (e.g. a background job) holds no roles.
+    @property
+    def identity_roles(self) -> frozenset[IdentityRole]:
+        roles: frozenset[IdentityRole] = self.__dict__.get(
+            "_identity_roles", frozenset()
+        )
+        return roles
+
+    def set_identity_roles(self, roles: frozenset[IdentityRole]) -> None:
+        """Record the roles the authenticating token's groups map to."""
+        self.__dict__["_identity_roles"] = frozenset(roles)

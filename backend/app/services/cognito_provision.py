@@ -18,10 +18,17 @@ needed. The resolution order is:
 
 This mirrors ``qontinui-coord/src/auth_sso.rs::lookup_or_provision_operator``
 (the coord operator equivalent) but targets the web ``User`` model.
+
+:func:`resolve_user_for_oidc_claims` is the same three-step resolution for a
+token from a generic OIDC issuer (``OIDC_PROVIDERS``), with step 1 keyed by
+``(issuer, sub)`` in ``auth.user_oidc_identities`` instead of
+``auth.users.cognito_sub``: a ``sub`` is unique only within the issuer that
+minted it.
 """
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import uuid
 from typing import Any
@@ -31,6 +38,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
+from app.models.user_oidc_identity import UserOIDCIdentity
 
 logger = structlog.get_logger(__name__)
 
@@ -68,7 +76,7 @@ def _email_is_verified(claims: dict[str, Any]) -> bool:
 
 
 def _extract_name(claims: dict[str, Any]) -> str | None:
-    for key in ("name", "given_name", "cognito:username"):
+    for key in ("name", "given_name", "cognito:username", "preferred_username"):
         v = claims.get(key)
         if isinstance(v, str) and v.strip():
             return v.strip()
@@ -76,7 +84,7 @@ def _extract_name(claims: dict[str, Any]) -> str | None:
 
 
 async def _derive_unique_username(
-    session: AsyncSession, *, email: str | None, sub: str
+    session: AsyncSession, *, email: str | None, sub: str, prefix: str = "cognito"
 ) -> str:
     """Build a username that satisfies the NOT NULL + UNIQUE constraint.
 
@@ -87,7 +95,7 @@ async def _derive_unique_username(
     if email and "@" in email:
         base = email.split("@", 1)[0].strip()
     if not base:
-        base = f"cognito-{sub[:8]}"
+        base = f"{prefix}-{sub[:8]}"
     # Keep it bounded and predictable.
     base = base[:40]
 
@@ -220,6 +228,136 @@ async def resolve_user_for_cognito_claims(
     if personal_org is None:
         logger.warning(
             "cognito_user_provisioned_without_personal_org",
+            user_id=str(user.id),
+        )
+
+    return user
+
+
+async def _link_or_reject_by_email(
+    session: AsyncSession,
+    *,
+    email: str | None,
+    email_verified: bool,
+    log_fields: dict[str, Any],
+) -> User | None:
+    """The existing user sharing ``email``, when it may be linked.
+
+    ``None`` when no user has the email. Raises :class:`CognitoClaimError`
+    when one does but the token's email is unverified — linking would be an
+    account-takeover vector and creating would collide on the unique email.
+    """
+    if not email:
+        return None
+    by_email = await session.execute(
+        select(User).where(func.lower(User.email) == email)
+    )
+    existing = by_email.scalar_one_or_none()
+    if existing is None:
+        return None
+    if email_verified:
+        return existing
+    logger.warning(
+        "oidc_unverified_email_collision",
+        email=email,
+        existing_user_id=str(existing.id),
+        **log_fields,
+    )
+    raise CognitoClaimError(
+        "Token email is unverified and collides with an existing account; "
+        "cannot provision or link."
+    )
+
+
+async def resolve_user_for_oidc_claims(
+    session: AsyncSession,
+    issuer: str,
+    claims: dict[str, Any],
+) -> User:
+    """Return the ``User`` for verified claims from a generic OIDC ``issuer``.
+
+    Same contract as :func:`resolve_user_for_cognito_claims` — the caller has
+    already verified the token, and ``issuer`` is the normalised issuer the
+    verifier matched — but the identity is keyed by ``(issuer, sub)``:
+
+    1. An ``auth.user_oidc_identities`` row for ``(issuer, sub)`` -> its user.
+    2. A user with the same email, when the token says the email is verified
+       -> link (record the identity row). An unverified colliding email is
+       rejected. Entra ID emits no ``email_verified``, so on Entra a
+       colliding email is always rejected rather than linked.
+    3. Otherwise create the user and its identity row.
+
+    Raises:
+        CognitoClaimError: no ``sub``, or an unverified colliding email.
+    """
+    sub = _extract_sub(claims)
+    email = _extract_email(claims)
+    email_verified = _email_is_verified(claims)
+    log_fields = {"oidc_issuer": issuer, "oidc_sub": sub}
+
+    by_identity = await session.execute(
+        select(User)
+        .join(UserOIDCIdentity, UserOIDCIdentity.user_id == User.id)
+        .where(UserOIDCIdentity.issuer == issuer, UserOIDCIdentity.subject == sub)
+    )
+    user = by_identity.scalar_one_or_none()
+    if user is not None:
+        return user
+
+    linked = await _link_or_reject_by_email(
+        session, email=email, email_verified=email_verified, log_fields=log_fields
+    )
+    if linked is not None:
+        session.add(UserOIDCIdentity(user_id=linked.id, issuer=issuer, subject=sub))
+        await session.flush()
+        logger.info("oidc_user_linked", user_id=str(linked.id), **log_fields)
+        return linked
+
+    if not email:
+        # Same reasoning as the Cognito path: email is unique + NOT NULL, so
+        # synthesise a stable, non-deliverable address. Hashed rather than
+        # spelled from ``sub``, which for some issuers carries characters
+        # (``auth0|...``) an email validator rejects, and is unique only
+        # together with the issuer.
+        digest = hashlib.sha256(f"{issuer}\n{sub}".encode()).hexdigest()[:32]
+        email = f"oidc-{digest}@no-reply.qontinui.io"
+        email_verified = False
+
+    username = await _derive_unique_username(
+        session, email=email, sub=sub, prefix="oidc"
+    )
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        username=username,
+        full_name=_extract_name(claims),
+        cognito_sub=None,
+        is_active=True,
+        is_verified=email_verified,
+        is_superuser=False,
+    )
+    session.add(user)
+    await session.flush()
+    session.add(UserOIDCIdentity(user_id=user.id, issuer=issuer, subject=sub))
+    await session.flush()
+    logger.info(
+        "oidc_user_provisioned",
+        user_id=str(user.id),
+        email=email,
+        username=username,
+        is_verified=email_verified,
+        **log_fields,
+    )
+
+    from app.services.organization_service import organization_service
+
+    personal_org = await organization_service.create_personal_organization(
+        db=session,
+        user=user,
+    )
+    if personal_org is None:
+        logger.warning(
+            "oidc_user_provisioned_without_personal_org",
             user_id=str(user.id),
         )
 

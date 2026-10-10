@@ -644,7 +644,7 @@ async def test_forced_refetch_is_rate_limited() -> None:
 
     Without a cooldown, any caller could force one coord round-trip per
     request just by presenting an unknown kid. This follows coord's own Rust
-    `FORCED_REFRESH_COOLDOWN`; the sibling `cognito_jwks` no longer lacks one
+    `FORCED_REFRESH_COOLDOWN`; the sibling `oidc_jwks` no longer lacks one
     either (web #1076 gave it the same 30s), though the two still read
     different clocks — see the constant's own comment.
     """

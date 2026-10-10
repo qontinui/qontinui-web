@@ -178,21 +178,36 @@ def _user_manager_with_session(session: AsyncSession) -> MagicMock:
     return manager
 
 
+def _cognito_verifier(monkeypatch, verify: AsyncMock):
+    """Install a verifier holding one Cognito-pool client with a stubbed verify."""
+    from app.services import oidc_jwks
+
+    provider = oidc_jwks.OIDCProvider(
+        issuer=_ISSUER,
+        audiences=frozenset({"q6ns1a8bokf2np1mj8v8arl31"}),
+        audience_claims=("aud", "client_id"),
+        groups_claim="cognito:groups",
+        issuer_setting="COGNITO_ISSUER",
+        kind="cognito",
+    )
+    verifier = oidc_jwks.OIDCVerifier([oidc_jwks.OIDCIssuerClient(provider)])
+    monkeypatch.setattr(verifier, "verify_token", verify)
+    monkeypatch.setattr(oidc_jwks, "oidc_verifier", verifier)
+    return provider
+
+
 @pytest.mark.asyncio
 async def test_strategy_resolves_valid_cognito_token(
     monkeypatch, async_db_session: AsyncSession
 ) -> None:
     """A verifiable Cognito token resolves to a provisioned User via the
     one shared verify+provision helper."""
-    from app.services import cognito_jwks
+    from app.services.oidc_jwks import VerifiedToken
 
     claims = _claims()
-    monkeypatch.setattr(cognito_jwks.cognito_jwks_client, "_issuer", _ISSUER)
-    monkeypatch.setattr(
-        cognito_jwks.cognito_jwks_client,
-        "verify_token",
-        AsyncMock(return_value=claims),
-    )
+    verify = AsyncMock()
+    provider = _cognito_verifier(monkeypatch, verify)
+    verify.return_value = VerifiedToken(claims=claims, provider=provider)
 
     strategy = _strategy()
     manager = _user_manager_with_session(async_db_session)
@@ -205,18 +220,12 @@ async def test_strategy_resolves_valid_cognito_token(
 
 @pytest.mark.asyncio
 async def test_strategy_returns_none_on_invalid_token(monkeypatch) -> None:
-    """A token that fails Cognito verification yields None (→ 401), never
-    an exception that escapes the dependency. There is NO local fallback."""
-    from app.services import cognito_jwks
-    from app.services.cognito_jwks import CognitoTokenInvalidError
+    """A token that fails verification yields None (→ 401), never an
+    exception that escapes the dependency. There is NO local fallback."""
+    from app.services.oidc_jwks import OIDCTokenInvalidError
 
-    monkeypatch.setattr(cognito_jwks.cognito_jwks_client, "_issuer", _ISSUER)
-
-    async def _raise(token):  # noqa: ANN001
-        raise CognitoTokenInvalidError("bad sig")
-
-    monkeypatch.setattr(
-        cognito_jwks.cognito_jwks_client, "verify_token", AsyncMock(side_effect=_raise)
+    _cognito_verifier(
+        monkeypatch, AsyncMock(side_effect=OIDCTokenInvalidError("bad sig"))
     )
 
     strategy = _strategy()
@@ -226,12 +235,11 @@ async def test_strategy_returns_none_on_invalid_token(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_strategy_returns_none_when_cognito_not_configured(monkeypatch) -> None:
-    """If Cognito is not configured the strategy authenticates no one
+    """With no issuer configured the strategy authenticates no one
     (fails closed → None), rather than falling back to any local path."""
-    from app.services import cognito_jwks
+    from app.services import oidc_jwks
 
-    # Empty issuer → ``configured`` is False.
-    monkeypatch.setattr(cognito_jwks.cognito_jwks_client, "_issuer", "")
+    monkeypatch.setattr(oidc_jwks, "oidc_verifier", oidc_jwks.OIDCVerifier([]))
 
     strategy = _strategy()
     result = await strategy.read_token("some-token", MagicMock())
