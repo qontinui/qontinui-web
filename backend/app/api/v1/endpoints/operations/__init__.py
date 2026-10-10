@@ -5078,11 +5078,11 @@ async def post_fleet_undrain(
 # The operator door for a machine's standing DISPATCH ROLE — which kind of work
 # coord may send it (§D1): ``workhorse`` (CI + agent sessions), ``testbed``
 # (nothing — the machine kept for hand-driven UI testing; formerly ``bench``,
-# plan Amendment 2026-10-10 A2) or ``ci_node`` (CI only). Same three shapes as the drain pair above,
-# and the same auth path: the read rides ``get_tenant_id`` (bearer forwarded so
-# coord scopes it), the write rides ``require_coord_tenant_admin`` and coord
-# re-checks with its own operator-only gate (§D9). A role is NOT a drain: it is
-# a standing fact with no expiry, and the two compose (§D2) — coord serves each
+# plan Amendment 2026-10-10 A2) or ``ci_node`` (CI only). Same three shapes as
+# the drain pair above, and the same auth path: the read rides
+# ``get_tenant_id`` (bearer forwarded so coord scopes it), the write rides
+# ``require_coord_tenant_admin`` and coord re-checks with its own operator-only
+# gate (§D9). A role is NOT a drain: it is a standing fact with no expiry, and the two compose (§D2) — coord serves each
 # lane's state with WHICH of the two closed it, and this hop forwards that
 # untouched.
 #

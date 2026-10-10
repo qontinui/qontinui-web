@@ -103,7 +103,7 @@ class TestReadRoles:
                     "device_id": DEVICE_ID,
                     "name": "monster",
                     "dispatch_role": "unassigned",
-                    "suggestion": {"role": "bench", "mem_total_bytes": 33e9},
+                    "suggestion": {"role": "testbed", "mem_total_bytes": 33e9},
                     "lanes": {
                         "agent": {"state": "closed_by_drain"},
                         "ci": {"state": "open"},
@@ -236,35 +236,35 @@ class TestWriteBody:
             {"device_id": DEVICE_ID, "dispatch_role": "Testbed", "reason": "r"},
             {"device_id": DEVICE_ID, "dispatch_role": "test_bed", "reason": "r"},
             # neither key
-            {"dispatch_role": "bench", "reason": "r"},
+            {"dispatch_role": "testbed", "reason": "r"},
             # both keys
             {
                 "device_id": DEVICE_ID,
                 "ci_host_name": "dell-2020",
-                "dispatch_role": "bench",
+                "dispatch_role": "testbed",
                 "reason": "r",
             },
             # a role the table CHECK does not admit
             {"device_id": DEVICE_ID, "dispatch_role": "unassigned", "reason": "r"},
             # blank reason
-            {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": "   "},
+            {"device_id": DEVICE_ID, "dispatch_role": "testbed", "reason": "   "},
             # missing reason
-            {"device_id": DEVICE_ID, "dispatch_role": "bench"},
+            {"device_id": DEVICE_ID, "dispatch_role": "testbed"},
             # a client-asserted author
             {
                 "device_id": DEVICE_ID,
-                "dispatch_role": "bench",
+                "dispatch_role": "testbed",
                 "reason": "r",
                 "updated_by": "someone-else@example.com",
             },
             # the device-list spelling, which coord's CI-host key never uses
             {
                 "ci_host_name": "gh-runner-msi-wsl",
-                "dispatch_role": "bench",
+                "dispatch_role": "testbed",
                 "reason": "r",
             },
             # whitespace inside a host name (mdroles_01's CHECK)
-            {"ci_host_name": "dell 2020", "dispatch_role": "bench", "reason": "r"},
+            {"ci_host_name": "dell 2020", "dispatch_role": "testbed", "reason": "r"},
         ],
     )
     def test_malformed_bodies_never_reach_coord(
@@ -311,7 +311,7 @@ class TestRefusalsPassThrough:
         bad.json.side_effect = ValueError("not json")
         resp, _ = _put(
             auth_client,
-            {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": "r"},
+            {"device_id": DEVICE_ID, "dispatch_role": "testbed", "reason": "r"},
             coord_resp=bad,
         )
         assert resp.status_code == 400
@@ -336,7 +336,7 @@ def test_the_write_is_admin_gated_before_any_coord_call() -> None:
     app.dependency_overrides[require_coord_tenant_admin] = _deny
     client = TestClient(app)
     resp, mock_instance = _put(
-        client, {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": "r"}
+        client, {"device_id": DEVICE_ID, "dispatch_role": "testbed", "reason": "r"}
     )
     assert mock_instance.put.await_count == 0
     assert resp.status_code == 403

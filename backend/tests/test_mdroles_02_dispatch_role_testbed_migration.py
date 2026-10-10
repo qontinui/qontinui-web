@@ -42,6 +42,7 @@ from tests._alembic_harness import (
     backend_root,
     can_connect,
     comment_body_from_source,
+    declared_parent_revision_id,
     ephemeral_database,
     load_revision_module,
     run_alembic,
@@ -82,11 +83,7 @@ def _revision_source() -> str:
 
 
 def _declared_parent() -> str:
-    parent = load_revision_module(
-        _revision_path(), f"_test_{_REVISION_ID}"
-    ).down_revision
-    assert isinstance(parent, str) and parent, f"down_revision is {parent!r}"
-    return parent
+    return declared_parent_revision_id(_revision_source(), _REVISION_FILENAME)
 
 
 def _function(name: str) -> ast.FunctionDef:
