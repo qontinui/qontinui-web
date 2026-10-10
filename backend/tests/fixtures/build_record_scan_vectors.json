@@ -1,15 +1,17 @@
 {
  "generator": "backend/scripts/gen_build_record_scan_vectors.py",
  "generator_command": "python -I backend/scripts/gen_build_record_scan_vectors.py",
- "allowlist_version": 15,
+ "allowlist_version": 16,
  "unidata_version": "15.1.0",
  "excluded_name_exempt_paths": [
   "generated_at",
+  "product.repos[]",
   "product.slug",
   "product.window_end",
   "product.window_start",
   "prs[].landed_at",
   "prs[].opened_at",
+  "prs[].repo",
   "sessions.unknown_reason",
   "timeline[].at",
   "timeline[].from_status",
@@ -5419,6 +5421,74 @@
    "violations": [
     "work_units[0].title: names a repo excluded as not known public"
    ]
+  },
+  {
+   "id": "public_repo_name_contains_excluded_name",
+   "document": {
+    "schema": "build-record/1",
+    "generated_at": "2026-10-09T12:00:00Z",
+    "product": {
+     "slug": "demo",
+     "title": "Demo",
+     "repos": [
+      "acme/qontinui-design-tokens"
+     ],
+     "window_start": null,
+     "window_end": null
+    },
+    "work_units": [
+     {
+      "slug": "2026-10-01-demo",
+      "title": "Demo work",
+      "status": "shipped",
+      "vetted_at": null,
+      "shipped_at": null
+     }
+    ],
+    "timeline": [
+     {
+      "at": "2026-10-01T00:00:00Z",
+      "work_unit": "2026-10-01-demo",
+      "from_status": null,
+      "to_status": "shipped"
+     }
+    ],
+    "prs": [
+     {
+      "repo": "acme/qontinui-design-tokens",
+      "number": 1,
+      "title": "feat: demo",
+      "opened_at": null,
+      "landed_at": null,
+      "ci_duration_secs": null,
+      "attempts": null
+     }
+    ],
+    "gates": {
+     "registered": 0,
+     "cleared": 0
+    },
+    "sessions": {
+     "count": null,
+     "unknown_reason": "sessions.count: census_provisional"
+    },
+    "wall_clock_secs": null,
+    "self_corrections": {
+     "red_ci_fixed": null,
+     "review_findings_fixed": null,
+     "gate_reopens": null
+    },
+    "unknowns": [
+     "sessions.count: census_provisional"
+    ]
+   },
+   "excluded_repos": [
+    "acme/design-tokens"
+   ],
+   "excluded_names": [
+    "design-tokens"
+   ],
+   "violations": []
   }
  ],
  "normalize_vectors": [
