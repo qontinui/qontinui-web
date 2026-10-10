@@ -5083,8 +5083,8 @@ async def post_fleet_undrain(
 # ``get_tenant_id`` (bearer forwarded so coord scopes it), the write rides
 # ``require_coord_tenant_admin`` and coord re-checks with its own operator-only
 # gate (§D9). A role is NOT a drain: it is a standing fact with no expiry, and
-# the two compose (§D2) — coord serves each lane's state with WHICH of the two closed it, and this hop forwards that
-# untouched.
+# the two compose (§D2) — coord serves each lane's state with WHICH of the two
+# closed it, and this hop forwards that untouched.
 #
 # Wire facts encoded ONCE here:
 #
