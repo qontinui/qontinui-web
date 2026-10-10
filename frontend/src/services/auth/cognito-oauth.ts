@@ -103,22 +103,43 @@ const COGNITO_ENDPOINTS: OAuthEndpoints = {
 
 let discoveredEndpoints: Promise<OAuthEndpoints> | null = null;
 
-/** An absolute URL no weaker than the issuer's own scheme, or an error. */
+/**
+ * Whether `hostname` is this machine. Plain `http:` is acceptable only there:
+ * an http issuer or endpoint anywhere else lets anyone on the path rewrite the
+ * discovery document or read the authorization code.
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "::1" ||
+    /^127(\.\d{1,3}){3}$/.test(host)
+  );
+}
+
+/** `https:`, or `http:` on a loopback host — anything else is refused. */
+function isAcceptableUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" ||
+      (url.protocol === "http:" && isLoopbackHost(url.hostname))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** An absolute https (or loopback http) URL from the document, or an error. */
 function requireEndpoint(doc: Record<string, unknown>, key: string): string {
   const value = doc[key];
-  const issuerScheme = new URL(OIDC_ISSUER).protocol;
-  if (typeof value === "string" && value) {
-    try {
-      const url = new URL(value);
-      if (url.protocol === "https:" || url.protocol === issuerScheme) {
-        return value;
-      }
-    } catch {
-      // fall through to the error below
-    }
+  if (typeof value === "string" && value && isAcceptableUrl(value)) {
+    return value;
   }
   throw new Error(
-    `The identity provider's discovery document has no usable ${key}.`
+    `The identity provider's discovery document has no usable ${key} ` +
+      "(it must be an https URL, or http on localhost)."
   );
 }
 
@@ -126,6 +147,12 @@ async function discoverOidcEndpoints(): Promise<OAuthEndpoints> {
   if (!OIDC_CLIENT_ID) {
     throw new Error(
       "NEXT_PUBLIC_OIDC_ISSUER is set but NEXT_PUBLIC_OIDC_CLIENT_ID is not."
+    );
+  }
+  if (!isAcceptableUrl(OIDC_ISSUER)) {
+    throw new Error(
+      "NEXT_PUBLIC_OIDC_ISSUER must be an https URL (plain http is accepted " +
+        "only for a localhost issuer)."
     );
   }
   const url = `${OIDC_ISSUER}/.well-known/openid-configuration`;
@@ -696,7 +723,12 @@ export function consumePkceState(): void {
  * Cognito: the hosted `/logout` endpoint with `client_id` + `logout_uri`.
  * Generic OIDC: the discovered `end_session_endpoint` (RP-Initiated Logout
  * 1.0) with `client_id`, `post_logout_redirect_uri` and, when supplied, the
- * `id_token_hint` some issuers (Okta) require. An issuer that advertises no
+ * `id_token_hint`. The hint is sent whenever we hold the ID token: the spec
+ * RECOMMENDS it, Okta requires it, Keycloak and Entra ID use it to skip the
+ * "sign out?" confirmation, and an OP must accept an expired one — so sending
+ * it costs nothing and omitting it breaks some issuers. It is the user's own
+ * ID token going to the issuer that minted it, over the same top-level
+ * navigation, so it discloses nothing new. An issuer that advertises no
  * end-session endpoint — or whose discovery document cannot be read — gets a
  * local sign-out only: straight to `/login`, the tokens already cleared.
  *

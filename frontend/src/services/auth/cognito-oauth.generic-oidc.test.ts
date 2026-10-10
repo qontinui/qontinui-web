@@ -164,6 +164,86 @@ describe("generic OIDC mode", () => {
     );
   });
 
+  it("refuses a plain-http issuer that is not localhost", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    vi.stubEnv(
+      "NEXT_PUBLIC_OIDC_ISSUER",
+      "http://idp.example.test/realms/acme"
+    );
+    vi.stubEnv("NEXT_PUBLIC_OIDC_CLIENT_ID", CLIENT_ID);
+    vi.resetModules();
+    const mod = await import("./cognito-oauth");
+    await expect(mod.startCognitoLogin()).rejects.toThrow(
+      /must be an https URL/
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts a plain-http localhost issuer and its localhost endpoints", async () => {
+    const local = "http://127.0.0.1:8771";
+    const doc = {
+      issuer: local,
+      authorization_endpoint: `${local}/auth`,
+      token_endpoint: `${local}/token`,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => json(doc))
+    );
+    vi.stubEnv("NEXT_PUBLIC_OIDC_ISSUER", local);
+    vi.stubEnv("NEXT_PUBLIC_OIDC_CLIENT_ID", CLIENT_ID);
+    vi.resetModules();
+    const mod = await import("./cognito-oauth");
+    await expect(mod.resolveOAuthEndpoints()).resolves.toMatchObject({
+      authorize: `${local}/auth`,
+      logout: null,
+    });
+  });
+
+  it("refuses a plain-http non-localhost endpoint even under a localhost issuer", async () => {
+    const local = "http://localhost:8771";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        json({
+          issuer: local,
+          authorization_endpoint: "http://idp.example.test/auth",
+          token_endpoint: `${local}/token`,
+        })
+      )
+    );
+    vi.stubEnv("NEXT_PUBLIC_OIDC_ISSUER", local);
+    vi.stubEnv("NEXT_PUBLIC_OIDC_CLIENT_ID", CLIENT_ID);
+    vi.resetModules();
+    const mod = await import("./cognito-oauth");
+    await expect(mod.resolveOAuthEndpoints()).rejects.toThrow(
+      /authorization_endpoint/
+    );
+  });
+
+  it("isLoopbackHost recognises only this machine", async () => {
+    const { isLoopbackHost } = await loadGeneric();
+    for (const host of [
+      "localhost",
+      "app.localhost",
+      "127.0.0.1",
+      "127.4.5.6",
+      "[::1]",
+      "::1",
+    ]) {
+      expect(isLoopbackHost(host)).toBe(true);
+    }
+    for (const host of [
+      "idp.example.test",
+      "localhost.evil.test",
+      "10.0.0.1",
+      "128.0.0.1",
+    ]) {
+      expect(isLoopbackHost(host)).toBe(false);
+    }
+  });
+
   it("requires a client id", async () => {
     stubIssuer();
     const mod = await loadGeneric({ NEXT_PUBLIC_OIDC_CLIENT_ID: "" });
