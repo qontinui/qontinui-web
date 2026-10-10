@@ -532,6 +532,35 @@ describe("describeRoleWriteError", () => {
       describeRoleWriteError(502, "<html>bad gateway</html>").message
     ).toContain("MAY");
   });
+  it("a role the deployment does not know yet says so, from coord or the web body check", () => {
+    const fromCoord = describeRoleWriteError(
+      422,
+      JSON.stringify({
+        detail: { error: "unknown_dispatch_role", detail: "testbed" },
+      })
+    );
+    expect(fromCoord.message).toContain("predates the Testbed rename");
+    expect(fromCoord.message).toContain("Nothing was changed");
+    const fromWeb = describeRoleWriteError(
+      422,
+      JSON.stringify({
+        detail: [
+          {
+            type: "literal_error",
+            loc: ["body", "dispatch_role"],
+            msg: "Input should be 'workhorse', 'bench' or 'ci_node'",
+          },
+        ],
+      })
+    );
+    expect(fromWeb.message).toContain("predates the Testbed rename");
+    // An unrelated 422 is not mistaken for it.
+    expect(
+      describeRoleWriteError(422, JSON.stringify({ error: "no_agent_host" }))
+        .kind
+    ).toBe("no_agent_host");
+  });
+
   it("tenant_not_resolved is not reported as not-an-operator", () => {
     expect(
       describeRoleWriteError(

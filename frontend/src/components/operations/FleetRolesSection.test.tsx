@@ -526,7 +526,7 @@ describe("FleetRolesSection", () => {
     );
   });
 
-  it("a role coord still serves as legacy `bench` reads as Testbed, marked legacy, and is current", async () => {
+  it("a role coord still serves as legacy `bench` reads as Testbed, marked legacy, and can be re-saved", async () => {
     // nomad's fixture row is stored under the pre-rename spelling (plan
     // Amendment 2026-10-10 A2/A6): it is Testbed, never "unrecognised".
     render(<FleetRolesSection />);
@@ -536,11 +536,11 @@ describe("FleetRolesSection", () => {
     const current = screen.getByTestId(
       "fleet-roles-set-testbed"
     ) as HTMLButtonElement;
-    expect(current.disabled).toBe(true);
+    // It IS the current role, but stays enabled so the row can be re-saved
+    // under the current spelling.
+    expect(current.disabled).toBe(false);
     expect(current.getAttribute("aria-pressed")).toBe("true");
-    expect(current.title).toBe(
-      "UI testing — takes no coord work (no CI, no sessions)."
-    );
+    expect(current.title).toContain('legacy name "bench"');
   });
 
   it("hides the write controls from a non-admin", async () => {

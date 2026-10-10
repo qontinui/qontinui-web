@@ -45,8 +45,8 @@ export type DispatchRole = (typeof DISPATCH_ROLES)[number];
 
 /**
  * Pre-rename spellings coord may still serve, and the role each one IS (plan
- * Amendment 2026-10-10 A2/A6: coord keeps parsing `bench` as Testbed until the
- * contract step). Read-side only — this console never writes one.
+ * Amendment 2026-10-10 A2/A6: coord keeps parsing `bench` as Testbed until
+ * coord's own contract step). Read-side only — this console never writes one.
  */
 export const LEGACY_ROLE_SPELLINGS: Readonly<Record<string, DispatchRole>> = {
   bench: "testbed",
@@ -622,6 +622,26 @@ export function describeRoleWriteError(
         "Coord refused: this machine has no workstation runner, so it cannot " +
         "host agent sessions and cannot be a Workhorse. Choose CI node or " +
         `Testbed.${coordMsg ? ` Coord: ${coordMsg}` : ""}`,
+    };
+  }
+  // The Testbed rename (plan Amendment 2026-10-10 A2) deploys in steps: a
+  // coord predating it answers `unknown_dispatch_role` for `testbed`, and a
+  // web backend predating it refuses the role in its own body validation
+  // (FastAPI's 422 list, with no `error` code). Either way nothing changed,
+  // and the operator should hear that the role is not live yet — not a raw
+  // status.
+  if (
+    code === "unknown_dispatch_role" ||
+    (status === 422 &&
+      /dispatch_role/.test(body) &&
+      /literal_error|Input should be/.test(body))
+  ) {
+    return {
+      kind: "other",
+      message:
+        "This deployment does not accept that role yet — coord or the web " +
+        "backend predates the Testbed rename. Nothing was changed." +
+        (coordMsg ? ` Coord: ${coordMsg}` : ""),
     };
   }
   if (code === "tenant_not_resolved" || /tenant_not_resolved/.test(body)) {

@@ -256,19 +256,26 @@ function RoleButtons({
         aria-label={`Dispatch role for ${m.name}`}
       >
         {DISPATCH_ROLES.map((r) => {
-          const current = m.role === r;
+          // A row served under a legacy spelling (`bench`) IS this role, but
+          // stays re-savable so the operator can store it under the current
+          // name without a detour through another role (which could trip
+          // last_open_lane).
+          const current = m.role === r && m.legacyRoleSpelling === null;
+          const legacyCurrent = m.role === r && m.legacyRoleSpelling !== null;
           const refused = r === "workhorse" && m.hostOnly;
           return (
             <Button
               key={r}
               size="sm"
-              variant={current ? "default" : "outline"}
+              variant={current || legacyCurrent ? "default" : "outline"}
               disabled={current || refused}
-              aria-pressed={current}
+              aria-pressed={current || legacyCurrent}
               title={
                 refused
                   ? "No workstation runner on this machine — it cannot host agent sessions."
-                  : ROLE_DESCRIPTION[r]
+                  : legacyCurrent
+                    ? `${ROLE_DESCRIPTION[r]} Stored under the legacy name "${m.legacyRoleSpelling}" — choose it to re-save under the current name.`
+                    : ROLE_DESCRIPTION[r]
               }
               onClick={() => onPick(r)}
               data-testid={`fleet-roles-set-${r}`}
