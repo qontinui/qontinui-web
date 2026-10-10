@@ -277,6 +277,13 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # The overview authoring contract: a record's version as its ETag,
             # and the marker on a create answered from an Idempotency-Key.
             *OVERVIEW_CONTRACT_HEADERS,
+            # PUT /api/v1/build-records/products/{slug}: whether this request
+            # retracted the tenant's public build-record page (making a product
+            # private, or narrowing its repos). Its only purpose is to tell the
+            # caller — the operator dashboard, a cross-origin browser — that the
+            # public page went down, including on a coord failure where the body
+            # is coord's error; unpublished, a browser could never see it.
+            "X-Build-Record-Retracted",
         ]
     )
 )
