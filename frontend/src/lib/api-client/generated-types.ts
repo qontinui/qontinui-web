@@ -5048,6 +5048,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/devices/credential-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Credential Overview
+         * @description The caller's devices, in the caller's tenants, with web's credential
+         *     facts: machine key (presence / expiry / revocation), the device-scoped
+         *     deny, and any operator authorization still awaiting the runner.
+         *
+         *     Same auth and device set as ``GET /api/v1/devices`` (coord
+         *     ``/coord/devices/by-user``), narrowed to devices whose ``tenant_id`` is
+         *     one of the caller's coord tenant memberships. The deny is read from this
+         *     backend's own database — web authors and writes the column, so its value
+         *     is authoritative here — never defaulted from a coord JSON row that might
+         *     omit it.
+         *     Credential POSTURE is coord's ``GET /coord/status`` and is joined on
+         *     ``device_id`` by the client, not served here.
+         */
+        get: operations["api_v1_devices_credential_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/me": {
         parameters: {
             query?: never;
@@ -5188,6 +5219,12 @@ export interface paths {
          *     Returns:
          *
          *     * **200** + :class:`PairCodeRedeemOut` on success.
+         *     * **404** for a device-bound code (operator ``authorize-redeem``) that
+         *       its device has not yet collected through ``/pending-redeem``.
+         *     * **403** ``pair_code_bound_to_other_device`` if a collected bound code
+         *       is presented for a different device; **403**
+         *       ``device_credential_revoked`` while the device's credentials are
+         *       revoked (a failed read of that state → **503**). Neither consumes it.
          *     * **404** if the code doesn't exist (or never did).
          *     * **409** if the code has already been redeemed (single-use).
          *     * **410** if the code has expired.
@@ -5360,6 +5397,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/devices/{device_id}/authorize-redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authorize Redeem
+         * @description Authorize ONE device to re-pair itself, headless.
+         *
+         *     **Operator SSO only.** ``get_current_active_user_async`` verifies a
+         *     Cognito token (a coord device JWT, or any other bearer, is a 401), and
+         *     :func:`_operator_tenant_device` requires a linked coord operator whose
+         *     tenant holds the device. The target is the PATH ``device_id``; the route
+         *     declares no body, so nothing a caller sends can redirect it.
+         *
+         *     Effect, one transaction:
+         *
+         *     * mints an ordinary pair code through ``pair_code_crud`` BOUND to this
+         *       device, in the device's tenant, with
+         *       :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min — the
+         *       runner polls every 300 s), and expires any earlier pending code for the
+         *       device (the newest authorization supersedes);
+         *     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
+         *       explicit act, never a side effect;
+         *     * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
+         *       enrol a fresh key (a usable key is left alone).
+         *
+         *     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
+         *     the device collects it, through ``/pending-redeem``.
+         */
+        post: operations["api_v1_devices_device_id_authorize_redeem_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/{device_id}/dispatch": {
         parameters: {
             query?: never;
@@ -5411,8 +5489,10 @@ export interface paths {
          *     forward (sliding session), then web calls coord's service-mint with its
          *     trusted service token; coord resolves the device's owner/tenant itself.
          *
-         *     503 when the coord service bridge is disabled (``COORD_ADMIN_SECRET``
-         *     unset). A coord 4xx propagates as the matching client error.
+         *     403 ``device_credential_revoked`` while an operator's device-scoped revoke
+         *     stands (a failed read → 503). 503 when the coord service bridge is
+         *     disabled (``COORD_ADMIN_SECRET`` unset). A coord 4xx propagates as the
+         *     matching client error.
          */
         post: operations["api_v1_devices_device_id_machine_credential_exchange_post"];
         delete?: never;
@@ -5439,8 +5519,41 @@ export interface paths {
          *     the same check the single-device reads use); a non-owner gets 403. The
          *     device's ``tenant_id`` is resolved server-side from the owned coord row
          *     (never client-asserted). Returns the plaintext ``dmk_`` ONCE.
+         *
+         *     Refused (403 ``device_credential_revoked``) while an operator's revoke
+         *     stands — this mint rotates over a revoked key, so without the check it
+         *     would silently undo the revocation.
          */
         post: operations["api_v1_devices_device_id_machine_credential_mint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/{device_id}/machine-credential/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Device Credentials
+         * @description Revoke a device's credentials, fail-closed. Operator SSO, tenant-scoped
+         *     (same gate as :func:`authorize_redeem`).
+         *
+         *     One transaction: revokes the machine key (``dmk_crud.revoke`` — hash
+         *     cleared, so ``/exchange`` can never match it), sets
+         *     ``coord.devices.credential_revoked_at`` (every web door that issues this
+         *     device a credential, and coord's refresh/service-mint, refuse while it is
+         *     set), and expires any pending authorization. Only a later
+         *     ``authorize-redeem`` clears it. 404 ``device_not_found`` when there is no
+         *     ``coord.devices`` row to deny — nothing is committed then.
+         */
+        post: operations["api_v1_devices_device_id_machine_credential_revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5493,6 +5606,9 @@ export interface paths {
          *       ``coord_device_state_malformed``. In every
          *       one of these nothing is minted — an unanswered or unreadable lookup is
          *       UNKNOWN, never a licence to mint.
+         *     * a device whose credentials an operator revoked
+         *       (``coord.devices.credential_revoked_at``) → 403
+         *       ``device_credential_revoked`` (a failed read → 503).
          *     * an existing key that an operator REVOKED is not re-minted → 403
          *       ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``
          *       on rotation, so without this a device could undo its own revocation;
@@ -5566,6 +5682,38 @@ export interface paths {
          *     ``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.
          */
         post: operations["api_v1_devices_device_id_machine_credential_self_mint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/{device_id}/pending-redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending Redeem
+         * @description Hand a credential-dark runner the pair code an operator authorized
+         *     for it — AT MOST ONCE.
+         *
+         *     Authenticated by the device's own coord-signed device JWT with expiry
+         *     TOLERATED up to 30 days (:func:`_verify_poll_token`): a third party that
+         *     knows only a ``device_id`` cannot forge one, and a stolen expired token
+         *     yields a code only after an operator authorized exactly this device. A
+         *     device whose credentials are revoked is refused (403
+         *     ``device_credential_revoked``; a failed read is a 503, never a pass).
+         *
+         *     200 ``{code, expires_at}`` exactly once per authorization (the code is
+         *     stamped delivered); 204 when nothing is pending. The runner then redeems
+         *     the code through the ordinary ``/pair-codes/{code}/redeem``.
+         */
+        get: operations["api_v1_devices_device_id_pending_redeem_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7283,15 +7431,35 @@ export interface paths {
          * Designate Test Target
          * @description Designate ``device_id`` as a test host for ``app_id`` (upsert).
          *
-         *     Writes ``coord.test_targets`` stamped with the caller's effective coord
-         *     tenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent — re-designating updates ``auto_fresh``. The device
-         *     must be owned by the caller and the app must be registered.
+         *     The write is coord's: ``POST /coord/trees/test-targets/upsert`` with the
+         *     caller's bearer and ``X-Qontinui-Active-Tenant`` forwarded, so the row is
+         *     stamped with the caller's EFFECTIVE tenant and refused unless the device is
+         *     bound to it. Idempotent — re-designating updates ``auto_fresh``.
+         *
+         *     Web checks what coord does not, BEFORE calling it: the device must be owned
+         *     by the caller (404), the app must be registered (404), and an existing row
+         *     for the pair must not be stamped with another project (409
+         *     ``designation_in_other_project``) — coord's upsert would update that row
+         *     in place and keep its old stamp. A device the effective tenant has no
+         *     binding for is a 409 ``device_not_bound_to_project`` naming that project.
+         *     The response is the row as it now reads, joined with device + freshness.
          */
         put: operations["api_v1_fleet_test_targets_device_id_app_id_put"];
         post?: never;
         /**
          * Undesignate Test Target
-         * @description Remove a test-host designation (idempotent — 204 even if absent).
+         * @description Remove a test-host designation through coord.
+         *
+         *     coord's DELETE is scoped to the caller's EFFECTIVE tenant and answers
+         *     ``200 {"deleted": false}`` for a row stamped with any other tenant — which
+         *     is NOT a removal. So ``deleted: false`` is never taken as success on its
+         *     own: the row is read back. Absent means the designation the operator asked
+         *     to remove is gone (204, idempotent as before). Still present means it
+         *     lives in another project — 409 ``designation_in_other_project`` naming
+         *     it, since reporting success there would leave the device's runner serving
+         *     a designation the operator believes is removed — or, when it is still in
+         *     the selected project (a concurrent re-designation), 409
+         *     ``designation_not_removed``.
          */
         delete: operations["api_v1_fleet_test_targets_device_id_app_id_delete"];
         options?: never;
@@ -26290,6 +26458,25 @@ export interface components {
             stateHint?: string | null;
         };
         /**
+         * AuthorizeRedeemResponse
+         * @description Response body (202) for ``POST /api/v1/devices/{id}/authorize-redeem``.
+         *
+         *     Carries NO code: the code is delivered only to the device itself, through
+         *     ``/pending-redeem``.
+         */
+        AuthorizeRedeemResponse: {
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /**
+             * Expires At
+             * @description When the authorization lapses unredeemed (UTC).
+             */
+            expires_at: string;
+        };
+        /**
          * AutoCreateBaselinesRequest
          * @description Request schema for auto-creating baselines from a test run.
          */
@@ -31539,6 +31726,52 @@ export interface components {
             user_id: string;
         };
         /**
+         * DeviceCredentialOverviewResponse
+         * @description Response body for ``GET /api/v1/devices/credential-overview``.
+         */
+        DeviceCredentialOverviewResponse: {
+            /** Devices */
+            devices: components["schemas"]["DeviceCredentialOverviewRow"][];
+        };
+        /**
+         * DeviceCredentialOverviewRow
+         * @description One device in ``GET /api/v1/devices/credential-overview``.
+         *
+         *     Credential POSTURE (live/expiring/expired/…) is deliberately NOT here — it
+         *     is coord's ``GET /coord/status`` report, joined on ``device_id`` by the
+         *     frontend, so a missing report renders UNKNOWN rather than a web default.
+         */
+        DeviceCredentialOverviewRow: {
+            /**
+             * Credential Revoked At
+             * @description Device-scoped credential deny (UTC), or null when not revoked.
+             */
+            credential_revoked_at?: string | null;
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Hostname */
+            hostname?: string | null;
+            machine_key: components["schemas"]["DeviceMachineKeyPosture"];
+            /** @description The operator authorization awaiting the runner, or null. */
+            pending_redeem?: components["schemas"]["PendingRedeemPosture"] | null;
+        };
+        /**
+         * DeviceCredentialRevokeResponse
+         * @description Response body for ``POST /api/v1/devices/{id}/machine-credential/revoke``.
+         */
+        DeviceCredentialRevokeResponse: {
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Revoked At */
+            revoked_at: string;
+        };
+        /**
          * DeviceIdentityResponse
          * @description Response shape for ``GET /api/v1/devices/me``.
          *
@@ -31602,6 +31835,29 @@ export interface components {
              * @description Non-secret display prefix (first 14 chars).
              */
             prefix: string;
+        };
+        /**
+         * DeviceMachineKeyPosture
+         * @description web's own ``device_machine_credentials`` row for a device, reduced to
+         *     what an operator needs: whether a key exists, when it lapses, and whether
+         *     it was revoked. Never any key material.
+         */
+        DeviceMachineKeyPosture: {
+            /**
+             * Expires At
+             * @description When the key lapses (UTC), or null.
+             */
+            expires_at?: string | null;
+            /**
+             * Present
+             * @description True when the device has a machine-key row at all.
+             */
+            present: boolean;
+            /**
+             * Revoked At
+             * @description When the key was revoked (UTC), or null.
+             */
+            revoked_at?: string | null;
         };
         /**
          * DeviceResolveRequest
@@ -39819,12 +40075,6 @@ export interface components {
              */
             email_shares: boolean;
             /**
-             * Email Team Invites
-             * @description Email for team invites
-             * @default true
-             */
-            email_team_invites: boolean;
-            /**
              * Id
              * Format: uuid
              */
@@ -39842,12 +40092,6 @@ export interface components {
              */
             in_app_mentions: boolean;
             /**
-             * In App Project Updates
-             * @description In-app for project updates
-             * @default true
-             */
-            in_app_project_updates: boolean;
-            /**
              * In App Replies
              * @description In-app for replies
              * @default true
@@ -39859,12 +40103,6 @@ export interface components {
              * @default true
              */
             in_app_shares: boolean;
-            /**
-             * In App Team Invites
-             * @description In-app for team invites
-             * @default true
-             */
-            in_app_team_invites: boolean;
             /** Updated At */
             updated_at: string;
             /**
@@ -39886,20 +40124,14 @@ export interface components {
             email_replies?: boolean | null;
             /** Email Shares */
             email_shares?: boolean | null;
-            /** Email Team Invites */
-            email_team_invites?: boolean | null;
             /** In App Comments */
             in_app_comments?: boolean | null;
             /** In App Mentions */
             in_app_mentions?: boolean | null;
-            /** In App Project Updates */
-            in_app_project_updates?: boolean | null;
             /** In App Replies */
             in_app_replies?: boolean | null;
             /** In App Shares */
             in_app_shares?: boolean | null;
-            /** In App Team Invites */
-            in_app_team_invites?: boolean | null;
         };
         /**
          * NotificationResponse
@@ -41463,6 +41695,32 @@ export interface components {
         PendingCountResponse: {
             /** Pending Count */
             pending_count: number;
+        };
+        /**
+         * PendingRedeemPosture
+         * @description An operator authorization the runner has not redeemed yet.
+         */
+        PendingRedeemPosture: {
+            /**
+             * Delivered At
+             * @description When a device collected the code via /pending-redeem (UTC), or null while uncollected. Collected-but-unredeemed for long means the collector never finished pairing — after a theft-driven revoke, re-pair interactively instead.
+             */
+            delivered_at?: string | null;
+            /**
+             * Expires At
+             * @description When the bound pair code lapses (UTC).
+             */
+            expires_at: string;
+        };
+        /**
+         * PendingRedeemResponse
+         * @description Response body (200) for ``GET /api/v1/devices/{id}/pending-redeem``.
+         */
+        PendingRedeemResponse: {
+            /** Code */
+            code: string;
+            /** Expires At */
+            expires_at: string;
         };
         /** PhaseForecast */
         PhaseForecast: {
@@ -61921,6 +62179,26 @@ export interface operations {
             };
         };
     };
+    api_v1_devices_credential_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCredentialOverviewResponse"];
+                };
+            };
+        };
+    };
     api_v1_devices_me_get: {
         parameters: {
             query?: never;
@@ -62294,6 +62572,37 @@ export interface operations {
             };
         };
     };
+    api_v1_devices_device_id_authorize_redeem_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizeRedeemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_devices_device_id_dispatch_post: {
         parameters: {
             query?: never;
@@ -62393,6 +62702,37 @@ export interface operations {
             };
         };
     };
+    api_v1_devices_device_id_machine_credential_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCredentialRevokeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_devices_device_id_machine_credential_self_mint_post: {
         parameters: {
             query?: never;
@@ -62412,6 +62752,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DeviceMachineCredentialMintResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_devices_device_id_pending_redeem_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingRedeemResponse"];
+                };
+            };
+            /** @description Nothing is pending for this device. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

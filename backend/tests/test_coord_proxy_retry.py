@@ -29,6 +29,20 @@ from app.services.coord_proxy import post_to_coord
 from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
 
+@pytest.fixture(autouse=True)
+def _device_credential_not_revoked():
+    """``pair-cli`` / ``pair-confirm`` now refuse a device whose credentials an
+    operator revoked (``coord.devices.credential_revoked_at``). These tests run
+    on a mock session, so that read is stubbed to "not revoked"; the revoked
+    arm is covered in ``test_devices_operator_credential_controls.py``."""
+    from app.crud import device_crud
+
+    with patch.object(
+        device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+    ):
+        yield
+
+
 def _mock_response(status_code: int = 201, json_data=None) -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code

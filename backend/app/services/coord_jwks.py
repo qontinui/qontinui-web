@@ -43,6 +43,7 @@ from jwt.exceptions import (
     PyJWKError,
     PyJWTError,
 )
+from jwt.types import Options
 
 from app.core.config import (
     coord_device_base,
@@ -471,8 +472,22 @@ class CoordJWKSClient:
             )
             return jwks
 
-    async def verify_token(self, token: str) -> dict[str, Any]:
+    async def verify_token(
+        self, token: str, *, expired_grace_s: int | None = None
+    ) -> dict[str, Any]:
         """Verify a coord-issued JWT and return its decoded claims.
+
+        ``expired_grace_s`` is an explicit OPT-IN, and ``None`` (the default)
+        leaves verification exactly as it has always been: ``exp`` enforced
+        with only the clock-skew leeway. When set, the token's SIGNATURE,
+        ``kid`` and ``nbf``/``iat`` are verified as usual, it MUST still carry
+        a numeric ``exp``, and it is accepted until ``exp + expired_grace_s``
+        (never less than the normal leeway). Past that it raises
+        :class:`CoordTokenExpiredError`. It exists for exactly one door — the
+        ``/pending-redeem`` poll, whose whole premise is that the caller's
+        device JWT has expired (plan
+        ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-from-qontinui-web``
+        Phase 2); every other caller omits it.
 
         Raises:
             CoordJWKSUnavailableError: JWKS could not be fetched on cold
@@ -545,12 +560,18 @@ class CoordJWKSClient:
         # asymmetric set so a future RS256/ES256 cutover doesn't need a
         # paired web-side deploy). HMAC-family algorithms are
         # deliberately excluded — coord is a key-pair issuer.
+        decode_options: Options = {"verify_aud": False}
+        if expired_grace_s is not None:
+            # Expiry is checked by hand below, against the widened window;
+            # ``require`` keeps a token with NO exp from slipping through.
+            decode_options["verify_exp"] = False
+            decode_options["require"] = ["exp"]
         try:
             claims = pyjwt.decode(
                 token,
                 jwk.key,
                 algorithms=["EdDSA", "RS256", "ES256"],
-                options={"verify_aud": False},
+                options=decode_options,
                 leeway=_CLOCK_SKEW_LEEWAY_S,
             )
         except ImmatureSignatureError as exc:
@@ -568,7 +589,27 @@ class CoordJWKSClient:
         if not isinstance(claims, dict):
             raise CoordTokenInvalidError("decoded JWT is not a JSON object")
 
+        if expired_grace_s is not None:
+            _check_exp_within_grace(claims, expired_grace_s)
+
         return claims
+
+
+def _check_exp_within_grace(claims: dict[str, Any], expired_grace_s: int) -> None:
+    """Reject a token whose ``exp`` is more than ``expired_grace_s`` past.
+
+    ``pyjwt.decode`` already required ``exp`` to be present; this rejects a
+    non-numeric one (PyJWT validates its type only when it verifies it) and
+    applies the widened window.
+    """
+    exp = claims.get("exp")
+    if isinstance(exp, bool) or not isinstance(exp, int | float):
+        raise CoordTokenInvalidError("token 'exp' claim is not a number")
+    window = max(int(expired_grace_s), _CLOCK_SKEW_LEEWAY_S)
+    if time.time() > float(exp) + window:
+        raise CoordTokenExpiredError(
+            f"token expired more than {int(expired_grace_s)}s ago"
+        )
 
 
 # Process-wide singleton — wired at import time.

@@ -144,11 +144,14 @@ WRITE_PATH_FOLLOWUP: frozenset[str] = frozenset(
         # Cross-schema FK target → `coord.device_connections.id` on the
         # web-owned `software_test_run` table (device-write follow-up).
         "models/software_test_run.py",
-        # `{"schema": "coord"}` binding on the `TestTarget` ORM model — the
-        # fleet-fresh P5 test-host designation write path to `coord.test_targets`
-        # (same shared-Postgres posture as `Device` against `coord.devices`;
-        # a later plan moves this designation write onto coord HTTP and drains
-        # this entry).
+        # `{"schema": "coord"}` binding on the `TestTarget` ORM model. READ-ONLY
+        # since plan 2026-09-30-test-host-designation-put-stamps-a-tenant-the-
+        # device-is-not-bound-to: the designation PUT/DELETE now go through
+        # coord's binding-checked `/coord/trees/test-targets` routes, and only
+        # `fleet_targets`' GET list (plus the PUT's read-back / the DELETE's
+        # verification read) still reads `coord.test_targets` through it. coord
+        # has no per-caller list route with timestamps, so the entry cannot
+        # drain until one exists.
         "models/test_target.py",
         # Tenant agentic memory (plan 2026-07-10-tenant-agentic-memory-web-
         # backend, Phase 1): web OWNS the coord.memory_records substrate —
