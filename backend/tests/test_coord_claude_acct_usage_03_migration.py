@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 
 _REVISION_ID = "coord_claude_acct_usage_03"
-_PARENT_ID = "notif_producerless_01_drop_enum_values"
+_PARENT_ID = "coord_wt_cargo_lock_01"
 _FILENAME = "coord_claude_acct_usage_03_nullable_weekly_utilization.py"
 
 _VERSIONS = Path(__file__).resolve().parents[1] / "alembic" / "versions"

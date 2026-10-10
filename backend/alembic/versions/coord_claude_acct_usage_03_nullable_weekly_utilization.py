@@ -1,7 +1,7 @@
 """coord.claude_account_usage — weekly_utilization may be NULL (no reading)
 
 Revision ID: coord_claude_acct_usage_03
-Revises: notif_producerless_01_drop_enum_values
+Revises: coord_wt_cargo_lock_01
 Create Date: 2026-10-07
 
 Plan ``2026-10-07-mobile-account-usage-stale-tenant-feed-remediation`` item #6,
@@ -67,7 +67,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_claude_acct_usage_03"
-down_revision: str | Sequence[str] | None = "notif_producerless_01_drop_enum_values"
+down_revision: str | Sequence[str] | None = "coord_wt_cargo_lock_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
