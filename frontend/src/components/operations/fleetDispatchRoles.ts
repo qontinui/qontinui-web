@@ -81,15 +81,34 @@ export type LaneDrain =
     }
   | { state: "unknown" };
 
+/**
+ * Coord's role layer of one lane. `not_registered` = the machine has no device
+ * row, so there is no lane state to show (coord serves it rather than an
+ * `open` computed over an empty device list).
+ */
+export type LaneRoleLayer = "open" | "closed" | "unknown" | "not_registered";
+
 /** One lane of one machine: coord's role layer and drain layer (§D2). */
 export interface LaneView {
   /** Coord's composed verdict, verbatim (`open` / `closed_by_role` /
-   * `closed_by_drain` / `unknown`), or `null` when absent. */
+   * `closed_by_drain` / `unknown` / `not_registered`), or `null` when absent. */
   effective: string | null;
   /** The ROLE layer alone. */
-  role: "open" | "closed" | "unknown";
+  role: LaneRoleLayer;
   drain: LaneDrain;
 }
+
+/** A lane with no state because the machine has no device row. */
+export function laneNotRegistered(l: LaneView): boolean {
+  return l.effective === "not_registered" || l.role === "not_registered";
+}
+
+/** The lane coord serves for a machine with no device row. */
+const NOT_REGISTERED_LANE: LaneView = {
+  effective: "not_registered",
+  role: "not_registered",
+  drain: { state: "none" },
+};
 
 export interface RoleSuggestion {
   role: DispatchRole;
@@ -148,6 +167,14 @@ export type DispatchRolesRead =
       /** CI runner registrations coord could not name. */
       unidentifiable: number | null;
       /**
+       * Coord's device read reached its row cap (`roster_truncated`): the
+       * least-recently-seen device rows MAY have been cut, so the list may be
+       * incomplete and a role whose machine was cut reads "assigned, not yet
+       * registered". `null` when coord does not report it (a build predating
+       * the field) — not read as "whole".
+       */
+      rosterTruncated: boolean | null;
+      /**
        * Coord's read-level note (e.g. a failed drain/role read: dispatch is
        * failing CLOSED), or that the roles table is absent so no write can
        * land yet. `null` when coord said nothing.
@@ -195,7 +222,10 @@ export function parseLane(v: unknown): LaneView {
   if (!isRecord(v)) {
     return { effective: null, role: "unknown", drain: { state: "unknown" } };
   }
-  const role = v.role === "open" || v.role === "closed" ? v.role : "unknown";
+  const role: LaneRoleLayer =
+    v.role === "open" || v.role === "closed" || v.role === "not_registered"
+      ? v.role
+      : "unknown";
   return { effective: str(v.effective), role, drain: parseDrainLayer(v.drain) };
 }
 
@@ -234,13 +264,13 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
       : null;
 
   // A machine with no device rows (assigned, not registered) has no lane
-  // state. Coord still serves both lane keys for it, with a role layer of
-  // `open` computed over an EMPTY device list — rendering that would
-  // contradict the assigned role, so registration decides, not key presence.
-  const lanes =
-    v.registration !== "assigned_not_registered" &&
-    isRecord(v.lanes) &&
-    ("agent" in v.lanes || "ci" in v.lanes)
+  // state: coord serves each lane as `not_registered`. Registration decides,
+  // not what the lane keys say — a coord that served a lane computed over an
+  // EMPTY device list (`open`) would otherwise contradict the assigned role.
+  const registered = v.registration !== "assigned_not_registered";
+  const lanes = !registered
+    ? { agent: NOT_REGISTERED_LANE, ci: NOT_REGISTERED_LANE }
+    : isRecord(v.lanes) && ("agent" in v.lanes || "ci" in v.lanes)
       ? { agent: parseLane(v.lanes.agent), ci: parseLane(v.lanes.ci) }
       : null;
 
@@ -259,7 +289,7 @@ export function parseRoleMachine(v: unknown): RoleMachine | null {
     name: str(v.name) ?? ciHostName ?? (deviceId as string),
     role,
     unrecognisedRole,
-    registered: v.registration !== "assigned_not_registered",
+    registered,
     hostOnly,
     heartbeatFresh:
       typeof v.heartbeat_fresh === "boolean" ? v.heartbeat_fresh : null,
@@ -313,6 +343,8 @@ export function parseDispatchRoles(body: unknown): DispatchRolesRead {
     // must we (`silent-empty-is-unknown`).
     omitted: num(body.older_machines_omitted),
     unidentifiable: num(body.unidentifiable_ci_runner_rows),
+    rosterTruncated:
+      typeof body.roster_truncated === "boolean" ? body.roster_truncated : null,
     notice:
       [
         str(body.detail),
@@ -366,7 +398,7 @@ export function describeRoleEffect(
    * "after". Omit it when this tenant's own row is unreadable (that row may be
    * the closure being replaced).
    */
-  servedRoleLayer?: Partial<Record<Lane, "open" | "closed" | "unknown">>
+  servedRoleLayer?: Partial<Record<Lane, LaneRoleLayer>>
 ): string {
   const own = from === null ? ROLE_OPENS.workhorse : ROLE_OPENS[from];
   const after = ROLE_OPENS[to];
@@ -374,6 +406,8 @@ export function describeRoleEffect(
     const what = lane === "agent" ? "sessions" : "CI";
     if (lane === "agent" && hostOnly)
       return "still no sessions (no workstation runner)";
+    // Any other value (e.g. `not_registered`, no lane state) falls through to
+    // this tenant's own row below.
     const served = servedRoleLayer?.[lane];
     // Closed by the fleet while this tenant's own role opens it: another
     // tenant's role closes the lane, and it stays closed whatever we pick.
@@ -409,9 +443,34 @@ const ADMIN_REFUSAL_CODES = [
   "operator_principal_required",
 ];
 
+/**
+ * The capacity class coord's `last_open_lane` guard weighed for a lane:
+ * `workstations` (sessions, and the runner's own CI-node dispatch) or
+ * `github_runner_hosts` (GitHub `runs-on` routing). A string this build does
+ * not know is kept verbatim.
+ */
+export type LaneCapacity =
+  | "workstations"
+  | "github_runner_hosts"
+  | (string & {});
+
+/** The capacity in words, as the Force prompt names it. */
+export function describeCapacity(c: LaneCapacity | null): string {
+  if (c === "workstations") return "workstation";
+  if (c === "github_runner_hosts") return "GitHub runner host";
+  if (c === null) return "machine";
+  return `machine of capacity "${c}"`;
+}
+
 /** A refusal coord returned for a role write, as the dialog renders it. */
 export type RoleWriteRefusal =
-  | { kind: "last_open_lane"; lanes: Lane[]; message: string }
+  | {
+      kind: "last_open_lane";
+      lanes: Lane[];
+      /** Per refused lane, the capacity coord weighed (`null` = not served). */
+      capacities: Partial<Record<Lane, LaneCapacity | null>>;
+      message: string;
+    }
   | { kind: "no_agent_host"; message: string }
   | { kind: "not_admin"; message: string }
   | {
@@ -470,39 +529,42 @@ export function describeRoleWriteError(
     : null;
 
   if (code === "last_open_lane") {
-    // Coord serves `lanes: [{lane, remaining, offline_only}, …]`.
+    // Coord serves `lanes: [{lane, capacity, remaining, offline_only}, …]`.
     const lanes: Lane[] = [];
+    const capacities: Partial<Record<Lane, LaneCapacity | null>> = {};
+    const clauses: string[] = [];
     const offlineOnly: string[] = [];
     if (inner && Array.isArray(inner.lanes)) {
       for (const l of inner.lanes) {
         const name = isRecord(l) ? l.lane : null;
-        if ((name === "agent" || name === "ci") && !lanes.includes(name)) {
-          lanes.push(name);
-          if (
-            isRecord(l) &&
-            l.offline_only === true &&
-            Array.isArray(l.remaining)
-          )
-            offlineOnly.push(
-              `${name === "agent" ? "sessions" : "CI"}: only offline ${l.remaining
-                .filter((x): x is string => typeof x === "string")
-                .join(", ")}`
-            );
-        }
+        if (!isRecord(l) || (name !== "agent" && name !== "ci")) continue;
+        if (lanes.includes(name)) continue;
+        lanes.push(name);
+        const capacity = str(l.capacity);
+        capacities[name] = capacity;
+        clauses.push(
+          `no heartbeat-fresh ${describeCapacity(capacity)} would take ${
+            name === "agent" ? "agent sessions" : "CI"
+          }`
+        );
+        if (l.offline_only === true && Array.isArray(l.remaining))
+          offlineOnly.push(
+            `${name === "agent" ? "sessions" : "CI"}: only offline ${l.remaining
+              .filter((x): x is string => typeof x === "string")
+              .join(", ")}`
+          );
       }
     }
-    const what =
-      lanes.length === 0
-        ? "one of its lanes"
-        : lanes
-            .map((l) => (l === "agent" ? "agent sessions" : "CI"))
-            .join(" or ");
     return {
       kind: "last_open_lane",
       lanes,
+      capacities,
       message:
-        `Coord refused: after this change no heartbeat-fresh machine would ` +
-        `take ${what}.` +
+        `Coord refused: after this change ` +
+        (clauses.length === 0
+          ? "no heartbeat-fresh machine would take one of its lanes"
+          : clauses.join(", and ")) +
+        "." +
         (offlineOnly.length > 0
           ? ` Other machines that would keep it open are offline (${offlineOnly.join("; ")}).`
           : "") +
@@ -582,6 +644,56 @@ export function describeRoleWriteError(
     };
   }
   return { kind: "other", message: parts.join(" — ") };
+}
+
+/** One effect coord says a role change did NOT apply (`effects_not_applied`). */
+export interface EffectNotApplied {
+  effect: string;
+  detail: string | null;
+  /** The plan phase coord says will apply it — when the gap closes. */
+  planPhase: number | null;
+}
+
+const EFFECT_LABEL: Record<string, string> = {
+  github_routing_labels: "GitHub routing labels were not changed",
+  ci_node_config_enabled: "the runner's own CI-node switch was not changed",
+  linked_ci_host_fanout:
+    "the role does not reach this machine's linked CI hosts — they keep their own roles",
+};
+
+/** Parse `effects_not_applied`. `null` when coord served none (not "none"). */
+export function parseEffectsNotApplied(v: unknown): EffectNotApplied[] | null {
+  if (!Array.isArray(v)) return null;
+  return v
+    .filter(isRecord)
+    .map((e) => ({
+      effect: str(e.effect) ?? "unnamed",
+      detail: str(e.detail),
+      planPhase: num(e.plan_phase),
+    }))
+    .filter((e) => e.effect !== "unnamed" || e.detail !== null);
+}
+
+/** One effect in words: a known effect's label, else coord's own words. */
+export function describeEffectNotApplied(e: EffectNotApplied): string {
+  // Coord's own detail is kept: it differs by direction (a change that opens
+  // CI vs one that closes it) and by machine kind, which no fixed label can.
+  const label = EFFECT_LABEL[e.effect] ?? e.effect;
+  const phase = e.planPhase !== null ? ` [plan phase ${e.planPhase}]` : "";
+  return `${label}${phase}${e.detail ? ` (coord: ${e.detail})` : ""}`;
+}
+
+/**
+ * Coord's `live_sessions_on_machine` in words. `null` from coord means NOT
+ * MEASURED (a CI-host write, or an unreadable count) — never zero.
+ * `undefined` = the field was not served at all.
+ */
+export function describeLiveSessions(
+  v: number | "unknown" | undefined
+): string | null {
+  if (v === undefined) return null;
+  if (v === "unknown") return "live sessions on it: unknown";
+  return `${v} live session${v === 1 ? "" : "s"} on it now`;
 }
 
 /** Validate the confirm form. Returns an error sentence or `null`. */

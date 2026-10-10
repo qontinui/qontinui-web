@@ -22,8 +22,10 @@ import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { OPERATIONS_API } from "./utils";
 import {
   parseDispatchRoles,
+  parseEffectsNotApplied,
   type DispatchRole,
   type DispatchRolesRead,
+  type EffectNotApplied,
 } from "./fleetDispatchRoles";
 
 export const FLEET_DISPATCH_ROLES_API = `${OPERATIONS_API}/fleet/dispatch-roles`;
@@ -97,8 +99,17 @@ export type RoleWriteResult =
       ok: true;
       /** Coord's `changed`: `false` when the machine already had this role. */
       changed: boolean;
-      /** Coord's `live_sessions_on_machine`, when served. */
-      liveSessions: number | null;
+      /**
+       * Coord's `live_sessions_on_machine`: a count, `"unknown"` when coord
+       * served `null` (not measured — a CI-host write, or an unreadable count;
+       * never 0), or `undefined` when the field was not served.
+       */
+      liveSessions: number | "unknown" | undefined;
+      /**
+       * Coord's `effects_not_applied` — what this build of coord did NOT do
+       * for the change. `null` when not served (never read as "none").
+       */
+      notApplied: EffectNotApplied[] | null;
     }
   | { ok: false; status: number | null; body: string };
 
@@ -137,7 +148,8 @@ export async function putDispatchRole(input: {
     // A success with an unreadable body still succeeded; `changed` stays
     // true, the reading that does not claim a no-op happened.
     let changed = true;
-    let liveSessions: number | null = null;
+    let liveSessions: number | "unknown" | undefined = undefined;
+    let notApplied: EffectNotApplied[] | null = null;
     try {
       const payload: unknown = await res.json();
       if (typeof payload === "object" && payload !== null) {
@@ -145,11 +157,15 @@ export async function putDispatchRole(input: {
         if (typeof p.changed === "boolean") changed = p.changed;
         if (typeof p.live_sessions_on_machine === "number")
           liveSessions = p.live_sessions_on_machine;
+        else if ("live_sessions_on_machine" in p)
+          // `null` (or a shape we do not know) is NOT MEASURED — never 0.
+          liveSessions = "unknown";
+        notApplied = parseEffectsNotApplied(p.effects_not_applied);
       }
     } catch {
       // see above
     }
-    return { ok: true, changed, liveSessions };
+    return { ok: true, changed, liveSessions, notApplied };
   } catch (err) {
     return {
       ok: false,

@@ -7,7 +7,13 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -15,7 +21,11 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+  }),
 }));
 
 const authState = { isCoordAdmin: true };
@@ -80,10 +90,10 @@ const MACHINES = {
       },
       behaves_as: "ci_node",
       suggestion: null,
-      // Coord serves both lane keys even with no device rows.
+      // Coord serves `not_registered` lanes for a machine with no device row.
       lanes: {
-        agent: lane("unknown", "open"),
-        ci: lane("unknown", "open"),
+        agent: lane("not_registered", "not_registered"),
+        ci: lane("not_registered", "not_registered"),
       },
       pre_change_sessions: { state: "not_applicable" },
     },
@@ -99,7 +109,8 @@ const MACHINES = {
         dispatch_role: "bench",
         reason: "local box",
         version: 1,
-        updated_by: "op@example.com",
+        // A non-admin's read: coord redacts operator emails.
+        updated_by: "[redacted]",
         updated_at: "2026-10-08T10:00:00Z",
       },
       behaves_as: "bench",
@@ -206,7 +217,14 @@ describe("FleetRolesSection", () => {
         detail: {
           error: "last_open_lane",
           detail: "pass `force: true` to apply it anyway",
-          lanes: [{ lane: "agent", remaining: [], offline_only: false }],
+          lanes: [
+            {
+              lane: "agent",
+              capacity: "workstations",
+              remaining: [],
+              offline_only: false,
+            },
+          ],
         },
       }),
       json(200, { ok: true }),
@@ -220,7 +238,9 @@ describe("FleetRolesSection", () => {
     fireEvent.click(screen.getByTestId("fleet-roles-submit"));
     const refusal = await screen.findByTestId("fleet-roles-refusal");
     expect(refusal.getAttribute("data-refusal")).toBe("last_open_lane");
-    expect(refusal.textContent).toContain("agent sessions");
+    expect(refusal.textContent).toContain(
+      "no heartbeat-fresh workstation would take agent sessions"
+    );
     fireEvent.click(screen.getByTestId("fleet-roles-force"));
     await waitFor(() => expect(puts).toHaveLength(2));
     expect(puts[1].body.force).toBe(true);
@@ -305,8 +325,15 @@ describe("FleetRolesSection", () => {
     expect(
       screen.queryByTestId("fleet-roles-github-runner-warning")
     ).toBeNull();
-    expect(screen.getByTestId("fleet-roles-lanes").textContent).toContain(
-      "not served"
+    // Inside the lanes table: CI lane's role and "coord says" cells (the
+    // sessions lane is n/a on a CI host).
+    expect(
+      within(screen.getByTestId("fleet-roles-lanes")).getAllByTestId(
+        "fleet-roles-lane-not-registered"
+      )
+    ).toHaveLength(2);
+    expect(screen.getByTestId("fleet-roles-lanes").textContent).not.toContain(
+      "not drained"
     );
     fireEvent.click(screen.getByText("msi-wsl"));
     expect(
@@ -334,6 +361,164 @@ describe("FleetRolesSection", () => {
       expect(toast.success).toHaveBeenCalledWith(
         "monster is Bench — the earlier attempt may have applied it."
       )
+    );
+  });
+
+  it("a redacted operator email is shown as served", async () => {
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText("nomad"));
+    expect(screen.getByText(/by \[redacted\]: local box/)).toBeTruthy();
+  });
+
+  it("an unregistered row carries the not-registered badge", async () => {
+    render(<FleetRolesSection />);
+    await screen.findByText("dell-2024");
+    // On the row itself, before it is expanded.
+    expect(
+      screen.getAllByTestId("fleet-roles-row-not-registered")
+    ).toHaveLength(1);
+    expect(screen.queryByTestId("fleet-roles-lane-not-registered")).toBeNull();
+  });
+
+  it("a truncated roster says the list is incomplete", async () => {
+    fetchMock.mockImplementation(async () =>
+      json(200, { ...MACHINES, roster_truncated: true })
+    );
+    render(<FleetRolesSection />);
+    expect(
+      (await screen.findByTestId("fleet-roles-truncated")).textContent
+    ).toContain("incomplete");
+  });
+
+  it("a truncated roster marks the not-registered badge as uncertain", async () => {
+    fetchMock.mockImplementation(async () =>
+      json(200, { ...MACHINES, roster_truncated: true })
+    );
+    render(<FleetRolesSection />);
+    await screen.findByTestId("fleet-roles-truncated");
+    expect(
+      screen.getByTestId("fleet-roles-row-not-registered").textContent
+    ).toBe("not registered?");
+    // The expanded lane table carries the same hedge.
+    fireEvent.click(screen.getByText("dell-2024"));
+    const cells = within(
+      screen.getByTestId("fleet-roles-lanes")
+    ).getAllByTestId("fleet-roles-lane-not-registered");
+    expect(cells.map((c) => c.textContent)).toEqual([
+      "not registered?",
+      "not registered?",
+    ]);
+  });
+
+  it("no truncation notice when coord says the roster is whole", async () => {
+    fetchMock.mockImplementation(async () =>
+      json(200, { ...MACHINES, roster_truncated: false })
+    );
+    render(<FleetRolesSection />);
+    await screen.findByText("monster");
+    expect(screen.queryByTestId("fleet-roles-truncated")).toBeNull();
+    expect(
+      screen.queryByTestId("fleet-roles-truncation-unreported")
+    ).toBeNull();
+    expect(
+      screen.getByTestId("fleet-roles-row-not-registered").textContent
+    ).toBe("not registered");
+  });
+
+  it("a host write's null live sessions read unknown, and what coord did not apply is named", async () => {
+    putAnswers = [
+      json(200, {
+        changed: true,
+        dispatch_role: "ci_node",
+        live_sessions_on_machine: null,
+        effects_not_applied: [
+          { effect: "github_routing_labels", plan_phase: 4, detail: "x" },
+          { effect: "ci_node_config_enabled", plan_phase: 5, detail: "y" },
+        ],
+      }),
+    ];
+    const { toast } = await import("sonner");
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+    render(<FleetRolesSection />);
+    await screen.findByText("monster");
+    fireEvent.change(screen.getByTestId("fleet-roles-host-input"), {
+      target: { value: "dell-2020" },
+    });
+    fireEvent.click(screen.getByTestId("fleet-roles-host-open"));
+    fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
+      target: { value: "remote CI box" },
+    });
+    fireEvent.click(screen.getByTestId("fleet-roles-submit"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const [msg] = vi.mocked(toast.success).mock.calls[0] as [string];
+    expect(msg).toContain("live sessions on it: unknown");
+    expect(msg).not.toMatch(/\b0 live session/);
+    const [warn, opts] = vi.mocked(toast.warning).mock.calls[0] as [
+      string,
+      { duration?: number } | undefined,
+    ];
+    expect(warn).toContain("GitHub routing labels");
+    // Coord's own words are kept, and the warning does not time out.
+    expect(warn).toContain("(coord: x)");
+    expect(opts).toMatchObject({ duration: Infinity });
+  });
+
+  it("a host write never shows a count, even if coord sends 0", async () => {
+    putAnswers = [
+      json(200, {
+        changed: true,
+        dispatch_role: "ci_node",
+        live_sessions_on_machine: 0,
+        effects_not_applied: [],
+      }),
+    ];
+    const { toast } = await import("sonner");
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+    render(<FleetRolesSection />);
+    await screen.findByText("monster");
+    fireEvent.change(screen.getByTestId("fleet-roles-host-input"), {
+      target: { value: "dell-2020" },
+    });
+    fireEvent.click(screen.getByTestId("fleet-roles-host-open"));
+    fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
+      target: { value: "remote CI box" },
+    });
+    fireEvent.click(screen.getByTestId("fleet-roles-submit"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const [msg] = vi.mocked(toast.success).mock.calls[0] as [string];
+    expect(msg).toContain("live sessions on it: unknown");
+    expect(msg).not.toContain("0 live sessions");
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it("a device write names linked_ci_host_fanout and a counted session", async () => {
+    putAnswers = [
+      json(200, {
+        changed: true,
+        dispatch_role: "bench",
+        live_sessions_on_machine: 2,
+        effects_not_applied: [
+          { effect: "linked_ci_host_fanout", plan_phase: 3, detail: "z" },
+        ],
+      }),
+    ];
+    const { toast } = await import("sonner");
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+    render(<FleetRolesSection />);
+    fireEvent.click(await screen.findByText("monster"));
+    fireEvent.click(screen.getByTestId("fleet-roles-set-bench"));
+    fireEvent.change(screen.getByTestId("fleet-roles-reason"), {
+      target: { value: "rebuild" },
+    });
+    fireEvent.click(screen.getByTestId("fleet-roles-submit"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const [msg] = vi.mocked(toast.success).mock.calls[0] as [string];
+    expect(msg).toContain("2 live sessions on it now");
+    expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain(
+      "linked CI hosts"
     );
   });
 
