@@ -119,7 +119,7 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
 #: version it was validated under at publish; the public route re-validates
 #: only a snapshot stored under a different version. BUMP IT on any change to
 #: the key set, a slot rule, a pattern, normalisation or a cap.
-ALLOWLIST_VERSION: Final = 17
+ALLOWLIST_VERSION: Final = 18
 
 #: Longest string the content scan will read — measured on the string AND on
 #: its NFKD decomposition (which can be ~18× longer for one code point, e.g.
@@ -293,10 +293,13 @@ _STRIPPED_CATEGORIES: Final = frozenset({"Mn", "Me", "Cf", "Cc", "Cn", "Co", "Cs
 #: Glyphs that render as blank space but are neither whitespace nor
 #: default-ignorable, so they survive normalisation and split a token:
 #: ``acme\u2800/\u2800secret`` (U+2800 BRAILLE PATTERN BLANK, category So)
-#: renders as "acme / secret". Refused as hidden characters. The other blank
+#: renders as "acme / secret"; U+1D159 MUSICAL SYMBOL NULL NOTEHEAD likewise.
+#: Refused as hidden characters — belt and braces: the structural fix is
+#: :data:`SLASH_TRANSPARENT_CATEGORIES`, which makes ANY ``So``/``Sk`` symbol
+#: or separator next to a slash unable to split a token. The other blank
 #: fillers (U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0) are already
 #: default-ignorable (:data:`DEFAULT_IGNORABLE_RANGES`), so are not repeated.
-BLANK_RENDERING_GLYPHS: Final = frozenset("\u2800")
+BLANK_RENDERING_GLYPHS: Final = frozenset("\u2800\U0001d159")
 #: Combining marks that draw a stroke THROUGH the previous character, so
 #: ``a\u0338b`` can render like ``a/b`` while scanning as two letters.
 _OVERLAY_MARKS: Final = frozenset(
@@ -565,21 +568,50 @@ def _infix_to_slash(match: re.Match[str]) -> str:
     return match.group(0)
 
 
-def _collapse_spaced_slashes(text: str) -> str:
-    """Remove the whitespace on both sides of EVERY ``/`` — and nothing else.
+#: Character categories that are TRANSPARENT at a slash: stripped from the
+#: slash-adjacent edge of each piece by :func:`_collapse_spaced_slashes`.
+#: Separators (``Zs Zl Zp``) and the symbol classes ``So`` (other symbol) and
+#: ``Sk`` (modifier symbol), none of which can be part of a repo name, and some
+#: of which render as blank space in common fonts (U+2800, U+1D159, …). A
+#: symbol next to a slash therefore cannot keep an ``owner / name`` apart:
+#: the scan sees exactly what it would see had the symbol not been typed.
+#: Letters, digits and punctuation (``(``, ``)``, ``,`` …) are NOT transparent:
+#: they are what a reader sees ending a token, so ``(lint)/(test)`` stays two
+#: bracketed words. Python whitespace (``str.isspace``) is transparent too.
+SLASH_TRANSPARENT_CATEGORIES: Final = frozenset({"Zs", "Zl", "Zp", "So", "Sk"})
 
-    A split, not a regex: linear by construction, and each slash is handled
-    on its own, so ``a / / b`` becomes ``a//b``. (The earlier lookbehind
-    pattern left the second slash's trailing space, ``a// b``, because its
-    lookbehind saw the space the first match had consumed.)
+
+def _slash_transparent(ch: str) -> bool:
+    return ch.isspace() or unicodedata.category(ch) in SLASH_TRANSPARENT_CATEGORIES
+
+
+def _strip_edge(piece: str, *, left: bool, right: bool) -> str:
+    start, end = 0, len(piece)
+    if left:
+        while start < end and _slash_transparent(piece[start]):
+            start += 1
+    if right:
+        while end > start and _slash_transparent(piece[end - 1]):
+            end -= 1
+    return piece[start:end]
+
+
+def _collapse_spaced_slashes(text: str) -> str:
+    """Remove every slash-transparent character (whitespace and the
+    :data:`SLASH_TRANSPARENT_CATEGORIES` symbols) on both sides of EVERY
+    ``/`` — and nothing else.
+
+    A split, not a regex: linear by construction, and each slash is handled on
+    its own, so ``a / / b`` becomes ``a//b`` and ``acme\U0001d159/\U0001d159secret``
+    becomes ``acme/secret``. This is the structural fix for blank-rendering
+    symbols splitting an owner/name token: no list of individual glyphs.
     """
     pieces = text.split("/")
     if len(pieces) == 1:
         return text
     last = len(pieces) - 1
     return "/".join(
-        piece.rstrip() if i == 0 else piece.lstrip() if i == last else piece.strip()
-        for i, piece in enumerate(pieces)
+        _strip_edge(piece, left=i > 0, right=i < last) for i, piece in enumerate(pieces)
     )
 
 
