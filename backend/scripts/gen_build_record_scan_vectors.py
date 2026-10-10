@@ -52,6 +52,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from app.services import build_record_allowlist as al  # noqa: E402
+from app.services import build_record_slash_confusables as tr39  # noqa: E402
 
 GENERATOR = "backend/scripts/gen_build_record_scan_vectors.py"
 FIXTURE = BACKEND / "tests" / "fixtures" / "build_record_scan_vectors.json"
@@ -202,6 +203,16 @@ DOCUMENT_CASES: list[tuple[str, Any, list[str]]] = [
     # plain word/word pair (read/write, a / b, CI (lint/test)) is an
     # owner/name-shaped token and is refused by the token rule — as before
     # this change; two digit segments (50/50) and bracketed words are not.
+    ("tr39_coptic_esh", _title("acme\u2cc6secret"), []),
+    ("tr39_vertical_kana_repeat", _title("acme\u3033secret"), []),
+    ("tr39_cjk_stroke_sp", _title("acme\u31d3secret"), []),
+    ("tr39_greek_instrumental_47", _title("acme\U0001d23asecret"), []),
+    ("supplement_canadian_final_acute", _title("acme\u141fsecret"), []),
+    ("transparent_middle_dot", _title("acme\u00b7/secret"), []),
+    ("transparent_hyphenation_point", _title("acme\u2027/secret"), []),
+    ("transparent_modifier_apostrophe", _title("acme\u02bc/secret"), []),
+    ("transparent_triangular_colon", _title("acme\u02d0/secret"), []),
+    ("transparent_combining_stem_mc", _title("acme\U0001d165/secret"), []),
     ("guard_read_write", _title("read/write"), []),
     ("guard_spaced_a_b", _title("a / b"), []),
     ("guard_ci_lint_test", _title("CI (lint/test)"), []),
@@ -277,6 +288,17 @@ def build() -> dict[str, Any]:
         "default_ignorable_ranges": [list(r) for r in al.DEFAULT_IGNORABLE_RANGES],
         "overlay_marks": sorted(ord(c) for c in al._OVERLAY_MARKS),
         "blank_rendering_glyphs": sorted(ord(c) for c in al.BLANK_RENDERING_GLYPHS),
+        "slash_transparent_categories": sorted(al.SLASH_TRANSPARENT_CATEGORIES),
+        "slash_transparent_non_ascii_categories": sorted(
+            al.SLASH_TRANSPARENT_NON_ASCII_CATEGORIES
+        ),
+        "lookalike_slashes": sorted(al._LOOKALIKE_SLASHES),
+        "lookalike_slashes_provenance": {
+            "tr39_confusables_version": tr39.CONFUSABLES_VERSION,
+            "tr39_confusables_date": tr39.CONFUSABLES_DATE,
+            "vendoring_script": "backend/scripts/vendor_slash_confusables.py",
+            "supplement": list(al.SLASH_LOOKALIKE_SUPPLEMENT),
+        },
         "category_overrides": {
             "method": (
                 "web's own category membership as inclusive code point ranges "
