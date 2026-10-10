@@ -53,7 +53,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_11_spec_artifacts"
-_PARENT_REVISION_ID = "plan_library_10_keyset_walk_indexes"
+_PARENT_REVISION_ID = "ci_read_token_01"
 _REVISION_FILENAME = "plan_library_11_spec_artifacts.py"
 
 _NEW_KINDS = (
