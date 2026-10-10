@@ -4154,6 +4154,18 @@ class TestExcludedNameExemptions:
             "work_units[0].title: names an owner/name not in product.repos"
         ]
 
+    @pytest.mark.parametrize(
+        "title", ["acme\u31d2/secret", "acme/\U0001d23asecret", "acme//secret"]
+    )
+    def test_a_doubled_slash_cannot_keep_owner_and_name_apart(self, title: str) -> None:
+        """A lookalike folded next to a real slash yields ``acme//secret``;
+        empty segments are dropped before pairing, so it is still a token."""
+        doc = _document()
+        doc["work_units"][0]["title"] = title
+        assert build_record_violations(doc) == [
+            "work_units[0].title: names an owner/name not in product.repos"
+        ]
+
     def test_the_lookalike_table_is_tr39_plus_the_supplement(self) -> None:
         from app.services import build_record_allowlist as al
         from app.services import build_record_slash_confusables as tr39
