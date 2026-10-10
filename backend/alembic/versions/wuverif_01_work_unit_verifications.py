@@ -1,4 +1,4 @@
-"""coord work-unit verifications — one row per independent post-ship verification
+"""coord work-unit verifications table + per-tenant verification dials
 
 Revision ID: wuverif_01
 Revises: census_idx_01_device_repo_path_observed
@@ -20,6 +20,27 @@ session ran against a shipped work unit. A row records the verdict
 independence evidence (``independence``, ``author_sessions``,
 ``author_resolution``), and how the unit was chosen (``selection``,
 ``effective_rate_bp``).
+
+Four per-tenant verification dials on ``coord.tenant_merge_settings``:
+
+* ``verification_sample_rate_bp INTEGER NULL`` — CHECK 1..10000. NULL means
+  "inherit coord's default rate"; 0 is not storable (sampling off is a
+  separate decision, not a rate).
+* ``calibration_floor_bp INTEGER NULL`` — CHECK 1..10000. NULL means "inherit".
+* ``verification_salt BYTEA NULL`` — per-tenant salt for deterministic
+  sampling. NULL until coord mints one; never defaulted here, so a salt is
+  never shared across tenants by a column default.
+* ``verification_demotion_mode TEXT NOT NULL DEFAULT 'shadow'`` — CHECK
+  ``shadow`` | ``live``. Every existing tenant row starts in ``shadow``
+  (metadata-only on PG >= 11: a constant default needs no rewrite), so this
+  revision arms no demotion anywhere.
+
+The dials were authored as a separate revision and folded in here because the
+``Migration Reversal Tested`` gate admits one added migration per PR. Their
+CHECK names follow the table's historical
+``tenant_merge_settings_<column>_check`` convention
+(``tenant_merge_settings_rollout_state_check``, since dropped by
+``merge_enabled_02_drop_rollout_state``).
 
 Design notes
 ============
@@ -65,7 +86,9 @@ Idempotency / authorship posture
   ``op.execute`` (not ``op.create_table``), matching the ``coord.*`` house
   style (``vetev_01``, ``phaseatt_01``). Constraints are declared INLINE in the
   ``CREATE TABLE IF NOT EXISTS`` with explicit names, so a re-run against an
-  already-applied DB is a no-op as a whole.
+  already-applied DB is a no-op as a whole. The ``tenant_merge_settings``
+  columns use ``ADD COLUMN IF NOT EXISTS`` and drop-then-add named CHECKs
+  (same posture as ``vetev_01``'s ``coord.work_units`` columns).
 * SQL is written as plain string literals (no f-strings) so
   ``.pre-commit-hooks/check_alembic_schema_args.py``'s raw-SQL audit actually
   inspects it — that audit silently skips any non-literal argument.
@@ -88,10 +111,9 @@ Head resolution
 ===============
 
 ``down_revision = "census_idx_01_device_repo_path_observed"`` — the single
-head of qontinui-web ``origin/main`` @ ``243794513`` on
-2026-10-10 (re-chained from ``cmtland_01``, the head this was authored on),
-resolved by AST-parsing every file in ``backend/alembic/versions`` and taking
-the one ``revision`` no file names as ``down_revision``. If main moves before
+head of qontinui-web ``origin/main`` @ ``243794513``, measured 2026-10-10 by
+AST-parsing every file in ``backend/alembic/versions`` and taking the one
+``revision`` no file names as ``down_revision``. If main moves before
 this lands, re-chain onto the live head (prove ONE head with
 ``ScriptDirectory.from_config(...).get_heads()``), and re-point the
 ``Revises:`` line above in the same edit. Do not author an ``alembic merge``.
@@ -109,7 +131,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create coord.work_unit_verifications, its CHECKs and its four indexes."""
+    """Create coord.work_unit_verifications, then the four tenant dials.
+
+    The table (its CHECKs and four indexes) first, then the four
+    ``coord.tenant_merge_settings`` columns and their three CHECKs.
+    """
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
 
     op.execute(
@@ -237,13 +263,97 @@ def upgrade() -> None:
         """
     )
 
+    # --- per-tenant verification dials on coord.tenant_merge_settings ---
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_merge_settings
+            ADD COLUMN IF NOT EXISTS verification_sample_rate_bp INTEGER,
+            ADD COLUMN IF NOT EXISTS calibration_floor_bp INTEGER,
+            ADD COLUMN IF NOT EXISTS verification_salt BYTEA,
+            ADD COLUMN IF NOT EXISTS verification_demotion_mode TEXT
+                NOT NULL DEFAULT 'shadow'
+        """
+    )
+
+    op.execute(
+        "ALTER TABLE coord.tenant_merge_settings DROP CONSTRAINT IF EXISTS "
+        "tenant_merge_settings_verification_sample_rate_bp_check"
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_merge_settings
+            ADD CONSTRAINT tenant_merge_settings_verification_sample_rate_bp_check
+                CHECK (verification_sample_rate_bp BETWEEN 1 AND 10000)
+        """
+    )
+    op.execute(
+        "ALTER TABLE coord.tenant_merge_settings DROP CONSTRAINT IF EXISTS "
+        "tenant_merge_settings_calibration_floor_bp_check"
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_merge_settings
+            ADD CONSTRAINT tenant_merge_settings_calibration_floor_bp_check
+                CHECK (calibration_floor_bp BETWEEN 1 AND 10000)
+        """
+    )
+    op.execute(
+        "ALTER TABLE coord.tenant_merge_settings DROP CONSTRAINT IF EXISTS "
+        "tenant_merge_settings_verification_demotion_mode_check"
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_merge_settings
+            ADD CONSTRAINT tenant_merge_settings_verification_demotion_mode_check
+                CHECK (verification_demotion_mode IN ('shadow', 'live'))
+        """
+    )
+
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.tenant_merge_settings.verification_sample_rate_bp IS
+        'Basis points (1..10000) of shipped units sampled for independent '
+        'verification. NULL = inherit coord''s default.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.tenant_merge_settings.verification_demotion_mode IS
+        'shadow = a refutation is recorded but demotes nothing; live = a live '
+        'refutation demotes the unit. Every pre-existing tenant starts shadow.'
+        """
+    )
+
 
 def downgrade() -> None:
-    """Reverse: indexes first, then the table (its CHECKs and FKs go with it).
+    """Reverse in mirror order: the tenant dials, then the table.
 
-    Index names are schema-qualified so the drop is explicit about which
+    The three ``tenant_merge_settings`` CHECKs, then its four columns; then the
+    indexes, then the table (its CHECKs and FKs go with it). Index names are schema-qualified so the drop is explicit about which
     schema it touches rather than depending on ``search_path``.
     """
+    op.execute(
+        "ALTER TABLE coord.tenant_merge_settings DROP CONSTRAINT IF EXISTS "
+        "tenant_merge_settings_verification_demotion_mode_check"
+    )
+    op.execute(
+        "ALTER TABLE coord.tenant_merge_settings DROP CONSTRAINT IF EXISTS "
+        "tenant_merge_settings_calibration_floor_bp_check"
+    )
+    op.execute(
+        "ALTER TABLE coord.tenant_merge_settings DROP CONSTRAINT IF EXISTS "
+        "tenant_merge_settings_verification_sample_rate_bp_check"
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_merge_settings
+            DROP COLUMN IF EXISTS verification_demotion_mode,
+            DROP COLUMN IF EXISTS verification_salt,
+            DROP COLUMN IF EXISTS calibration_floor_bp,
+            DROP COLUMN IF EXISTS verification_sample_rate_bp
+        """
+    )
+
     op.execute("DROP INDEX IF EXISTS coord.idx_work_unit_verifications_live_refuted")
     op.execute("DROP INDEX IF EXISTS coord.idx_work_unit_verifications_unit_created")
     op.execute("DROP INDEX IF EXISTS coord.idx_work_unit_verifications_tenant_created")
