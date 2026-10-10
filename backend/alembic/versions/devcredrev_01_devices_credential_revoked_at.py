@@ -1,7 +1,7 @@
 """coord.devices.credential_revoked_at — a device-scoped credential deny
 
 Revision ID: devcredrev_01_devices_credential_revoked_at
-Revises: coordinput_01_operator_inputs
+Revises: census_idx_01_device_repo_path_observed
 Create Date: 2026-09-30
 
 Phase 4 of plan
@@ -39,7 +39,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "devcredrev_01_devices_credential_revoked_at"
-down_revision: str = "coordinput_01_operator_inputs"
+down_revision: str = "census_idx_01_device_repo_path_observed"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
