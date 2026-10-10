@@ -64741,6 +64741,17 @@
             ],
             "title": "Source Repo"
           },
+          "spec_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Ref"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -64782,6 +64793,7 @@
           "kind",
           "kind_locked",
           "slug",
+          "spec_ref",
           "title",
           "status",
           "content_sha256",
@@ -64869,7 +64881,12 @@
               "supersedes",
               "depends_on",
               "spawned_followup",
-              "refutes"
+              "refutes",
+              "derives_from",
+              "refines",
+              "implements",
+              "verifies",
+              "traces_to"
             ],
             "title": "Relation",
             "type": "string"
@@ -65053,7 +65070,13 @@
               "investigation_report",
               "handoff",
               "plan",
-              "diagnostic"
+              "diagnostic",
+              "request",
+              "requirement",
+              "interface_mapping",
+              "story",
+              "test_case",
+              "doc_correction"
             ],
             "title": "Kind",
             "type": "string"
@@ -65388,6 +65411,17 @@
             ],
             "title": "Source Repo"
           },
+          "spec_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Ref"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -65422,6 +65456,7 @@
           "kind",
           "kind_locked",
           "slug",
+          "spec_ref",
           "title",
           "status",
           "content_sha256",
@@ -65509,7 +65544,13 @@
               "investigation_report",
               "handoff",
               "plan",
-              "diagnostic"
+              "diagnostic",
+              "request",
+              "requirement",
+              "interface_mapping",
+              "story",
+              "test_case",
+              "doc_correction"
             ],
             "title": "Kind",
             "type": "string"
@@ -110603,6 +110644,24 @@
               ],
               "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
               "title": "Intent Ref"
+            }
+          },
+          {
+            "description": "Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization.",
+            "in": "query",
+            "name": "spec_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization.",
+              "title": "Spec Ref"
             }
           },
           {
