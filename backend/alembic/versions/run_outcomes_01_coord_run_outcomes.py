@@ -17,7 +17,8 @@ gains a behavioural ``run_outcome`` type with two arms. The CONCLUSION arm
      "metric":"…","at_least":<n>,"min_cases":<n>}
 
 and resolves against the LATEST row of this table for
-``(tenant_id, source, subject, task)`` — latest by the RUN's own completion
+``(tenant_id, source, subject, task)`` within ONE lane (see "Lanes" below) —
+latest by the RUN's own completion
 time (``run_completed_at``), never by when coord happened to write the row, so a
 late or retried write cannot reorder history. An optional ``ref`` on the anchor
 narrows the lookup to rows of that git sha: confirmed when the named metric is at
@@ -33,8 +34,22 @@ coord's existing CI result door, ``POST /coord/ci/dispatches/:dispatch_id/result
 here under the same principal, assignee and tenant checks it already applies.
 Attribution comes from coord's own ``coord.ci_dispatches`` row, never from the
 body: ``tenant_id``, ``repo``, ``ref`` (the dispatch's head sha),
-``dispatch_id`` and ``run_completed_at`` (the dispatch's ``completed_at``). The body contributes only ``source``, ``subject``, ``task``,
-``metrics`` and ``executed_case_count``.
+``dispatch_id``, ``run_completed_at`` (the dispatch's ``completed_at``) and
+``check_name`` (the dispatch's lane). The body contributes only ``source``,
+``subject``, ``task``, ``metrics`` and ``executed_case_count``.
+
+## Lanes
+
+A CI dispatch runs on one of two lanes, named by its ``check_name``: the
+authoritative ``qontinui-ci-node`` or the shadow ``qontinui-ci-node/shadow``.
+coord records outcomes from BOTH (today every dispatch is created on the shadow
+lane, so a shadow-only writer is the live path) and stores the lane in
+``check_name``; a dispatch row whose lane cannot be read is recorded as shadow,
+the same default coord's result door applies everywhere else. The resolver
+PREFERS the authoritative lane: when any authoritative row exists for the
+lookup, the latest of those decides; only when none does is the latest shadow
+row read. The two lanes never interleave into one "latest", so a newer shadow
+run can never displace an authoritative one.
 
 ## Columns
 
@@ -53,15 +68,19 @@ body: ``tenant_id``, ``repo``, ``ref`` (the dispatch's head sha),
 * ``executed_case_count`` BIGINT NOT NULL, CHECKed non-negative.
 * ``run_completed_at`` TIMESTAMPTZ NOT NULL: when the run completed, copied from
   the dispatch row's ``completed_at``. The ordering key for "latest".
+* ``check_name`` TEXT NOT NULL, never blank: the dispatch lane
+  (``qontinui-ci-node`` or ``qontinui-ci-node/shadow``) the run was recorded
+  from. Part of the lookup key, so the lanes never interleave.
 * ``recorded_at`` TIMESTAMPTZ NOT NULL DEFAULT ``now()``.
 
 ## Indexes
 
 * ``idx_run_outcomes_latest`` on ``(tenant_id, source, subject, task,
-  run_completed_at DESC, id DESC)``: the resolver's query is
-  ``WHERE tenant_id, source, subject, task [AND ref] ORDER BY run_completed_at
-  DESC, id DESC LIMIT 1``, served as one index probe (the optional ``ref`` is a
-  filter on the walk).
+  check_name, run_completed_at DESC, id DESC)``: the resolver's query is
+  ``WHERE tenant_id, source, subject, task, check_name [AND ref] ORDER BY
+  run_completed_at DESC, id DESC LIMIT 1``, run once per lane in preference
+  order, each served as one index probe (the optional ``ref`` is a filter on the
+  walk).
 * ``idx_run_outcomes_one_per_dispatch`` UNIQUE on ``(dispatch_id, source,
   subject, task)`` WHERE ``dispatch_id IS NOT NULL``: one outcome per task per
   dispatch, so a retried result POST can never double-count a run. coord writes
@@ -126,6 +145,7 @@ def upgrade() -> None:
             metrics              JSONB NOT NULL,
             executed_case_count  BIGINT NOT NULL,
             run_completed_at     TIMESTAMPTZ NOT NULL,
+            check_name           TEXT NOT NULL,
             recorded_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT run_outcomes_pkey
                 PRIMARY KEY (id),
@@ -135,6 +155,8 @@ def upgrade() -> None:
                 CHECK (length(btrim(subject)) > 0),
             CONSTRAINT run_outcomes_task_nonblank_check
                 CHECK (length(btrim(task)) > 0),
+            CONSTRAINT run_outcomes_check_name_nonblank_check
+                CHECK (length(btrim(check_name)) > 0),
             CONSTRAINT run_outcomes_metrics_object_check
                 CHECK (jsonb_typeof(metrics) = 'object'),
             CONSTRAINT run_outcomes_executed_case_count_nonnegative_check
@@ -145,7 +167,7 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_run_outcomes_latest
-            ON coord.run_outcomes (tenant_id, source, subject, task, run_completed_at DESC, id DESC)
+            ON coord.run_outcomes (tenant_id, source, subject, task, check_name, run_completed_at DESC, id DESC)
         """
     )
     op.execute(
@@ -159,7 +181,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.run_outcomes IS
-            'Measured evaluation-run outcomes: the store behind the metric arm of coord''s run_outcome anchor. The anchor resolves against the latest row, by run_completed_at, for (tenant_id, source, subject, task) and optionally ref: confirmed when the named metric is at least at_least and executed_case_count is at least min_cases, contradicted when either is missed, unknown when there is no row. Written by coord''s CI result door (POST /coord/ci/dispatches/{dispatch_id}/result) with attribution taken from the dispatch row, never from the request body.'
+            'Measured evaluation-run outcomes: the store behind the metric arm of coord''s run_outcome anchor. The anchor resolves against the latest row, by run_completed_at, for (tenant_id, source, subject, task) and optionally ref, within one lane (check_name): the authoritative lane when it has any row, else the shadow lane. It is confirmed when the named metric is at least at_least and executed_case_count is at least min_cases, contradicted when either is missed, unknown when there is no row. Written by coord''s CI result door (POST /coord/ci/dispatches/{dispatch_id}/result) with attribution taken from the dispatch row, never from the request body.'
         """
     )
     op.execute(
@@ -226,6 +248,12 @@ def upgrade() -> None:
         """
         COMMENT ON COLUMN coord.run_outcomes.run_completed_at IS
             'When the run completed: the dispatch row''s completed_at. The ordering key for the latest-run lookup, so a late or retried write can never become the latest.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.run_outcomes.check_name IS
+            'Dispatch lane the run was recorded from, copied from coord.ci_dispatches.check_name: qontinui-ci-node (authoritative) or qontinui-ci-node/shadow. The resolver prefers authoritative rows and reads shadow rows only when no authoritative row exists; the lanes never interleave into one latest.'
         """
     )
     op.execute(
