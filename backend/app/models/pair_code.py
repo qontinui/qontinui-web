@@ -50,7 +50,7 @@ class PairCode(Base):
 
     __tablename__ = "pair_codes"
     __table_args__ = (
-        # alembic ``paircode_bind_01``: serves the pending-redeem poll and the
+        # alembic ``devcred_01``: serves the pending-redeem poll and the
         # supersede sweep (a device's still-redeemable bound codes).
         Index(
             "idx_pair_codes_bound_device_pending",
@@ -116,7 +116,7 @@ class PairCode(Base):
         comment="Device that redeemed this code (UUID claimed by the runner).",
     )
 
-    # ---- Device binding (alembic ``paircode_bind_01``) ---------------------
+    # ---- Device binding (alembic ``devcred_01``) ---------------------
     bound_device_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=True,
