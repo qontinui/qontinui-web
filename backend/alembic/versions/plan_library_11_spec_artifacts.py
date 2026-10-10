@@ -1,7 +1,7 @@
 """agent.work_artifacts — the specification family: kinds, trace relations, stable refs
 
 Revision ID: plan_library_11_spec_artifacts
-Revises: plan_library_10_keyset_walk_indexes
+Revises: ci_read_token_01
 Create Date: 2026-10-10
 
 Phase 6 step 1 of ``2026-10-09-spec-front-end-of-the-software-factory``
@@ -104,7 +104,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "plan_library_11_spec_artifacts"
-down_revision: str = "plan_library_10_keyset_walk_indexes"
+down_revision: str = "ci_read_token_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

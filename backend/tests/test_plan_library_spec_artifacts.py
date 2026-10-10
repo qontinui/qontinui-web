@@ -419,6 +419,50 @@ class TestScannerCannotOverwriteASpecRow:
         assert artifact.spec_ref is None
 
 
+@pytest.mark.asyncio
+class TestKindForksAreCountedWithinAFamily:
+    """``/plan-library/divergent``'s kind forks: a spec artifact and a plan
+    sharing ``(slug, source_repo)`` are a legitimate pair, not a fork."""
+
+    async def test_a_spec_and_plan_pair_is_not_a_fork(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        slug = _slug("pair")
+        await _create(async_db_session, org_id=org, kind="requirement", slug=slug)
+        await _scan_write(async_db_session, org_id=org, slug=slug)
+        assert await crud.find_kind_forks(async_db_session, org_id=org) == []
+
+    async def test_a_fork_inside_one_family_is_still_reported_alone(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        slug = _slug("forked")
+        await _create(async_db_session, org_id=org, kind="requirement", slug=slug)
+        await _scan_write(async_db_session, org_id=org, slug=slug)
+        await _create(async_db_session, org_id=org, kind="handoff", slug=slug)
+
+        forks = await crud.find_kind_forks(async_db_session, org_id=org)
+        assert len(forks) == 1
+        fork_slug, source_repo, variants = forks[0]
+        assert (fork_slug, source_repo) == (slug, None)
+        # The non-spec family's rows only; the requirement is not part of it.
+        assert sorted(v.kind for v in variants) == ["handoff", "plan"]
+
+    async def test_a_fork_inside_the_spec_family_is_reported(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        slug = _slug("spec-fork")
+        await _create(async_db_session, org_id=org, kind="requirement", slug=slug)
+        await _create(async_db_session, org_id=org, kind="story", slug=slug)
+        await _scan_write(async_db_session, org_id=org, slug=slug)
+
+        forks = await crud.find_kind_forks(async_db_session, org_id=org)
+        assert len(forks) == 1
+        assert sorted(v.kind for v in forks[0][2]) == ["requirement", "story"]
+
+
 class TestKeyFamilyBackstop:
     """The backstop for any path that still resolves across the family — the
     scan path no longer does, so it is exercised directly."""

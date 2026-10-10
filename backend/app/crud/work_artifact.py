@@ -2103,6 +2103,13 @@ async def find_kind_forks(
 
     Returns ``(slug, source_repo, rows)`` with ``rows`` ordered locked-first so
     the operator can see immediately whether a winner already exists.
+
+    Kinds are counted WITHIN one family (spec / non-spec). A spec artifact and
+    a plan that share ``(slug, source_repo)`` are a legitimate pair, not a
+    fork: the scanner resolves within its own family (``_same_family``), so
+    the pair never makes a scan ambiguous, and neither row is a misfiled copy
+    of the other. A key whose rows fork inside one family is reported with
+    that family's rows only (and twice, once per family, if both fork).
     """
     # ONE Label object reused across SELECT / GROUP BY / ORDER BY. Spelling
     # ``coalesce(source_repo, '')`` three times instead would emit three
@@ -2111,23 +2118,25 @@ async def find_kind_forks(
     # GROUP BY copy and the query fails with "source_repo must appear in the
     # GROUP BY clause". (Observed, not theorised.)
     repo_key = func.coalesce(WorkArtifact.source_repo, "").label("repo_key")
+    # Same single-Label discipline for the family key.
+    is_spec = WorkArtifact.kind.in_(SPEC_ARTIFACT_KINDS).label("is_spec")
     group_stmt = (
-        select(WorkArtifact.slug, repo_key)
+        select(WorkArtifact.slug, repo_key, is_spec)
         .where(_org_scope(org_id))
-        .group_by(WorkArtifact.slug, repo_key)
+        .group_by(WorkArtifact.slug, repo_key, is_spec)
         .having(func.count(func.distinct(WorkArtifact.kind)) > 1)
-        .order_by(WorkArtifact.slug, repo_key)
+        .order_by(WorkArtifact.slug, repo_key, is_spec)
     )
     groups = list((await db.execute(group_stmt)).all())
     if not groups:
         return []
 
-    keys = {(g.slug, g.repo_key) for g in groups}
+    keys = {(g.slug, g.repo_key, bool(g.is_spec)) for g in groups}
     rows_stmt = (
         select(WorkArtifact)
         .where(
             _org_scope(org_id),
-            WorkArtifact.slug.in_({s for s, _ in keys}),
+            WorkArtifact.slug.in_({s for s, _, _ in keys}),
         )
         .order_by(
             WorkArtifact.slug,
@@ -2138,15 +2147,18 @@ async def find_kind_forks(
     )
     rows = (await db.execute(rows_stmt)).scalars().all()
 
-    buckets: dict[tuple[str, str], list[WorkArtifact]] = {k: [] for k in keys}
+    buckets: dict[tuple[str, str, bool], list[WorkArtifact]] = {k: [] for k in keys}
     for row in rows:
-        # The slug IN-list can pull in a (slug, repo) pair that is not itself
-        # forked; keep only the real groups.
-        bucket = buckets.get((row.slug, row.source_repo or ""))
+        # The slug IN-list can pull in a (slug, repo, family) that is not
+        # itself forked; keep only the real groups.
+        bucket = buckets.get((row.slug, row.source_repo or "", is_spec_kind(row.kind)))
         if bucket is not None:
             bucket.append(row)
 
-    return [(g.slug, g.repo_key or None, buckets[(g.slug, g.repo_key)]) for g in groups]
+    return [
+        (g.slug, g.repo_key or None, buckets[(g.slug, g.repo_key, bool(g.is_spec))])
+        for g in groups
+    ]
 
 
 # ===========================================================================
