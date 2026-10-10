@@ -119,7 +119,7 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
 #: version it was validated under at publish; the public route re-validates
 #: only a snapshot stored under a different version. BUMP IT on any change to
 #: the key set, a slot rule, a pattern, normalisation or a cap.
-ALLOWLIST_VERSION: Final = 15
+ALLOWLIST_VERSION: Final = 16
 
 #: Longest string the content scan will read — measured on the string AND on
 #: its NFKD decomposition (which can be ~18× longer for one code point, e.g.
@@ -396,7 +396,11 @@ BUILD_RECORD_ALLOWED_PATHS: Final[frozenset[str]] = frozenset(
 #: holds a fixed vocabulary or a value the operator chose, never free text a
 #: private repo name could leak through: the coded-unknown grammar
 #: (``<allowlisted path>: <reason_code>``, validated strictly), work-unit
-#: statuses (coord's enum), RFC 3339 timestamps, and the product slug. Without
+#: statuses (coord's enum), RFC 3339 timestamps, the product slug, and the
+#: repo slots (``product.repos[]``, ``prs[].repo``), which are validated as
+#: members of the confirmed-public repo set — qontinui repo names overlap
+#: (``qontinui-design-tokens`` / ``design-tokens``), so scanning them refused
+#: ordinary documents. Without
 #: this, an excluded repo named ``sessions`` or ``review`` made the
 #: always-present unknown ``sessions.count: census_provisional`` unpublishable,
 #: and ``acme/design-tokens`` refused its own product ``design-tokens``.
@@ -404,11 +408,13 @@ BUILD_RECORD_ALLOWED_PATHS: Final[frozenset[str]] = frozenset(
 #: ``tests/fixtures/build_record_scan_vectors.json`` carries it).
 EXCLUDED_NAME_EXEMPT_PATHS: Final[tuple[str, ...]] = (
     "generated_at",
+    "product.repos[]",
     "product.slug",
     "product.window_end",
     "product.window_start",
     "prs[].landed_at",
     "prs[].opened_at",
+    "prs[].repo",
     "sessions.unknown_reason",
     "timeline[].at",
     "timeline[].from_status",

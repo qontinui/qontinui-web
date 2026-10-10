@@ -4086,6 +4086,12 @@ class TestExcludedNameExemptions:
         )
         assert build_record_violations(doc, excluded_names={"review"}) == []
 
+    def test_a_public_repo_name_may_contain_an_excluded_name(self) -> None:
+        doc = _document()
+        doc["product"]["repos"] = ["acme/qontinui-design-tokens"]
+        doc["prs"][0]["repo"] = "acme/qontinui-design-tokens"
+        assert build_record_violations(doc, excluded_names={"design-tokens"}) == []
+
     def test_free_text_is_still_scanned(self) -> None:
         doc = _document()
         doc["work_units"][0]["title"] = "tokens for review"
@@ -4102,6 +4108,7 @@ class TestExcludedNameExemptions:
         )
 
         fixed = {
+            Slot.REPO,  # validated as a member of the confirmed-public repos
             Slot.SLUG,
             Slot.STATUS,
             Slot.STATUS_OR_NULL,
