@@ -27,14 +27,17 @@ const postMock = vi.fn();
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    patch: (...args: unknown[]) => patchMock(...args),
-    post: (...args: unknown[]) => postMock(...args),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (...args: unknown[]) => getMock(...args),
+      patch: (...args: unknown[]) => patchMock(...args),
+      post: (...args: unknown[]) => postMock(...args),
+      delete: vi.fn(),
+    }),
+  };
+});
 // Arrow indirection, not a direct reference: `vi.mock` factories are hoisted
 // above these consts, so naming them eagerly is a TDZ error.
 vi.mock("sonner", () => ({

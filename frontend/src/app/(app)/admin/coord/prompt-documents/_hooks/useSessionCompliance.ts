@@ -2,21 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchSessionComplianceConfig,
+  listSessionComplianceConfigVersions,
+  listSessionComplianceOutstanding,
+  listSessionComplianceSessions,
+  saveSessionComplianceConfig,
+} from "@/lib/api/operations/coordPromptDocuments";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import type {
   ComplianceVerdict,
-  ListComplianceSessionsResponse,
-  ListConfigVersionsResponse,
-  ListOutstandingResponse,
   OutstandingItem,
   SessionComplianceConfig,
   SessionComplianceConfigUpdate,
   SessionComplianceConfigVersion,
   SessionComplianceRow,
 } from "../compliance-types";
-
-const API = "/api/v1/operations/coord/session-compliance";
 
 /** Default page size for the recent-sessions list. */
 const SESSIONS_PAGE = 25;
@@ -129,9 +130,7 @@ export function useSessionCompliance() {
   const loadConfig = useCallback(async () => {
     setConfig((s) => ({ ...s, loading: true }));
     try {
-      const data = await httpClient.get<SessionComplianceConfig>(
-        `${API}/config`
-      );
+      const data = await fetchSessionComplianceConfig();
       setConfig({
         data,
         loading: false,
@@ -155,9 +154,7 @@ export function useSessionCompliance() {
   const loadVersions = useCallback(async () => {
     setVersions((s) => ({ ...s, loading: true }));
     try {
-      const data = await httpClient.get<ListConfigVersionsResponse>(
-        `${API}/config/versions`
-      );
+      const data = await listSessionComplianceConfigVersions();
       setVersions({
         data: data.versions ?? [],
         loading: false,
@@ -187,10 +184,7 @@ export function useSessionCompliance() {
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
       setSaving(true);
       try {
-        const updated = await httpClient.put<SessionComplianceConfig>(
-          `${API}/config`,
-          patch
-        );
+        const updated = await saveSessionComplianceConfig(patch);
         setConfig({
           data: updated,
           loading: false,
@@ -217,13 +211,12 @@ export function useSessionCompliance() {
 
   const loadSessions = useCallback(async () => {
     setSessions((s) => ({ ...s, loading: true }));
-    const qs = new URLSearchParams({ limit: String(SESSIONS_PAGE) });
-    if (verdictFilter !== "all") qs.set("verdict", verdictFilter);
-    if (cursor) qs.set("cursor", cursor);
     try {
-      const data = await httpClient.get<ListComplianceSessionsResponse>(
-        `${API}/sessions?${qs.toString()}`
-      );
+      const data = await listSessionComplianceSessions({
+        limit: SESSIONS_PAGE,
+        verdict: verdictFilter !== "all" ? verdictFilter : undefined,
+        cursor,
+      });
       setSessions({
         data: data.sessions ?? [],
         loading: false,
@@ -251,9 +244,7 @@ export function useSessionCompliance() {
   const loadOutstanding = useCallback(async () => {
     setOutstanding((s) => ({ ...s, loading: true }));
     try {
-      const data = await httpClient.get<ListOutstandingResponse>(
-        `${API}/outstanding`
-      );
+      const data = await listSessionComplianceOutstanding();
       setOutstanding({
         data: data.items ?? [],
         loading: false,
