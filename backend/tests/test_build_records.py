@@ -3647,11 +3647,23 @@ def _scaling_ratio(run: Any, small: Any, large: Any) -> float:
     ``process_time`` and the minimum of several repeats, so a slow or
     instrumented interpreter (coverage) scales both sides alike."""
 
+    # Calibrate: enough repetitions that the SMALL input costs >= 20 ms, so
+    # the ratio is not timer granularity or a GC pause over sub-millisecond
+    # runs (which made a linear pattern read as 3x under coverage).
+    reps = 1
+    while True:
+        started = time.process_time()
+        for _ in range(reps):
+            run(small)
+        if time.process_time() - started >= 0.02 or reps >= 4096:
+            break
+        reps *= 2
+
     def cost(arg: Any) -> float:
         best = float("inf")
         for _ in range(5):
             started = time.process_time()
-            for _ in range(5):
+            for _ in range(reps):
                 run(arg)
             best = min(best, time.process_time() - started)
         return max(best, 1e-6)
@@ -4092,6 +4104,15 @@ class TestExcludedNameExemptions:
         doc["prs"][0]["repo"] = "acme/qontinui-design-tokens"
         assert build_record_violations(doc, excluded_names={"design-tokens"}) == []
 
+    def test_a_blank_braille_glyph_cannot_split_a_repo_token(self) -> None:
+        """U+2800 renders as a space but is neither whitespace nor
+        default-ignorable, so it split ``acme / secret`` past the scan."""
+        doc = _document()
+        doc["work_units"][0]["title"] = "port acme\u2800/\u2800secret"
+        assert build_record_violations(doc) == [
+            "work_units[0].title: contains an invisible, control or overlay character"
+        ]
+
     def test_free_text_is_still_scanned(self) -> None:
         doc = _document()
         doc["work_units"][0]["title"] = "tokens for review"
@@ -4142,10 +4163,31 @@ def test_the_scan_vector_fixture_is_current() -> None:
     import json
     import subprocess
     import sys
+    import unicodedata
     from pathlib import Path
 
     backend = Path(__file__).resolve().parents[1]
     script = backend / "scripts" / "gen_build_record_scan_vectors.py"
+    committed = json.loads(
+        (backend / "tests" / "fixtures" / "build_record_scan_vectors.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    # Category membership comes from the interpreter's Unicode database, so a
+    # different one would make --check fail on every Cn range for a reason
+    # that is not a scanner change. That must still FAIL (a skip would leave
+    # coord's parity unpinned) — but say why, and how to fix it.
+    if committed["unidata_version"] != unicodedata.unidata_version:
+        pytest.fail(
+            "build_record_scan_vectors.json was generated under Unicode "
+            f"{committed['unidata_version']}, but this interpreter "
+            f"({sys.version.split()[0]}) has Unicode {unicodedata.unidata_version}. "
+            "The fixture must be generated on the CI-pinned Python "
+            "(PYTHON_VERSION in .github/workflows/backend-ci.yml): run "
+            "`python -I backend/scripts/gen_build_record_scan_vectors.py` there "
+            "(or via docker, see the generator's docstring) and commit it — "
+            "do not regenerate it on this interpreter."
+        )
     result = subprocess.run(
         [sys.executable, "-I", str(script), "--check"],
         capture_output=True,

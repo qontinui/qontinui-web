@@ -9,7 +9,8 @@ expected value in it is computed HERE, by calling
 ``app.services.build_record_allowlist`` (``build_record_violations``,
 ``normalize_for_scan``) — nothing is hand-written — so the fixture is web's
 scanner, frozen. qontinui-coord's port of the scanner copies the fixture
-verbatim and must reproduce every vector; ``tests/test_build_record_scan_vectors.py``
+verbatim and must reproduce every vector;
+``tests/test_build_records.py::test_the_scan_vector_fixture_is_current``
 regenerates it and fails CI when the committed copy is stale, so a web
 scanner change cannot land without a regenerated fixture (and an
 ``ALLOWLIST_VERSION`` bump, which the fixture also carries).
@@ -23,6 +24,14 @@ specially — refused (``Cc Cf Cn Co Cs``) or stripped (``Mn Me``) — plus the
 default-ignorable and overlay tables. coord diffs those ranges against its own
 Unicode tables; any difference is a code point the two scanners classify
 differently.
+
+``unidata_version`` matters: category membership comes from the
+interpreter's Unicode database, so the fixture must be generated on the
+CI-pinned Python (``PYTHON_VERSION`` in ``.github/workflows/backend-ci.yml``,
+3.12 -> Unicode 15.0.0). Without that interpreter locally:
+``docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/backend:/backend" -w /
+python:3.12-slim python -I /backend/scripts/gen_build_record_scan_vectors.py``
+(the generator needs only the standard library).
 
 ``-I`` (isolated mode): the script puts ``backend/`` on ``sys.path`` itself
 and reads no ``PYTHON*`` variable, so the output depends only on the tree and
@@ -182,6 +191,7 @@ DOCUMENT_CASES: list[tuple[str, Any, list[str]]] = [
     ("minus_sign_uuid", _title("id 1b4e28ba−2fa1−11d2−883f−0016d3cca427"), []),
     ("minus_sign_between_words", _title("acme−secret"), []),
     ("spaced_double_slash", _title("a / / b"), []),
+    ("braille_blank_split_repo_token", _title("acme\u2800/\u2800secret"), []),
     (
         "f3_product_slug_equals_excluded_name",
         _product_slug("design-tokens"),
@@ -248,6 +258,7 @@ def build() -> dict[str, Any]:
         "stripped_categories": sorted(al._STRIPPED_CATEGORIES),
         "default_ignorable_ranges": [list(r) for r in al.DEFAULT_IGNORABLE_RANGES],
         "overlay_marks": sorted(ord(c) for c in al._OVERLAY_MARKS),
+        "blank_rendering_glyphs": sorted(ord(c) for c in al.BLANK_RENDERING_GLYPHS),
         "category_overrides": {
             "method": (
                 "web's own category membership as inclusive code point ranges "
