@@ -14,7 +14,7 @@ re-check — write GitHub's last reported ``X-RateLimit-Remaining`` /
 A reading is stale once its window has reset (``reset_at`` passed), or, when
 GitHub sent no reset, an hour after it was observed; a stale reading reserves
 nothing. Persisted because the backend runs several replicas and redeploys
-often (revision ``brs_03_build_record_visibility_check``).
+often (revision ``build_records_01_export``).
 """
 
 from __future__ import annotations

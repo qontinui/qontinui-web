@@ -1,11 +1,11 @@
 """Public build-record snapshots (``web.build_record_*``).
 
 Phase 1 of ``2026-10-09-factory-built-product-portfolio-and-launch-kit``.
-Mirrors alembic revision ``brs_01_build_record_snapshots``; read that
+Mirrors alembic revision ``build_records_01_export``; read that
 migration's docstring for why ownership is its own table.
 
 The product DEFINITIONS (``coord.build_record_products``) are coord's: web
-created that table (``brp_01_build_record_products``) but never reads it — it
+created that table (``build_records_01_export``) but never reads it — it
 proxies coord's routes instead — so there is deliberately no ORM model for it
 here.
 """
@@ -56,7 +56,7 @@ class BuildRecordPublicSlug(Base):
     claimed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
-    #: Set by the D7 unpublish (revision ``brs_02_build_record_unpublish``):
+    #: Set by the D7 unpublish (revision ``build_records_01_export``):
     #: the public reader 404s while it is set; a publish with ``reactivate``
     #: clears it.
     #: Snapshot rows are kept either way, and the tenant keeps the slug.
@@ -65,13 +65,13 @@ class BuildRecordPublicSlug(Base):
     )
     #: When the visibility re-check last finished with this slug, whatever
     #: the outcome — the queue order (revision
-    #: ``brs_03_build_record_visibility_check``).
+    #: ``build_records_01_export``).
     last_visibility_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     #: When the scheduled reconcile last asked GitHub whether this page's repos
     #: are still public, set only when every repo got a definite answer
-    #: (revision ``brs_03_build_record_visibility_check``).
+    #: (revision ``build_records_01_export``).
     last_visibility_check_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -169,7 +169,7 @@ class GithubRateBudget(Base):
 class BuildRecordPendingNotPublic(Base):
     """A NOT_PUBLIC verdict whose retraction could not take the owner row
     lock in time; applied first by the next visibility tick. No FK to the
-    owner on purpose (see revision ``brs_03_build_record_visibility_check``).
+    owner on purpose (see revision ``build_records_01_export``).
     """
 
     __tablename__ = "build_record_pending_not_public"

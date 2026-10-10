@@ -32,7 +32,7 @@ capped at 60/hour per egress IP, and a caller-triggered loop could spend the
 publish route's share). Per tick it makes at most
 :data:`VISIBILITY_CALLS_PER_TICK_ANONYMOUS` (8) GitHub calls — 80 with the
 operator token — counted in repos, stalest page first, resuming a wide slug
-at its stored offset (revision ``brs_03_build_record_visibility_check``).
+at its stored offset (revision ``build_records_01_export``).
 Real throughput is :func:`recheck_throughput_per_hour`: ~30 repos/hour
 (~720/day) anonymous, 480/hour with the token. It stops the tick only on a
 transport error or a rate-limit signal; any other unanswered repo gives up

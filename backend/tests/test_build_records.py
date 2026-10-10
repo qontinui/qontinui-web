@@ -47,6 +47,7 @@ from app.services.build_record_allowlist import (
 from app.services.github_repo_visibility import (
     check_repo as _REAL_CHECK_REPO,
 )
+from tests._ops_patch import setattr_ops
 
 TENANT_A = UUID("aaaaaaaa-0000-4000-8000-0000000000b1")
 TENANT_B = UUID("bbbbbbbb-0000-4000-8000-0000000000b2")
@@ -1058,12 +1059,10 @@ class TestRealApp:
         monkeypatch: pytest.MonkeyPatch,
         async_db_session,
     ) -> None:
-        from app.api.v1.endpoints import operations
-
         async def fake_identity(request: Any) -> Any:
             return _identity(admin=False)
 
-        monkeypatch.setattr(operations, "get_coord_identity", fake_identity)
+        setattr_ops(monkeypatch, "get_coord_identity", fake_identity)
         async with _client(real_app) as c:
             r = await c.post(f"/api/v1/build-records/{SLUG}/publish")
         assert r.status_code == 403
@@ -1076,15 +1075,13 @@ class TestRealApp:
         monkeypatch: pytest.MonkeyPatch,
         async_db_session,
     ) -> None:
-        from app.api.v1.endpoints import operations
-
         async def fake_identity(request: Any) -> Any:
             return _identity(admin=True)
 
         async def refused(self: Any, url: Any, *args: Any, **kwargs: Any) -> Any:
             raise httpx.ConnectError("connection refused")
 
-        monkeypatch.setattr(operations, "get_coord_identity", fake_identity)
+        setattr_ops(monkeypatch, "get_coord_identity", fake_identity)
         monkeypatch.setattr(httpx.AsyncClient, "get", refused)
         async with _client(real_app) as c:
             r = await c.post(f"/api/v1/build-records/{SLUG}/publish")
@@ -1574,12 +1571,10 @@ class TestRealAppWrites:
         path: str,
         body: Any,
     ) -> None:
-        from app.api.v1.endpoints import operations
-
         async def fake_identity(request: Any) -> Any:
             return _identity(admin=False)
 
-        monkeypatch.setattr(operations, "get_coord_identity", fake_identity)
+        setattr_ops(monkeypatch, "get_coord_identity", fake_identity)
         async with _client(real_app) as c:
             r = await c.request(method, path, json=body)
         assert r.status_code == 403
@@ -1591,12 +1586,10 @@ class TestRealAppWrites:
         signed_in_user: None,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from app.api.v1.endpoints import operations
-
         async def fake_identity(request: Any) -> Any:
             return _identity(admin=True)
 
-        monkeypatch.setattr(operations, "get_coord_identity", fake_identity)
+        setattr_ops(monkeypatch, "get_coord_identity", fake_identity)
         async with _client(real_app) as c:
             r = await c.delete(f"/api/v1/build-records/{SLUG}/publish")
         assert r.status_code == 404
@@ -1695,7 +1688,6 @@ class TestReconcileResilience:
     async def test_list_products_treats_transport_errors_as_unanswered(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from app.api.v1.endpoints import operations
         from app.jobs.build_record_reconcile import _list_products
 
         for exc in (httpx.ConnectError("down"), ValueError("not json")):
@@ -1703,7 +1695,7 @@ class TestReconcileResilience:
             async def broken(*_: Any, __exc: Exception = exc, **___: Any) -> Any:
                 raise __exc
 
-            monkeypatch.setattr(operations, "_proxy_coord_get", broken)
+            setattr_ops(monkeypatch, "_proxy_coord_get", broken)
             assert await _list_products(TENANT_A) is None
 
     async def test_one_failing_or_slow_tenant_does_not_starve_the_rest(
