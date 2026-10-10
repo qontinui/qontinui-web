@@ -130,7 +130,7 @@ UNKNOWN_REASON_CODES: Final[frozenset[str]] = frozenset(
 #: version it was validated under at publish; the public route re-validates
 #: only a snapshot stored under a different version. BUMP IT on any change to
 #: the key set, a slot rule, a pattern, normalisation or a cap.
-ALLOWLIST_VERSION: Final = 19
+ALLOWLIST_VERSION: Final = 20
 
 #: Longest string the content scan will read — measured on the string AND on
 #: its NFKD decomposition (which can be ~18× longer for one code point, e.g.
@@ -676,9 +676,12 @@ def _repo_tokens(normalized: str) -> list[str]:
     names are case-blind)."""
     pairs: list[str] = []
     for run in _PATH_RUN_RE.findall(normalized):
-        segments = [s.strip(".-") for s in run.split("/")]
+        # Empty segments are DROPPED before pairing, so a doubled slash —
+        # typed (``acme//secret``) or produced by folding a lookalike next to
+        # a real one (``acme㇒/secret``) — cannot keep owner and name apart.
+        segments = [s for s in (s.strip(".-") for s in run.split("/")) if s]
         for left, right in zip(segments, segments[1:], strict=False):
-            if not left or not right or (left.isdigit() and right.isdigit()):
+            if left.isdigit() and right.isdigit():
                 continue
             pairs.append(f"{left}/{right}".lower())
     return pairs
