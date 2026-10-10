@@ -1,6 +1,9 @@
-"""Schema + round-trip test for alembic ``wuverif_02``.
+"""Schema + round-trip test for the tenant-dial half of alembic ``wuverif_01``.
 
-Four verification dials on ``coord.tenant_merge_settings``. What is asserted:
+``wuverif_01`` also adds four verification dials on
+``coord.tenant_merge_settings`` (folded in from a former second revision; the
+table half is tested in ``test_wuverif_01_work_unit_verifications_migration``).
+What is asserted here:
 
 1. **Types and nullability.** The two ``_bp`` dials and the salt are nullable
    with no default (NULL = inherit / not yet minted); the demotion mode is NOT
@@ -13,6 +16,10 @@ Four verification dials on ``coord.tenant_merge_settings``. What is asserted:
    parent, upgrade again) errors on nothing, keeps every dial value already
    set, and leaves the three CHECKs in force.
 
+The parent revision is READ from the revision, never pinned (the
+``phaseatt_01`` convention): ``down_revision`` is re-pointed at the merged head
+at land time.
+
 Substrate is ``_alembic_harness`` (see ``test_wuverif_01_...``); a skip proves
 nothing — set ``QONTINUI_TEST_PG=host:port``.
 """
@@ -20,6 +27,7 @@ nothing — set ``QONTINUI_TEST_PG=host:port``.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 import pytest
 import sqlalchemy
@@ -32,13 +40,14 @@ from tests._alembic_harness import (
     can_connect,
     column_info,
     ephemeral_database,
+    load_revision_module,
     run_alembic,
     scalar,
     table_exists,
 )
 
-_REVISION_ID = "wuverif_02"
-_PARENT_REVISION_ID = "wuverif_01"  # sibling revision in the same PR; stable.
+_REVISION_ID = "wuverif_01"
+_REVISION_FILENAME = "wuverif_01_work_unit_verifications.py"
 
 _SCHEMA = "coord"
 _TABLE = "tenant_merge_settings"
@@ -62,6 +71,16 @@ _needs_pg = pytest.mark.skipif(
         "derives DATABASE_URL from QONTINUI_TEST_PG=host:port, so set that)"
     ),
 )
+
+
+def _declared_parent() -> str:
+    """The parent this revision currently names — READ, never pinned."""
+    path: Path = backend_root() / "alembic" / "versions" / _REVISION_FILENAME
+    module = load_revision_module(path, f"_test_{_REVISION_ID}_settings")
+    assert module.revision == _REVISION_ID
+    parent = module.down_revision
+    assert isinstance(parent, str) and parent, f"down_revision is {parent!r}"
+    return parent
 
 
 def _assert_present(engine: Engine) -> None:
@@ -92,7 +111,7 @@ def _seed_tenant_settings(engine: Engine) -> uuid.UUID:
         conn.execute(
             text(
                 "INSERT INTO coord.tenants (tenant_id, slug, display_name) "
-                "VALUES (:t, :slug, 'wuverif_02 fixture')"
+                "VALUES (:t, :slug, 'wuverif_01 settings fixture')"
             ),
             {"t": str(tenant_id), "slug": f"wuverif-{tenant_id.hex[:12]}"},
         )
@@ -126,9 +145,13 @@ def _refused_by(
 
 @_needs_pg
 def test_an_existing_tenant_starts_in_shadow_and_the_checks_hold() -> None:
-    with ephemeral_database(admin_database_url(), "wuverif02_chk") as (engine, db_url):
+    parent = _declared_parent()
+    with ephemeral_database(admin_database_url(), "wuverif01_set_chk") as (
+        engine,
+        db_url,
+    ):
         # Seed a settings row BEFORE the columns exist, as production has.
-        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        run_alembic(backend_root(), db_url, "upgrade", parent)
         tenant_id = _seed_tenant_settings(engine)
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
@@ -167,12 +190,16 @@ def test_an_existing_tenant_starts_in_shadow_and_the_checks_hold() -> None:
 
 @_needs_pg
 def test_up_down_up_leaves_no_residue_and_keeps_the_settings_row() -> None:
-    with ephemeral_database(admin_database_url(), "wuverif02_rt") as (engine, db_url):
+    parent = _declared_parent()
+    with ephemeral_database(admin_database_url(), "wuverif01_set_rt") as (
+        engine,
+        db_url,
+    ):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         tenant_id = _seed_tenant_settings(engine)
         _set(engine, tenant_id, "verification_demotion_mode", "live")
 
-        run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
+        run_alembic(backend_root(), db_url, "downgrade", parent)
         _assert_absent(engine)
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert (
@@ -200,7 +227,8 @@ def test_up_down_up_leaves_no_residue_and_keeps_the_settings_row() -> None:
 
 @_needs_pg
 def test_re_executing_upgrade_over_an_applied_schema_is_a_no_op() -> None:
-    with ephemeral_database(admin_database_url(), "wuverif02_rerun") as (
+    parent = _declared_parent()
+    with ephemeral_database(admin_database_url(), "wuverif01_set_rerun") as (
         engine,
         db_url,
     ):
@@ -220,11 +248,8 @@ def test_re_executing_upgrade_over_an_applied_schema_is_a_no_op() -> None:
 
         # Stamp back WITHOUT running downgrade(), so the next upgrade genuinely
         # re-executes this revision's upgrade() body over the live columns.
-        run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
-        assert (
-            scalar(engine, "SELECT version_num FROM alembic_version")
-            == _PARENT_REVISION_ID
-        )
+        run_alembic(backend_root(), db_url, "stamp", parent)
+        assert scalar(engine, "SELECT version_num FROM alembic_version") == parent
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert scalar(engine, "SELECT version_num FROM alembic_version") == _REVISION_ID
 
