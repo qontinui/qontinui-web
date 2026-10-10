@@ -6,8 +6,9 @@ Pins the reversible shape of the Phase 1 build-record schema (plan
 1. **Upgrade** creates ``coord.build_record_products`` and the four ``web.*``
    tables, with the cursor columns, the snapshot's ``allowlist_version`` and
    the slug CHECK.
-2. **Downgrade** first deletes retracted slugs' snapshots and owner rows (a
-   retracted page is never resurrected), then drops everything.
+2. **Downgrade** drops every table, so no retracted page survives it. The
+   migration's delete-retracted-rows-first step is not separately observable
+   once the tables are gone, and this test does not pin it.
 3. **Upgrade again** succeeds on the downgraded database.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
