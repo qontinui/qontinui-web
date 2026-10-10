@@ -26,7 +26,10 @@ the tests at a live instance with ``QONTINUI_TEST_PG=host:port`` or
 5. Each CHECK rejects what it names, NOT NULL names its column, and the
    one-per-dispatch index absorbs a retried write but admits dispatch-less rows.
 6. The latest-row query coord runs picks the newest RUN (by run_completed_at,
-   so a late write cannot reorder it), breaks a tie on id, never crosses tenants, and is served by the latest index.
+   so a late write cannot reorder it), breaks a tie on id, never crosses tenants
+   or lanes, and is served by the latest index. Run in coord's lane preference
+   order, the authoritative lane wins over a newer shadow row and a shadow-only
+   history still resolves.
 7. The table and column comments land as the source writes them.
 8. ``upgrade()`` is idempotent, and up, down, up leaves no residue.
 """
@@ -88,16 +91,22 @@ _COLUMNS: tuple[tuple[str, str, bool, bool], ...] = (
     ("metrics", "jsonb", False, False),
     ("executed_case_count", "bigint", False, False),
     ("run_completed_at", "timestamp with time zone", False, False),
+    ("check_name", "text", False, False),
     ("recorded_at", "timestamp with time zone", False, True),
 )
 
-# The exact query coord's metric-arm resolver runs. Kept in step with
-# `qontinui-coord` `anchor_observer.rs` `RUN_OUTCOME_LATEST_SQL`.
+# The exact query coord's metric-arm resolver runs, once per lane in
+# preference order. Kept in step with `qontinui-coord` `anchor_observer.rs`
+# `RUN_OUTCOME_LATEST_SQL` and `RUN_OUTCOME_LANE_PREFERENCE`.
 _LATEST_SQL = (
     "SELECT metrics, executed_case_count FROM coord.run_outcomes "
     "WHERE tenant_id = :tenant AND source = :source AND subject = :subject "
-    "AND task = :task ORDER BY run_completed_at DESC, id DESC LIMIT 1"
+    "AND task = :task AND check_name = :lane "
+    "ORDER BY run_completed_at DESC, id DESC LIMIT 1"
 )
+_AUTHORITATIVE = "qontinui-ci-node"
+_SHADOW = "qontinui-ci-node/shadow"
+_LANE_PREFERENCE = (_AUTHORITATIVE, _SHADOW)
 
 _needs_pg = pytest.mark.skipif(
     not can_connect(admin_database_url()),
@@ -291,6 +300,7 @@ def _row(**overrides: object) -> dict[str, object]:
         "metrics": json.dumps({"f1": 0.75}),
         "executed_case_count": 150,
         "run_completed_at": _RECORDED,
+        "check_name": _SHADOW,
     }
     params.update(overrides)
     return params
@@ -350,7 +360,9 @@ def _count(engine: Engine) -> int:
     return value
 
 
-def _latest(engine: Engine, tenant: uuid.UUID) -> tuple[object, ...] | None:
+def _latest_in_lane(
+    engine: Engine, tenant: uuid.UUID, lane: str
+) -> tuple[object, ...] | None:
     with engine.connect() as conn:
         row = conn.execute(
             text(_LATEST_SQL),
@@ -359,9 +371,19 @@ def _latest(engine: Engine, tenant: uuid.UUID) -> tuple[object, ...] | None:
                 "source": "reference-eval",
                 "subject": "baseline",
                 "task": "all-sets",
+                "lane": lane,
             },
         ).one_or_none()
     return None if row is None else tuple(row)
+
+
+def _latest(engine: Engine, tenant: uuid.UUID) -> tuple[object, ...] | None:
+    """coord's lookup: the first lane, in preference order, that has a row."""
+    for lane in _LANE_PREFERENCE:
+        row = _latest_in_lane(engine, tenant, lane)
+        if row is not None:
+            return row
+    return None
 
 
 @_needs_pg
@@ -395,7 +417,7 @@ def test_table_shape_key_and_indexes() -> None:
         )
         assert isinstance(latest_def, str)
         assert (
-            "(tenant_id, source, subject, task, run_completed_at DESC, id DESC)"
+            "(tenant_id, source, subject, task, check_name, run_completed_at DESC, id DESC)"
             in latest_def
         ), latest_def
         one_def = scalar(
@@ -419,6 +441,7 @@ def test_checks_nulls_and_the_one_per_dispatch_index_behave() -> None:
             ("run_outcomes_source_nonblank_check", _row(source="  ")),
             ("run_outcomes_subject_nonblank_check", _row(subject="")),
             ("run_outcomes_task_nonblank_check", _row(task=" ")),
+            ("run_outcomes_check_name_nonblank_check", _row(check_name=" ")),
             ("run_outcomes_metrics_object_check", _row(metrics=json.dumps([1, 2]))),
             ("run_outcomes_metrics_object_check", _row(metrics=json.dumps(0.5))),
             (
@@ -435,6 +458,7 @@ def test_checks_nulls_and_the_one_per_dispatch_index_behave() -> None:
             "metrics",
             "executed_case_count",
             "run_completed_at",
+            "check_name",
         ):
             _assert_not_null(engine, column)
         # ref, repo and dispatch_id are nullable: a dispatch-less writer is allowed.
@@ -455,9 +479,9 @@ def test_checks_nulls_and_the_one_per_dispatch_index_behave() -> None:
                 text(
                     "INSERT INTO coord.run_outcomes "
                     "(tenant_id, source, subject, task, dispatch_id, metrics, "
-                    "executed_case_count, run_completed_at) "
+                    "executed_case_count, run_completed_at, check_name) "
                     "VALUES (:t, 'reference-eval', 'baseline', 'all-sets', :d, '{}'::jsonb, "
-                    "1, now()) "
+                    "1, now(), 'qontinui-ci-node/shadow') "
                     "ON CONFLICT DO NOTHING"
                 ),
                 {"t": _TENANT, "d": dispatch},
@@ -554,11 +578,63 @@ def test_the_latest_row_query_picks_newest_breaks_ties_and_stays_in_tenant() -> 
                 r[0]
                 for r in conn.execute(
                     text("EXPLAIN " + _LATEST_SQL),
-                    {"tenant": _TENANT, "source": "s", "subject": "s", "task": "t"},
+                    {
+                        "tenant": _TENANT,
+                        "source": "s",
+                        "subject": "s",
+                        "task": "t",
+                        "lane": _AUTHORITATIVE,
+                    },
                 )
             )
         assert "idx_run_outcomes_latest" in plan, plan
         assert "Sort" not in plan, f"the latest index must serve the ORDER BY:\n{plan}"
+
+
+@_needs_pg
+def test_the_authoritative_lane_is_preferred_and_lanes_never_interleave() -> None:
+    with ephemeral_database(admin_database_url(), "runout01_lanes") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+
+        # Shadow-only history (the live path today) still resolves.
+        _insert(
+            engine,
+            _row(
+                check_name=_SHADOW,
+                metrics=json.dumps({"f1": 0.3}),
+                run_completed_at=_RECORDED,
+            ),
+        )
+        latest = _latest(engine, _TENANT)
+        assert latest is not None and latest[0] == {"f1": 0.3}
+
+        # An authoritative row wins even over a NEWER shadow row.
+        _insert(
+            engine,
+            _row(
+                check_name=_AUTHORITATIVE,
+                metrics=json.dumps({"f1": 0.8}),
+                run_completed_at=_RECORDED + timedelta(hours=1),
+            ),
+        )
+        _insert(
+            engine,
+            _row(
+                check_name=_SHADOW,
+                metrics=json.dumps({"f1": 0.1}),
+                run_completed_at=_RECORDED + timedelta(hours=9),
+            ),
+        )
+        latest = _latest(engine, _TENANT)
+        assert latest is not None and latest[0] == {"f1": 0.8}, (
+            "a newer shadow row displaced the authoritative one"
+        )
+        # Each lane's own latest is read without the other interleaving.
+        shadow = _latest_in_lane(engine, _TENANT, _SHADOW)
+        assert shadow is not None and shadow[0] == {"f1": 0.1}
 
 
 @_needs_pg
