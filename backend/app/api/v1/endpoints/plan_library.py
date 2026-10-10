@@ -612,6 +612,7 @@ def _detail(
         kind=row.kind,
         kind_locked=row.kind_locked,
         slug=row.slug,
+        spec_ref=row.spec_ref,
         title=row.title,
         status=row.status,
         content_sha256=row.content_sha256,
@@ -2574,6 +2575,7 @@ def list_fingerprint(
     work_unit_slug: str | None = None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    spec_ref: str | None = None,
 ) -> ScopeFingerprint:
     """``GET /plan-library``'s cursor scope: the org and EVERY filter, as
     applied. A cursor minted under one filter set is refused under another."""
@@ -2588,6 +2590,7 @@ def list_fingerprint(
         .opt_str("work_unit_slug", work_unit_slug)
         .opt_str("intent_ref", intent_ref)
         .opt_str("slug", slug)
+        .opt_str("spec_ref", spec_ref)
         .finish()
     )
 
@@ -2691,6 +2694,11 @@ async def list_work_artifacts(
         "citation such as success_metric/<name>. Not resolved; a citation "
         "no artifact carries simply returns an empty page.",
     ),
+    spec_ref: str | None = Query(
+        None,
+        description="Exact match on a specification artifact's stable ID "
+        "(e.g. REQ-0042). At most one row per organization.",
+    ),
     cursor: str | None = Query(None, description=_CURSOR_DESCRIPTION),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
@@ -2735,6 +2743,7 @@ async def list_work_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
     )
     after = fingerprint.decode_param(cursor, surface="GET /plan-library")
     rows, total = await crud.list_artifacts(
@@ -2748,6 +2757,7 @@ async def list_work_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
         after=after,
         limit=limit,
     )
@@ -4844,6 +4854,17 @@ async def upsert_work_artifact(
                 "candidate_kinds": exc.candidate_kinds,
             },
         ) from exc
+    except crud.SpecFamilyBoundary as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "spec_family_boundary",
+                "message": str(exc),
+                "from_kind": exc.from_kind,
+                "to_kind": exc.to_kind,
+                "spec_ref": exc.spec_ref,
+            },
+        ) from exc
     except crud.ArtifactKindConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -5039,6 +5060,17 @@ async def patch_work_artifact_kind(
         updated = await crud.set_artifact_kind(
             db, row, kind=payload.kind, org_id=org_id
         )
+    except crud.SpecFamilyBoundary as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "spec_family_boundary",
+                "message": str(exc),
+                "from_kind": exc.from_kind,
+                "to_kind": exc.to_kind,
+                "spec_ref": exc.spec_ref,
+            },
+        ) from exc
     except crud.ArtifactKindConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
