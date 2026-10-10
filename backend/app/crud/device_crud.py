@@ -510,7 +510,7 @@ async def delete_device(
 # Device-scoped credential deny (``coord.devices.credential_revoked_at``)
 #
 # Plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-from-
-# qontinui-web`` Phase 4. web AUTHORS this column (alembic ``devcredrev_01``)
+# qontinui-web`` Phase 4. web AUTHORS this column (alembic ``devcred_01``)
 # and is its only writer; the operator revoke / authorize-redeem routes set
 # and clear it, and every web door that issues the device a credential reads
 # it. Kept on the ``Device`` ORM model with the rest of web's sanctioned

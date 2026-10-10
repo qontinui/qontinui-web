@@ -225,7 +225,7 @@ class Device(Base):
         comment="Timestamp of the most recent CI job executed by this runner.",
     )
 
-    # ---- Credential deny (alembic ``devcredrev_01``) -----------------------
+    # ---- Credential deny (alembic ``devcred_01``) -----------------------
     #
     # Device-scoped: while set, every door that issues this device a
     # credential refuses (web's dmk mint/self-mint/exchange, pair-code redeem,
