@@ -10,24 +10,24 @@
  */
 
 import { useEffect, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { fetchPlanAttribution } from "@/lib/api/operations/planAttribution";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { httpStatusOfError } from "@/components/console/readFailure";
 import { deriveAttribution, type AttributionReading } from "./attribution";
 
-export function attributionEndpoint(slug: string): string {
-  return `/api/v1/operations/plans/${encodeURIComponent(slug)}/attribution`;
-}
-
-export function useAttribution(slug: string, enabled: boolean): AttributionReading {
-  const [reading, setReading] = useState<AttributionReading>({ state: "pending" });
+export function useAttribution(
+  slug: string,
+  enabled: boolean
+): AttributionReading {
+  const [reading, setReading] = useState<AttributionReading>({
+    state: "pending",
+  });
 
   useEffect(() => {
     if (!enabled) return;
     let live = true;
     setReading({ state: "pending" });
-    httpClient
-      .get<unknown>(attributionEndpoint(slug), COORD_DASHBOARD_POLL_OPTIONS)
+    fetchPlanAttribution(slug, COORD_DASHBOARD_POLL_OPTIONS)
       .then((body) => {
         if (live) setReading(deriveAttribution(body));
       })

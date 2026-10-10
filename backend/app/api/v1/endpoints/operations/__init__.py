@@ -4285,7 +4285,9 @@ _ATTRIBUTION_SLUG_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
 
 @router.get("/plans/{slug}/attribution")
 async def get_coord_plan_attribution(
-    slug: str = Path(..., min_length=1, max_length=255, pattern=_ATTRIBUTION_SLUG_PATTERN),
+    slug: str = Path(
+        ..., min_length=1, max_length=255, pattern=_ATTRIBUTION_SLUG_PATTERN
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return who shipped a work unit, as session DISPLAY NAMES (operator only).

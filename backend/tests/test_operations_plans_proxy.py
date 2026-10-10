@@ -55,6 +55,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 TEST_TENANT_ID = uuid4()
 API_PREFIX = "/api/v1/operations"
 
@@ -900,8 +902,8 @@ class TestCoordPlanAttribution:
     def test_the_operator_bearer_is_forwarded(self, auth_client: TestClient):
         """``tenant_id=`` is what makes ``_proxy_coord_get`` forward the
         bearer coord authorizes on; without it coord answers 401/403."""
-        with patch(
-            "app.api.v1.endpoints.operations._tenant_headers",
+        with patch_ops(
+            "_tenant_headers",
             return_value={"Authorization": "Bearer op"},
         ) as headers:
             _, instance = self._get(auth_client, self._SLUG)
@@ -967,8 +969,8 @@ class TestCoordPlanAttribution:
         app = _build_test_app()
         del app.dependency_overrides[get_tenant_id]
         identity = MagicMock(home_tenant_id=None)
-        with patch(
-            "app.api.v1.endpoints.operations.get_coord_identity",
+        with patch_ops(
+            "get_coord_identity",
             AsyncMock(return_value=identity),
         ):
             resp, instance = self._get(TestClient(app), self._SLUG)
