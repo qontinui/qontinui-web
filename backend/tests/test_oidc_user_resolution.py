@@ -199,23 +199,119 @@ async def test_cognito_tokens_still_resolve_by_cognito_sub_with_roles(
     assert await _identity_rows(async_db_session, user.id) == []
 
 
+async def _local_account(session: AsyncSession, email: str) -> User:
+    """An account holding NO federated identity (e.g. created before SSO)."""
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        username=f"local-{uuid.uuid4().hex[:8]}",
+        is_active=True,
+        is_verified=True,
+        is_superuser=False,
+    )
+    session.add(user)
+    await session.flush()
+    return user
+
+
 @pytest.mark.asyncio
-async def test_a_verified_email_links_the_existing_account(
+async def test_an_opted_in_issuer_links_a_local_account(
     issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
 ) -> None:
     email = f"linked-{uuid.uuid4().hex[:8]}@example.test"
-    existing = await verify_cognito_token_and_resolve_user(
-        issuers["cognito"].mint("k1", **_unique(email=email, groups=None)),
-        async_db_session,
-    )
+    local = await _local_account(async_db_session, email)
     fields = _unique(email=email, email_verified=True)
     linked = await verify_cognito_token_and_resolve_user(
         issuers["okta"].mint("k1", **fields), async_db_session
     )
-    assert linked.id == existing.id
-    assert await _identity_rows(async_db_session, existing.id) == [
-        (_OKTA, fields["sub"])
+    assert linked.id == local.id
+    assert await _identity_rows(async_db_session, local.id) == [(_OKTA, fields["sub"])]
+
+
+@pytest.mark.asyncio
+async def test_an_opted_in_issuer_never_claims_a_cognito_account(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    email = f"cog-{uuid.uuid4().hex[:8]}@example.test"
+    cognito = await verify_cognito_token_and_resolve_user(
+        issuers["cognito"].mint("k1", **_unique(email=email, groups=None)),
+        async_db_session,
+    )
+    token = issuers["okta"].mint("k1", **_unique(email=email, email_verified=True))
+    with pytest.raises(IdentityConflictError, match="account_has_cognito_identity"):
+        await verify_cognito_token_and_resolve_user(token, async_db_session)
+    assert await _identity_rows(async_db_session, cognito.id) == []
+
+
+@pytest.mark.asyncio
+async def test_an_opted_in_issuer_never_claims_another_issuers_account(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    email = f"kc-{uuid.uuid4().hex[:8]}@example.test"
+    keycloak_fields = _unique(email=email)
+    at_keycloak = await verify_cognito_token_and_resolve_user(
+        issuers["keycloak"].mint("k1", **keycloak_fields), async_db_session
+    )
+    token = issuers["okta"].mint("k1", **_unique(email=email, email_verified=True))
+    with pytest.raises(IdentityConflictError, match="account_has_oidc_identity"):
+        await verify_cognito_token_and_resolve_user(token, async_db_session)
+    assert await _identity_rows(async_db_session, at_keycloak.id) == [
+        (_KEYCLOAK, keycloak_fields["sub"])
     ]
+
+
+@pytest.mark.asyncio
+async def test_the_same_issuer_under_another_sub_never_claims_the_account(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    email = f"okta-{uuid.uuid4().hex[:8]}@example.test"
+    first = _unique(email=email, email_verified=True)
+    owner = await verify_cognito_token_and_resolve_user(
+        issuers["okta"].mint("k1", **first), async_db_session
+    )
+    second = _unique(email=email, email_verified=True)  # new sub, same email
+    with pytest.raises(IdentityConflictError, match="account_has_oidc_identity"):
+        await verify_cognito_token_and_resolve_user(
+            issuers["okta"].mint("k1", **second), async_db_session
+        )
+    assert await _identity_rows(async_db_session, owner.id) == [(_OKTA, first["sub"])]
+
+
+@pytest.mark.asyncio
+async def test_cognito_never_overwrites_a_different_cognito_sub(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    email = f"pool-{uuid.uuid4().hex[:8]}@example.test"
+    owner = await _cognito_account(issuers, async_db_session, email)
+    original_sub = owner.cognito_sub
+    with pytest.raises(IdentityConflictError, match="account_has_cognito_identity"):
+        await _cognito_account(issuers, async_db_session, email)  # new sub
+    await async_db_session.refresh(owner)
+    assert owner.cognito_sub == original_sub
+
+
+@pytest.mark.asyncio
+async def test_an_email_taken_concurrently_by_another_account_is_a_409(
+    issuers: dict[str, LocalIssuer],
+    async_db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The insert races a DIFFERENT account for the email: no winner owns this
+    identity, so the unique violation becomes a clean 409, not a 500."""
+    from app.services import cognito_provision
+
+    email = f"race-{uuid.uuid4().hex[:8]}@example.test"
+    await _local_account(async_db_session, email)
+
+    async def email_not_seen_yet(session: AsyncSession, value: str | None) -> None:
+        return None  # the other account committed after our email lookup
+
+    monkeypatch.setattr(cognito_provision, "_user_by_email", email_not_seen_yet)
+    with pytest.raises(IdentityConflictError, match="account_conflict") as excinfo:
+        await verify_cognito_token_and_resolve_user(
+            issuers["keycloak"].mint("k1", **_unique(email=email)), async_db_session
+        )
+    assert excinfo.value.status_code == 409
 
 
 async def _cognito_account(
@@ -282,7 +378,7 @@ async def test_cognito_never_links_an_account_of_another_issuer(
     generic = await verify_cognito_token_and_resolve_user(
         issuers["keycloak"].mint("k1", **_unique(email=email)), async_db_session
     )
-    with pytest.raises(IdentityConflictError, match="another_issuer"):
+    with pytest.raises(IdentityConflictError, match="account_has_oidc_identity"):
         await _cognito_account(issuers, async_db_session, email)
     await async_db_session.refresh(generic)
     assert generic.cognito_sub is None

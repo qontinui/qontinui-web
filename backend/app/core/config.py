@@ -166,11 +166,13 @@ class OIDCProviderSetting(BaseModel):
         description=(
             "Claim carrying the user's groups (dotted path allowed, e.g. "
             "`realm_access.roles` for Keycloak realm roles). Entra ID omits "
-            "`groups` past its overage limit (~200 groups in a JWT) and "
+            "`groups` when a user is in more groups than fit in a token (its "
+            "'groups overage' case, documented at https://learn.microsoft.com/"
+            "en-us/entra/identity-platform/id-token-claims-reference) and "
             "points at Microsoft Graph via `_claim_names` instead; that is "
             "NOT resolved — such a user gets no roles from groups (fail "
-            "closed). Configure Entra to emit only groups assigned to the "
-            "application, or app roles, to stay under the limit."
+            "closed). Configuring Entra to emit only groups assigned to the "
+            "application, or app roles, avoids the overage."
         ),
     )
     group_role_map: dict[str, list[IdentityRole]] = Field(
@@ -532,7 +534,10 @@ class Settings(BaseSettings):
         issuer would make which audience set and groups claim applies an
         accident of list order.
         """
-        seen: set[str] = {self.COGNITO_ISSUER} if self.COGNITO_ISSUER else set()
+        # Compared in the verifier's routing form (trimmed, no trailing
+        # slash) — the form OIDC_PROVIDERS issuers are already stored in.
+        cognito = self.COGNITO_ISSUER.strip().rstrip("/")
+        seen: set[str] = {cognito} if cognito else set()
         for provider in self.OIDC_PROVIDERS:
             if provider.issuer in seen:
                 raise ValueError(
@@ -858,15 +863,17 @@ class Settings(BaseSettings):
         (before the app can boot):
 
         1. **Prod guardrail (the security core).** Under a production-posture
-           ENVIRONMENT (staging/production), REFUSE TO BOOT if either the
-           ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set OR ``COGNITO_ISSUER``
-           resolves to a loopback/local host. Both would let a locally-minted
-           token be trusted in prod — impossible by construction now.
+           ENVIRONMENT (staging/production), REFUSE TO BOOT if the
+           ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set, if ``COGNITO_ISSUER``
+           resolves to a loopback/local host, OR if any ``OIDC_PROVIDERS``
+           issuer does. Each would let a locally-minted token be trusted in
+           prod — impossible by construction now.
 
         2. **Isolated dev DB (anomaly fix).** When dev-local-auth is active —
-           EITHER the ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set OR
-           ``COGNITO_ISSUER`` resolves to a loopback/local host (only reachable
-           under a dev posture, per protection 1) — refuse to run against the
+           the ``QONTINUI_DEV_LOCAL_AUTH`` master flag is set, OR
+           ``COGNITO_ISSUER`` or any ``OIDC_PROVIDERS`` issuer resolves to a
+           loopback/local host (only reachable under a dev posture, per
+           protection 1) — refuse to run against the
            shared dev database so the JIT-provisioned dev user cannot pollute
            it, forcing an explicit isolated ``DATABASE_URL``. The loopback
            signal is included because it is what ACTUALLY activates local-auth:

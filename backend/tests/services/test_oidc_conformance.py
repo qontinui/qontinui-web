@@ -44,6 +44,13 @@ from tests._oidc_local_issuer import route as _route
 _ISOLATED_DB = "postgresql://user:pass@localhost/isolated"
 
 
+async def _settle(client: OIDCIssuerClient) -> None:
+    """Wait for any background refresh the client has in flight."""
+    task = client._inflight
+    if task is not None:
+        await asyncio.gather(task, return_exceptions=True)
+
+
 def _provider(issuer: str = _ISSUER, **over: Any) -> OIDCProvider:
     fields: dict[str, Any] = {
         "issuer": issuer,
@@ -329,6 +336,7 @@ async def test_metadata_is_refetched_after_the_ttl(issuer: LocalIssuer) -> None:
 
     clock["now"] += 2
     await client.verify_token(token)
+    await _settle(client)
     assert issuer.jwks_hits() == 2
 
 
@@ -361,11 +369,37 @@ async def test_concurrent_cold_start_fetches_once(issuer: LocalIssuer) -> None:
 
 
 @pytest.mark.asyncio
+async def test_stale_keys_are_served_while_one_refresh_runs(
+    issuer: LocalIssuer,
+) -> None:
+    """Past the TTL nobody waits on the refresh: stale keys answer at once and
+    one background refresh replaces them."""
+    clock = {"now": 1000.0}
+    client = OIDCIssuerClient(
+        _provider(), metadata_ttl_s=300, clock=lambda: clock["now"]
+    )
+    token = issuer.mint("k1")
+    await client.verify_token(token)
+
+    issuer.delay = 0.5
+    clock["now"] += 301
+    started = time.perf_counter()
+    results = await asyncio.gather(*(client.verify_token(token) for _ in range(10)))
+    elapsed = time.perf_counter() - started
+    assert all(r["iss"] == _ISSUER for r in results)
+    assert elapsed < 0.3, f"a request waited on the TTL refresh ({elapsed:.2f}s)"
+
+    await _settle(client)
+    assert issuer.jwks_hits() == 2, "exactly one background refresh"
+    assert issuer.discovery_hits() == 2
+
+
+@pytest.mark.asyncio
 async def test_outage_past_ttl_is_single_flight_and_backs_off(
     issuer: LocalIssuer,
 ) -> None:
     """Many requests past the TTL with the issuer down: ONE fetch attempt, no
-    serial stall, cached keys served, and no re-dial until the back-off ends."""
+    stall, cached keys served, and no re-dial until the back-off ends."""
     clock = {"now": 1000.0}
     client = OIDCIssuerClient(
         _provider(), metadata_ttl_s=300, clock=lambda: clock["now"]
@@ -380,19 +414,39 @@ async def test_outage_past_ttl_is_single_flight_and_backs_off(
     started = time.perf_counter()
     results = await asyncio.gather(*(client.verify_token(token) for _ in range(20)))
     elapsed = time.perf_counter() - started
+    await _settle(client)
 
     assert all(r["iss"] == _ISSUER for r in results)
     assert len(issuer.requests) - fetched == 1, "one shared attempt, not one each"
-    assert elapsed < 1.5, f"requests queued behind serial fetches ({elapsed:.2f}s)"
+    assert elapsed < 0.2, f"requests waited on the failing refresh ({elapsed:.2f}s)"
 
     clock["now"] += 10
     for _ in range(10):
         await client.verify_token(token)
+    await _settle(client)
     assert len(issuer.requests) - fetched == 1, "no re-dial inside the back-off"
 
     clock["now"] += _FAILURE_BACKOFF_S
     await client.verify_token(token)
+    await _settle(client)
     assert len(issuer.requests) - fetched == 2, "one retry once the back-off ends"
+
+
+def test_a_refresh_task_from_another_loop_is_not_awaited(issuer: LocalIssuer) -> None:
+    """A slot left holding a task of a closed loop is discarded, not awaited
+    (awaiting it from another loop would raise or hang)."""
+    client = OIDCIssuerClient(_provider())
+    other = asyncio.new_event_loop()
+    orphan = other.create_task(asyncio.sleep(3600))
+    orphan.cancel()
+    other.run_until_complete(asyncio.gather(orphan, return_exceptions=True))
+    other.close()
+    client._inflight = orphan  # type: ignore[assignment]
+
+    async def verify() -> dict[str, Any]:
+        return await asyncio.wait_for(client.verify_token(issuer.mint("k1")), 2)
+
+    assert asyncio.run(verify())["iss"] == _ISSUER
 
 
 @pytest.mark.asyncio
@@ -521,6 +575,12 @@ def test_duplicate_issuers_are_refused() -> None:
     with pytest.raises(ValidationError, match="more than once"):
         _settings(
             COGNITO_ISSUER="https://idp.example.test",
+            OIDC_PROVIDERS=[entry],
+        )
+    # Compared in routing form: whitespace / trailing slash do not hide it.
+    with pytest.raises(ValidationError, match="more than once"):
+        _settings(
+            COGNITO_ISSUER="  https://idp.example.test/  ",
             OIDC_PROVIDERS=[entry],
         )
 

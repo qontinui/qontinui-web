@@ -16,8 +16,9 @@ JWKS URL by string concatenation any more.
 Caching:
 
 * The discovery document and JWKS are reused for
-  ``OIDC_METADATA_CACHE_TTL_SECONDS`` and then refetched on the next
-  verification.
+  ``OIDC_METADATA_CACHE_TTL_SECONDS``. Past that, the next verification is
+  answered from the held keys while ONE background refresh runs
+  (stale-while-revalidate); only a cold start or an unknown ``kid`` waits.
 * A ``kid`` absent from the cached set forces one refetch of both (key
   rotation), RATE-LIMITED to one per ``_FORCED_REFRESH_COOLDOWN_S``: the
   ``kid`` comes from an unverified header, so without the cooldown any caller
@@ -96,8 +97,8 @@ DISCOVERY_PATH = "/.well-known/openid-configuration"
 def normalise_issuer(issuer: str) -> str:
     """The comparison form of an issuer: trimmed, without a trailing slash.
 
-    Some issuers (Auth0) stamp ``iss`` with a trailing slash; configuration
-    and routing compare the slash-less form on both sides.
+    Some issuers stamp ``iss`` with a trailing slash; configuration and
+    routing compare the slash-less form on both sides.
     """
     return issuer.strip().rstrip("/")
 
@@ -184,7 +185,7 @@ class OIDCIssuerClient:
         self._failed_at: float | None = None
         self._last_error: OIDCJWKSUnavailableError | None = None
         # The single in-flight fetch every concurrent waiter shares.
-        self._inflight: asyncio.Future[dict[str, Any]] | None = None
+        self._inflight: asyncio.Task[dict[str, Any]] | None = None
 
     def _now(self) -> float:
         return self._clock() if self._clock is not None else time.monotonic()
@@ -298,11 +299,18 @@ class OIDCIssuerClient:
         return jwks_uri, jwks
 
     async def _get_jwks(self, *, force_refresh: bool) -> dict[str, Any]:
-        """The cached JWKS, refetched when absent, past its TTL, or forced.
+        """The cached JWKS; fetched when absent, refreshed when stale or forced.
+
+        * Fresh keys: returned.
+        * Stale keys (past the TTL), not forced: returned AT ONCE while one
+          background refresh runs (stale-while-revalidate) — no request waits
+          on a routine TTL refresh.
+        * Forced (unknown ``kid``) or cold (no keys): the caller needs keys it
+          does not have, so it waits on the shared fetch.
 
         No lock is held across I/O: the decision below runs without an
         ``await`` (atomic under asyncio), and the fetch itself is one shared
-        future that every concurrent caller awaits.
+        task that every waiter awaits.
         """
         now = self._now()
         held = self._jwks
@@ -323,7 +331,10 @@ class OIDCIssuerClient:
                 # kid lookup fails as it would have.
                 return held
 
-        if self._failed_at is not None and (now - self._failed_at) < _FAILURE_BACKOFF_S:
+        backing_off = (
+            self._failed_at is not None and (now - self._failed_at) < _FAILURE_BACKOFF_S
+        )
+        if backing_off:
             if held is not None:
                 return held
             last = self._last_error
@@ -336,13 +347,30 @@ class OIDCIssuerClient:
         if held is not None and force_refresh:
             self._forced_at = now
 
-        inflight = self._inflight
-        if inflight is None:
-            inflight = asyncio.ensure_future(self._refresh(forced=force_refresh))
-            self._inflight = inflight
+        task = self._start_refresh(forced=force_refresh)
+        if held is not None and not force_refresh:
+            # Stale-while-revalidate: the refresh continues in the background.
+            return held
         # ``shield``: one waiter's cancellation must not cancel the fetch the
         # others are waiting on.
-        return await asyncio.shield(inflight)
+        return await asyncio.shield(task)
+
+    def _start_refresh(self, *, forced: bool) -> asyncio.Task[dict[str, Any]]:
+        """The in-flight refresh task, starting one if none is usable.
+
+        A task left behind by another event loop (a closed loop, or a test
+        that ran on a different loop) is discarded rather than awaited, which
+        would raise or hang.
+        """
+        loop = asyncio.get_running_loop()
+        task = self._inflight
+        if task is not None and (task.get_loop() is not loop or task.done()):
+            task = None
+        if task is None:
+            task = loop.create_task(self._refresh(forced=forced))
+            task.add_done_callback(_retrieve_task_exception)
+            self._inflight = task
+        return task
 
     async def _refresh(self, *, forced: bool) -> dict[str, Any]:
         """Run ONE fetch and record its outcome for every waiter."""
@@ -374,7 +402,10 @@ class OIDCIssuerClient:
             )
             return jwks
         finally:
-            self._inflight = None
+            # Only clear the slot if it still holds THIS task (a replacement
+            # may have been started after this one was discarded).
+            if self._inflight is asyncio.current_task():
+                self._inflight = None
 
     @staticmethod
     def _find_jwk(jwks: dict[str, Any], kid: str) -> dict[str, Any] | None:
@@ -485,6 +516,18 @@ class OIDCIssuerClient:
             f"{'/'.join(self._provider.audience_claims)}="
             f"{sorted(candidates)[:8]} not in allowed set"
         )
+
+
+def _retrieve_task_exception(task: asyncio.Task[Any]) -> None:
+    """Mark a refresh task's outcome as observed.
+
+    A background (stale-while-revalidate) refresh may finish with nobody
+    awaiting it; without this, a failure would be reported by asyncio as
+    "Task exception was never retrieved". The failure itself is already
+    recorded (back-off + log) by ``_refresh``.
+    """
+    if not task.cancelled():
+        task.exception()
 
 
 class OIDCVerifier:

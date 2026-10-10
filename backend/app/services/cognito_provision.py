@@ -172,14 +172,19 @@ async def _check_link_allowed(
     *,
     link_existing_by_email: bool,
     email_verified: bool,
-    refuse_if_holds_oidc_identity: bool,
     log_fields: dict[str, Any],
 ) -> None:
     """Raise :class:`IdentityLinkRefusedError` unless ``existing`` may be linked.
 
     Linking by email hands an existing account to whoever holds a verified
     email at the presenting issuer, so it needs the issuer's explicit opt-in,
-    a verified email, and a non-superuser target.
+    a verified email, a non-superuser target — and a target that holds NO
+    federated identity yet. The last rule is symmetric across issuers: an
+    account that already signs in through Cognito (any ``cognito_sub``,
+    including a different sub in the same pool) or through any generic issuer
+    (another issuer, or the same issuer under a different ``sub``) belongs to
+    that identity, and a matching email at some other identity does not
+    transfer it. Only a local account with no identity can be claimed.
     """
     if not link_existing_by_email:
         _refuse_link("issuer_not_opted_in", existing, log_fields)
@@ -187,8 +192,21 @@ async def _check_link_allowed(
         _refuse_link("email_unverified", existing, log_fields)
     if existing.is_superuser:
         _refuse_link("superuser_account", existing, log_fields)
-    if refuse_if_holds_oidc_identity and await _holds_oidc_identity(session, existing):
-        _refuse_link("account_belongs_to_another_issuer", existing, log_fields)
+    if existing.cognito_sub is not None:
+        _refuse_link("account_has_cognito_identity", existing, log_fields)
+    if await _holds_oidc_identity(session, existing):
+        _refuse_link("account_has_oidc_identity", existing, log_fields)
+
+
+def _insert_conflict(log_fields: dict[str, Any]) -> IdentityLinkRefusedError:
+    """A provisioning insert hit a unique constraint and no winner owns this
+    identity: the email or username was taken concurrently by a DIFFERENT
+    account. Refused cleanly (409) rather than surfacing a 500."""
+    logger.warning("identity_provision_conflict", **log_fields)
+    return IdentityLinkRefusedError(
+        "This sign-in could not be provisioned because its email or username "
+        "was claimed concurrently by another account (account_conflict)."
+    )
 
 
 async def _bootstrap_personal_org(
@@ -225,8 +243,9 @@ async def resolve_user_for_cognito_claims(
 
     Linking an existing account by email (step 2) requires
     ``link_existing_by_email`` (``COGNITO_LINK_EXISTING_BY_EMAIL``), a verified
-    email, a non-superuser account, and an account that does not already sign
-    in through a generic OIDC issuer.
+    email, a non-superuser account, and an account holding no identity yet —
+    never one with a different ``cognito_sub`` (it is not overwritten) nor one
+    that signs in through a generic OIDC issuer.
 
     A concurrent first login for the same ``sub`` is absorbed: the losing
     insert rolls back to a savepoint and the winner's row is returned.
@@ -254,12 +273,20 @@ async def resolve_user_for_cognito_claims(
             existing,
             link_existing_by_email=link_existing_by_email,
             email_verified=email_verified,
-            refuse_if_holds_oidc_identity=True,
             log_fields=log_fields,
         )
-        existing.cognito_sub = sub
-        session.add(existing)
-        await session.flush()
+        try:
+            async with session.begin_nested():
+                existing.cognito_sub = sub
+                session.add(existing)
+                await session.flush()
+        except IntegrityError:
+            # A concurrent first login for this sub won.
+            await session.refresh(existing)
+            winner = await _user_by_cognito_sub(session, sub)
+            if winner is None:
+                raise _insert_conflict(log_fields) from None
+            return winner
         logger.info("cognito_user_linked", user_id=str(existing.id), **log_fields)
         return existing
 
@@ -291,7 +318,7 @@ async def resolve_user_for_cognito_claims(
         # A concurrent first login for this sub won the insert.
         winner = await _user_by_cognito_sub(session, sub)
         if winner is None:
-            raise
+            raise _insert_conflict(log_fields) from None
         logger.info("cognito_user_provision_race_absorbed", user_id=str(winner.id))
         return winner
     logger.info(
@@ -322,9 +349,11 @@ async def resolve_user_for_oidc_claims(
 
     1. An ``auth.user_oidc_identities`` row for ``(issuer, sub)`` -> its user.
     2. A user with the same email -> link, ONLY when the issuer opted in
-       (``link_existing_by_email``), the email is verified (Entra ID emits no
-       ``email_verified``, so on Entra this never links) and the account is
-       not a superuser; otherwise refused.
+       (``link_existing_by_email``), the email is verified (an issuer that
+       emits no ``email_verified`` claim — Entra ID commonly does not — never
+       links), the account is not a superuser, and it holds no identity yet
+       (no ``cognito_sub``, no identity at any generic issuer); otherwise
+       refused.
     3. Otherwise create the user and its identity row.
 
     A concurrent first login for the same ``(issuer, sub)`` is absorbed: the
@@ -351,7 +380,6 @@ async def resolve_user_for_oidc_claims(
             existing,
             link_existing_by_email=link_existing_by_email,
             email_verified=email_verified,
-            refuse_if_holds_oidc_identity=False,
             log_fields=log_fields,
         )
         try:
@@ -363,7 +391,7 @@ async def resolve_user_for_oidc_claims(
         except IntegrityError:
             winner = await _user_by_oidc_identity(session, issuer, sub)
             if winner is None:
-                raise
+                raise _insert_conflict(log_fields) from None
             return winner
         logger.info("oidc_user_linked", user_id=str(existing.id), **log_fields)
         return existing
@@ -399,7 +427,7 @@ async def resolve_user_for_oidc_claims(
         # A concurrent first login for this (issuer, sub) won the insert.
         winner = await _user_by_oidc_identity(session, issuer, sub)
         if winner is None:
-            raise
+            raise _insert_conflict(log_fields) from None
         logger.info("oidc_user_provision_race_absorbed", user_id=str(winner.id))
         return winner
     logger.info(

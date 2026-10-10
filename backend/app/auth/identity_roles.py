@@ -61,8 +61,9 @@ def groups_from_claims(claims: Mapping[str, Any], groups_claim: str) -> list[str
     """The issuer groups asserted in ``claims[groups_claim]``.
 
     A list of strings or a single string is accepted; anything else yields no
-    groups. Entra ID omits ``groups`` entirely past its overage limit and
-    points at Graph through ``_claim_names`` instead — that case is logged and
+    groups. Entra ID omits ``groups`` in its "groups overage" case (see
+    https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference)
+    and points at Graph through ``_claim_names`` instead — that case is logged and
     yields no groups (fail closed), because resolving it needs a Graph call
     with the user's delegated token, which this backend does not hold.
     """
