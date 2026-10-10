@@ -265,10 +265,12 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
     ("POST", f"{_V1}/plan-library"): Evidence(
         closed_fields=("captured_by", "kind"),
         # ``status`` is CLOSED for a spec kind only (its per-kind lifecycle,
-        # ``WorkArtifactUpsert._spec_kind_rules``) and opaque for every other
-        # kind, so the body schema cannot serve it as one enum. The per-kind
-        # sets ARE served, on ``GET /plan-library/vocabulary`` as
-        # ``status[kind=<kind>]``.
+        # checked by ``WorkArtifactUpsert._spec_kind_rules``) and opaque for
+        # every other kind, so the request BODY SCHEMA cannot carry it as one
+        # enum — hence "unserved" in this table's sense. The per-kind sets are
+        # still readable before writing: they are served on
+        # ``GET /plan-library/vocabulary`` as ``status[kind=<kind>]``, not in
+        # the body schema.
         unserved_closed_fields=(("status", SPEC_FRONT_END_PLAN),),
         correction=AppendOnlyByDesign(
             "the body is a version log — a changed body appends a new version "

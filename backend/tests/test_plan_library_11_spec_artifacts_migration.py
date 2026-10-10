@@ -347,6 +347,20 @@ def test_the_spec_ref_check_and_uniqueness() -> None:
             org=uuid.uuid4(),
         )
 
+        # The counter numbers spec kinds only.
+        with (
+            pytest.raises((IntegrityError, DBAPIError)) as excinfo,
+            engine.begin() as conn,
+        ):
+            conn.execute(
+                text(
+                    "INSERT INTO agent.work_artifact_spec_ref_counters "
+                    "(organization_scope, kind, last_number) "
+                    "VALUES (gen_random_uuid(), 'plan', 1)"
+                )
+            )
+        assert "ck_spec_ref_counters_kind" in str(excinfo.value)
+
         # A kind in no vocabulary is still refused.
         with pytest.raises((IntegrityError, DBAPIError)) as excinfo:
             _seed(engine, "bogus", kind="epic")

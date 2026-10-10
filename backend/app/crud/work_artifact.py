@@ -1243,6 +1243,17 @@ async def upsert_artifact(
 
     assert existing is not None  # narrowed by both branches above
 
+    # The family boundary holds on EVERY write, not only when the kind would
+    # move. A heuristic scan resolves its target ignoring ``kind``, so a
+    # scanned plan sharing a spec row's ``(org, slug, source_repo)`` resolves
+    # ONTO that spec row; ``kind_locked`` then keeps the kind but the write
+    # would still overwrite its status (outside the lifecycle), title, body and
+    # source_path. Refuse before anything is written.
+    if is_spec_kind(existing.kind) != is_spec_kind(kind):
+        raise SpecFamilyBoundary(
+            from_kind=existing.kind, to_kind=kind, spec_ref=existing.spec_ref
+        )
+
     metadata = _HeadMetadata(
         title=title,
         status=status,
@@ -1279,10 +1290,8 @@ async def upsert_artifact(
     may_move_kind = not (kind_is_heuristic and existing.kind_locked)
 
     if may_move_kind and existing.kind != kind:
-        # A spec row is created locked and a heuristic write of a spec kind is
-        # refused at the schema, so this is a backstop — but it is the one
-        # place the kind of a stored row moves on this path, and a spec row's
-        # kind is fixed by its ref.
+        # Cross-family writes were refused above; this catches a move
+        # between two spec kinds (a spec row's kind is fixed by its ref).
         _check_spec_family_boundary(existing, kind)
         # Only reachable on the heuristic path against an UNLOCKED row: the
         # exact-identity lookup can never hand back a differing kind. Moving

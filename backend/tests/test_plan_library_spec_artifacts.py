@@ -20,6 +20,7 @@ The DB-backed tests use the suite's Postgres (``QONTINUI_TEST_PG_DSN``).
 
 from __future__ import annotations
 
+import asyncio
 from typing import get_args
 from uuid import UUID, uuid4
 
@@ -28,7 +29,8 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import work_artifact as crud
 from app.models.work_artifact import (
@@ -37,6 +39,7 @@ from app.models.work_artifact import (
     SPEC_REF_PREFIXES,
     WORK_ARTIFACT_KINDS,
     WorkArtifact,
+    WorkArtifactSpecRefCounter,
     format_spec_ref,
 )
 from app.schemas.plan_library import (
@@ -296,6 +299,140 @@ class TestFamilyBoundary:
         assert moved.spec_ref is None
 
 
+async def _scan_write(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    slug: str,
+    kind: str = "plan",
+) -> tuple[WorkArtifact, bool, bool]:
+    """A runner-scan-shaped write: heuristic kind, target resolved kind-less."""
+    return await crud.upsert_artifact(
+        db,
+        org_id=org_id,
+        user_id=None,
+        kind=kind,
+        slug=slug,
+        title="scanned title",
+        status="SHIPPED",
+        body="a scanned body",
+        source_path="plans/scanned.md",
+        source_repo=None,
+        work_unit_slug=None,
+        repos=[],
+        authored_at=None,
+        captured_by="runner_scan",
+        change_description=None,
+        created_by="scanner",
+        kind_is_heuristic=True,
+    )
+
+
+@pytest.mark.asyncio
+class TestScannerCannotOverwriteASpecRow:
+    """A heuristic write resolves its target IGNORING kind, so a scanned plan
+    that shares a spec row's ``(org, slug, source_repo)`` resolves onto it.
+    ``kind_locked`` keeps the kind, but without the family check the write
+    would still overwrite the row's status, title, body and source_path."""
+
+    async def test_a_scan_onto_a_spec_row_is_refused_and_writes_nothing(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        slug = _slug("shared")
+        req = await _create(
+            async_db_session, org_id=org, kind="requirement", slug=slug, body="spec"
+        )
+        before = (req.status, req.title, req.body, req.source_path, req.current_version)
+
+        with pytest.raises(crud.SpecFamilyBoundary) as excinfo:
+            await _scan_write(async_db_session, org_id=org, slug=slug)
+        assert excinfo.value.spec_ref == "REQ-0001"
+        assert (excinfo.value.from_kind, excinfo.value.to_kind) == (
+            "requirement",
+            "plan",
+        )
+
+        await async_db_session.refresh(req)
+        after = (req.status, req.title, req.body, req.source_path, req.current_version)
+        assert after == before
+        assert req.kind == "requirement"
+
+    async def test_an_identical_body_scan_is_refused_too(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The unchanged-digest arm settles metadata only — it must be
+        refused as well, or a same-body scan rewrites status and title."""
+        org = uuid4()
+        slug = _slug("same-body")
+        req = await _create(
+            async_db_session,
+            org_id=org,
+            kind="requirement",
+            slug=slug,
+            body="a scanned body",
+        )
+        with pytest.raises(crud.SpecFamilyBoundary):
+            await _scan_write(async_db_session, org_id=org, slug=slug)
+        await async_db_session.refresh(req)
+        assert req.status == "draft"
+        assert req.title == "t"
+
+    async def test_a_scan_with_no_spec_row_still_lands(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        artifact, created, _ = await _scan_write(
+            async_db_session, org_id=uuid4(), slug=_slug("plain")
+        )
+        assert created is True
+        assert artifact.kind == "plan"
+        assert artifact.spec_ref is None
+
+
+@pytest.mark.asyncio
+class TestConcurrentAllocation:
+    async def test_concurrent_creates_get_distinct_contiguous_refs(
+        self, test_engine
+    ) -> None:
+        """N allocations on N separate sessions, all in flight at once, draw N
+        distinct numbers 1..N — the ``ON CONFLICT DO UPDATE`` serializes them
+        on the counter row. Separate sessions (and connections) are the point:
+        one session would serialize the calls itself and prove nothing."""
+        n = 12
+        org = uuid4()
+        maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        start = asyncio.Event()
+
+        async def allocate() -> str:
+            async with maker() as session:
+                await start.wait()
+                ref = await crud.allocate_spec_ref(
+                    session, org_id=org, kind="requirement"
+                )
+                # Hold the transaction open briefly so the others really
+                # queue behind the counter row's lock.
+                await asyncio.sleep(0.01)
+                await session.commit()
+                return ref
+
+        tasks = [asyncio.create_task(allocate()) for _ in range(n)]
+        try:
+            await asyncio.sleep(0.05)
+            start.set()
+            refs = await asyncio.gather(*tasks)
+            assert len(set(refs)) == n
+            assert sorted(int(r.split("-")[1]) for r in refs) == list(range(1, n + 1))
+            assert all(r.startswith("REQ-") for r in refs)
+        finally:
+            async with maker() as session:
+                await session.execute(
+                    delete(WorkArtifactSpecRefCounter).where(
+                        WorkArtifactSpecRefCounter.organization_scope == org
+                    )
+                )
+                await session.commit()
+
+
 # ───────────────────────────── DB-backed: HTTP ─────────────────────────────
 
 
@@ -443,6 +580,36 @@ class TestHttpSurface:
         detail = resp.json()["detail"]
         assert detail["error"] == "spec_family_boundary"
         assert detail["spec_ref"] == artifact["spec_ref"]
+
+    async def test_a_scan_onto_a_spec_row_is_a_409(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        slug = _slug("collide")
+        created = await client.post(
+            API_PREFIX, json={"kind": "requirement", "slug": slug, "title": "R"}
+        )
+        assert created.status_code == 201, created.text
+        artifact = created.json()["artifact"]
+
+        scan = await client.post(
+            API_PREFIX,
+            json={
+                "kind": "plan",
+                "slug": slug,
+                "title": "overwritten?",
+                "status": "SHIPPED",
+                "body": "scanned",
+                "kind_is_heuristic": True,
+                "captured_by": "runner_scan",
+            },
+        )
+        assert scan.status_code == 409, scan.text
+        assert scan.json()["detail"]["error"] == "spec_family_boundary"
+
+        detail = (await client.get(f"{API_PREFIX}/{artifact['id']}")).json()
+        assert detail["title"] == "R"
+        assert detail["status"] == "draft"
+        assert detail["current_version"] == 1
 
     async def test_trace_edges_connect_spec_artifacts(
         self, client: httpx.AsyncClient

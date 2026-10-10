@@ -539,6 +539,12 @@ class WorkArtifactSpecRefCounter(Base):
     __tablename__ = "work_artifact_spec_ref_counters"
     __table_args__ = (
         CheckConstraint("last_number >= 1", name="ck_spec_ref_counters_positive"),
+        # Only spec kinds are numbered. Mirrors the migration's CHECK, spelled
+        # from the same constant so the two cannot drift.
+        CheckConstraint(
+            "kind IN (" + ", ".join(f"'{k}'" for k in SPEC_ARTIFACT_KINDS) + ")",
+            name="ck_spec_ref_counters_kind",
+        ),
         {"schema": "agent"},
     )
 
