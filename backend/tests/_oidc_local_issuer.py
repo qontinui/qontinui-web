@@ -8,6 +8,7 @@ user-resolution tests.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
@@ -40,6 +41,8 @@ class LocalIssuer:
         self.published: list[str] = []
         self.requests: list[str] = []
         self.down = False
+        # Seconds each request takes — to observe stalls and concurrency.
+        self.delay = 0.0
 
     # -- keys -------------------------------------------------------------
     def add_rsa_key(self, kid: str, *, publish: bool = True) -> None:
@@ -67,9 +70,11 @@ class LocalIssuer:
         return jwk
 
     # -- HTTP -------------------------------------------------------------
-    def handler(self, request: httpx.Request) -> httpx.Response:
+    async def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         self.requests.append(url)
+        if self.delay:
+            await asyncio.sleep(self.delay)
         if self.down:
             raise httpx.ConnectError("issuer unreachable", request=request)
         if url == f"{self.issuer.rstrip('/')}{DISCOVERY_PATH}":
@@ -123,11 +128,11 @@ class LocalIssuer:
 def route(monkeypatch: pytest.MonkeyPatch, *issuers: LocalIssuer) -> None:
     """Send the verifier's HTTP to the local issuers (by URL prefix)."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         for issuer in issuers:
             if url.startswith(issuer.issuer.rstrip("/")):
-                return issuer.handler(request)
+                return await issuer.handler(request)
         return httpx.Response(404, text="unknown host")
 
     def factory(*args: Any, **kwargs: Any) -> httpx.AsyncClient:

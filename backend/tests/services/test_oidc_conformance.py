@@ -16,6 +16,7 @@ settings that configure all of it.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
@@ -26,6 +27,7 @@ from pydantic import ValidationError
 
 from app.core.config import OIDCProviderSetting, Settings
 from app.services.oidc_jwks import (
+    _FAILURE_BACKOFF_S,
     DISCOVERY_PATH,
     OIDCIssuerClient,
     OIDCJWKSUnavailableError,
@@ -313,12 +315,11 @@ async def test_unknown_kid_refetches_are_rate_limited(issuer: LocalIssuer) -> No
 
 
 @pytest.mark.asyncio
-async def test_metadata_is_refetched_after_the_ttl(
-    issuer: LocalIssuer, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_metadata_is_refetched_after_the_ttl(issuer: LocalIssuer) -> None:
     clock = {"now": 1000.0}
-    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
-    client = OIDCIssuerClient(_provider(), metadata_ttl_s=300)
+    client = OIDCIssuerClient(
+        _provider(), metadata_ttl_s=300, clock=lambda: clock["now"]
+    )
     token = issuer.mint("k1")
 
     await client.verify_token(token)
@@ -333,11 +334,12 @@ async def test_metadata_is_refetched_after_the_ttl(
 
 @pytest.mark.asyncio
 async def test_failed_ttl_refresh_keeps_serving_the_cached_keys(
-    issuer: LocalIssuer, monkeypatch: pytest.MonkeyPatch
+    issuer: LocalIssuer,
 ) -> None:
     clock = {"now": 1000.0}
-    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
-    client = OIDCIssuerClient(_provider(), metadata_ttl_s=300)
+    client = OIDCIssuerClient(
+        _provider(), metadata_ttl_s=300, clock=lambda: clock["now"]
+    )
     token = issuer.mint("k1")
     await client.verify_token(token)
 
@@ -345,6 +347,84 @@ async def test_failed_ttl_refresh_keeps_serving_the_cached_keys(
     clock["now"] += 301
     claims = await client.verify_token(token)
     assert claims["iss"] == _ISSUER, "a transient outage must not log everyone out"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_cold_start_fetches_once(issuer: LocalIssuer) -> None:
+    issuer.delay = 0.1
+    client = OIDCIssuerClient(_provider())
+    token = issuer.mint("k1")
+    results = await asyncio.gather(*(client.verify_token(token) for _ in range(20)))
+    assert len(results) == 20
+    assert issuer.discovery_hits() == 1
+    assert issuer.jwks_hits() == 1
+
+
+@pytest.mark.asyncio
+async def test_outage_past_ttl_is_single_flight_and_backs_off(
+    issuer: LocalIssuer,
+) -> None:
+    """Many requests past the TTL with the issuer down: ONE fetch attempt, no
+    serial stall, cached keys served, and no re-dial until the back-off ends."""
+    clock = {"now": 1000.0}
+    client = OIDCIssuerClient(
+        _provider(), metadata_ttl_s=300, clock=lambda: clock["now"]
+    )
+    token = issuer.mint("k1")
+    await client.verify_token(token)
+    fetched = len(issuer.requests)
+
+    issuer.down = True
+    issuer.delay = 0.25
+    clock["now"] += 301
+    started = time.perf_counter()
+    results = await asyncio.gather(*(client.verify_token(token) for _ in range(20)))
+    elapsed = time.perf_counter() - started
+
+    assert all(r["iss"] == _ISSUER for r in results)
+    assert len(issuer.requests) - fetched == 1, "one shared attempt, not one each"
+    assert elapsed < 1.5, f"requests queued behind serial fetches ({elapsed:.2f}s)"
+
+    clock["now"] += 10
+    for _ in range(10):
+        await client.verify_token(token)
+    assert len(issuer.requests) - fetched == 1, "no re-dial inside the back-off"
+
+    clock["now"] += _FAILURE_BACKOFF_S
+    await client.verify_token(token)
+    assert len(issuer.requests) - fetched == 2, "one retry once the back-off ends"
+
+
+@pytest.mark.asyncio
+async def test_cold_start_outage_is_single_flight_and_backs_off(
+    issuer: LocalIssuer,
+) -> None:
+    clock = {"now": 1000.0}
+    client = OIDCIssuerClient(_provider(), clock=lambda: clock["now"])
+    token = issuer.mint("k1")
+    issuer.down = True
+    issuer.delay = 0.25
+
+    started = time.perf_counter()
+    results = await asyncio.gather(
+        *(client.verify_token(token) for _ in range(20)), return_exceptions=True
+    )
+    elapsed = time.perf_counter() - started
+    assert all(isinstance(r, OIDCJWKSUnavailableError) for r in results)
+    assert len(issuer.requests) == 1
+    assert elapsed < 1.5, f"requests queued behind serial fetches ({elapsed:.2f}s)"
+
+    # Inside the back-off: fail closed at once, without dialling.
+    clock["now"] += 5
+    with pytest.raises(OIDCJWKSUnavailableError, match="backing off"):
+        await client.verify_token(token)
+    assert len(issuer.requests) == 1
+
+    # Issuer back, back-off over: recovers.
+    issuer.down = False
+    issuer.delay = 0.0
+    clock["now"] += _FAILURE_BACKOFF_S
+    assert (await client.verify_token(token))["iss"] == _ISSUER
 
 
 # ---------------------------------------------------------------------------

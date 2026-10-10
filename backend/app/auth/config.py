@@ -4,7 +4,7 @@ import uuid
 from typing import cast
 
 import structlog
-from fastapi import Depends, Request, Response
+from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import AuthenticationBackend, JWTStrategy
@@ -294,6 +294,7 @@ class CognitoJWTStrategy(JWTStrategy):
 
         from app.auth.cognito_user import (
             CognitoAuthError,
+            IdentityConflictError,
             verify_cognito_token_and_resolve_user,
         )
 
@@ -307,6 +308,12 @@ class CognitoJWTStrategy(JWTStrategy):
 
         try:
             return await verify_cognito_token_and_resolve_user(token, user_db.session)
+        except IdentityConflictError as exc:
+            # A valid token whose account resolution was refused: say so
+            # (409) rather than pretend the token was bad.
+            raise HTTPException(
+                status_code=exc.status_code, detail=exc.public_detail
+            ) from exc
         except CognitoAuthError:
             # Invalid/unverifiable token → 401 (fastapi-users treats None
             # as "no authenticated user"). Detail already logged in helper.

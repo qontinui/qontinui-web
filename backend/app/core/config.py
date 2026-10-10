@@ -116,6 +116,16 @@ def issuer_is_loopback(issuer: str) -> bool:
     return bool(mapped is not None and mapped.is_loopback)
 
 
+def _coerce_group_role_map(v: Any) -> Any:
+    """Accept ``"group": "role"`` as shorthand for ``"group": ["role"]``,
+    and a JSON string (as an env var delivers it)."""
+    if isinstance(v, str):
+        v = json.loads(v) if v.strip() else {}
+    if isinstance(v, dict):
+        return {k: [r] if isinstance(r, str) else r for k, r in v.items()}
+    return v
+
+
 class OIDCProviderSetting(BaseModel):
     """One additional OpenID Connect issuer this backend accepts user tokens from.
 
@@ -128,7 +138,9 @@ class OIDCProviderSetting(BaseModel):
     The issuer's signing keys are found through OIDC discovery
     (``<issuer>/.well-known/openid-configuration`` -> ``jwks_uri``), so any
     conformant issuer works — Entra ID, Keycloak, Okta, Auth0, or a second
-    Cognito pool.
+    Cognito pool. Tokens must carry a ``kid`` header naming a key in that
+    JWKS (every mainstream issuer sets it); a token without one is refused
+    rather than tried against every key.
     """
 
     issuer: str = Field(description="Exact `iss` value the issuer stamps.")
@@ -153,9 +165,41 @@ class OIDCProviderSetting(BaseModel):
         default="groups",
         description=(
             "Claim carrying the user's groups (dotted path allowed, e.g. "
-            "`realm_access.roles` for Keycloak realm roles)."
+            "`realm_access.roles` for Keycloak realm roles). Entra ID omits "
+            "`groups` past its overage limit (~200 groups in a JWT) and "
+            "points at Microsoft Graph via `_claim_names` instead; that is "
+            "NOT resolved — such a user gets no roles from groups (fail "
+            "closed). Configure Entra to emit only groups assigned to the "
+            "application, or app roles, to stay under the limit."
         ),
     )
+    group_role_map: dict[str, list[IdentityRole]] = Field(
+        default_factory=dict,
+        description=(
+            "THIS issuer's group -> role mapping: a group as it appears in "
+            "`groups_claim` mapped to one or more of analyst, knowledge_owner, "
+            "developer, tester, support, admin, auditor (a single role string "
+            "is accepted as shorthand). Per issuer, because group names are "
+            "only meaningful within the issuer that asserts them."
+        ),
+    )
+    link_existing_by_email: bool = Field(
+        default=False,
+        description=(
+            "Whether a first sign-in from this issuer may attach to an "
+            "EXISTING account with the same email (requires the token's "
+            "`email_verified` to be true). Off by default: otherwise anyone "
+            "who can obtain a verified-email token for that address at this "
+            "issuer takes over the account. Even when on, accounts with "
+            "is_superuser are never linked automatically. When off, a "
+            "colliding email is refused (409), not linked."
+        ),
+    )
+
+    @field_validator("group_role_map", mode="before")
+    @classmethod
+    def _coerce_roles(cls, v: Any) -> Any:
+        return _coerce_group_role_map(v)
 
     @field_validator("issuer")
     @classmethod
@@ -432,7 +476,7 @@ class Settings(BaseSettings):
         default="cognito:groups",
         description=(
             "Claim of a Cognito token that carries the user's groups, read "
-            "for the OIDC_GROUP_ROLE_MAP role mapping."
+            "for the COGNITO_GROUP_ROLE_MAP role mapping."
         ),
     )
 
@@ -446,14 +490,23 @@ class Settings(BaseSettings):
         default_factory=list,
         description="JSON list of additional OIDC issuers (see OIDCProviderSetting).",
     )
-    OIDC_GROUP_ROLE_MAP: dict[str, list[IdentityRole]] = Field(
+    COGNITO_GROUP_ROLE_MAP: dict[str, list[IdentityRole]] = Field(
         default_factory=dict,
         description=(
-            "JSON object mapping an issuer group (as it appears in the "
-            "provider's groups claim) to one or more roles: analyst, "
-            "knowledge_owner, developer, tester, support, admin, auditor. "
-            'e.g. {"qontinui-analysts": ["analyst"], "it-admins": "admin"}. '
-            "Applies to every accepted issuer, Cognito included."
+            "JSON object mapping a Cognito group (COGNITO_GROUPS_CLAIM) to one "
+            "or more roles: analyst, knowledge_owner, developer, tester, "
+            'support, admin, auditor. e.g. {"analysts": ["analyst"], '
+            '"it-admins": "admin"}. Generic issuers carry their own map on '
+            "their OIDC_PROVIDERS entry."
+        ),
+    )
+    COGNITO_LINK_EXISTING_BY_EMAIL: bool = Field(
+        default=True,
+        description=(
+            "Whether a first Cognito sign-in may attach to an existing account "
+            "with the same verified email. Even when on, it never attaches to "
+            "an account that already signs in through a generic OIDC issuer, "
+            "nor to an is_superuser account."
         ),
     )
     OIDC_METADATA_CACHE_TTL_SECONDS: int = Field(
@@ -466,15 +519,10 @@ class Settings(BaseSettings):
         ),
     )
 
-    @field_validator("OIDC_GROUP_ROLE_MAP", mode="before")
+    @field_validator("COGNITO_GROUP_ROLE_MAP", mode="before")
     @classmethod
-    def _coerce_single_role(cls, v: Any) -> Any:
-        """Accept ``"group": "role"`` as shorthand for ``"group": ["role"]``."""
-        if isinstance(v, str):
-            v = json.loads(v) if v.strip() else {}
-        if isinstance(v, dict):
-            return {k: [r] if isinstance(r, str) else r for k, r in v.items()}
-        return v
+    def _coerce_cognito_roles(cls, v: Any) -> Any:
+        return _coerce_group_role_map(v)
 
     @model_validator(mode="after")
     def _oidc_issuers_are_distinct(self) -> "Settings":

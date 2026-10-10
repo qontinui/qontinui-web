@@ -17,10 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.cognito_user import (
     CognitoAuthError,
+    IdentityConflictError,
     verify_cognito_token_and_resolve_user,
 )
 from app.auth.identity_roles import IdentityRole
-from app.core.config import settings
 from app.models.user import User
 from app.models.user_oidc_identity import UserOIDCIdentity
 from app.services import oidc_jwks
@@ -32,7 +32,21 @@ _OKTA = "https://acme.okta.example.test/oauth2/default"
 _COGNITO = "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_LOCAL"
 
 
-def _provider(issuer: str, kind: str, groups_claim: str) -> OIDCProvider:
+_KEYCLOAK_ROLES = {
+    "spec-analysts": (IdentityRole.ANALYST,),
+    "kb-owners": (IdentityRole.KNOWLEDGE_OWNER, IdentityRole.AUDITOR),
+}
+_OKTA_ROLES = {"okta-analysts": (IdentityRole.ANALYST,)}
+_COGNITO_ROLES = {"cognito-admins": (IdentityRole.ADMIN,)}
+
+
+def _provider(
+    issuer: str,
+    kind: str,
+    groups_claim: str,
+    roles: dict[str, tuple[IdentityRole, ...]],
+    link: bool,
+) -> OIDCProvider:
     return OIDCProvider(
         issuer=issuer,
         audiences=frozenset({DEFAULT_CLIENT}),
@@ -40,7 +54,27 @@ def _provider(issuer: str, kind: str, groups_claim: str) -> OIDCProvider:
         groups_claim=groups_claim,
         issuer_setting=f"test:{kind}",
         kind=kind,  # type: ignore[arg-type]
+        group_role_map=roles,
+        link_existing_by_email=link,
     )
+
+
+def _install_verifier(monkeypatch: pytest.MonkeyPatch, *, cognito_link: bool) -> None:
+    """Keycloak: no email linking. Okta: opted in. Cognito: per argument."""
+    verifier = OIDCVerifier(
+        [
+            OIDCIssuerClient(
+                _provider(_KEYCLOAK, "oidc", "groups", _KEYCLOAK_ROLES, False)
+            ),
+            OIDCIssuerClient(_provider(_OKTA, "oidc", "groups", _OKTA_ROLES, True)),
+            OIDCIssuerClient(
+                _provider(
+                    _COGNITO, "cognito", "cognito:groups", _COGNITO_ROLES, cognito_link
+                )
+            ),
+        ]
+    )
+    monkeypatch.setattr(oidc_jwks, "oidc_verifier", verifier)
 
 
 @pytest.fixture
@@ -53,23 +87,7 @@ def issuers(monkeypatch: pytest.MonkeyPatch) -> dict[str, LocalIssuer]:
     for issuer in local.values():
         issuer.add_rsa_key("k1")
     route(monkeypatch, *local.values())
-    verifier = OIDCVerifier(
-        [
-            OIDCIssuerClient(_provider(_KEYCLOAK, "oidc", "groups")),
-            OIDCIssuerClient(_provider(_OKTA, "oidc", "groups")),
-            OIDCIssuerClient(_provider(_COGNITO, "cognito", "cognito:groups")),
-        ]
-    )
-    monkeypatch.setattr(oidc_jwks, "oidc_verifier", verifier)
-    monkeypatch.setattr(
-        settings,
-        "OIDC_GROUP_ROLE_MAP",
-        {
-            "spec-analysts": [IdentityRole.ANALYST],
-            "kb-owners": [IdentityRole.KNOWLEDGE_OWNER, IdentityRole.AUDITOR],
-            "cognito-admins": [IdentityRole.ADMIN],
-        },
-    )
+    _install_verifier(monkeypatch, cognito_link=True)
     return local
 
 
@@ -200,18 +218,193 @@ async def test_a_verified_email_links_the_existing_account(
     ]
 
 
+async def _cognito_account(
+    issuers: dict[str, LocalIssuer], session: AsyncSession, email: str
+) -> User:
+    return await verify_cognito_token_and_resolve_user(
+        issuers["cognito"].mint("k1", **_unique(email=email, groups=None)), session
+    )
+
+
+def _email() -> str:
+    return f"taken-{uuid.uuid4().hex[:8]}@example.test"
+
+
 @pytest.mark.asyncio
-async def test_an_unverified_colliding_email_is_rejected(
+async def test_an_issuer_not_opted_in_never_links_by_email(
     issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
 ) -> None:
-    email = f"taken-{uuid.uuid4().hex[:8]}@example.test"
-    await verify_cognito_token_and_resolve_user(
-        issuers["cognito"].mint("k1", **_unique(email=email, groups=None)),
+    """Cross-issuer takeover: a VERIFIED email at an issuer that did not opt
+    in must not attach to the existing account — refused with 409."""
+    email = _email()
+    existing = await _cognito_account(issuers, async_db_session, email)
+    fields = _unique(email=email, email_verified=True)
+    with pytest.raises(IdentityConflictError) as excinfo:
+        await verify_cognito_token_and_resolve_user(
+            issuers["keycloak"].mint("k1", **fields), async_db_session
+        )
+    assert excinfo.value.status_code == 409
+    assert await _identity_rows(async_db_session, existing.id) == []
+
+
+@pytest.mark.asyncio
+async def test_an_unverified_colliding_email_is_rejected_even_when_opted_in(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    email = _email()
+    await _cognito_account(issuers, async_db_session, email)
+    token = issuers["okta"].mint("k1", **_unique(email=email, email_verified=None))
+    with pytest.raises(IdentityConflictError):
+        await verify_cognito_token_and_resolve_user(token, async_db_session)
+
+
+@pytest.mark.asyncio
+async def test_a_superuser_is_never_linked_automatically(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    email = _email()
+    admin = await _cognito_account(issuers, async_db_session, email)
+    admin.is_superuser = True
+    await async_db_session.flush()
+    token = issuers["okta"].mint("k1", **_unique(email=email, email_verified=True))
+    with pytest.raises(IdentityConflictError, match="superuser"):
+        await verify_cognito_token_and_resolve_user(token, async_db_session)
+    assert await _identity_rows(async_db_session, admin.id) == []
+
+
+@pytest.mark.asyncio
+async def test_cognito_never_links_an_account_of_another_issuer(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    """The reverse direction: an account created via a generic issuer is not
+    claimable by a Cognito token carrying the same verified email."""
+    email = _email()
+    generic = await verify_cognito_token_and_resolve_user(
+        issuers["keycloak"].mint("k1", **_unique(email=email)), async_db_session
+    )
+    with pytest.raises(IdentityConflictError, match="another_issuer"):
+        await _cognito_account(issuers, async_db_session, email)
+    await async_db_session.refresh(generic)
+    assert generic.cognito_sub is None
+
+
+@pytest.mark.asyncio
+async def test_cognito_email_linking_can_be_switched_off(
+    issuers: dict[str, LocalIssuer],
+    async_db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = _email()
+    local = User(
+        id=uuid.uuid4(),
+        email=email,
+        username=f"local-{uuid.uuid4().hex[:8]}",
+        is_active=True,
+        is_verified=True,
+        is_superuser=False,
+    )
+    async_db_session.add(local)
+    await async_db_session.flush()
+
+    _install_verifier(monkeypatch, cognito_link=False)
+    with pytest.raises(IdentityConflictError, match="not_opted_in"):
+        await _cognito_account(issuers, async_db_session, email)
+
+    _install_verifier(monkeypatch, cognito_link=True)
+    linked = await _cognito_account(issuers, async_db_session, email)
+    assert linked.id == local.id
+
+
+@pytest.mark.asyncio
+async def test_role_maps_do_not_leak_across_issuers(
+    issuers: dict[str, LocalIssuer], async_db_session: AsyncSession
+) -> None:
+    """``kb-owners`` is mapped for Keycloak only; at Okta it means nothing."""
+    at_okta = await verify_cognito_token_and_resolve_user(
+        issuers["okta"].mint("k1", **_unique(groups=["kb-owners", "okta-analysts"])),
         async_db_session,
     )
-    token = issuers["keycloak"].mint("k1", **_unique(email=email, email_verified=None))
-    with pytest.raises(CognitoAuthError, match="could not be resolved"):
-        await verify_cognito_token_and_resolve_user(token, async_db_session)
+    assert at_okta.identity_roles == {IdentityRole.ANALYST}
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_first_login_is_absorbed_generic(
+    issuers: dict[str, LocalIssuer],
+    async_db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two first logins race: the loser's insert hits the unique constraint,
+    rolls back to its savepoint, and resolves to the winner — not a 500."""
+    from app.services import cognito_provision
+
+    fields = _unique(email=None, email_verified=None)
+    token = issuers["keycloak"].mint("k1", **fields)
+    winner = await verify_cognito_token_and_resolve_user(token, async_db_session)
+
+    real = cognito_provision._user_by_oidc_identity
+    calls = {"n": 0}
+
+    async def miss_once(session: AsyncSession, issuer: str, sub: str) -> User | None:
+        calls["n"] += 1
+        return None if calls["n"] == 1 else await real(session, issuer, sub)
+
+    monkeypatch.setattr(cognito_provision, "_user_by_oidc_identity", miss_once)
+    loser = await verify_cognito_token_and_resolve_user(token, async_db_session)
+
+    assert loser.id == winner.id
+    assert calls["n"] == 2, "the race path re-read after the unique violation"
+    # The session is still usable after the rolled-back savepoint.
+    assert await async_db_session.scalar(select(func.count()).select_from(User)) >= 1
+
+
+@pytest.mark.asyncio
+async def test_a_concurrent_first_login_is_absorbed_cognito(
+    issuers: dict[str, LocalIssuer],
+    async_db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import cognito_provision
+
+    fields = _unique(email=None, email_verified=None, groups=None)
+    token = issuers["cognito"].mint("k1", **fields)
+    winner = await verify_cognito_token_and_resolve_user(token, async_db_session)
+
+    real = cognito_provision._user_by_cognito_sub
+    calls = {"n": 0}
+
+    async def miss_once(session: AsyncSession, sub: str) -> User | None:
+        calls["n"] += 1
+        return None if calls["n"] == 1 else await real(session, sub)
+
+    monkeypatch.setattr(cognito_provision, "_user_by_cognito_sub", miss_once)
+    loser = await verify_cognito_token_and_resolve_user(token, async_db_session)
+    assert loser.id == winner.id
+    assert calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_the_strategy_answers_409_for_a_refused_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastapi import HTTPException
+    from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+
+    from app.auth import cognito_user
+    from app.auth.config import get_jwt_strategy
+
+    monkeypatch.setattr(
+        cognito_user,
+        "verify_cognito_token_and_resolve_user",
+        AsyncMock(side_effect=IdentityConflictError("refused")),
+    )
+    manager = MagicMock()
+    manager.user_db = MagicMock(spec=SQLAlchemyUserDatabase)
+    manager.user_db.session = MagicMock()
+    with pytest.raises(HTTPException) as excinfo:
+        await get_jwt_strategy().read_token("token", manager)
+    assert excinfo.value.status_code == 409
 
 
 @pytest.mark.asyncio

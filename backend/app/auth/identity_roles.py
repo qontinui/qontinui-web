@@ -3,7 +3,8 @@
 An OIDC issuer (Cognito, Entra ID, Keycloak, Okta, ...) asserts the groups a
 user belongs to in a claim of its own choosing (``cognito:groups``,
 ``groups``, ``realm_access.roles``). A deployment maps those groups onto a
-FIXED role vocabulary with the ``OIDC_GROUP_ROLE_MAP`` setting, and every
+FIXED role vocabulary with a per-issuer map (an ``OIDC_PROVIDERS`` entry's
+``group_role_map``, or ``COGNITO_GROUP_ROLE_MAP``), and every
 authenticated request carries the derived roles on
 :attr:`app.models.user.User.identity_roles`.
 

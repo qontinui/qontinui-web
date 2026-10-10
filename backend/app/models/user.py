@@ -227,7 +227,7 @@ class User(Base):
     )
 
     # Roles derived from the issuer groups of the token that authenticated
-    # THIS request (``OIDC_GROUP_ROLE_MAP``; see app/auth/identity_roles.py).
+    # THIS request (its issuer's group -> role map; see app/auth/identity_roles.py).
     # Deliberately NOT a column: the issuer is the authority on group
     # membership, so the roles are re-derived from every verified token and a
     # membership revoked at the issuer is gone by the next token. Kept in the

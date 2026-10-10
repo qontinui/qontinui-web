@@ -22,10 +22,15 @@ Caching:
   rotation), RATE-LIMITED to one per ``_FORCED_REFRESH_COOLDOWN_S``: the
   ``kid`` comes from an unverified header, so without the cooldown any caller
   could drive one outbound round-trip per request.
-* A refetch that FAILS while a previously fetched JWKS is held keeps serving
-  that JWKS (logged), so a transient issuer outage does not log every user
-  out at each TTL boundary. A cold start with no JWKS fails closed —
-  never "trust the token".
+* Fetches are SINGLE-FLIGHT: concurrent verifications that need a fetch all
+  await the one in-flight fetch rather than queueing their own behind a lock,
+  so an outage costs one ``http_timeout_s`` stall, not one per request.
+* A fetch that FAILS starts a back-off of ``_FAILURE_BACKOFF_S`` during which
+  no further fetch is attempted. With a previously fetched JWKS held, that
+  JWKS keeps being served (logged), so a transient issuer outage does not log
+  every user out at each TTL boundary. On a cold start (no JWKS) every
+  verification during the back-off fails closed at once — never "trust the
+  token" — without dialling the issuer again.
 
 Verification gates (all must pass): asymmetric JWS signature against the JWK
 selected by ``kid`` (``HS*`` and ``none`` are never accepted), ``iss`` equal
@@ -37,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -46,6 +52,7 @@ import jwt as pyjwt
 import structlog
 from jwt.exceptions import InvalidTokenError, PyJWKError, PyJWTError
 
+from app.auth.identity_roles import IdentityRole
 from app.core.config import Settings, cognito_issuer_setting_name, settings
 
 logger = structlog.get_logger(__name__)
@@ -53,6 +60,12 @@ logger = structlog.get_logger(__name__)
 # Minimum interval between FORCED (kid-miss-driven) refetches. Matches coord's
 # `auth_sso::FORCED_REFRESH_COOLDOWN` and `coord_jwks._FORCED_REFRESH_COOLDOWN_S`.
 _FORCED_REFRESH_COOLDOWN_S = 30
+
+# After a failed discovery/JWKS fetch, no further fetch is attempted for this
+# long — on the stale-cache path (held keys keep being served) and on a cold
+# start (verification fails closed without re-dialling). Bounds the outbound
+# rate and the per-request stall during an issuer outage.
+_FAILURE_BACKOFF_S = 30
 
 # Cap on attacker-controlled header/claim values (``kid``, unverified ``iss``)
 # where they reach an exception message that is logged on a PRE-AUTH path.
@@ -123,6 +136,14 @@ class OIDCProvider:
     # ``cognito`` identities live on ``auth.users.cognito_sub``; ``oidc``
     # identities on ``auth.user_oidc_identities``.
     kind: Literal["cognito", "oidc"]
+    # This issuer's group -> role mapping (group names mean nothing across
+    # issuers).
+    group_role_map: Mapping[str, tuple[IdentityRole, ...]] = field(
+        default_factory=dict, hash=False
+    )
+    # Whether a first sign-in may attach to an existing account by verified
+    # email (see OIDCProviderSetting.link_existing_by_email).
+    link_existing_by_email: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "issuer", normalise_issuer(self.issuer))
@@ -145,10 +166,14 @@ class OIDCIssuerClient:
         *,
         metadata_ttl_s: float = 3600.0,
         http_timeout_s: float = 10.0,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         self._provider = provider
         self._metadata_ttl_s = metadata_ttl_s
         self._http_timeout_s = http_timeout_s
+        # ``None`` = ``time.monotonic``, looked up at each call so a test that
+        # patches it is honoured.
+        self._clock = clock
         self._jwks_uri: str | None = None
         self._jwks: dict[str, Any] | None = None
         # ``time.monotonic`` readings; ``None`` means "never" (a ``0.0``
@@ -156,7 +181,13 @@ class OIDCIssuerClient:
         # origin sits — the defect ``cognito_jwks`` once carried).
         self._fetched_at: float | None = None
         self._forced_at: float | None = None
-        self._lock = asyncio.Lock()
+        self._failed_at: float | None = None
+        self._last_error: OIDCJWKSUnavailableError | None = None
+        # The single in-flight fetch every concurrent waiter shares.
+        self._inflight: asyncio.Future[dict[str, Any]] | None = None
+
+    def _now(self) -> float:
+        return self._clock() if self._clock is not None else time.monotonic()
 
     @property
     def provider(self) -> OIDCProvider:
@@ -267,50 +298,83 @@ class OIDCIssuerClient:
         return jwks_uri, jwks
 
     async def _get_jwks(self, *, force_refresh: bool) -> dict[str, Any]:
-        """The cached JWKS, refetched when absent, past its TTL, or forced."""
-        async with self._lock:
-            now = time.monotonic()
-            fresh = (
-                self._jwks is not None
-                and self._fetched_at is not None
-                and (now - self._fetched_at) < self._metadata_ttl_s
-            )
-            if fresh and not force_refresh and self._jwks is not None:
-                return self._jwks
+        """The cached JWKS, refetched when absent, past its TTL, or forced.
 
-            if force_refresh and self._jwks is not None:
-                if (
-                    self._forced_at is not None
-                    and (now - self._forced_at) < _FORCED_REFRESH_COOLDOWN_S
-                ):
-                    # Already refetched recently — serve the cache; the
-                    # caller's kid lookup fails as it would have.
-                    return self._jwks
-                self._forced_at = now
+        No lock is held across I/O: the decision below runs without an
+        ``await`` (atomic under asyncio), and the fetch itself is one shared
+        future that every concurrent caller awaits.
+        """
+        now = self._now()
+        held = self._jwks
+        fresh = (
+            held is not None
+            and self._fetched_at is not None
+            and (now - self._fetched_at) < self._metadata_ttl_s
+        )
+        if held is not None and fresh and not force_refresh:
+            return held
 
+        if held is not None and force_refresh:
+            if (
+                self._forced_at is not None
+                and (now - self._forced_at) < _FORCED_REFRESH_COOLDOWN_S
+            ):
+                # Already refetched recently — serve the cache; the caller's
+                # kid lookup fails as it would have.
+                return held
+
+        if self._failed_at is not None and (now - self._failed_at) < _FAILURE_BACKOFF_S:
+            if held is not None:
+                return held
+            last = self._last_error
+            raise self._unavailable(
+                "OIDC issuer keys unavailable (backing off "
+                f"{_FAILURE_BACKOFF_S}s after a failed fetch): {last}",
+                last.url if last is not None else self.discovery_url,
+            ) from last
+
+        if held is not None and force_refresh:
+            self._forced_at = now
+
+        inflight = self._inflight
+        if inflight is None:
+            inflight = asyncio.ensure_future(self._refresh(forced=force_refresh))
+            self._inflight = inflight
+        # ``shield``: one waiter's cancellation must not cancel the fetch the
+        # others are waiting on.
+        return await asyncio.shield(inflight)
+
+    async def _refresh(self, *, forced: bool) -> dict[str, Any]:
+        """Run ONE fetch and record its outcome for every waiter."""
+        try:
             try:
                 jwks_uri, jwks = await self._fetch_metadata()
             except OIDCJWKSUnavailableError as exc:
+                self._failed_at = self._now()
+                self._last_error = exc
                 if self._jwks is None:
                     raise
                 logger.warning(
                     "oidc_jwks_refresh_failed_serving_cached",
-                    forced=force_refresh,
+                    forced=forced,
                     **oidc_jwks_failure_log_fields(exc),
                 )
                 return self._jwks
-
             self._jwks_uri = jwks_uri
             self._jwks = jwks
-            self._fetched_at = now
+            self._fetched_at = self._now()
+            self._failed_at = None
+            self._last_error = None
             logger.info(
                 "oidc_jwks_fetched",
                 issuer=self._provider.issuer,
                 jwks_url=jwks_uri,
                 key_count=len(jwks["keys"]),
-                forced=force_refresh,
+                forced=forced,
             )
             return jwks
+        finally:
+            self._inflight = None
 
     @staticmethod
     def _find_jwk(jwks: dict[str, Any], kid: str) -> dict[str, Any] | None:
@@ -486,6 +550,10 @@ def build_providers(cfg: Settings) -> list[OIDCProvider]:
                 groups_claim=cfg.COGNITO_GROUPS_CLAIM,
                 issuer_setting=cognito_issuer_setting_name(cfg),
                 kind="cognito",
+                group_role_map={
+                    g: tuple(r) for g, r in cfg.COGNITO_GROUP_ROLE_MAP.items()
+                },
+                link_existing_by_email=cfg.COGNITO_LINK_EXISTING_BY_EMAIL,
             )
         )
     for index, entry in enumerate(cfg.OIDC_PROVIDERS):
@@ -497,6 +565,8 @@ def build_providers(cfg: Settings) -> list[OIDCProvider]:
                 groups_claim=entry.groups_claim,
                 issuer_setting=f"OIDC_PROVIDERS[{index}]",
                 kind="oidc",
+                group_role_map={g: tuple(r) for g, r in entry.group_role_map.items()},
+                link_existing_by_email=entry.link_existing_by_email,
             )
         )
     return providers

@@ -16,7 +16,7 @@ verifier for its issuer. It is used by:
 There is no local HS256 / password fallback. A token no configured issuer
 vouches for yields ``None`` (HTTP) or raises (WS) — never a silently-accepted
 user. The resolved user carries the roles its issuer groups map to
-(:attr:`User.identity_roles`, ``OIDC_GROUP_ROLE_MAP``).
+(:attr:`User.identity_roles`, from that issuer's own group -> role map).
 
 The module and function keep their Cognito names because every auth
 dependency and its tests address them; the behaviour is issuer-generic.
@@ -40,7 +40,24 @@ class CognitoAuthError(Exception):
     Raised by :func:`verify_cognito_token_and_resolve_user`. Callers that
     need a hard failure (WebSocket auth) translate this to a 401; the
     fastapi-users strategy catches it and returns ``None`` instead.
+    ``status_code`` / ``public_detail`` are what an HTTP caller answers.
     """
+
+    status_code: int = 401
+    public_detail: str = "Invalid or expired token."
+
+
+class IdentityConflictError(CognitoAuthError):
+    """The token is valid but its email belongs to an account it may not
+    attach to (see ``IdentityLinkRefusedError``). Answered 409, not 401: the
+    caller should not retry with a fresh token, they need the account owner
+    or an administrator to link the identity."""
+
+    status_code = 409
+    public_detail = (
+        "An account with this email already exists and cannot be linked to "
+        "this sign-in automatically. Contact your administrator."
+    )
 
 
 async def verify_cognito_token_and_resolve_user(
@@ -69,9 +86,9 @@ async def verify_cognito_token_and_resolve_user(
             the token is invalid, or the verified claims cannot be resolved.
     """
     from app.auth.identity_roles import derive_roles, groups_from_claims
-    from app.core.config import settings
     from app.services.cognito_provision import (
         CognitoClaimError,
+        IdentityLinkRefusedError,
         resolve_user_for_cognito_claims,
         resolve_user_for_oidc_claims,
     )
@@ -105,9 +122,18 @@ async def verify_cognito_token_and_resolve_user(
     provider = verified.provider
     try:
         if provider.kind == "cognito":
-            user = await resolve_user_for_cognito_claims(session, claims)
+            user = await resolve_user_for_cognito_claims(
+                session, claims, link_existing_by_email=provider.link_existing_by_email
+            )
         else:
-            user = await resolve_user_for_oidc_claims(session, provider.issuer, claims)
+            user = await resolve_user_for_oidc_claims(
+                session,
+                provider.issuer,
+                claims,
+                link_existing_by_email=provider.link_existing_by_email,
+            )
+    except IdentityLinkRefusedError as exc:
+        raise IdentityConflictError(str(exc)) from exc
     except CognitoClaimError as exc:
         logger.warning("oidc_claims_incomplete", error=str(exc), issuer=provider.issuer)
         raise CognitoAuthError("Token claims could not be resolved") from exc
@@ -115,7 +141,7 @@ async def verify_cognito_token_and_resolve_user(
     user.set_identity_roles(
         derive_roles(
             groups_from_claims(claims, provider.groups_claim),
-            settings.OIDC_GROUP_ROLE_MAP,
+            provider.group_role_map,
         )
     )
 

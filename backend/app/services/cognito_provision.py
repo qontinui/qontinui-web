@@ -35,6 +35,7 @@ from typing import Any
 
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -44,7 +45,18 @@ logger = structlog.get_logger(__name__)
 
 
 class CognitoClaimError(RuntimeError):
-    """Raised when verified Cognito claims are missing required fields."""
+    """Raised when verified token claims cannot be resolved to a user."""
+
+
+class IdentityLinkRefusedError(CognitoClaimError):
+    """A first sign-in's email belongs to an account it may not attach to.
+
+    Raised instead of linking when the issuer has not opted in to
+    email-based linking, the token's email is unverified, the account is a
+    superuser, or (Cognito) the account already signs in through a generic
+    OIDC issuer. Callers answer 409: the token is valid, the account
+    resolution is refused.
+    """
 
 
 def _extract_sub(claims: dict[str, Any]) -> str:
@@ -111,83 +123,155 @@ async def _derive_unique_username(
     return f"{base}-{sub[:12]}"
 
 
+async def _user_by_cognito_sub(session: AsyncSession, sub: str) -> User | None:
+    found = await session.execute(select(User).where(User.cognito_sub == sub))
+    return found.scalar_one_or_none()
+
+
+async def _user_by_oidc_identity(
+    session: AsyncSession, issuer: str, sub: str
+) -> User | None:
+    found = await session.execute(
+        select(User)
+        .join(UserOIDCIdentity, UserOIDCIdentity.user_id == User.id)
+        .where(UserOIDCIdentity.issuer == issuer, UserOIDCIdentity.subject == sub)
+    )
+    return found.scalar_one_or_none()
+
+
+async def _user_by_email(session: AsyncSession, email: str | None) -> User | None:
+    if not email:
+        return None
+    found = await session.execute(select(User).where(func.lower(User.email) == email))
+    return found.scalar_one_or_none()
+
+
+async def _holds_oidc_identity(session: AsyncSession, user: User) -> bool:
+    found = await session.execute(
+        select(UserOIDCIdentity.id).where(UserOIDCIdentity.user_id == user.id).limit(1)
+    )
+    return found.scalar_one_or_none() is not None
+
+
+def _refuse_link(reason: str, existing: User, log_fields: dict[str, Any]) -> None:
+    logger.warning(
+        "identity_link_refused",
+        reason=reason,
+        existing_user_id=str(existing.id),
+        **log_fields,
+    )
+    raise IdentityLinkRefusedError(
+        "An account with this email already exists and this sign-in may not "
+        f"be attached to it automatically ({reason})."
+    )
+
+
+async def _check_link_allowed(
+    session: AsyncSession,
+    existing: User,
+    *,
+    link_existing_by_email: bool,
+    email_verified: bool,
+    refuse_if_holds_oidc_identity: bool,
+    log_fields: dict[str, Any],
+) -> None:
+    """Raise :class:`IdentityLinkRefusedError` unless ``existing`` may be linked.
+
+    Linking by email hands an existing account to whoever holds a verified
+    email at the presenting issuer, so it needs the issuer's explicit opt-in,
+    a verified email, and a non-superuser target.
+    """
+    if not link_existing_by_email:
+        _refuse_link("issuer_not_opted_in", existing, log_fields)
+    if not email_verified:
+        _refuse_link("email_unverified", existing, log_fields)
+    if existing.is_superuser:
+        _refuse_link("superuser_account", existing, log_fields)
+    if refuse_if_holds_oidc_identity and await _holds_oidc_identity(session, existing):
+        _refuse_link("account_belongs_to_another_issuer", existing, log_fields)
+
+
+async def _bootstrap_personal_org(
+    session: AsyncSession, user: User, event: str
+) -> None:
+    """Give a freshly provisioned user its personal organization.
+
+    The legacy signup path did this in UserManager.on_after_register, which
+    never fires for users provisioned here (their first project create 500'd
+    on ``personal_org_not_found``). Same tolerate-None posture: a failed
+    bootstrap logs loudly but never fails the login
+    (create_personal_organization is idempotent).
+    """
+    from app.services.organization_service import organization_service
+
+    personal_org = await organization_service.create_personal_organization(
+        db=session,
+        user=user,
+    )
+    if personal_org is None:
+        logger.warning(event, user_id=str(user.id))
+
+
 async def resolve_user_for_cognito_claims(
     session: AsyncSession,
     claims: dict[str, Any],
+    *,
+    link_existing_by_email: bool = True,
 ) -> User:
     """Return the ``User`` for verified Cognito ``claims`` (provision/link).
 
     The caller must have *already verified* the token (signature, issuer,
     audience, expiry). This function only trusts the claim *values*.
 
+    Linking an existing account by email (step 2) requires
+    ``link_existing_by_email`` (``COGNITO_LINK_EXISTING_BY_EMAIL``), a verified
+    email, a non-superuser account, and an account that does not already sign
+    in through a generic OIDC issuer.
+
+    A concurrent first login for the same ``sub`` is absorbed: the losing
+    insert rolls back to a savepoint and the winner's row is returned.
+
     Raises:
         CognitoClaimError: required claims are missing (no ``sub``).
+        IdentityLinkRefusedError: the email belongs to an account this sign-in
+            may not attach to.
     """
     sub = _extract_sub(claims)
     email = _extract_email(claims)
     email_verified = _email_is_verified(claims)
+    log_fields = {"cognito_sub": sub, "email": email}
 
     # 1. Steady state: a row already linked to this Cognito sub.
-    by_sub = await session.execute(select(User).where(User.cognito_sub == sub))
-    user = by_sub.scalar_one_or_none()
+    user = await _user_by_cognito_sub(session, sub)
     if user is not None:
         return user
 
-    # 2. An existing local user shares this email.
-    existing_by_email: User | None = None
-    if email:
-        by_email = await session.execute(
-            select(User).where(func.lower(User.email) == email)
+    # 2. An existing account shares this email.
+    existing = await _user_by_email(session, email)
+    if existing is not None:
+        await _check_link_allowed(
+            session,
+            existing,
+            link_existing_by_email=link_existing_by_email,
+            email_verified=email_verified,
+            refuse_if_holds_oidc_identity=True,
+            log_fields=log_fields,
         )
-        existing_by_email = by_email.scalar_one_or_none()
-
-    if existing_by_email is not None:
-        if email_verified:
-            # Verified email → link the Cognito identity to the existing
-            # account (unify the two identities).
-            existing_by_email.cognito_sub = sub
-            session.add(existing_by_email)
-            await session.flush()
-            logger.info(
-                "cognito_user_linked",
-                user_id=str(existing_by_email.id),
-                email=email,
-                cognito_sub=sub,
-            )
-            return existing_by_email
-        # UNVERIFIED email colliding with an existing account: we must
-        # neither link (account-takeover vector) nor create a new row
-        # (would violate the unique-email constraint). Reject the login —
-        # the strategy turns this into a 401, never a 500. The user must
-        # verify their email in Cognito (or resolve the conflict) first.
-        logger.warning(
-            "cognito_unverified_email_collision",
-            email=email,
-            cognito_sub=sub,
-            existing_user_id=str(existing_by_email.id),
-        )
-        raise CognitoClaimError(
-            "Cognito email is unverified and collides with an existing "
-            "account; cannot provision or link."
-        )
+        existing.cognito_sub = sub
+        session.add(existing)
+        await session.flush()
+        logger.info("cognito_user_linked", user_id=str(existing.id), **log_fields)
+        return existing
 
     # 3. Create a fresh user from the token claims.
     if not email:
-        # Cognito user-pool tokens always carry an email for a standard
-        # email-based pool, but a federated identity may hide it. Without
-        # an email we cannot create a usable account row (email is unique
-        # + NOT NULL), so synthesize a stable, non-deliverable address.
-        # Use a real (controlled, MX-less) domain rather than the reserved
-        # `.local` TLD — the latter is a special-use name that `EmailStr`
-        # (and RFC validators) reject, which would 500 the user on read.
+        # A federated identity may hide the email. Email is unique + NOT
+        # NULL, so synthesize a stable, non-deliverable address on a real
+        # (controlled, MX-less) domain — `.local` is rejected by EmailStr.
         email = f"{sub}@no-reply.qontinui.io"
         email_verified = False
 
     username = await _derive_unique_username(session, email=email, sub=sub)
-    # Cognito is the sole authentication mechanism: the ``hashed_password``
-    # column no longer exists on the model (dropped from auth.users), so
-    # nothing password-related is set here.
-
     user = User(
         id=uuid.uuid4(),
         email=email,
@@ -199,80 +283,36 @@ async def resolve_user_for_cognito_claims(
         is_verified=email_verified,
         is_superuser=False,
     )
-    session.add(user)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(user)
+            await session.flush()
+    except IntegrityError:
+        # A concurrent first login for this sub won the insert.
+        winner = await _user_by_cognito_sub(session, sub)
+        if winner is None:
+            raise
+        logger.info("cognito_user_provision_race_absorbed", user_id=str(winner.id))
+        return winner
     logger.info(
         "cognito_user_provisioned",
         user_id=str(user.id),
-        email=email,
         username=username,
-        cognito_sub=sub,
         is_verified=email_verified,
-    )
-
-    # Bootstrap the personal organization. The legacy signup path did this in
-    # UserManager.on_after_register, but that hook only fires for
-    # fastapi-users' programmatic ``create`` — Cognito-first users provisioned
-    # HERE never got one, so their first project create 500'd
-    # (``personal_org_not_found`` in create_project's org resolution; caught
-    # by hermetic Spec CI 2026-06-04). Same tolerate-None posture as
-    # on_after_register: a failed bootstrap logs loudly but never fails the
-    # login (create_personal_organization is idempotent, so any later
-    # programmatic create self-heals the gap).
-    from app.services.organization_service import organization_service
-
-    personal_org = await organization_service.create_personal_organization(
-        db=session,
-        user=user,
-    )
-    if personal_org is None:
-        logger.warning(
-            "cognito_user_provisioned_without_personal_org",
-            user_id=str(user.id),
-        )
-
-    return user
-
-
-async def _link_or_reject_by_email(
-    session: AsyncSession,
-    *,
-    email: str | None,
-    email_verified: bool,
-    log_fields: dict[str, Any],
-) -> User | None:
-    """The existing user sharing ``email``, when it may be linked.
-
-    ``None`` when no user has the email. Raises :class:`CognitoClaimError`
-    when one does but the token's email is unverified — linking would be an
-    account-takeover vector and creating would collide on the unique email.
-    """
-    if not email:
-        return None
-    by_email = await session.execute(
-        select(User).where(func.lower(User.email) == email)
-    )
-    existing = by_email.scalar_one_or_none()
-    if existing is None:
-        return None
-    if email_verified:
-        return existing
-    logger.warning(
-        "oidc_unverified_email_collision",
-        email=email,
-        existing_user_id=str(existing.id),
         **log_fields,
     )
-    raise CognitoClaimError(
-        "Token email is unverified and collides with an existing account; "
-        "cannot provision or link."
+    await _bootstrap_personal_org(
+        session, user, "cognito_user_provisioned_without_personal_org"
     )
+    return user
 
 
 async def resolve_user_for_oidc_claims(
     session: AsyncSession,
     issuer: str,
     claims: dict[str, Any],
+    *,
+    link_existing_by_email: bool = False,
 ) -> User:
     """Return the ``User`` for verified claims from a generic OIDC ``issuer``.
 
@@ -281,44 +321,57 @@ async def resolve_user_for_oidc_claims(
     verifier matched — but the identity is keyed by ``(issuer, sub)``:
 
     1. An ``auth.user_oidc_identities`` row for ``(issuer, sub)`` -> its user.
-    2. A user with the same email, when the token says the email is verified
-       -> link (record the identity row). An unverified colliding email is
-       rejected. Entra ID emits no ``email_verified``, so on Entra a
-       colliding email is always rejected rather than linked.
+    2. A user with the same email -> link, ONLY when the issuer opted in
+       (``link_existing_by_email``), the email is verified (Entra ID emits no
+       ``email_verified``, so on Entra this never links) and the account is
+       not a superuser; otherwise refused.
     3. Otherwise create the user and its identity row.
 
+    A concurrent first login for the same ``(issuer, sub)`` is absorbed: the
+    losing insert rolls back to a savepoint and the winner's user is returned.
+
     Raises:
-        CognitoClaimError: no ``sub``, or an unverified colliding email.
+        CognitoClaimError: no ``sub``.
+        IdentityLinkRefusedError: the email belongs to an account this sign-in
+            may not attach to.
     """
     sub = _extract_sub(claims)
     email = _extract_email(claims)
     email_verified = _email_is_verified(claims)
-    log_fields = {"oidc_issuer": issuer, "oidc_sub": sub}
+    log_fields = {"oidc_issuer": issuer, "oidc_sub": sub, "email": email}
 
-    by_identity = await session.execute(
-        select(User)
-        .join(UserOIDCIdentity, UserOIDCIdentity.user_id == User.id)
-        .where(UserOIDCIdentity.issuer == issuer, UserOIDCIdentity.subject == sub)
-    )
-    user = by_identity.scalar_one_or_none()
+    user = await _user_by_oidc_identity(session, issuer, sub)
     if user is not None:
         return user
 
-    linked = await _link_or_reject_by_email(
-        session, email=email, email_verified=email_verified, log_fields=log_fields
-    )
-    if linked is not None:
-        session.add(UserOIDCIdentity(user_id=linked.id, issuer=issuer, subject=sub))
-        await session.flush()
-        logger.info("oidc_user_linked", user_id=str(linked.id), **log_fields)
-        return linked
+    existing = await _user_by_email(session, email)
+    if existing is not None:
+        await _check_link_allowed(
+            session,
+            existing,
+            link_existing_by_email=link_existing_by_email,
+            email_verified=email_verified,
+            refuse_if_holds_oidc_identity=False,
+            log_fields=log_fields,
+        )
+        try:
+            async with session.begin_nested():
+                session.add(
+                    UserOIDCIdentity(user_id=existing.id, issuer=issuer, subject=sub)
+                )
+                await session.flush()
+        except IntegrityError:
+            winner = await _user_by_oidc_identity(session, issuer, sub)
+            if winner is None:
+                raise
+            return winner
+        logger.info("oidc_user_linked", user_id=str(existing.id), **log_fields)
+        return existing
 
     if not email:
-        # Same reasoning as the Cognito path: email is unique + NOT NULL, so
-        # synthesise a stable, non-deliverable address. Hashed rather than
-        # spelled from ``sub``, which for some issuers carries characters
-        # (``auth0|...``) an email validator rejects, and is unique only
-        # together with the issuer.
+        # Hashed rather than spelled from ``sub``, which for some issuers
+        # carries characters (``auth0|...``) an email validator rejects, and
+        # is unique only together with the issuer.
         digest = hashlib.sha256(f"{issuer}\n{sub}".encode()).hexdigest()[:32]
         email = f"oidc-{digest}@no-reply.qontinui.io"
         email_verified = False
@@ -336,29 +389,27 @@ async def resolve_user_for_oidc_claims(
         is_verified=email_verified,
         is_superuser=False,
     )
-    session.add(user)
-    await session.flush()
-    session.add(UserOIDCIdentity(user_id=user.id, issuer=issuer, subject=sub))
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(user)
+            await session.flush()
+            session.add(UserOIDCIdentity(user_id=user.id, issuer=issuer, subject=sub))
+            await session.flush()
+    except IntegrityError:
+        # A concurrent first login for this (issuer, sub) won the insert.
+        winner = await _user_by_oidc_identity(session, issuer, sub)
+        if winner is None:
+            raise
+        logger.info("oidc_user_provision_race_absorbed", user_id=str(winner.id))
+        return winner
     logger.info(
         "oidc_user_provisioned",
         user_id=str(user.id),
-        email=email,
         username=username,
         is_verified=email_verified,
         **log_fields,
     )
-
-    from app.services.organization_service import organization_service
-
-    personal_org = await organization_service.create_personal_organization(
-        db=session,
-        user=user,
+    await _bootstrap_personal_org(
+        session, user, "oidc_user_provisioned_without_personal_org"
     )
-    if personal_org is None:
-        logger.warning(
-            "oidc_user_provisioned_without_personal_org",
-            user_id=str(user.id),
-        )
-
     return user
