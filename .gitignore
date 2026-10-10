@@ -38,6 +38,7 @@ backend/scripts/*
 !backend/scripts/dev_local_idp.py
 !backend/scripts/export_openapi.py
 !backend/scripts/export_test_coverage.py
+!backend/scripts/gen_build_record_scan_vectors.py
 !backend/scripts/generate_secrets.py
 !backend/scripts/import_agent_text_units.py
 !backend/scripts/migrate_files_to_object_storage.py
