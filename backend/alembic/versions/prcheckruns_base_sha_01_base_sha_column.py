@@ -152,6 +152,10 @@ def upgrade() -> None:
         """
     )
     op.execute(_LATEST_VIEW_CONCLUSIVE_FIRST)
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
@@ -162,3 +166,7 @@ def downgrade() -> None:
     op.execute("DROP VIEW IF EXISTS coord.pr_check_runs_latest")
     op.execute("ALTER TABLE coord.pr_check_runs DROP COLUMN IF EXISTS base_sha")
     op.execute(_LATEST_VIEW_CONCLUSIVE_FIRST)
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")

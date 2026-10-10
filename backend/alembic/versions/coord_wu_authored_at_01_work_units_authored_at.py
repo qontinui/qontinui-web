@@ -203,6 +203,10 @@ def upgrade() -> None:
         "ALTER TABLE coord.work_units "
         "ADD COLUMN IF NOT EXISTS authored_at TIMESTAMPTZ NULL"
     )
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
     # Backfill OUTSIDE the DDL transaction: entering the autocommit block
     # commits the ADD COLUMN, releasing its ACCESS EXCLUSIVE lock before the

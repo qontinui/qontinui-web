@@ -78,6 +78,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute("ALTER TABLE coord.sessions ADD COLUMN IF NOT EXISTS plan_slug TEXT")
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
     # Backfill OUTSIDE the DDL transaction: entering the autocommit block commits
     # the ADD COLUMN, releasing its ACCESS EXCLUSIVE lock before this
