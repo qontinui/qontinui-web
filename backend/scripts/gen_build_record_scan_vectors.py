@@ -192,6 +192,22 @@ DOCUMENT_CASES: list[tuple[str, Any, list[str]]] = [
     ("minus_sign_between_words", _title("acme−secret"), []),
     ("spaced_double_slash", _title("a / / b"), []),
     ("braille_blank_split_repo_token", _title("acme\u2800/\u2800secret"), []),
+    ("null_notehead_split_repo_token", _title("acme\U0001d159/\U0001d159secret"), []),
+    (
+        "so_symbol_next_to_slash_repo_token",
+        _title("acme\U0001f4a0/\U0001f4a0secret"),
+        [],
+    ),
+    # Guards for ordinary titles: the verdicts are what web's scanner says. A
+    # plain word/word pair (read/write, a / b, CI (lint/test)) is an
+    # owner/name-shaped token and is refused by the token rule — as before
+    # this change; two digit segments (50/50) and bracketed words are not.
+    ("guard_read_write", _title("read/write"), []),
+    ("guard_spaced_a_b", _title("a / b"), []),
+    ("guard_ci_lint_test", _title("CI (lint/test)"), []),
+    ("guard_fifty_fifty", _title("50/50"), []),
+    ("guard_spaced_fifty_fifty", _title("50 / 50"), []),
+    ("guard_bracketed_words", _title("(lint)/(test)"), []),
     (
         "f3_product_slug_equals_excluded_name",
         _product_slug("design-tokens"),
@@ -221,6 +237,8 @@ NORMALIZE_CASES: list[tuple[str, str]] = [
     ("upper_case_kept", "SECRET-ENGINE"),
     ("middle_dot_infix", "acme·secret"),
     ("fullwidth", "ａcme／secret"),
+    ("so_symbol_transparent_at_slash", "acme\U0001f4a0/\U0001f4a0secret"),
+    ("punctuation_not_transparent", "(lint) / (test)"),
     ("combining_acute", "secrét"),
 ]
 
