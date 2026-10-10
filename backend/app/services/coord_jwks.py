@@ -98,6 +98,38 @@ _MAX_KID_CHARS = 64
 # read this paragraph as describing THIS door.
 _FORCED_REFRESH_COOLDOWN_S = 30
 
+#: Every ``kid`` coord mints carries this prefix — the current
+#: ``coord-ed25519-<thumbprint>`` keys and the withdrawn ``coord-ed25519-v1``
+#: alias alike. It is coord's own family test (``auth_sso::is_coord_issued_kid``,
+#: which ``JwtKeys::classify_kid`` uses to tell another coord's key apart from
+#: an OIDC one).
+COORD_KID_PREFIX = "coord-"
+
+
+def kid_outside_coord_family(token: str) -> bool:
+    """True when the token's header names a ``kid`` coord never mints.
+
+    Header-only and signature-unverified, so it can only REFUSE: such a token
+    is not a coord token whatever else is true of it (a Cognito token that
+    did not resolve, typically), and a caller that reads one bearer as either
+    family answers it as an unauthenticated request instead of verifying it.
+    Verifying it would cost a forced JWKS re-fetch (an unknown ``kid``) and
+    end in :class:`CoordTokenForeignIssuerError`, whose terminal callers log
+    the ``coord_identity_mismatch`` wiring alarm — an alarm about a token
+    minted by ANOTHER coord, which this is not.
+
+    ``False`` when the header does not parse or names no ``kid``: that is not
+    a statement about anyone's key, so the verifier gives its own answer.
+    """
+    try:
+        header = pyjwt.get_unverified_header(token)
+    except InvalidTokenError:
+        return False
+    kid = header.get("kid")
+    if not kid:
+        return False
+    return not str(kid).startswith(COORD_KID_PREFIX)
+
 
 class CoordJWKSUnavailableError(RuntimeError):
     """Raised when coord's JWKS cannot be fetched (cold-start failure)."""

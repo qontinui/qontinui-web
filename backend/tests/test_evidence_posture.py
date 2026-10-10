@@ -71,7 +71,16 @@ from app.core.evidence_posture import (
 #: * ``PATCH /plan-library/edges/{edge_id}`` — the edge verbs (#1459);
 #: * ``POST /session-repository`` [identity] — this plan;
 #: * ``POST /testing/runs``, ``…/deficiencies``, ``…/screenshots`` — this plan.
-GAP_COUNT_PIN = 7
+#:
+#: Three more when every overview write began admitting a device JWT
+#: (2026-10-07, plan ``2026-10-07-agents-publish-documents-to-the-project-overview``):
+#:
+#: * ``DELETE /overview/pages/{record_id}`` [what a re-create loses] — the
+#:   version history, owned by that plan;
+#: * ``DELETE /overview/estimates/{record_id}`` [what a re-create loses] — the
+#:   phase progress and ids, this plan;
+#: * ``DELETE /overview/files/{record_id}`` — the stored bytes, this plan.
+GAP_COUNT_PIN = 10
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;
