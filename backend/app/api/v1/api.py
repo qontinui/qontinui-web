@@ -34,6 +34,7 @@ from app.api.v1.endpoints import (
     automation_ws,
     background_removal,
     batch_import,
+    build_records,
     capture,
     chat_sessions,
     claude_accounts,
@@ -279,6 +280,13 @@ api_router.include_router(conditions.router, prefix="/conditions", tags=["condit
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
+)
+# Build records (plan 2026-10-09-factory-built-product-portfolio-and-launch-kit,
+# Phase 1) — the authed coord export proxy and the publish step. The frozen,
+# unauthenticated copy is served by ``public.router`` at
+# ``/public/build-records/{slug}``.
+api_router.include_router(
+    build_records.router, prefix="/build-records", tags=["build-records"]
 )
 # Project Overview — the business-leader surface (overview.*): the project
 # settings, hand-written. Tenant-scoped on the active coord tenant, so the frontend attaches

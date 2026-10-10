@@ -508,6 +508,20 @@ async def _job_render_log_retention() -> Any:
     return await _run_committed(run_render_log_retention)
 
 
+async def _job_build_record_reconcile() -> Any:
+    from app.db.session import AsyncSessionLocal
+    from app.jobs.build_record_reconcile import reconcile_all
+
+    return await reconcile_all(AsyncSessionLocal)
+
+
+async def _job_build_record_visibility_recheck() -> Any:
+    from app.db.session import AsyncSessionLocal
+    from app.jobs.build_record_reconcile import recheck_visibility_all
+
+    return await recheck_visibility_all(AsyncSessionLocal)
+
+
 async def _job_journey_edge_retention() -> Any:
     from app.jobs.journey_edge_retention import run_journey_edge_retention
 
@@ -625,6 +639,37 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="devenv_config_history_prune",
             coro=_job_devenv_config_history_prune,
             cron="25 4 * * *",
+        )
+    )
+
+    # Public build records — retract a published snapshot whose coord product
+    # was made private (or deleted) through coord's own door, which web never
+    # sees. Every 10 minutes and at boot: the window a private product's page
+    # stays public is bounded by this cadence. A tenant with no live public
+    # slug costs nothing; one whose coord read is unanswered retracts nothing
+    # (UNKNOWN, not "private"). Plan
+    # 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
+    service.register(
+        ScheduledTask(
+            name="build_record_reconcile",
+            coro=_job_build_record_reconcile,
+            cron="*/10 * * * *",
+            run_at_boot=True,
+        )
+    )
+    # Public build records, second question — does GitHub (asked anonymously)
+    # still say every repo on a live page is public? Its own task so it has its
+    # own kill switch and its own timeout, and never shares a tick with the
+    # coord reconcile above. At most 8 GitHub calls per tick anonymously (80
+    # with GITHUB_VISIBILITY_TOKEN); real anonymous throughput is ~30 repos/
+    # hour because it stops at 30 remaining of GitHub's 60/hour window — see
+    # recheck_throughput_per_hour. Offset to :05 so the two never fire together.
+    service.register(
+        ScheduledTask(
+            name="build_record_visibility_recheck",
+            coro=_job_build_record_visibility_recheck,
+            cron="5-59/10 * * * *",
+            timeout_seconds=300.0,
         )
     )
 

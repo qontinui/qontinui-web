@@ -6017,6 +6017,194 @@
         "title": "BridgeAuditLogResponse",
         "type": "object"
       },
+      "BuildRecordProductWrite": {
+        "additionalProperties": false,
+        "description": "Body of ``PUT /products/{slug}`` \u2014 the coord contract's product fields.",
+        "properties": {
+          "is_public": {
+            "default": false,
+            "title": "Is Public",
+            "type": "boolean"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Repos",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "BuildRecordProductWrite",
+        "type": "object"
+      },
+      "BuildRecordPublication": {
+        "description": "What ``GET /{slug}/publication`` returns, for the CALLER's tenant.",
+        "properties": {
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "owned_by_caller_tenant": {
+            "title": "Owned By Caller Tenant",
+            "type": "boolean"
+          },
+          "public_slug": {
+            "title": "Public Slug",
+            "type": "string"
+          },
+          "unpublished": {
+            "title": "Unpublished",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "public_slug",
+          "owned_by_caller_tenant",
+          "unpublished",
+          "version",
+          "content_sha256"
+        ],
+        "title": "BuildRecordPublication",
+        "type": "object"
+      },
+      "BuildRecordPublishRequest": {
+        "additionalProperties": false,
+        "description": "Optional body of ``POST /{slug}/publish``.",
+        "properties": {
+          "reactivate": {
+            "default": false,
+            "title": "Reactivate",
+            "type": "boolean"
+          }
+        },
+        "title": "BuildRecordPublishRequest",
+        "type": "object"
+      },
+      "BuildRecordPublishResult": {
+        "description": "What ``POST /{slug}/publish`` returns.",
+        "properties": {
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "public_slug": {
+            "title": "Public Slug",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "public_slug",
+          "version",
+          "content_sha256"
+        ],
+        "title": "BuildRecordPublishResult",
+        "type": "object"
+      },
+      "BuildRecordReconcileResult": {
+        "description": "What ``POST /reconcile`` returns.",
+        "properties": {
+          "retracted": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Retracted",
+            "type": "array"
+          }
+        },
+        "required": [
+          "retracted"
+        ],
+        "title": "BuildRecordReconcileResult",
+        "type": "object"
+      },
+      "BuildRecordUnpublishResult": {
+        "description": "What ``DELETE /{slug}/publish`` returns.",
+        "properties": {
+          "latest_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Version"
+          },
+          "public_slug": {
+            "title": "Public Slug",
+            "type": "string"
+          },
+          "unpublished_at": {
+            "format": "date-time",
+            "title": "Unpublished At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_slug",
+          "unpublished_at",
+          "latest_version"
+        ],
+        "title": "BuildRecordUnpublishResult",
+        "type": "object"
+      },
       "BulkAnnotationError": {
         "description": "Schema for bulk operation error",
         "properties": {
@@ -39899,6 +40087,42 @@
         "title": "PromptVersionResponse",
         "type": "object"
       },
+      "PublicBuildRecord": {
+        "description": "The latest frozen version of a published build record.",
+        "properties": {
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "document": {
+            "additionalProperties": true,
+            "title": "Document",
+            "type": "object"
+          },
+          "public_slug": {
+            "title": "Public Slug",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "public_slug",
+          "version",
+          "published_at",
+          "content_sha256",
+          "document"
+        ],
+        "title": "PublicBuildRecord",
+        "type": "object"
+      },
       "PushDeviceRegister": {
         "description": "Schema for registering a push device token.",
         "properties": {
@@ -70617,6 +70841,315 @@
         "summary": "Stripe Webhook",
         "tags": [
           "billing"
+        ]
+      }
+    },
+    "/api/v1/build-records/products": {
+      "get": {
+        "description": "The tenant's product definitions (``{products: [...]}``), from coord.",
+        "operationId": "api_v1_build_records_products_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Build Record Products Api V1 Build Records Products Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Build Record Products",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/products/{slug}": {
+      "put": {
+        "description": "Create or replace one product definition. Tenant admins only: this is\nthe switch that makes a product publishable (``is_public``).\n\n``is_public: false`` \u2014 or a ``repos`` list that no longer covers every repo\nthe live snapshot names \u2014 retracts this tenant's live public snapshot of\nthe slug FIRST and commits, then calls coord \u2014 so whatever coord answers, the\npage is not left public under a product that was just made private. The\n``X-Build-Record-Retracted`` header says whether this request retracted.",
+        "operationId": "api_v1_build_records_products_slug_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildRecordProductWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Put Build Record Product Api V1 Build Records Products  Slug  Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Build Record Product",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/reconcile": {
+      "post": {
+        "description": "Retract every live public build record of this tenant whose coord\nproduct is gone, private or another tenant's \u2014 now, with the caller's own\ncoord credential \u2014 or whose snapshot names a repo the product no longer\nincludes. GitHub visibility is NOT re-checked here: that spends the shared\nanonymous GitHub budget and runs only as the scheduled\n``build_record_visibility_recheck`` task. The same reconcile also runs on the in-process scheduler\nevery 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for\nthe launch kit and the operator notice, which should not wait for a tick.\n\nA coord read that fails is a refusal (coord's status), never an empty\nlisting \u2014 an unanswered question retracts nothing.",
+        "operationId": "api_v1_build_records_reconcile_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildRecordReconcileResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Reconcile Build Records",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/{slug}": {
+      "get": {
+        "description": "The live ``build-record/1`` document for one product, from coord.\n\ncoord's 404 ``{\"error\": \"build_record_product_not_found\"}`` passes through\nas a structured detail.",
+        "operationId": "api_v1_build_records_slug_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Build Record Api V1 Build Records  Slug  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Build Record",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/{slug}/publication": {
+      "get": {
+        "description": "The caller's tenant's publication state for ``slug`` (any member):\nwhether it owns the public address, whether it is currently unpublished,\nand the latest snapshot's version and digest. Read-only; no coord call.",
+        "operationId": "api_v1_build_records_slug_publication_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildRecordPublication"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Build Record Publication",
+        "tags": [
+          "build-records"
+        ]
+      }
+    },
+    "/api/v1/build-records/{slug}/publish": {
+      "delete": {
+        "description": "D7's one-step unpublish: retract the public address immediately.\n\n``GET /api/v1/public/build-records/{slug}`` answers 404 from the moment\nthis commits. Every snapshot row is kept as history and the tenant keeps\nthe slug; ``POST /{slug}/publish`` with ``{\"reactivate\": true}``\nre-activates it as the next version. Idempotent: unpublishing a retracted\nslug keeps its first retraction time.\n\nRefuses with the publish route's own answers: 404\n``build_record_not_published`` when nothing was ever published under the\nslug, 409 ``public_slug_owned_by_another_tenant`` when another tenant owns\nit. coord is not consulted \u2014 retraction must work while coord is down.",
+        "operationId": "api_v1_build_records_slug_publish_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildRecordUnpublishResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Unpublish Build Record",
+        "tags": [
+          "build-records"
+        ]
+      },
+      "post": {
+        "description": "Freeze the product's current build record as its next public version.\n\nRefuses (nothing stored) when:\n\n* another tenant already owns this public slug \u2192 409\n  ``public_slug_owned_by_another_tenant``;\n* the slug is retracted and the body does not say ``reactivate: true`` \u2192\n  409 ``build_record_retracted``;\n* the product does not exist in the caller's tenant \u2192 404;\n* coord's product row names a different tenant \u2192 409\n  ``build_record_tenant_mismatch``;\n* the product's ``is_public`` is not ``true`` \u2192 409 (D3: nothing is public\n  by default);\n\n\u2014 and in those three cases a LIVE snapshot this tenant owns is retracted\non the spot (``retracted`` in the refusal says whether it was);\n\n* coord's document fails the D3 allowlist, names another product, or lists\n  a repo outside the product definition \u2192 502 (coord sent something it\n  must not; the violations are listed);\n* coord's ``generated_at`` is outside [now \u2212 15 min, now + 5 min] \u2192 502\n  ``build_record_generated_at_out_of_window``;\n* GitHub, asked anonymously, does not confirm a listed repo is public \u2192\n  502 ``build_record_repo_not_public`` (it said private / absent) or\n  ``build_record_repo_visibility_unknown`` (no answer, rate limit, error);\n  refused without asking when the product has more than 50 repos (409\n  ``build_record_too_many_repos``) or the shared GitHub budget is at its\n  publish reserve (502 ``build_record_repo_visibility_budget_reserved``);\n* the slug was retracted or re-activated while coord was being asked \u2192 409\n  ``build_record_retraction_changed``;\n* the document is older than the latest snapshot \u2192 409\n  ``build_record_stale``.\n\nAfter storing, the product is read from coord once more; if it went\nprivate (or the read fails) in the meantime, the new version is retracted\nat once and the answer is 409 ``build_record_product_not_public`` /\n502 ``build_record_post_publish_check_unanswered`` with ``retracted``.",
+        "operationId": "api_v1_build_records_slug_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BuildRecordPublishRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildRecordPublishResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Publish Build Record",
+        "tags": [
+          "build-records"
         ]
       }
     },
@@ -115686,6 +116219,50 @@
         "summary": "Restore Project Version",
         "tags": [
           "versions"
+        ]
+      }
+    },
+    "/api/v1/public/build-records/{slug}": {
+      "get": {
+        "description": "The latest published snapshot of a product's build record, without\nauthentication.\n\nServes ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,\nwhich refuses a product that is not opted in (``is_public``) and\nre-validates the D3 allowlist before storing. It never proxies to coord,\nso the authed export is never reachable from here. 404 when nothing has\nbeen published under ``slug``, or when its owner has unpublished it\n(``DELETE /api/v1/build-records/{slug}/publish``).\n\nA snapshot validated under an older allowlist version is re-validated\nagainst the current one (once per process, cached, off the event loop\nunder a dedicated limiter) and 404s if it fails; one validated under the\ncurrent version is served on its stored verdict. Rate-limited per peer\n(:data:`PUBLIC_BUILD_RECORD_RATE_LIMIT`). Every answer carries\n``Cache-Control: no-store`` so an unpublish is not outlived by a cached\ncopy.\n\n``content_sha256`` is the SHA-256 of ``document`` serialized with sorted\nkeys and no insignificant whitespace, so a reader can verify it.",
+        "operationId": "api_v1_public_build_records_slug_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBuildRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Public Build Record",
+        "tags": [
+          "public"
         ]
       }
     },

@@ -40,6 +40,8 @@
   "tests/test_aws_region_default.py": 2.6,
   "tests/test_backfill_github_identities.py": 0.0,
   "tests/test_blane_01_blocking_lanes_on_resource_sample_migration.py": 22.5,
+  "tests/test_build_records.py": 68.5,
+  "tests/test_build_records_01_export_migration.py": 20.6,
   "tests/test_ci_job_mem_01_memory_headroom_columns_migration.py": 29.1,
   "tests/test_ci_node_config_schema.py": 0.0,
   "tests/test_ci_timeout_marker.py": 26.8,
