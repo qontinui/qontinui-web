@@ -1,13 +1,11 @@
 import asyncio
 import os
 import time
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
@@ -311,10 +309,12 @@ from app.api.v1.endpoints.wrappers import router as wrappers_router  # noqa: E40
 
 app.include_router(wrappers_router, prefix="/api/wrappers", tags=["wrappers"])
 
-# Mount static files for avatars
-uploads_dir = Path("uploads")
-uploads_dir.mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+# Local-storage read doors: signed, expiring object URLs plus the public avatar
+# path. Replaces a StaticFiles mount that served all of uploads/ to anyone; see
+# app/api/local_storage.py for what is reachable and why.
+from app.api.local_storage import router as local_storage_router  # noqa: E402
+
+app.include_router(local_storage_router, tags=["local-storage"])
 
 # Background task handle for the wrapper-registry sync loop. The stale-
 # connection / clipboard / file cleanups and the cron dispatch now run inside

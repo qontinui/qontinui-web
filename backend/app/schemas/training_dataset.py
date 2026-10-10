@@ -12,6 +12,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.base import IsoDatetime
+from app.services.storage import object_storage
 
 # ============================================================================
 # Enums (mirror the model enums for API)
@@ -460,6 +461,13 @@ class DatasetExportJobResponse(BaseModel):
     completed_at: IsoDatetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    # The job row stores upload_file's bare object address, which no private
+    # store serves: presign on every read.
+    @field_validator("download_url", mode="after")
+    @classmethod
+    def presign_download_url(cls, v: str | None) -> str | None:
+        return object_storage.presign_stored_url(v)
 
     @field_validator("id", "dataset_id", mode="before")
     @classmethod

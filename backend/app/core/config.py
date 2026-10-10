@@ -5,6 +5,7 @@ Loads configuration from environment variables and .env file.
 
 import ipaddress
 import json
+import os
 import re
 import socket
 import warnings
@@ -19,6 +20,13 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings
+
+#: The SECRET_KEY a deployment gets when it sets none. It is public (it is in
+#: this file), so ``_refuse_public_secret_for_local_storage`` refuses it under
+#: local storage outside development and test runs, and the local-storage URL
+#: signer refuses to use it at all outside a test run
+#: (``app/services/storage/local_backend.py``).
+SHIPPED_DEFAULT_SECRET_KEY = "change-me-in-production-min-32-chars"
 
 # Trust posture is derived FAIL-CLOSED (see ``is_production_posture``): only a
 # literal ``development`` ENVIRONMENT is a local/dev posture that may trust the
@@ -88,7 +96,7 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str = Field(
-        default="change-me-in-production-min-32-chars",
+        default=SHIPPED_DEFAULT_SECRET_KEY,
         min_length=32,
         description="Secret key for JWT encoding",
     )
@@ -653,6 +661,36 @@ class Settings(BaseSettings):
         # Strip anything after a "?" that urlparse may leave when the DSN is
         # not fully URL-shaped.
         return path.split("?", 1)[0]
+
+    @model_validator(mode="after")
+    def _refuse_public_secret_for_local_storage(self) -> "Settings":
+        """Refuse the shipped-default SECRET_KEY when it would sign storage URLs.
+
+        Under ``STORAGE_BACKEND=local`` the backend HMAC-signs object URLs
+        with ``SECRET_KEY`` (``app/services/storage/local_backend.py``). The
+        shipped default is public, so those signatures would be forgeable and
+        every stored object readable. Scoped to local storage on purpose:
+        login is Cognito. The only other reader of SECRET_KEY is
+        ``middleware/rate_limit.py``, which verifies a refresh token's subject
+        with it to choose a rate-limit bucket - so a known key lets an
+        attacker pick buckets, but no authorisation decision depends on it.
+        An S3 deployment whose secret happened to equal the default must not
+        crash-loop over a rule that protects nothing it uses. Tolerated under ``development`` and test
+        runs (``TESTING=1``); the signer's own fail-closed check
+        (``signing_enabled``) still applies everywhere.
+        """
+        if (
+            self.SECRET_KEY == SHIPPED_DEFAULT_SECRET_KEY
+            and self.STORAGE_BACKEND == "local"
+            and self.ENVIRONMENT != "development"
+            and os.getenv("TESTING") != "1"
+        ):
+            raise ValueError(
+                "SECRET_KEY is the public shipped default while "
+                "STORAGE_BACKEND=local signs object URLs with it; set a "
+                "private SECRET_KEY"
+            )
+        return self
 
     @model_validator(mode="after")
     def _enforce_dev_local_auth_safety(self) -> "Settings":

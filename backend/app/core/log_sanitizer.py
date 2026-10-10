@@ -8,7 +8,9 @@ This module helps comply with security best practices and regulations like
 GDPR, PCI-DSS, and HIPAA by ensuring sensitive data is never written to logs.
 """
 
+import logging
 from typing import Any
+from urllib.parse import unquote_plus
 
 # Set of field names/patterns that indicate sensitive data
 SENSITIVE_FIELDS = {
@@ -47,6 +49,84 @@ SENSITIVE_FIELDS = {
 
 # Redaction marker
 REDACTED_VALUE = "***REDACTED***"
+
+#: Query-parameter names that carry a credential but match no SENSITIVE_FIELDS
+#: substring, compared lower-cased and exactly (a substring rule on these
+#: would redact ordinary fields such as ``error_code``). Covers the local
+#: storage signer (``signature``), S3 SigV4/SigV2 presigned URLs, and OAuth
+#: authorization codes.
+CREDENTIAL_QUERY_PARAMS = {
+    "signature",
+    "sig",
+    "x-amz-signature",
+    "x-amz-credential",
+    "x-amz-security-token",
+    "awsaccesskeyid",
+    "code",
+    "client_secret",
+}
+
+
+def is_credential_query_param(name: str) -> bool:
+    """True for a query parameter whose value must never be logged."""
+    return name.lower() in CREDENTIAL_QUERY_PARAMS or is_sensitive_field(name)
+
+
+def sanitize_query_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Copy of ``params`` with every credential-bearing value redacted."""
+    return {
+        name: REDACTED_VALUE if is_credential_query_param(name) else value
+        for name, value in params.items()
+    }
+
+
+def sanitize_request_target(target: str) -> str:
+    """A request target (``/path?query``) with credential query values redacted.
+
+    Works on the raw, still-encoded string piece by piece, so everything that
+    is not a credential is logged byte-for-byte as received.
+    """
+    path, sep, query = target.partition("?")
+    if not sep:
+        return target
+    pieces = []
+    for piece in query.split("&"):
+        name, eq, _value = piece.partition("=")
+        if eq and is_credential_query_param(unquote_plus(name)):
+            pieces.append(f"{name}={REDACTED_VALUE}")
+        else:
+            pieces.append(piece)
+    return f"{path}?{'&'.join(pieces)}"
+
+
+class AccessLogQueryRedactionFilter(logging.Filter):
+    """Redact credential query params from ``uvicorn.access`` records.
+
+    uvicorn logs ``'%s - "%s %s HTTP/%s" %d'`` with args
+    ``(client_addr, method, full_path, http_version, status_code)``, and
+    ``full_path`` carries the whole query string - a signed URL's
+    ``signature`` / ``X-Amz-Signature`` included. Never drops a record.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+            record.args = (
+                args[0],
+                args[1],
+                sanitize_request_target(args[2]),
+                *args[3:],
+            )
+        return True
+
+
+def install_access_log_redaction() -> None:
+    """Attach :class:`AccessLogQueryRedactionFilter` to ``uvicorn.access`` once."""
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(
+        isinstance(f, AccessLogQueryRedactionFilter) for f in access_logger.filters
+    ):
+        access_logger.addFilter(AccessLogQueryRedactionFilter())
 
 
 def is_sensitive_field(field_name: str) -> bool:
@@ -163,7 +243,7 @@ def sanitize_url(url: str) -> str:
             query_params = parse_qs(parsed.query)
             sanitized_params = []
             for key, values in query_params.items():
-                if is_sensitive_field(key):
+                if is_credential_query_param(key):
                     sanitized_params.append(f"{key}={REDACTED_VALUE}")
                 else:
                     for value in values:

@@ -12,6 +12,8 @@ import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core.log_sanitizer import sanitize_query_params
+
 logger = structlog.get_logger(__name__)
 
 
@@ -48,7 +50,13 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         # Log the request
         logger.info(
             "request_started",
-            query_params=dict(request.query_params) if request.query_params else None,
+            # Signed URLs carry their credential in the query string
+            # (``signature``, ``X-Amz-Signature``...), so never log it raw.
+            query_params=(
+                sanitize_query_params(dict(request.query_params))
+                if request.query_params
+                else None
+            ),
         )
 
         # Process the request
