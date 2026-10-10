@@ -1,7 +1,7 @@
 """Device-scoped credential deny + device-bound, deliver-once pair codes
 
 Revision ID: devcred_01_credential_deny_and_bound_pair_codes
-Revises: notif_producerless_01_drop_enum_values
+Revises: coord_wt_cargo_lock_01
 Create Date: 2026-10-10
 
 Plan
@@ -47,7 +47,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "devcred_01_credential_deny_and_bound_pair_codes"
-down_revision: str = "notif_producerless_01_drop_enum_values"
+down_revision: str = "coord_wt_cargo_lock_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
