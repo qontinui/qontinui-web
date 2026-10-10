@@ -1,7 +1,7 @@
 """coord.agent_questions — the recommendation and what overturning it changes
 
 Revision ID: coord_agent_questions_recommendation
-Revises: coord_sessions_fleet_idx_01
+Revises: ci_read_token_01
 Create Date: 2026-09-30
 
 Phase 3 (qontinui-web half) of plan
@@ -98,7 +98,7 @@ a no-op — raw ``op.execute`` rather than ``op.add_column`` for exactly that
 reason.
 
 ``down_revision`` is this repo's single alembic head at authoring
-(``coord_sessions_fleet_idx_01``, re-pointed 2026-10-09 when the
+(``ci_read_token_01``, re-pointed 2026-10-10 when the
 adopting successor rebased onto main), computed from the versions graph (a
 revision is a head iff no revision names it as a parent). If another revision
 lands ahead of this one, ``alembic-graph-pr.yml`` reports the fork and the fix
@@ -114,7 +114,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_questions_recommendation"
-down_revision: str | Sequence[str] | None = "coord_sessions_fleet_idx_01"
+down_revision: str | Sequence[str] | None = "ci_read_token_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
