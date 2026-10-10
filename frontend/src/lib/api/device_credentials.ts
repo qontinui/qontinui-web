@@ -43,7 +43,11 @@ export interface DeviceCredentialOverviewRow {
   /** `coord.devices.credential_revoked_at` — the device-scoped deny. */
   credential_revoked_at: string | null;
   /** An operator authorization the runner has not yet picked up, or null. */
-  pending_redeem: { expires_at: string } | null;
+  pending_redeem: {
+    expires_at: string;
+    /** When the runner collected the code, or null while uncollected. */
+    delivered_at?: string | null;
+  } | null;
 }
 
 export interface DeviceCredentialOverview {
@@ -61,7 +65,15 @@ export interface RevokeMachineCredentialResponse {
   revoked_at: string;
 }
 
-/** An API failure carrying the backend's typed `detail.code` when it sent one. */
+/**
+ * An API failure carrying the backend's typed refusal code when it sent one.
+ *
+ * The real app's `http_exception_handler` flattens a typed refusal into the
+ * TOP LEVEL of the body:
+ * `{"error": "<code>", "code": "<code>", "message": "...", "timestamp", "path"}`.
+ * A bare router (and older backends) answer `{"detail": {"code", "message"}}`
+ * instead, so both shapes are read.
+ */
 export class DeviceCredentialApiError extends Error {
   readonly status: number;
   readonly code: string | undefined;
@@ -74,22 +86,40 @@ export class DeviceCredentialApiError extends Error {
   }
 }
 
+interface RefusalBody {
+  error?: unknown;
+  code?: unknown;
+  message?: unknown;
+  detail?: string | { message?: unknown; code?: unknown };
+}
+
+function asText(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
+}
+
+/** The typed refusal code: top-level (the app handler), else `detail.code`. */
+export function refusalCode(body: RefusalBody): string | undefined {
+  const detail = typeof body.detail === "object" ? body.detail : undefined;
+  return asText(body.code) ?? asText(body.error) ?? asText(detail?.code);
+}
+
 async function handleResponse<T>(
   response: Response,
   fallback: string
 ): Promise<T> {
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as {
-      detail?: string | { message?: string; code?: string };
-      message?: string;
-    };
+    const body = ((await response.json().catch(() => ({}))) ??
+      {}) as RefusalBody;
     const detail = body.detail;
     const message =
-      (typeof detail === "string" ? detail : detail?.message) ||
-      body.message ||
+      asText(body.message) ??
+      (typeof detail === "string" ? asText(detail) : asText(detail?.message)) ??
       `${fallback} (HTTP ${response.status})`;
-    const code = typeof detail === "object" ? detail?.code : undefined;
-    throw new DeviceCredentialApiError(message, response.status, code);
+    throw new DeviceCredentialApiError(
+      message,
+      response.status,
+      refusalCode(body)
+    );
   }
   return (await response.json()) as T;
 }

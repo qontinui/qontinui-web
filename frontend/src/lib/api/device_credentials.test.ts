@@ -1,7 +1,8 @@
 /**
  * The device-credential client emits the routes the shared contract names:
- * target device in the PATH only, never in a body field; typed `detail.code`
- * surfaced on failure.
+ * target device in the PATH only, never in a body field; the typed refusal
+ * code surfaced on failure, from the real app handler's top-level `error`
+ * (or `detail.code` on a bare router).
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -63,6 +64,39 @@ describe("device_credentials client", () => {
     );
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({});
+  });
+
+  it("reads the code from the app handler's top-level shape", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        error: "device_credential_revoked",
+        code: "device_credential_revoked",
+        message: "An operator revoked this device's credentials.",
+        timestamp: 1,
+        path: "http://x/api/v1/devices/d/authorize-redeem",
+      }),
+    } as unknown as Response);
+    const err = await authorizeDeviceRedeem(DEVICE).catch((e) => e);
+    expect(err).toBeInstanceOf(DeviceCredentialApiError);
+    expect(err.status).toBe(403);
+    expect(err.code).toBe("device_credential_revoked");
+    expect(err.message).toBe("An operator revoked this device's credentials.");
+  });
+
+  it("falls back to top-level error when no code key is present", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({
+        error: "device_not_found",
+        message: "No such device.",
+      }),
+    } as unknown as Response);
+    const err = await revokeDeviceMachineCredential(DEVICE).catch((e) => e);
+    expect(err.code).toBe("device_not_found");
+    expect(err.message).toBe("No such device.");
   });
 
   it("surfaces the backend's typed detail.code on failure", async () => {
