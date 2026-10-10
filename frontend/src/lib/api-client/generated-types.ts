@@ -16716,6 +16716,15 @@ export interface paths {
          *     ``slug`` is a QUERY key, not a path segment: this adds no route, so the
          *     literal-before-pattern ordering below (``/divergent``, ``/capture-health``
          *     … declared before ``/{artifact_id}``) is untouched.
+         *
+         *     **A keyset walk, newest captured first** (plan
+         *     ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+         *     Phase 4). The page states its bound in the shared ``BoundedReadMeta``
+         *     keys — ``total`` (exact, from this page's start), ``truncated`` and
+         *     ``next_cursor``, which the next request passes back as ``cursor``. A
+         *     ``?q=`` search is the same walk, so a search page that filled up says
+         *     ``truncated: true`` and carries the cursor to the rest: a capped search
+         *     page is never evidence that a plan is absent.
          */
         get: operations["api_v1_plan_library_get"];
         put?: never;
@@ -16780,13 +16789,22 @@ export interface paths {
          *
          *     **There is no criticality score** (design decision D6). A hardcoded score
          *     would be a guess frozen into SQL; the read exposes the evidence and the
-         *     agent ranks. The only ordering is a stable default — oldest-vetted-first
-         *     (``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit
-         *     rows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to
-         *     an artifact so a page without them is unchanged) — with no weighting of any
-         *     kind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:
-         *     411 of the 635 carried an empty status, which would make that a guess over
-         *     the least-known rows.
+         *     agent ranks. The only ordering is a stable default — oldest CAPTURED first,
+         *     a keyset walk over every row's immutable ``(created_at, id)``, both arms
+         *     compared as one order (plan
+         *     ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+         *     Phase 4: the old ``coalesce(authored_at, …)`` /
+         *     ``coalesce(first_in_progress_at, …)`` keys both move, and ``offset``
+         *     over them dropped rows) — with no weighting of any kind. Work-unit rows
+         *     are neither capped nor re-weighted toward ``vetted``: 411 of the 635
+         *     carried an empty status, which would make that a guess over the
+         *     least-known rows.
+         *
+         *     **The bound is on the wire.** ``total`` / ``truncated`` / ``next_cursor``
+         *     describe ``items``. When coord's work-unit walk stops at its page cap the
+         *     population is a lower bound: ``work_unit_population_state`` reads
+         *     ``truncated`` and the page is ``at_least`` / ``unknown`` with
+         *     ``total: null`` — never an exact count that quietly stopped counting.
          *
          *     Coord-owned fields (the work unit and its PR citations) come over coord's
          *     HTTP API, never from coord's Postgres schema. Two things the payload is
@@ -17041,8 +17059,10 @@ export interface paths {
          *
          *     **Oldest first**, and that is the useful default rather than an arbitrary
          *     one: an old unowned follow-up is work the fleet has known about and
-         *     repeatedly not picked up. ``total`` is the unpaged count, so a bounded page
-         *     can never be mistaken for the whole queue.
+         *     repeatedly not picked up. A keyset walk over the edge's immutable
+         *     ``(created_at, id)``: ``total`` counts the open follow-ups from this
+         *     page's start and ``next_cursor`` reaches the rest, so a bounded page can
+         *     never be mistaken for the whole queue.
          */
         get: operations["api_v1_plan_library_followups_get"];
         put?: never;
@@ -17132,6 +17152,15 @@ export interface paths {
          *     Coord is reached over its HTTP API only; nothing here touches coord's
          *     Postgres (module invariant 4, enforced by
          *     ``tests/test_coord_schema_boundary_guard.py``).
+         *
+         *     **The page is a keyset walk over the stems** (plan
+         *     ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+         *     Phase 4): each stem's position is a pure function of the stem
+         *     (:func:`~app.crud.work_artifact.stem_position` — its date prefix, then a
+         *     uuid5 tiebreak), so a stem added or removed between two requests can no
+         *     longer shift the window the way ``offset`` did. The facets still cover
+         *     the WHOLE population on every page; ``facets.denominator`` is its size,
+         *     and ``total`` counts the stems from this page's start.
          */
         get: operations["api_v1_plan_library_reconciliation_get"];
         put?: never;
@@ -40201,26 +40230,74 @@ export interface components {
         };
         /**
          * OpenFollowupResponse
-         * @description A page of open (unclaimed) follow-ups. ``count`` is this page's length;
-         *     ``total`` is the unpaged total.
+         * @description A page of open (unclaimed) follow-ups — a keyset walk over the edge's
+         *     immutable ``(created_at, id)``, oldest first. The bounded-read keys
+         *     describe ``items``; ``next_cursor`` is passed back as ``cursor``.
          */
         OpenFollowupResponse: {
-            /** Count */
+            /**
+             * Available
+             * @description `false` ONLY when the store is unprovisioned: an empty page with
+             *     `available: false` is UNKNOWN, not "nothing matched".
+             */
+            available: boolean;
+            /** @description Which kind of bound produced `total` / `truncated`. */
+            bound_kind: components["schemas"]["BoundKind"];
+            /**
+             * Count
+             * @description Rows in this page (the legacy spelling of `shown`).
+             */
             count: number;
+            /**
+             * Enumerate Via
+             * @description For a relevance-RANKED read, which can never hand out a cursor: the
+             *     door that enumerates the same corpus by an immutable sort key (plan
+             *     `2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so
+             *     a `truncated: true, next_cursor: null` answer still says how to reach
+             *     the rest. `null` on a keyset walk, whose `next_cursor` is the way on.
+             */
+            enumerate_via: string | null;
+            /** @description A FILTER the surface narrowed before the read ran, or `null`. */
+            filter_narrowed: components["schemas"]["FilterNarrowing"] | null;
             /** Items */
             items: components["schemas"]["OpenFollowup"][];
-            /** Limit */
+            /**
+             * Limit
+             * @description The cap actually applied to this page.
+             */
             limit: number;
-            /** Offset */
-            offset: number;
+            /**
+             * Next Cursor
+             * @description The opaque token for the next page — pass it back verbatim as
+             *     `cursor`. `null` iff `truncated` is not `true`, OR the read is a
+             *     RANKING that cannot be paged — then `truncated` may be `true` with
+             *     `next_cursor: null`, and `enumerate_via` names the door that walks the
+             *     corpus by an immutable key.
+             */
+            next_cursor: string | null;
             /**
              * Ordering
              * @default oldest_first
              * @constant
              */
             ordering: "oldest_first";
-            /** Total */
-            total: number;
+            /**
+             * Shown
+             * @description Rows in this page.
+             */
+            shown: number;
+            /**
+             * Total
+             * @description The exact match count from this page's start position — a number only
+             *     when `bound_kind` is `exact`, else `null`.
+             */
+            total: number | null;
+            /**
+             * Truncated
+             * @description Whether matching rows exist beyond this page; `null` when
+             *     `bound_kind` is `unknown`.
+             */
+            truncated: boolean | null;
         };
         /**
          * OrganizationCreate
@@ -41731,9 +41808,25 @@ export interface components {
         /**
          * PlanCandidateResponse
          * @description A page of candidates plus the honesty flags for the whole read.
-         *     ``count`` is this page's length; ``total`` is the unpaged total.
+         *
+         *     The bounded-read keys describe ``items``: a keyset walk over BOTH arms'
+         *     immutable ``(created_at, id)``, oldest first; ``next_cursor`` is passed
+         *     back as ``cursor``. ``bound_kind`` is ``exact`` (``total`` from this
+         *     page's start) unless the coord work-unit walk hit its page cap
+         *     (``work_unit_population_state: "truncated"``) — then the population is a
+         *     lower bound and the page reads ``at_least`` (more rows were read than
+         *     shown) or ``unknown`` (``truncated: null``: everything read is shown, and
+         *     nothing proves the population whole).
          */
         PlanCandidateResponse: {
+            /**
+             * Available
+             * @description `false` ONLY when the store is unprovisioned: an empty page with
+             *     `available: false` is UNKNOWN, not "nothing matched".
+             */
+            available: boolean;
+            /** @description Which kind of bound produced `total` / `truncated`. */
+            bound_kind: components["schemas"]["BoundKind"];
             /**
              * Coord Available
              * @default true
@@ -41742,11 +41835,28 @@ export interface components {
             corpus_health: components["schemas"]["CorpusHealth"] | null;
             /** Corpus Health Unavailable Reason */
             corpus_health_unavailable_reason: string | null;
-            /** Count */
+            /**
+             * Count
+             * @description Rows in this page (the legacy spelling of `shown`).
+             */
             count: number;
+            /**
+             * Enumerate Via
+             * @description For a relevance-RANKED read, which can never hand out a cursor: the
+             *     door that enumerates the same corpus by an immutable sort key (plan
+             *     `2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so
+             *     a `truncated: true, next_cursor: null` answer still says how to reach
+             *     the rest. `null` on a keyset walk, whose `next_cursor` is the way on.
+             */
+            enumerate_via: string | null;
+            /** @description A FILTER the surface narrowed before the read ran, or `null`. */
+            filter_narrowed: components["schemas"]["FilterNarrowing"] | null;
             /** Items */
             items: components["schemas"]["PlanCandidate"][];
-            /** Limit */
+            /**
+             * Limit
+             * @description The cap actually applied to this page.
+             */
             limit: number;
             /** Model Selector Vocabulary */
             model_selector_vocabulary: string;
@@ -41758,31 +41868,53 @@ export interface components {
             model_tiers: {
                 [key: string]: string;
             };
-            /** Offset */
-            offset: number;
+            /**
+             * Next Cursor
+             * @description The opaque token for the next page — pass it back verbatim as
+             *     `cursor`. `null` iff `truncated` is not `true`, OR the read is a
+             *     RANKING that cannot be paged — then `truncated` may be `true` with
+             *     `next_cursor: null`, and `enumerate_via` names the door that walks the
+             *     corpus by an immutable key.
+             */
+            next_cursor: string | null;
             /**
              * Open Followup Total
              * @default 0
              */
             open_followup_total: number;
             /** Open Followups */
-            open_followups?: components["schemas"]["OpenFollowup"][];
+            open_followups: components["schemas"]["OpenFollowup"][];
             /**
              * Ordering
-             * @default oldest_vetted_first
+             * @default oldest_captured_first
              * @constant
              */
-            ordering: "oldest_vetted_first";
-            /** Total */
-            total: number;
+            ordering: "oldest_captured_first";
+            /**
+             * Shown
+             * @description Rows in this page.
+             */
+            shown: number;
+            /**
+             * Total
+             * @description The exact match count from this page's start position — a number only
+             *     when `bound_kind` is `exact`, else `null`.
+             */
+            total: number | null;
+            /**
+             * Truncated
+             * @description Whether matching rows exist beyond this page; `null` when
+             *     `bound_kind` is `unknown`.
+             */
+            truncated: boolean | null;
             /** Work Unit Population Reason */
-            work_unit_population_reason?: string | null;
+            work_unit_population_reason: string | null;
             /**
              * Work Unit Population State
              * @default included
              * @enum {string}
              */
-            work_unit_population_state: "included" | "unavailable";
+            work_unit_population_state: "included" | "truncated" | "unavailable";
         };
         /**
          * PlanCensusSide
@@ -43432,8 +43564,21 @@ export interface components {
         /**
          * ReconciliationResponse
          * @description A page of reconciled plan stems plus the honesty flags for the read.
+         *
+         *     The bounded-read keys describe ``items``: a keyset walk over each stem's
+         *     immutable position (see ``ordering``); ``total`` counts the stems from
+         *     this page's start, and ``next_cursor`` is passed back as ``cursor``. The
+         *     WHOLE population's size is ``facets.denominator`` — the denominator the
+         *     facets are over, not a page count. When ``q`` is set both describe the
+         *     FILTERED population.
          */
         ReconciliationResponse: {
+            /**
+             * Available
+             * @description `false` ONLY when the store is unprovisioned: an empty page with
+             *     `available: false` is UNKNOWN, not "nothing matched".
+             */
+            available: boolean;
             /** Axis C Computed Count */
             axis_c_computed_count: number;
             /**
@@ -43442,11 +43587,18 @@ export interface components {
              * @constant
              */
             axis_c_scope: "page";
+            /** @description Which kind of bound produced `total` / `truncated`. */
+            bound_kind: components["schemas"]["BoundKind"];
             /**
              * Coord Available
              * @default true
              */
             coord_available: boolean;
+            /**
+             * Count
+             * @description Rows in this page (the legacy spelling of `shown`).
+             */
+            count: number;
             /** Document Axis Complete */
             document_axis_complete: boolean;
             /**
@@ -43459,31 +43611,67 @@ export interface components {
             document_missing_count: number;
             /** Document Present Count */
             document_present_count: number;
+            /**
+             * Enumerate Via
+             * @description For a relevance-RANKED read, which can never hand out a cursor: the
+             *     door that enumerates the same corpus by an immutable sort key (plan
+             *     `2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so
+             *     a `truncated: true, next_cursor: null` answer still says how to reach
+             *     the rest. `null` on a keyset walk, whose `next_cursor` is the way on.
+             */
+            enumerate_via: string | null;
             facets: components["schemas"]["ReconciliationFacets"];
+            /** @description A FILTER the surface narrowed before the read ran, or `null`. */
+            filter_narrowed: components["schemas"]["FilterNarrowing"] | null;
             /** Items */
             items: components["schemas"]["ReconciliationRow"][];
-            /** Limit */
+            /**
+             * Limit
+             * @description The cap actually applied to this page.
+             */
             limit: number;
-            /** Offset */
-            offset: number;
+            /**
+             * Next Cursor
+             * @description The opaque token for the next page — pass it back verbatim as
+             *     `cursor`. `null` iff `truncated` is not `true`, OR the read is a
+             *     RANKING that cannot be paged — then `truncated` may be `true` with
+             *     `next_cursor: null`, and `enumerate_via` names the door that walks the
+             *     corpus by an immutable key.
+             */
+            next_cursor: string | null;
             /**
              * Ordering
-             * @default slug_asc
+             * @default stem_date_asc
              * @constant
              */
-            ordering: "slug_asc";
+            ordering: "stem_date_asc";
             /** Q */
-            q?: string | null;
-            /** Total */
-            total: number;
+            q: string | null;
+            /**
+             * Shown
+             * @description Rows in this page.
+             */
+            shown: number;
+            /**
+             * Total
+             * @description The exact match count from this page's start position — a number only
+             *     when `bound_kind` is `exact`, else `null`.
+             */
+            total: number | null;
+            /**
+             * Truncated
+             * @description Whether matching rows exist beyond this page; `null` when
+             *     `bound_kind` is `unknown`.
+             */
+            truncated: boolean | null;
             /** Work Unit Population Reason */
-            work_unit_population_reason?: string | null;
+            work_unit_population_reason: string | null;
             /**
              * Work Unit Population State
              * @default included
              * @enum {string}
              */
-            work_unit_population_state: "included" | "unavailable";
+            work_unit_population_state: "included" | "truncated" | "unavailable";
         };
         /**
          * ReconciliationRow
@@ -52258,17 +52446,50 @@ export interface components {
          * WorkArtifactListResponse
          * @description A page of list rows, plus the health of the corpus it was drawn from.
          *
+         *     A keyset walk, newest-CAPTURED first (``created_at DESC, id DESC`` — the
+         *     immutable capture time, never ``updated_at``, which every upsert moves).
+         *     The bounded-read keys describe ``items``: ``total`` is exact from this
+         *     page's start, ``truncated`` is ``total > shown``, and ``next_cursor`` is
+         *     passed back as ``cursor``. That holds for ``?q=`` searches too — a search
+         *     page that filled up says so, and a content search with ``truncated: true``
+         *     is not evidence of absence.
+         *
          *     ``corpus_health`` is reported on EVERY page, filtered or not, so an
          *     empty ``items`` can always be read against ``plan_count`` — a zero on a
          *     frozen corpus and a zero on a real absence are different findings.
          */
         WorkArtifactListResponse: {
+            /**
+             * Available
+             * @description `false` ONLY when the store is unprovisioned: an empty page with
+             *     `available: false` is UNKNOWN, not "nothing matched".
+             */
+            available: boolean;
+            /** @description Which kind of bound produced `total` / `truncated`. */
+            bound_kind: components["schemas"]["BoundKind"];
             corpus_health: components["schemas"]["CorpusHealth"];
-            /** Count */
+            /**
+             * Count
+             * @description Rows in this page (the legacy spelling of `shown`).
+             */
             count: number;
+            /**
+             * Enumerate Via
+             * @description For a relevance-RANKED read, which can never hand out a cursor: the
+             *     door that enumerates the same corpus by an immutable sort key (plan
+             *     `2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so
+             *     a `truncated: true, next_cursor: null` answer still says how to reach
+             *     the rest. `null` on a keyset walk, whose `next_cursor` is the way on.
+             */
+            enumerate_via: string | null;
+            /** @description A FILTER the surface narrowed before the read ran, or `null`. */
+            filter_narrowed: components["schemas"]["FilterNarrowing"] | null;
             /** Items */
             items: components["schemas"]["WorkArtifactSummary"][];
-            /** Limit */
+            /**
+             * Limit
+             * @description The cap actually applied to this page.
+             */
             limit: number;
             /** Model Selector Vocabulary */
             model_selector_vocabulary: string;
@@ -52280,10 +52501,38 @@ export interface components {
             model_tiers: {
                 [key: string]: string;
             };
-            /** Offset */
-            offset: number;
-            /** Total */
-            total: number;
+            /**
+             * Next Cursor
+             * @description The opaque token for the next page — pass it back verbatim as
+             *     `cursor`. `null` iff `truncated` is not `true`, OR the read is a
+             *     RANKING that cannot be paged — then `truncated` may be `true` with
+             *     `next_cursor: null`, and `enumerate_via` names the door that walks the
+             *     corpus by an immutable key.
+             */
+            next_cursor: string | null;
+            /**
+             * Ordering
+             * @default newest_captured_first
+             * @constant
+             */
+            ordering: "newest_captured_first";
+            /**
+             * Shown
+             * @description Rows in this page.
+             */
+            shown: number;
+            /**
+             * Total
+             * @description The exact match count from this page's start position — a number only
+             *     when `bound_kind` is `exact`, else `null`.
+             */
+            total: number | null;
+            /**
+             * Truncated
+             * @description Whether matching rows exist beyond this page; `null` when
+             *     `bound_kind` is `unknown`.
+             */
+            truncated: boolean | null;
         };
         /**
          * WorkArtifactSummary
@@ -77354,7 +77603,8 @@ export interface operations {
                 slug?: string | null;
                 /** @description Exact member of intent_refs[] — a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page. */
                 intent_ref?: string | null;
-                offset?: number;
+                /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
+                cursor?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -77419,7 +77669,8 @@ export interface operations {
     api_v1_plan_library_candidates_get: {
         parameters: {
             query?: {
-                offset?: number;
+                /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
+                cursor?: string | null;
                 limit?: number;
                 /** @description Fetch the coord-owned signals (work unit + PR citations). Set false for a purely local, coord-free read. */
                 include_coord?: boolean;
@@ -77568,7 +77819,7 @@ export interface operations {
                 work_unit_slug?: string | null;
                 /** @description Exact match on the artifact's own slug (see the list route). */
                 slug?: string | null;
-                /** @description Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` — a silently short export is indistinguishable from a short corpus. */
+                /** @description Hard bound on archived artifacts. When it truncates, the response says so in the `X-Bounded-Read` header and `manifest.json` (the shared bounded-read keys: `truncated`, `bound_kind`, `enumerate_via`, ...) — a silently short export is indistinguishable from a short corpus. */
                 limit?: number;
             };
             header?: never;
@@ -77600,7 +77851,8 @@ export interface operations {
     api_v1_plan_library_followups_get: {
         parameters: {
             query?: {
-                offset?: number;
+                /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
+                cursor?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -77632,7 +77884,8 @@ export interface operations {
     api_v1_plan_library_reconciliation_get: {
         parameters: {
             query?: {
-                offset?: number;
+                /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
+                cursor?: string | null;
                 limit?: number;
                 /** @description Read coord's work-unit list (axis A) and its derived delivery verdict (axis C). Set false for a document-layer-only read, in which BOTH coord axes report UNKNOWN — never agreement. */
                 include_coord?: boolean;
