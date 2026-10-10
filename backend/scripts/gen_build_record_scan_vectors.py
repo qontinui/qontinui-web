@@ -144,6 +144,14 @@ def _add_unknown(text: str) -> Any:
     return apply
 
 
+def _public_repo(repo: str) -> Any:
+    def apply(doc: dict[str, Any]) -> None:
+        doc["product"]["repos"] = [repo]
+        doc["prs"][0]["repo"] = repo
+
+    return apply
+
+
 def _excluded_names(repos: list[str]) -> list[str]:
     """Exactly how web's publish route derives names from excluded repos
     (``_excluded_names`` in ``app/api/v1/endpoints/build_records.py``):
@@ -186,6 +194,11 @@ DOCUMENT_CASES: list[tuple[str, Any, list[str]]] = [
         ["acme/review"],
     ),
     ("f3_title_is_still_scanned", _title("tokens for review"), ["acme/review"]),
+    (
+        "public_repo_name_contains_excluded_name",
+        _public_repo("acme/qontinui-design-tokens"),
+        ["acme/design-tokens"],
+    ),
 ]
 
 #: Strings whose normalised scan form is pinned.
