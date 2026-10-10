@@ -7,7 +7,11 @@
  *   resource (plan `2026-09-20-overview-authoring-layer`) — readable by any
  *   member, writable by whoever the server says may, with version checks and
  *   a change log on every save;
- * - its work units, through `/api/v1/operations/plans`.
+ * - its progress: the counts from coord's project-state door
+ *   (`/api/v1/operations/project-state`, `on_track.totals` — the one
+ *   definition of the count the operator's console shares), and the recently
+ *   finished list from a read of shipped work units
+ *   (`/api/v1/operations/plans?status=shipped`).
  *
  * Each source reports `loading`, `error` or data on its own, so one failing
  * never blanks the other, and neither failure is shown as an empty project.
@@ -15,6 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { httpClient } from "@/services/service-factory";
+import { fetchProjectState } from "@/lib/api/operations/projectState";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
@@ -30,14 +35,23 @@ import {
   type IntentEntry,
   type SummaryIntentKind,
 } from "../_lib/intent";
-import { summarizeProgress, type Progress } from "../_lib/progress";
+import { parseProjectState } from "@/components/admin/coord/coordHomeStatus";
+import {
+  progressFromOnTrack,
+  recentlyFinishedFrom,
+  type ProgressReading,
+  type RecentlyFinished,
+} from "../_lib/progress";
 
 const API = "/api/v1/operations";
 export const INTENT_RESOURCE = "intent_documents";
 const INTENT_PATH = "intent-documents";
 
-/** Same window the Coord Console's plan list reads. */
-export const PLAN_FETCH_LIMIT = 500;
+/**
+ * Page size of the shipped-units read behind "Recently finished". A full page
+ * marks the list partial; it no longer bounds any count.
+ */
+export const FINISHED_FETCH_LIMIT = 500;
 
 export type Loadable<T> =
   | { state: "loading" }
@@ -57,17 +71,41 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-async function loadProgress(): Promise<Progress> {
+async function loadRecentlyFinished(): Promise<RecentlyFinished | null> {
   const qs = new URLSearchParams({
-    limit: String(PLAN_FETCH_LIMIT),
+    status: "shipped",
+    order: "updated_desc",
+    limit: String(FINISHED_FETCH_LIMIT),
     exclude_slug_prefix: SHEPHERD_SLUG_PREFIX,
   });
-  const body = await httpClient.get<{
-    work_units?: CoordPlanRow[];
-    plans?: CoordPlanRow[];
-  }>(`${API}/plans?${qs.toString()}`);
-  const rows = body.work_units ?? body.plans ?? [];
-  return summarizeProgress(rows, { fetchLimit: PLAN_FETCH_LIMIT });
+  try {
+    const body = await httpClient.get<{
+      work_units?: CoordPlanRow[];
+      plans?: CoordPlanRow[];
+    }>(`${API}/plans?${qs.toString()}`);
+    const rows = body.work_units ?? body.plans ?? null;
+    return rows === null
+      ? null
+      : recentlyFinishedFrom(rows, { fetchLimit: FINISHED_FETCH_LIMIT });
+  } catch {
+    // The list is secondary: its failure must not take the counts down with
+    // it, and is shown as "could not be loaded", never as "nothing finished".
+    return null;
+  }
+}
+
+/**
+ * The counts come from the project-state door. A door that answers with a
+ * body that is not a project state is an error, not an empty project.
+ */
+async function loadProgress(): Promise<ProgressReading> {
+  const [stateBody, finished] = await Promise.all([
+    fetchProjectState(),
+    loadRecentlyFinished(),
+  ]);
+  const view = parseProjectState(stateBody);
+  if (!view) throw new Error("the progress answer was not readable");
+  return progressFromOnTrack(view.onTrack, finished);
 }
 
 /** Kind order is the page's section order; within a kind, reading order.
@@ -98,7 +136,9 @@ export function useSummaryData(tenantId: string | null, hold: boolean) {
     hold,
     reloadKey: tenantId,
   });
-  const [progress, setProgress] = useState<Loadable<{ progress: Progress }>>({
+  const [progress, setProgress] = useState<
+    Loadable<{ reading: ProgressReading }>
+  >({
     state: "loading",
   });
 
@@ -107,7 +147,7 @@ export function useSummaryData(tenantId: string | null, hold: boolean) {
     let live = true;
     setProgress({ state: "loading" });
     loadProgress().then(
-      (data) => live && setProgress({ state: "ready", progress: data }),
+      (reading) => live && setProgress({ state: "ready", reading }),
       (err) =>
         live && setProgress({ state: "error", message: errorMessage(err) })
     );
