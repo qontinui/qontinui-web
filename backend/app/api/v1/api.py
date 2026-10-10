@@ -13,7 +13,7 @@ mid-3b), some cloud-only routers are still imported directly here as well
 qontinui-cloud-control and they go away from this file. The hook call at
 the bottom is already in place so the move is a delete-only diff in OSS.
 
-See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
+See: D:/qontinui-root/qontinui-cloud-control/  (separate repo)
      D:/qontinui-root/tmp_cloud_control_carve_out.md  §3 (register-hook
      surface) and §2 (file-by-file split).
 """
