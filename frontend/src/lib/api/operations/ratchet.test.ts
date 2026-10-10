@@ -16,18 +16,22 @@ import { describe, expect, it } from "vitest";
  * Out of the scan, by design: the client itself (`lib/api/operations/`), tests
  * (they pin literal URLs on purpose), and the two infrastructure files that
  * must name the prefix (`services/http-client.ts`, the active-tenant prefix;
- * `lib/api/route-walker.ts`, the contract checker).
+ * `lib/api/route-walker.ts`, the contract checker), plus the generated
+ * `lib/api-client/generated-types.ts`, which only declares route types.
  *
  * Resume point: when the pin reaches 0 the migration is done, and
  * `components/operations/utils.ts` exports no URL.
  */
-const PINNED_COUNT = 77;
+const PINNED_COUNT = 76;
 
 const SRC_ROOT = path.resolve(__dirname, "../../..");
 
 const EXCLUDED_FILES = new Set([
   "services/http-client.ts",
   "lib/api/route-walker.ts",
+  // Generated from the OpenAPI snapshot, so it names every route as a type key
+  // and calls none of them. Drift-gated in frontend-ci.yml.
+  "lib/api-client/generated-types.ts",
 ]);
 
 const NEEDLE = /OPERATIONS_API|OPERATIONS_BASE|\/api\/v1\/operations/;

@@ -1,7 +1,7 @@
 """coord.claude_account_usage — weekly_utilization may be NULL (no reading)
 
 Revision ID: coord_claude_acct_usage_03
-Revises: coord_sessions_fleet_idx_01
+Revises: census_idx_01_device_repo_path_observed
 Create Date: 2026-10-07
 
 Plan ``2026-10-07-mobile-account-usage-stale-tenant-feed-remediation`` item #6,
@@ -67,7 +67,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_claude_acct_usage_03"
-down_revision: str | Sequence[str] | None = "coord_sessions_fleet_idx_01"
+down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

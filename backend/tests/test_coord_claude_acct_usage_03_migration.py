@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 
 _REVISION_ID = "coord_claude_acct_usage_03"
-_PARENT_ID = "coord_sessions_fleet_idx_01"
+_PARENT_ID = "census_idx_01_device_repo_path_observed"
 _FILENAME = "coord_claude_acct_usage_03_nullable_weekly_utilization.py"
 
 _VERSIONS = Path(__file__).resolve().parents[1] / "alembic" / "versions"
