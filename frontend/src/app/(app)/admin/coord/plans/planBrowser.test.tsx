@@ -94,9 +94,11 @@ function body(
   return {
     items: [row()],
     total: 1,
-    offset: 0,
+    truncated: false,
+    next_cursor: null,
+    bound_kind: "exact",
     limit: 25,
-    ordering: "slug_asc",
+    ordering: "stem_date_asc",
     document_axis_source: "artifact_store",
     document_axis_complete: true,
     document_present_count: 1,
@@ -444,14 +446,16 @@ describe("Phase 2 — server-side search", () => {
     expect(screen.getByTestId("coord-plans-empty")).toBeInTheDocument();
   });
 
-  it("sends q (debounced), returns to offset 0, and shows the echo", async () => {
+  it("sends q (debounced), returns to the first page, and shows the echo", async () => {
     const user = userEvent.setup();
     route({
       "/plan-library/reconciliation": (url: string) =>
         url.includes("q=")
-          ? body({ q: "devops-unfiltered-push-trigger", offset: 0 })
+          ? body({ q: "devops-unfiltered-push-trigger" })
           : body({
               total: 80,
+              truncated: true,
+              next_cursor: "page-two",
               items: Array.from({ length: 25 }, (_, i) =>
                 row({ slug: `2026-01-${String(i).padStart(2, "0")}-p` })
               ),
@@ -462,9 +466,9 @@ describe("Phase 2 — server-side search", () => {
 
     await user.click(screen.getByTestId("coord-plans-page-next"));
     await waitFor(() =>
-      expect(reconciliationCalls().some((u) => u.includes("offset=25"))).toBe(
-        true
-      )
+      expect(
+        reconciliationCalls().some((u) => u.includes("cursor=page-two"))
+      ).toBe(true)
     );
 
     await user.type(
@@ -483,7 +487,8 @@ describe("Phase 2 — server-side search", () => {
     const searched = reconciliationCalls().filter((u) => u.includes("q="));
     // Debounced: one search request for ~30 keystrokes, not one per key.
     expect(searched.length).toBeLessThanOrEqual(2);
-    expect(searched.every((u) => u.includes("offset=0"))).toBe(true);
+    // A cursor is bound to `q`: a new search restarts the walk.
+    expect(searched.every((u) => !u.includes("cursor="))).toBe(true);
 
     expect(
       await screen.findByTestId(

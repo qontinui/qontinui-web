@@ -35,6 +35,11 @@
  *    repeatedly not picked up, which is the whole reason to read this page.
  */
 
+import {
+  describeBoundedWindow,
+  type BoundedReadMeta,
+} from "@/components/admin/coord/cursorPager";
+
 // ---------------------------------------------------------------------------
 // The wire shape. Mirrors `backend/app/schemas/plan_library.py`
 // (`OpenFollowupResponse` / `OpenFollowup`).
@@ -54,25 +59,33 @@ export interface OpenFollowup {
   age_days?: number;
 }
 
-export interface OpenFollowupResponse {
+/**
+ * A keyset walk: the shared bounded-read keys describe `items`, `total`
+ * counts from THIS page's start, and `next_cursor` is passed back as
+ * `cursor`. There is no `offset`.
+ */
+export interface OpenFollowupResponse extends Partial<
+  Omit<BoundedReadMeta, "total">
+> {
   items?: OpenFollowup[];
-  count?: number;
-  total?: number;
-  offset?: number;
-  limit?: number;
+  total?: number | null;
   /** Declared by the route: `"oldest_first"`. */
   ordering?: string;
 }
 
 export interface FollowupWindow {
-  /** `null` when the route served no total — UNKNOWN, never `items.length`. */
+  /** The whole open queue (rows already walked + the route's `total` from
+   *  this page's start); `null` when the route served no count — UNKNOWN,
+   *  never `items.length`. */
   total: number | null;
-  offset: number;
+  /** Rows served before this page, from the cursor walk. */
+  start: number;
   limit: number | null;
   shown: number;
   /** The DECLARED ordering, so a consumer can assert it. */
   ordering: string | null;
   hasMore: boolean;
+  nextCursor: string | null;
   /**
    * `true` when the route declared an ordering this build does not expect.
    * Not an error — a statement that the "oldest first" reading below the list
@@ -84,23 +97,23 @@ export interface FollowupWindow {
 export const EXPECTED_ORDERING = "oldest_first";
 
 export function describeFollowupWindow(
-  res: OpenFollowupResponse
+  res: OpenFollowupResponse,
+  start = 0
 ): FollowupWindow {
-  const items = res.items ?? [];
-  const total = typeof res.total === "number" ? res.total : null;
-  const offset = typeof res.offset === "number" ? res.offset : 0;
+  const window = describeBoundedWindow(
+    { ...res, total: typeof res.total === "number" ? res.total : null },
+    start
+  );
   const limit = typeof res.limit === "number" ? res.limit : null;
   const ordering = typeof res.ordering === "string" ? res.ordering : null;
   return {
-    total,
-    offset,
+    total: window.populationTotal,
+    start,
     limit,
-    shown: items.length,
+    shown: window.shown,
     ordering,
-    hasMore:
-      total !== null
-        ? offset + items.length < total
-        : limit !== null && items.length >= limit,
+    hasMore: window.hasMore,
+    nextCursor: window.nextCursor,
     orderingUnexpected: ordering !== null && ordering !== EXPECTED_ORDERING,
   };
 }
@@ -131,7 +144,8 @@ const DASH = "–";
 export function deriveFollowupHealth(
   res: OpenFollowupResponse | null,
   loaded: boolean,
-  readFailed: boolean
+  readFailed: boolean,
+  start = 0
 ): FollowupHealth {
   const dashes = [
     { key: "open", label: `open ${DASH}`, tone: "muted" as const },
@@ -149,7 +163,9 @@ export function deriveFollowupHealth(
       badges: dashes,
     };
   }
-  const total = res.total;
+  // The route's `total` counts from this page's start; the whole queue is
+  // the rows already walked plus it.
+  const total = typeof res.total === "number" ? start + res.total : null;
   const items = res.items ?? [];
   const ordering = typeof res.ordering === "string" ? res.ordering : null;
   /**
@@ -168,7 +184,7 @@ export function deriveFollowupHealth(
   const orderingWarrantsOldest =
     ordering === null || ordering === EXPECTED_ORDERING;
   const oldest =
-    orderingWarrantsOldest && (res.offset ?? 0) === 0 && items.length > 0
+    orderingWarrantsOldest && start === 0 && items.length > 0
       ? (items[0]?.age_days ?? null)
       : null;
   return {
@@ -209,7 +225,7 @@ export function deriveFollowupHealth(
             ? "Days since the follow-up was recorded. An old unowned follow-up is work the fleet has known about and repeatedly not picked up."
             : !orderingWarrantsOldest
               ? `The route declared its ordering as "${ordering}", not ${EXPECTED_ORDERING}, so nothing warrants reading the first row as the oldest.`
-              : (res.offset ?? 0) !== 0
+              : start !== 0
                 ? "The oldest row is only on the first page, so it is not measured from here."
                 : items.length === 0
                   ? "This page returned no follow-up, so there is no row to read an age from — unknown, not zero."
