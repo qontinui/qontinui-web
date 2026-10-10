@@ -27,9 +27,10 @@
  * surface an operator is actually on during an incident.
  *
  * This module is the composer only: it owns the page's three reads and the
- * section order. Each card lives in `./merge-settings/`, beside the shared wire
- * types (`types.ts`), the parse/format helpers (`format.ts`) and the
- * pinned-vs-inherited helpers (`pinChoice.tsx`).
+ * section order. Each card lives in `./merge-settings/`, beside the form-field
+ * shape (`types.ts`), the parse/format helpers (`format.ts`) and the
+ * pinned-vs-inherited helpers (`pinChoice.tsx`). The routes and their wire
+ * types are the typed client's, `@/lib/api/operations/prMerge`.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -38,20 +39,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchMergeSlo,
+  fetchTenantRepos,
+  fetchTenantSettings,
+  type EffectiveProfile,
+  type SloResponse,
+  type TenantRepoRow,
+} from "@/lib/api/operations/prMerge";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
-import { OPERATIONS_API } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { TenantDefaultsCard } from "./merge-settings/TenantDefaultsCard";
 import { RepoOverrideCard } from "./merge-settings/RepoOverrideCard";
 import { SloDashboardCard } from "./merge-settings/SloDashboardCard";
 import { ffLandHeadSyncSupported } from "./merge-settings/format";
-import type {
-  EffectiveProfile,
-  SloResponse,
-  TenantRepoRow,
-  TenantReposResponse,
-  TenantSettingsResponse,
-} from "./merge-settings/types";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -68,29 +69,66 @@ export function MergeOrchestrationSettings() {
 
   useEffect(() => {
     let cancelled = false;
+    // The page used to be one `Promise.all` over three raw fetches, then check
+    // statuses, then parse bodies. The typed reads parse as they go, so all
+    // three are SETTLED first and judged in that same order:
+    //   1. a read that never got an answer (a network failure) rejects the
+    //      whole batch — only the top-level error is set and profile/repos
+    //      stay unset. When several fail, the first by POSITION (settings,
+    //      repos, slo) wins; `Promise.all` reported whichever failed first in
+    //      TIME, so this is deterministic where the original was not. A 2xx
+    //      whose body stream breaks mid-read (a `TypeError` from `res.json()`)
+    //      also lands here, which the original would have reported only after
+    //      the status checks; it needs a truncated 2xx, so it is accepted;
+    //   2. otherwise a refused settings, then a refused repos, is worded
+    //      `settings: HTTP <status>` / `repos: HTTP <status>`, before any body
+    //      is looked at;
+    //   3. only then are bodies used: an unparseable settings or repos body is
+    //      its own error, and state is set from the two that parsed.
+    // The SLO read is best-effort: a refusal is only logged.
+    const settle = <T,>(read: Promise<T>) =>
+      read.then(
+        (body) => ({ ok: true as const, body }),
+        (err: unknown) => ({ ok: false as const, err })
+      );
+    // A body that arrived 2xx but did not parse. `readJson` surfaces it as
+    // the `SyntaxError` of `res.json()`; it is not a missing answer.
+    const isBodyFailure = (err: unknown) => err instanceof SyntaxError;
+    const isNoAnswer = (err: unknown) =>
+      httpStatusOf(err) === null && !isBodyFailure(err);
+    const refusal = (label: string, err: unknown): unknown => {
+      const status = httpStatusOf(err);
+      return status === null ? err : new Error(`${label}: HTTP ${status}`);
+    };
     Promise.all([
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/settings`),
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/repos`),
-      httpClient.fetch(`${OPERATIONS_API}/pr-merge/slo`),
+      settle(fetchTenantSettings()),
+      settle(fetchTenantRepos()),
+      settle(fetchMergeSlo()),
     ])
-      .then(async ([s, r, sl]) => {
-        if (!s.ok) throw new Error(`settings: HTTP ${s.status}`);
-        if (!r.ok) throw new Error(`repos: HTTP ${r.status}`);
-        // SLO is best-effort — a failure (e.g. coord down) shouldn't
-        // block the rest of the page from rendering.
-        const sb = (await s.json()) as TenantSettingsResponse;
-        const rb = (await r.json()) as TenantReposResponse;
+      .then(([s, r, sl]) => {
+        for (const read of [s, r, sl]) {
+          if (!read.ok && isNoAnswer(read.err)) throw read.err;
+        }
+        if (!s.ok && httpStatusOf(s.err) !== null) {
+          throw refusal("settings", s.err);
+        }
+        if (!r.ok && httpStatusOf(r.err) !== null) {
+          throw refusal("repos", r.err);
+        }
+        if (!s.ok) throw s.err;
+        if (!r.ok) throw r.err;
         if (cancelled) return;
-        setProfile(sb.profile);
-        setRepos(rb.repos);
+        setProfile(s.body.profile);
+        setRepos(r.body.repos);
         setError(null);
         if (sl.ok) {
-          const slBody = (await sl.json()) as SloResponse;
-          if (!cancelled) setSlo(slBody);
-        } else {
+          setSlo(sl.body);
+        } else if (httpStatusOf(sl.err) !== null) {
           // Log but don't propagate to top-level error banner — the
           // SLO card surfaces its own loading state.
-          log.warn("slo fetch failed", await sl.text().catch(() => "?"));
+          log.warn("slo fetch failed", httpBodyOf(sl.err) ?? "?");
+        } else {
+          throw sl.err;
         }
       })
       .catch((err) => {

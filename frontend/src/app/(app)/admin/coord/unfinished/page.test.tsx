@@ -9,11 +9,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 const getMock = vi.fn();
 const postMock = vi.fn();
 const patchMock = vi.fn();
+// The client calls `httpClient.fetch`; this adapter routes each call to the
+// per-verb mock by method, with the parsed body, and wraps the answer in a
+// `Response` (a rejection from a mock stays a rejection).
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...a: unknown[]) => getMock(...a),
-    post: (...a: unknown[]) => postMock(...a),
-    patch: (...a: unknown[]) => patchMock(...a),
+    fetch: async (url: string, init: { method: string; body?: string }) => {
+      const mock =
+        init.method === "GET"
+          ? getMock
+          : init.method === "POST"
+            ? postMock
+            : patchMock;
+      const out =
+        init.method === "GET"
+          ? await mock(url)
+          : await mock(url, JSON.parse(init.body ?? "null"));
+      return new Response(JSON.stringify(out));
+    },
   },
 }));
 vi.mock("sonner", () => ({
@@ -21,7 +34,10 @@ vi.mock("sonner", () => ({
 }));
 
 import UnfinishedSessionsPage from "./page";
-import { RESUME_UNFINISHED_API, UNFINISHED_API } from "./types";
+
+const UNFINISHED_API = "/api/v1/operations/unfinished-sessions";
+const RESUME_UNFINISHED_API =
+  "/api/v1/operations/tenant-policy/resume-unfinished";
 
 const ROW = {
   claude_session_id: "11111111-1111-1111-1111-111111111111",
@@ -75,6 +91,23 @@ describe("UnfinishedSessionsPage", () => {
     expect(screen.getByTestId("unfinished-health").textContent).toMatch(
       /UNKNOWN/
     );
+    expect(screen.queryByTestId("unfinished-unknown-detail")).toBeNull();
+  });
+
+  it("shows coord's own detail beside an UNKNOWN reason", async () => {
+    route({
+      state: "unknown",
+      reason: "candidate_query_failed",
+      detail: "db error: relation does not exist",
+      sessions: null,
+      truncated: false,
+    });
+    render(<UnfinishedSessionsPage />);
+    const msg = await screen.findByTestId("unfinished-unknown");
+    expect(msg.textContent).toMatch(/query for closed sessions failed/);
+    expect(screen.getByTestId("unfinished-unknown-detail").textContent).toMatch(
+      /relation does not exist/
+    );
   });
 
   it("says empty only for a read that was ok and had no rows", async () => {
@@ -87,6 +120,22 @@ describe("UnfinishedSessionsPage", () => {
     });
     render(<UnfinishedSessionsPage />);
     await screen.findByTestId("unfinished-empty");
+  });
+
+  it("an unrecorded last-acted time reads unknown, not never", async () => {
+    route({
+      state: "ok",
+      reason: null,
+      detail: null,
+      sessions: [ROW],
+      truncated: false,
+    });
+    render(<UnfinishedSessionsPage />);
+    const row = await screen.findByTestId("unfinished-row");
+    fireEvent.click(row.querySelector("button") ?? row);
+    const detail = await screen.findByTestId("unfinished-detail");
+    expect(detail.textContent).toMatch(/Last acted:\s*unknown/);
+    expect(detail.textContent).toMatch(/working_dir unknown/);
   });
 
   it("a failed first read is unknown, not none", async () => {

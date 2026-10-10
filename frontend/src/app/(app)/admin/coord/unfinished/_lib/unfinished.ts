@@ -1,6 +1,9 @@
 /** Pure helpers for the Unfinished page (no fetching, no React). */
 
-import type { UnfinishedSession, UnfinishedSessionsView } from "../types";
+import type {
+  UnfinishedSession,
+  UnfinishedSessionsView,
+} from "@/lib/api/operations/unfinished";
 
 /**
  * Why a row cannot be resumed, or null when it can. A respawn is addressed at
@@ -54,6 +57,8 @@ export function unknownReasonText(view: UnfinishedSessionsView): string {
       return "coord's database has not been migrated for this view yet";
     case "census_unreadable":
       return "coord could not read the session census";
+    case "candidate_query_failed":
+      return "coord's query for closed sessions failed";
     case "pool_unavailable":
       return "coord's database was unreachable";
     case "malformed_response":
@@ -61,6 +66,15 @@ export function unknownReasonText(view: UnfinishedSessionsView): string {
     default:
       return view.reason ?? "coord gave no reason";
   }
+}
+
+/**
+ * Coord's own diagnostic beside the reason (e.g. the database error text), or
+ * null when it sent none. Shown verbatim so an UNKNOWN can be chased.
+ */
+export function unknownDetailText(view: UnfinishedSessionsView): string | null {
+  const detail = view.detail?.trim();
+  return detail ? detail : null;
 }
 
 export function transcriptText(row: UnfinishedSession): string {

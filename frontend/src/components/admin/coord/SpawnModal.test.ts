@@ -27,7 +27,7 @@ import {
   formatUtilization,
   parsePlanPhase,
 } from "./spawnModel";
-import type { ClaudeAccountRow } from "./spawnModel";
+import type { ClaudeAccountRow } from "@/lib/api/operations/agents";
 
 const base = {
   workUnitSlug: "2026-07-28-coord-post-plan-slug-surfaces-rename",

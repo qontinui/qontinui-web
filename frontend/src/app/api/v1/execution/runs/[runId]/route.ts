@@ -13,10 +13,18 @@ type Context = { params: Promise<{ runId: string }> };
 
 export async function GET(request: NextRequest, { params }: Context) {
   const { runId } = await params;
-  return proxyToBackend(request, `/api/v1/execution/runs/${runId}`, OPTIONS);
+  return proxyToBackend(
+    request,
+    `/api/v1/execution/runs/${encodeURIComponent(runId)}`,
+    OPTIONS
+  );
 }
 
 export async function DELETE(request: NextRequest, { params }: Context) {
   const { runId } = await params;
-  return proxyToBackend(request, `/api/v1/execution/runs/${runId}`, OPTIONS);
+  return proxyToBackend(
+    request,
+    `/api/v1/execution/runs/${encodeURIComponent(runId)}`,
+    OPTIONS
+  );
 }

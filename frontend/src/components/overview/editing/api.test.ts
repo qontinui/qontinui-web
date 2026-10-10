@@ -10,6 +10,7 @@ vi.mock("@/services/api-config", () => ({
 
 import {
   deleteFile,
+  fetchChangeLog,
   fetchFileBlob,
   revertPage,
   uploadFile,
@@ -90,5 +91,51 @@ describe("overview write calls send what the server reads", () => {
     expect(init.headers).toMatchObject({ "Idempotency-Key": "key-1" });
     expect(init.timeoutMs).toBe(400_000);
     expect(init.idempotent).toBe(true);
+  });
+});
+
+describe("fetchChangeLog sends the source filter and limit the server reads", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ entries: [], truncated: false }), {
+          status: 200,
+        })
+    );
+  });
+
+  function sentQuery(): URLSearchParams {
+    const { url, init } = lastCall();
+    expect(init.method).toBe("GET");
+    const parsed = new URL(url);
+    expect(parsed.origin + parsed.pathname).toBe(
+      "https://api.test/api/v1/overview/change-log"
+    );
+    return parsed.searchParams;
+  }
+
+  it("fetchChangeLog carries source=api when asked, with the limit", async () => {
+    await fetchChangeLog("pages", "p1", { source: "api", limit: 7 });
+    const q = sentQuery();
+    expect(q.get("resource")).toBe("pages");
+    expect(q.get("record_id")).toBe("p1");
+    expect(q.getAll("source")).toEqual(["api"]);
+    expect(q.get("limit")).toBe("7");
+  });
+
+  it("fetchChangeLog omits source when not asked, and defaults the limit to 20", async () => {
+    await fetchChangeLog("pages", null);
+    const q = sentQuery();
+    expect(q.has("source")).toBe(false);
+    expect(q.has("record_id")).toBe(false);
+    expect(q.get("limit")).toBe("20");
+  });
+
+  it("fetchChangeLog keeps an explicit limit without a source", async () => {
+    await fetchChangeLog("milestones", null, { limit: 50 });
+    const q = sentQuery();
+    expect(q.has("source")).toBe(false);
+    expect(q.get("limit")).toBe("50");
   });
 });

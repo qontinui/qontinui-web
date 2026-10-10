@@ -2,7 +2,9 @@
  * Workflow Documentation Service
  *
  * Barrel export that re-exports everything from the split modules.
- * This replaces the original workflow-documentation-service.ts file.
+ * Single home of the workflow documentation service (types, generator,
+ * formatter, exporter, templates); import it as
+ * `@/services/workflow-documentation`.
  */
 
 // Types

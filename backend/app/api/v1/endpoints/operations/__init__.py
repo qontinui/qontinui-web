@@ -1356,6 +1356,7 @@ async def _proxy_coord_write(
     body: Any,
     *,
     headers: dict[str, str] | None,
+    structured_errors: bool = False,
 ) -> Any:
     """Send one PATCH/PUT to coord and say honestly what came back.
 
@@ -1371,7 +1372,9 @@ async def _proxy_coord_write(
       the response), or a 2xx whose body is PRESENT but not JSON → **504**:
       coord may well have committed, and only a re-read can tell. Each is
       logged, because a 504 the operator retries is otherwise invisible.
-    * a coord ≥400 → coord's own status with ``detail=resp.text``.
+    * a coord ≥400 → coord's own status with ``detail=resp.text`` — or, with
+      ``structured_errors``, coord's typed JSON refusal object verbatim (same
+      opt-in contract as ``_proxy_coord_post``'s flag of the same name).
     * a 204, or any 2xx with an empty body → ``None``: a success that carries
       nothing to return is still a success.
     """
@@ -1402,7 +1405,10 @@ async def _proxy_coord_write(
                 ),
             ) from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     if resp.status_code == 204 or not resp.content:
         return None
     try:
@@ -1459,6 +1465,7 @@ async def _proxy_coord_put(
     body: Any,
     *,
     tenant_id: UUID | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a PUT request to coord. Returns the JSON body (``None`` for an
     empty 2xx).
@@ -1469,7 +1476,9 @@ async def _proxy_coord_put(
     coord expects a full-replacement PUT rather than a partial PATCH.
     """
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
-    return await _proxy_coord_write("put", path, body, headers=headers)
+    return await _proxy_coord_write(
+        "put", path, body, headers=headers, structured_errors=structured_errors
+    )
 
 
 @router.get("/pr-merge/settings")
@@ -3830,6 +3839,8 @@ async def get_dev_action_detail(
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
+# - GET    /operations/fleet/dispatch-roles              — machine dispatch roles
+# - PUT    /operations/fleet/dispatch-role               — set one (admin)
 # - GET    /operations/fleet/worktree-cap                — per-device worktree caps
 # - POST   /operations/fleet/worktree-cap                — set one (admin)
 # - POST   /operations/fleet/worktree-cap/clear          — remove one (admin)
@@ -5057,6 +5068,145 @@ async def post_fleet_undrain(
     return await _proxy_coord_post(
         "/coord/fleet/undrain",
         {"device_id": str(body.device_id), "reason": body.reason},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+# ---- Machine dispatch roles (plan 2026-10-02 fleet machine roles, Phase 6) --
+#
+# The operator door for a machine's standing DISPATCH ROLE — which kind of work
+# coord may send it (§D1): ``workhorse`` (CI + agent sessions), ``bench``
+# (nothing) or ``ci_node`` (CI only). Same three shapes as the drain pair above,
+# and the same auth path: the read rides ``get_tenant_id`` (bearer forwarded so
+# coord scopes it), the write rides ``require_coord_tenant_admin`` and coord
+# re-checks with its own operator-only gate (§D9). A role is NOT a drain: it is
+# a standing fact with no expiry, and the two compose (§D2) — coord serves each
+# lane's state with WHICH of the two closed it, and this hop forwards that
+# untouched.
+#
+# Wire facts encoded ONCE here:
+#
+# 1. The write body is CLOSED and assembled here, never forwarded verbatim.
+#    Exactly one of ``device_id`` / ``ci_host_name`` names the machine (the
+#    table's own one-key CHECK, ``mdroles_01``), and there is no ``set_by``:
+#    coord stamps the author from its authenticated operator context.
+# 2. Coord's guards come back as typed refusals — ``last_open_lane`` (the
+#    change would leave no machine with that lane open; ``force: true`` lifts
+#    it, audited) and ``no_agent_host`` (``workhorse`` on a host with no
+#    runner to place a session on, §D4). They pass through STRUCTURED, with
+#    coord's own status, so the console renders a sentence and offers Force
+#    only for the refusal that admits it — never a raw error string.
+
+#: The three roles the table's CHECK admits (``mdroles_01``). Pinned here so a
+#: typo is a local 422 rather than a coord round trip.
+DispatchRoleName = Literal["workhorse", "bench", "ci_node"]
+
+#: The character class ``mdroles_01`` CHECKs ``ci_host_name`` against: printable
+#: ASCII with no whitespace. Mirrored so a pasted name with a trailing newline is
+#: a legible local 422, not a Postgres constraint name echoed back from coord.
+_CI_HOST_NAME_RE = re.compile(r"^[\x21-\x7e]+$")
+
+
+class DispatchRoleRequestBody(BaseModel):
+    """Closed body for ``PUT /operations/fleet/dispatch-role``.
+
+    ``extra="forbid"`` keeps a client-asserted author (``set_by``,
+    ``updated_by``) off the wire, and keeps the body exactly the shape coord
+    declares.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID | None = None
+    ci_host_name: str | None = Field(default=None, min_length=1, max_length=255)
+    dispatch_role: DispatchRoleName
+    reason: str = Field(..., min_length=1, max_length=2000)
+    #: Lifts coord's ``last_open_lane`` guard, and nothing else. Coord audits a
+    #: forced change; it never lifts ``no_agent_host``, which is a fact about
+    #: the machine rather than a judgement about the fleet.
+    force: bool = False
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+    @field_validator("ci_host_name")
+    @classmethod
+    def _host_name_is_printable_ascii(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not _CI_HOST_NAME_RE.fullmatch(v):
+            raise ValueError(
+                "ci_host_name must be printable ASCII with no whitespace "
+                "(the GitHub runner host name, e.g. dell-2020)"
+            )
+        # Coord names a CI host by the BARE runner name — its registrar strips
+        # `gh-runner-` (`host_of_hostname`) — so a row keyed on the prefixed
+        # spelling would never attach to a registration.
+        if v.lower().startswith("gh-runner-"):
+            raise ValueError(
+                "ci_host_name is the runner name without the gh-runner- prefix "
+                f"(e.g. {v[len('gh-runner-') :]})"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _exactly_one_machine_key(self) -> "DispatchRoleRequestBody":
+        if (self.device_id is None) == (self.ci_host_name is None):
+            raise ValueError(
+                "name the machine by exactly one of device_id or ci_host_name"
+            )
+        return self
+
+
+@router.get("/fleet/dispatch-roles")
+async def get_fleet_dispatch_roles(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Every machine of the caller's tenant with its dispatch role.
+
+    Proxies coord's ``GET /coord/fleet/dispatch-roles`` with the body passed
+    through untouched (no ``response_model``): role or ``unassigned``, the RAM
+    suggestion for an unassigned machine, and each lane's state with role and
+    drain kept apart.
+
+    A 404 (coord predates the route), a 502/504, or an unrecognised body is
+    UNKNOWN to the browser — never "every machine is unassigned", which would
+    read as "every machine is a workhorse" (``[policy:
+    unknown-must-not-render-as-a-default]``). The status is what lets it tell.
+    """
+    return await _proxy_coord_get("/coord/fleet/dispatch-roles", tenant_id=tenant_id)
+
+
+@router.put("/fleet/dispatch-role")
+async def put_fleet_dispatch_role(
+    body: DispatchRoleRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set one machine's dispatch role (operator-only).
+
+    Affects NEW dispatch only: sessions and CI jobs already placed on the
+    machine run to their end (§D9). The GitHub-label (Phase 4) and CI-node
+    switch (Phase 5) effects are coord's and web's later phases — nothing on
+    this path claims them.
+    """
+    wire: dict[str, Any] = {
+        "dispatch_role": body.dispatch_role,
+        "reason": body.reason,
+        "force": body.force,
+    }
+    if body.device_id is not None:
+        wire["device_id"] = str(body.device_id)
+    else:
+        wire["ci_host_name"] = body.ci_host_name
+    return await _proxy_coord_put(
+        "/coord/fleet/dispatch-role",
+        wire,
         tenant_id=tenant_id,
         structured_errors=True,
     )
@@ -7765,7 +7915,7 @@ async def websocket_coord_events(
 
         async def send_keepalive() -> None:
             # Runs for the life of the bridge, independent of upstream
-            # traffic — an idle `strategy`/`claims` subscription can go
+            # traffic — an idle `claims` subscription can go
             # minutes between real frames, and that idle gap is exactly when
             # a proxy on the browser<->backend leg times the socket out
             # (finding 67329129). Ends only via cancellation (the other pump

@@ -27,7 +27,10 @@ import {
   fetchMembers,
   grantMemberRole,
   revokeMemberRole,
+  type CoordMemberRole,
+  type OperatorRow,
 } from "@/lib/api/operations/coordMembers";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
 import {
   RecordDetail,
   StatCluster,
@@ -36,10 +39,8 @@ import {
   type Stat,
 } from "@/components/console";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "../memberStatus";
-import type { CoordRole, MembersResponse, OperatorRow } from "../_types";
 import { requireRows } from "../_lib/groupName";
 import { TIER_OPTIONS, tierLabel } from "../_lib/tenantLabels";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { log } from "../_lib/log";
 
 // ===========================================================================
@@ -57,7 +58,9 @@ export function MembersTable({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Pending role selection per operator (defaults to Administrator).
-  const [pendingRole, setPendingRole] = useState<Record<string, CoordRole>>({});
+  const [pendingRole, setPendingRole] = useState<
+    Record<string, CoordMemberRole>
+  >({});
   const [busy, setBusy] = useState<string | null>(null);
   // R5 — one row open at a time, the same model `<RecordList>` holds for a row
   // list, spelled out here because a `<TableBody>` cannot host that primitive.
@@ -67,9 +70,7 @@ export function MembersTable({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchMembers();
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as MembersResponse;
+      const json = await fetchMembers();
       // The third sibling. A malformed 200 here fabricates "No members yet." —
       // and, through `stats` below, the four-count headline `members 0 ·
       // administrators 0 · developers 0 · no access 0`. That is the page's
@@ -94,7 +95,7 @@ export function MembersTable({
       setOperators(rows);
     } catch (err) {
       log.warn("load members failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(operationsErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -105,19 +106,16 @@ export function MembersTable({
   }, [load, refreshKey]);
 
   const grantRole = useCallback(
-    async (operatorId: string, role: CoordRole) => {
+    async (operatorId: string, role: CoordMemberRole) => {
       setBusy(operatorId);
       try {
-        const res = await grantMemberRole(operatorId, role);
-        if (!res.ok) throw new Error(await backendErrorMessage(res));
+        await grantMemberRole(operatorId, role);
         toast.success(`Granted ${tierLabel(role)}`);
         await load();
         onChanged();
       } catch (err) {
         log.warn("grant role failed", err);
-        toast.error(
-          `Grant failed: ${err instanceof Error ? err.message : String(err)}`
-        );
+        toast.error(`Grant failed: ${operationsErrorMessage(err)}`);
       } finally {
         setBusy(null);
       }
@@ -129,16 +127,13 @@ export function MembersTable({
     async (operatorId: string, role: string) => {
       setBusy(operatorId);
       try {
-        const res = await revokeMemberRole(operatorId, role);
-        if (!res.ok) throw new Error(await backendErrorMessage(res));
+        await revokeMemberRole(operatorId, role);
         toast.success(`Revoked ${tierLabel(role)}`);
         await load();
         onChanged();
       } catch (err) {
         log.warn("revoke role failed", err);
-        toast.error(
-          `Revoke failed: ${err instanceof Error ? err.message : String(err)}`
-        );
+        toast.error(`Revoke failed: ${operationsErrorMessage(err)}`);
       } finally {
         setBusy(null);
       }
@@ -296,7 +291,7 @@ export function MembersTable({
                             onValueChange={(v) =>
                               setPendingRole((p) => ({
                                 ...p,
-                                [op.operator_id]: v as CoordRole,
+                                [op.operator_id]: v as CoordMemberRole,
                               }))
                             }
                           >
