@@ -1,6 +1,9 @@
 /** Pure helpers for the Unfinished page (no fetching, no React). */
 
-import type { UnfinishedSession, UnfinishedSessionsView } from "../types";
+import type {
+  UnfinishedSession,
+  UnfinishedSessionsView,
+} from "@/lib/api/operations/unfinished";
 
 /**
  * Why a row cannot be resumed, or null when it can. A respawn is addressed at
