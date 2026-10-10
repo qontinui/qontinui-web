@@ -2289,6 +2289,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/build-records/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Build Record Products
+         * @description The tenant's product definitions (``{products: [...]}``), from coord.
+         */
+        get: operations["api_v1_build_records_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/products/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Build Record Product
+         * @description Create or replace one product definition. Tenant admins only: this is
+         *     the switch that makes a product publishable (``is_public``).
+         *
+         *     ``is_public: false`` — or a ``repos`` list that no longer covers every repo
+         *     the live snapshot names — retracts this tenant's live public snapshot of
+         *     the slug FIRST and commits, then calls coord — so whatever coord answers, the
+         *     page is not left public under a product that was just made private. The
+         *     ``X-Build-Record-Retracted`` header says whether this request retracted.
+         */
+        put: operations["api_v1_build_records_products_slug_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Build Records
+         * @description Retract every live public build record of this tenant whose coord
+         *     product is gone, private or another tenant's — now, with the caller's own
+         *     coord credential — or whose snapshot names a repo the product no longer
+         *     includes. GitHub visibility is NOT re-checked here: that spends the shared
+         *     anonymous GitHub budget and runs only as the scheduled
+         *     ``build_record_visibility_recheck`` task. The same reconcile also runs on the in-process scheduler
+         *     every 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for
+         *     the launch kit and the operator notice, which should not wait for a tick.
+         *
+         *     A coord read that fails is a refusal (coord's status), never an empty
+         *     listing — an unanswered question retracts nothing.
+         */
+        post: operations["api_v1_build_records_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record
+         * @description The live ``build-record/1`` document for one product, from coord.
+         *
+         *     coord's 404 ``{"error": "build_record_product_not_found"}`` passes through
+         *     as a structured detail.
+         */
+        get: operations["api_v1_build_records_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record Publication
+         * @description The caller's tenant's publication state for ``slug`` (any member):
+         *     whether it owns the public address, whether it is currently unpublished,
+         *     and the latest snapshot's version and digest. Read-only; no coord call.
+         */
+        get: operations["api_v1_build_records_slug_publication_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Build Record
+         * @description Freeze the product's current build record as its next public version.
+         *
+         *     Refuses (nothing stored) when:
+         *
+         *     * another tenant already owns this public slug → 409
+         *       ``public_slug_owned_by_another_tenant``;
+         *     * the slug is retracted and the body does not say ``reactivate: true`` →
+         *       409 ``build_record_retracted``;
+         *     * the product does not exist in the caller's tenant → 404;
+         *     * coord's product row names a different tenant → 409
+         *       ``build_record_tenant_mismatch``;
+         *     * the product's ``is_public`` is not ``true`` → 409 (D3: nothing is public
+         *       by default);
+         *
+         *     — and in those three cases a LIVE snapshot this tenant owns is retracted
+         *     on the spot (``retracted`` in the refusal says whether it was);
+         *
+         *     * coord's document fails the D3 allowlist, names another product, or lists
+         *       a repo outside the product definition → 502 (coord sent something it
+         *       must not; the violations are listed);
+         *     * coord's ``generated_at`` is outside [now − 15 min, now + 5 min] → 502
+         *       ``build_record_generated_at_out_of_window``;
+         *     * GitHub, asked anonymously, does not confirm a listed repo is public →
+         *       502 ``build_record_repo_not_public`` (it said private / absent) or
+         *       ``build_record_repo_visibility_unknown`` (no answer, rate limit, error);
+         *       refused without asking when the product has more than 50 repos (409
+         *       ``build_record_too_many_repos``) or the shared GitHub budget is at its
+         *       publish reserve (502 ``build_record_repo_visibility_budget_reserved``);
+         *     * the slug was retracted or re-activated while coord was being asked → 409
+         *       ``build_record_retraction_changed``;
+         *     * the document is older than the latest snapshot → 409
+         *       ``build_record_stale``.
+         *
+         *     After storing, the product is read from coord once more; if it went
+         *     private (or the read fails) in the meantime, the new version is retracted
+         *     at once and the answer is 409 ``build_record_product_not_public`` /
+         *     502 ``build_record_post_publish_check_unanswered`` with ``retracted``.
+         */
+        post: operations["api_v1_build_records_slug_publish_post"];
+        /**
+         * Unpublish Build Record
+         * @description D7's one-step unpublish: retract the public address immediately.
+         *
+         *     ``GET /api/v1/public/build-records/{slug}`` answers 404 from the moment
+         *     this commits. Every snapshot row is kept as history and the tenant keeps
+         *     the slug; ``POST /{slug}/publish`` with ``{"reactivate": true}``
+         *     re-activates it as the next version. Idempotent: unpublishing a retracted
+         *     slug keeps its first retraction time.
+         *
+         *     Refuses with the publish route's own answers: 404
+         *     ``build_record_not_published`` when nothing was ever published under the
+         *     slug, 409 ``public_slug_owned_by_another_tenant`` when another tenant owns
+         *     it. coord is not consulted — retraction must work while coord is down.
+         */
+        delete: operations["api_v1_build_records_slug_publish_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/capture/actions/batch": {
         parameters: {
             query?: never;
@@ -19954,6 +20147,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Public Build Record
+         * @description The latest published snapshot of a product's build record, without
+         *     authentication.
+         *
+         *     Serves ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,
+         *     which refuses a product that is not opted in (``is_public``) and
+         *     re-validates the D3 allowlist before storing. It never proxies to coord,
+         *     so the authed export is never reachable from here. 404 when nothing has
+         *     been published under ``slug``, or when its owner has unpublished it
+         *     (``DELETE /api/v1/build-records/{slug}/publish``).
+         *
+         *     A snapshot validated under an older allowlist version is re-validated
+         *     against the current one (once per process, cached, off the event loop
+         *     under a dedicated limiter) and 404s if it fails; one validated under the
+         *     current version is served on its stored verdict. Rate-limited per peer
+         *     (:data:`PUBLIC_BUILD_RECORD_RATE_LIMIT`). Every answer carries
+         *     ``Cache-Control: no-store`` so an unpublish is not outlived by a cached
+         *     copy.
+         *
+         *     ``content_sha256`` is the SHA-256 of ``document`` serialized with sorted
+         *     keys and no insignificant whitespace, so a reader can verify it.
+         */
+        get: operations["api_v1_public_build_records_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/projects": {
         parameters: {
             query?: never;
@@ -27199,6 +27431,87 @@ export interface components {
             tab_id: string | null;
             /** Target Element Id */
             target_element_id: string | null;
+        };
+        /**
+         * BuildRecordProductWrite
+         * @description Body of ``PUT /products/{slug}`` — the coord contract's product fields.
+         */
+        BuildRecordProductWrite: {
+            /**
+             * Is Public
+             * @default false
+             */
+            is_public: boolean;
+            /** Repos */
+            repos?: string[];
+            /** Title */
+            title: string;
+            /** Window End */
+            window_end?: string | null;
+            /** Window Start */
+            window_start?: string | null;
+        };
+        /**
+         * BuildRecordPublication
+         * @description What ``GET /{slug}/publication`` returns, for the CALLER's tenant.
+         */
+        BuildRecordPublication: {
+            /** Content Sha256 */
+            content_sha256: string | null;
+            /** Owned By Caller Tenant */
+            owned_by_caller_tenant: boolean;
+            /** Public Slug */
+            public_slug: string;
+            /** Unpublished */
+            unpublished: boolean;
+            /** Version */
+            version: number | null;
+        };
+        /**
+         * BuildRecordPublishRequest
+         * @description Optional body of ``POST /{slug}/publish``.
+         */
+        BuildRecordPublishRequest: {
+            /**
+             * Reactivate
+             * @default false
+             */
+            reactivate: boolean;
+        };
+        /**
+         * BuildRecordPublishResult
+         * @description What ``POST /{slug}/publish`` returns.
+         */
+        BuildRecordPublishResult: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Public Slug */
+            public_slug: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * BuildRecordReconcileResult
+         * @description What ``POST /reconcile`` returns.
+         */
+        BuildRecordReconcileResult: {
+            /** Retracted */
+            retracted: string[];
+        };
+        /**
+         * BuildRecordUnpublishResult
+         * @description What ``DELETE /{slug}/publish`` returns.
+         */
+        BuildRecordUnpublishResult: {
+            /** Latest Version */
+            latest_version: number | null;
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Unpublished At
+             * Format: date-time
+             */
+            unpublished_at: string;
         };
         /**
          * BulkAnnotationError
@@ -43173,6 +43486,27 @@ export interface components {
             version_number: number;
         };
         /**
+         * PublicBuildRecord
+         * @description The latest frozen version of a published build record.
+         */
+        PublicBuildRecord: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Document */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
          * PushDeviceRegister
          * @description Schema for registering a push device token.
          */
@@ -57272,6 +57606,209 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_build_records_products_slug_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordProductWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordReconcileResult"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publication_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublication"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordPublishRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublishResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordUnpublishResult"];
                 };
             };
             /** @description Validation Error */
@@ -82960,6 +83497,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionRestoreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_public_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicBuildRecord"];
                 };
             };
             /** @description Validation Error */
