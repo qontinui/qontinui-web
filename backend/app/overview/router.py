@@ -45,6 +45,7 @@ from app.overview import change_log
 from app.overview import http as contract_http
 from app.overview.estimates import router as estimates_routes
 from app.overview.files import router as files_routes
+from app.overview.objectives import router as objectives_routes
 from app.overview.pages import router as pages_routes
 from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
 from app.overview.phase_progress import router as timeline_routes
@@ -528,5 +529,6 @@ for _spec in REGISTRY.values():
 # download.
 router.include_router(estimates_routes)
 router.include_router(timeline_routes)
+router.include_router(objectives_routes)
 router.include_router(pages_routes)
 router.include_router(files_routes)

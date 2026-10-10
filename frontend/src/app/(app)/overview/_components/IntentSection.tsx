@@ -31,6 +31,8 @@ import {
   type IntentEntry,
   type SummaryIntentKind,
 } from "../_lib/intent";
+import type { SummaryMetrics } from "../_lib/objectives";
+import { MetricSummaryList } from "./MetricSummaryList";
 
 export const INTENT_HEADINGS: Record<
   SummaryIntentKind,
@@ -285,10 +287,18 @@ export function IntentSection({
   kind,
   entries,
   actions,
+  metricStatus,
 }: {
   kind: SummaryIntentKind;
   entries: IntentEntry[];
   actions: IntentSectionActions;
+  /**
+   * Set for `success_metric` only: its written documents render as a compact
+   * list fed by the objectives read, and their prose lives on Objectives
+   * (plan `2026-10-06-overview-objectives-view` D1). Templates, "Add" and
+   * the reorder controls stay here.
+   */
+  metricStatus?: SummaryMetrics;
 }) {
   const { heading, missing, noun } = INTENT_HEADINGS[kind];
   // Every template with an OPEN editor stays an unwritten row until that
@@ -415,7 +425,16 @@ export function IntentSection({
         {heading}
       </h2>
 
-      {written.length > 0 && (
+      {written.length > 0 && metricStatus && (
+        <MetricSummaryList
+          entries={written}
+          status={metricStatus}
+          canEdit={canEdit}
+          move={actions.move}
+        />
+      )}
+
+      {written.length > 0 && !metricStatus && (
         <div className="mt-3 space-y-8">
           {written.map((entry, index) => {
             const docId = `${sectionId}-${entry.name}`;

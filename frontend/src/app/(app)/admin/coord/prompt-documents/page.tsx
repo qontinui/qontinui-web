@@ -62,7 +62,8 @@
  *   so there is no palette to enrol in `console/attention.test.ts`.
  */
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
 import { PolicyAutoPublishDialControl } from "./_components/PolicyAutoPublishDialControl";
@@ -70,6 +71,26 @@ import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialContr
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
+import { parseDeepLink } from "./_lib/deepLink";
+
+/**
+ * The list, opened on `?kind=&name=` when the URL names a document (plan
+ * `2026-10-06-overview-objectives-view` D2). Its own component because
+ * `useSearchParams` must sit under a `<Suspense>` boundary in Next 15.
+ */
+function DeepLinkedList({
+  autoPublishRefreshKey,
+}: {
+  autoPublishRefreshKey: number;
+}) {
+  const params = useSearchParams();
+  return (
+    <PromptDocumentList
+      autoPublishRefreshKey={autoPublishRefreshKey}
+      deepLink={parseDeepLink(params)}
+    />
+  );
+}
 
 export default function PromptDocumentsPage() {
   // Bumped when the D5 switch is written, so the list re-reads the status its
@@ -102,7 +123,15 @@ export default function PromptDocumentsPage() {
         </span>
       </p>
 
-      <PromptDocumentList autoPublishRefreshKey={autoPublishRefreshKey} />
+      <Suspense
+        fallback={
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            Loading documents…
+          </div>
+        }
+      >
+        <DeepLinkedList autoPublishRefreshKey={autoPublishRefreshKey} />
+      </Suspense>
 
       {/*
         The tenant-wide autonomy dial sits with the per-document write-access

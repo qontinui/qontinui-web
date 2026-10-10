@@ -23,6 +23,7 @@ import { useDomainCost } from "./_hooks/useDomainCost";
 import { ProgressPanel } from "./_components/ProgressPanel";
 import { INTENT_RESOURCE, useSummaryData } from "./_hooks/useSummaryData";
 import { SUMMARY_INTENT_KINDS } from "./_lib/intent";
+import { summaryMetricsOf, useObjectives } from "./_hooks/useObjectives";
 
 function ProseSkeleton() {
   return (
@@ -66,6 +67,12 @@ export default function OverviewSummaryPage() {
     move,
     createDocument,
   };
+  // Read beside the Summary's own: the compact metric list's tallies and
+  // which documents are void (plan `2026-10-06-overview-objectives-view` D1).
+  const { objectives } = useObjectives(
+    activeTenantId,
+    tenantsLoading || tenantsError !== null
+  );
 
   // Without the project list the page cannot say whose figures it would be
   // showing, so it shows none rather than an unnamed project's.
@@ -135,6 +142,11 @@ export default function OverviewSummaryPage() {
                   kind={kind}
                   entries={intent.entries.filter((e) => e.kind === kind)}
                   actions={actions}
+                  metricStatus={
+                    kind === "success_metric"
+                      ? summaryMetricsOf(objectives)
+                      : undefined
+                  }
                 />
               ))
             )}
