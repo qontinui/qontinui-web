@@ -8930,6 +8930,24 @@ export interface paths {
          *
          *     ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
          *     Gaps tab can list pre-answered (non-blocking) gap reports.
+         *
+         *     ``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME
+         *     ``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both
+         *     reach it — but only if they are declared HERE. Until they were, this
+         *     handler declared ``limit`` and ``gap`` alone and **FastAPI dropped the
+         *     rest on the floor**: a caller asking for ``?offset=50&audience=operator``
+         *     reached coord with neither, and got page 1 of every audience with a 200
+         *     in front of it. That is the exact failure the pending docstring above
+         *     describes in its own words, still live one handler down — no visible
+         *     defect only because nothing pages the answered tab yet, which makes the
+         *     next answered pager a silent no-op its author cannot observe. Validated
+         *     identically to the pending handler (``limit`` ``ge=1, le=500``,
+         *     ``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than
+         *     with a second convention.
+         *
+         *     The envelope is coord's, verbatim, with the same absence contract the
+         *     pending docstring sets out: ``total``/``truncated`` are OMITTED when coord
+         *     could not observe the count, and an absent key is UNKNOWN, never zero.
          */
         get: operations["api_v1_operations_agent_questions_answered_get"];
         put?: never;
@@ -8979,6 +8997,58 @@ export interface paths {
          *     when set, forwarded to coord as the POLICY_GAP filter —
          *     ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
          *     Backs the Gaps tab on the questions inbox.
+         *
+         *     ``limit`` / ``offset`` / ``audience`` (plan
+         *     2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).
+         *     Until these were declared here the proxy took ``gap`` alone, and FastAPI
+         *     drops an undeclared query param on the floor — so a caller asking for
+         *     ``?limit=500&audience=operator`` reached coord with NEITHER, and any
+         *     frontend-side limit change was a **no-op it could not observe**. Declaring
+         *     them is the whole fix on this side; the forwarding below is mechanical.
+         *
+         *     Why it mattered: measured 2026-09-12, ``coord.agent_questions`` held
+         *     ~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``
+         *     and only ~442 with ``audience='operator'``. Coord's default page is 100
+         *     rows newest-first, so a correctly-escalated operator question sank out of
+         *     reach behind the agent tier's volume and was unanswerable for 10 days.
+         *     ``audience=operator`` is what makes the operator's own 442 addressable;
+         *     ``limit``/``offset`` are what make the rest of them reachable.
+         *
+         *     ``limit`` is validated exactly as the ANSWERED proxy below validates its
+         *     own (``ge=1, le=500``) rather than with a second convention. ``offset`` is
+         *     ``ge=0`` — the answered proxy has no offset to copy, and the work-units
+         *     proxy's ``offset: int | None = Query(default=None, ge=0)`` is the house
+         *     form.
+         *
+         *     ``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates
+         *     the sibling change**, and "deployed" is the load-bearing word. Coord's
+         *     source on ``main`` now DOES parse both — ``PendingQuery``
+         *     (``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,
+         *     ``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in
+         *     this same change set — so a grep of that source is not grounds for deleting
+         *     the degrade path here: what governs is the build answering this box, and it
+         *     lags ``main``. The struct is plain serde with no ``deny_unknown_fields``,
+         *     so on an older build an unknown query key is dropped rather than refused.
+         *     Forwarding them is therefore safe in both directions, but a 200 is never
+         *     proof the filter was applied — the frontend reads the echoed ``limit`` and
+         *     ``offset`` back and says which parameter went nowhere. ``limit`` coord has
+         *     always honoured (default 100, hard max 500), which is the bound the defect
+         *     below ran into.
+         *
+         *     The response envelope is **unchanged** and deliberately untranslated:
+         *     :func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord
+         *     already ships ``{questions, count, limit, shown, offset}`` plus ``total``
+         *     and ``truncated`` — so the paging metadata the frontend needs arrives
+         *     without a re-wrap here.
+         *
+         *     ⚠️ **``total`` and ``truncated`` are OMITTED — the key absent — when coord
+         *     could not observe the count**, which is precisely why nothing here
+         *     re-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the
+         *     returned rows, so an ``offset`` past the end of the match set returns zero
+         *     rows and no count with them; a ``0`` in its place would be a fabrication,
+         *     and the operator console turns a pending ``0`` into "No agent is waiting on
+         *     an answer". Any future re-wrap here MUST preserve the absence — a
+         *     ``body.get("total", 0)`` anywhere in this path recreates the defect.
          */
         get: operations["api_v1_operations_agent_questions_pending_get"];
         put?: never;
@@ -68605,7 +68675,10 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number | null;
+                offset?: number | null;
                 gap?: boolean | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
@@ -68668,6 +68741,10 @@ export interface operations {
         parameters: {
             query?: {
                 gap?: boolean | null;
+                limit?: number | null;
+                offset?: number | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
