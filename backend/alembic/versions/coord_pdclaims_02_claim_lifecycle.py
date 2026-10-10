@@ -243,8 +243,8 @@ revision guarded it with a ``DO $$`` block over ``pg_constraint``; coord's
 migration classifier admits no ``DO`` block, so it is now a bare
 ``ADD CONSTRAINT … NOT VALID``. That costs idempotency only in a state that
 cannot arise: this revision contains no ``autocommit_block`` and its version
-stamp lands inside the same transaction as its DDL (the next revision,
-``coord_smhist_01``, commits only after that), so it is never partially
+stamp lands inside the same transaction as its DDL (any later revision's
+``autocommit_block`` commits only after that), so it is never partially
 applied, and ``downgrade()`` drops the constraint. A re-run
 over a database that somehow has it fails LOUDLY on ``DuplicateObject`` rather
 than silently.
