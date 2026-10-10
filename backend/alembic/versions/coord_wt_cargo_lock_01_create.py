@@ -1,7 +1,7 @@
 """coord.worktree_cargo_lock — per-device cargo target lock samples
 
 Revision ID: coord_wt_cargo_lock_01
-Revises: census_idx_01_device_repo_path_observed
+Revises: notif_producerless_01_drop_enum_values
 Create Date: 2026-09-30
 
 Phase 2 (web half) of plan
@@ -78,7 +78,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_wt_cargo_lock_01"
-down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
+down_revision: str | Sequence[str] | None = "notif_producerless_01_drop_enum_values"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
