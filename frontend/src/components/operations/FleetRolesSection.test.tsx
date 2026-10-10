@@ -115,6 +115,7 @@ const MACHINES = {
         updated_by: "[redacted]",
         updated_at: "2026-10-08T10:00:00Z",
       },
+      // Legacy spelling too, deliberately: the panel does not parse it.
       behaves_as: "bench",
       suggestion: null,
       lanes: {
@@ -526,7 +527,7 @@ describe("FleetRolesSection", () => {
     );
   });
 
-  it("a role coord still serves as legacy `bench` reads as Testbed, marked legacy, and can be re-saved", async () => {
+  it("a role coord still serves as legacy `bench` reads as Testbed, marked legacy, and is current", async () => {
     // nomad's fixture row is stored under the pre-rename spelling (plan
     // Amendment 2026-10-10 A2/A6): it is Testbed, never "unrecognised".
     render(<FleetRolesSection />);
@@ -536,9 +537,7 @@ describe("FleetRolesSection", () => {
     const current = screen.getByTestId(
       "fleet-roles-set-testbed"
     ) as HTMLButtonElement;
-    // It IS the current role, but stays enabled so the row can be re-saved
-    // under the current spelling.
-    expect(current.disabled).toBe(false);
+    expect(current.disabled).toBe(true);
     expect(current.getAttribute("aria-pressed")).toBe("true");
     expect(current.title).toContain('legacy name "bench"');
   });

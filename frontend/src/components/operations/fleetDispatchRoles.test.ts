@@ -554,6 +554,38 @@ describe("describeRoleWriteError", () => {
       })
     );
     expect(fromWeb.message).toContain("predates the Testbed rename");
+    // The envelope the deployed web backend actually sends.
+    const deployed = describeRoleWriteError(
+      422,
+      JSON.stringify({
+        error: "VALIDATION_ERROR",
+        message: "Invalid request data",
+        details: [
+          {
+            field: "body.dispatch_role",
+            message: "Input should be 'workhorse', 'bench' or 'ci_node'",
+            type: "literal_error",
+          },
+        ],
+      })
+    );
+    expect(deployed.message).toContain("predates the Testbed rename");
+    // A validation error on ANOTHER field is not this.
+    expect(
+      describeRoleWriteError(
+        422,
+        JSON.stringify({
+          error: "VALIDATION_ERROR",
+          details: [
+            {
+              field: "body.reason",
+              message: "dispatch_role mentioned in prose",
+              type: "string_too_short",
+            },
+          ],
+        })
+      ).message
+    ).not.toContain("Testbed rename");
     // An unrelated 422 is not mistaken for it.
     expect(
       describeRoleWriteError(422, JSON.stringify({ error: "no_agent_host" }))

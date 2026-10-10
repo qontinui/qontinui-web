@@ -525,6 +525,26 @@ export type RoleWriteRefusal =
     };
 
 /**
+ * True when a 422 body carries a validation entry refusing the VALUE of
+ * `dispatch_role` (`literal_error`), in either envelope the web backend can
+ * send: FastAPI's `{detail: [{type, loc}]}` or the deployed
+ * `{error: "VALIDATION_ERROR", details: [{type, field}]}`.
+ */
+function refusesDispatchRoleValue(parsed: unknown): boolean {
+  if (!isRecord(parsed)) return false;
+  const entries = [parsed.detail, parsed.details].flatMap((v) =>
+    Array.isArray(v) ? v : []
+  );
+  return entries.some(
+    (e) =>
+      isRecord(e) &&
+      e.type === "literal_error" &&
+      ((Array.isArray(e.loc) && e.loc.at(-1) === "dispatch_role") ||
+        (typeof e.field === "string" && /(^|\.)dispatch_role$/.test(e.field)))
+  );
+}
+
+/**
  * Turn a non-2xx role write into a readable refusal. The web proxy passes
  * coord's typed refusal through as a structured object — at the top level or
  * under `detail`, depending on the deployed error envelope — so both are read.
@@ -626,15 +646,14 @@ export function describeRoleWriteError(
   }
   // The Testbed rename (plan Amendment 2026-10-10 A2) deploys in steps: a
   // coord predating it answers `unknown_dispatch_role` for `testbed`, and a
-  // web backend predating it refuses the role in its own body validation
-  // (FastAPI's 422 list, with no `error` code). Either way nothing changed,
-  // and the operator should hear that the role is not live yet — not a raw
-  // status.
+  // web backend predating it refuses the role in its own body validation — a
+  // `literal_error` entry naming `dispatch_role`, in FastAPI's `detail` list
+  // or the deployed envelope's `details` list (`middleware/error_handler.py`).
+  // Either way nothing changed, and the operator should hear that the role is
+  // not live yet — not a raw status.
   if (
     code === "unknown_dispatch_role" ||
-    (status === 422 &&
-      /dispatch_role/.test(body) &&
-      /literal_error|Input should be/.test(body))
+    (status === 422 && refusesDispatchRoleValue(parsed))
   ) {
     return {
       kind: "other",

@@ -256,25 +256,24 @@ function RoleButtons({
         aria-label={`Dispatch role for ${m.name}`}
       >
         {DISPATCH_ROLES.map((r) => {
-          // A row served under a legacy spelling (`bench`) IS this role, but
-          // stays re-savable so the operator can store it under the current
-          // name without a detour through another role (which could trip
-          // last_open_lane).
-          const current = m.role === r && m.legacyRoleSpelling === null;
-          const legacyCurrent = m.role === r && m.legacyRoleSpelling !== null;
+          // A row served under a legacy spelling (`bench`) IS this role, so it
+          // is current like any other. No re-save is offered: coord compares
+          // parsed roles, so writing `testbed` over `bench` changes nothing.
+          const current = m.role === r;
+          const legacyCurrent = current && m.legacyRoleSpelling !== null;
           const refused = r === "workhorse" && m.hostOnly;
           return (
             <Button
               key={r}
               size="sm"
-              variant={current || legacyCurrent ? "default" : "outline"}
+              variant={current ? "default" : "outline"}
               disabled={current || refused}
-              aria-pressed={current || legacyCurrent}
+              aria-pressed={current}
               title={
                 refused
                   ? "No workstation runner on this machine — it cannot host agent sessions."
                   : legacyCurrent
-                    ? `${ROLE_DESCRIPTION[r]} Stored under the legacy name "${m.legacyRoleSpelling}" — choose it to re-save under the current name.`
+                    ? `${ROLE_DESCRIPTION[r]} Coord stores it under the legacy name "${m.legacyRoleSpelling}".`
                     : ROLE_DESCRIPTION[r]
               }
               onClick={() => onPick(r)}
