@@ -1,5 +1,6 @@
 /**
- * `useChatWebSocket` reports the failures it used to drop.
+ * `useChatWebSocket` reports the failures it used to drop, and only its own
+ * conversation's.
  *
  * Each frame below has the shape its emitter writes — the runner
  * (`backend_relay.rs`) or the backend (`runner_chat_ws.py`) — except where a
@@ -94,6 +95,9 @@ describe("useChatWebSocket failure reporting", () => {
   it("still announces a created session", async () => {
     const { result, ws, onSessionCreated } = await connected();
 
+    act(() => {
+      result.current.createSession("Digital Twin question", "prompt", "q");
+    });
     act(() =>
       ws.push({
         type: "chat_created",
@@ -112,6 +116,9 @@ describe("useChatWebSocket failure reporting", () => {
 
   it("a new create clears the previous failure and its state", async () => {
     const { result, ws } = await connected();
+    act(() => {
+      result.current.createSession("Digital Twin question", "prompt", "q1");
+    });
     act(() => ws.push({ type: "chat_created", error: "device_drained: x" }));
     expect(result.current.sessionState).toBe("error");
 
@@ -190,5 +197,175 @@ describe("useChatWebSocket failure reporting", () => {
 
     expect(sent).toBe(false);
     expect(hook.result.current.sessionError).toContain("not sent");
+  });
+});
+
+/**
+ * The backend relay sends every chat socket of a device the same runner
+ * frames, so frames about OTHER runs on that runner arrive here too. Each
+ * frame below names its run the way its emitter does: direct replies as
+ * top-level `task_run_id`, broadcast payloads as `data.taskRunId`.
+ */
+describe("useChatWebSocket keeps to its own conversation", () => {
+  /** Connected, with a created session `run-1`. */
+  async function inSession() {
+    const hook = await connected();
+    act(() => {
+      hook.result.current.createSession("Digital Twin question", "p", "q");
+    });
+    act(() =>
+      hook.ws.push({
+        type: "chat_created",
+        id: "run-1",
+        task_name: "Digital Twin question",
+        state: "initializing",
+      })
+    );
+    return hook;
+  }
+
+  it("ignores a chat_created it did not ask for", async () => {
+    // Another tab's create: the reply names no requester, so adopting it
+    // would point this conversation at that tab's session.
+    const { result, ws, onSessionCreated } = await connected();
+
+    act(() =>
+      ws.push({
+        type: "chat_created",
+        id: "run-other",
+        task_name: "New Chat",
+        state: "initializing",
+      })
+    );
+    act(() =>
+      ws.push({ type: "chat_created", error: "device_drained: other tab" })
+    );
+
+    expect(onSessionCreated).not.toHaveBeenCalled();
+    expect(result.current.sessionError).toBeNull();
+    expect(result.current.sessionState).toBe("disconnected");
+  });
+
+  it("answers one create with one chat_created", async () => {
+    const { ws, onSessionCreated } = await inSession();
+
+    act(() =>
+      ws.push({
+        type: "chat_created",
+        id: "run-other",
+        task_name: "New Chat",
+        state: "initializing",
+      })
+    );
+
+    expect(onSessionCreated).toHaveBeenCalledTimes(1);
+    expect(onSessionCreated).toHaveBeenCalledWith(
+      "run-1",
+      "Digital Twin question"
+    );
+  });
+
+  it("ignores another run's failures once it knows its own", async () => {
+    const { result, ws } = await inSession();
+
+    act(() => {
+      // A direct reply to another tab's state request …
+      ws.push({
+        type: "chat_session_state",
+        task_run_id: "run-2",
+        state: "error",
+        can_send: false,
+        can_interrupt: false,
+      });
+      // … the broadcast form, whose payload spells it `taskRunId` …
+      ws.push({
+        type: "chat_session_state",
+        data: { taskRunId: "run-2", sessionId: "run-2", state: "error" },
+      });
+      // … another tab's unaccepted message, and the runner's error frame.
+      ws.push({
+        type: "chat_message_ack",
+        success: false,
+        error: "No active session for task_run_id",
+        task_run_id: "run-2",
+      });
+      ws.push({
+        type: "error",
+        task_run_id: "run-2",
+        error: "Interrupt failed: gone",
+      });
+    });
+
+    expect(result.current.sessionError).toBeNull();
+    expect(result.current.sessionState).not.toBe("error");
+  });
+
+  it("keeps another run's output out of its answer", async () => {
+    const { result, ws } = await inSession();
+
+    act(() => {
+      // A workflow agent's output names its run …
+      ws.push({
+        type: "chat_response",
+        data: { line: "agent noise", source: "claude", taskRunId: "run-2" },
+      });
+      // … this conversation's relay session names none (no session context).
+      ws.push({
+        type: "chat_response",
+        data: { line: "the answer", source: "claude", taskRunId: null },
+      });
+    });
+
+    expect(result.current.streamingContent).toBe("the answer");
+  });
+
+  it("still reads its own run's frames", async () => {
+    const { result, ws } = await inSession();
+
+    act(() =>
+      ws.push({
+        type: "chat_session_state",
+        task_run_id: "run-1",
+        state: "error",
+        can_send: false,
+        can_interrupt: false,
+      })
+    );
+
+    expect(result.current.sessionState).toBe("error");
+  });
+
+  it("reads every frame while it does not know its own run", async () => {
+    // Before `chat_created` names this conversation's run there is nothing to
+    // compare against, so nothing is dropped: dropping here would also drop
+    // this conversation's own frames if they ever named their run.
+    const { result, ws } = await connected();
+    act(() => {
+      result.current.createSession("Digital Twin question", "p", "q");
+    });
+
+    act(() =>
+      ws.push({
+        type: "chat_response",
+        data: { line: "partial", source: "claude", taskRunId: "run-9" },
+      })
+    );
+
+    expect(result.current.streamingContent).toBe("partial");
+  });
+
+  it("a new create forgets the previous run instead of messaging it", async () => {
+    const { result, ws } = await inSession();
+
+    act(() => {
+      result.current.createSession("Digital Twin question", "p", "q2");
+    });
+    act(() => {
+      result.current.sendMessage("follow-up");
+    });
+
+    // No `chat_message` to run-1: until the new `chat_created` arrives this
+    // conversation has no run to send to.
+    expect(ws.sent.filter((m) => m.type === "chat_message")).toEqual([]);
   });
 });

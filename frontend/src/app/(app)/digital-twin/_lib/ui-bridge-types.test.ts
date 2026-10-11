@@ -8,7 +8,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { snapshotHasElementTree, summarizeSpecGraph } from "./ui-bridge-types";
+import {
+  isValidAppId,
+  snapshotHasElementTree,
+  summarizeSpecGraph,
+} from "./ui-bridge-types";
 
 describe("summarizeSpecGraph", () => {
   it("counts states and transitions from the id lists", () => {
@@ -93,6 +97,46 @@ describe("summarizeSpecGraph", () => {
 
     expect(out.states).toBe(0);
     expect(out.unreadablePages).toBe(1);
+  });
+});
+
+/**
+ * `isValidAppId` is the runner registry's own rule (qontinui-schemas
+ * `validate_app_id`): an id outside it can never have been registered, and
+ * most such ids cannot even cross the relay as one path segment.
+ */
+describe("isValidAppId", () => {
+  it.each([
+    "qontinui-runner",
+    "qontinui-web",
+    "qontinui-supervisor",
+    "customer-portal-v2",
+    "a",
+    "0",
+    "a".repeat(64),
+  ])("accepts %j", (id) => {
+    expect(isValidAppId(id)).toBe(true);
+  });
+
+  it.each([
+    "",
+    "-leading-hyphen",
+    "Qontinui-Runner",
+    "has_underscore",
+    "a".repeat(65),
+    // A `/` becomes extra path segments — encoded or not, the relay decodes
+    // the path first — and the runner's allowlist refuses those with a 403.
+    "qontinui/web",
+    "qontinui%2Fweb",
+    // Dot segments are dropped or refused by the relay's normaliser.
+    ".",
+    "..",
+    // Characters the backend relay refuses with a 400.
+    "qontinui web",
+    "app@host",
+    "a?b",
+  ])("rejects %j", (id) => {
+    expect(isValidAppId(id)).toBe(false);
   });
 });
 

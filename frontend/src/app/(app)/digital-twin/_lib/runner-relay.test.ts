@@ -292,6 +292,25 @@ describe("runnerProxyGet unwraps the runner's ApiResponse envelope", () => {
     expect(err.message).toContain("UI Bridge SDK not connected");
   });
 
+  it("keeps the backend's request id on a 2xx refusal", async () => {
+    // The body is the runner's, so only the header can carry the id — and
+    // without it the relay-failure box has nothing to grep the log for.
+    fetchMock.mockResolvedValue(
+      response(
+        200,
+        { success: false, error: "UI Bridge SDK not connected" },
+        { "X-Request-ID": "req-200" }
+      )
+    );
+
+    const err = await rejection(
+      runnerProxyGet("dev-1", "ui-bridge/control/snapshot")
+    );
+
+    expect(err.requestId).toBe("req-200");
+    expect(err.message).toContain("(request req-200)");
+  });
+
   it("carries the runner's message from a non-2xx { success: false } envelope", async () => {
     // The snapshot route's own failure: neither the SDK nor a native window
     // capture answered (`ui_bridge_get_snapshot_handler` → 500 `api_error`).

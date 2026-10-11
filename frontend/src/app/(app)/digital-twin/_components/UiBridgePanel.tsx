@@ -20,6 +20,8 @@ import {
 import { RelayFailure } from "./RelayFailure";
 import { sharesRelayCause } from "../_lib/relay-error-presentation";
 import {
+  APP_ID_RULE,
+  isValidAppId,
   RUNNER_APP_ID,
   snapshotHasElementTree,
   summarizeSpecGraph,
@@ -28,18 +30,20 @@ import {
 
 /**
  * Suggestions for the App field — a datalist, not an allowlist: any id the
- * runner has registered works. Beyond its own UI, a runner registers
- * `qontinui-web` and `qontinui-supervisor` only when started with
- * QONTINUI_DEV_BOOTSTRAP=1 (`bootstrap_dev_apps`); any other id answers
- * `404 app-not-found`. The runner's `GET /apps` listing is not on its relay
+ * runner has registered works, and an id it has not registered answers
+ * `404 app-not-found`. A runner registers ids through its dev bootstrap or
+ * `POST /apps`, besides its own UI (see `RUNNER_APP_ID`). The dev bootstrap
+ * (QONTINUI_DEV_BOOTSTRAP=1, `bootstrap_dev_apps`) registers `qontinui-web`
+ * and `qontinui-supervisor`, each only when its `<workspace>/<dir>/frontend`
+ * directory exists. The runner's `GET /apps` listing is not on its relay
  * allowlist, so the registered set cannot be read from here.
  */
 const APP_ID_SUGGESTIONS: ReadonlyArray<{ id: string; note: string }> = [
-  { id: RUNNER_APP_ID, note: "This runner's own UI" },
-  { id: "qontinui-web", note: "Dev runners only (QONTINUI_DEV_BOOTSTRAP=1)" },
+  { id: RUNNER_APP_ID, note: "The runner's own UI" },
+  { id: "qontinui-web", note: "Dev bootstrap only (QONTINUI_DEV_BOOTSTRAP=1)" },
   {
     id: "qontinui-supervisor",
-    note: "Dev runners only (QONTINUI_DEV_BOOTSTRAP=1)",
+    note: "Dev bootstrap only (QONTINUI_DEV_BOOTSTRAP=1)",
   },
 ];
 
@@ -105,8 +109,12 @@ export function UiBridgePanel() {
   // The runner this tree targets (explicit choice, else coord's pick), read
   // from the target so a device the web list has not caught up with counts.
   const deviceId = targetRunnerId(useRunnerTarget());
-  // Default to the runner's own UI: the one app id every runner registers.
+  // Default to the runner's own UI: the id runners register for themselves.
   const [appId, setAppId] = useState(RUNNER_APP_ID);
+  // Free text, checked here rather than sent: an id the registry would never
+  // admit cannot answer (see `isValidAppId`).
+  const appIdValid = isValidAppId(appId);
+  const appIdInvalid = appId !== "" && !appIdValid;
   const [snapshotRequested, setSnapshotRequested] = useState(false);
 
   const specList = useRunnerSpecList(deviceId, appId);
@@ -177,7 +185,9 @@ export function UiBridgePanel() {
           value={appId}
           list="dt-app-id-options"
           onChange={(e) => setAppId(e.target.value.trim())}
-          className="h-7 w-48 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          aria-invalid={appIdInvalid}
+          aria-describedby={appIdInvalid ? "dt-app-id-invalid" : undefined}
+          className={`h-7 w-48 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${appIdInvalid ? "border-amber-500" : "border-input"}`}
         />
         <datalist id="dt-app-id-options">
           {APP_ID_SUGGESTIONS.map(({ id, note }) => (
@@ -189,7 +199,7 @@ export function UiBridgePanel() {
           variant="ghost"
           size="sm"
           className="h-7 gap-1.5 text-xs"
-          disabled={appId === ""}
+          disabled={!appIdValid}
           onClick={() => {
             specList.refetch();
             specGraph.refetch();
@@ -213,6 +223,16 @@ export function UiBridgePanel() {
           {appId === "" && (
             <p className="text-sm text-muted-foreground">
               Enter an app id to read its spec pages.
+            </p>
+          )}
+          {appIdInvalid && (
+            <p
+              id="dt-app-id-invalid"
+              data-testid="ui-bridge-app-id-invalid"
+              className="text-sm text-amber-700 dark:text-amber-500"
+            >
+              <code className="break-all">{appId}</code> is not a valid app id,
+              so it was not sent to the runner. App ids are {APP_ID_RULE}.
             </p>
           )}
           {specList.isLoading && (

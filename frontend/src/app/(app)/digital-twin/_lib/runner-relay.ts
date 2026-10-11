@@ -189,10 +189,16 @@ export async function runnerProxyGet<T>(
   const body: unknown = await resp.json();
   const refused = readRunnerRefusal(body);
   if (refused) {
+    // A 2xx body is all the runner's, so there are no relay diagnostics to
+    // read — but the backend still stamps its request id on the response
+    // header, and a refusal that came back as a success is the hardest one to
+    // trace without it.
+    const requestId = nonEmpty(resp.headers.get("X-Request-ID"));
+    const ref = requestId ? ` (request ${requestId})` : "";
     throw new RunnerRelayError(
-      `runner answered HTTP ${resp.status} for ${path} with a failure${refusalSuffix(refused)}`,
+      `runner answered HTTP ${resp.status} for ${path} with a failure${refusalSuffix(refused)}${ref}`,
       resp.status,
-      {},
+      { requestId },
       undefined,
       refused
     );
