@@ -3972,6 +3972,27 @@
         "title": "ApprovedTemplateData",
         "type": "object"
       },
+      "AuthorizeRedeemResponse": {
+        "description": "Response body (202) for ``POST /api/v1/devices/{id}/authorize-redeem``.\n\nCarries NO code: the code is delivered only to the device itself, through\n``/pending-redeem``.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the authorization lapses unredeemed (UTC).",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "expires_at"
+        ],
+        "title": "AuthorizeRedeemResponse",
+        "type": "object"
+      },
       "AutoCreateBaselinesRequest": {
         "description": "Request schema for auto-creating baselines from a test run.",
         "properties": {
@@ -5722,6 +5743,17 @@
         ],
         "title": "Body_validate_file_path_api_v1_code_execution_files_validate_post",
         "type": "object"
+      },
+      "BoundKind": {
+        "description": "The wire discriminant of a [`Bound`].",
+        "enum": [
+          "exact",
+          "at_least",
+          "complete",
+          "unknown"
+        ],
+        "title": "BoundKind",
+        "type": "string"
       },
       "BoundingBox": {
         "description": "Bounding box for an element or state.",
@@ -15515,6 +15547,96 @@
         "title": "DeviceConnectionResponse",
         "type": "object"
       },
+      "DeviceCredentialOverviewResponse": {
+        "description": "Response body for ``GET /api/v1/devices/credential-overview``.",
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceCredentialOverviewRow"
+            },
+            "title": "Devices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "devices"
+        ],
+        "title": "DeviceCredentialOverviewResponse",
+        "type": "object"
+      },
+      "DeviceCredentialOverviewRow": {
+        "description": "One device in ``GET /api/v1/devices/credential-overview``.\n\nCredential POSTURE (live/expiring/expired/\u2026) is deliberately NOT here \u2014 it\nis coord's ``GET /coord/status`` report, joined on ``device_id`` by the\nfrontend, so a missing report renders UNKNOWN rather than a web default.",
+        "properties": {
+          "credential_revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Device-scoped credential deny (UTC), or null when not revoked.",
+            "title": "Credential Revoked At"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "machine_key": {
+            "$ref": "#/components/schemas/DeviceMachineKeyPosture"
+          },
+          "pending_redeem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingRedeemPosture"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The operator authorization awaiting the runner, or null."
+          }
+        },
+        "required": [
+          "device_id",
+          "machine_key"
+        ],
+        "title": "DeviceCredentialOverviewRow",
+        "type": "object"
+      },
+      "DeviceCredentialRevokeResponse": {
+        "description": "Response body for ``POST /api/v1/devices/{id}/machine-credential/revoke``.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "title": "Revoked At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "revoked_at"
+        ],
+        "title": "DeviceCredentialRevokeResponse",
+        "type": "object"
+      },
       "DeviceIdentityResponse": {
         "description": "Response shape for ``GET /api/v1/devices/me``.\n\nThe device-principal identity resolved from a coord-issued device-token\nJWT: the device's own id, the paired operator (owning user), and the\ntenant the device belongs to. All three are emitted as UUID strings so\nthe relay's ``_auth.ts`` can use them directly as a principal.",
         "properties": {
@@ -15591,6 +15713,45 @@
           "prefix"
         ],
         "title": "DeviceMachineCredentialMintResponse",
+        "type": "object"
+      },
+      "DeviceMachineKeyPosture": {
+        "description": "web's own ``device_machine_credentials`` row for a device, reduced to\nwhat an operator needs: whether a key exists, when it lapses, and whether\nit was revoked. Never any key material.",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the key lapses (UTC), or null.",
+            "title": "Expires At"
+          },
+          "present": {
+            "description": "True when the device has a machine-key row at all.",
+            "title": "Present",
+            "type": "boolean"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the key was revoked (UTC), or null.",
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "present"
+        ],
+        "title": "DeviceMachineKeyPosture",
         "type": "object"
       },
       "DeviceResolveRequest": {
@@ -17299,6 +17460,63 @@
           "dispatched"
         ],
         "title": "DispatchEnrollResponse",
+        "type": "object"
+      },
+      "DispatchRoleRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``PUT /operations/fleet/dispatch-role``.\n\n``extra=\"forbid\"`` keeps a client-asserted author (``set_by``,\n``updated_by``) off the wire, and keeps the body exactly the shape coord\ndeclares.",
+        "properties": {
+          "ci_host_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Host Name"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "dispatch_role": {
+            "enum": [
+              "workhorse",
+              "bench",
+              "ci_node"
+            ],
+            "title": "Dispatch Role",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dispatch_role",
+          "reason"
+        ],
+        "title": "DispatchRoleRequestBody",
         "type": "object"
       },
       "DispatchStatusResponse": {
@@ -23874,6 +24092,33 @@
           "can_edit"
         ],
         "title": "FilesList",
+        "type": "object"
+      },
+      "FilterNarrowing": {
+        "description": "A FILTER the surface narrowed before running the read \u2014 reported, never\napplied silently, because a narrowed filter that reads as a complete answer\nis the same defect class as a silent empty.\n\nPromoted from `coord.findings`' `resource_keys_truncated`, the only\nnarrowing any surface reported when this type was written: a list-valued\nfilter truncated at a cap rather than refused (truncating a FILTER only\nnarrows a read). Minimal on purpose \u2014 which parameter, how many values\nwere actually applied, and the cap that dropped the rest. A caller seeing\nit knows a miss is meaningless for the values beyond the cap.",
+        "properties": {
+          "applied": {
+            "description": "How many values of it the read actually applied.",
+            "title": "Applied",
+            "type": "integer"
+          },
+          "cap": {
+            "description": "The cap the surface enforces; values past it were dropped.",
+            "title": "Cap",
+            "type": "integer"
+          },
+          "parameter": {
+            "description": "The query parameter that was narrowed, spelled as the caller spelled it\non the wire (e.g. `resource_keys`).",
+            "title": "Parameter",
+            "type": "string"
+          }
+        },
+        "required": [
+          "applied",
+          "cap",
+          "parameter"
+        ],
+        "title": "FilterNarrowing",
         "type": "object"
       },
       "FindingCategoryConfigCreate": {
@@ -30541,7 +30786,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
-        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.\n\n``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are\nREQUIRED and un-defaulted for **exactly the same reason**, and the\nreason is worth stating rather than inheriting: an empty ``hits``\nwas the same six bytes for a query that was mis-spelled, a corpus\nthat was empty, a backend that was serving a different tenant, and a\nretrieval that landed in ``anchored_hits`` instead. Those are four\ndifferent diagnoses, and a caller could not tell them apart in one\ncall.\n\nGiving any of the three a DEFAULT would defeat the fix invisibly. An\noptional field is absent on an old backend and present on a new one,\nso a caller reading it would silently fall back to the same\nambiguity this change removes \u2014 and would do so without ever\nlearning which backend it was talking to. Un-defaulted means an old\npayload fails validation loudly, at the boundary, naming the missing\nfield; that is a diagnosable outage rather than a silent regression\nto zero information.",
+        "description": "``POST /memory/query`` result.\n\n**Bound disclosure** (plan\n``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``,\nPhase 3). The class inherits the GENERATED shared envelope\n(:class:`BoundedReadMeta`, ``qontinui_schemas``; never redeclared here),\nso ``count`` / ``limit`` / ``shown`` / ``total`` / ``truncated`` /\n``bound_kind`` / ``next_cursor`` / ``available`` / ``filter_narrowed``\nare always serialized, ``null`` included. They describe ``hits`` ONLY;\n``anchored_hits`` is a separate ranked list with its own arm and is not\ncovered by them.\n\n* ``truncated`` \u2014 the fused candidate pool held more ids than ``limit``\n  (judged against the cut, not against ``shown``: a pooled id whose row\n  was not fetched is not \"more beyond this page\").\n* ``bound_kind`` \u2014 ``exact`` (``total`` = the fused pool size, deduplicated\n  across arms) when no retrieval arm was capped, so the pool is the whole\n  match set; ``at_least`` (``total: null``) when an arm was capped, so\n  matches may exist that no arm returned; ``unknown`` when an arm was\n  capped but the page shows the whole pool, so whether more exist did not\n  resolve. The vector and FTS arms count as capped when they returned\n  ``memory_store.ARM_LIMIT`` ids; the link arm counts as capped whenever\n  it ran (``link_arm == \"expanded\"``), see below.\n* ``next_cursor`` \u2014 ALWAYS ``null``. The order is a computed relevance\n  score that moves with every write, so a ranking is not pageable.\n* ``enumerate_via`` \u2014 ALWAYS :data:`MEMORY_ENUMERATION_DOOR`\n  (``GET /api/v1/memory/records``, keyset over the immutable\n  ``(created_at, seq)``): the walk a caller takes to see the corpus.\n* ``available`` \u2014 always ``true``: this route has no unprovisioned-store\n  arm (a missing substrate is an error, not an empty answer).\n\n``total`` counts CANDIDATES, not relevance: the vector arm has no\nsimilarity floor, so on a hybrid query every embedded live row that\npasses the filters is a candidate, and a tenant with ``ARM_LIMIT`` or\nmore of them always reads ``at_least``. Saturation of the vector and\nFTS arms is judged on each arm's returned list. The link arm's per-seed\nfan-out cap is applied BEFORE the record filters, so a cut seed cannot be\nseen in the filtered list; an expanded query is therefore always treated\nas capped (``at_least`` / ``unknown``, never ``exact``) \u2014 the safe\ndirection.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.\n\n``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are\nREQUIRED and un-defaulted for **exactly the same reason**, and the\nreason is worth stating rather than inheriting: an empty ``hits``\nwas the same six bytes for a query that was mis-spelled, a corpus\nthat was empty, a backend that was serving a different tenant, and a\nretrieval that landed in ``anchored_hits`` instead. Those are four\ndifferent diagnoses, and a caller could not tell them apart in one\ncall.\n\nGiving any of the three a DEFAULT would defeat the fix invisibly. An\noptional field is absent on an old backend and present on a new one,\nso a caller reading it would silently fall back to the same\nambiguity this change removes \u2014 and would do so without ever\nlearning which backend it was talking to. Un-defaulted means an old\npayload fails validation loudly, at the boundary, naming the missing\nfield; that is a diagnosable outage rather than a silent regression\nto zero information.",
         "properties": {
           "anchored_arm": {
             "default": "not_requested",
@@ -30564,12 +30809,54 @@
             "title": "Anchored Hits",
             "type": "array"
           },
+          "available": {
+            "description": "`false` ONLY when the store is unprovisioned: an empty page with\n`available: false` is UNKNOWN, not \"nothing matched\".",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "bound_kind": {
+            "$ref": "#/components/schemas/BoundKind",
+            "description": "Which kind of bound produced `total` / `truncated`."
+          },
+          "count": {
+            "description": "Rows in this page (the legacy spelling of `shown`).",
+            "title": "Count",
+            "type": "integer"
+          },
+          "enumerate_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a relevance-RANKED read, which can never hand out a cursor: the\ndoor that enumerates the same corpus by an immutable sort key (plan\n`2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so\na `truncated: true, next_cursor: null` answer still says how to reach\nthe rest. `null` on a keyset walk, whose `next_cursor` is the way on.",
+            "title": "Enumerate Via"
+          },
+          "filter_narrowed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterNarrowing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A FILTER the surface narrowed before the read ran, or `null`."
+          },
           "hits": {
             "items": {
               "$ref": "#/components/schemas/MemoryQueryHit"
             },
             "title": "Hits",
             "type": "array"
+          },
+          "limit": {
+            "description": "The cap actually applied to this page.",
+            "title": "Limit",
+            "type": "integer"
           },
           "link_arm": {
             "enum": [
@@ -30584,8 +30871,49 @@
             "title": "Live Row Count",
             "type": "integer"
           },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The opaque token for the next page \u2014 pass it back verbatim as\n`cursor`. `null` iff `truncated` is not `true`, OR the read is a\nRANKING that cannot be paged \u2014 then `truncated` may be `true` with\n`next_cursor: null`, and `enumerate_via` names the door that walks the\ncorpus by an immutable key.",
+            "title": "Next Cursor"
+          },
           "query_echo": {
             "$ref": "#/components/schemas/MemoryQueryEcho"
+          },
+          "shown": {
+            "description": "Rows in this page.",
+            "title": "Shown",
+            "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact match count from this page's start position \u2014 a number only\nwhen `bound_kind` is `exact`, else `null`.",
+            "title": "Total"
+          },
+          "truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether matching rows exist beyond this page; `null` when\n`bound_kind` is `unknown`.",
+            "title": "Truncated"
           },
           "vector_arm": {
             "enum": [
@@ -30598,9 +30926,21 @@
           }
         },
         "required": [
+          "available",
+          "bound_kind",
+          "count",
+          "enumerate_via",
+          "filter_narrowed",
+          "limit",
+          "next_cursor",
+          "shown",
+          "total",
+          "truncated",
           "hits",
           "vector_arm",
           "link_arm",
+          "anchored_arm",
+          "anchored_hits",
           "anchored_hit_count",
           "live_row_count",
           "query_echo"
@@ -32119,12 +32459,6 @@
             "title": "Email Shares",
             "type": "boolean"
           },
-          "email_team_invites": {
-            "default": true,
-            "description": "Email for team invites",
-            "title": "Email Team Invites",
-            "type": "boolean"
-          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -32142,12 +32476,6 @@
             "title": "In App Mentions",
             "type": "boolean"
           },
-          "in_app_project_updates": {
-            "default": true,
-            "description": "In-app for project updates",
-            "title": "In App Project Updates",
-            "type": "boolean"
-          },
           "in_app_replies": {
             "default": true,
             "description": "In-app for replies",
@@ -32158,12 +32486,6 @@
             "default": true,
             "description": "In-app for shares",
             "title": "In App Shares",
-            "type": "boolean"
-          },
-          "in_app_team_invites": {
-            "default": true,
-            "description": "In-app for team invites",
-            "title": "In App Team Invites",
             "type": "boolean"
           },
           "updated_at": {
@@ -32232,17 +32554,6 @@
             ],
             "title": "Email Shares"
           },
-          "email_team_invites": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email Team Invites"
-          },
           "in_app_comments": {
             "anyOf": [
               {
@@ -32265,17 +32576,6 @@
             ],
             "title": "In App Mentions"
           },
-          "in_app_project_updates": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In App Project Updates"
-          },
           "in_app_replies": {
             "anyOf": [
               {
@@ -32297,17 +32597,6 @@
               }
             ],
             "title": "In App Shares"
-          },
-          "in_app_team_invites": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In App Team Invites"
           }
         },
         "title": "NotificationPreferencesUpdate",
@@ -32785,11 +33074,44 @@
         "type": "object"
       },
       "OpenFollowupResponse": {
-        "description": "A page of open (unclaimed) follow-ups. ``count`` is this page's length;\n``total`` is the unpaged total.",
+        "description": "A page of open (unclaimed) follow-ups \u2014 a keyset walk over the edge's\nimmutable ``(created_at, id)``, oldest first. The bounded-read keys\ndescribe ``items``; ``next_cursor`` is passed back as ``cursor``.",
         "properties": {
+          "available": {
+            "description": "`false` ONLY when the store is unprovisioned: an empty page with\n`available: false` is UNKNOWN, not \"nothing matched\".",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "bound_kind": {
+            "$ref": "#/components/schemas/BoundKind",
+            "description": "Which kind of bound produced `total` / `truncated`."
+          },
           "count": {
+            "description": "Rows in this page (the legacy spelling of `shown`).",
             "title": "Count",
             "type": "integer"
+          },
+          "enumerate_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a relevance-RANKED read, which can never hand out a cursor: the\ndoor that enumerates the same corpus by an immutable sort key (plan\n`2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so\na `truncated: true, next_cursor: null` answer still says how to reach\nthe rest. `null` on a keyset walk, whose `next_cursor` is the way on.",
+            "title": "Enumerate Via"
+          },
+          "filter_narrowed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterNarrowing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A FILTER the surface narrowed before the read ran, or `null`."
           },
           "items": {
             "items": {
@@ -32799,12 +33121,21 @@
             "type": "array"
           },
           "limit": {
+            "description": "The cap actually applied to this page.",
             "title": "Limit",
             "type": "integer"
           },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The opaque token for the next page \u2014 pass it back verbatim as\n`cursor`. `null` iff `truncated` is not `true`, OR the read is a\nRANKING that cannot be paged \u2014 then `truncated` may be `true` with\n`next_cursor: null`, and `enumerate_via` names the door that walks the\ncorpus by an immutable key.",
+            "title": "Next Cursor"
           },
           "ordering": {
             "const": "oldest_first",
@@ -32812,17 +33143,49 @@
             "title": "Ordering",
             "type": "string"
           },
-          "total": {
-            "title": "Total",
+          "shown": {
+            "description": "Rows in this page.",
+            "title": "Shown",
             "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact match count from this page's start position \u2014 a number only\nwhen `bound_kind` is `exact`, else `null`.",
+            "title": "Total"
+          },
+          "truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether matching rows exist beyond this page; `null` when\n`bound_kind` is `unknown`.",
+            "title": "Truncated"
           }
         },
         "required": [
-          "items",
+          "available",
+          "bound_kind",
           "count",
+          "enumerate_via",
+          "filter_narrowed",
+          "limit",
+          "next_cursor",
+          "shown",
           "total",
-          "offset",
-          "limit"
+          "truncated",
+          "items",
+          "ordering"
         ],
         "title": "OpenFollowupResponse",
         "type": "object"
@@ -35248,6 +35611,54 @@
         "title": "PendingCountResponse",
         "type": "object"
       },
+      "PendingRedeemPosture": {
+        "description": "An operator authorization the runner has not redeemed yet.",
+        "properties": {
+          "delivered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a device collected the code via /pending-redeem (UTC), or null while uncollected. Collected-but-unredeemed for long means the collector never finished pairing \u2014 after a theft-driven revoke, re-pair interactively instead.",
+            "title": "Delivered At"
+          },
+          "expires_at": {
+            "description": "When the bound pair code lapses (UTC).",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expires_at"
+        ],
+        "title": "PendingRedeemPosture",
+        "type": "object"
+      },
+      "PendingRedeemResponse": {
+        "description": "Response body (200) for ``GET /api/v1/devices/{id}/pending-redeem``.",
+        "properties": {
+          "code": {
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "expires_at"
+        ],
+        "title": "PendingRedeemResponse",
+        "type": "object"
+      },
       "PhaseForecast": {
         "properties": {
           "code": {
@@ -36564,8 +36975,17 @@
         "type": "object"
       },
       "PlanCandidateResponse": {
-        "description": "A page of candidates plus the honesty flags for the whole read.\n``count`` is this page's length; ``total`` is the unpaged total.",
+        "description": "A page of candidates plus the honesty flags for the whole read.\n\nThe bounded-read keys describe ``items``: a keyset walk over BOTH arms'\nimmutable ``(created_at, id)``, oldest first; ``next_cursor`` is passed\nback as ``cursor``. ``bound_kind`` is ``exact`` (``total`` from this\npage's start) unless the coord work-unit walk hit its page cap\n(``work_unit_population_state: \"truncated\"``) \u2014 then the population is a\nlower bound and the page reads ``at_least`` (more rows were read than\nshown) or ``unknown`` (``truncated: null``: everything read is shown, and\nnothing proves the population whole).",
         "properties": {
+          "available": {
+            "description": "`false` ONLY when the store is unprovisioned: an empty page with\n`available: false` is UNKNOWN, not \"nothing matched\".",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "bound_kind": {
+            "$ref": "#/components/schemas/BoundKind",
+            "description": "Which kind of bound produced `total` / `truncated`."
+          },
           "coord_available": {
             "default": true,
             "title": "Coord Available",
@@ -36593,8 +37013,32 @@
             "title": "Corpus Health Unavailable Reason"
           },
           "count": {
+            "description": "Rows in this page (the legacy spelling of `shown`).",
             "title": "Count",
             "type": "integer"
+          },
+          "enumerate_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a relevance-RANKED read, which can never hand out a cursor: the\ndoor that enumerates the same corpus by an immutable sort key (plan\n`2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so\na `truncated: true, next_cursor: null` answer still says how to reach\nthe rest. `null` on a keyset walk, whose `next_cursor` is the way on.",
+            "title": "Enumerate Via"
+          },
+          "filter_narrowed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterNarrowing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A FILTER the surface narrowed before the read ran, or `null`."
           },
           "items": {
             "items": {
@@ -36604,6 +37048,7 @@
             "type": "array"
           },
           "limit": {
+            "description": "The cap actually applied to this page.",
             "title": "Limit",
             "type": "integer"
           },
@@ -36625,9 +37070,17 @@
             "title": "Model Tiers",
             "type": "object"
           },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The opaque token for the next page \u2014 pass it back verbatim as\n`cursor`. `null` iff `truncated` is not `true`, OR the read is a\nRANKING that cannot be paged \u2014 then `truncated` may be `true` with\n`next_cursor: null`, and `enumerate_via` names the door that walks the\ncorpus by an immutable key.",
+            "title": "Next Cursor"
           },
           "open_followup_total": {
             "default": 0,
@@ -36642,14 +37095,39 @@
             "type": "array"
           },
           "ordering": {
-            "const": "oldest_vetted_first",
-            "default": "oldest_vetted_first",
+            "const": "oldest_captured_first",
+            "default": "oldest_captured_first",
             "title": "Ordering",
             "type": "string"
           },
-          "total": {
-            "title": "Total",
+          "shown": {
+            "description": "Rows in this page.",
+            "title": "Shown",
             "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact match count from this page's start position \u2014 a number only\nwhen `bound_kind` is `exact`, else `null`.",
+            "title": "Total"
+          },
+          "truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether matching rows exist beyond this page; `null` when\n`bound_kind` is `unknown`.",
+            "title": "Truncated"
           },
           "work_unit_population_reason": {
             "anyOf": [
@@ -36666,6 +37144,7 @@
             "default": "included",
             "enum": [
               "included",
+              "truncated",
               "unavailable"
             ],
             "title": "Work Unit Population State",
@@ -36673,11 +37152,23 @@
           }
         },
         "required": [
-          "items",
+          "available",
+          "bound_kind",
           "count",
-          "total",
-          "offset",
+          "enumerate_via",
+          "filter_narrowed",
           "limit",
+          "next_cursor",
+          "shown",
+          "total",
+          "truncated",
+          "items",
+          "ordering",
+          "coord_available",
+          "work_unit_population_state",
+          "work_unit_population_reason",
+          "open_followups",
+          "open_followup_total",
           "corpus_health",
           "corpus_health_unavailable_reason",
           "model_tiers",
@@ -40410,8 +40901,13 @@
         "type": "object"
       },
       "ReconciliationResponse": {
-        "description": "A page of reconciled plan stems plus the honesty flags for the read.",
+        "description": "A page of reconciled plan stems plus the honesty flags for the read.\n\nThe bounded-read keys describe ``items``: a keyset walk over each stem's\nimmutable position (see ``ordering``); ``total`` counts the stems from\nthis page's start, and ``next_cursor`` is passed back as ``cursor``. The\nWHOLE population's size is ``facets.denominator`` \u2014 the denominator the\nfacets are over, not a page count. When ``q`` is set both describe the\nFILTERED population.",
         "properties": {
+          "available": {
+            "description": "`false` ONLY when the store is unprovisioned: an empty page with\n`available: false` is UNKNOWN, not \"nothing matched\".",
+            "title": "Available",
+            "type": "boolean"
+          },
           "axis_c_computed_count": {
             "title": "Axis C Computed Count",
             "type": "integer"
@@ -40422,10 +40918,19 @@
             "title": "Axis C Scope",
             "type": "string"
           },
+          "bound_kind": {
+            "$ref": "#/components/schemas/BoundKind",
+            "description": "Which kind of bound produced `total` / `truncated`."
+          },
           "coord_available": {
             "default": true,
             "title": "Coord Available",
             "type": "boolean"
+          },
+          "count": {
+            "description": "Rows in this page (the legacy spelling of `shown`).",
+            "title": "Count",
+            "type": "integer"
           },
           "document_axis_complete": {
             "title": "Document Axis Complete",
@@ -40445,8 +40950,31 @@
             "title": "Document Present Count",
             "type": "integer"
           },
+          "enumerate_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a relevance-RANKED read, which can never hand out a cursor: the\ndoor that enumerates the same corpus by an immutable sort key (plan\n`2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so\na `truncated: true, next_cursor: null` answer still says how to reach\nthe rest. `null` on a keyset walk, whose `next_cursor` is the way on.",
+            "title": "Enumerate Via"
+          },
           "facets": {
             "$ref": "#/components/schemas/ReconciliationFacets"
+          },
+          "filter_narrowed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterNarrowing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A FILTER the surface narrowed before the read ran, or `null`."
           },
           "items": {
             "items": {
@@ -40456,16 +40984,25 @@
             "type": "array"
           },
           "limit": {
+            "description": "The cap actually applied to this page.",
             "title": "Limit",
             "type": "integer"
           },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The opaque token for the next page \u2014 pass it back verbatim as\n`cursor`. `null` iff `truncated` is not `true`, OR the read is a\nRANKING that cannot be paged \u2014 then `truncated` may be `true` with\n`next_cursor: null`, and `enumerate_via` names the door that walks the\ncorpus by an immutable key.",
+            "title": "Next Cursor"
           },
           "ordering": {
-            "const": "slug_asc",
-            "default": "slug_asc",
+            "const": "stem_date_asc",
+            "default": "stem_date_asc",
             "title": "Ordering",
             "type": "string"
           },
@@ -40480,9 +41017,34 @@
             ],
             "title": "Q"
           },
-          "total": {
-            "title": "Total",
+          "shown": {
+            "description": "Rows in this page.",
+            "title": "Shown",
             "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact match count from this page's start position \u2014 a number only\nwhen `bound_kind` is `exact`, else `null`.",
+            "title": "Total"
+          },
+          "truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether matching rows exist beyond this page; `null` when\n`bound_kind` is `unknown`.",
+            "title": "Truncated"
           },
           "work_unit_population_reason": {
             "anyOf": [
@@ -40499,6 +41061,7 @@
             "default": "included",
             "enum": [
               "included",
+              "truncated",
               "unavailable"
             ],
             "title": "Work Unit Population State",
@@ -40506,13 +41069,27 @@
           }
         },
         "required": [
-          "items",
-          "total",
-          "offset",
+          "available",
+          "bound_kind",
+          "count",
+          "enumerate_via",
+          "filter_narrowed",
           "limit",
+          "next_cursor",
+          "shown",
+          "total",
+          "truncated",
+          "items",
+          "q",
+          "ordering",
+          "document_axis_source",
           "document_axis_complete",
           "document_present_count",
           "document_missing_count",
+          "coord_available",
+          "work_unit_population_state",
+          "work_unit_population_reason",
+          "axis_c_scope",
           "axis_c_computed_count",
           "facets"
         ],
@@ -60996,14 +61573,47 @@
         "type": "object"
       },
       "WorkArtifactListResponse": {
-        "description": "A page of list rows, plus the health of the corpus it was drawn from.\n\n``corpus_health`` is reported on EVERY page, filtered or not, so an\nempty ``items`` can always be read against ``plan_count`` \u2014 a zero on a\nfrozen corpus and a zero on a real absence are different findings.",
+        "description": "A page of list rows, plus the health of the corpus it was drawn from.\n\nA keyset walk, newest-CAPTURED first (``created_at DESC, id DESC`` \u2014 the\nimmutable capture time, never ``updated_at``, which every upsert moves).\nThe bounded-read keys describe ``items``: ``total`` is exact from this\npage's start, ``truncated`` is ``total > shown``, and ``next_cursor`` is\npassed back as ``cursor``. That holds for ``?q=`` searches too \u2014 a search\npage that filled up says so, and a content search with ``truncated: true``\nis not evidence of absence.\n\n``corpus_health`` is reported on EVERY page, filtered or not, so an\nempty ``items`` can always be read against ``plan_count`` \u2014 a zero on a\nfrozen corpus and a zero on a real absence are different findings.",
         "properties": {
+          "available": {
+            "description": "`false` ONLY when the store is unprovisioned: an empty page with\n`available: false` is UNKNOWN, not \"nothing matched\".",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "bound_kind": {
+            "$ref": "#/components/schemas/BoundKind",
+            "description": "Which kind of bound produced `total` / `truncated`."
+          },
           "corpus_health": {
             "$ref": "#/components/schemas/CorpusHealth"
           },
           "count": {
+            "description": "Rows in this page (the legacy spelling of `shown`).",
             "title": "Count",
             "type": "integer"
+          },
+          "enumerate_via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a relevance-RANKED read, which can never hand out a cursor: the\ndoor that enumerates the same corpus by an immutable sort key (plan\n`2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` D8), so\na `truncated: true, next_cursor: null` answer still says how to reach\nthe rest. `null` on a keyset walk, whose `next_cursor` is the way on.",
+            "title": "Enumerate Via"
+          },
+          "filter_narrowed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilterNarrowing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A FILTER the surface narrowed before the read ran, or `null`."
           },
           "items": {
             "items": {
@@ -61013,6 +61623,7 @@
             "type": "array"
           },
           "limit": {
+            "description": "The cap actually applied to this page.",
             "title": "Limit",
             "type": "integer"
           },
@@ -61034,21 +61645,67 @@
             "title": "Model Tiers",
             "type": "object"
           },
-          "offset": {
-            "title": "Offset",
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The opaque token for the next page \u2014 pass it back verbatim as\n`cursor`. `null` iff `truncated` is not `true`, OR the read is a\nRANKING that cannot be paged \u2014 then `truncated` may be `true` with\n`next_cursor: null`, and `enumerate_via` names the door that walks the\ncorpus by an immutable key.",
+            "title": "Next Cursor"
+          },
+          "ordering": {
+            "const": "newest_captured_first",
+            "default": "newest_captured_first",
+            "title": "Ordering",
+            "type": "string"
+          },
+          "shown": {
+            "description": "Rows in this page.",
+            "title": "Shown",
             "type": "integer"
           },
           "total": {
-            "title": "Total",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact match count from this page's start position \u2014 a number only\nwhen `bound_kind` is `exact`, else `null`.",
+            "title": "Total"
+          },
+          "truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether matching rows exist beyond this page; `null` when\n`bound_kind` is `unknown`.",
+            "title": "Truncated"
           }
         },
         "required": [
-          "items",
+          "available",
+          "bound_kind",
           "count",
-          "total",
-          "offset",
+          "enumerate_via",
+          "filter_narrowed",
           "limit",
+          "next_cursor",
+          "shown",
+          "total",
+          "truncated",
+          "items",
+          "ordering",
           "corpus_health",
           "model_tiers",
           "model_selectors",
@@ -77914,6 +78571,33 @@
         ]
       }
     },
+    "/api/v1/devices/credential-overview": {
+      "get": {
+        "description": "The caller's devices, in the caller's tenants, with web's credential\nfacts: machine key (presence / expiry / revocation), the device-scoped\ndeny, and any operator authorization still awaiting the runner.\n\nSame auth and device set as ``GET /api/v1/devices`` (coord\n``/coord/devices/by-user``), narrowed to devices whose ``tenant_id`` is\none of the caller's coord tenant memberships. The deny is read from this\nbackend's own database \u2014 web authors and writes the column, so its value\nis authoritative here \u2014 never defaulted from a coord JSON row that might\nomit it.\nCredential POSTURE is coord's ``GET /coord/status`` and is joined on\n``device_id`` by the client, not served here.",
+        "operationId": "api_v1_devices_credential_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredentialOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Credential Overview",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/v1/devices/me": {
       "get": {
         "description": "Resolve the device principal for a coord-issued device-token JWT.\n\nThe relay's ``_auth.ts`` forwards the device-token JWT as a bearer to\nthis route to resolve the caller into a ``(device_id, user_id,\ntenant_id)`` principal. This is the disjoint device path: the\nCognito-only ``/api/v1/auth/users/me`` rejects a device-JWT.\n\nDeclared before ``GET /{device_id}`` so ``me`` is never captured as a\ndevice-id path parameter.",
@@ -78037,7 +78721,7 @@
     },
     "/api/v1/devices/pair-codes/{code}/redeem": {
       "post": {
-        "description": "Redeem a single-use pair code for a device JWT.\n\n**UNAUTHENTICATED ON PURPOSE.** This endpoint deliberately requires\nNO operator JWT \u2014 the pair code IS the credential. The runner has\nno operator JWT yet (that's why it needs to pair), so any\nauth-gated alternative would defeat the entire flow.\n\nThe resulting device JWT is tenant-scoped to the **code's**\nmint-time tenant, NOT to anything the runner asserts in the request\nbody. The runner's ``device_id`` is recorded but used only as the\nnew device's stable identity \u2014 the runner cannot escalate to a\ndifferent tenant by claiming a different ``device_id``.\n\nThe call to coord's ``pair-cli`` rides the web service token +\n``X-Qontinui-User-Id = issued_by_user_id`` (coord's pairing arm B).\nCoord verifies that credential and then REFUSES the redeem (403\n``tenant_membership_required`` \u2192 502 here) when the code's issuer no\nlonger belongs to the code's tenant, matched by Cognito subject \u2014 a\ncode outlives its issuer's membership only as a row, never as a\ncredential.\n\nReturns:\n\n* **200** + :class:`PairCodeRedeemOut` on success.\n* **404** if the code doesn't exist (or never did).\n* **409** if the code has already been redeemed (single-use).\n* **410** if the code has expired.\n* **502** if the downstream coord ``pair-cli`` call fails \u2014 including\n  coord's own refusal when the issuer is no longer a member of the\n  code's tenant.\n* **503** + ``Retry-After`` if coord is temporarily unavailable\n  (e.g. mid-deploy) after the proxy's connect-failure retries.\n* **504** if coord did not respond in time (no retry \u2014 the request\n  may have been processed).",
+        "description": "Redeem a single-use pair code for a device JWT.\n\n**UNAUTHENTICATED ON PURPOSE.** This endpoint deliberately requires\nNO operator JWT \u2014 the pair code IS the credential. The runner has\nno operator JWT yet (that's why it needs to pair), so any\nauth-gated alternative would defeat the entire flow.\n\nThe resulting device JWT is tenant-scoped to the **code's**\nmint-time tenant, NOT to anything the runner asserts in the request\nbody. The runner's ``device_id`` is recorded but used only as the\nnew device's stable identity \u2014 the runner cannot escalate to a\ndifferent tenant by claiming a different ``device_id``.\n\nThe call to coord's ``pair-cli`` rides the web service token +\n``X-Qontinui-User-Id = issued_by_user_id`` (coord's pairing arm B).\nCoord verifies that credential and then REFUSES the redeem (403\n``tenant_membership_required`` \u2192 502 here) when the code's issuer no\nlonger belongs to the code's tenant, matched by Cognito subject \u2014 a\ncode outlives its issuer's membership only as a row, never as a\ncredential.\n\nReturns:\n\n* **200** + :class:`PairCodeRedeemOut` on success.\n* **404** for a device-bound code (operator ``authorize-redeem``) that\n  its device has not yet collected through ``/pending-redeem``.\n* **403** ``pair_code_bound_to_other_device`` if a collected bound code\n  is presented for a different device; **403**\n  ``device_credential_revoked`` while the device's credentials are\n  revoked (a failed read of that state \u2192 **503**). Neither consumes it.\n* **404** if the code doesn't exist (or never did).\n* **409** if the code has already been redeemed (single-use).\n* **410** if the code has expired.\n* **502** if the downstream coord ``pair-cli`` call fails \u2014 including\n  coord's own refusal when the issuer is no longer a member of the\n  code's tenant.\n* **503** + ``Retry-After`` if coord is temporarily unavailable\n  (e.g. mid-deploy) after the proxy's connect-failure retries.\n* **504** if coord did not respond in time (no retry \u2014 the request\n  may have been processed).",
         "operationId": "api_v1_devices_pair_codes_code_redeem_post",
         "parameters": [
           {
@@ -78427,6 +79111,55 @@
         ]
       }
     },
+    "/api/v1/devices/{device_id}/authorize-redeem": {
+      "post": {
+        "description": "Authorize ONE device to re-pair itself, headless.\n\n**Operator SSO only.** ``get_current_active_user_async`` verifies a\nCognito token (a coord device JWT, or any other bearer, is a 401), and\n:func:`_operator_tenant_device` requires a linked coord operator whose\ntenant holds the device. The target is the PATH ``device_id``; the route\ndeclares no body, so nothing a caller sends can redirect it.\n\nEffect, one transaction:\n\n* mints an ordinary pair code through ``pair_code_crud`` BOUND to this\n  device, in the device's tenant, with\n  :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min \u2014 the\n  runner polls every 300 s), and expires any earlier pending code for the\n  device (the newest authorization supersedes);\n* clears ``coord.devices.credential_revoked_at`` \u2014 re-arming is this\n  explicit act, never a side effect;\n* deletes a REVOKED machine-key row so the runner's ``/self-mint`` can\n  enrol a fresh key (a usable key is left alone).\n\n202 ``{device_id, expires_at}`` \u2014 the code itself is NEVER returned; only\nthe device collects it, through ``/pending-redeem``.",
+        "operationId": "api_v1_devices_device_id_authorize_redeem_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeRedeemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Authorize Redeem",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/v1/devices/{device_id}/dispatch": {
       "post": {
         "description": "Dispatch a workflow to a connected device.\n\nSends a typed ``dispatch`` message over the device's WebSocket if it\nis currently connected (``ws_session_id IS NOT NULL``); 503 otherwise.\nWS is the sole dispatch channel.\n\nThe ownership read is sourced over coord's HTTP boundary\n(``GET /coord/devices/:id/owned``) \u2014 Phase 3 of\n``2026-05-30-web-coord-schema-boundary-decoupling.md`` \u2014 replacing the\nformer ``device_crud.get_device`` + ``_ensure_owned``. The dispatch\nitself still goes over the local WS manager.",
@@ -78488,7 +79221,7 @@
     },
     "/api/v1/devices/{device_id}/machine-credential/exchange": {
       "post": {
-        "description": "Exchange a valid ``dmk_`` for a fresh device JWT \u2014 no user session.\n\nAuthenticated by the ``X-Device-Machine-Key`` header (the\n:func:`get_authenticated_device_credential` dep already rejected an\nunknown / revoked / expired key). The credential's ``device_id`` MUST\nmatch the path (anti-forgery \u2014 a key for device A cannot mint a JWT for\ndevice B => 403). On success ``last_used_at`` is bumped and the TTL slid\nforward (sliding session), then web calls coord's service-mint with its\ntrusted service token; coord resolves the device's owner/tenant itself.\n\n503 when the coord service bridge is disabled (``COORD_ADMIN_SECRET``\nunset). A coord 4xx propagates as the matching client error.",
+        "description": "Exchange a valid ``dmk_`` for a fresh device JWT \u2014 no user session.\n\nAuthenticated by the ``X-Device-Machine-Key`` header (the\n:func:`get_authenticated_device_credential` dep already rejected an\nunknown / revoked / expired key). The credential's ``device_id`` MUST\nmatch the path (anti-forgery \u2014 a key for device A cannot mint a JWT for\ndevice B => 403). On success ``last_used_at`` is bumped and the TTL slid\nforward (sliding session), then web calls coord's service-mint with its\ntrusted service token; coord resolves the device's owner/tenant itself.\n\n403 ``device_credential_revoked`` while an operator's device-scoped revoke\nstands (a failed read \u2192 503). 503 when the coord service bridge is\ndisabled (``COORD_ADMIN_SECRET`` unset). A coord 4xx propagates as the\nmatching client error.",
         "operationId": "api_v1_devices_device_id_machine_credential_exchange_post",
         "parameters": [
           {
@@ -78541,7 +79274,7 @@
     },
     "/api/v1/devices/{device_id}/machine-credential/mint": {
       "post": {
-        "description": "Mint (or rotate) the calling user's device machine key for a device.\n\n**User-bearer authenticated.** The caller MUST own ``device_id`` \u2014 this is\nverified over coord's ownership boundary (``GET /coord/devices/:id/owned``,\nthe same check the single-device reads use); a non-owner gets 403. The\ndevice's ``tenant_id`` is resolved server-side from the owned coord row\n(never client-asserted). Returns the plaintext ``dmk_`` ONCE.",
+        "description": "Mint (or rotate) the calling user's device machine key for a device.\n\n**User-bearer authenticated.** The caller MUST own ``device_id`` \u2014 this is\nverified over coord's ownership boundary (``GET /coord/devices/:id/owned``,\nthe same check the single-device reads use); a non-owner gets 403. The\ndevice's ``tenant_id`` is resolved server-side from the owned coord row\n(never client-asserted). Returns the plaintext ``dmk_`` ONCE.\n\nRefused (403 ``device_credential_revoked``) while an operator's revoke\nstands \u2014 this mint rotates over a revoked key, so without the check it\nwould silently undo the revocation.",
         "operationId": "api_v1_devices_device_id_machine_credential_mint_post",
         "parameters": [
           {
@@ -78588,9 +79321,58 @@
         ]
       }
     },
+    "/api/v1/devices/{device_id}/machine-credential/revoke": {
+      "post": {
+        "description": "Revoke a device's credentials, fail-closed. Operator SSO, tenant-scoped\n(same gate as :func:`authorize_redeem`).\n\nOne transaction: revokes the machine key (``dmk_crud.revoke`` \u2014 hash\ncleared, so ``/exchange`` can never match it), sets\n``coord.devices.credential_revoked_at`` (every web door that issues this\ndevice a credential, and coord's refresh/service-mint, refuse while it is\nset), and expires any pending authorization. Only a later\n``authorize-redeem`` clears it. 404 ``device_not_found`` when there is no\n``coord.devices`` row to deny \u2014 nothing is committed then.",
+        "operationId": "api_v1_devices_device_id_machine_credential_revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredentialRevokeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Revoke Device Credentials",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/v1/devices/{device_id}/machine-credential/self-mint": {
       "post": {
-        "description": "Mint (or rotate) a device's OWN machine key, authenticated by its live\ndevice JWT \u2014 no user session.\n\nPlan ``2026-09-24-runner-coord-credential-stranded-after-outage`` Phase 3.\nThe ``dmk_`` is the only credential that re-derives a device JWT after the\nJWT has expired (``/exchange``), but until now it was issued only by\npairing and by the user-bearer :func:`mint_device_machine_credential`. A\nrunner paired before the auto-mint, or one that lost its key, therefore\nhad no way to acquire one unattended, and an outage longer than its\nJWT's remaining life stranded it until an operator re-paired. The runner\ncalls this while it still holds a valid device JWT and its stored key is\nabsent or near expiry.\n\n**Authentication** (:func:`~app.api.deps.get_paired_device`): only an\nUNEXPIRED coord-signed device JWT with ``sub_type=device`` and\n``mint_provenance=paired``. No bearer / expired / invalid \u2192 401; an agent\ncredential (including the anonymous bootstrap mint), a capability grant,\nor a ``bootstrap``/``unknown`` provenance \u2192 403.\n\n**Authorization**, all server-side, nothing read from a body:\n\n* the token's ``device_id`` claim MUST equal the path \u2192 else 403\n  ``device_mismatch``. A device mints only its own key.\n* coord must know the device: ``GET /coord/devices/{id}/state``,\n  forwarding the caller's verified device JWT (5 s budget). A 404 \u2192 403\n  ``device_not_owned``; a row naming a different ``device_id`` \u2192 403\n  ``device_mismatch``; coord refusing the forwarded token (401/403 or\n  any other non-404 4xx except 429) \u2192 403 ``coord_refused_device_token``;\n  coord unreachable, timed out, any other transport failure, a 5xx, or a\n  429 rate limit \u2192 **503** ``coord_device_lookup_unavailable``; any\n  status below 400 other than 200, a 200 that is not a JSON object, or a\n  row whose ``tenant_id`` is missing, null or unparseable \u2192 **502**\n  ``coord_device_state_malformed``. In every\n  one of these nothing is minted \u2014 an unanswered or unreadable lookup is\n  UNKNOWN, never a licence to mint.\n* an existing key that an operator REVOKED is not re-minted \u2192 403\n  ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``\n  on rotation, so without this a device could undo its own revocation;\n  re-enrolment after a revocation stays with the owner's user-bearer mint.\n* an existing unrevoked key still usable for more than\n  :data:`SELF_MINT_RENEWAL_WINDOW` (7 days) is NOT rotated \u2192 409\n  ``machine_key_still_usable``.\n\nBoth key-state checks run inside ``dmk_crud.mint``, after its\n``SELECT ... FOR UPDATE`` of the row, so a concurrent revoke cannot be\nundone and two concurrent self-mints cannot both rotate (the second sees\nthe first's fresh key and gets the 409).\n\n**Owner**: the verified device JWT's ``user_id`` claim. The read\nboundary forbids web reading ``coord.devices`` directly, and no coord\nread route that accepts a device JWT returns the owner. How coord sets\nthat claim (qontinui-coord ``origin/main`` ``9774f4e43``):\n\n* pairing \u2014 ``post_pair_complete`` and ``post_pair_cli``\n  (``routes_phase3.rs:2431``/``:2461`` and ``:2585``/``:2615``) write the\n  paired user to ``coord.devices.user_id`` via ``record_pairing``\n  (``:2254``, UPSERT ``user_id = $4``) and mint the JWT for that SAME\n  user in the same request;\n* ``service-mint`` reads ``user_id`` from the ``coord.devices`` row\n  (``tokens.rs:623``, minted at ``:670``);\n* refresh does NOT re-read it: ``authorize_device_refresh`` copies the\n  presented claim (``tokens.rs:222-224``, minted at ``:455-458``) and\n  checks only ``capability_user_paired`` (``:383``) and the tenant\n  binding.\n\nSo the claim equals ``coord.devices.user_id`` at pairing, but after the\ndevice is RE-PAIRED to another user, the previous user's token keeps its\n``user_id`` for as long as it keeps being refreshed \u2014 not merely until it\nexpires. Such a token can enrol (within the 7-day rule below) a key whose\n``owner_user_id`` names the previous user. That field is a label: the key\nis still bound to this device only, and web's ``/exchange`` sends coord\n``service-mint`` only the path ``device_id`` (the ``X-Qontinui-User-Id``\nheader it also sends is never read: ``post_service_mint_device`` takes no\nheaders, ``tokens.rs:586-589``), and service-mint\nresolves both owner and tenant from ``coord.devices`` (``tokens.rs:623``\n\u2192 ``:670``). The JWT a key yields is therefore always the CURRENT\nowner's; the stale label grants nothing.\n\n**Tenant**: the ``tenant_id`` of coord's ``/state`` row \u2014 the same\n``coord.devices.tenant_id`` column the user-bearer route reads through\n``/owned`` (which accepts only an operator bearer). The token's own\n``tenant_id`` claim is deliberately NOT used: on a multi-tenant device it\nnames whichever tenant slot the token was minted for. The stored tenant\nis a label on the key; ``/exchange`` does not read it.\n\n**When it mints**: only when the device has no key, or its key is expired\nor within 7 days of expiry. The new key gets the normal\n``DEVICE_MACHINE_KEY_TTL_DAYS`` expiry and replaces the old one, whose\nplaintext stops working. Replacing a lost-but-still-valid key is the\nowner's job, through the user-bearer ``/mint``.\n\n**The bound on what this adds.** The caller already holds an unexpired\ndevice JWT for this device, which can self-refresh at coord indefinitely\nwhile it stays unexpired. The ``dmk_`` it receives is bound to the same\ndevice, exchanges only for a device JWT for that device (``/exchange``\n403s any other), is owner-attributed, expires, and cannot be re-minted\nhere once revoked. So a leaked live device JWT (or a JWT that a leaked\n``dmk_`` derived via ``/exchange``) gains exactly this: it can obtain a\n``dmk_`` for this device ONLY while the device has no key usable for more\nthan 7 days. It cannot rotate, and so cannot silently invalidate, the\nreal runner's usable recovery key. Inside the final 7 days, or with no\nkey at all, it can win the renewal race; the real runner then finds its\nown key refused at ``/exchange``.\n\nResponse: the same :class:`DeviceMachineCredentialMintResponse` as\n``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.",
+        "description": "Mint (or rotate) a device's OWN machine key, authenticated by its live\ndevice JWT \u2014 no user session.\n\nPlan ``2026-09-24-runner-coord-credential-stranded-after-outage`` Phase 3.\nThe ``dmk_`` is the only credential that re-derives a device JWT after the\nJWT has expired (``/exchange``), but until now it was issued only by\npairing and by the user-bearer :func:`mint_device_machine_credential`. A\nrunner paired before the auto-mint, or one that lost its key, therefore\nhad no way to acquire one unattended, and an outage longer than its\nJWT's remaining life stranded it until an operator re-paired. The runner\ncalls this while it still holds a valid device JWT and its stored key is\nabsent or near expiry.\n\n**Authentication** (:func:`~app.api.deps.get_paired_device`): only an\nUNEXPIRED coord-signed device JWT with ``sub_type=device`` and\n``mint_provenance=paired``. No bearer / expired / invalid \u2192 401; an agent\ncredential (including the anonymous bootstrap mint), a capability grant,\nor a ``bootstrap``/``unknown`` provenance \u2192 403.\n\n**Authorization**, all server-side, nothing read from a body:\n\n* the token's ``device_id`` claim MUST equal the path \u2192 else 403\n  ``device_mismatch``. A device mints only its own key.\n* coord must know the device: ``GET /coord/devices/{id}/state``,\n  forwarding the caller's verified device JWT (5 s budget). A 404 \u2192 403\n  ``device_not_owned``; a row naming a different ``device_id`` \u2192 403\n  ``device_mismatch``; coord refusing the forwarded token (401/403 or\n  any other non-404 4xx except 429) \u2192 403 ``coord_refused_device_token``;\n  coord unreachable, timed out, any other transport failure, a 5xx, or a\n  429 rate limit \u2192 **503** ``coord_device_lookup_unavailable``; any\n  status below 400 other than 200, a 200 that is not a JSON object, or a\n  row whose ``tenant_id`` is missing, null or unparseable \u2192 **502**\n  ``coord_device_state_malformed``. In every\n  one of these nothing is minted \u2014 an unanswered or unreadable lookup is\n  UNKNOWN, never a licence to mint.\n* a device whose credentials an operator revoked\n  (``coord.devices.credential_revoked_at``) \u2192 403\n  ``device_credential_revoked`` (a failed read \u2192 503).\n* an existing key that an operator REVOKED is not re-minted \u2192 403\n  ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``\n  on rotation, so without this a device could undo its own revocation;\n  re-enrolment after a revocation stays with the owner's user-bearer mint.\n* an existing unrevoked key still usable for more than\n  :data:`SELF_MINT_RENEWAL_WINDOW` (7 days) is NOT rotated \u2192 409\n  ``machine_key_still_usable``.\n\nBoth key-state checks run inside ``dmk_crud.mint``, after its\n``SELECT ... FOR UPDATE`` of the row, so a concurrent revoke cannot be\nundone and two concurrent self-mints cannot both rotate (the second sees\nthe first's fresh key and gets the 409).\n\n**Owner**: the verified device JWT's ``user_id`` claim. The read\nboundary forbids web reading ``coord.devices`` directly, and no coord\nread route that accepts a device JWT returns the owner. How coord sets\nthat claim (qontinui-coord ``origin/main`` ``9774f4e43``):\n\n* pairing \u2014 ``post_pair_complete`` and ``post_pair_cli``\n  (``routes_phase3.rs:2431``/``:2461`` and ``:2585``/``:2615``) write the\n  paired user to ``coord.devices.user_id`` via ``record_pairing``\n  (``:2254``, UPSERT ``user_id = $4``) and mint the JWT for that SAME\n  user in the same request;\n* ``service-mint`` reads ``user_id`` from the ``coord.devices`` row\n  (``tokens.rs:623``, minted at ``:670``);\n* refresh does NOT re-read it: ``authorize_device_refresh`` copies the\n  presented claim (``tokens.rs:222-224``, minted at ``:455-458``) and\n  checks only ``capability_user_paired`` (``:383``) and the tenant\n  binding.\n\nSo the claim equals ``coord.devices.user_id`` at pairing, but after the\ndevice is RE-PAIRED to another user, the previous user's token keeps its\n``user_id`` for as long as it keeps being refreshed \u2014 not merely until it\nexpires. Such a token can enrol (within the 7-day rule below) a key whose\n``owner_user_id`` names the previous user. That field is a label: the key\nis still bound to this device only, and web's ``/exchange`` sends coord\n``service-mint`` only the path ``device_id`` (the ``X-Qontinui-User-Id``\nheader it also sends is never read: ``post_service_mint_device`` takes no\nheaders, ``tokens.rs:586-589``), and service-mint\nresolves both owner and tenant from ``coord.devices`` (``tokens.rs:623``\n\u2192 ``:670``). The JWT a key yields is therefore always the CURRENT\nowner's; the stale label grants nothing.\n\n**Tenant**: the ``tenant_id`` of coord's ``/state`` row \u2014 the same\n``coord.devices.tenant_id`` column the user-bearer route reads through\n``/owned`` (which accepts only an operator bearer). The token's own\n``tenant_id`` claim is deliberately NOT used: on a multi-tenant device it\nnames whichever tenant slot the token was minted for. The stored tenant\nis a label on the key; ``/exchange`` does not read it.\n\n**When it mints**: only when the device has no key, or its key is expired\nor within 7 days of expiry. The new key gets the normal\n``DEVICE_MACHINE_KEY_TTL_DAYS`` expiry and replaces the old one, whose\nplaintext stops working. Replacing a lost-but-still-valid key is the\nowner's job, through the user-bearer ``/mint``.\n\n**The bound on what this adds.** The caller already holds an unexpired\ndevice JWT for this device, which can self-refresh at coord indefinitely\nwhile it stays unexpired. The ``dmk_`` it receives is bound to the same\ndevice, exchanges only for a device JWT for that device (``/exchange``\n403s any other), is owner-attributed, expires, and cannot be re-minted\nhere once revoked. So a leaked live device JWT (or a JWT that a leaked\n``dmk_`` derived via ``/exchange``) gains exactly this: it can obtain a\n``dmk_`` for this device ONLY while the device has no key usable for more\nthan 7 days. It cannot rotate, and so cannot silently invalidate, the\nreal runner's usable recovery key. Inside the final 7 days, or with no\nkey at all, it can win the renewal race; the real runner then finds its\nown key refused at ``/exchange``.\n\nResponse: the same :class:`DeviceMachineCredentialMintResponse` as\n``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.",
         "operationId": "api_v1_devices_device_id_machine_credential_self_mint_post",
         "parameters": [
           {
@@ -78632,6 +79414,58 @@
           }
         ],
         "summary": "Self Mint Device Machine Credential",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/v1/devices/{device_id}/pending-redeem": {
+      "get": {
+        "description": "Hand a credential-dark runner the pair code an operator authorized\nfor it \u2014 AT MOST ONCE.\n\nAuthenticated by the device's own coord-signed device JWT with expiry\nTOLERATED up to 30 days (:func:`_verify_poll_token`): a third party that\nknows only a ``device_id`` cannot forge one, and a stolen expired token\nyields a code only after an operator authorized exactly this device. A\ndevice whose credentials are revoked is refused (403\n``device_credential_revoked``; a failed read is a 503, never a pass).\n\n200 ``{code, expires_at}`` exactly once per authorization (the code is\nstamped delivered); 204 when nothing is pending. The runner then redeems\nthe code through the ordinary ``/pair-codes/{code}/redeem``.",
+        "operationId": "api_v1_devices_device_id_pending_redeem_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingRedeemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "204": {
+            "description": "Nothing is pending for this device."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pending Redeem",
         "tags": [
           "devices"
         ]
@@ -84445,7 +85279,7 @@
     },
     "/api/v1/fleet/test-targets/{device_id}/{app_id}": {
       "delete": {
-        "description": "Remove a test-host designation (idempotent \u2014 204 even if absent).",
+        "description": "Remove a test-host designation through coord.\n\ncoord's DELETE is scoped to the caller's EFFECTIVE tenant and answers\n``200 {\"deleted\": false}`` for a row stamped with any other tenant \u2014 which\nis NOT a removal. So ``deleted: false`` is never taken as success on its\nown: the row is read back. Absent means the designation the operator asked\nto remove is gone (204, idempotent as before). Still present means it\nlives in another project \u2014 409 ``designation_in_other_project`` naming\nit, since reporting success there would leave the device's runner serving\na designation the operator believes is removed \u2014 or, when it is still in\nthe selected project (a concurrent re-designation), 409\n``designation_not_removed``.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_delete",
         "parameters": [
           {
@@ -84494,7 +85328,7 @@
         ]
       },
       "put": {
-        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nWrites ``coord.test_targets`` stamped with the caller's effective coord\ntenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent \u2014 re-designating updates ``auto_fresh``. The device\nmust be owned by the caller and the app must be registered.",
+        "description": "Designate ``device_id`` as a test host for ``app_id`` (upsert).\n\nThe write is coord's: ``POST /coord/trees/test-targets/upsert`` with the\ncaller's bearer and ``X-Qontinui-Active-Tenant`` forwarded, so the row is\nstamped with the caller's EFFECTIVE tenant and refused unless the device is\nbound to it. Idempotent \u2014 re-designating updates ``auto_fresh``.\n\nWeb checks what coord does not, BEFORE calling it: the device must be owned\nby the caller (404), the app must be registered (404), and an existing row\nfor the pair must not be stamped with another project (409\n``designation_in_other_project``) \u2014 coord's upsert would update that row\nin place and keep its old stamp. A device the effective tenant has no\nbinding for is a 409 ``device_not_bound_to_project`` naming that project.\nThe response is the row as it now reads, joined with device + freshness.",
         "operationId": "api_v1_fleet_test_targets_device_id_app_id_put",
         "parameters": [
           {
@@ -95407,6 +96241,75 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/dispatch-role": {
+      "put": {
+        "description": "Set one machine's dispatch role (operator-only).\n\nAffects NEW dispatch only: sessions and CI jobs already placed on the\nmachine run to their end (\u00a7D9). The GitHub-label (Phase 4) and CI-node\nswitch (Phase 5) effects are coord's and web's later phases \u2014 nothing on\nthis path claims them.",
+        "operationId": "api_v1_operations_fleet_dispatch_role_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchRoleRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Put Fleet Dispatch Role Api V1 Operations Fleet Dispatch Role Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Fleet Dispatch Role",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/dispatch-roles": {
+      "get": {
+        "description": "Every machine of the caller's tenant with its dispatch role.\n\nProxies coord's ``GET /coord/fleet/dispatch-roles`` with the body passed\nthrough untouched (no ``response_model``): role or ``unassigned``, the RAM\nsuggestion for an unassigned machine, and each lane's state with role and\ndrain kept apart.\n\nA 404 (coord predates the route), a 502/504, or an unrecognised body is\nUNKNOWN to the browser \u2014 never \"every machine is unassigned\", which would\nread as \"every machine is a workhorse\" (``[policy:\nunknown-must-not-render-as-a-default]``). The status is what lets it tell.",
+        "operationId": "api_v1_operations_fleet_dispatch_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Dispatch Roles Api V1 Operations Fleet Dispatch Roles Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Dispatch Roles",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/drain": {
       "get": {
         "description": "Return which machines coord is currently holding out of the fleet.\n\nProxies coord's ``GET /coord/fleet/drain``, body passed through untouched\n\u2014 this route declares no ``response_model``, so nothing here filters a\nfield coord adds.\n\nThe body carries the ACTIVE drain entries keyed by device UUID, each with\n``until``, ``reason``, ``drained_by`` and ``drained_at``. Expiry is\nevaluated by coord on READ (there is no sweeper and no expiry job), so an\nentry that has lapsed simply stops appearing; a caller holding a response\nacross the deadline must re-read rather than assume.\n\n``drained_by`` may come back as coord's ``[redacted]`` placeholder for a\nprincipal that may not see operator identities. That is a value, not an\nabsence \u2014 \"someone drained this and you are not being told who\" is a\ndifferent fact from \"nobody is recorded\", and a caller that renders the\nplaceholder as blank reports the second.\n\n**The one thing a caller must not do with a failure here.** Coord keeps\n``DrainSet::Known(vec![])`` and ``DrainSet::Unknown`` apart on purpose, and\nso must every hop after it: a 404 (this coord predates the read route), a\n502/504 from the transport, or a body in an unrecognised shape is UNKNOWN,\nnever \"no machine is drained\" (``[policy: silent-empty-is-unknown]``,\n``[policy: unknown-must-not-render-as-a-default]``). The browser client\n(`useFleetDrain.ts`) is written to that rule and renders UNKNOWN on each\nof them; the 404 arm in particular is the EXPECTED reading during the\nwindow where this console is a deploy ahead of coord.",
@@ -104821,7 +105724,7 @@
     },
     "/api/v1/plan-library": {
       "get": {
-        "description": "A filtered page, with the health of the corpus it came from.\n\n``corpus_health`` (design decision D1 of\n``2026-08-27-plan-corpus-read-path-is-dark``) rides on every page so that\n``items: []`` is never the whole answer: ``plan_count: 0`` beside it says\n\"the corpus holds no plans\", which is a different sentence from \"no such\nplan\". Its ``capture`` block is ``/capture-health``'s census from the\nsame query and builder, and its ``scan_roots`` block is\n``GET /plan-library/scan-roots`` rendered by the same builder (two reads\ncan still differ by when they happen):\nhow far behind its default branch each device's scan source is, so a page\ndrawn from a stale corpus can say so. Two extra reads per list call \u2014 one\naggregate, and one over a table of one row per device inside a savepoint\n(four round trips in all).\n\n``slug`` is a QUERY key, not a path segment: this adds no route, so the\nliteral-before-pattern ordering below (``/divergent``, ``/capture-health``\n\u2026 declared before ``/{artifact_id}``) is untouched.",
+        "description": "A filtered page, with the health of the corpus it came from.\n\n``corpus_health`` (design decision D1 of\n``2026-08-27-plan-corpus-read-path-is-dark``) rides on every page so that\n``items: []`` is never the whole answer: ``plan_count: 0`` beside it says\n\"the corpus holds no plans\", which is a different sentence from \"no such\nplan\". Its ``capture`` block is ``/capture-health``'s census from the\nsame query and builder, and its ``scan_roots`` block is\n``GET /plan-library/scan-roots`` rendered by the same builder (two reads\ncan still differ by when they happen):\nhow far behind its default branch each device's scan source is, so a page\ndrawn from a stale corpus can say so. Two extra reads per list call \u2014 one\naggregate, and one over a table of one row per device inside a savepoint\n(four round trips in all).\n\n``slug`` is a QUERY key, not a path segment: this adds no route, so the\nliteral-before-pattern ordering below (``/divergent``, ``/capture-health``\n\u2026 declared before ``/{artifact_id}``) is untouched.\n\n**A keyset walk, newest captured first** (plan\n``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``\nPhase 4). The page states its bound in the shared ``BoundedReadMeta``\nkeys \u2014 ``total`` (exact, from this page's start), ``truncated`` and\n``next_cursor``, which the next request passes back as ``cursor``. A\n``?q=`` search is the same walk, so a search page that filled up says\n``truncated: true`` and carries the cursor to the rest: a capped search\npage is never evidence that a plan is absent.",
         "operationId": "api_v1_plan_library_get",
         "parameters": [
           {
@@ -104970,14 +105873,21 @@
             }
           },
           {
+            "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
+              "title": "Cursor"
             }
           },
           {
@@ -105079,18 +105989,25 @@
     },
     "/api/v1/plan-library/candidates": {
       "get": {
-        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit\nrows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to\nan artifact so a page without them is unchanged) \u2014 with no weighting of any\nkind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:\n411 of the 635 carried an empty status, which would make that a guess over\nthe least-known rows.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\n``corpus_health`` is the block every list page carries \u2014 the corpus's\ncounts, capture census, and each feeding device's scan-source drift \u2014 so\na consumer ranking these candidates can see, in the same read, whether\nthe corpus they were drawn from is stale. Report-only: a stale corpus is\nstill the best available answer, and nothing here refuses to serve it.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest CAPTURED first,\na keyset walk over every row's immutable ``(created_at, id)``, both arms\ncompared as one order (plan\n``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``\nPhase 4: the old ``coalesce(authored_at, \u2026)`` /\n``coalesce(first_in_progress_at, \u2026)`` keys both move, and ``offset``\nover them dropped rows) \u2014 with no weighting of any kind. Work-unit rows\nare neither capped nor re-weighted toward ``vetted``: 411 of the 635\ncarried an empty status, which would make that a guess over the\nleast-known rows.\n\n**The bound is on the wire.** ``total`` / ``truncated`` / ``next_cursor``\ndescribe ``items``. When coord's work-unit walk stops at its page cap the\npopulation is a lower bound: ``work_unit_population_state`` reads\n``truncated`` and the page is ``at_least`` / ``unknown`` with\n``total: null`` \u2014 never an exact count that quietly stopped counting.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\n``corpus_health`` is the block every list page carries \u2014 the corpus's\ncounts, capture census, and each feeding device's scan-source drift \u2014 so\na consumer ranking these candidates can see, in the same read, whether\nthe corpus they were drawn from is stale. Report-only: a stale corpus is\nstill the best available answer, and nothing here refuses to serve it.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
         "operationId": "api_v1_plan_library_candidates_get",
         "parameters": [
           {
+            "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
+              "title": "Cursor"
             }
           },
           {
@@ -105457,13 +106374,13 @@
             }
           },
           {
-            "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
+            "description": "Hard bound on archived artifacts. When it truncates, the response says so in the `X-Bounded-Read` header and `manifest.json` (the shared bounded-read keys: `truncated`, `bound_kind`, `enumerate_via`, ...) \u2014 a silently short export is indistinguishable from a short corpus.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 5000,
-              "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
+              "description": "Hard bound on archived artifacts. When it truncates, the response says so in the `X-Bounded-Read` header and `manifest.json` (the shared bounded-read keys: `truncated`, `bound_kind`, `enumerate_via`, ...) \u2014 a silently short export is indistinguishable from a short corpus.",
               "maximum": 5000,
               "minimum": 1,
               "title": "Limit",
@@ -105505,18 +106422,25 @@
     },
     "/api/v1/plan-library/followups": {
       "get": {
-        "description": "The queryable form of \"worth its own plan\".\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. A plan\nroutinely surfaces work it deliberately does not do, and until this route\nthat lived ONLY as prose in the plan body \u2014 unrecoverable from the data, so\nnothing could answer \"show me follow-ups with no owning plan\". It is now a\n``spawned_followup`` edge whose ``to_id`` is still NULL, and this is the\nread that lists them.\n\n**Open only.** A follow-up that has been claimed\n(``PATCH /plan-library/edges/{edge_id}``) is an ordinary two-ended\nprovenance edge and drops out of this list \u2014 but it is not deleted, and it\nstays on the originating artifact's edge list, so the trail from \"this plan\nsurfaced it\" to \"that plan owns it\" survives the claim.\n\n**Oldest first**, and that is the useful default rather than an arbitrary\none: an old unowned follow-up is work the fleet has known about and\nrepeatedly not picked up. ``total`` is the unpaged count, so a bounded page\ncan never be mistaken for the whole queue.",
+        "description": "The queryable form of \"worth its own plan\".\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. A plan\nroutinely surfaces work it deliberately does not do, and until this route\nthat lived ONLY as prose in the plan body \u2014 unrecoverable from the data, so\nnothing could answer \"show me follow-ups with no owning plan\". It is now a\n``spawned_followup`` edge whose ``to_id`` is still NULL, and this is the\nread that lists them.\n\n**Open only.** A follow-up that has been claimed\n(``PATCH /plan-library/edges/{edge_id}``) is an ordinary two-ended\nprovenance edge and drops out of this list \u2014 but it is not deleted, and it\nstays on the originating artifact's edge list, so the trail from \"this plan\nsurfaced it\" to \"that plan owns it\" survives the claim.\n\n**Oldest first**, and that is the useful default rather than an arbitrary\none: an old unowned follow-up is work the fleet has known about and\nrepeatedly not picked up. A keyset walk over the edge's immutable\n``(created_at, id)``: ``total`` counts the open follow-ups from this\npage's start and ``next_cursor`` reaches the rest, so a bounded page can\nnever be mistaken for the whole queue.",
         "operationId": "api_v1_plan_library_followups_get",
         "parameters": [
           {
+            "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
+              "title": "Cursor"
             }
           },
           {
@@ -105570,18 +106494,25 @@
     },
     "/api/v1/plan-library/reconciliation": {
       "get": {
-        "description": "Three writers share one fact \u2014 \"is this plan done?\" \u2014 and none reads the others.\n\n* **axis A** \u2014 coord ``work_units.status``, the STORED column.\n* **axis B** \u2014 the plan document's status stamp. **Here that is the\n  ARTIFACT STORE**, and every response says so in ``document_axis_source``.\n* **axis C** \u2014 coord's DERIVED ``delivery`` verdict\n  (``{shipped, evidence_complete, evidence_gaps}``), re-derived per read\n  and forwarded verbatim. Web never re-derives it (D4).\n\nThe classification is a first-match-wins cascade of twelve members whose\nORDER is part of the spec (D6), vendored from qontinui-dev-notes together\nwith its test vectors and pinned by digest (D7). Two properties the order\nbuys mechanically rather than by comment: ``EVIDENCE_INCOMPLETE`` precedes\nevery arm that reads ``shipped``, and the two AGREE members are LAST, so no\nunreadable axis can fall through into agreement.\n\n**Read ``evidence_complete`` before ``shipped``.** When it is false,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The two demand opposite responses.\n\n**What this surface's document axis cannot do.** ``agent.work_artifacts``\nis sparse (18 plan bodies against ~1500 addressable stems on 2026-09-03)\nand can be silently FROZEN: the runner's body sync is constructed only\nunder ``QONTINUI_PLAN_LIBRARY_SYNC=1`` and gated again on the tenant's\n``plan_capture`` dial, and a store frozen weeks ago looks identical to an\nempty one. A comparator that read that as agreement would manufacture\nfleet-wide FALSE AGREEMENT. So a stem with no artifact classifies UNKNOWN,\nnever AGREE, ``document_axis_complete`` reports it at both row and response\nlevel, and the body is REFUSED if any such row carried another verdict. The\ngit-side reconciler in qontinui-dev-notes is the primary surface precisely\nbecause its axis B is ``origin/main`` of the plans repo (D1).\n\n**Axis C is per-page, and the off-page rows are counted, not dropped.**\nCoord has no bulk delivery door; the per-unit read measured 0.145 s median\n/ 0.192 s p95 over 1421 units, so a corpus-wide axis C is ~4.5 minutes and\nno request can pay it (Phase 0.1). Every row outside the returned page is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` with the reason naming axis C, and\nstays in the denominator. Page through the corpus to derive it row by row.\n\n**The facet block is the answer, not the item list** (D3): exhaustive\nfacets INCLUDING the zeros, an explicit denominator that equals their sum,\nand ``corpus_complete`` with every blind spot named. \"No rows of class X\"\nis a stated fact here rather than an absence.\n\nThis route WRITES NOTHING. It has no status write, no worker and no\n``shipped`` write anywhere \u2014 ``shipped`` is derived, and a direct write is\na ``422 status_is_derived`` on coord's side. Where the reconciler finds\ndrift, the correction path is the existing ``plan-steward`` (D5).\n\n**``q`` narrows the population, not the page.** The stem population is\ncoord units \u222a artifacts, so the list route's ``q`` cannot be applied as a\nsingle SQL predicate. It is applied with the SAME semantics in two halves\nbefore paging: the slug arm (:func:`~app.crud.work_artifact.stem_matches_q`,\na literal case-insensitive substring of the stem) and the full-text arm\nover the stem's artifacts\n(:func:`~app.crud.work_artifact.plan_artifact_ids_matching_q`). A stem\ncoord knows about but the artifact store does not is therefore matchable\nby slug only \u2014 there is no body for the full-text arm to read. Under\n``q``, ``total``, every facet and every completeness count describe the\nFILTERED population; the response echoes ``q`` so a consumer can tell.\n\n**Axis A carries coord's per-unit annotations.** ``status_class``,\n``vet_state`` and ``vet_checked_at`` are forwarded from coord's list row; under\n``include_custody`` the unit's ``live_sessions`` arrive with coord's\n``custody`` resolution, and ``custody_resolved`` says whether coord\nactually resolved them. Each absent value is UNKNOWN, never a default.\n\nCoord is reached over its HTTP API only; nothing here touches coord's\nPostgres (module invariant 4, enforced by\n``tests/test_coord_schema_boundary_guard.py``).",
+        "description": "Three writers share one fact \u2014 \"is this plan done?\" \u2014 and none reads the others.\n\n* **axis A** \u2014 coord ``work_units.status``, the STORED column.\n* **axis B** \u2014 the plan document's status stamp. **Here that is the\n  ARTIFACT STORE**, and every response says so in ``document_axis_source``.\n* **axis C** \u2014 coord's DERIVED ``delivery`` verdict\n  (``{shipped, evidence_complete, evidence_gaps}``), re-derived per read\n  and forwarded verbatim. Web never re-derives it (D4).\n\nThe classification is a first-match-wins cascade of twelve members whose\nORDER is part of the spec (D6), vendored from qontinui-dev-notes together\nwith its test vectors and pinned by digest (D7). Two properties the order\nbuys mechanically rather than by comment: ``EVIDENCE_INCOMPLETE`` precedes\nevery arm that reads ``shipped``, and the two AGREE members are LAST, so no\nunreadable axis can fall through into agreement.\n\n**Read ``evidence_complete`` before ``shipped``.** When it is false,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The two demand opposite responses.\n\n**What this surface's document axis cannot do.** ``agent.work_artifacts``\nis sparse (18 plan bodies against ~1500 addressable stems on 2026-09-03)\nand can be silently FROZEN: the runner's body sync is constructed only\nunder ``QONTINUI_PLAN_LIBRARY_SYNC=1`` and gated again on the tenant's\n``plan_capture`` dial, and a store frozen weeks ago looks identical to an\nempty one. A comparator that read that as agreement would manufacture\nfleet-wide FALSE AGREEMENT. So a stem with no artifact classifies UNKNOWN,\nnever AGREE, ``document_axis_complete`` reports it at both row and response\nlevel, and the body is REFUSED if any such row carried another verdict. The\ngit-side reconciler in qontinui-dev-notes is the primary surface precisely\nbecause its axis B is ``origin/main`` of the plans repo (D1).\n\n**Axis C is per-page, and the off-page rows are counted, not dropped.**\nCoord has no bulk delivery door; the per-unit read measured 0.145 s median\n/ 0.192 s p95 over 1421 units, so a corpus-wide axis C is ~4.5 minutes and\nno request can pay it (Phase 0.1). Every row outside the returned page is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` with the reason naming axis C, and\nstays in the denominator. Page through the corpus to derive it row by row.\n\n**The facet block is the answer, not the item list** (D3): exhaustive\nfacets INCLUDING the zeros, an explicit denominator that equals their sum,\nand ``corpus_complete`` with every blind spot named. \"No rows of class X\"\nis a stated fact here rather than an absence.\n\nThis route WRITES NOTHING. It has no status write, no worker and no\n``shipped`` write anywhere \u2014 ``shipped`` is derived, and a direct write is\na ``422 status_is_derived`` on coord's side. Where the reconciler finds\ndrift, the correction path is the existing ``plan-steward`` (D5).\n\n**``q`` narrows the population, not the page.** The stem population is\ncoord units \u222a artifacts, so the list route's ``q`` cannot be applied as a\nsingle SQL predicate. It is applied with the SAME semantics in two halves\nbefore paging: the slug arm (:func:`~app.crud.work_artifact.stem_matches_q`,\na literal case-insensitive substring of the stem) and the full-text arm\nover the stem's artifacts\n(:func:`~app.crud.work_artifact.plan_artifact_ids_matching_q`). A stem\ncoord knows about but the artifact store does not is therefore matchable\nby slug only \u2014 there is no body for the full-text arm to read. Under\n``q``, ``total``, every facet and every completeness count describe the\nFILTERED population; the response echoes ``q`` so a consumer can tell.\n\n**Axis A carries coord's per-unit annotations.** ``status_class``,\n``vet_state`` and ``vet_checked_at`` are forwarded from coord's list row; under\n``include_custody`` the unit's ``live_sessions`` arrive with coord's\n``custody`` resolution, and ``custody_resolved`` says whether coord\nactually resolved them. Each absent value is UNKNOWN, never a default.\n\nCoord is reached over its HTTP API only; nothing here touches coord's\nPostgres (module invariant 4, enforced by\n``tests/test_coord_schema_boundary_guard.py``).\n\n**The page is a keyset walk over the stems** (plan\n``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``\nPhase 4): each stem's position is a pure function of the stem\n(:func:`~app.crud.work_artifact.stem_position` \u2014 its date prefix, then a\nuuid5 tiebreak), so a stem added or removed between two requests can no\nlonger shift the window the way ``offset`` did. The facets still cover\nthe WHOLE population on every page; ``facets.denominator`` is its size,\nand ``total`` counts the stems from this page's start.",
         "operationId": "api_v1_plan_library_reconciliation_get",
         "parameters": [
           {
+            "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page.",
+              "title": "Cursor"
             }
           },
           {

@@ -9,7 +9,7 @@ export async function GET(
   const { projectId } = await params;
   return proxyToBackend(
     request,
-    `/api/v1/projects/${projectId}/rag/dashboard`,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/rag/dashboard`,
     {
       tokenSources: ["cookie", "header"],
       onMissingToken: "401",

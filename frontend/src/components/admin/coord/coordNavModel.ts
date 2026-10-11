@@ -648,9 +648,12 @@ export const GROUPS: NavGroup[] = [
         // Per-tenant switches: transcript sync (the session-output ingest
         // consent gate coord enforces; plan
         // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`)
-        // and the `command_safety_rewrite` fleet-policy dial runners read at
+        // the `command_safety_rewrite` fleet-policy dial runners read at
         // spawn (plan
-        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`).
+        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`),
+        // and the `account_selection_mode` dial runners force-apply unless the
+        // machine is pinned (plan
+        // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,

@@ -5,9 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { AlertTriangle } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../utils";
-import type { MergeEnabledResponse } from "../mergeTypes";
+import { fireKillSwitch, setMergeEnabled } from "@/lib/api/operations/prMerge";
+import { httpFailureText } from "./format";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -75,28 +74,19 @@ export function TenantMergePauseControl({
       try {
         // OFF → the audited kill-switch door (writes the alert row).
         // ON  → the merge-enabled door, clearing the latch.
-        const res = await httpClient.fetch(
-          nextEnabled
-            ? `${OPERATIONS_API}/pr-merge/merge-enabled`
-            : `${OPERATIONS_API}/pr-merge/kill-switch`,
-          {
-            method: "POST",
-            body: JSON.stringify(
-              nextEnabled
-                ? { scope: "tenant", enabled: true, reason: reason.trim() }
-                : { scope: "tenant", reason: reason.trim() }
-            ),
-          }
-        );
-        if (!res.ok) {
-          const detail = await res.text().catch(() => "");
-          throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+        if (nextEnabled) {
+          await setMergeEnabled({
+            scope: "tenant",
+            enabled: true,
+            reason: reason.trim(),
+          });
+        } else {
+          await fireKillSwitch({ scope: "tenant", reason: reason.trim() });
         }
-        (await res.json()) as MergeEnabledResponse;
         onChanged();
       } catch (err) {
         log.warn("tenant merge pause flip failed", err);
-        setError(err instanceof Error ? err.message : String(err));
+        setError(httpFailureText(err, { withBody: true }));
       } finally {
         setSubmitting(false);
       }

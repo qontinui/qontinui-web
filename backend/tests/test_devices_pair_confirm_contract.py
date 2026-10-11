@@ -25,6 +25,21 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.services.coord_service_account import coord_service_account
 
+
+@pytest.fixture(autouse=True)
+def _device_credential_not_revoked():
+    """``pair-cli`` / ``pair-confirm`` now refuse a device whose credentials an
+    operator revoked (``coord.devices.credential_revoked_at``). These tests run
+    on a mock session, so that read is stubbed to "not revoked"; the revoked
+    arm is covered in ``test_devices_operator_credential_controls.py``."""
+    from app.crud import device_crud
+
+    with patch.object(
+        device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+    ):
+        yield
+
+
 _USER_ID = uuid4()
 _SERVICE_TOKEN = "coord-service-jwt-for-qontinui-web-strategy"
 _DEVICE_ID = "00000000-0000-0000-0000-deadbeefcafe"

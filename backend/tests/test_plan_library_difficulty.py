@@ -418,17 +418,17 @@ class TestDifficultyRoute:
         # Page through: the NULL-organization bucket this user writes into is
         # shared with every other test, so one page proves nothing.
         mine: list[dict] = []
-        offset = 0
+        cursor: str | None = None
         while True:
-            response = await http.get(
-                f"{API_PREFIX}/candidates",
-                params={"include_coord": "false", "limit": 100, "offset": offset},
-            )
+            params: dict[str, str | int] = {"include_coord": "false", "limit": 100}
+            if cursor is not None:
+                params["cursor"] = cursor
+            response = await http.get(f"{API_PREFIX}/candidates", params=params)
             assert response.status_code == 200, response.text
             page = response.json()
             mine += [c for c in page["items"] if c["slug"] == slug]
-            offset += len(page["items"])
-            if not page["items"] or offset >= page["total"]:
+            cursor = page["next_cursor"]
+            if cursor is None:
                 break
         assert len(mine) == 1
         assert mine[0]["difficulty"] == "high"

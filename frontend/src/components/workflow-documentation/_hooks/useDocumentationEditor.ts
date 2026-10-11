@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { WorkflowDocumentation } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentation } from "@/services/workflow-documentation";
 
 export type AutoSaveStatus = "saved" | "saving" | "unsaved";
 
