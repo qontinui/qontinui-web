@@ -24,10 +24,11 @@
  * 2. **Green is unreachable on ignorance.** The strip is never green while
  *    ANY pool is not `measured` (required or not — an unmeasured pool's
  *    required-ness is itself unknown), while any pool's `required` is `null`,
- *    while any repo lacks a CI-status row, a green/red main or a measured
- *    outcome split, while any open alert has no current pool reading
- *    (`unattached_alerts`), or while either read the strip is built from failed,
- *    never landed, or is older than three polls.
+ *    while any repo lacks a CI-status row, a green, red or deploy-red main
+ *    (any other verdict, including a token this build does not know, is
+ *    UNKNOWN) or a measured outcome split, while any open alert has no
+ *    current pool reading (`unattached_alerts`), or while either read the
+ *    strip is built from failed, never landed, or is older than three polls.
  *    UNKNOWN renders UNKNOWN — not "stuck" and not "healthy"
  *    (`[policy: an-unknown-input-must-not-fire-a-detector]`).
  * 3. **Infra-shaped is never folded into content red.** A job that failed
@@ -51,7 +52,10 @@
  *
  * - **Red** — on a CURRENT, measured reading only: a REQUIRED pool with no
  *   eligible runner, a `ci_job_queue_stalled` alert the reading confirms
- *   (jobs queued, oldest past its bound), or red main. An alert the reading
+ *   (jobs queued, oldest past its bound), red main, or — ranked below a red
+ *   main, because it blocks no merge — a `deploy_red` main (a push-only
+ *   deploy workflow failing; the verdict comes from the CI-status read, so a
+ *   failed or unseeded read makes it UNKNOWN). An alert the reading
  *   does not confirm is amber (`alert_contradicted` / `alert_unconfirmed`),
  *   and a stuck pool on a stale read is UNKNOWN ("Last read showed …").
  * - **Amber** — waiting (a queue past its bound, jobs queued with no
@@ -76,7 +80,7 @@ import {
   type StatusPalette,
 } from "@/components/console";
 import type { MergeEconomics } from "@/components/operations/mergeTypes";
-import type { RepoCiRow } from "@/components/operations/types";
+import type { MainCiVerdict, RepoCiRow } from "@/components/operations/types";
 
 // ---------------------------------------------------------------------------
 // Wire — coord `GET /coord/ci/overview`, field for field (plan Phase 2)
@@ -879,6 +883,7 @@ export function poolGroupCells(group: PoolGroup): PoolCells {
 
 export type RepoKind =
   | "main_red"
+  | "main_deploy_red"
   | "main_unknown"
   | "main_vacuous"
   | "outcomes_unknown"
@@ -888,6 +893,11 @@ export type RepoKind =
 /**
  * - `main_red` — AUTHOR. Main is failing its required checks; every PR on the
  *   repo is blocked behind it and only a fix lands it green.
+ * - `main_deploy_red` — AUTHOR. Coord's `deploy_red`: main is green FOR
+ *   MERGING, but a push-only (deploy-side) workflow no pull request can run
+ *   is failing on it. Merges are not blocked, and the fix may live outside
+ *   the repo (plan
+ *   `2026-09-13-a-push-only-deploy-workflow-reds-main-and-no-pr-can-clear-it`).
  * - `main_unknown` — WAITING (ignorance floor): coord could not read main's
  *   verdict, or the CI-status read never landed for this repo.
  * - `main_vacuous` — WAITING (ignorance floor): `vacuously_green` — no
@@ -901,6 +911,7 @@ export type RepoKind =
  */
 export const CI_REPO_ATTENTION_BY_KIND = {
   main_red: "author",
+  main_deploy_red: "author",
   main_unknown: "waiting",
   main_vacuous: "waiting",
   outcomes_unknown: "waiting",
@@ -910,6 +921,7 @@ export const CI_REPO_ATTENTION_BY_KIND = {
 
 export const CI_REPO_BADGE_CLASS: Record<RepoKind, string> = {
   main_red: AUTHOR_RED,
+  main_deploy_red: AUTHOR_RED,
   main_unknown: UNKNOWN_AMBER,
   main_vacuous: UNKNOWN_AMBER,
   outcomes_unknown: UNKNOWN_AMBER,
@@ -918,7 +930,7 @@ export const CI_REPO_BADGE_CLASS: Record<RepoKind, string> = {
 };
 
 export const CI_REPO_AUTHOR_GLYPH_KINDS: ReadonlySet<RepoKind> =
-  new Set<RepoKind>(["main_red"]);
+  new Set<RepoKind>(["main_red", "main_deploy_red"]);
 
 export const CI_REPO_PALETTE: StatusPalette<RepoKind> = {
   badgeClass: CI_REPO_BADGE_CLASS,
@@ -971,11 +983,16 @@ export function trainHref(repo: string): string {
   return `/admin/coord/pipeline?tab=train&repo=${encodeURIComponent(repo)}`;
 }
 
-const MAIN_VERDICT_TEXT: Record<string, string> = {
+/**
+ * Keyed by every token this build knows, so a token added to `MainCiVerdict`
+ * without a row here is a compile error rather than a silent "unknown".
+ */
+const MAIN_VERDICT_TEXT: Record<MainCiVerdict, string> = {
   green: "green",
   red: "red",
   unknown: DASH,
   vacuously_green: DASH,
+  deploy_red: "deploy red",
 };
 
 /** The proven cause, in an operator's words. */
@@ -1102,24 +1119,30 @@ export function repoRowStatus(
       `${repo}'s main is failing a required check; PRs cannot land until it is fixed`
     );
   }
-  if (
-    ci === null ||
-    ci.main_verdict === "unknown" ||
-    !Object.hasOwn(MAIN_VERDICT_TEXT, ci.main_verdict)
-  ) {
+  if (ci?.main_verdict === "deploy_red") {
+    return make(
+      "main_deploy_red",
+      "deploy red",
+      `${repo}'s main is green for merging, but a push-only deploy workflow no PR can run is failing on it; merges are not blocked`
+    );
+  }
+  if (ci?.main_verdict === "vacuously_green") {
+    return make(
+      "main_vacuous",
+      "no main baseline",
+      "no required check has ever reported on main — green would be an absence of evidence, not a pass"
+    );
+  }
+  // Only a literal `green` reaches the arms below, which all assume a green
+  // main. `unknown`, a token this build does not know, and a token added to
+  // `MainCiVerdict` without an arm above all stop here — never green (rule 2).
+  if (ci === null || ci.main_verdict !== "green") {
     return make(
       "main_unknown",
       "main unknown",
       ci === null
         ? "no CI-status row for this repo — main's verdict is unknown"
         : "coord could not read main's verdict — unknown, not green"
-    );
-  }
-  if (ci.main_verdict === "vacuously_green") {
-    return make(
-      "main_vacuous",
-      "no main baseline",
-      "no required check has ever reported on main — green would be an absence of evidence, not a pass"
     );
   }
   const outcomesState = overview
@@ -1188,8 +1211,8 @@ export function buildRepoRows(
     const status = repoRowStatus(repo, ci, ov);
     const verdict = ci?.main_verdict;
     const mainVerdict: CellReading =
-      verdict === "green" || verdict === "red"
-        ? { text: verdict, known: true, reason: null }
+      verdict === "green" || verdict === "red" || verdict === "deploy_red"
+        ? { text: MAIN_VERDICT_TEXT[verdict], known: true, reason: null }
         : {
             text: DASH,
             known: false,
@@ -1465,6 +1488,9 @@ function deriveCiHealthCore(
     ({ status }) => status.attention === "waiting"
   );
   const mainRed = ciStatus.rows.filter((r) => r.main_verdict === "red");
+  const deployRed = ciStatus.rows.filter(
+    (r) => r.main_verdict === "deploy_red"
+  );
 
   const contentFail = sumOutcome(data, "content_fail");
   const infra = sumOutcome(data, "infra_shaped");
@@ -1506,6 +1532,16 @@ function deriveCiHealthCore(
   if (mainRed.length > 0)
     badges.push(
       countBadge("main-red", "main red", mainRed.length, "attention")
+    );
+  if (deployRed.length > 0)
+    badges.push(
+      countBadge(
+        "deploy-red",
+        "deploy red",
+        deployRed.length,
+        "attention",
+        "Main is green for merging, but a push-only deploy workflow no PR can run is failing. Merges are not blocked."
+      )
     );
   // Content and infra are ALWAYS separate badges (rule 3). Each dashes when
   // any repo's split is unmeasured — a partial sum is not the total.
@@ -1608,6 +1644,30 @@ function deriveCiHealthCore(
       pools,
     };
   }
+  // A push-only deploy workflow red on main: someone must fix it (red), but
+  // it blocks no merge, so it ranks below a merge-blocking red main.
+  if (deployRed.length > 0) {
+    const where =
+      deployRed.length === 1 && deployRed[0]
+        ? deployRed[0].repo
+        : `${deployRed.length} repos`;
+    if (ciStatus.error || !ciStatus.seeded) {
+      return {
+        level: "unknown",
+        headline: `Last read showed a deploy workflow red on ${where} — not current`,
+        detail: qualifiers || null,
+        badges,
+        pools,
+      };
+    }
+    return {
+      level: "red",
+      headline: `Deploy workflow red on ${where} — merges are not blocked`,
+      detail: qualifiers || null,
+      badges,
+      pools,
+    };
+  }
 
   // UNKNOWN — the ignorance floor. Every arm here disqualifies green.
   if (pools.length === 0) {
@@ -1668,7 +1728,8 @@ function deriveCiHealthCore(
     };
   }
   // Repos: green also needs every repo's own row to be known — a CI-status
-  // row, a green/red main, and a measured outcome split. A repo the strip
+  // row, a green main (red and deploy-red returned above), and a measured
+  // outcome split. A repo the strip
   // cannot vouch for would otherwise sit as a `–` badge beside a green dot.
   const repoNames = new Map<string, string>();
   for (const r of ciStatus.rows) repoNames.set(r.repo.toLowerCase(), r.repo);

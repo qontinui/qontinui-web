@@ -158,18 +158,37 @@ export interface SymbolClaimsResponse {
 
 /**
  * Backend main-branch CI verdict for a repo. Mirrors coord's
- * `MainCiStatus` 3-state enum (`ci_baseline.rs` `main_ci_status`),
- * lowercased on the wire. There is intentionally **no** `amber` value
- * here — amber is a frontend-only derivation from open-PR-check counts
- * (see `CiRepoStrip`, which was `CiStatusPanel` until 2026-09-19), never a
- * backend verdict.
+ * `MainCiStatus` enum (`ci_baseline.rs` `main_ci_status`, rendered to a
+ * token in `api/ci_routes.rs` `build_repo_ci_row`). There is intentionally
+ * **no** `amber` value here — amber is a frontend-only derivation from
+ * open-PR-check counts (see `CiRepoStrip`, which was `CiStatusPanel` until
+ * 2026-09-19), never a backend verdict.
+ *
+ * - `vacuously_green` — the merge gate treats main as green, but main has
+ *   no CI baseline and positively CANNOT get one: coord's baselines come
+ *   only from completed `push` runs, and this repo has no workflow that
+ *   produces one. That covers a virgin repo, a default branch whose
+ *   workflows declare no push or pull_request trigger (or has none; it may
+ *   still have CI history elsewhere), and a
+ *   `pull_request`-only repo whose workflows gate PRs but none declares a
+ *   `push` trigger (`ci_baseline.rs` `MainCiStatus::VacuouslyGreen`). The
+ *   "green" is an absence of evidence, not a pass, and must never render as
+ *   a measured green.
+ * - `deploy_red` — green FOR MERGING while a push-only (deploy-side) workflow
+ *   is red: a repo with no readable required checks whose only failing main
+ *   workflows no pull request can run. It does NOT block merges, and its fix
+ *   may live outside the repo. Plan
+ *   `2026-09-13-a-push-only-deploy-workflow-reds-main-and-no-pr-can-clear-it`
+ *   Phase 2 (Option A); coord raises a `deploy_red:<repo>` alert beside it.
+ *
+ * A token this build does not know renders as "no verdict", never as green.
  */
-/**
- * `vacuously_green` is coord's zero-baseline arm: no required check has ever
- * reported on main, so the "green" is an absence of evidence, not a pass. It
- * must never render as a measured green.
- */
-export type MainCiVerdict = "green" | "red" | "unknown" | "vacuously_green";
+export type MainCiVerdict =
+  | "green"
+  | "red"
+  | "unknown"
+  | "vacuously_green"
+  | "deploy_red";
 
 /**
  * Counts of open-PR check runs for a repo, bucketed by GitHub

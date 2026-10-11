@@ -13,15 +13,37 @@
  * D4). This banner is the loud surface for that state on every coord console
  * page.
  *
- * Driven SOLELY by the coord `red_main:<repo>` alert rows (single source
- * of truth): coord's `stuck_pr_watcher` detector 6 upserts one live
- * `coord.alerts` row per (repo, red-episode) and self-resolves it when
- * main goes green, so the banner can never disagree with coord. Fetched
- * over `/api/v1/operations/alerts?kind=red_main`, a raw pass-through of
- * coord's `/coord/alerts` read API.
+ * Driven SOLELY by the coord `red_main:<repo>` and `deploy_red:<repo>`
+ * alert rows (single source of truth): coord's `stuck_pr_watcher`
+ * detector 6 upserts one live `coord.alerts` row per (repo, red-episode)
+ * and self-resolves it when the red clears, so the banner can never
+ * disagree with coord. Fetched in ONE poll over
+ * `/api/v1/operations/alerts?kind=red_main&kind=deploy_red`, a raw
+ * pass-through of coord's `/coord/alerts` read API.
  *
  * Deliberately NOT dismissable and NOT a toast — it clears only when the
  * alert row resolves.
+ *
+ * ## It also carries `deploy_red:<repo>` rows, scoped to what they block
+ *
+ * Plan
+ * `2026-09-13-a-push-only-deploy-workflow-reds-main-and-no-pr-can-clear-it`
+ * Phase 2 (Option A) moved one class of red OFF coord's merge verdict: in a
+ * repo with no readable required checks, a failing workflow that no pull
+ * request can run (push-only, deploy-side) no longer reds main. Coord raises
+ * a `deploy_red:<repo>` alert INSTEAD of `red_main:<repo>` for it — critical
+ * and paged exactly like `red_main`. Such a repo would otherwise lose its
+ * banner the moment it stopped being a red main, so the same poll asks for
+ * both kinds and this banner renders each with its own wording: a red main
+ * says what it holds; a red deploy says what coord's live
+ * `detail.blocks_merging` says — blocked (coord has not yet re-proved the
+ * workflow push-only, e.g. right after a land or a restart), THIS deploy
+ * failure does not block merges, or (an older coord) nothing about merges at
+ * all. It never defaults to "does not block". A repo can carry
+ * both at once (coord's `Red` carries its deploy-side rows too, so main red
+ * for `CI` and the deploy red for `Deploy backend` opens both alerts). Each
+ * is its own row, and the deploy row then says merges ARE held — by the red
+ * main above it — so the two rows can never contradict each other.
  *
  * ## It reports who is fixing it; it does not offer to fix it
  *
@@ -108,8 +130,19 @@ const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 const RED_MAIN_KEY_PREFIX = "red_main:";
-/** The `coord.alerts.kind` value the server-side filter narrows on. */
+const DEPLOY_RED_KEY_PREFIX = "deploy_red:";
+/** The `coord.alerts.kind` values the server-side filter narrows on. */
 const RED_MAIN_KIND = "red_main";
+const DEPLOY_RED_KIND = "deploy_red";
+/**
+ * `kind` is repeatable and OR-ed on coord's side. A coord that predates
+ * `deploy_red` REPORTS the kind in `unknown_kinds` rather than rejecting the
+ * request (`fleet_health.rs`), so asking for both cannot cost the red-main row.
+ */
+const BANNER_KIND_QUERY = `kind=${RED_MAIN_KIND}&kind=${DEPLOY_RED_KIND}`;
+
+/** Which banner kind an alert row is. */
+export type BannerAlertKind = typeof RED_MAIN_KIND | typeof DEPLOY_RED_KIND;
 
 /**
  * How many CONSECUTIVE empty polls it takes to clear the banner.
@@ -180,9 +213,15 @@ export type AlertClaimState =
       expiresAt?: string;
     };
 
-/** One red-main episode, parsed from its `coord.alerts` row. */
+/** One red-main (or red-deploy) episode, parsed from its `coord.alerts` row. */
 export interface RedMainAlert {
   alertKey: string;
+  /**
+   * `red_main` — main is red and PRs read `main-red`; `deploy_red` — a
+   * deploy workflow is red; whether merges are blocked on it is
+   * {@link RedMainAlert.blocksMerging}, never assumed.
+   */
+  kind: BannerAlertKind;
   repo: string;
   /** Failing workflow names (alert `detail.workflows`). */
   workflows: string[];
@@ -200,6 +239,30 @@ export interface RedMainAlert {
   fixSession: FixSessionState;
   /** Whether an agent holds the alert's claim, and who. */
   claim: AlertClaimState;
+  /**
+   * `deploy_red` only — coord's LIVE answer to "is the merge gate blocked on
+   * this deploy right now" (alert `detail.blocks_merging`). It is `true` while
+   * coord cannot yet prove the workflow push-only (right after a land or a
+   * restart it keeps counting it red). `null` = absent or not a boolean (an
+   * older coord): UNKNOWN, and the banner then makes no merge claim at all.
+   * Always `null` on a `red_main` row.
+   */
+  blocksMerging: boolean | null;
+  /**
+   * `detail.blocking_reason` — a machine token such as
+   * `push_only_proof_pending`; shown only in a tooltip (R8).
+   */
+  blockingReason?: string;
+  /** `detail.blocking_since` — when the current blocking state began. */
+  blockingSince?: string;
+  /**
+   * `detail.blocking_workflows` — the deploy-side workflows the merge gate is
+   * blocked on RIGHT NOW. Not necessarily {@link RedMainAlert.workflows}: a
+   * proven workflow A can fire the row while an unproven B is what blocks
+   * (coord `deploy_red_blocking_patch`). Non-strings are dropped; `[]` when
+   * absent.
+   */
+  blockingWorkflows: string[];
 }
 
 /**
@@ -284,11 +347,29 @@ export function compactPrincipal(label: string): string {
 }
 
 /**
- * Extract the live red-main episodes from a `coord.alerts` slice: rows
- * whose `alert_key` starts with `red_main:` and are unresolved. Repo
- * falls back to the alert-key suffix when the detail is missing, so a
- * malformed detail payload can never hide an episode. Pure — exported
- * for the vitest suite.
+ * The banner kind an `alert_key` belongs to, and its prefix — or `null` for a
+ * row this banner does not render. Keyed on the KEY rather than `kind`
+ * because the key is the row's identity, and an older coord that ignores the
+ * `kind` filter returns rows of every kind.
+ */
+function bannerKindOf(
+  alertKey: string
+): { kind: BannerAlertKind; prefix: string } | null {
+  if (alertKey.startsWith(RED_MAIN_KEY_PREFIX)) {
+    return { kind: RED_MAIN_KIND, prefix: RED_MAIN_KEY_PREFIX };
+  }
+  if (alertKey.startsWith(DEPLOY_RED_KEY_PREFIX)) {
+    return { kind: DEPLOY_RED_KIND, prefix: DEPLOY_RED_KEY_PREFIX };
+  }
+  return null;
+}
+
+/**
+ * Extract the live red-main and red-deploy episodes from a `coord.alerts`
+ * slice: rows whose `alert_key` starts with `red_main:` or `deploy_red:` and
+ * are unresolved. Repo falls back to the alert-key suffix when the detail is
+ * missing, so a malformed detail payload can never hide an episode. Pure —
+ * exported for the vitest suite.
  */
 export function parseRedMainAlerts(
   alerts: unknown,
@@ -299,13 +380,14 @@ export function parseRedMainAlerts(
   const out: RedMainAlert[] = [];
   for (const a of alerts as CoordAlertRow[]) {
     if (!a || typeof a.alert_key !== "string") continue;
-    if (!a.alert_key.startsWith(RED_MAIN_KEY_PREFIX)) continue;
+    const bannerKind = bannerKindOf(a.alert_key);
+    if (!bannerKind) continue;
     if (a.resolved_at) continue;
     const detail = (a.detail ?? {}) as Record<string, unknown>;
     const repo =
       typeof detail.repo === "string" && detail.repo.length > 0
         ? detail.repo
-        : a.alert_key.slice(RED_MAIN_KEY_PREFIX.length);
+        : a.alert_key.slice(bannerKind.prefix.length);
     const workflows = Array.isArray(detail.workflows)
       ? detail.workflows.filter((w): w is string => typeof w === "string")
       : [];
@@ -320,6 +402,7 @@ export function parseRedMainAlerts(
         : null;
     out.push({
       alertKey: a.alert_key,
+      kind: bannerKind.kind,
       repo,
       workflows,
       blockedPrCount,
@@ -327,10 +410,29 @@ export function parseRedMainAlerts(
       since: a.first_seen_at,
       fixSession: parseFixSession(detail.fix_session),
       claim: parseAlertClaim(a, claimsScrapeUp),
+      // Read only off a deploy row, and only a real boolean counts: anything
+      // else is UNKNOWN, never "does not block".
+      blocksMerging:
+        bannerKind.kind === DEPLOY_RED_KIND &&
+        typeof detail.blocks_merging === "boolean"
+          ? detail.blocks_merging
+          : null,
+      blockingReason: nonEmptyString(detail.blocking_reason),
+      blockingSince: nonEmptyString(detail.blocking_since),
+      blockingWorkflows: Array.isArray(detail.blocking_workflows)
+        ? detail.blocking_workflows.filter(
+            (w): w is string => typeof w === "string" && w.length > 0
+          )
+        : [],
     });
   }
-  // Stable per-repo order so the banner stack never reshuffles between polls.
-  out.sort((x, y) => x.repo.localeCompare(y.repo));
+  // Stable per-repo order so the banner stack never reshuffles between polls;
+  // within one repo, the red main (which holds PRs) sits above its deploy.
+  out.sort(
+    (x, y) =>
+      x.repo.localeCompare(y.repo) ||
+      (x.kind === y.kind ? 0 : x.kind === RED_MAIN_KIND ? -1 : 1)
+  );
   return out;
 }
 
@@ -371,10 +473,103 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
 }
 
 /**
+ * The headline for a `deploy_red` row. Pure — exported for the vitest suite.
+ *
+ * What it says about merges follows coord's live `detail.blocks_merging`
+ * ({@link RedMainAlert.blocksMerging}) and nothing else:
+ *
+ *   - `true`  — merges ARE blocked on it: coord has not yet re-proved the
+ *     workflow push-only (after a land or a restart), so it still counts red.
+ *   - `false` — scoped to the alert: THIS deploy failure does not block
+ *     merges. Never "merges are open", because the same repo can carry a
+ *     `red_main` at the same time; `mainAlsoRed` is that case, and the row
+ *     then says the red main above does block them.
+ *   - `null`  — an older coord that does not say: NO merge claim either way.
+ *
+ * It must not claim main is green, and it must not borrow the red-main
+ * wording ("read main-red", "a candidate lands only if…").
+ */
+export function deployRedHeadline(
+  a: RedMainAlert,
+  nowMs: number,
+  mainAlsoRed = false
+): string {
+  const label = sinceLabel(a.since, nowMs);
+  const since = a.since && label !== a.since ? ` for ${label}` : "";
+  const head = `Deploy is red on ${a.repo}${since}`;
+  if (a.blocksMerging === true) {
+    // Name what blocks — it can differ from the failing list (see
+    // `blockingWorkflows`). Without a list, the generic wording.
+    const n = a.blockingWorkflows.length;
+    const on = n > 0 ? a.blockingWorkflows.join(", ") : "it";
+    const pronoun = n > 1 ? "them" : "it";
+    return (
+      `${head} — merges are currently BLOCKED on ${on} until coord ` +
+      `re-proves ${pronoun} push-only; see the coord diagnosis`
+    );
+  }
+  if (a.blocksMerging === false) {
+    const scope = mainAlsoRed
+      ? "this deploy failure does not block merges, but the red main above does"
+      : "this deploy failure does not block merges";
+    return (
+      `${head} — ${scope}; ` +
+      "the fix may be outside this repo (see the coord diagnosis)"
+    );
+  }
+  return `${head}; see the coord diagnosis`;
+}
+
+/**
+ * `detail.blocking_since`, aged the way {@link sinceLabel} ages an episode.
+ * coord writes it two ways — chrono on the fire path (`…Z`) and Postgres on
+ * the mark path (`….123456+00:00`) — and both parse to the same age, so they
+ * display alike. An unparseable value is shown verbatim rather than hidden.
+ * Pure — exported for the vitest suite.
+ */
+export function blockingSinceLabel(iso: string, nowMs: number): string {
+  const label = sinceLabel(iso, nowMs);
+  return label === iso ? `blocking since ${iso}` : `blocking for ${label}`;
+}
+
+/**
+ * The native tooltip for a BLOCKING deploy row: coord's reason and since,
+ * which are machine vocabulary (R8) and so stay off the headline itself.
+ */
+function blockingTitle(a: RedMainAlert, nowMs: number): string | undefined {
+  if (a.blocksMerging !== true) return undefined;
+  const parts = [
+    a.blockingReason ? `reason: ${a.blockingReason}` : null,
+    a.blockingSince ? blockingSinceLabel(a.blockingSince, nowMs) : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
+
+/**
+ * The headline for one banner row, by its kind. `mainAlsoRed` says whether
+ * the same repo also has a live `red_main` row in this answer.
+ */
+export function bannerHeadline(
+  a: RedMainAlert,
+  nowMs: number,
+  mainAlsoRed = false
+): string {
+  return a.kind === DEPLOY_RED_KIND
+    ? deployRedHeadline(a, nowMs, mainAlsoRed)
+    : redMainHeadline(a, nowMs);
+}
+
+/**
  * The claim chip on one banner row: whether an agent holds the episode, and
  * which one. Pure render of {@link AlertClaimState}.
  */
-function ClaimBadge({ claim }: { claim: AlertClaimState }) {
+function ClaimBadge({
+  claim,
+  alertKind,
+}: {
+  claim: AlertClaimState;
+  alertKind: BannerAlertKind;
+}) {
   if (claim.kind === "claimed") {
     const by = claim.claimedBy;
     return (
@@ -402,7 +597,11 @@ function ClaimBadge({ claim }: { claim: AlertClaimState }) {
         className="badge badge-warning"
         data-testid="red-main-claim"
         data-claim-state="unclaimed"
-        title="No agent holds a claim on this red main yet."
+        title={
+          alertKind === DEPLOY_RED_KIND
+            ? "No agent holds a claim on this deploy alert yet."
+            : "No agent holds a claim on this red main yet."
+        }
       >
         no agent has claimed it
       </span>
@@ -471,7 +670,8 @@ function RemediationNote({ fixSession }: { fixSession: FixSessionState }) {
 export function RedMainBanner() {
   const [reds, setReds] = useState<RedMainAlert[]>([]);
   /**
-   * Consecutive polls that came back with no `red_main` row. See
+   * Consecutive polls that came back with no `red_main` or `deploy_red` row
+   * (one streak for both kinds, since they arrive in one answer). See
    * {@link EMPTY_POLLS_BEFORE_CLEAR} — the banner clears only once this
    * crosses the threshold, so one evicted or dropped answer cannot blank it.
    */
@@ -511,7 +711,7 @@ export function RedMainBanner() {
       // this banner is mounted by the coord layout on every page, and the
       // next tick is the retry. `inFlight` above is its single-flight.
       const body = await httpClient.get<unknown>(
-        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`,
+        `${API}/alerts?include_resolved=false&${BANNER_KIND_QUERY}`,
         COORD_DASHBOARD_POLL_OPTIONS
       );
       // Tolerate both `{alerts: [...]}` and bare-list shapes (two coord
@@ -588,6 +788,11 @@ export function RedMainBanner() {
   const staleMs =
     lastSuccessAt === null ? 0 : Math.max(0, nowMs - lastSuccessAt);
   const stale = staleMs > STALE_AFTER_MS;
+  // Repos with a live red main in this answer: their deploy row must not
+  // read as if merges were open.
+  const redMainRepos = new Set(
+    reds.filter((r) => r.kind === RED_MAIN_KIND).map((r) => r.repo)
+  );
 
   return (
     <div data-testid="red-main-banner" className="shrink-0">
@@ -596,6 +801,7 @@ export function RedMainBanner() {
           key={a.alertKey}
           role="alert"
           data-testid="red-main-banner-row"
+          data-alert-kind={a.kind}
           // Deep-red bar + white text (~10:1, passes WCAG AAA), NOT
           // `bg-destructive text-destructive-foreground`: this app's theme
           // has no `--destructive-foreground` token (see globals.css — the
@@ -606,18 +812,51 @@ export function RedMainBanner() {
           // `--destructive` (#e5534b) is only 3.7:1 and fails AA for 14px
           // text anyway, so the surface is darkened rather than just
           // re-colouring the text. The bright border + icon keep it loud.
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2 bg-red-900 text-white border-b-2 border-red-500"
+          //
+          // A `deploy_red` row stays in the red family (R3: nothing clears
+          // it but a fix, and coord pages it like a red main). Only when coord
+          // SAYS it does not block merges is it drawn darker with a DASHED
+          // edge — the "not holding PRs" look. A blocking one gets the red
+          // main's full treatment, and an unknown one never borrows the
+          // not-blocking look.
+          data-blocks-merging={
+            a.kind === DEPLOY_RED_KIND
+              ? a.blocksMerging === null
+                ? "unknown"
+                : String(a.blocksMerging)
+              : undefined
+          }
+          className={[
+            "flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2",
+            "text-white border-b-2 border-red-500",
+            a.kind === DEPLOY_RED_KIND && a.blocksMerging === false
+              ? "bg-red-950 border-dashed"
+              : "bg-red-900",
+          ].join(" ")}
         >
           <AlertTriangle
             className="h-4 w-4 shrink-0 text-red-300"
             aria-hidden
           />
-          <span className="text-sm font-semibold">
-            {redMainHeadline(a, nowMs)}
+          <span
+            className="text-sm font-semibold"
+            title={blockingTitle(a, nowMs)}
+          >
+            {bannerHeadline(a, nowMs, redMainRepos.has(a.repo))}
           </span>
           {a.workflows.length > 0 && (
             <span className="text-xs font-mono text-red-100">
               failing: {a.workflows.join(", ")}
+            </span>
+          )}
+          {a.blocksMerging === true && a.blockingWorkflows.length > 0 && (
+            // Labelled apart from `failing:` because the two lists can
+            // differ: what is red is not necessarily what holds merges.
+            <span
+              className="text-xs font-mono text-red-100"
+              data-testid="deploy-red-blocking-workflows"
+            >
+              blocking: {a.blockingWorkflows.join(", ")}
             </span>
           )}
           {stale && lastSuccessAt !== null && (
@@ -634,7 +873,7 @@ export function RedMainBanner() {
           )}
           <RemediationNote fixSession={a.fixSession} />
           <span className="ml-auto">
-            <ClaimBadge claim={a.claim} />
+            <ClaimBadge claim={a.claim} alertKind={a.kind} />
           </span>
         </div>
       ))}

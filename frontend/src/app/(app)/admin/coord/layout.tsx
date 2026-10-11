@@ -60,8 +60,12 @@ export default function CoordLayout({
 
       {/* Red-main banner (plan 2026-07-06-coord-red-main-…, Phase 1
           D2): one persistent, non-dismissable row per repo whose main CI is
-          red, driven solely by the coord `red_main:<repo>` alert rows.
-          Mounted in the layout so it shows on EVERY coord console page. */}
+          red, driven solely by the coord `red_main:<repo>` alert rows, plus
+          one per repo whose push-only DEPLOY is red (`deploy_red:<repo>`).
+          A deploy row states coord's live `blocks_merging`: blocked, "this
+          deploy failure does not block merges", or no merge claim at all
+          from an older coord. Mounted in the layout so it shows on EVERY
+          coord console page. */}
       <RedMainBanner />
 
       <main className="flex-1 overflow-y-auto">{children}</main>

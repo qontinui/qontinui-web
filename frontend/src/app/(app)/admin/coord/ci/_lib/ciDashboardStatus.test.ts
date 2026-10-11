@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console";
-import type { RepoCiRow } from "@/components/operations/types";
+import type { MainCiVerdict, RepoCiRow } from "@/components/operations/types";
 import {
   CI_POOL_ATTENTION_BY_KIND,
   CI_POOL_PALETTE,
@@ -809,6 +809,86 @@ describe("deriveCiHealth — green is unreachable on ignorance", () => {
     expect(h.level).toBe("unknown");
   });
 
+  it("a deploy_red main is red, named, and says merges are not blocked", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([ciRow({ main_verdict: "deploy_red" })]),
+      NOW
+    );
+    expect(h.level).toBe("red");
+    expect(h.headline).toMatch(/^Deploy workflow red on /);
+    expect(h.headline).toMatch(/merges are not blocked/);
+    expect(h.badges.some((b) => b.key === "deploy-red")).toBe(true);
+    expect(h.badges.some((b) => b.key === "main-red")).toBe(false);
+  });
+
+  it("a deploy_red main on a failed CI-status refresh is UNKNOWN, not red", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([ciRow({ main_verdict: "deploy_red" })], { error: "boom" }),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toMatch(/not current/);
+  });
+
+  it("a deploy_red main on an unseeded CI-status read is UNKNOWN, not red", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([ciRow({ main_verdict: "deploy_red" })], { seeded: false }),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(h.headline).toMatch(/deploy workflow red .* not current/);
+  });
+
+  it("names the count when several repos are deploy red", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([
+        ciRow({ main_verdict: "deploy_red" }),
+        ciRow({ repo: "qontinui/qontinui-coord", main_verdict: "deploy_red" }),
+      ]),
+      NOW
+    );
+    expect(h.headline).toBe(
+      "Deploy workflow red on 2 repos — merges are not blocked"
+    );
+  });
+
+  it("a merge-blocking red main outranks a deploy_red main", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([
+        ciRow({ main_verdict: "deploy_red" }),
+        ciRow({ repo: "qontinui/qontinui-coord", main_verdict: "red" }),
+      ]),
+      NOW
+    );
+    expect(h.level).toBe("red");
+    expect(h.headline).toMatch(/^Main is red on /);
+    expect(h.badges.some((b) => b.key === "main-red")).toBe(true);
+    expect(h.badges.some((b) => b.key === "deploy-red")).toBe(true);
+  });
+
+  it("a main verdict this build does not know is UNKNOWN, never green", () => {
+    const h = deriveCiHealth(
+      read(overview()),
+      status([
+        ciRow({ main_verdict: "future_token" as unknown as MainCiVerdict }),
+      ]),
+      NOW
+    );
+    expect(h.level).toBe("unknown");
+    expect(
+      repoRowStatus(
+        "a/b",
+        ciRow({ main_verdict: "future_token" as unknown as MainCiVerdict }),
+        repo()
+      ).kind
+    ).toBe("main_unknown");
+  });
+
   it("a vacuously-green main disqualifies green", () => {
     const h = deriveCiHealth(
       read(overview()),
@@ -1181,6 +1261,27 @@ describe("repo rows", () => {
       ECON
     );
     expect(row.mainVerdict.text).toBe(DASH);
+  });
+
+  it("deploy_red main is an author row with a known verdict, not unknown", () => {
+    const s = repoRowStatus(
+      "a/b",
+      ciRow({ main_verdict: "deploy_red" }),
+      repo()
+    );
+    expect(s.kind).toBe("main_deploy_red");
+    expect(s.attention).toBe("author");
+    expect(s.reason).toMatch(/merges are not blocked/);
+    const [row] = buildRepoRows(
+      overview(),
+      [ciRow({ main_verdict: "deploy_red" })],
+      ECON
+    );
+    expect(row.mainVerdict).toEqual({
+      text: "deploy red",
+      known: true,
+      reason: null,
+    });
   });
 
   it("main green with unmeasured outcomes is amber, not healthy", () => {
