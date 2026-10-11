@@ -632,7 +632,7 @@ jobs:
           # (backend/app/api/v1/endpoints/releases.py reads GITHUB_TOKEN). Shared
           # runner IPs exhaust the 60/hr anonymous api.github.com limit, which
           # empties the release payload and fails the Download Page specs; the
-          # token lifts it to 5000/hr. Mirrors e2e-playwright-stack.yml.
+          # token lifts that anonymous limit. Mirrors e2e-playwright-stack.yml.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx playwright test --project="${{ matrix.browser }}"
