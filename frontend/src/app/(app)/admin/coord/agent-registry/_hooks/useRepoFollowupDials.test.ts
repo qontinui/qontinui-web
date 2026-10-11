@@ -15,8 +15,15 @@ const listRepos = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...a: unknown[]) => httpGet(...a),
-    put: (...a: unknown[]) => httpPut(...a),
+    // The dials go through `httpClient.fetch` (the typed /operations client);
+    // route each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const out =
+        init.method === "PUT"
+          ? await httpPut(url, JSON.parse(init.body ?? "null"))
+          : await httpGet(url);
+      return new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 

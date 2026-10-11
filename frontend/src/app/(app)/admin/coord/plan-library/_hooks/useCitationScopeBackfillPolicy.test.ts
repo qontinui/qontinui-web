@@ -21,11 +21,15 @@ const toastWarning = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const out =
+        init.method === "GET"
+          ? await getMock(url)
+          : await putMock(url, JSON.parse(init.body ?? "null"));
+      return new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 // Arrow indirection: `vi.mock` factories hoist above these consts.

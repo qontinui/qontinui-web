@@ -25,7 +25,9 @@ vi.mock("@/services/service-factory", () => ({
       const body =
         init?.method === "PATCH"
           ? await patchViaFetch(url, JSON.parse(String(init.body)))
-          : await get(url);
+          : init?.method === "PUT"
+            ? await put(url, JSON.parse(String(init.body)))
+            : await get(url);
       return new Response(JSON.stringify(body), { status: 200 });
     },
     get: (...args: unknown[]) => get(...args),

@@ -15,11 +15,15 @@ const patchMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    patch: (...args: unknown[]) => patchMock(...args),
-    put: vi.fn(),
-    post: vi.fn(),
-    delete: vi.fn(),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const out =
+        init.method === "GET"
+          ? await getMock(url)
+          : await patchMock(url, JSON.parse(init.body ?? "null"));
+      return new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 vi.mock("sonner", () => ({
@@ -27,7 +31,8 @@ vi.mock("sonner", () => ({
 }));
 
 import { useTranscriptSyncPolicy } from "./useTranscriptSyncPolicy";
-import { TRANSCRIPT_SYNC_API } from "../types";
+
+const TRANSCRIPT_SYNC_API = "/api/v1/operations/tenant-policy/transcript-sync";
 
 const view = (enabled: boolean | null) => ({
   transcript_sync_enabled: enabled,
