@@ -67,9 +67,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "kpi_01_phase_token_usage_cost_precision"
-down_revision: str | Sequence[str] | None = (
-    "devcred_01_credential_deny_and_bound_pair_codes"
-)
+# A plain `str` annotation keeps this on one line: a formatter-wrapped
+# `= (\n"..."\n)` reads to coord's escalate-evidence door as a merge tuple.
+down_revision: str = "devcred_01_credential_deny_and_bound_pair_codes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
