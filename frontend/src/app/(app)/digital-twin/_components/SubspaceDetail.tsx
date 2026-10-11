@@ -16,7 +16,7 @@ import { Code2, Loader2, Sparkles } from "lucide-react";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
-import { STATUS_STYLES } from "../_lib/status-presentation";
+import { presentStatus } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 
 interface SubspaceDetailProps {
@@ -61,7 +61,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   });
 
   if (!row) return null;
-  const style = STATUS_STYLES[row.cellStatus];
+  const style = presentStatus(row);
   const verdict = data?.verdict;
   const summary = verdict ? summarizeVerdict(row.id, verdict) : null;
 

@@ -1,5 +1,5 @@
 {
-  "$comment": "Digital Twin sub-space taxonomy — the DENOMINATOR for the completeness matrix and the lifecycle view. It lists the research + coord sub-spaces of the twin of the software-development process as of 2026-10-11 (three coupled twins: environment = the system being built and run; process = work in flight; intent = what the operator wants), including planned and not-yet-built ones so the gap is explicit; it is not every research candidate (qontinui-research open-questions/missing-twin-sub-spaces.md parks more). The live numerator (per-tenant observer status) comes from GET /api/v1/digital-twin/subspaces and is joined by `id`. query_kind: 'snapshot' = live-probed by this page through coord's twin verdict route (the backend probes exactly _PROBEABLE_SUBSPACES in backend/app/api/v1/endpoints/digital_twin.py, which mirrors coord twin_routes.rs subspace_tool); 'parameterized' = a coord tool answers it (with or without arguments) but this page does not probe it — ask it via Ask the Twin; 'none' = no coord query tool. Statuses on 'none' / 'parameterized' rows are MANIFEST CLAIMS, not live verdicts. stages = the lifecycle stages a row observes (intent, plan, implement, verify, integrate, release, operate, learn); plan = the plan slug that builds a planned / partial row. Re-vetted 2026-10-11 against qontinui-coord origin/main (every coord_query_tool exists there) and qontinui-research origin/master; theory/process-twin.md, theory/intent-twin.md and theory/interventional-twin.md are the companion research docs. Keep coord_query_tool / observer_module in sync with coord src.",
+  "$comment": "Digital Twin sub-space taxonomy — the DENOMINATOR for the completeness matrix and the lifecycle view. It lists the research + coord sub-spaces of the twin of the software-development process as of 2026-10-11 (three coupled twins: environment = the system being built and run; process = work in flight; intent = what the operator wants), including planned and not-yet-built ones so the gap is explicit; it is not every research candidate (qontinui-research open-questions/missing-twin-sub-spaces.md parks more). The live numerator (per-tenant observer status) comes from GET /api/v1/digital-twin/subspaces and is joined by `id`. query_kind: 'snapshot' = live-probed by this page through coord's twin verdict route (the backend probes exactly _PROBEABLE_SUBSPACES in backend/app/api/v1/endpoints/digital_twin.py, which mirrors coord twin_routes.rs subspace_tool); 'parameterized' = a coord tool answers it (with or without arguments) but this page does not probe it — ask it via Ask the Twin; 'none' = no coord query tool. Statuses on 'none' / 'parameterized' rows are MANIFEST CLAIMS, not live verdicts. stages = the lifecycle stages a row observes (intent, plan, implement, verify, integrate, release, operate, learn); plan = the plan slug that builds a planned / partial row; ask_via (parameterized rows only) = where on this page the row's coord tool can be asked — 'ask-the-twin', 'delivery-tab' or 'not-on-this-page' (Ask the Twin runs on the runner's device credential, so it reaches only the tools coord grants a device session: agent_tool_access.rs device_default_allow_set). Re-vetted 2026-10-11 against qontinui-coord origin/main (every coord_query_tool exists there) and qontinui-research origin/master; theory/process-twin.md, theory/intent-twin.md and theory/interventional-twin.md are the companion research docs. Keep coord_query_tool / observer_module in sync with coord src.",
   "version": "2.0.0",
   "subspaces": [
     {
@@ -42,7 +42,8 @@
       "research_doc": "theory/omega-evolution.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_git_drift",
-      "observer_module": "git_observer.rs"
+      "observer_module": "git_observer.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "proc",
@@ -84,7 +85,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_symbol_lookup",
-      "observer_module": "code_semantics.rs"
+      "observer_module": "code_semantics.rs",
+      "ask_via": "not-on-this-page"
     },
     {
       "id": "type",
@@ -98,7 +100,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_typecheck_file",
-      "observer_module": "code_semantics (runner LSP sidecar)"
+      "observer_module": "code_semantics (runner LSP sidecar)",
+      "ask_via": "not-on-this-page"
     },
     {
       "id": "ci",
@@ -112,7 +115,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_ci_state",
-      "observer_module": "ci_observer.rs"
+      "observer_module": "ci_observer.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "health",
@@ -140,7 +144,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_recent_errors",
-      "observer_module": "error_observer.rs"
+      "observer_module": "error_observer.rs",
+      "ask_via": "not-on-this-page"
     },
     {
       "id": "deps",
@@ -252,7 +257,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_resolve_origin",
-      "observer_module": "origin_resolution_observer.rs"
+      "observer_module": "origin_resolution_observer.rs",
+      "ask_via": "not-on-this-page"
     },
     {
       "id": "auth",
@@ -267,7 +273,8 @@
       "query_kind": "parameterized",
       "_query_kind_note": "Deliberately NOT auto-probed: coord_query_auth_config exposes Cognito pool wiring / app-clients / tenancy graph — the most recon-sensitive sub-space. coord drops it from the snapshot map (/coord/twin/auth/verdict 404s); it stays available to the Phase-2 interactive explorer.",
       "coord_query_tool": "coord_query_auth_config",
-      "observer_module": "auth_observation_watcher.rs"
+      "observer_module": "auth_observation_watcher.rs",
+      "ask_via": "not-on-this-page"
     },
     {
       "id": "client_telemetry",
@@ -323,7 +330,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_account_usage",
-      "observer_module": "claude_account_usage.rs"
+      "observer_module": "claude_account_usage.rs",
+      "ask_via": "not-on-this-page"
     },
     {
       "id": "queue",
@@ -379,7 +387,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_delivery",
-      "observer_module": "delivery_view.rs"
+      "observer_module": "delivery_view.rs",
+      "ask_via": "delivery-tab"
     },
     {
       "id": "work_units",
@@ -393,7 +402,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_work_unit_overview",
-      "observer_module": "work_unit_registry.rs"
+      "observer_module": "work_unit_registry.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "gates",
@@ -407,7 +417,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_gate_list",
-      "observer_module": "gates.rs"
+      "observer_module": "gates.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "sessions",
@@ -421,7 +432,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_orient",
-      "observer_module": "agent_status.rs"
+      "observer_module": "agent_status.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "merge_train",
@@ -435,7 +447,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_train_health",
-      "observer_module": "pr_merge/train_health.rs"
+      "observer_module": "pr_merge/train_health.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "merge_economics",
@@ -449,7 +462,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_merge_economics",
-      "observer_module": "pr_merge/economics.rs"
+      "observer_module": "pr_merge/economics.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "scheduler_trace",
@@ -463,7 +477,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_scheduler_trace",
-      "observer_module": "scheduler_trace.rs"
+      "observer_module": "scheduler_trace.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "workers",
@@ -477,7 +492,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_workers",
-      "observer_module": "worker_ledger.rs"
+      "observer_module": "worker_ledger.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "webhook_pulse",
@@ -491,7 +507,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_webhook_pulse",
-      "observer_module": "webhook_pulse.rs"
+      "observer_module": "webhook_pulse.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "outbound",
@@ -505,7 +522,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_outbound_budget",
-      "observer_module": "outbound_budget_observer.rs"
+      "observer_module": "outbound_budget_observer.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "action_expectations",
@@ -519,7 +537,8 @@
       "research_doc": "theory/effect-calculus.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_action_expectations",
-      "observer_module": "dev_actions.rs"
+      "observer_module": "dev_actions.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "graduation",
@@ -533,7 +552,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_graduation_readiness",
-      "observer_module": "policies/graduation_readiness.rs"
+      "observer_module": "policies/graduation_readiness.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "twin_fidelity",
@@ -547,7 +567,8 @@
       "research_doc": "theory/observability-scopes.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_twin_fidelity",
-      "observer_module": "twin_fidelity_watcher.rs"
+      "observer_module": "twin_fidelity_watcher.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "findings",
@@ -561,7 +582,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_recent_findings",
-      "observer_module": "findings.rs"
+      "observer_module": "findings.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "process_log",
@@ -605,7 +627,8 @@
       "research_doc": "theory/intent-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_list_prompt_documents",
-      "observer_module": "prompt_documents.rs"
+      "observer_module": "prompt_documents.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "spec_claims",
@@ -619,7 +642,8 @@
       "research_doc": "theory/intent-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_get_prompt_document",
-      "observer_module": "prompt_document_claims.rs"
+      "observer_module": "prompt_document_claims.rs",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "operator_touches",
@@ -647,7 +671,8 @@
       "research_doc": "theory/intent-twin.md",
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_metric",
-      "observer_module": "gates.rs (read_metric_series)"
+      "observer_module": "gates.rs (read_metric_series)",
+      "ask_via": "ask-the-twin"
     },
     {
       "id": "arch",

@@ -1,6 +1,6 @@
 /** Shared visual vocabulary for cell statuses — colors + human labels. */
 
-import type { CellStatus } from "./types";
+import type { AskVia, CellStatus, ResolvedSubspace } from "./types";
 
 export interface StatusStyle {
   label: string;
@@ -86,6 +86,42 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     meaning: "Live probe in flight.",
   },
 };
+
+/**
+ * `STATUS_STYLES.interactive` sends the reader to Ask the Twin. That is only
+ * true of a tool coord grants the device session Ask the Twin runs on; a row
+ * with another door (or none) says so instead.
+ */
+const INTERACTIVE_ELSEWHERE: Record<
+  Exclude<AskVia, "ask-the-twin">,
+  Pick<StatusStyle, "label" | "meaning">
+> = {
+  "delivery-tab": {
+    label: "Built · ask it",
+    meaning:
+      "Built — a coord tool answers it; look it up in the Delivery tab. Not probed on this page.",
+  },
+  "not-on-this-page": {
+    label: "Built · not askable here",
+    meaning:
+      "Built — a coord tool answers it, but coord withholds that tool from the device session Ask the Twin runs on, so nothing on this page can ask it.",
+  },
+};
+
+/** The presentation of one row's status (its cell status, refined by its door). */
+export function presentStatus(
+  row: Pick<ResolvedSubspace, "cellStatus" | "ask_via">
+): StatusStyle {
+  const style = STATUS_STYLES[row.cellStatus];
+  if (
+    row.cellStatus !== "interactive" ||
+    row.ask_via === undefined ||
+    row.ask_via === "ask-the-twin"
+  ) {
+    return style;
+  }
+  return { ...style, ...INTERACTIVE_ELSEWHERE[row.ask_via] };
+}
 
 export function formatStaleness(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return "live";
