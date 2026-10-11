@@ -36,18 +36,21 @@ const getMock = vi.fn();
 const postMock = vi.fn();
 const patchMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    post: (...args: unknown[]) => postMock(...args),
-    // Filled in, unlike the template's bare `vi.fn()`: the publish-mode control
-    // is a WRITE, and a stub with no implementation returns `undefined`, which
-    // the document hook would report as a successful save of nothing.
-    patch: (...args: unknown[]) => patchMock(...args),
-    put: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (...args: unknown[]) => getMock(...args),
+      post: (...args: unknown[]) => postMock(...args),
+      // Filled in, unlike the template's bare `vi.fn()`: the publish-mode control
+      // is a WRITE, and a stub with no implementation returns `undefined`, which
+      // the document hook would report as a successful save of nothing.
+      patch: (...args: unknown[]) => patchMock(...args),
+      put: vi.fn(),
+      delete: vi.fn(),
+    }),
+  };
+});
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
