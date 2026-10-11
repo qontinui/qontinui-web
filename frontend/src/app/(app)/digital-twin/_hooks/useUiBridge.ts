@@ -12,8 +12,19 @@ import type {
  * Hooks for the UI Bridge tab — the twin's UI half. Spec list/graph are the
  * CACHED/processed side (read from the runner's on-disk spec IR, no app run
  * needed); the snapshot is the AUTOMATION-required side (live DOM capture).
- * All go through the device-bridge relay to the paired runner.
+ * All go through the device-bridge relay to the paired runner, and
+ * `runnerProxyGet` hands back the payload (the runner's `{ success, data }`
+ * envelope already unwrapped).
  */
+
+/**
+ * The relay path for an app's Spec API route. The App field is free text, so
+ * the id is encoded to stay ONE path segment — the runner's relay allowlist
+ * matches `/apps/{app_id}/…` with exactly one segment for the id.
+ */
+function specPath(appId: string, leaf: "list" | "graph"): string {
+  return `apps/${encodeURIComponent(appId)}/spec/${leaf}`;
+}
 
 /** CACHED: the runner's discovered spec pages for `appId`. */
 export function useRunnerSpecList(deviceId: string | null, appId: string) {
@@ -22,10 +33,11 @@ export function useRunnerSpecList(deviceId: string | null, appId: string) {
     queryFn: () =>
       runnerProxyGet<SpecListResponse>(
         deviceId as string,
-        `apps/${appId}/spec/list`,
-        { timeoutMs: 8000 },
+        specPath(appId, "list"),
+        { timeoutMs: 8000 }
       ),
-    enabled: !!deviceId,
+    // An empty App field names no app: there is nothing to ask for.
+    enabled: !!deviceId && appId !== "",
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,
@@ -39,10 +51,10 @@ export function useRunnerSpecGraph(deviceId: string | null, appId: string) {
     queryFn: () =>
       runnerProxyGet<SpecGraphResponse>(
         deviceId as string,
-        `apps/${appId}/spec/graph`,
-        { timeoutMs: 8000 },
+        specPath(appId, "graph"),
+        { timeoutMs: 8000 }
       ),
-    enabled: !!deviceId,
+    enabled: !!deviceId && appId !== "",
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,
@@ -50,9 +62,12 @@ export function useRunnerSpecGraph(deviceId: string | null, appId: string) {
 }
 
 /**
- * AUTOMATION-required: a live UI Bridge snapshot of the runner's connected app.
- * On-demand only (`enabled`) — it requires the app to be running + connected, so
- * we never fire it implicitly.
+ * AUTOMATION-required: a live UI Bridge snapshot of the RUNNER'S OWN window.
+ * The runner answers `ui-bridge/control/snapshot` from its own webview
+ * (`ui_bridge_request_sync`), not from the app the Spec API reads are about,
+ * so the key deliberately has no app id: the App field does not change what
+ * this captures. What it captured is whatever `appId` / `page` the snapshot
+ * reports. On-demand only (`enabled`) — we never fire it implicitly.
  */
 export function useRunnerSnapshot(deviceId: string | null, enabled: boolean) {
   return useQuery({
@@ -61,7 +76,7 @@ export function useRunnerSnapshot(deviceId: string | null, enabled: boolean) {
       runnerProxyGet<UiBridgeSnapshot>(
         deviceId as string,
         "ui-bridge/control/snapshot",
-        { timeoutMs: 10_000 },
+        { timeoutMs: 10_000 }
       ),
     enabled: enabled && !!deviceId,
     staleTime: 0,
