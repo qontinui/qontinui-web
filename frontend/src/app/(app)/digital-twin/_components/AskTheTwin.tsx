@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, Loader2, WifiOff, Bot, User } from "lucide-react";
+import {
+  AlertTriangle,
+  MessageSquare,
+  Send,
+  Loader2,
+  WifiOff,
+  Bot,
+  User,
+} from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import { useDispatchTarget } from "@/contexts/active-runner-context";
@@ -9,14 +17,17 @@ import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 
 /**
  * "Ask the Twin" — a prompt box that routes a custom question to the user's
- * CONNECTED AI (the paired runner's Claude session) over the chat relay. The
- * runner agent has coord's digital-twin MCP tools (coord_query_* / coord_is_*),
- * so it answers from the SAME live observed state the matrix surfaces — goal #2
- * (the human gets exactly what an agent would get), made interactive.
+ * CONNECTED AI over the chat relay: the runner starts a fresh Claude Code
+ * session for it (qontinui-runner `backend_relay.rs` `handle_chat_create`).
+ * The runner provisions coord's digital-twin MCP tools (coord_query_* /
+ * coord_is_*) into that session FAIL-OPEN — with no device credential the
+ * session still answers, just without them — and nothing on the wire says
+ * which happened. So this component never claims the answer came from the
+ * twin; the copy says when it can.
  *
  * Phase 2 scope: single ephemeral session, single-slot question queue. We seed
  * the first message with a twin-oriented preamble so the agent grounds its
- * answer in the twin tools and reports credibility.
+ * answer in the twin tools (when it has them) and reports credibility.
  */
 
 const TWIN_PREAMBLE =
@@ -40,6 +51,7 @@ export function AskTheTwin() {
   const {
     isConnected,
     sessionState,
+    sessionError,
     messages,
     streamingContent,
     createSession,
@@ -51,6 +63,18 @@ export function AskTheTwin() {
     }, []),
   });
 
+  // The latest question failed: the runner refused the session, the session
+  // entered its error state, or the request was not delivered or accepted.
+  // Each of these used to be dropped, leaving the question with no answer.
+  const failed = sessionState === "error" || !!sessionError;
+  // No answer can come from the current session any more — it failed, was
+  // closed, or the runner no longer knows it. A question asked now must start
+  // a fresh session: the follow-up path waits for `ready`, which none of these
+  // states can reach, so routing it there hung on "Connecting to your runner…"
+  // forever.
+  const sessionGone =
+    failed || sessionState === "closed" || sessionState === "not_found";
+
   // When a runner drops, forget the session so a reconnect starts cleanly.
   useEffect(() => {
     if (runnerId === null) {
@@ -58,6 +82,12 @@ export function AskTheTwin() {
       sentCountRef.current = 0;
     }
   }, [runnerId]);
+
+  // Forget a session that can no longer answer (declared before the delivery
+  // effect below, so it runs first in any commit that changes both).
+  useEffect(() => {
+    if (sessionGone) hasSessionRef.current = false;
+  }, [sessionGone]);
 
   // State machine to deliver a queued question: create a session when connected,
   // then flush the question once the session is ready. Re-runs as connection /
@@ -70,10 +100,12 @@ export function AskTheTwin() {
     // runner's chat session auto-responds to its first turn, and the terminal
     // `ready` that the old flow waited on to send the real question was never
     // reliably observed (the question stayed queued → busy stuck forever).
+    // The same path serves a question asked after the session became unable
+    // to answer (`sessionGone`): it starts a fresh session.
     if (
       !hasSessionRef.current &&
       isConnected &&
-      sessionState === "disconnected"
+      (sessionState === "disconnected" || sessionGone)
     ) {
       createSession("Digital Twin question", TWIN_PREAMBLE + queued, queued);
       sentCountRef.current += 1;
@@ -86,13 +118,23 @@ export function AskTheTwin() {
       sentCountRef.current += 1;
       setQueued(null);
     }
-  }, [queued, isConnected, sessionState, createSession, sendMessage]);
+  }, [
+    queued,
+    isConnected,
+    sessionState,
+    sessionGone,
+    createSession,
+    sendMessage,
+  ]);
 
   // Busy from submit until the answer finishes: `queued` (awaiting send),
-  // `processing`/`initializing` (session generating), or a live stream in flight.
-  // Not keyed on `queued` alone — the one-shot clears it immediately after
-  // createSession, so the stream/processing signals carry the rest.
-  const busy = !!queued || sessionState === "processing" || !!streamingContent;
+  // `processing` (session generating), or a live stream in flight. Not keyed
+  // on `queued` alone — the one-shot clears it immediately after
+  // createSession, so the stream/processing signals carry the rest. A session
+  // that can no longer answer ends the wait: nothing more is coming from it.
+  const busy =
+    !!queued ||
+    (!sessionGone && (sessionState === "processing" || !!streamingContent));
 
   const handleSubmit = useCallback(() => {
     const q = input.trim();
@@ -145,9 +187,8 @@ export function AskTheTwin() {
         <MessageSquare className="size-4" /> Ask the Twin
       </h2>
       <p className="mb-3 text-xs text-muted-foreground">
-        Your connected runner answers using the same digital-twin tools an AI
-        agent uses — e.g. “Is coord’s deployed commit live?” or “Which observers
-        are blind right now?”
+        Ask your connected runner about the digital twin — e.g. “Is coord’s
+        deployed commit live?” or “Which observers are blind right now?”
       </p>
 
       {(conversation.length > 0 || streamingContent) && (
@@ -171,10 +212,37 @@ export function AskTheTwin() {
               </span>
               <div className="whitespace-pre-wrap break-words">
                 {streamingContent}
-                <span className="ml-0.5 inline-block animate-pulse">▍</span>
+                {!sessionGone && (
+                  <span className="ml-0.5 inline-block animate-pulse">▍</span>
+                )}
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {failed && (
+        // `role="alert"`: this replaces an answer that will never arrive, and
+        // appears asynchronously — without it a screen reader gets no signal.
+        <div
+          role="alert"
+          data-testid="ask-the-twin-error"
+          className="mb-3 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+        >
+          <AlertTriangle
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500"
+          />
+          <div className="min-w-0 space-y-1">
+            <p className="font-medium">The question could not be answered.</p>
+            <p className="break-words text-muted-foreground">
+              {sessionError ??
+                "The runner reported the session failed and gave no reason."}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Asking again starts a fresh session.
+            </p>
+          </div>
         </div>
       )}
 
@@ -209,11 +277,16 @@ export function AskTheTwin() {
       </div>
       {busy && (
         <p className="mt-1.5 text-xs text-muted-foreground">
-          {sessionState === "processing"
-            ? "The agent is querying the twin…"
+          {sessionState === "processing" || streamingContent
+            ? "Your runner’s agent is working on an answer…"
             : "Connecting to your runner…"}
         </p>
       )}
+      <p className="mt-2 text-xs text-muted-foreground">
+        Answers come from a fresh Claude Code session on your runner. It uses
+        the twin’s tools only if the runner could provision them for that
+        session, and this page cannot see whether it did.
+      </p>
     </section>
   );
 }
