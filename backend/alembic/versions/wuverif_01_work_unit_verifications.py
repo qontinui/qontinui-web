@@ -1,7 +1,7 @@
 """coord work-unit verifications table + per-tenant verification dials
 
 Revision ID: wuverif_01
-Revises: census_idx_01_device_repo_path_observed
+Revises: coord_wt_cargo_lock_01
 Create Date: 2026-09-30
 
 Phase 1 (storage) of the work-unit verification plan. DDL ONLY: no route, no
@@ -110,8 +110,8 @@ this one.
 Head resolution
 ===============
 
-``down_revision = "census_idx_01_device_repo_path_observed"`` — the single
-head of qontinui-web ``origin/main`` @ ``243794513``, measured 2026-10-10 by
+``down_revision = "coord_wt_cargo_lock_01"`` — the single head of
+qontinui-web ``origin/main`` @ ``96e5e4ff8``, measured 2026-10-10 by
 AST-parsing every file in ``backend/alembic/versions`` and taking the one
 ``revision`` no file names as ``down_revision``. If main moves before
 this lands, re-chain onto the live head (prove ONE head with
@@ -125,7 +125,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "wuverif_01"
-down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
+down_revision: str | Sequence[str] | None = "coord_wt_cargo_lock_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
