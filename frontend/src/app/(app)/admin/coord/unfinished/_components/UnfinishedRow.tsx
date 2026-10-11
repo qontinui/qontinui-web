@@ -9,7 +9,7 @@ import {
   transcriptText,
   verdictLabel,
 } from "../_lib/unfinished";
-import type { UnfinishedSession } from "../types";
+import type { UnfinishedSession } from "@/lib/api/operations/unfinished";
 
 interface Props {
   row: UnfinishedSession;
@@ -79,7 +79,16 @@ export function UnfinishedRow({
           </span>
         </>
       }
-      time={<RowTime at={row.closed_at} verb="Closed" />}
+      time={
+        <RowTime
+          at={row.closed_at}
+          verb="Closed"
+          absent={{
+            label: "close time unknown",
+            title: "Coord recorded no close time — unknown, not never",
+          }}
+        />
+      }
     >
       <RecordDetail
         data-testid="unfinished-detail"
@@ -131,7 +140,16 @@ export function UnfinishedRow({
         }
         history={
           <div className="text-xs text-muted-foreground">
-            Last resume attempt:{" "}
+            Last acted:{" "}
+            <RowTime
+              at={row.last_acted_at}
+              verb="Last acted"
+              absent={{
+                label: "unknown",
+                title: "Coord recorded no last-acted time — unknown, not never",
+              }}
+            />{" "}
+            · last resume attempt:{" "}
             <RowTime at={row.last_resume_attempt_at} verb="Attempted" /> · last
             verdict: {verdictLabel(row.resume_verdict)}
           </div>
@@ -142,6 +160,7 @@ export function UnfinishedRow({
             <div>coord {row.coord_session_id}</div>
             <div>device {row.device_id ?? "unknown"}</div>
             <div>config_dir {row.config_dir ?? "unknown"}</div>
+            <div>working_dir {row.working_dir ?? "unknown"}</div>
             <div>worktree {row.worktree_path ?? "unknown"}</div>
             <div>{transcriptText(row)}</div>
           </div>

@@ -1,6 +1,6 @@
 # Workflow Builder Documentation
 
-Welcome to the comprehensive documentation for the Qontinui Workflow Builder advanced features. This documentation covers enterprise-grade workflow management capabilities including organization, version control, testing, analytics, and performance optimization.
+Welcome to the comprehensive documentation for the Qontinui Workflow Builder advanced features. This documentation covers enterprise-grade workflow management capabilities including organization, dependency analysis, testing, analytics, and complexity analysis.
 
 ## Table of Contents
 
@@ -18,10 +18,8 @@ The Workflow Builder is a powerful automation tool that enables you to create, o
 
 - **Organized**: Hierarchical folder structure with tags and search capabilities
 - **Reliable**: Comprehensive testing framework with assertions and test suites
-- **Maintainable**: Git-like version control with branches, merging, and rollback
 - **Reusable**: Component library for creating modular, parameterized subflows
-- **Insightful**: Analytics dashboard with performance metrics and bottleneck detection
-- **Optimized**: Performance analysis with parallelization suggestions and resource tracking
+- **Insightful**: Analytics dashboard with execution metrics and performance trends
 - **Documented**: Auto-generated documentation with markdown support
 - **Scalable**: Dependency analysis and circular dependency detection
 
@@ -87,20 +85,7 @@ Track workflow performance with detailed metrics and trends.
 
 **Documentation**: [Analytics Guide](./analytics.md)
 
-### 6. Performance Analysis
-
-Identify bottlenecks and optimize workflow execution.
-
-- Bottleneck identification
-- Parallelization opportunities
-- Wait action analysis
-- Loop optimization suggestions
-- Resource usage tracking
-- Performance heatmaps
-
-**Documentation**: [Performance Analysis](./analytics.md#performance-analysis)
-
-### 7. Documentation System
+### 6. Documentation System
 
 Auto-generate and maintain workflow documentation.
 
@@ -108,25 +93,10 @@ Auto-generate and maintain workflow documentation.
 - Auto-generate from workflow structure
 - Custom documentation templates
 - Export to multiple formats
-- Version documentation with workflow
 
 **Documentation**: [Documentation Guide](./documentation.md)
 
-### 8. Version Control
-
-Git-like version control for workflows with branches, tags, and merging.
-
-- Create and manage branches
-- Save versions (commits)
-- Tag important releases
-- Compare versions with detailed diffs
-- Merge branches with conflict detection
-- Rollback to previous versions
-- Export/import version history
-
-**Documentation**: [Version Control Guide](./version-control.md)
-
-### 9. Complexity Analysis
+### 7. Complexity Analysis
 
 Analyze and track workflow complexity metrics.
 
@@ -205,59 +175,6 @@ const result = await workflowTestingService.runTestCase(testCase.id);
 console.log(result.passed ? 'Test passed' : 'Test failed');
 ```
 
-### Version Control
-
-```typescript
-import { workflowVersionControl } from '@/services/workflow-version-control';
-
-// Create a branch
-const branch = workflowVersionControl.createBranch(
-  workflowId,
-  'feature/new-login-flow',
-  undefined,
-  'Implementing new login flow'
-);
-
-// Save a version
-const version = workflowVersionControl.saveVersion(
-  workflowId,
-  branch.id,
-  workflow,
-  'Add two-factor authentication',
-  'john.doe@example.com'
-);
-
-// Create a tag
-const tag = workflowVersionControl.createTag(
-  workflowId,
-  version.id,
-  'v1.0.0',
-  'Initial production release'
-);
-```
-
-### Analyzing Performance
-
-```typescript
-import { workflowPerformanceAnalyzer } from '@/services/workflow-performance-analyzer';
-
-// Analyze workflow performance
-const analysis = workflowPerformanceAnalyzer.analyzePerformance(workflow);
-
-// Check performance score
-console.log(`Performance Score: ${analysis.performanceScore}/100`);
-
-// Review bottlenecks
-analysis.bottlenecks.forEach(bottleneck => {
-  console.log(`${bottleneck.type}: ${bottleneck.description}`);
-});
-
-// Get optimization suggestions
-analysis.suggestions.forEach(suggestion => {
-  console.log(`Priority ${suggestion.priority}: ${suggestion.title}`);
-});
-```
-
 ## Architecture
 
 ### Service Layer
@@ -278,10 +195,8 @@ The Workflow Builder uses a service-oriented architecture with singleton service
 │  • WorkflowComponentsService      (Reusable Components)     │
 │  • WorkflowTestingService         (Testing)                 │
 │  • WorkflowAnalyticsService       (Metrics & Analytics)     │
-│  • WorkflowPerformanceAnalyzer    (Performance)             │
 │  • WorkflowComplexityAnalyzer     (Complexity)              │
 │  • WorkflowDocumentationService   (Documentation)           │
-│  • WorkflowVersionControl         (Version Control)         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -307,10 +222,6 @@ WorkflowBuilder
     │
     ├──> FolderManager ──> LocalStorage
     │
-    ├──> VersionControl ──> LocalStorage
-    │         │
-    │         └──> Snapshots (legacy)
-    │
     ├──> DependencyAnalyzer
     │         │
     │         └──> Analyzes RUN_WORKFLOW actions
@@ -320,10 +231,6 @@ WorkflowBuilder
     │         └──> Mock Execution
     │
     ├──> AnalyticsService ──> LocalStorage
-    │
-    ├──> PerformanceAnalyzer
-    │         │
-    │         └──> Uses ExecutionData (optional)
     │
     ├──> ComponentsService ──> LocalStorage
     │
@@ -340,9 +247,8 @@ WorkflowBuilder
 - [Dependencies](./dependencies.md) - Analyze workflow relationships
 - [Reusable Components](./components.md) - Build component libraries
 - [Testing Framework](./testing.md) - Test workflows comprehensively
-- [Analytics & Metrics](./analytics.md) - Track performance and metrics
+- [Analytics & Metrics](./analytics.md) - Track execution metrics and complexity
 - [Documentation](./documentation.md) - Auto-generate documentation
-- [Version Control](./version-control.md) - Manage versions and branches
 
 ### Reference Documentation
 
@@ -384,11 +290,9 @@ When extending the Workflow Builder:
   - Reusable Components
   - Testing Framework
   - Analytics & Metrics
-  - Performance Analysis
   - Documentation System
-  - Version Control
   - Complexity Analysis
 
 ## License
 
-Copyright © 2024 Qontinui. All rights reserved.
+Licensed under AGPL-3.0-or-later, as part of qontinui-web — see the repository [LICENSE](../../LICENSE).

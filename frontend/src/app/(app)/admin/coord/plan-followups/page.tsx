@@ -49,6 +49,7 @@ import {
   useGuardedPoll,
   type ReadGuard,
 } from "@/components/admin/coord/useGuardedPoll";
+import { useCursorPager } from "@/components/admin/coord/cursorPager";
 import { httpClient } from "@/services/service-factory";
 import {
   EXPECTED_ORDERING,
@@ -63,20 +64,23 @@ const POLL_INTERVAL_MS = 60_000;
 const PAGE_SIZE = 50;
 
 export default function CoordPlanFollowupsPage() {
-  const [offset, setOffset] = useState(0);
+  const pager = useCursorPager();
+  const { cursor, start } = pager;
   const [data, setData] = useState<OpenFollowupResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /**
    * Guarded by `useGuardedPoll` — the two generation counters and the
-   * in-flight lock, one spelling shared with `/admin/coord/plans`. The offset
+   * in-flight lock, one spelling shared with `/admin/coord/plans`. The cursor
    * control makes both races it documents reachable here.
    */
   const fetchData = useCallback(
     async (guard: ReadGuard) => {
       try {
         const qs = new URLSearchParams();
-        qs.set("offset", String(offset));
+        // Keyset paging: the previous page's `next_cursor`, verbatim (the
+        // route has no `offset`).
+        if (cursor !== null) qs.set("cursor", cursor);
         qs.set("limit", String(PAGE_SIZE));
         const body = await httpClient.get<OpenFollowupResponse>(
           `${ENDPOINT}?${qs.toString()}`
@@ -89,10 +93,10 @@ export default function CoordPlanFollowupsPage() {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [offset]
+    [cursor]
   );
 
-  // The offset is the question: rows already held answer the previous one.
+  // The cursor is the question: rows already held answer the previous one.
   const resetWindow = useCallback(() => {
     setData(null);
     setError(null);
@@ -108,12 +112,12 @@ export default function CoordPlanFollowupsPage() {
   const readFailed = error !== null;
   const items = useMemo(() => data?.items ?? [], [data]);
   const window = useMemo(
-    () => (data ? describeFollowupWindow(data) : null),
-    [data]
+    () => (data ? describeFollowupWindow(data, start) : null),
+    [data, start]
   );
   const health = useMemo(
-    () => deriveFollowupHealth(data, loaded, readFailed),
-    [data, loaded, readFailed]
+    () => deriveFollowupHealth(data, loaded, readFailed, start),
+    [data, loaded, readFailed, start]
   );
 
   return (
@@ -131,7 +135,7 @@ export default function CoordPlanFollowupsPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <RefreshButton
-          key={offset}
+          key={cursor ?? ""}
           onRefresh={refresh}
           label="Refresh follow-ups"
           title={`Re-reads the queue now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
@@ -165,8 +169,14 @@ export default function CoordPlanFollowupsPage() {
               an unknown total — the route served no count
             </span>
           )}{" "}
-          open follow-ups, offset {window.offset}, page size{" "}
-          {window.limit ?? "unstated"}, ordered{" "}
+          open follow-ups
+          {window.shown > 0 && (
+            <>
+              {" "}
+              (rows {window.start + 1}–{window.start + window.shown})
+            </>
+          )}
+          , page size {window.limit ?? "unstated"}, ordered{" "}
           <span className="font-mono" data-testid="coord-followups-ordering">
             {window.ordering ?? "unstated"}
           </span>
@@ -281,8 +291,8 @@ export default function CoordPlanFollowupsPage() {
         <Button
           variant="outline"
           size="sm"
-          disabled={offset === 0}
-          onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+          disabled={!pager.canPrev}
+          onClick={pager.prev}
           data-testid="coord-followups-page-prev"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -292,7 +302,9 @@ export default function CoordPlanFollowupsPage() {
           variant="outline"
           size="sm"
           disabled={!(window?.hasMore ?? false)}
-          onClick={() => setOffset((o) => o + PAGE_SIZE)}
+          onClick={() => {
+            if (window?.nextCursor) pager.next(window.nextCursor, window.shown);
+          }}
           data-testid="coord-followups-page-next"
         >
           Next

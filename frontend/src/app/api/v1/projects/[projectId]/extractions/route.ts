@@ -19,7 +19,7 @@ export async function GET(
   const { projectId } = await params;
   return proxyToBackend(
     request,
-    `/api/v1/projects/${projectId}/extractions`,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/extractions`,
     OPTIONS
   );
 }
@@ -31,7 +31,7 @@ export async function POST(
   const { projectId } = await params;
   return proxyToBackend(
     request,
-    `/api/v1/projects/${projectId}/extractions`,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/extractions`,
     OPTIONS
   );
 }
@@ -43,7 +43,7 @@ export async function DELETE(
   const { projectId } = await params;
   return proxyToBackend(
     request,
-    `/api/v1/projects/${projectId}/extractions`,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/extractions`,
     OPTIONS
   );
 }

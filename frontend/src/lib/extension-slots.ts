@@ -4,7 +4,7 @@
  * OSS-only builds register nothing here; the slots stay empty and the app
  * runs as a single-tenant install.
  *
- * The proprietary `@qontinui/cloud-control` package side-effect-registers
+ * The separate `@qontinui/cloud-control` package side-effect-registers
  * its services, components and context providers at module-load time by
  * calling `registerCloudExtensions(...)` from its `src/index.ts`.
  *
@@ -64,7 +64,7 @@
  * added since — `components/CloudProviders.tsx` — is `"use client"` too, and
  * its only mount site (`app/(app)/layout.tsx`) is itself a client component.
  *
- * See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
+ * See: D:/qontinui-root/qontinui-cloud-control/  (separate repo)
  *      D:/qontinui-root/tmp_cloud_control_carve_out.md  §4.1.
  */
 

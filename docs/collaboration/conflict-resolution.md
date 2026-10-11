@@ -514,31 +514,12 @@ useEffect(() => {
 }, [hasUnsavedChanges]);
 ```
 
-### 3. Use Version Control Features
-
-```typescript
-// Create savepoint before major changes
-const createSavepoint = async (workflowId: string, description: string) => {
-  return await workflowVersionControl.createVersion({
-    workflow_id: workflowId,
-    description,
-    tag: `savepoint-${Date.now()}`
-  });
-};
-
-// Rollback if needed
-const rollbackToSavepoint = async (workflowId: string, versionId: string) => {
-  return await workflowVersionControl.rollback(workflowId, versionId);
-};
-```
-
-### 4. Conflict Prevention Checklist
+### 3. Conflict Prevention Checklist
 
 - ✓ Enable resource locking for critical resources
 - ✓ Use presence indicators to see who's editing
 - ✓ Communicate with team before major changes
 - ✓ Save frequently to minimize conflict window
-- ✓ Use version control for rollback capability
 - ✓ Test conflict resolution in development
 - ✓ Train team on conflict resolution procedures
 

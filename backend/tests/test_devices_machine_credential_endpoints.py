@@ -54,6 +54,21 @@ def _mock_user() -> MagicMock:
     return user
 
 
+@pytest.fixture(autouse=True)
+def _device_credential_not_revoked():
+    """Every credential door now reads ``coord.devices.credential_revoked_at``
+    (plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-
+    from-qontinui-web`` Phase 4). These tests run against a mock session, so
+    the read is stubbed to "not revoked"; the revoked arm is covered in
+    ``test_devices_operator_credential_controls.py``."""
+    from app.crud import device_crud
+
+    with patch.object(
+        device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+    ):
+        yield
+
+
 def _patch_enabled(*, enabled: bool = True):
     return patch.object(
         coord_service_account,
@@ -196,8 +211,9 @@ class TestMintEndpoint:
         kwargs = mock_mint.call_args.kwargs
         assert kwargs["owner_user_id"] == _USER_ID
         assert kwargs["tenant_id"] == tenant_id
-        # The owner's mint keeps the unconditional rotate.
-        assert kwargs["refuse_if_revoked"] is False
+        # The owner's mint still rotates a usable key, but never over a
+        # revoked one (a concurrent operator revoke must win).
+        assert kwargs["refuse_if_revoked"] is True
         assert kwargs["refuse_if_usable_beyond"] is None
 
     def test_non_owner_gets_403(self) -> None:

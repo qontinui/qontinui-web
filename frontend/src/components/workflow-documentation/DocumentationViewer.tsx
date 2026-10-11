@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
-import { WorkflowDocumentation } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentation } from "@/services/workflow-documentation";
 import { cn } from "@/lib/utils";
 import { useDocumentationSections } from "./_hooks/useDocumentationSections";
 import { useViewerActions } from "./_hooks/useViewerActions";
