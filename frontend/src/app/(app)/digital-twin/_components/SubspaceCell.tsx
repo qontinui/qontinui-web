@@ -3,9 +3,9 @@
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { cn } from "@/lib/utils";
 import {
-  STATUS_STYLES,
   formatRatio,
   formatStaleness,
+  presentStatus,
 } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 
@@ -28,7 +28,7 @@ interface SubspaceCellProps {
  * verbatim from coord.
  */
 export function SubspaceCell({ row, onSelect, uiId }: SubspaceCellProps) {
-  const style = STATUS_STYLES[row.cellStatus];
+  const style = presentStatus(row);
   const metrics = row.query_kind === "snapshot" ? row.metrics : undefined;
   const id = uiId ?? `digital-twin-cell-${row.id}`;
 

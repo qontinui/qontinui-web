@@ -197,7 +197,10 @@ export interface CoverageCounts {
    * A claim, not a live verdict.
    */
   manifestBuilt: number;
-  /** Of `manifestBuilt`: rows a coord tool answers on demand (Ask the Twin). */
+  /**
+   * Of `manifestBuilt`: rows a coord tool answers on demand (cell status
+   * `interactive`) — not all of them from Ask the Twin (see `ask_via`).
+   */
   interactive: number;
   /** Non-snapshot rows on the roadmap (research status `planned`). */
   planned: number;

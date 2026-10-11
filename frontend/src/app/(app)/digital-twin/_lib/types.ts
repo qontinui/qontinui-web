@@ -21,6 +21,15 @@
  */
 export type QueryKind = "snapshot" | "parameterized" | "none";
 
+/**
+ * Where on this page a `parameterized` row's coord tool can be asked:
+ *  - `ask-the-twin` — Ask the Twin (coord grants the tool to device sessions);
+ *  - `delivery-tab` — the Delivery tab (coord's SSO delivery-verdict route);
+ *  - `not-on-this-page` — nowhere: coord withholds the tool from the device
+ *    session Ask the Twin runs on, and no other door here asks it.
+ */
+export type AskVia = "ask-the-twin" | "delivery-tab" | "not-on-this-page";
+
 /** Research-side maturity, from the qontinui-research roadmap. */
 export type ResearchStatus = "implemented" | "partial" | "planned" | "not-yet";
 
@@ -62,6 +71,14 @@ export interface SubspaceManifestEntry {
   query_kind: QueryKind;
   coord_query_tool: string | null;
   observer_module: string | null;
+  /**
+   * Set on every `parameterized` row, absent on the others. Ask the Twin runs
+   * on the runner's DEVICE credential, and coord serves a device session only
+   * its device allow set (`agent_tool_access.rs` `device_default_allow_set`),
+   * so a built tool outside that set is answered by coord yet not askable from
+   * Ask the Twin.
+   */
+  ask_via?: AskVia;
   /** The plan slug that builds a planned / partial row (shown in the drawer). */
   plan?: string | null;
 }

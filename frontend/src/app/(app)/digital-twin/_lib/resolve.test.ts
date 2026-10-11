@@ -3,6 +3,24 @@ import { describe, expect, it } from "vitest";
 import { manifest, resolveSubspaces, summarize } from "./resolve";
 import type { CellStatus, SubspaceProbe } from "./types";
 
+/**
+ * The parameterized-row tools coord does NOT grant the device session Ask the
+ * Twin runs on — the ones outside `device_default_allow_set`
+ * (`DEVICE_DEFAULT_TOOLS` ∪ `TWIN_READ_TOOLS`) in qontinui-coord
+ * `crates/coord/src/mcp/agent_tool_access.rs`. A row naming one of them cannot
+ * be asked through Ask the Twin. Re-check against that file when a row's tool
+ * changes.
+ */
+const TOOLS_NOT_GRANTED_TO_DEVICES = [
+  "coord_query_account_usage",
+  "coord_query_auth_config",
+  "coord_query_delivery",
+  "coord_recent_errors",
+  "coord_resolve_origin",
+  "coord_symbol_lookup",
+  "coord_typecheck_file",
+];
+
 describe("subspaces manifest integrity", () => {
   it("has unique ids", () => {
     const ids = manifest.subspaces.map((s) => s.id);
@@ -22,6 +40,29 @@ describe("subspaces manifest integrity", () => {
       if (s.query_kind === "parameterized") {
         expect(s.coord_query_tool, `${s.id} is parameterized`).toBeTruthy();
       }
+    }
+  });
+
+  it("says where every parameterized row can be asked, and only those rows", () => {
+    for (const s of manifest.subspaces) {
+      if (s.query_kind === "parameterized") {
+        expect(
+          ["ask-the-twin", "delivery-tab", "not-on-this-page"],
+          s.id
+        ).toContain(s.ask_via);
+      } else {
+        expect(s.ask_via, s.id).toBeUndefined();
+      }
+    }
+  });
+
+  it("sends a row to Ask the Twin exactly when coord grants its tool to device sessions", () => {
+    for (const s of manifest.subspaces) {
+      if (s.query_kind !== "parameterized") continue;
+      const granted = !TOOLS_NOT_GRANTED_TO_DEVICES.includes(
+        s.coord_query_tool ?? ""
+      );
+      expect(s.ask_via === "ask-the-twin", s.id).toBe(granted);
     }
   });
 
