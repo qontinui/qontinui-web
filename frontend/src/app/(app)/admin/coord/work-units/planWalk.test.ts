@@ -16,8 +16,9 @@ import {
   serverOrderFor,
   timeSpan,
   walkWorkUnits,
-  type PlansListResponse,
+  type FetchPlansPage,
 } from "./planWalk";
+import type { PlansListResponse } from "@/lib/api/operations/coordPlans";
 
 function row(slug: string, authored_at: string | null = null): CoordPlanRow {
   return { slug, authored_at, updated_at: "2026-09-19T00:00:00Z" };
@@ -38,9 +39,8 @@ function base() {
 /** Route each call by its cursor, and record every URL asked. */
 function scripted(pages: Record<string, PlansListResponse | Error>) {
   const urls: string[] = [];
-  const get = vi.fn(async (url: string) => {
-    urls.push(url);
-    const q = new URL(url, "http://x").searchParams;
+  const get = vi.fn(async (q: URLSearchParams) => {
+    urls.push(q.toString());
     const key = q.get("after_slug") ?? "first";
     const answer = pages[key];
     if (answer === undefined) throw new Error(`unscripted page ${key}`);
@@ -48,7 +48,7 @@ function scripted(pages: Record<string, PlansListResponse | Error>) {
     return answer;
   });
   return {
-    get: get as unknown as <T>(u: string) => Promise<T>,
+    get: get as unknown as FetchPlansPage,
     urls,
     spy: get,
   };
@@ -91,13 +91,7 @@ describe("walkWorkUnits", () => {
       },
     });
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
 
     expect(out?.kind).toBe("complete");
     expect(out?.rows).toHaveLength(2 * WALK_PAGE_LIMIT + 1);
@@ -123,13 +117,7 @@ describe("walkWorkUnits", () => {
       first: { work_units: fullPage("old") },
     });
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
 
     expect(urls).toHaveLength(1);
     expect(out).toMatchObject({
@@ -141,13 +129,7 @@ describe("walkWorkUnits", () => {
 
   it("an older coord's short page is single-page and not truncated", async () => {
     const { get } = scripted({ first: { work_units: [row("x")] } });
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
     expect(out).toMatchObject({ kind: "single_page", truncated: false });
   });
 
@@ -164,13 +146,7 @@ describe("walkWorkUnits", () => {
       "a-499": new Error("HTTP 502"),
     });
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
 
     expect(out).toMatchObject({
       kind: "partial",
@@ -184,7 +160,7 @@ describe("walkWorkUnits", () => {
   it("throws when the FIRST page fails — nothing was read", async () => {
     const { get } = scripted({ first: new Error("HTTP 503") });
     await expect(
-      walkWorkUnits(get, "/api/plans", base(), "authored_desc", always)
+      walkWorkUnits(get, base(), "authored_desc", always)
     ).rejects.toThrow("HTTP 503");
   });
 
@@ -200,15 +176,9 @@ describe("walkWorkUnits", () => {
           after_slug: `p${n}`,
         },
       };
-    }) as unknown as <T>(u: string) => Promise<T>;
+    }) as unknown as FetchPlansPage;
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
 
     expect(out).toMatchObject({
       kind: "partial",
@@ -227,15 +197,9 @@ describe("walkWorkUnits", () => {
       order: "authored_desc",
       work_units: [row("s", "2026-09-01T00:00:00Z")],
       next_cursor: stuck,
-    })) as unknown as <T>(u: string) => Promise<T>;
+    })) as unknown as FetchPlansPage;
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
     expect(out).toMatchObject({ kind: "partial", reason: "stalled", pages: 2 });
   });
 
@@ -256,15 +220,9 @@ describe("walkWorkUnits", () => {
         // first page → A, then B, A, B, …
         next_cursor: n === 1 ? A : n % 2 === 0 ? B : A,
       };
-    }) as unknown as <T>(u: string) => Promise<T>;
+    }) as unknown as FetchPlansPage;
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
 
     expect(out).toMatchObject({ kind: "partial", reason: "stalled" });
     expect(out?.kind === "partial" && out.pages).toBe(3);
@@ -277,9 +235,8 @@ describe("walkWorkUnits", () => {
     // so the same slug with and without a timestamp must be two cursors — or
     // an ordinary crossing into the tail would be reported as a cycle.
     const urls: string[] = [];
-    const get = (async (url: string) => {
-      urls.push(url);
-      const q = new URL(url, "http://x").searchParams;
+    const get = (async (q: URLSearchParams) => {
+      urls.push(q.toString());
       const slug = q.get("after_slug");
       const at = q.get("after_authored_at");
       if (!slug) {
@@ -307,15 +264,9 @@ describe("walkWorkUnits", () => {
         work_units: [row("v")],
         next_cursor: null,
       };
-    }) as <T>(u: string) => Promise<T>;
+    }) as unknown as FetchPlansPage;
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
 
     expect(out).toMatchObject({ kind: "complete", pages: 3 });
     expect(out?.rows.map((r) => r.slug)).toEqual(["t", "u", "v"]);
@@ -334,15 +285,14 @@ describe("walkWorkUnits", () => {
         },
       },
     });
-    const wrapped = (async (u: string) => {
-      const body = await get(u);
+    const wrapped = (async (q: URLSearchParams) => {
+      const body = await get(q);
       current = false; // a newer question arrived while page one was out
       return body;
-    }) as <T>(u: string) => Promise<T>;
+    }) as unknown as FetchPlansPage;
 
     const out = await walkWorkUnits(
       wrapped,
-      "/api/plans",
       base(),
       "authored_desc",
       () => current
@@ -360,13 +310,7 @@ describe("walkWorkUnits", () => {
       },
     });
 
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "updated_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "updated_desc", always);
 
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain("order=updated_desc");
@@ -383,7 +327,6 @@ describe("walkWorkUnits", () => {
     );
     const served = await walkWorkUnits(
       async <T>() => ({ work_units: full, total: 3268 }) as T,
-      "/api/plans",
       base(),
       "updated_desc",
       always
@@ -392,7 +335,6 @@ describe("walkWorkUnits", () => {
 
     const unserved = await walkWorkUnits(
       async <T>() => ({ work_units: full, count: WALK_PAGE_LIMIT }) as T,
-      "/api/plans",
       base(),
       "updated_desc",
       always
@@ -502,13 +444,7 @@ describe("walkWorkUnits — the per-page body_signal blocks", () => {
     const { get } = scripted({
       first: { work_units: [row("a")], body_signal: { ...readable } },
     });
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "updated_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "updated_desc", always);
     expect(out).toMatchObject({ kind: "single_page" });
     // `miss_scope` is the fold's own field — a single page with no miss has
     // nothing to scope, so it folds to the block plus a null scope.
@@ -538,13 +474,7 @@ describe("walkWorkUnits — the per-page body_signal blocks", () => {
         next_cursor: null,
       },
     });
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
     expect(out).toMatchObject({ kind: "complete", pages: 2 });
     // ANDed, not last-write-wins and not first-page-wins.
     expect(out?.bodySignal?.capture_readable).toBe(false);
@@ -565,26 +495,14 @@ describe("walkWorkUnits — the per-page body_signal blocks", () => {
       },
       "a-499": new Error("coord blipped"),
     });
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "authored_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "authored_desc", always);
     expect(out).toMatchObject({ kind: "partial", reason: "error" });
     expect(out?.bodySignal?.miss_reason).toBe("capture_off");
   });
 
   it("a backend that predates the signals reports null, never a block of falses", async () => {
     const { get } = scripted({ first: { work_units: [row("a")] } });
-    const out = await walkWorkUnits(
-      get,
-      "/api/plans",
-      base(),
-      "updated_desc",
-      always
-    );
+    const out = await walkWorkUnits(get, base(), "updated_desc", always);
     expect(out?.bodySignal).toBeNull();
   });
 });

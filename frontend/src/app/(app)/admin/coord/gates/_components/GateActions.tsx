@@ -61,18 +61,17 @@ import {
 import { Loader2, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import {
-  gateApproveUrl,
-  gateAudienceUrl,
-  gateContinuationCancelUrl,
-  gateForceClearUrl,
-  gateMuteUrl,
-  gateRejectUrl,
-  gateReopenUrl,
-  gateSnoozeUrl,
-  gateUnmuteUrl,
-} from "@/components/operations/utils";
+  patchGateAudience,
+  postGateApprove,
+  postGateContinuationCancel,
+  postGateForceClear,
+  postGateMute,
+  postGateReject,
+  postGateReopen,
+  postGateSnooze,
+  postGateUnmute,
+} from "@/lib/api/operations/gateActions";
 import type { GateOverviewRow } from "@/services/admin-dev-service";
 
 const log = createLogger("GateActions");
@@ -146,25 +145,21 @@ export function GateActions({
     gate.continuation_expired_at == null;
 
   // Shared request runner — surfaces coord's error message on failure and
-  // refetches on success. Handles POST (default) and PATCH.
+  // refetches on success. `send` is the client's request function for the verb.
   const runAction = useCallback(
     async (
-      url: string,
+      send: (body: Record<string, unknown>) => Promise<Response>,
       opts: {
-        method?: "POST" | "PATCH";
         body?: Record<string, unknown>;
         successMsg: string;
-      },
+      }
     ): Promise<boolean> => {
       setBusy(true);
       try {
-        const res = await httpClient.fetch(url, {
-          method: opts.method ?? "POST",
-          body: JSON.stringify(opts.body ?? {}),
-        });
+        const res = await send(opts.body ?? {});
         if (!res.ok) {
           const text = await res.text();
-          log.warn("gate action failed", url, res.status, text);
+          log.warn("gate action failed", opts.successMsg, res.status, text);
           toast.error(opts.successMsg.replace(/…$/, "") + " failed", {
             description: text || `HTTP ${res.status}`,
           });
@@ -175,14 +170,14 @@ export function GateActions({
         return true;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        log.warn("gate action threw", url, msg);
+        log.warn("gate action threw", opts.successMsg, msg);
         toast.error("Action failed", { description: msg });
         return false;
       } finally {
         setBusy(false);
       }
     },
-    [onActed],
+    [onActed]
   );
 
   const id = gate.gate_id;
@@ -192,46 +187,49 @@ export function GateActions({
   // behind a `DestructiveButton` (synthetic-click protection), so Approve opens
   // a confirm dialog rather than firing straight from the menu item.
   const onConfirmApprove = useCallback(() => {
-    void runAction(gateApproveUrl(id), { successMsg: "Gate approved" }).then(
-      (ok) => {
-        if (ok) setDialog(null);
-      },
-    );
+    void runAction((b) => postGateApprove(id, b), {
+      successMsg: "Gate approved",
+    }).then((ok) => {
+      if (ok) setDialog(null);
+    });
   }, [runAction, id]);
 
   // ---- Non-destructive actions --------------------------------------------
 
   const onReopen = useCallback(() => {
-    void runAction(gateReopenUrl(id), { successMsg: "Gate reopened" });
+    void runAction((b) => postGateReopen(id, b), {
+      successMsg: "Gate reopened",
+    });
   }, [runAction, id]);
 
   const onToggleMute = useCallback(() => {
     if (gate.muted) {
-      void runAction(gateUnmuteUrl(id), { successMsg: "Gate unmuted" });
+      void runAction((b) => postGateUnmute(id, b), {
+        successMsg: "Gate unmuted",
+      });
     } else {
-      void runAction(gateMuteUrl(id), { successMsg: "Gate muted" });
+      void runAction((b) => postGateMute(id, b), { successMsg: "Gate muted" });
     }
   }, [runAction, id, gate.muted]);
 
   const onSnooze = useCallback(
     (secs: number, label: string) => {
-      void runAction(gateSnoozeUrl(id), {
+      void runAction((b) => postGateSnooze(id, b), {
         body: { until: snoozeUntilIso(secs) },
         successMsg: `Gate snoozed for ${label}`,
       });
     },
-    [runAction, id],
+    [runAction, id]
   );
 
   const onSetAudience = useCallback(
     (next: "operator" | "agent") => {
-      void runAction(gateAudienceUrl(id), {
-        method: "PATCH",
+      void runAction((b) => patchGateAudience(id, b), {
         body: { audience: next },
         successMsg: `Audience set to ${next}`,
       });
     },
-    [runAction, id],
+    [runAction, id]
   );
 
   // ---- Destructive actions (reason dialog) --------------------------------
@@ -242,7 +240,7 @@ export function GateActions({
 
   const onConfirmReject = useCallback(() => {
     const body = reason.trim() ? { reason: reason.trim() } : {};
-    void runAction(gateRejectUrl(id), {
+    void runAction((b) => postGateReject(id, b), {
       body,
       successMsg: "Gate rejected",
     }).then((ok) => {
@@ -251,7 +249,7 @@ export function GateActions({
   }, [runAction, id, reason, closeDialog]);
 
   const onConfirmForceClear = useCallback(() => {
-    void runAction(gateForceClearUrl(id), {
+    void runAction((b) => postGateForceClear(id, b), {
       body: { reason: reason.trim() },
       successMsg: "Gate force-cleared",
     }).then((ok) => {
@@ -260,7 +258,7 @@ export function GateActions({
   }, [runAction, id, reason, closeDialog]);
 
   const onConfirmCancelContinuation = useCallback(() => {
-    void runAction(gateContinuationCancelUrl(id), {
+    void runAction((b) => postGateContinuationCancel(id, b), {
       body: { cancelled_by: OPERATOR_ACTOR, reason: reason.trim() },
       successMsg: "Continuation cancelled",
     }).then((ok) => {
@@ -501,7 +499,9 @@ export function GateActions({
       >
         <AlertDialogContent data-testid="gate-cancel-continuation-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel this gate&apos;s continuation?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Cancel this gate&apos;s continuation?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               Clearing this gate will no longer spawn the armed follow-up
               session. The gate itself is unaffected.

@@ -49,8 +49,7 @@ import {
   type HealthBadge,
   type HealthStripLevel,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { fetchDeploys as fetchDeploysRead } from "@/lib/api/operations/coordDeploys";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { DeployRow } from "@/components/admin/coord/DeployRow";
 import type { DeployRow as DeployRowData } from "@/components/admin/coord/deployTypes";
@@ -59,12 +58,7 @@ import {
   deriveVerificationStatus,
 } from "@/components/admin/coord/verificationStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
-
-interface DeploysResponse {
-  deploys?: DeployRowData[] | null;
-}
 
 type TabId = "all" | "attention" | "unsettled";
 
@@ -174,13 +168,7 @@ export default function CoordDeploysPage() {
   const fetchDeploys = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const qs = new URLSearchParams();
-        if (serviceFilter.trim()) qs.set("service", serviceFilter.trim());
-        qs.set("limit", "25");
-        const body = await httpClient.get<DeploysResponse>(
-          `${API}/deploys?${qs.toString()}`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchDeploysRead(serviceFilter, 25);
         if (!isCurrent()) return;
         setDeploys(body.deploys ?? []);
         setError(null);

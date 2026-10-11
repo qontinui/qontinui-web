@@ -38,14 +38,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import {
+  fetchFleetDrain,
+  postFleetDrain,
+  postFleetUndrain,
+} from "@/lib/api/operations/fleetControls";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
-
-export const FLEET_DRAIN_API = `${OPERATIONS_API}/fleet/drain`;
-export const FLEET_UNDRAIN_API = `${OPERATIONS_API}/fleet/undrain`;
 
 /**
  * Poll cadence. Slow on purpose — see the module doc. A drain is measured in
@@ -71,10 +70,7 @@ export function useFleetDrain(): UseFleetDrainResult {
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetDrainRead;
     try {
-      const res = await httpClient.fetch(
-        FLEET_DRAIN_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchFleetDrain();
       if (res.status === 404) {
         next = {
           state: "unknown",
@@ -143,7 +139,7 @@ export async function postDrain(input: {
   untilIso: string;
   reason: string;
 }): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_DRAIN_API, {
+  return postDrainChange(postFleetDrain, {
     device_id: input.deviceId,
     until: input.untilIso,
     reason: input.reason,
@@ -155,21 +151,18 @@ export async function postUndrain(input: {
   deviceId: string;
   reason: string;
 }): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_UNDRAIN_API, {
+  return postDrainChange(postFleetUndrain, {
     device_id: input.deviceId,
     reason: input.reason,
   });
 }
 
 async function postDrainChange(
-  url: string,
+  send: (body: Record<string, string>) => Promise<Response>,
   body: Record<string, string>
 ): Promise<DrainWriteResult> {
   try {
-    const res = await httpClient.fetch(url, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    const res = await send(body);
     if (!res.ok) {
       return { ok: false, status: res.status, body: await res.text() };
     }

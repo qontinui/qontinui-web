@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, POLL_INTERVAL_MS } from "./utils";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { fetchRunnerOutput } from "@/lib/api/operations/fleetReads";
+import { POLL_INTERVAL_MS } from "./utils";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
 interface OutputViewerProps {
@@ -28,8 +27,7 @@ export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
   const fetchOutput = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const url = `${OPERATIONS_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
-        const res = await httpClient.fetch(url, COORD_DASHBOARD_POLL_OPTIONS);
+        const res = await fetchRunnerOutput(runnerId, taskRunId, 8000);
 
         if (!res.ok) {
           const text = await res.text().catch(() => "Unknown error");

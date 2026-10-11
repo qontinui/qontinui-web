@@ -55,11 +55,13 @@ import {
 } from "@/components/admin/coord/QuestionRow";
 import { GapRow } from "@/components/admin/coord/GapRow";
 import { isGapQuestion } from "@/components/admin/coord/policy-gap";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchAnsweredQuestions,
+  fetchPendingQuestions,
+} from "@/lib/api/operations/agentQuestions";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlight } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 const ANSWERED_LIMIT = 50;
 const GAPS_LIMIT = 200;
@@ -137,8 +139,8 @@ export default function CoordQuestionsPage() {
   const fetchPending = useCallback(async (polled = false) => {
     const seq = ++pendingSeq.current;
     try {
-      const body = await httpClient.get<unknown>(
-        `${API}/agent-questions/pending`,
+      const body = await fetchPendingQuestions(
+        "",
         polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       if (seq !== pendingSeq.current) return;
@@ -157,8 +159,8 @@ export default function CoordQuestionsPage() {
       // The answered endpoint may not be wired yet on every coord build;
       // any failure (incl. 404/501) is tolerated by the catch below, which
       // leaves the answered list empty so the pending tab still works.
-      const body = await httpClient.get<unknown>(
-        `${API}/agent-questions/answered?limit=${ANSWERED_LIMIT}`,
+      const body = await fetchAnsweredQuestions(
+        `limit=${ANSWERED_LIMIT}`,
         polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       if (seq !== answeredSeq.current) return;
@@ -185,14 +187,8 @@ export default function CoordQuestionsPage() {
     const options = polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined;
     try {
       const [pendingBody, answeredBody] = await Promise.all([
-        httpClient.get<unknown>(
-          `${API}/agent-questions/pending?gap=true`,
-          options
-        ),
-        httpClient.get<unknown>(
-          `${API}/agent-questions/answered?gap=true&limit=${GAPS_LIMIT}`,
-          options
-        ),
+        fetchPendingQuestions("gap=true", options),
+        fetchAnsweredQuestions(`gap=true&limit=${GAPS_LIMIT}`, options),
       ]);
       const merged = [
         ...extractQuestions(pendingBody),

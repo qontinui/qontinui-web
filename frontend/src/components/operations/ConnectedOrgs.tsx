@@ -52,12 +52,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, CheckCircle2 } from "lucide-react";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { absoluteTime } from "@/components/console/time";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
-
-// Same relative base the OnboardingDoctor uses (Next.js proxies /api to the
-// web backend, which forwards to coord with the operator's bearer).
-const API = "/api/v1/operations";
+import {
+  fetchOnboardingAccounts,
+  postOnboardingEnroll,
+  postOnboardingRestore,
+} from "@/lib/api/operations/prMergeOnboarding";
 
 // Poll cadence after a 202 enroll-spawn: coord enrolls off-connection, so we
 // re-pull the accounts list until this row's repos appear. 3s × 20 ≈ 60s cap.
@@ -326,10 +325,7 @@ function AccountRow({
     setEnrollMsg("Enrolling repositories…");
 
     try {
-      const res = await httpClient.fetch(
-        `${API}/pr-merge/onboarding/installations/${account.installation_id}/enroll`,
-        { method: "POST", maxRetries: 0 }
-      );
+      const res = await postOnboardingEnroll(account.installation_id);
 
       if (res.status === 202 || res.ok) {
         startPoll("enroll");
@@ -365,10 +361,7 @@ function AccountRow({
       setEnrollMsg(`Re-enrolling ${repo}…`);
 
       try {
-        const res = await httpClient.fetch(
-          `${API}/pr-merge/onboarding/repos/${repo}/restore`,
-          { method: "POST", maxRetries: 0 }
-        );
+        const res = await postOnboardingRestore(repo);
 
         if (res.status === 202 || res.ok) {
           startPoll("restore");
@@ -557,10 +550,7 @@ export function ConnectedOrgs() {
 
   const refetch = useCallback(async (polled = false) => {
     try {
-      const body = await httpClient.get<AccountsResponse>(
-        `${API}/pr-merge/onboarding/accounts`,
-        polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
-      );
+      const body = await fetchOnboardingAccounts<AccountsResponse>(polled);
       setAccounts(body.accounts ?? []);
       setError(null);
     } catch (e) {

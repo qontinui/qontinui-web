@@ -24,8 +24,11 @@ const httpGet = vi.fn();
 const httpPost = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => httpGet(...args),
-    post: (...args: unknown[]) => httpPost(...args),
+    // The page reads through the typed `/operations` client, which calls
+    // `httpClient.fetch`: GETs are routed through `httpGet`, anything else
+    // through `httpPost`.
+    fetch: (url: string, init?: { method?: string }) =>
+      init?.method === "GET" ? httpGet(url) : httpPost(url, init),
   },
 }));
 
@@ -61,7 +64,15 @@ function routeGets(handlers: { detail: unknown; history: unknown }) {
   httpGet.mockImplementation((url: string) => {
     // Suffix, not the exact URL: one test changes the slug mid-flight.
     const v = url.endsWith("/history") ? handlers.history : handlers.detail;
-    return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);
+    if (!(v instanceof Error)) {
+      return Promise.resolve(new Response(JSON.stringify(v), { status: 200 }));
+    }
+    // An Error spelled like the helpers' status rejection stands for that
+    // HTTP answer; any other Error is a transport failure.
+    const m = /^GET \S+ failed: (\d+) - ([\s\S]*)$/.exec(v.message);
+    return m
+      ? Promise.resolve(new Response(m[2], { status: Number(m[1]) }))
+      : Promise.reject(v);
   });
 }
 

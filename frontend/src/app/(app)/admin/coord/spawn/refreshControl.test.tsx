@@ -27,6 +27,12 @@ vi.mock("@/contexts/auth-context", () => ({
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    // The typed /operations client reads over `httpClient.fetch` (plan
+    // 2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls
+    // Phase 7): route it through the same table. A rejection passes through
+    // unchanged, so error-path tests see the identical Error.
+    fetch: async (...a: unknown[]) =>
+      new Response(JSON.stringify(await get(...a)), { status: 200 }),
     get: (...args: unknown[]) => get(...args),
     post: vi.fn(),
   },
@@ -78,7 +84,9 @@ describe("/admin/coord/spawn refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : clickRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : clickRead.promise;
     });
     const user = userEvent.setup();
     render(<CoordSpawnPage />);
@@ -110,7 +118,9 @@ describe("/admin/coord/spawn refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : pollRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : pollRead.promise;
     });
     render(<CoordSpawnPage />);
     await screen.findByTestId("coord-spawn-plans-empty");
@@ -136,7 +146,9 @@ describe("/admin/coord/spawn refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : clickRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : clickRead.promise;
     });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CoordSpawnPage />);

@@ -24,20 +24,20 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, LifeBuoy, Lock, Terminal } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import {
+  fetchPrMergePrList,
+  fetchPrMergeVerdict,
+  fetchStuckNudges,
+  postPrReevaluate,
+  postProposalCancel,
+} from "@/lib/api/operations/prMergeBoard";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import type { PrListResponse, PrRow } from "./mergeTypes";
 import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import {
-  OPERATIONS_API,
   STUCK_PR_MAX_CARDS,
   STUCK_PR_MAX_VERDICT_READS,
   STUCK_PR_POLL_MS,
-  prMergeVerdictUrl,
-  prReevaluateUrl,
-  proposalCancelUrl,
-  stuckNudgesUrl,
 } from "./utils";
 import {
   CANCEL_REASON,
@@ -389,9 +389,10 @@ export function StuckPrDiagnosisCard({
         let res: Response;
         if (kind === "reevaluate") {
           if (!parts) throw new Error(`unrecognized repo "${repo}"`);
-          res = await httpClient.fetch(
-            prReevaluateUrl(parts.owner, parts.name, candidate.prNumber),
-            { method: "POST", body: JSON.stringify({}) }
+          res = await postPrReevaluate(
+            parts.owner,
+            parts.name,
+            candidate.prNumber
           );
         } else {
           if (!proposal) {
@@ -399,12 +400,9 @@ export function StuckPrDiagnosisCard({
             // proposal has been read) but stated rather than swallowed.
             throw new Error("no merge attempt to cancel");
           }
-          res = await httpClient.fetch(proposalCancelUrl(proposal.proposalId), {
-            method: "POST",
-            body: JSON.stringify({
-              unblock: kind === "cancel_unblock",
-              reason: CANCEL_REASON,
-            }),
+          res = await postProposalCancel(proposal.proposalId, {
+            unblock: kind === "cancel_unblock",
+            reason: CANCEL_REASON,
           });
         }
         const body: unknown = await res.json().catch(() => ({}));
@@ -588,14 +586,8 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
       const parts = splitRepo(activeRepo);
       try {
         const [nudgeRes, prRes] = await Promise.all([
-          httpClient.fetch(
-            stuckNudgesUrl(activeRepo),
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
-          httpClient.fetch(
-            `${OPERATIONS_API}/pr-merge/prs`,
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
+          fetchStuckNudges(activeRepo),
+          fetchPrMergePrList(),
         ]);
         const nudgeBody: unknown = nudgeRes.ok ? await nudgeRes.json() : null;
         const prBody: unknown = prRes.ok ? await prRes.json() : null;
@@ -620,9 +612,10 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
           const read = await Promise.all(
             wanted.map(async (c) => {
               try {
-                const res = await httpClient.fetch(
-                  prMergeVerdictUrl(parts.owner, parts.name, c.prNumber),
-                  COORD_DASHBOARD_POLL_OPTIONS
+                const res = await fetchPrMergeVerdict(
+                  parts.owner,
+                  parts.name,
+                  c.prNumber
                 );
                 // A verdict coord will not serve is not a failure of the panel —
                 // the diagnosis proceeds without proposal evidence and says so.

@@ -24,8 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
+import { fetchPrMergeHealth } from "@/lib/api/operations/prMergeBoard";
 import type { TrainHealth } from "./mergeTypes";
 
 const log = createLogger("useTrainHealth");
@@ -71,7 +70,7 @@ export function useTrainHealth(enabled: boolean): TrainHealthState {
     inFlightRef.current = true;
     lastFetchAtRef.current = Date.now();
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/health`);
+      const res = await fetchPrMergeHealth();
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as TrainHealth;
       if (!cleanedUpRef.current) {

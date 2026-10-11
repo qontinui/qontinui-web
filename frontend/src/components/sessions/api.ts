@@ -1,10 +1,13 @@
 // ============================================================================
 // Sessions panel — API client
 //
-// Thin wrapper around the web-backend session proxy
-// (`/api/v1/operations/sessions*`). Centralizes URL building, fetch
-// options (credentials, error mapping), and SSE subscription so
-// `page.tsx` stays declarative.
+// Thin wrapper around the typed `/operations` client
+// (`lib/api/operations/sessionsConsole.ts`), which owns every URL. This file
+// maps the client's `<METHOD> <url> failed: <status> - <body>` rejections onto
+// the console's own error classes (`SessionsApiError`, `TenantCreateError`,
+// `TenantRenameError`) so the text it renders is unchanged, and keeps the
+// registered-repo cache and the SSE subscriptions so `page.tsx` stays
+// declarative.
 //
 // All requests are routed through the shared `httpClient` (from
 // `@/services/service-factory`) which automatically attaches the
@@ -14,17 +17,42 @@
 // conflict with the caller's long-lived signal).
 // ============================================================================
 
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+  deleteSession,
+  fetchConsolidatedSessions,
+  fetchRegisteredRepos,
+  fetchSession,
+  fetchSessionAgentStatus,
+  fetchSessionClaims,
+  fetchSessionLineage,
+  fetchSessionOutput,
+  fetchSessionRestoreRecord,
+  fetchSessions,
+  fetchTenants,
+  patchTenant,
+  postSessionHandoff,
+  postSessionSteal,
+  postTenant,
+  sessionEventsUrl,
+  type GetSessionOutputOptions,
+  type HandoffSessionRequest,
+  type ListConsolidatedSessionsOptions,
+  type ListSessionsOptions,
+  type ListSessionsScope,
+  type ListSessionsTenantScope,
+  type OutputTier,
+  type StealSessionRequest,
+} from "@/lib/api/operations/sessionsConsole";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../operations/utils";
 import type { ConsolidatedSessionsResponse } from "./sessionConsoleStatus";
 import type {
   AgentStatusResponse,
   LineageResponse,
   OutputChunkFrame,
   OutputHistoryResponse,
-  OutputStream,
   RegisteredRepo,
-  RegisteredReposResponse,
   SessionClaimsResponse,
   SessionEventRow,
   SessionListResponse,
@@ -37,57 +65,41 @@ import type {
   TenantRenameResponse,
 } from "./types";
 
-export type ListSessionsScope = "active" | "all";
+export {
+  NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+  type GetSessionOutputOptions,
+  type HandoffSessionRequest,
+  type ListConsolidatedSessionsOptions,
+  type ListSessionsOptions,
+  type ListSessionsScope,
+  type ListSessionsTenantScope,
+  type OutputTier,
+  type StealSessionRequest,
+};
 
-/** Tenant breadth axis — orthogonal to {@link ListSessionsScope}. */
-export type ListSessionsTenantScope = "active" | "all";
-
-export interface ListSessionsOptions {
-  /** Session-state filter: `active` only vs include closed. */
-  scope?: ListSessionsScope;
-  /**
-   * Tenant breadth filter: `active` (caller's active tenant only —
-   * the default + only meaningful value for single-tenant operators)
-   * vs `all` (union across every tenant the caller is a member of).
-   */
-  tenantScope?: ListSessionsTenantScope;
-  /** RFC 3339 timestamp; incremental polling. */
-  since?: string;
-  signal?: AbortSignal;
+/**
+ * Map a rejection from the typed client onto a `SessionsApiError`. A status
+ * rejection (`<METHOD> <url> failed: <status> - <body>`) becomes one whose
+ * message stops at the status, as the older helpers here always worded it; the
+ * consolidated list keeps the body (`includeBody`), the one shape
+ * `console/readFailure.ts::isNotFoundError` can recover a status from.
+ * Anything that is not a status rejection (a network error, an abort) is
+ * rethrown as it was.
+ */
+function sessionsApiError(err: unknown, includeBody = false): unknown {
+  const status = httpStatusOf(err);
+  if (status === null) return err;
+  const message = (err as Error).message;
+  const head = /^(.+? failed: \d{3})/.exec(message)?.[1] ?? message;
+  return new SessionsApiError(includeBody ? message : head, status);
 }
 
 export async function listSessions(
   opts: ListSessionsOptions = {}
 ): Promise<SessionListResponse> {
-  const params = new URLSearchParams();
-  if (opts.scope) params.set("scope", opts.scope);
-  if (opts.tenantScope) params.set("tenant_scope", opts.tenantScope);
-  if (opts.since) params.set("since", opts.since);
-
-  const qs = params.toString();
-  const url = `${OPERATIONS_API}/sessions${qs ? `?${qs}` : ""}`;
-
-  const res = await httpClient.fetch(url, { signal: opts.signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionListResponse;
-}
-
-/**
- * Filters for {@link listConsolidatedSessions} — the param vocabulary the three
- * redirected routes bring with them (plan §3's redirect table).
- */
-export interface ListConsolidatedSessionsOptions {
-  /** coord device uuid. `/environments/sessions?device=` maps here 1:1. */
-  device?: string;
-  /** Free text. The agent half is searched coord-side; the lifecycle half web-side. */
-  q?: string;
-  /** coord's own agent-session lifecycle vocabulary. */
-  status?: "live" | "stale" | "closed";
-  /** Tenant breadth. Same axis as {@link ListSessionsOptions.tenantScope}. */
-  tenantScope?: ListSessionsTenantScope;
-  signal?: AbortSignal;
+  return fetchSessions(opts).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 /**
@@ -105,55 +117,23 @@ export interface ListConsolidatedSessionsOptions {
 export async function listConsolidatedSessions(
   opts: ListConsolidatedSessionsOptions = {}
 ): Promise<ConsolidatedSessionsResponse> {
-  const params = new URLSearchParams({ shape: "consolidated" });
-  if (opts.device) params.set("device", opts.device);
-  if (opts.q) params.set("q", opts.q);
-  if (opts.status) params.set("status", opts.status);
-  if (opts.tenantScope) params.set("tenant_scope", opts.tenantScope);
-
-  const url = `${OPERATIONS_API}/sessions?${params.toString()}`;
-  const res = await httpClient.fetch(url, { signal: opts.signal });
-  if (!res.ok) {
-    // `<verb> <url> failed: <status> - <body>` — the shape `httpClient` itself
-    // formats, and the ONE shape `console/readFailure.ts::isNotFoundError`
-    // can recover a status from. The older helpers in this file stop at the
-    // status, so a 404 through them is indistinguishable from a dead socket;
-    // this path does not inherit that.
-    const body = await res.text().catch(() => "");
-    throw new SessionsApiError(
-      `GET ${url} failed: ${res.status} - ${body}`,
-      res.status
-    );
-  }
-  return (await res.json()) as ConsolidatedSessionsResponse;
+  // `<verb> <url> failed: <status> - <body>` — the shape `httpClient` itself
+  // formats, and the ONE shape `console/readFailure.ts::isNotFoundError` can
+  // recover a status from. The older helpers in this file stop at the status,
+  // so a 404 through them is indistinguishable from a dead socket; this path
+  // does not inherit that.
+  return fetchConsolidatedSessions(opts).catch((e: unknown) => {
+    throw sessionsApiError(e, true);
+  });
 }
 
 export async function getSession(
   id: string,
   signal?: AbortSignal
 ): Promise<SessionRow> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionRow;
-}
-
-export type OutputTier = "warm" | "cold";
-
-export interface GetSessionOutputOptions {
-  /** `warm` (default) recent scrollback | `cold` archived full history. */
-  tier?: OutputTier;
-  /**
-   * `pty` (default) terminal bytes | `transcript` AI conversation JSONL.
-   * Plan `2026-07-09-runner-session-history-cloud-sync` Phase 2 — omitted
-   * for `pty` so requests stay compatible with a pre-`stream` coord.
-   */
-  stream?: OutputStream;
-  /** Max warm-tier chunks to fetch. Coord clamps to [1, 65536]; default 4096. */
-  limit?: number;
-  signal?: AbortSignal;
+  return fetchSession(id, signal).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 /**
@@ -171,37 +151,15 @@ export async function getSessionOutput(
   id: string,
   opts: GetSessionOutputOptions = {}
 ): Promise<OutputHistoryResponse> {
-  const params = new URLSearchParams();
-  if (opts.tier) params.set("tier", opts.tier);
-  if (opts.stream) params.set("stream", opts.stream);
-  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
-
-  const qs = params.toString();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/output${
-    qs ? `?${qs}` : ""
-  }`;
-  const res = await httpClient.fetch(url, { signal: opts.signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as OutputHistoryResponse;
+  return fetchSessionOutput(id, opts).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 export async function closeSession(id: string): Promise<SessionRow> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}`;
-  const res = await httpClient.fetch(url, { method: "DELETE" });
-  if (!res.ok) {
-    throw new SessionsApiError(
-      `DELETE ${url} failed: ${res.status}`,
-      res.status
-    );
-  }
-  return (await res.json()) as SessionRow;
-}
-
-export interface StealSessionRequest {
-  reason: string;
-  machine_id: string;
+  return deleteSession(id).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 /**
@@ -215,21 +173,9 @@ export async function stealSession(
   id: string,
   body: StealSessionRequest
 ): Promise<unknown> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/steal`;
-  const res = await httpClient.fetch(url, {
-    method: "POST",
-    body: JSON.stringify(body),
-    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+  return postSessionSteal(id, body).catch((e: unknown) => {
+    throw sessionsApiError(e);
   });
-  if (!res.ok) {
-    throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
-  }
-  return await res.json();
-}
-
-export interface HandoffSessionRequest {
-  /** The device the session should move to. */
-  target_device_id: string;
 }
 
 /**
@@ -248,16 +194,9 @@ export async function handoffSession(
   id: string,
   body: HandoffSessionRequest
 ): Promise<unknown> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/handoff`;
-  const res = await httpClient.fetch(url, {
-    method: "POST",
-    body: JSON.stringify(body),
-    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+  return postSessionHandoff(id, body).catch((e: unknown) => {
+    throw sessionsApiError(e);
   });
-  if (!res.ok) {
-    throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
-  }
-  return await res.json();
 }
 
 /**
@@ -271,36 +210,27 @@ export async function getSessionRestoreRecord(
   id: string,
   signal?: AbortSignal
 ): Promise<SessionRestoreRecordResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(id)}/restore-record`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionRestoreRecordResponse;
+  return fetchSessionRestoreRecord(id, signal).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 export async function getSessionClaims(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<SessionClaimsResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/claims`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as SessionClaimsResponse;
+  return fetchSessionClaims(sessionId, signal).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 export async function getSessionAgentStatus(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<AgentStatusResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/agent-status`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as AgentStatusResponse;
+  return fetchSessionAgentStatus(sessionId, signal).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 /**
@@ -314,27 +244,21 @@ export async function getSessionLineage(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<LineageResponse> {
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/lineage`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as LineageResponse;
+  return fetchSessionLineage(sessionId, signal).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 export async function listTenants(
   signal?: AbortSignal
 ): Promise<TenantListResponse> {
-  const url = `${OPERATIONS_API}/tenants`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
-  }
-  return (await res.json()) as TenantListResponse;
+  return fetchTenants(signal).catch((e: unknown) => {
+    throw sessionsApiError(e);
+  });
 }
 
 /**
- * Error from `POST /api/v1/operations/tenants`, carrying enough for the
+ * Error from `POST /operations/tenants`, carrying enough for the
  * caller to say something TRUE about what went wrong.
  *
  * The web proxy re-raises coord's status and puts coord's raw response text
@@ -526,7 +450,7 @@ function unwrapProxiedCoordError(rawBody: string):
 }
 
 /**
- * Error from `PATCH /api/v1/operations/tenants/{tenant_id}`.
+ * Error from `PATCH /operations/tenants/{tenant_id}`.
  *
  * `code` is coord's error token (`invalid_slug`, `reserved_name`,
  * `slug_pinned`, `slug_taken`, `tenant_mismatch`, …) or `null` when none could
@@ -587,62 +511,9 @@ export function parseTenantRenameError(rawBody: string): {
 }
 
 /**
- * Statuses a **non-idempotent POST** must NOT be retried on.
- *
- * Shared by every POST in this module whose effect is not a free repeat of the
- * same question: `createTenant`, `handoffSession` and `stealSession`.
- * (`closeSession` is a DELETE to a terminal state — genuinely idempotent — and
- * every other call here is a GET, where retry is the correct behaviour.)
- *
- * The class of bug: `HttpClient` retries every `429` and every `>= 500` up to
- * `maxRetries: 3` with the identical body. For a POST that *does something*,
- * that turns one ambiguous answer into a second side effect. The concrete
- * hazard is the 504 — the web proxy's coord budget is 5s (`operations.py`
- * `_COORD_TIMEOUT`) and a timeout maps to `504 timeout waiting for coord`,
- * which is a statement about OUR clock, not about coord's transaction. From
- * here "coord was slow" and "coord never got it" are indistinguishable, and
- * the client resolved that ambiguity by doing it again:
- *
- *   - tenant creation — coord's create is a plain INSERT that deliberately
- *     rejects a slug collision rather than joining the caller to an existing
- *     tenant, so a create that committed at 5.1s answers 504 and the retry
- *     lands on the unique-violation arm: the operator is told their own
- *     successfully created project "is taken", a false failure they then act
- *     on by picking a different name;
- *   - handoff — coord records a durable `handoff_request` event and publishes
- *     a JetStream subject scoped to the target machine, so the retry
- *     plausibly *succeeds* and one click yields several child sessions;
- *   - steal — lower stakes, but every attempt records its own events.
- *
- * The 429 is here for a different reason: it is a deliberate and persistent
- * answer (a cap, or a limiter). Retrying it only buys round-trips to be told
- * the same thing.
- *
- * The list ENUMERATES statuses rather than declaring a range because
- * `noRetryStatuses` is an `Array.includes` membership test, checked against an
- * unbounded `status >= 500` guard (`http-client.ts`). It covers every status
- * these paths can actually produce: 500 (an unhandled web error, or coord's
- * own 500 forwarded verbatim — e.g. a cap-lookup failure), 501, 502 (coord
- * unreachable), 503 (the app unconfigured / an LB with no healthy target) and
- * 504 (the timeout above).
- *
- * **So it cannot express "all 5xx".** A status nobody enumerated — a `507`
- * from a storage layer, a `520` from a CDN sitting in front of the proxy —
- * falls through the membership test and is still retried, with exactly the
- * same duplicate side effect. An enumeration is only ever as complete as the
- * last person to think about it, which is the standing argument for inverting
- * the client default: make retry opt-IN for POSTs rather than opt-out (this
- * plan's Phase 4). Until that lands, adding a status here is the only fix
- * available.
- */
-export const NON_IDEMPOTENT_POST_NO_RETRY_STATUSES: number[] = [
-  429, 500, 501, 502, 503, 504,
-];
-
-/**
  * Create a new tenant ("Project") owned by the calling operator.
  *
- * POSTs `/api/v1/operations/tenants`, which proxies coord's
+ * POSTs `/operations/tenants`, which proxies coord's
  * `POST /coord/tenants` (plan
  * `2026-08-25-self-service-tenant-project-creation`). Coord creates the
  * tenant, seeds its policy row and grants the caller `admin` in it in ONE
@@ -654,24 +525,20 @@ export const NON_IDEMPOTENT_POST_NO_RETRY_STATUSES: number[] = [
 export async function createTenant(
   body: TenantCreateRequest
 ): Promise<TenantCreateResponse> {
-  const url = `${OPERATIONS_API}/tenants`;
-  const res = await httpClient.fetch(url, {
-    method: "POST",
-    body: JSON.stringify(body),
-    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+  return postTenant(body).catch((e: unknown) => {
+    const status = httpStatusOf(e);
+    if (status === null) throw e;
+    const { code, detail, ...fields } = parseTenantCreateError(
+      httpBodyOf(e) ?? ""
+    );
+    throw new TenantCreateError(status, code, detail, fields);
   });
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "");
-    const { code, detail, ...fields } = parseTenantCreateError(raw);
-    throw new TenantCreateError(res.status, code, detail, fields);
-  }
-  return (await res.json()) as TenantCreateResponse;
 }
 
 /**
  * Rename a tenant ("Project") — its display name, its slug, or both.
  *
- * PATCHes `/api/v1/operations/tenants/{tenant_id}`, which proxies coord's
+ * PATCHes `/operations/tenants/{tenant_id}`, which proxies coord's
  * `PATCH /coord/tenants/:tenant_id` (plan `2026-09-17-tenant-rename`). Send
  * only the fields that changed. Coord allows it only for an `admin` of that
  * tenant; the web proxy sets the active-tenant header to the path tenant.
@@ -684,34 +551,21 @@ export async function renameTenant(
   tenantId: string,
   body: TenantRenameRequest
 ): Promise<TenantRenameResponse> {
-  const url = `${OPERATIONS_API}/tenants/${encodeURIComponent(tenantId)}`;
-  const res = await httpClient.fetch(url, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
-    // Longer than the default 60s ceiling, on purpose. A rename that changes
-    // the slug is followed on the backend by the home-group migration, which
-    // costs one Cognito write per member of the old group and is bounded by
-    // its own budget. If the browser gives up first, the operator is told the
-    // outcome is UNKNOWN for work the backend went on to finish and report —
-    // the answer exists, we just stopped listening for it. This ceiling sits
-    // above the backend's own so the report wins that race.
-    timeoutMs: 120_000,
-  });
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "");
-    const { code, reason, detail, slug, envelopeCode } =
-      parseTenantRenameError(raw);
+  return patchTenant(tenantId, body).catch((e: unknown) => {
+    const status = httpStatusOf(e);
+    if (status === null) throw e;
+    const { code, reason, detail, slug, envelopeCode } = parseTenantRenameError(
+      httpBodyOf(e) ?? ""
+    );
     throw new TenantRenameError(
-      res.status,
+      status,
       code,
       reason,
       detail,
       slug,
       envelopeCode
     );
-  }
-  return (await res.json()) as TenantRenameResponse;
+  });
 }
 
 // ---- Registered repos (module-level cache) --------------------------------
@@ -730,15 +584,9 @@ export async function listRegisteredRepos(
 
   _repoInflight = (async () => {
     try {
-      const url = `${OPERATIONS_API}/repos`;
-      const res = await httpClient.fetch(url, { signal });
-      if (!res.ok) {
-        throw new SessionsApiError(
-          `GET ${url} failed: ${res.status}`,
-          res.status
-        );
-      }
-      const data = (await res.json()) as RegisteredReposResponse;
+      const data = await fetchRegisteredRepos(signal).catch((e: unknown) => {
+        throw sessionsApiError(e);
+      });
       const repos = data.repos ?? [];
       _repoCache = { repos, fetchedAt: Date.now() };
       return repos;
@@ -790,9 +638,7 @@ export function subscribeSessionEvents(
   handlers: SessionEventStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(
-    sessionId
-  )}/events`;
+  const url = sessionEventsUrl(sessionId);
 
   void (async () => {
     try {
@@ -923,9 +769,7 @@ export function subscribeSessionOutput(
   handlers: SessionOutputStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_API}/sessions/${encodeURIComponent(
-    sessionId
-  )}/events`;
+  const url = sessionEventsUrl(sessionId);
 
   void (async () => {
     try {

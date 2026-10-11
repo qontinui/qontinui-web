@@ -23,25 +23,26 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const get = vi.fn();
+const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...a: unknown[]) => get(...a),
-    post: vi.fn(),
-    patch: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-  },
+  httpClient: { fetch: (...a: unknown[]) => fetchMock(...a) },
 }));
 
-import { COORD_POLICIES_API } from "./coordPolicies";
 import { listCoordPolicies } from "./coordPolicyApi";
 
-const BASE = COORD_POLICIES_API;
+const BASE = "/api/v1/operations/coord/policies";
+
+/** `expectGet(url)` — a GET of `url`. */
+function expectGet(url: string) {
+  expect(fetchMock).toHaveBeenCalledWith(url, { method: "GET" });
+}
 
 beforeEach(() => {
-  get.mockReset();
-  get.mockResolvedValue({ policies: [], total: 0 });
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(
+    async () =>
+      new Response(JSON.stringify({ policies: [], total: 0 }), { status: 200 })
+  );
 });
 
 describe("listCoordPolicies query string", () => {
@@ -49,37 +50,35 @@ describe("listCoordPolicies query string", () => {
     await listCoordPolicies();
     // Every production caller takes this path, so it must stay byte-identical
     // to the pre-filter request: coord then applies its own `enabled = true`.
-    expect(get).toHaveBeenCalledWith(BASE);
+    expectGet(BASE);
   });
 
   it("sends no query string for an empty filter object", async () => {
     await listCoordPolicies({});
-    expect(get).toHaveBeenCalledWith(BASE);
+    expectGet(BASE);
   });
 
   it("forwards kind and repo", async () => {
     await listCoordPolicies({ kind: "terminal_auto_response", repo: "web" });
-    expect(get).toHaveBeenCalledWith(
-      `${BASE}?kind=terminal_auto_response&repo=web`
-    );
+    expectGet(`${BASE}?kind=terminal_auto_response&repo=web`);
   });
 
   it("forwards an EMPTY repo rather than dropping it", async () => {
     // `?repo=` selects the degenerate empty-repo rows. Dropping it would widen
     // the query and answer a question the caller never asked.
     await listCoordPolicies({ repo: "" });
-    expect(get).toHaveBeenCalledWith(`${BASE}?repo=`);
+    expectGet(`${BASE}?repo=`);
   });
 
   it("serializes enabled in both directions", async () => {
     await listCoordPolicies({ enabled: true });
-    expect(get).toHaveBeenCalledWith(`${BASE}?enabled=true`);
+    expectGet(`${BASE}?enabled=true`);
     await listCoordPolicies({ enabled: false });
-    expect(get).toHaveBeenCalledWith(`${BASE}?enabled=false`);
+    expectGet(`${BASE}?enabled=false`);
   });
 
   it("percent-encodes a value that would otherwise break the query", async () => {
     await listCoordPolicies({ repo: "a&b=c" });
-    expect(get).toHaveBeenCalledWith(`${BASE}?repo=a%26b%3Dc`);
+    expectGet(`${BASE}?repo=a%26b%3Dc`);
   });
 });

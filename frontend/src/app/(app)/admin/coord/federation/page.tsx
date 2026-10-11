@@ -42,8 +42,10 @@ import {
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import {
+  fetchFederationReports,
+  type FederationReport,
+} from "@/lib/api/operations/federationReports";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
   RecordDetail,
@@ -57,29 +59,9 @@ import {
   FEDERATION_STATUS_PALETTE,
 } from "./federationStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 // ---- Types ----------------------------------------------------------------
-
-interface FederationReport {
-  id: string;
-  device_id: string;
-  session_id?: string;
-  account?: string;
-  pushed: number;
-  pulled: number;
-  failed: number;
-  failed_names?: string[];
-  created_at: string;
-  metadata?: Record<string, unknown>;
-}
-
-interface FederationReportsResponse {
-  reports?: FederationReport[];
-  items?: FederationReport[];
-  count?: number;
-}
 
 type TimeRange = "1h" | "24h" | "7d" | "all";
 
@@ -246,10 +228,7 @@ export default function CoordFederationPage() {
         const qs = new URLSearchParams();
         if (since) qs.set("since", since);
         qs.set("limit", "200");
-        const body = await httpClient.get<FederationReportsResponse>(
-          `${API}/federation/reports?${qs.toString()}`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchFederationReports(qs);
         if (!isCurrent()) return;
         setReports(body.reports ?? body.items ?? []);
         setError(null);

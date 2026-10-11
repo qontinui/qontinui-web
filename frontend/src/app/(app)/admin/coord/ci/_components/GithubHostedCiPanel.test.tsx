@@ -41,10 +41,17 @@ vi.mock("@/services/service-factory", () => ({
     // a GET may take this route: any other method throws, so a future
     // write cannot silently be answered from the GET table.
     fetch: async (...a: unknown[]) => {
-      const method = (a[1] as RequestInit | undefined)?.method;
+      const init = a[1] as RequestInit | undefined;
+      const method = init?.method;
+      if (method?.toUpperCase() === "PUT") {
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        return new Response(JSON.stringify(await httpPut(a[0], body)), {
+          status: 200,
+        });
+      }
       if (method !== undefined && method.toUpperCase() !== "GET") {
         throw new Error(
-          `httpClient.fetch mock serves GET only; got ${method} ${String(a[0])}`
+          `httpClient.fetch mock serves GET and PUT only; got ${method} ${String(a[0])}`
         );
       }
       return new Response(JSON.stringify(await httpGet(...a)), {

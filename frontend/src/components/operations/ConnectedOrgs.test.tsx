@@ -16,14 +16,28 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const getMock = vi.fn();
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => getMock(...args),
-    fetch: (...args: unknown[]) => fetchMock(...args),
+    // The accounts read goes through `httpClient.fetch` (the typed client's
+    // `fetchOnboardingAccounts`). This suite answers it from `getMock`'s table
+    // as a parsed body served as a 200 Response; a rejection passes through.
+    fetch: async (url: string, init?: unknown) =>
+      String(url).endsWith("/onboarding/accounts")
+        ? new Response(JSON.stringify(await getMock(url, init)), {
+            status: 200,
+          })
+        : fetchMock(url, init),
   },
 }));
 
@@ -51,7 +65,9 @@ const ENROLLED_ORG = {
   account_login: "portofino",
   account_type: "Organization",
   installation_id: 222,
-  repos: [{ repo: "portofino/web", merge_enabled: false, profile_source: "auto" }],
+  repos: [
+    { repo: "portofino/web", merge_enabled: false, profile_source: "auto" },
+  ],
 };
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -88,7 +104,10 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
     fireEvent.click(btn);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const [url, opts] = fetchMock.mock.calls[0] as [string, Record<string, unknown>];
+    const [url, opts] = fetchMock.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
     expect(url).toContain("/pr-merge/onboarding/installations/111/enroll");
     expect(opts.method).toBe("POST");
     expect(opts.maxRetries).toBe(0);
@@ -104,7 +123,11 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
             {
               ...EMPTY_ORG,
               repos: [
-                { repo: "acme/web", merge_enabled: null, profile_source: "auto" },
+                {
+                  repo: "acme/web",
+                  merge_enabled: null,
+                  profile_source: "auto",
+                },
               ],
             },
           ],
@@ -315,9 +338,13 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     );
     expect(row).toHaveTextContent("portofino/infra");
     const detail = screen.getByTestId("unenrolled-detail-portofino/infra");
-    expect(detail).toHaveTextContent(/^removed .* by ops@example\.com: archived$/);
+    expect(detail).toHaveTextContent(
+      /^removed .* by ops@example\.com: archived$/
+    );
     // Not a doctor link — the repo has no enrollment to inspect.
-    expect(screen.queryByTestId("connected-org-repo-portofino/infra")).toBeNull();
+    expect(
+      screen.queryByTestId("connected-org-repo-portofino/infra")
+    ).toBeNull();
     // It is not counted as enrolled.
     expect(
       screen.getByTestId("connected-org-repo-count-portofino")
@@ -386,20 +413,27 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
       });
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const [url, opts] = fetchMock.mock.calls[0] as [string, Record<string, unknown>];
-      expect(url).toContain("/pr-merge/onboarding/repos/portofino/infra/restore");
+      const [url, opts] = fetchMock.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(url).toContain(
+        "/pr-merge/onboarding/repos/portofino/infra/restore"
+      );
       expect(opts.method).toBe("POST");
       expect(opts.maxRetries).toBe(0);
-      expect(screen.getByTestId("enroll-status-portofino").textContent).toContain(
-        "Re-enrolling portofino/infra"
-      );
+      expect(
+        screen.getByTestId("enroll-status-portofino").textContent
+      ).toContain("Re-enrolling portofino/infra");
 
       // One poll tick → the row is enrolled → the tombstone row is gone and
       // the repo is a doctor link again.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3000);
       });
-      expect(screen.getByTestId("connected-org-repo-portofino/infra")).toBeTruthy();
+      expect(
+        screen.getByTestId("connected-org-repo-portofino/infra")
+      ).toBeTruthy();
       expect(
         screen.queryByTestId("connected-org-repo-unenrolled-portofino/infra")
       ).toBeNull();
@@ -413,7 +447,11 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     fetchMock.mockResolvedValue(
       jsonResponse(
-        { error: "no_installation_for_owner", owner: "portofino", restored: true },
+        {
+          error: "no_installation_for_owner",
+          owner: "portofino",
+          restored: true,
+        },
         404
       )
     );

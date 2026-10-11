@@ -104,8 +104,11 @@ import {
   type HealthBadge,
   type HealthStripLevel,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import {
+  fetchLandPrecision,
+  fetchLandPreview,
+  fetchRecentLands,
+} from "@/lib/api/operations/landsReads";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { LandRow } from "@/components/admin/coord/LandRow";
 import type { LandRow as LandRowData } from "@/components/admin/coord/landTypes";
@@ -124,12 +127,7 @@ import {
 } from "@/components/admin/coord/LandPrecisionPanel";
 import { useTenantDefaultRepo } from "@/components/operations/useTenantDefaultRepo";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
-
-interface LandsResponse {
-  lands?: LandRowData[] | null;
-}
 
 type TabId = "all" | "attention" | "unverified";
 
@@ -204,10 +202,7 @@ function LandPrecisionSection({
   const load = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const body = await httpClient.get<PrecisionResponse>(
-          `${API}/lands/precision`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchLandPrecision();
         if (isCurrent()) onData(body, null);
       } catch (e) {
         if (isCurrent()) {
@@ -388,9 +383,7 @@ export default function CoordLandsPage() {
     setPreviewError(null);
     try {
       const qs = new URLSearchParams({ repo, pr });
-      const body = await httpClient.get<LandPreviewResponse>(
-        `${API}/lands/preview?${qs.toString()}`
-      );
+      const body = await fetchLandPreview(qs);
       setPreview(body);
     } catch (e) {
       setPreview(null);
@@ -409,10 +402,7 @@ export default function CoordLandsPage() {
         const qs = new URLSearchParams();
         if (landsRepoFilter.trim()) qs.set("repo", landsRepoFilter.trim());
         qs.set("limit", "25");
-        const body = await httpClient.get<LandsResponse>(
-          `${API}/lands?${qs.toString()}`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchRecentLands(qs);
         if (!isCurrent()) return;
         setLands(body.lands ?? []);
         setLandsError(null);

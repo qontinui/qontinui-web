@@ -49,7 +49,10 @@ import {
   StatusBadge,
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
-import { httpClient } from "@/services/service-factory";
+import {
+  createPolicyClause,
+  respondToAgentQuestion,
+} from "@/lib/api/operations/coordConsole";
 import {
   QUESTION_STATUS_PALETTE,
   deriveGapStatus,
@@ -60,8 +63,6 @@ import {
   parseGapContext,
   type ProposedClause,
 } from "@/components/admin/coord/policy-gap";
-
-const API = "/api/v1/operations";
 
 /** One labelled row in the proposed-clause readout, omitted when empty. */
 function ClauseField({
@@ -114,12 +115,10 @@ export function GapRow({
    */
   const markHandled = async (note: string) => {
     if (!answered) {
-      await httpClient.post(
-        `${API}/agent-questions/${encodeURIComponent(
-          question.question_id
-        )}/respond`,
-        { response: note, responded_by_operator: operator }
-      );
+      await respondToAgentQuestion(question.question_id, {
+        response: note,
+        responded_by_operator: operator,
+      });
     }
     onHandled(question.question_id);
   };
@@ -136,12 +135,7 @@ export function GapRow({
       };
       // Phase-2 clause-create proxy (raw path — may not be in this branch's
       // OpenAPI client yet; called via the generic http helper).
-      await httpClient.post(
-        `${API}/coord/prompt-documents/policy/${encodeURIComponent(
-          category
-        )}/clauses`,
-        body
-      );
+      await createPolicyClause(category, body);
       await markHandled(
         `accepted as proposed clause '${proposed.clause_id ?? "(unnamed)"}' in policy/${category}`
       );
@@ -183,7 +177,9 @@ export function GapRow({
       attention={status.attention}
       identity={category}
       label={
-        <span title={question.question}>{truncate(question.question, 160)}</span>
+        <span title={question.question}>
+          {truncate(question.question, 160)}
+        </span>
       }
       status={
         <span className="flex items-center gap-1.5 shrink-0">
@@ -213,8 +209,8 @@ export function GapRow({
                 className="text-xs text-muted-foreground"
                 data-testid="coord-gap-review-owed"
               >
-                Not blocking: coord already applied the category default
-                inline. A review is still owed —{" "}
+                Not blocking: coord already applied the category default inline.
+                A review is still owed —{" "}
                 {/* The second clause names BUTTONS, so it may only name the
                     ones that work. `Accept` is disabled without a
                     `clause_id` (see its own `disabled` below), and

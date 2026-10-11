@@ -7,15 +7,14 @@
  *   resource (plan `2026-09-20-overview-authoring-layer`) — readable by any
  *   member, writable by whoever the server says may, with version checks and
  *   a change log on every save;
- * - its work units, through `/api/v1/operations/plans`.
+ * - its work units, through `/operations/plans`.
  *
  * Each source reports `loading`, `error` or data on its own, so one failing
  * never blanks the other, and neither failure is shown as an empty project.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import { fetchWorkUnitPlans } from "@/lib/api/operations/overviewReads";
 import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   useResourceList,
@@ -32,7 +31,6 @@ import {
 } from "../_lib/intent";
 import { summarizeProgress, type Progress } from "../_lib/progress";
 
-const API = "/api/v1/operations";
 export const INTENT_RESOURCE = "intent_documents";
 const INTENT_PATH = "intent-documents";
 
@@ -62,10 +60,7 @@ async function loadProgress(): Promise<Progress> {
     limit: String(PLAN_FETCH_LIMIT),
     exclude_slug_prefix: SHEPHERD_SLUG_PREFIX,
   });
-  const body = await httpClient.get<{
-    work_units?: CoordPlanRow[];
-    plans?: CoordPlanRow[];
-  }>(`${API}/plans?${qs.toString()}`);
+  const body = await fetchWorkUnitPlans(qs);
   const rows = body.work_units ?? body.plans ?? [];
   return summarizeProgress(rows, { fetchLimit: PLAN_FETCH_LIMIT });
 }

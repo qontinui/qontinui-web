@@ -56,8 +56,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useResetOnBackNavigation } from "@/hooks/useResetOnBackNavigation";
 import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
-import { OPERATIONS_API } from "@/components/operations/utils";
-import { httpClient } from "@/services/service-factory";
+import { fetchOnboardingGithubApp } from "@/lib/api/operations/prMergeOnboarding";
 import {
   assertNonceStorageAvailable,
   authorizeUrl,
@@ -200,9 +199,7 @@ export function ConnectInstalledOrg({
     let cancelled = false;
     (async () => {
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/github-app`
-        );
+        const res = await fetchOnboardingGithubApp();
         if (cancelled) return;
         if (res.ok) setConfig((await res.json()) as GithubAppConfig);
       } catch {

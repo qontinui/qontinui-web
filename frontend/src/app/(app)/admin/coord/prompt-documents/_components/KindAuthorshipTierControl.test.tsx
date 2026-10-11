@@ -48,12 +48,21 @@ const putMock = vi.fn();
 const deleteMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
+  // The typed `/operations` client sends through `httpClient.fetch`; each verb
+  // is routed to its mock (url, then the parsed body) and a resolved value is
+  // wrapped in a 200 `Response`. A rejected mock rejects the fetch itself.
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    delete: (...args: unknown[]) => deleteMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
+    fetch: async (url: string, init: { method: string; body?: string }) => {
+      const body = init.body === undefined ? undefined : JSON.parse(init.body);
+      const mock =
+        init.method === "PUT"
+          ? putMock
+          : init.method === "DELETE"
+            ? deleteMock
+            : getMock;
+      const value = await mock(url, body);
+      return new Response(JSON.stringify(value ?? null), { status: 200 });
+    },
   },
 }));
 const toastSuccess = vi.fn();

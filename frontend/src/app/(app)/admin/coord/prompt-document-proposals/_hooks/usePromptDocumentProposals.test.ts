@@ -27,12 +27,24 @@ const postMock = vi.fn();
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
 
+// The typed `/operations` client sends through `httpClient.fetch`; this shim
+// routes each request to the per-verb mocks below (url first, then the parsed
+// body for writes) and wraps a resolved value in a 200 `Response`. A rejected
+// mock rejects the fetch itself, so the hook sees the same `Error` as before.
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    patch: (...args: unknown[]) => patchMock(...args),
-    post: (...args: unknown[]) => postMock(...args),
-    delete: vi.fn(),
+    fetch: async (url: string, init: { method: string; body?: string }) => {
+      const body = init.body === undefined ? undefined : JSON.parse(init.body);
+      const mock =
+        init.method === "GET"
+          ? getMock
+          : init.method === "PATCH"
+            ? patchMock
+            : postMock;
+      const value =
+        init.method === "GET" ? await mock(url) : await mock(url, body);
+      return new Response(JSON.stringify(value ?? null), { status: 200 });
+    },
   },
 }));
 // Arrow indirection, not a direct reference: `vi.mock` factories are hoisted
@@ -318,7 +330,8 @@ describe("usePromptDocumentProposals — the landed-write diff", () => {
   it("diffs v1 against the empty document without a second fetch", async () => {
     const first = { ...HEAD_WRITE, version_number: 1, current_version: 1 };
     getMock.mockImplementation((url: string) => {
-      if (url.endsWith("/versions/1")) return Promise.resolve({ body: "first" });
+      if (url.endsWith("/versions/1"))
+        return Promise.resolve({ body: "first" });
       return routeInitial({})(url);
     });
 

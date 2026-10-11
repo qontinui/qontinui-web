@@ -7,11 +7,18 @@
  * so there is exactly ONE place that knows the routes.
  */
 
-import { httpClient } from "@/services/service-factory";
 import {
-  COORD_POLICIES_API,
-  type CoordPolicyRow,
-  type ListCoordPoliciesResponse,
+  deleteCoordPolicyRow,
+  deleteCoordPolicySystemRuleOverride,
+  fetchCoordPolicies,
+  patchCoordPolicyRow,
+  postCoordPolicy,
+  postCoordPolicyRestoreDefault,
+  putCoordPolicySystemRuleOverride,
+} from "@/lib/api/operations/coordPolicyRules";
+import type {
+  CoordPolicyRow,
+  ListCoordPoliciesResponse,
 } from "./coordPolicies";
 
 /**
@@ -67,16 +74,14 @@ export function listCoordPolicies(
   if (filters?.enabled !== undefined)
     qs.set("enabled", String(filters.enabled));
   const query = qs.toString();
-  return httpClient.get<ListCoordPoliciesResponse>(
-    query ? `${COORD_POLICIES_API}?${query}` : COORD_POLICIES_API
-  );
+  return fetchCoordPolicies(query);
 }
 
 /** `POST /coord/policies` — v1 (`kind`) or v2 (`decision_domain`) body. */
 export function createCoordPolicy<TCreate>(
   body: TCreate
 ): Promise<CoordPolicyRow> {
-  return httpClient.post<CoordPolicyRow>(COORD_POLICIES_API, body);
+  return postCoordPolicy(body);
 }
 
 /**
@@ -90,30 +95,17 @@ export function patchCoordPolicy<TUpdate>(
   policyId: string,
   body: TUpdate
 ): Promise<unknown> {
-  return httpClient.patch(
-    `${COORD_POLICIES_API}/${encodeURIComponent(policyId)}`,
-    body,
-    {
-      // Safe to re-issue: `update_coord_policy` proxies to a plain
-      // `UPDATE ... SET <fields>` in coord; field assignment, no version row.
-      idempotent: true,
-    }
-  );
+  return patchCoordPolicyRow(policyId, body);
 }
 
 /** `DELETE /coord/policies/:id`. */
 export function deleteCoordPolicy(policyId: string): Promise<unknown> {
-  return httpClient.delete(
-    `${COORD_POLICIES_API}/${encodeURIComponent(policyId)}`
-  );
+  return deleteCoordPolicyRow(policyId);
 }
 
 /** `POST /coord/policies/:id/restore-default` — re-seed from `default_source`. */
 export function restoreCoordPolicyDefault(policyId: string): Promise<unknown> {
-  return httpClient.post(
-    `${COORD_POLICIES_API}/${encodeURIComponent(policyId)}/restore-default`,
-    {}
-  );
+  return postCoordPolicyRestoreDefault(policyId);
 }
 
 /** `PUT /coord/policies/system/:id/override` — v1 shapes only; see
@@ -122,17 +114,12 @@ export function putCoordPolicySystemOverride<TCreate>(
   systemRuleId: string,
   body: { disabled: boolean } | TCreate
 ): Promise<unknown> {
-  return httpClient.put(
-    `${COORD_POLICIES_API}/system/${encodeURIComponent(systemRuleId)}/override`,
-    body
-  );
+  return putCoordPolicySystemRuleOverride(systemRuleId, body);
 }
 
 /** `DELETE /coord/policies/system/:id/override` — revert to the built-in. */
 export function deleteCoordPolicySystemOverride(
   systemRuleId: string
 ): Promise<unknown> {
-  return httpClient.delete(
-    `${COORD_POLICIES_API}/system/${encodeURIComponent(systemRuleId)}/override`
-  );
+  return deleteCoordPolicySystemRuleOverride(systemRuleId);
 }

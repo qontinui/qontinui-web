@@ -86,7 +86,7 @@ import {
   StatusBadge,
   readIsUnknown,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
+import { fetchCoordFindings } from "@/lib/api/operations/coordFindings";
 import {
   type CoordFindingRow,
   type FindingsResponse,
@@ -106,7 +106,6 @@ import {
   triageSentence,
 } from "./_lib/findingStatus";
 
-const API = "/api/v1/operations";
 /** Page size asked of coord. Coord owns the clamp; this is a request. */
 const PAGE_SIZE = 50;
 
@@ -302,13 +301,13 @@ export default function CoordFindingsPage() {
     setWalkStalled(false);
     try {
       const body = readBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/findings?${buildQuery({
+        await fetchCoordFindings(
+          buildQuery({
             topic,
             kind,
             resourceKey,
             triaged,
-          })}`
+          })
         )
       );
       if (!current()) return;
@@ -415,14 +414,14 @@ export default function CoordFindingsPage() {
     setPagingError(null);
     try {
       const body = readBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/findings?${buildQuery({
+        await fetchCoordFindings(
+          buildQuery({
             topic,
             kind,
             resourceKey,
             triaged,
             cursor,
-          })}`
+          })
         )
       );
       if (!current()) return;
@@ -485,8 +484,8 @@ export default function CoordFindingsPage() {
     setLinkedFailed(false);
     try {
       const body = readBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/findings?finding_id=${encodeURIComponent(linkedId.trim())}`
+        await fetchCoordFindings(
+          `finding_id=${encodeURIComponent(linkedId.trim())}`
         )
       );
       if (linkedGenRef.current !== gen) return;

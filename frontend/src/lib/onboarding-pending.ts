@@ -27,26 +27,14 @@
  * `verification-and-evidence` `silent-empty-is-unknown`).
  */
 
-import { OPERATIONS_API } from "@/components/operations/utils";
 import { absoluteTime } from "@/components/console/time";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchPendingInstallationRow,
+  type PendingInstallationResponse,
+} from "@/lib/api/operations/prOnboarding";
 
-/**
- * Coord's envelope for `GET /coord/onboarding/pending-installations`, passed
- * through verbatim by `GET /api/v1/operations/pr-merge/onboarding/pending-installation`.
- */
-export interface PendingInstallationResponse {
-  /** `true` = seen and unclaimed; `false` = claimed or never seen; `null` = UNKNOWN. */
-  pending: boolean | null;
-  installation_id: number | null;
-  account_login: string | null;
-  account_type: string | null;
-  repo_count: number | null;
-  received_at: string | null;
-  claimed_at: string | null;
-  /** Set on the UNKNOWN arm: `"pending_installations_table_absent"`. */
-  reason?: string;
-}
+export type { PendingInstallationResponse };
 
 /** Exactly one key — the same rule coord and the proxy enforce (400 otherwise). */
 export type PendingInstallationKey =
@@ -79,18 +67,19 @@ export async function fetchPendingInstallation(
       ? { installation_id: String(key.installation_id) }
       : { account_login: key.account_login }
   );
-  const res = await httpClient.fetch(
-    `${OPERATIONS_API}/pr-merge/onboarding/pending-installation?${params.toString()}`
-  );
-  if (!res.ok) {
-    throw new Error(`pending-installation check failed: HTTP ${res.status}`);
+  try {
+    return await fetchPendingInstallationRow(params);
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === null) throw err;
+    throw new Error(`pending-installation check failed: HTTP ${status}`);
   }
-  return (await res.json()) as PendingInstallationResponse;
 }
 
 /** "3 repos" / "1 repo" / "an unknown number of repos" (null is not zero). */
 export function formatRepoCount(count: number | null | undefined): string {
-  if (count === null || count === undefined) return "an unknown number of repos";
+  if (count === null || count === undefined)
+    return "an unknown number of repos";
   return `${count} ${count === 1 ? "repo" : "repos"}`;
 }
 
@@ -106,7 +95,9 @@ export function classifyPendingInstallation(
   const r = resp as Partial<PendingInstallationResponse>;
   if (r.pending === true) return "pending";
   if (r.pending === false) {
-    return typeof r.claimed_at === "string" && r.claimed_at ? "claimed" : "unseen";
+    return typeof r.claimed_at === "string" && r.claimed_at
+      ? "claimed"
+      : "unseen";
   }
   return "unknown";
 }

@@ -2,21 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchComplianceOutstanding,
+  fetchComplianceSessions,
+  fetchSessionComplianceConfig,
+  fetchSessionComplianceConfigVersions,
+  putSessionComplianceConfig,
+} from "@/lib/api/operations/coordSessionCompliance";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import type {
   ComplianceVerdict,
-  ListComplianceSessionsResponse,
-  ListConfigVersionsResponse,
-  ListOutstandingResponse,
   OutstandingItem,
   SessionComplianceConfig,
   SessionComplianceConfigUpdate,
   SessionComplianceConfigVersion,
   SessionComplianceRow,
 } from "../compliance-types";
-
-const API = "/api/v1/operations/coord/session-compliance";
 
 /** Default page size for the recent-sessions list. */
 const SESSIONS_PAGE = 25;
@@ -95,7 +96,7 @@ const EMPTY: Loaded<never> = {
 
 /**
  * Reads and mutates the tenant's session-compliance enforcement surface via the
- * coord-proxy (`/api/v1/operations/coord/session-compliance/*`).
+ * coord-proxy (`/coord/session-compliance/* under the operations client`).
  *
  * Reads are visible to any tenant member; the config PUT is tenant-admin-gated
  * (coord re-checks) and coord stamps the editor from its own authenticated
@@ -108,8 +109,7 @@ const EMPTY: Loaded<never> = {
  * is "nothing to show".
  */
 export function useSessionCompliance() {
-  const [config, setConfig] =
-    useState<Loaded<SessionComplianceConfig>>(EMPTY);
+  const [config, setConfig] = useState<Loaded<SessionComplianceConfig>>(EMPTY);
   const [versions, setVersions] =
     useState<Loaded<SessionComplianceConfigVersion[]>>(EMPTY);
   const [sessions, setSessions] =
@@ -129,9 +129,7 @@ export function useSessionCompliance() {
   const loadConfig = useCallback(async () => {
     setConfig((s) => ({ ...s, loading: true }));
     try {
-      const data = await httpClient.get<SessionComplianceConfig>(
-        `${API}/config`
-      );
+      const data = await fetchSessionComplianceConfig();
       setConfig({
         data,
         loading: false,
@@ -155,9 +153,7 @@ export function useSessionCompliance() {
   const loadVersions = useCallback(async () => {
     setVersions((s) => ({ ...s, loading: true }));
     try {
-      const data = await httpClient.get<ListConfigVersionsResponse>(
-        `${API}/config/versions`
-      );
+      const data = await fetchSessionComplianceConfigVersions();
       setVersions({
         data: data.versions ?? [],
         loading: false,
@@ -187,10 +183,7 @@ export function useSessionCompliance() {
     async (patch: SessionComplianceConfigUpdate): Promise<boolean> => {
       setSaving(true);
       try {
-        const updated = await httpClient.put<SessionComplianceConfig>(
-          `${API}/config`,
-          patch
-        );
+        const updated = await putSessionComplianceConfig(patch);
         setConfig({
           data: updated,
           loading: false,
@@ -221,9 +214,7 @@ export function useSessionCompliance() {
     if (verdictFilter !== "all") qs.set("verdict", verdictFilter);
     if (cursor) qs.set("cursor", cursor);
     try {
-      const data = await httpClient.get<ListComplianceSessionsResponse>(
-        `${API}/sessions?${qs.toString()}`
-      );
+      const data = await fetchComplianceSessions(qs);
       setSessions({
         data: data.sessions ?? [],
         loading: false,
@@ -251,9 +242,7 @@ export function useSessionCompliance() {
   const loadOutstanding = useCallback(async () => {
     setOutstanding((s) => ({ ...s, loading: true }));
     try {
-      const data = await httpClient.get<ListOutstandingResponse>(
-        `${API}/outstanding`
-      );
+      const data = await fetchComplianceOutstanding();
       setOutstanding({
         data: data.items ?? [],
         loading: false,
@@ -285,13 +274,10 @@ export function useSessionCompliance() {
   }, [loadSessions]);
 
   /** Reset paging whenever the verdict filter changes. */
-  const changeVerdictFilter = useCallback(
-    (next: ComplianceVerdict | "all") => {
-      setVerdictFilter(next);
-      setCursor(null);
-    },
-    []
-  );
+  const changeVerdictFilter = useCallback((next: ComplianceVerdict | "all") => {
+    setVerdictFilter(next);
+    setCursor(null);
+  }, []);
 
   const reloadAll = useCallback(() => {
     loadConfig();

@@ -21,10 +21,9 @@ import {
   HelpCircle,
 } from "lucide-react";
 import type { Runner } from "@qontinui/shared-types";
-import { httpClient } from "@/services/service-factory";
+import { renameFleetMachine } from "@/lib/api/operations/fleetReads";
 import {
   formatBytes,
-  machineRenameUrl,
   percentFree,
   readingAgeMs,
   relativeTime,
@@ -451,14 +450,9 @@ export function MachineCard({
     setRenameError(null);
 
     try {
-      const res = await httpClient.fetch(machineRenameUrl(hostname), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: next }),
-        // Safe to re-issue: `rename_machine` UPSERTs the (user, hostname) row
-        // (DELETEs it for an empty name) — pure assignment, repeat is a no-op.
-        idempotent: true,
-      });
+      // Safe to re-issue: `rename_machine` UPSERTs the (user, hostname) row
+      // (DELETEs it for an empty name) — pure assignment, repeat is a no-op.
+      const res = await renameFleetMachine(hostname, next);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }

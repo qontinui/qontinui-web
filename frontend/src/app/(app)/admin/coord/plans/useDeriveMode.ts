@@ -12,11 +12,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { fetchPlansOverview } from "@/lib/api/operations/plansOverview";
 import { deriveModeOf, type DeriveModeState } from "./deriveMode";
-
-export const OVERVIEW_ENDPOINT = "/api/v1/operations/plans/overview";
 
 export function useDeriveMode(): {
   state: DeriveModeState;
@@ -29,10 +26,7 @@ export function useDeriveMode(): {
   const refresh = useCallback(async () => {
     const id = ++reqId.current;
     try {
-      const body = await httpClient.get<unknown>(
-        OVERVIEW_ENDPOINT,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchPlansOverview();
       if (!mounted.current || id !== reqId.current) return;
       setState({ state: "loaded", mode: deriveModeOf(body) });
     } catch (e) {

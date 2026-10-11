@@ -16,18 +16,16 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import {
+  fetchFleetDispatchRoles,
+  putFleetDispatchRole,
+} from "@/lib/api/operations/fleetControls";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import {
   parseDispatchRoles,
   type DispatchRole,
   type DispatchRolesRead,
 } from "./fleetDispatchRoles";
-
-export const FLEET_DISPATCH_ROLES_API = `${OPERATIONS_API}/fleet/dispatch-roles`;
-export const FLEET_DISPATCH_ROLE_API = `${OPERATIONS_API}/fleet/dispatch-role`;
 
 export const FLEET_DISPATCH_ROLES_POLL_MS = 30_000;
 
@@ -44,10 +42,7 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: DispatchRolesRead;
     try {
-      const res = await httpClient.fetch(
-        FLEET_DISPATCH_ROLES_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchFleetDispatchRoles();
       if (res.status === 404) {
         next = {
           state: "unknown",
@@ -121,16 +116,9 @@ export async function putDispatchRole(input: {
   if (input.deviceId) body.device_id = input.deviceId;
   else body.ci_host_name = input.ciHostName;
   try {
-    const res = await httpClient.fetch(FLEET_DISPATCH_ROLE_API, {
-      method: "PUT",
-      body: JSON.stringify(body),
-      // Never auto-retry: coord answers a repeated PUT with `changed: false`,
-      // so a retry after a lost-but-committed first attempt would report
-      // "nothing changed" for a change this operator just made. A 5xx must
-      // reach the caller, which re-reads instead. `maxRetries: 0` disables the
-      // whole chain (PUT is otherwise retried as idempotent on any 5xx).
-      maxRetries: 0,
-    });
+    // Never auto-retried: see `putFleetDispatchRole`. A 5xx must reach the
+    // caller, which re-reads instead.
+    const res = await putFleetDispatchRole(body);
     if (!res.ok) {
       return { ok: false, status: res.status, body: await res.text() };
     }

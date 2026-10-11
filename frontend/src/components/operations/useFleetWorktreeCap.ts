@@ -40,18 +40,17 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import {
+  fetchFleetWorktreeCap,
+  postFleetWorktreeCap,
+  postFleetWorktreeCapClear,
+} from "@/lib/api/operations/fleetControls";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import {
   normalizeDeviceId,
   parseFleetWorktreeCap,
   type FleetWorktreeCapRead,
 } from "./fleetWorktreeCap";
-
-export const FLEET_WORKTREE_CAP_API = `${OPERATIONS_API}/fleet/worktree-cap`;
-export const FLEET_WORKTREE_CAP_CLEAR_API = `${OPERATIONS_API}/fleet/worktree-cap/clear`;
 
 /** Poll cadence. Slow on purpose — see the module doc. */
 export const FLEET_WORKTREE_CAP_POLL_MS = 30_000;
@@ -70,10 +69,7 @@ export function useFleetWorktreeCap(): UseFleetWorktreeCapResult {
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetWorktreeCapRead;
     try {
-      const res = await httpClient.fetch(
-        FLEET_WORKTREE_CAP_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchFleetWorktreeCap();
       if (res.status === 404) {
         next = {
           state: "unknown",
@@ -152,7 +148,7 @@ export async function postWorktreeCap(input: {
   maxWorktrees: number;
   reason: string;
 }): Promise<WorktreeCapWriteResult> {
-  return postCapChange(FLEET_WORKTREE_CAP_API, {
+  return postCapChange(postFleetWorktreeCap, {
     // Normalised, like the READ side keys its map. The ids on this page come
     // from several joins; one carrying surrounding whitespace would resolve
     // `capped` in the state line and then 422 on the write, which reads as coord
@@ -171,21 +167,18 @@ export async function postClearWorktreeCap(input: {
   deviceId: string;
   reason: string;
 }): Promise<WorktreeCapWriteResult> {
-  return postCapChange(FLEET_WORKTREE_CAP_CLEAR_API, {
+  return postCapChange(postFleetWorktreeCapClear, {
     device_id: normalizeDeviceId(input.deviceId),
     reason: input.reason,
   });
 }
 
 async function postCapChange(
-  url: string,
+  send: (body: Record<string, string | number>) => Promise<Response>,
   body: Record<string, string | number>
 ): Promise<WorktreeCapWriteResult> {
   try {
-    const res = await httpClient.fetch(url, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    const res = await send(body);
     if (!res.ok) {
       // The response TEXT, not just the status. Route-missing,
       // `device_not_in_tenant`, `admin_required` and `schema_pending` are four

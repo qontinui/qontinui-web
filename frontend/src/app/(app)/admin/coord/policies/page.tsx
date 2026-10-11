@@ -50,7 +50,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchFleetNextStepSettings,
+  type FleetNextStepSettings,
+  type TenantPolicySetting,
+} from "@/lib/api/operations/nextStepSettingsFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { DesignPoliciesSection } from "./_components/DesignPoliciesSection";
@@ -67,7 +71,6 @@ import {
   POLICY_STATUS_PALETTE,
 } from "./policyAutonomyStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -75,19 +78,6 @@ const POLL_INTERVAL_MS = 30_000;
 // The level union lives with the derivation that reads it (R8), so the page
 // and its palette can never disagree about what coord's vocabulary is.
 import type { AutonomyLevel } from "./policyAutonomyStatus";
-
-interface TenantPolicySetting {
-  tenant_id: string;
-  slug: string;
-  autonomy_level: AutonomyLevel;
-  effective: boolean;
-  updated_at: string;
-}
-
-interface FleetResponse {
-  master_enabled: boolean;
-  tenants: TenantPolicySetting[];
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -124,15 +114,14 @@ function autonomyChip(level: AutonomyLevel) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CoordPoliciesPage() {
-  const [data, setData] = useState<FleetResponse | null>(null);
+  const [data, setData] = useState<FleetNextStepSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openTenant, setOpenTenant] = useState<string | null>(null);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<FleetResponse>(
-        `${API}/coord/next-step-settings/fleet`,
+      const body = await fetchFleetNextStepSettings(
         COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!isCurrent()) return;

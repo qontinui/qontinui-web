@@ -25,20 +25,12 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { fetchCiRunnerMirror } from "@/lib/api/operations/fleetReads";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
   parseCiRunnersPayload,
   type CiRunnerMirrorRead,
 } from "./ciRunnerMirror";
-
-/**
- * A relative literal, matching `OPERATIONS_BASE`'s convention rather than
- * `OPERATIONS_API`'s prefixed one. The console has both today; reconcile them
- * in a change that is about that.
- */
-export const CI_RUNNER_MIRROR_API = "/api/v1/operations/fleet/ci-runners";
 
 /** Coord's registrar cadence. Polling faster reads the same row twice. */
 export const CI_RUNNER_MIRROR_POLL_MS = 60_000;
@@ -52,10 +44,7 @@ export function useCiRunnerMirror(): CiRunnerMirrorRead {
   // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5).
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<unknown>(
-        CI_RUNNER_MIRROR_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchCiRunnerMirror();
       if (!isCurrent()) return;
       setRead(parseCiRunnersPayload(body));
     } catch (err) {

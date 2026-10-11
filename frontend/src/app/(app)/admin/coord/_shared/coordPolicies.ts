@@ -1,5 +1,6 @@
 /**
- * Shared coord policy-rule wire types + the tenant-admin coord-proxy base path.
+ * Shared coord policy-rule wire types (the calls live in
+ * `lib/api/operations/coordPolicyRules.ts`).
  *
  * `coord.policy_rules` carries TWO row shapes behind one route family
  * (`POST/PATCH/DELETE /coord/policies`, coord `policies/routes.rs`):
@@ -15,9 +16,6 @@
  * duplicated per surface. Each surface supplies its own filter + its own
  * create/update body types.
  */
-
-/** Tenant-admin coord proxy (web backend → coord). Never coord directly. */
-export const COORD_POLICIES_API = "/api/v1/operations/coord/policies";
 
 /**
  * A policy row as returned by `GET /coord/policies` (coord `PolicyRow`).

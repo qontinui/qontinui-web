@@ -34,6 +34,12 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    // The typed /operations client reads over `httpClient.fetch` (plan
+    // 2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls
+    // Phase 7): route it through the same table. A rejection passes through
+    // unchanged, so error-path tests see the identical Error.
+    fetch: async (...a: unknown[]) =>
+      new Response(JSON.stringify(await get(...a)), { status: 200 }),
     get: (...args: unknown[]) => get(...args),
     post: vi.fn(),
   },
@@ -115,7 +121,9 @@ describe("/plans body-signal filters", () => {
 
   it("renders both strips once the backend serves the fields", async () => {
     await renderPage(ANNOTATED);
-    expect(screen.getByTestId("coord-work-units-body-filters")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-work-units-body-filters")
+    ).toBeInTheDocument();
     expect(
       screen.getByTestId("coord-work-units-has-body-filter")
     ).toBeInTheDocument();
@@ -143,13 +151,15 @@ describe("/plans body-signal filters", () => {
 
     // The other chips must still report the window's counts — a strip whose
     // unselected counts collapse to 0 on click cannot be used to navigate.
-    await waitFor(() => expect(visibleSlugs()).toEqual(["2026-09-02-one-machine-only"]));
-    expect(screen.getByTestId("coord-work-units-has-body-filter-yes")).toHaveTextContent(
-      "1"
+    await waitFor(() =>
+      expect(visibleSlugs()).toEqual(["2026-09-02-one-machine-only"])
     );
-    expect(screen.getByTestId("coord-work-units-has-body-filter-no")).toHaveTextContent(
-      "1"
-    );
+    expect(
+      screen.getByTestId("coord-work-units-has-body-filter-yes")
+    ).toHaveTextContent("1");
+    expect(
+      screen.getByTestId("coord-work-units-has-body-filter-no")
+    ).toHaveTextContent("1");
   });
 
   it("filters on provenance, and clears back to the whole window", async () => {
@@ -164,9 +174,9 @@ describe("/plans body-signal filters", () => {
     );
 
     await user.click(
-      within(screen.getByTestId("coord-work-units-provenance-filter")).getByTestId(
-        "coord-work-units-provenance-filter-all"
-      )
+      within(
+        screen.getByTestId("coord-work-units-provenance-filter")
+      ).getByTestId("coord-work-units-provenance-filter-all")
     );
     await waitFor(() => expect(visibleSlugs()).toHaveLength(3));
   });
@@ -178,7 +188,9 @@ describe("/plans body-signal filters", () => {
     await user.click(
       screen.getByTestId("coord-work-units-provenance-filter-never_scanned")
     );
-    await user.click(screen.getByTestId("coord-work-units-has-body-filter-yes"));
+    await user.click(
+      screen.getByTestId("coord-work-units-has-body-filter-yes")
+    );
     await waitFor(() => expect(visibleSlugs()).toHaveLength(0));
   });
 
@@ -189,9 +201,13 @@ describe("/plans body-signal filters", () => {
     await user.click(
       screen.getByTestId("coord-work-units-provenance-filter-never_scanned")
     );
-    await user.click(screen.getByTestId("coord-work-units-has-body-filter-yes"));
+    await user.click(
+      screen.getByTestId("coord-work-units-has-body-filter-yes")
+    );
 
-    const empty = await screen.findByTestId("coord-work-units-body-filtered-empty");
+    const empty = await screen.findByTestId(
+      "coord-work-units-body-filtered-empty"
+    );
     expect(empty).toHaveTextContent(/3 work units in this window/);
     // The status-filter copy would name the wrong control entirely.
     expect(screen.queryByTestId("coord-work-units-empty")).toBeNull();

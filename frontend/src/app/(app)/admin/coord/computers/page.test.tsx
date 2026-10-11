@@ -35,7 +35,12 @@ vi.mock("next/navigation", () => ({
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...a: unknown[]) => httpGet(...a) },
+  httpClient: {
+    // The reads go through the typed /operations client (httpClient.fetch);
+    // adapt it onto the per-URL `httpGet` mock the cases below drive.
+    fetch: async (url: string) =>
+      new Response(JSON.stringify(await httpGet(url)), { status: 200 }),
+  },
 }));
 
 import {

@@ -55,9 +55,10 @@ import {
   type Attention,
 } from "@/components/console";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import { fireKillSwitch } from "@/lib/api/operations/prMerge";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { CiRepoStrip } from "./CiRepoStrip";
-import { OPERATIONS_API, relativeTime } from "./utils";
+import { relativeTime } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
 import {
   formatChurnValue,
@@ -515,18 +516,19 @@ function EmergencyStopControl({
     if (!ok) return;
     setSubmitting(true);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/kill-switch`,
-        {
-          method: "POST",
-          body: JSON.stringify({ scope, reason: trimmed }),
-        }
-      );
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
+      let data: MergeEnabledResponse | null;
+      try {
+        data = await fireKillSwitch({ scope, reason: trimmed });
+      } catch (err) {
+        // The rendered wording stays `HTTP <status>: <body>`.
+        const status = httpStatusOf(err);
+        if (status === null) throw err;
+        const body = httpBodyOf(err) ?? "";
+        throw new Error(`HTTP ${status}${body ? `: ${body}` : ""}`);
       }
-      const data = (await res.json()) as MergeEnabledResponse;
+      if (data === null) {
+        throw new Error("the kill-switch response was not valid JSON");
+      }
       setResult(data);
       setReason("");
       setTenantWide(false);

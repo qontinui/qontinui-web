@@ -34,16 +34,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
 import {
-  COORD_DASHBOARD_POLL_OPTIONS,
-  describeCoordPollError,
-} from "./coordPollError";
+  fetchFleetWorktreeSlots,
+  type WorktreeSlotsResponse,
+} from "@/lib/api/operations/fleetControls";
+import { describeCoordPollError } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import { RESOURCE_POLL_INTERVAL_MS } from "./useFleetResourceSamples";
-
-export const FLEET_WORKTREE_SLOTS_API = `${OPERATIONS_API}/fleet/worktree-slots`;
 
 /**
  * Friendly error text for the banner (`describeCoordPollError`, which reads
@@ -67,55 +64,6 @@ function describeError(err: unknown): string {
     routeUnavailableText:
       "coord does not serve the fleet worktree-slots route yet (Phase 1 of this feature's plan has not shipped)",
   });
-}
-
-/** One occupant of an allocated worktree slot, as coord's `BudgetOccupant` serializes it. */
-export interface WorktreeSlotOccupantRow {
-  repo: string;
-  worktree_path: string;
-  /** Seconds since the worktree was allocated — feed to `formatAge`. */
-  age_secs: number | null;
-  building?: boolean | null;
-}
-
-/**
- * Coord's `BudgetOccupancy::bounded` shape, reused verbatim by the fleet
- * route — the same renderer the per-device allocation-budget door and its
- * refusal detail already use, so this list and that one cannot drift.
- */
-export interface WorktreeSlotOccupancy {
-  shown: number;
-  total: number;
-  truncated: boolean;
-  rows: WorktreeSlotOccupantRow[];
-}
-
-export interface WorktreeSlotDevice {
-  device_id: string;
-  hostname: string | null;
-  active_worktrees: number;
-  max_worktrees: number;
-  /**
-   * Count of `coord.worktree_census` rows for this device within the narrow
-   * (`census_window_secs`) window — NOT the per-device door's 24h-windowed
-   * `census_rows_observed`, a different field with a different meaning.
-   *
-   * `0` means coord has no recent census hit for this device, so
-   * `active_worktrees` could not be corroborated as live and MUST be
-   * rendered UNKNOWN by the caller — never an idle/empty machine and never
-   * a healthy `0/8`. See `FleetWorktreeSlotsSection`.
-   */
-  census_recent_rows: number;
-  occupants: WorktreeSlotOccupancy;
-}
-
-export interface WorktreeSlotsResponse {
-  tenant_id: string;
-  device_count: number;
-  truncated: boolean;
-  device_cap: number;
-  census_window_secs: number;
-  devices: WorktreeSlotDevice[];
 }
 
 export interface UseFleetWorktreeSlotsResult {
@@ -144,10 +92,7 @@ export function useFleetWorktreeSlots(): UseFleetWorktreeSlotsResult {
   // actual cadence that day is UNKNOWN.
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<WorktreeSlotsResponse>(
-        FLEET_WORKTREE_SLOTS_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchFleetWorktreeSlots();
       if (!isCurrent()) return;
       setData(body);
       // Stamped ONLY on success — a failed poll must not refresh the clock

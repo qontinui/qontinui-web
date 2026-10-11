@@ -29,14 +29,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { resolveRunnerRoute, useRunnerTarget } from "@/lib/runner";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchOnboardingAuditStatus,
+  fetchOnboardingPreconditionStatus,
+  postDevicePairStart,
+  postOnboardingAccept,
+  postOnboardingAudit,
+} from "@/lib/api/operations/prMergeOnboarding";
 import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
 import { AUTHOR_RED, WAITING_AMBER } from "@/components/console";
-import { OPERATIONS_API } from "./utils";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlight, useSingleFlightPoll } from "./useSingleFlightPoll";
 
 const log = createLogger("MergeOrchestrationOnboarding");
@@ -385,13 +389,7 @@ export function PairDeviceStep({
         device_hostname: "operator-workstation",
         web_pair_url: `${window.location.origin}/operations/pair-runner`,
       };
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/coord/devices/pair-start`,
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-        }
-      );
+      const res = await postDevicePairStart(body);
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ""}`);
@@ -611,13 +609,7 @@ export function AuditStep({ ready }: AuditStepProps) {
       // {agent_id, repo, status:"running"} immediately. The POST is fast, so
       // the default client-side timeout is correct — the slow audit work
       // happens off-connection and we poll audit-status for the result.
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/audit`,
-        {
-          method: "POST",
-          body: JSON.stringify({ repo: repo.trim() }),
-        }
-      );
+      const res = await postOnboardingAudit(repo.trim());
       if (!res.ok) {
         if (res.status === 409) {
           const body = await res
@@ -680,12 +672,7 @@ export function AuditStep({ ready }: AuditStepProps) {
     async (isCurrent: () => boolean) => {
       if (!auditAgentId) return;
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/audit-status?agent_id=${encodeURIComponent(
-            auditAgentId
-          )}`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const res = await fetchOnboardingAuditStatus(auditAgentId);
         if (!isCurrent()) return;
         if (!res.ok) {
           // Transient proxy/coord hiccup — keep polling rather than fail.
@@ -784,10 +771,7 @@ export function AuditStep({ ready }: AuditStepProps) {
       } = { repo: auditResult.repo, profile: editedProfile };
       if (remote) body.github_remote = remote;
 
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/accept`,
-        { method: "POST", body: JSON.stringify(body) }
-      );
+      const res = await postOnboardingAccept(body);
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         setAcceptFailure(decodeAcceptFailure(res.status, text));
@@ -1241,10 +1225,7 @@ export function MergeOrchestrationOnboarding() {
 
   const pollStatus = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/onboarding/precondition-status`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchOnboardingPreconditionStatus();
       if (!isCurrent()) return;
       if (!res.ok) {
         if (res.status === 404) {

@@ -83,8 +83,8 @@
  * recovery path.
  */
 
-import { ApiConfig } from "@/services/api-config";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { postConnectState } from "@/lib/api/operations/prOnboarding";
 
 export type ConnectFlow = "connect" | "runner-clone";
 
@@ -184,9 +184,6 @@ export function assertNonceStorageAvailable(): void {
 /** Legacy value hardcoded by `/connect-runner-github` before the token existed. */
 const LEGACY_RUNNER_CLONE = "runner-clone";
 
-/** Web-backend proxy for coord's connect-state mint. */
-const CONNECT_STATE_MINT_URL = `${ApiConfig.API_BASE_URL}/api/v1/operations/pr-merge/onboarding/connect-state`;
-
 function randomNonce(): string {
   const buf = new Uint8Array(16);
   crypto.getRandomValues(buf);
@@ -284,19 +281,18 @@ export async function mintConnectState({
   if (Number.isInteger(targetInstallationId)) {
     payload.target_installation_id = targetInstallationId;
   }
-  const res = await httpClient.fetch(CONNECT_STATE_MINT_URL, {
-    method: "POST",
-    body: JSON.stringify(payload),
-    // A mint is a write that allocates a single-use row; retrying it silently
-    // would leak rows and mask a genuine coord outage.
-    maxRetries: 0,
-  });
-  if (!res.ok) {
+  // A mint is a write that allocates a single-use row; the client never
+  // retries it (a silent retry would leak rows and mask a coord outage).
+  let body: Record<string, unknown>;
+  try {
+    body = (await postConnectState(payload)) ?? {};
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === null) throw err;
     throw new Error(
-      `Couldn't start the GitHub connect (HTTP ${res.status}) — please retry.`
+      `Couldn't start the GitHub connect (HTTP ${status}) — please retry.`
     );
   }
-  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   // Coord's envelope key is `connect_state`; `token` is accepted as an alias
   // because the coord half of this plan lands in a separate PR. Anything else
   // throws rather than producing an unusable `undefined` segment.

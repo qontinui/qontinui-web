@@ -14,13 +14,18 @@ import userEvent from "@testing-library/user-event";
 const get = vi.fn();
 const put = vi.fn();
 
+// The hooks read and write through the typed client's `httpClient.fetch`, so
+// this adapter keeps the `get` / `put` stubs the cases are written against: a
+// resolved value is the 2xx body, a rejection is the transport's own error.
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    patch: vi.fn(),
-    post: vi.fn(),
-    put: (...args: unknown[]) => put(...args),
-    delete: vi.fn(),
+    fetch: async (url: string, init?: RequestInit) => {
+      const body =
+        init?.method === "PUT"
+          ? await put(url, JSON.parse(String(init.body)))
+          : await get(url);
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
   },
 }));
 

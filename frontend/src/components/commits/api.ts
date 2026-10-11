@@ -2,7 +2,7 @@
 // Commit lineage — API client
 //
 // Thin wrapper around the web-backend commit-lineage proxy
-// (`/api/v1/operations/lineage/*`). Requests route through the shared
+// (`/operations/lineage/*`). Requests route through the shared
 // `httpClient`, which attaches the operator Bearer token, handles
 // 401-refresh, and adds CSRF headers — so unlike the supervisor's Lineage
 // tab there is NO manual JWT paste; the logged-in operator's credential is
@@ -12,16 +12,13 @@
 // the components actually want.
 // ============================================================================
 
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../operations/utils";
-import type {
-  LineageRow,
-  LineageStats,
-  RecentCommitsResponse,
-  SessionCommitsResponse,
-} from "./types";
-
-const LINEAGE_API = `${OPERATIONS_API}/lineage`;
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchLineageStats,
+  fetchRecentLineage,
+  fetchSessionLineageCommits,
+} from "@/lib/api/operations/lineage";
+import type { LineageRow, LineageStats } from "./types";
 
 /** Stable empty array — never hand a fresh `[]` to identity-memoing consumers. */
 const EMPTY_ROWS: LineageRow[] = [];
@@ -84,27 +81,29 @@ function parseSchemaMigrationPending(
   }
 }
 
-/** Read the body (once) and throw the right CommitsApiError for a non-ok
- *  response. Ordinary errors keep today's exact message/status behavior. */
-async function throwApiError(url: string, res: Response): Promise<never> {
-  let bodyText = "";
-  try {
-    bodyText = await res.text();
-  } catch {
-    // Body unreadable — treat as an ordinary error below.
-  }
-  const pending = parseSchemaMigrationPending(res.status, bodyText);
+/** Map a rejection from the typed `/operations` client onto the right
+ *  CommitsApiError. A status rejection (`GET <url> failed: <status> - <body>`)
+ *  becomes a CommitsApiError whose message stops at the status — ordinary
+ *  errors keep today's exact message/status behavior — or the
+ *  schema-migration-pending flavour; anything else (a network error, an abort)
+ *  is rethrown as it was. */
+function toCommitsApiError(err: unknown): unknown {
+  const status = httpStatusOf(err);
+  if (status === null) return err;
+  const request = /^(.+? failed): \d{3}/.exec((err as Error).message)?.[1];
+  const head = request ?? `GET failed`;
+  const pending = parseSchemaMigrationPending(status, httpBodyOf(err) ?? "");
   if (pending) {
-    throw new CommitsApiError(
-      `GET ${url} failed: ${res.status} (schema migration pending${
+    return new CommitsApiError(
+      `${head}: ${status} (schema migration pending${
         pending.missing ? `: ${pending.missing}` : ""
       })`,
-      res.status,
+      status,
       "schema_migration_pending",
       pending.missing
     );
   }
-  throw new CommitsApiError(`GET ${url} failed: ${res.status}`, res.status);
+  return new CommitsApiError(`${head}: ${status}`, status);
 }
 
 /** Newest commit-lineage rows (default 100, coord caps at 500). */
@@ -112,12 +111,9 @@ export async function getRecentCommits(
   limit = 100,
   signal?: AbortSignal
 ): Promise<LineageRow[]> {
-  const url = `${LINEAGE_API}/recent?limit=${encodeURIComponent(limit)}`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    await throwApiError(url, res);
-  }
-  const body = (await res.json()) as RecentCommitsResponse;
+  const body = await fetchRecentLineage(limit, signal).catch((e: unknown) => {
+    throw toCommitsApiError(e);
+  });
   return Array.isArray(body.rows) && body.rows.length > 0
     ? body.rows
     : EMPTY_ROWS;
@@ -127,12 +123,9 @@ export async function getRecentCommits(
 export async function getLineageStats(
   signal?: AbortSignal
 ): Promise<LineageStats> {
-  const url = `${LINEAGE_API}/stats`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    await throwApiError(url, res);
-  }
-  return (await res.json()) as LineageStats;
+  return fetchLineageStats(signal).catch((e: unknown) => {
+    throw toCommitsApiError(e);
+  });
 }
 
 /** Every commit attributed to a single session (for the drill-down drawer). */
@@ -140,12 +133,11 @@ export async function getSessionCommits(
   sessionId: string,
   signal?: AbortSignal
 ): Promise<LineageRow[]> {
-  const url = `${LINEAGE_API}/sessions/${encodeURIComponent(sessionId)}/commits`;
-  const res = await httpClient.fetch(url, { signal });
-  if (!res.ok) {
-    await throwApiError(url, res);
-  }
-  const body = (await res.json()) as SessionCommitsResponse;
+  const body = await fetchSessionLineageCommits(sessionId, signal).catch(
+    (e: unknown) => {
+      throw toCommitsApiError(e);
+    }
+  );
   return Array.isArray(body.commits) && body.commits.length > 0
     ? body.commits
     : EMPTY_ROWS;

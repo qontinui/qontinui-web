@@ -52,8 +52,12 @@ import {
   GitCommitVertical,
   RefreshCw,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import {
+  fetchGitOpsBranches,
+  fetchGitOpsList,
+  type DeviceBranchSummary,
+  type GitOpRecord,
+} from "@/lib/api/operations/gitOps";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
   CollapsiblePanel,
@@ -64,51 +68,10 @@ import {
 } from "@/components/console";
 import { deriveGitOpStatus, GIT_OP_STATUS_PALETTE } from "./gitOpStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 // ---- Types ----------------------------------------------------------------
 //
-// These local interfaces mirror coord's git-ops wire shape. The generated
-// `@qontinui/shared-types` git-ops exports (GitOpRecord, DeviceBranchSummary)
-// are not yet published — they regenerate via CI on merge of the schemas
-// package. Swap these for the generated exports once that republishes;
-// the field shapes are intentionally identical.
-
-interface GitOpRecord {
-  op_id: string;
-  tenant_id: string;
-  device_id: string;
-  session_id: string;
-  repo: string;
-  branch: string;
-  op_kind: string;
-  sha: string;
-  message: string;
-  recorded_at: string;
-  metadata?: Record<string, unknown>;
-}
-
-interface DeviceBranchSummary {
-  device_id: string;
-  repo: string;
-  branch: string;
-  sha: string;
-  recorded_at: string;
-}
-
-interface GitOpsListResponse {
-  ops?: GitOpRecord[];
-  items?: GitOpRecord[];
-  count?: number;
-}
-
-interface GitOpsBranchesResponse {
-  branches?: DeviceBranchSummary[];
-  items?: DeviceBranchSummary[];
-  count?: number;
-}
-
 type TimeRange = "1h" | "24h" | "7d" | "all";
 
 const TIME_RANGES: { label: string; value: TimeRange }[] = [
@@ -360,14 +323,8 @@ export default function CoordGitOpsPage() {
         qs.set("limit", "200");
 
         const [listBody, branchesBody] = await Promise.all([
-          httpClient.get<GitOpsListResponse>(
-            `${API}/git-ops/list?${qs.toString()}`,
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
-          httpClient.get<GitOpsBranchesResponse>(
-            `${API}/git-ops/branches`,
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
+          fetchGitOpsList(qs),
+          fetchGitOpsBranches(),
         ]);
         if (!isCurrent()) return;
         setOps(listBody.ops ?? listBody.items ?? []);

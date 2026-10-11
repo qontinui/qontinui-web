@@ -13,12 +13,12 @@
  *
  * ## Sources — two existing reads, no new endpoint
  *
- * - `GET /api/v1/operations/fleet/health` (the roster `DevicePicker` is fed
+ * - `GET /operations/fleet/health` (the roster `DevicePicker` is fed
  *   from) for which devices are inside coord's dispatch window.
- * - `GET /api/v1/operations/fleet/drain` for which of those coord is holding
+ * - `GET /operations/fleet/drain` for which of those coord is holding
  *   out of the fleet, parsed by the shared `parseFleetDrain`.
  *
- * Both sit under `/api/v1/operations/`, so they are already scoped to the
+ * Both sit under `/operations/`, so they are already scoped to the
  * selected project by the active-tenant header.
  *
  * ## Unknown is not "no runners"
@@ -45,7 +45,6 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
@@ -53,14 +52,12 @@ import {
   type FleetHealthDevice,
   type FleetHealthPayload,
 } from "@/lib/api/operations/coordFleet";
+import { fetchFleetDrain } from "@/lib/api/operations/overviewReads";
 import {
   parseFleetDrain,
   resolveDeviceDrain,
   type FleetDrainRead,
 } from "@/components/operations/fleetDrain";
-
-/** `GET /api/v1/operations/fleet/drain` — the relative form, like `OPERATIONS_BASE`. */
-export const CONDITIONS_FLEET_DRAIN_API = "/api/v1/operations/fleet/drain";
 
 /**
  * Re-read cadence. The roster pages poll every 10-30 s because liveness is
@@ -148,10 +145,7 @@ export function useRunnerHint(): RunnerHintKind | null {
   const poll = useCallback(async (isCurrent: () => boolean) => {
     const [health, drainBody] = await Promise.allSettled([
       fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS),
-      httpClient.get<unknown>(
-        CONDITIONS_FLEET_DRAIN_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      ),
+      fetchFleetDrain(COORD_DASHBOARD_POLL_OPTIONS),
     ]);
     if (!isCurrent()) return;
     setRoster(health.status === "fulfilled" ? rosterOf(health.value) : null);

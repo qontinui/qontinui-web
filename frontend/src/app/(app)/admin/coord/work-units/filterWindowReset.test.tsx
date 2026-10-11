@@ -71,6 +71,12 @@ vi.mock("./usePlanDifficulty", () => ({
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    // The typed /operations client reads over `httpClient.fetch` (plan
+    // 2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls
+    // Phase 7): route it through the same table. A rejection passes through
+    // unchanged, so error-path tests see the identical Error.
+    fetch: async (...a: unknown[]) =>
+      new Response(JSON.stringify(await get(...a)), { status: 200 }),
     get: (...args: unknown[]) => get(...args),
     post: vi.fn(),
   },

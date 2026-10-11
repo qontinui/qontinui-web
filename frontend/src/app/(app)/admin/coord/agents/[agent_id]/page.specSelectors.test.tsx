@@ -48,7 +48,8 @@ const get = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
+    fetch: async (...args: unknown[]) =>
+      new Response(JSON.stringify(await get(...args))),
     post: vi.fn(),
   },
 }));

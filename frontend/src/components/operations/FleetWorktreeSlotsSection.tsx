@@ -62,7 +62,7 @@ import { useFleetWorktreeSlots } from "./useFleetWorktreeSlots";
 import type {
   WorktreeSlotDevice,
   WorktreeSlotOccupantRow,
-} from "./useFleetWorktreeSlots";
+} from "@/lib/api/operations/fleetControls";
 
 interface WorktreeSlotRow {
   deviceId: string;

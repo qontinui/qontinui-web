@@ -77,11 +77,12 @@ import { deriveAgentLogHealth } from "@/components/admin/coord/agentLogHealth";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import {
+  fetchAgentLogsByAgent,
+  type AgentLogsByAgentResponse as ByAgentResponse,
+} from "@/lib/api/operations/agentLogs";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
 const FETCH_LIMIT = 500;
 const ALL_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
@@ -98,11 +99,6 @@ const SINCE_OPTIONS: {
   { value: "1h", label: "Last 1 hour", minutes: 60 },
   { value: "24h", label: "Last 24 hours", minutes: 60 * 24 },
 ];
-
-interface ByAgentResponse {
-  agent_id?: string;
-  logs?: AgentLogRow[];
-}
 
 function deriveSessionId(logs: AgentLogRow[]): string | null {
   // The session_id of an agent is stable; pick the first non-null we
@@ -153,15 +149,9 @@ export default function CoordAgentLogPage() {
           ).toISOString();
           qs.set("since", sinceIso);
         }
-        const body = await httpClient.get<unknown>(
-          `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}?${qs.toString()}`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchAgentLogsByAgent(agentId, qs);
         if (!isCurrent()) return;
-        const normalized: ByAgentResponse = Array.isArray(body)
-          ? { logs: body }
-          : (body as ByAgentResponse);
-        setData(normalized);
+        setData(body);
         setError(null);
       } catch (e) {
         if (!isCurrent()) return;

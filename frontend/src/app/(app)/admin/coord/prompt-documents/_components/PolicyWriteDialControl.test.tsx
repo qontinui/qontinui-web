@@ -25,6 +25,19 @@ const putMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    // The hooks go through the typed /operations client (httpClient.fetch);
+    // adapt it onto the per-verb mocks the assertions below read.
+    fetch: async (url: string, init?: { method?: string; body?: string }) => {
+      const method = init?.method;
+      const body = init?.body ? JSON.parse(init.body) : undefined;
+      const result =
+        method === "GET"
+          ? await getMock(url)
+          : method === "PUT"
+            ? await putMock(url, body)
+            : undefined;
+      return new Response(JSON.stringify(result), { status: 200 });
+    },
     get: (...args: unknown[]) => getMock(...args),
     put: (...args: unknown[]) => putMock(...args),
     post: vi.fn(),

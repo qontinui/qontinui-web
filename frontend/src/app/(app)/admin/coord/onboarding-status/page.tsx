@@ -81,7 +81,7 @@ import { Button } from "@/components/ui/button";
 import { ConnectedOrgs } from "@/components/operations/ConnectedOrgs";
 import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
-import { OPERATIONS_API } from "@/components/operations/utils";
+import { postOnboardingClaim } from "@/lib/api/operations/onboardingClaim";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { StatusBadge } from "@/components/console";
@@ -90,7 +90,6 @@ import {
   claimBannerBorder,
   deriveClaimStatus,
 } from "@/components/admin/coord/onboardingClaimStatus";
-import { httpClient } from "@/services/service-factory";
 import {
   classifyPendingInstallation,
   fetchPendingInstallation,
@@ -511,24 +510,16 @@ export default function OnboardingStatusPage() {
     ) => {
       setPhase("claiming");
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/claim`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              code: claimCode,
-              ...target,
-              // The server-minted state is what binds this claim to the tenant
-              // that STARTED the flow, instead of to whoever's bearer arrives.
-              connect_state: connectStateToken,
-              // Clone-picker connect binds only — no repo enrollment / PRs.
-              ...(isRunnerClone ? { bind_only: true } : {}),
-            }),
-          }
-        );
-        const body = await res
-          .json()
-          .catch(() => ({}) as Record<string, unknown>);
+        const res = await postOnboardingClaim({
+          code: claimCode,
+          ...target,
+          // The server-minted state is what binds this claim to the tenant
+          // that STARTED the flow, instead of to whoever's bearer arrives.
+          connect_state: connectStateToken,
+          // Clone-picker connect binds only — no repo enrollment / PRs.
+          ...(isRunnerClone ? { bind_only: true } : {}),
+        });
+        const body = res.body;
         if (!mountedRef.current) return;
         if (!res.ok) {
           if (isRecoverableClaimRejection(res.status, body)) {
@@ -543,7 +534,7 @@ export default function OnboardingStatusPage() {
           setPhase("error");
           return;
         }
-        setClaim(body as ClaimResponse);
+        setClaim(body as unknown as ClaimResponse);
         setPhase("success");
       } catch (e) {
         if (!mountedRef.current) return;

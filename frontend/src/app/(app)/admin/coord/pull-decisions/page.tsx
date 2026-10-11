@@ -58,11 +58,10 @@ import {
   derivePullDecisionStatus,
   type PullDecisionRow as PullDecisionRowData,
 } from "@/components/admin/coord/pullDecisionStatus";
-import { httpClient } from "@/services/service-factory";
+import { fetchPullDecisions } from "@/lib/api/operations/pullDecisions";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 interface PullDecisionsResponse {
@@ -173,8 +172,8 @@ export default function CoordPullDecisionsPage() {
         if (repo) qs.set("repo", repo);
         const suffix = qs.toString() ? `?${qs.toString()}` : "";
         // Tolerate both the `{resolutions: [...]}` envelope and a bare array.
-        const body = await httpClient.get<unknown>(
-          `${API}/coord/pull-decisions${suffix}`,
+        const body = await fetchPullDecisions(
+          suffix,
           COORD_DASHBOARD_POLL_OPTIONS
         );
         if (!isCurrent()) return;

@@ -24,8 +24,20 @@ const httpGet = vi.fn();
 const httpPost = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => httpGet(...args),
-    post: (...args: unknown[]) => httpPost(...args),
+    // The typed `/operations` client calls `httpClient.fetch`; adapt it onto
+    // the per-verb mocks so the cases below keep their canned bodies.
+    fetch: async (url: string, opts: { method?: string; body?: string }) => {
+      const { method: _m, body: _b, ...rest } = opts;
+      const data =
+        opts.method === "POST"
+          ? await httpPost(
+              url,
+              opts.body ? JSON.parse(opts.body) : undefined,
+              opts
+            )
+          : await httpGet(url, rest);
+      return new Response(JSON.stringify(data));
+    },
   },
 }));
 

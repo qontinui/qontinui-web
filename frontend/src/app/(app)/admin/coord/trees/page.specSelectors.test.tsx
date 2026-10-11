@@ -49,9 +49,15 @@ import { resolve } from "path";
 const get = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
+  // The typed `/operations` client sends through `httpClient.fetch`: route it
+  // into the `get` table below and answer the table's value as a 2xx body.
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: vi.fn(),
+    fetch: async (url: string) => {
+      const value = await get(url);
+      return new Response(JSON.stringify(value === undefined ? null : value), {
+        status: 200,
+      });
+    },
   },
 }));
 
@@ -131,7 +137,9 @@ describe("coord-trees Spec-CI selectors survive the Wave 1 migration", () => {
 
     // The tree rows arrive from the stubbed by-device fetch.
     await waitFor(() => {
-      expect(screen.getAllByTestId("coord-tree-card").length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId("coord-tree-card").length).toBeGreaterThan(
+        0
+      );
     });
 
     const missing: string[] = [];

@@ -35,9 +35,8 @@ import {
   Stethoscope,
   XCircle,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-
-const API = "/api/v1/operations";
+import { fetchOnboardingDoctor } from "@/lib/api/operations/prMergeOnboarding";
+import { fetchTenantRepos } from "@/lib/api/operations/prMerge";
 
 // ----------------------------------------------------------------------------
 // Wire types — FROZEN contract with coord's onboarding doctor (P4).
@@ -65,16 +64,6 @@ interface DoctorResponse {
   repo: string;
   checks: DoctorCheck[];
   summary: DoctorSummary;
-}
-
-/** Subset of the `GET /pr-merge/repos` row we need for quick-picks. */
-interface TenantRepoRow {
-  repo: string;
-}
-
-interface TenantReposResponse {
-  repos: TenantRepoRow[];
-  total: number;
 }
 
 /** Mirrors the backend proxy's owner/name validation (422 otherwise). */
@@ -184,9 +173,7 @@ export function OnboardingDoctor() {
     setChecking(true);
     setError(null);
     try {
-      const body = await httpClient.get<DoctorResponse>(
-        `${API}/pr-merge/onboarding/doctor?repo=${encodeURIComponent(trimmed)}`
-      );
+      const body = await fetchOnboardingDoctor<DoctorResponse>(trimmed);
       setResult(body);
       setCheckedRepo(trimmed);
     } catch (e) {
@@ -201,8 +188,7 @@ export function OnboardingDoctor() {
   // (e.g. no coord operator row yet) just hides the buttons.
   useEffect(() => {
     let cancelled = false;
-    httpClient
-      .get<TenantReposResponse>(`${API}/pr-merge/repos`)
+    fetchTenantRepos()
       .then((body) => {
         if (!cancelled) {
           setEnrolledRepos((body.repos ?? []).map((r) => r.repo));

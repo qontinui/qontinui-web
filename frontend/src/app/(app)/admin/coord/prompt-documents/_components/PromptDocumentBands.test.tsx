@@ -28,15 +28,20 @@ import { render, screen, within } from "@testing-library/react";
 
 const getMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+// The typed `/operations` client sends through `httpClient.fetch`; the shim
+// routes it to the per-verb mocks below.
+vi.mock("@/services/service-factory", async () => {
+  const { withFetchShim } = await import("@/test/operationsFetchShim");
+  return {
+    httpClient: withFetchShim({
+      get: (...args: unknown[]) => getMock(...args),
+      post: vi.fn(),
+      patch: vi.fn(),
+      put: vi.fn(),
+      delete: vi.fn(),
+    }),
+  };
+});
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));

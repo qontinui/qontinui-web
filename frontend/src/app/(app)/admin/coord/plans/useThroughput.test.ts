@@ -10,7 +10,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 const getMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => getMock(...args) },
+  httpClient: {
+    // The typed /operations client reads over `httpClient.fetch`; route it
+    // through the same mock. A rejection passes through unchanged.
+    fetch: async (...args: unknown[]) =>
+      new Response(JSON.stringify(await getMock(...args)), { status: 200 }),
+  },
 }));
 
 import { useThroughput } from "./useThroughput";

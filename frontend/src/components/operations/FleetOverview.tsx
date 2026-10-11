@@ -21,10 +21,9 @@ import { TaskRunCard } from "./TaskRunCard";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
-import { httpClient } from "@/services/service-factory";
+import { fetchFleet, fetchFleetTasks } from "@/lib/api/operations/fleetReads";
 import {
   formatBytes,
-  OPERATIONS_API,
   POLL_INTERVAL_MS,
   relativeTime,
   volumeSeverity,
@@ -473,8 +472,8 @@ export function FleetOverview({
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const [fleetRes, tasksRes] = await Promise.allSettled([
-        httpClient.fetch(`${OPERATIONS_API}/fleet`),
-        httpClient.fetch(`${OPERATIONS_API}/fleet/tasks`),
+        fetchFleet(),
+        fetchFleetTasks(),
       ]);
 
       if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {

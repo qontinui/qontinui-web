@@ -66,14 +66,33 @@ function relative(file: string, root: string): string {
 }
 
 /**
- * Files whose source CALLS the endpoint, not merely names it. Comments and
- * wire-type docs reference these paths freely and must keep being allowed to;
- * only the `${OPERATIONS_API}/…` request form counts.
+ * The typed-client functions (`lib/api/operations/prMergeBoard.ts`) that issue
+ * each endpoint's request. The URL itself lives in the client now, so a module
+ * "fetches" an endpoint by CALLING its function.
+ */
+const ENDPOINT_CALLS: Record<string, string[]> = {
+  "/pr-merge/suggestions": ["fetchPrMergeSuggestions"],
+  "/pr-merge/blast-radius-blocks": ["fetchBlastRadiusBlocks"],
+  "/merge/queue": ["fetchMergeQueue"],
+  "/pr-merge/prs": [
+    "fetchPrMergePrsWithMergedCount",
+    "fetchPrMergePrsIncludingMerged",
+    "fetchPrMergePrList",
+  ],
+};
+
+/**
+ * Files whose source CALLS the endpoint's client function, not merely names
+ * it. Comments and wire-type docs reference these paths freely and must keep
+ * being allowed to; only the call form `fn(` counts.
  */
 function fetchSites(endpoint: string, root = OPERATIONS_DIR): string[] {
-  const needle = "${OPERATIONS_API}" + endpoint;
+  const needles = (ENDPOINT_CALLS[endpoint] ?? []).map((fn) => fn + "(");
   return moduleFiles(root)
-    .filter((f) => readFileSync(f, "utf8").includes(needle))
+    .filter((f) => {
+      const source = readFileSync(f, "utf8");
+      return needles.some((needle) => source.includes(needle));
+    })
     .map((f) => relative(f, root))
     .sort();
 }
@@ -109,7 +128,7 @@ describe("MergeTrain.tsx is presentation-only", () => {
     // so the header comment may keep describing the copy that was removed.
     expect(source).not.toContain("httpClient.fetch(");
     expect(source).not.toContain("new WebSocket(");
-    expect(source).not.toContain("${OPERATIONS_API}");
+    expect(source).not.toContain("@/lib/api/operations/");
   });
 
   it("holds no data state or effects", () => {

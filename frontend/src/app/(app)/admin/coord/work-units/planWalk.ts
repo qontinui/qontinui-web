@@ -59,6 +59,11 @@ import {
   type FoldedBodySignal,
   type PlanBodySignalBlock,
 } from "@/components/admin/coord/planBodySignal";
+import type {
+  PlansListResponse,
+  WalkCursor,
+  WorkUnitOverview,
+} from "@/lib/api/operations/coordPlans";
 import type { SortKey } from "./planSort";
 
 /** coord's page clamp (`work_unit_registry.rs` `list_work_units`). */
@@ -86,45 +91,6 @@ export type ServerOrder = "authored_desc" | "updated_desc";
  */
 export function serverOrderFor(sort: SortKey): ServerOrder {
   return sort.startsWith("updated") ? "updated_desc" : "authored_desc";
-}
-
-export interface WalkCursor {
-  /** RFC3339, or null while walking the NULL-authored tail. */
-  after_authored_at: string | null;
-  after_slug: string;
-}
-
-export interface PlansListResponse {
-  // coord `/coord/work-units` returns rows under `work_units`. `plans` is
-  // kept for backwards-tolerance during the cutover (harmless if absent).
-  work_units?: CoordPlanRow[];
-  plans?: CoordPlanRow[];
-  limit?: number;
-  offset?: number;
-  count?: number;
-  /** Echoed by a coord that understood `order`; absent on an older one. */
-  order?: string;
-  /** Non-null only when the page was full and another may follow. */
-  next_cursor?: WalkCursor | null;
-  /**
-   * The size of the WHOLE matching population, when coord serves one (it
-   * does not today: the envelope is `{work_units, limit, offset}` plus
-   * `count`). Read on the `single_page` arm only, where it is the one page's
-   * own statement and the truncation notice's denominator. A walk does not
-   * need it and does not fold it: a walk's denominator is the rows it read,
-   * cross-checked against `/plans/overview` — see {@link overviewTotalFor}.
-   * Never substituted from `count`, which is the size of the PAGE.
-   */
-  total?: number;
-  /**
-   * Why a `has_body: false` on THIS PAGE is (or is not) evidence — computed
-   * per request by the proxy (plan
-   * `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`).
-   * Absent when the page had no rows to annotate, and on a backend that
-   * predates the signals. A walk collects one per page and folds them; see
-   * {@link WalkOutcome}'s `bodySignal`.
-   */
-  body_signal?: PlanBodySignalBlock;
 }
 
 /**
@@ -182,7 +148,10 @@ export type WalkOutcome =
       total: number | null;
     } & WalkCommon);
 
-export type GetJson = <T>(url: string) => Promise<T>;
+/** Reads one page of the list under `query` (`fetchPlansPage`). */
+export type FetchPlansPage = (
+  query: URLSearchParams
+) => Promise<PlansListResponse>;
 
 function rowsOf(body: PlansListResponse | null | undefined): CoordPlanRow[] {
   return body?.work_units ?? body?.plans ?? [];
@@ -227,13 +196,12 @@ function cursorKey(cursor: WalkCursor): string {
  * failure on any later page is kept as `partial`.
  */
 export async function walkWorkUnits(
-  get: GetJson,
-  url: string,
+  fetchPage: FetchPlansPage,
   baseParams: URLSearchParams,
   order: ServerOrder,
   stillCurrent: () => boolean
 ): Promise<WalkOutcome | null> {
-  const pageUrl = (cursor: WalkCursor | null) => {
+  const pageQuery = (cursor: WalkCursor | null) => {
     const qs = new URLSearchParams(baseParams);
     qs.set("limit", String(WALK_PAGE_LIMIT));
     qs.set("order", order);
@@ -245,10 +213,10 @@ export async function walkWorkUnits(
       }
       qs.set("after_slug", cursor.after_slug);
     }
-    return `${url}?${qs.toString()}`;
+    return qs;
   };
 
-  const first = await get<PlansListResponse>(pageUrl(null));
+  const first = await fetchPage(pageQuery(null));
   const firstRows = rowsOf(first);
   // One block per page read, folded at every exit — see `WalkCommon`.
   const signals: Array<PlanBodySignalBlock | undefined> = [first?.body_signal];
@@ -291,7 +259,7 @@ export async function walkWorkUnits(
     visited.add(cursorKey(cursor));
     let body: PlansListResponse;
     try {
-      body = await get<PlansListResponse>(pageUrl(cursor));
+      body = await fetchPage(pageQuery(cursor));
     } catch (e) {
       if (!stillCurrent()) return null;
       return {
@@ -353,28 +321,6 @@ export function formatInstant(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso;
   return `${new Date(t).toISOString().slice(0, 16).replace("T", " ")}Z`;
-}
-
-/**
- * The fields of coord's `GET /coord/work-units/overview` the page reads.
- *
- * It deliberately does NOT declare `corpus_complete`, which the response also
- * carries, because declaring a field no consumer reads invites the belief that
- * completeness is being checked when it is not. Nothing is lost by leaving it
- * out: coord sets `corpus_complete: !by_status_truncated`
- * (`work_unit_registry.rs` `work_unit_overview_body`) — exactly the flag
- * {@link overviewTotalFor} already gates the per-status total on — while
- * `row_count`, the total the `status=any` arm reads, is folded from the
- * complete tally BEFORE any truncation and is whole-corpus in both arms. So
- * reading `corpus_complete` here would either duplicate the truncation check
- * or discard a `row_count` that is not truncated at all.
- */
-export interface WorkUnitOverview {
-  row_count?: number;
-  facets?: {
-    by_status?: Record<string, number>;
-    by_status_truncated?: boolean;
-  };
 }
 
 /**

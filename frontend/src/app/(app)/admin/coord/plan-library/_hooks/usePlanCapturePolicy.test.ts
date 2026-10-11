@@ -16,15 +16,18 @@ const toastError = vi.fn();
 const toastSuccess = vi.fn();
 const toastWarning = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { withFetchShim } = await import("@/test/operationsFetchShim");
+  return {
+    httpClient: withFetchShim({
+      get: (...args: unknown[]) => getMock(...args),
+      put: (...args: unknown[]) => putMock(...args),
+      post: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+    }),
+  };
+});
 // Arrow indirection: `vi.mock` factories hoist above these consts, so naming
 // them eagerly is a TDZ error.
 vi.mock("sonner", () => ({

@@ -39,8 +39,20 @@ const get = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: vi.fn(),
+    // The typed `/operations` client calls `httpClient.fetch`; adapt it onto
+    // the per-verb mocks so the cases below keep their canned bodies.
+    fetch: async (url: string, opts: { method?: string; body?: string }) => {
+      const { method: _m, body: _b, ...rest } = opts;
+      const data =
+        opts.method === "POST"
+          ? await vi.fn()(
+              url,
+              opts.body ? JSON.parse(opts.body) : undefined,
+              opts
+            )
+          : await get(url, rest);
+      return new Response(JSON.stringify(data));
+    },
   },
 }));
 
@@ -155,15 +167,15 @@ describe("coord-pull-decisions Spec-CI selectors survive the Wave 2 migration", 
     expect(badges).toHaveLength(2);
     expect(badges[0]).toHaveTextContent("Pull");
     expect(badges[1]).toHaveTextContent("Diverged");
-    expect(screen.getAllByTestId("coord-pull-decision-outcome")).toHaveLength(1);
+    expect(screen.getAllByTestId("coord-pull-decision-outcome")).toHaveLength(
+      1
+    );
     expect(
       screen.getAllByTestId("coord-pull-decision-no-outcome")
     ).toHaveLength(1);
     // R4 — the diverged row, and only it, earns the left-edge accent.
     const rows = screen.getAllByTestId("coord-pull-decision-card");
     expect(rows[0].querySelector(".border-l-red-500\\/80")).toBeNull();
-    expect(
-      rows[1].querySelector(".border-l-red-500\\/80")
-    ).not.toBeNull();
+    expect(rows[1].querySelector(".border-l-red-500\\/80")).not.toBeNull();
   });
 });

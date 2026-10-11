@@ -10,7 +10,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  httpClient: { fetch: (...args: unknown[]) => httpGet(...args) },
 }));
 
 import { useDomainCost } from "./useDomainCost";
@@ -20,9 +20,7 @@ describe("useDomainCost", () => {
   beforeEach(() => httpGet.mockReset());
 
   it("a held read with a failed project list names that failure, and reads nothing", () => {
-    const { result } = renderHook(() =>
-      useDomainCost("t-1", true, "HTTP 502")
-    );
+    const { result } = renderHook(() => useDomainCost("t-1", true, "HTTP 502"));
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBe("project list unavailable: HTTP 502");
     expect(httpGet).not.toHaveBeenCalled();
@@ -35,10 +33,14 @@ describe("useDomainCost", () => {
   });
 
   it("a partial body is the answered-without-a-ledger error, never data", async () => {
-    httpGet.mockResolvedValue({
-      ...compounded,
-      comparison: { ...compounded.comparison, dimensions: undefined },
-    });
+    httpGet.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ...compounded,
+          comparison: { ...compounded.comparison, dimensions: undefined },
+        })
+      )
+    );
     const { result } = renderHook(() => useDomainCost("t-1", false));
     await waitFor(() =>
       expect(result.current.error).toBe(
@@ -49,7 +51,7 @@ describe("useDomainCost", () => {
   });
 
   it("a well-formed body is the data", async () => {
-    httpGet.mockResolvedValue(compounded);
+    httpGet.mockResolvedValue(new Response(JSON.stringify(compounded)));
     const { result } = renderHook(() => useDomainCost("t-1", false));
     await waitFor(() => expect(result.current.data).not.toBeNull());
     expect(result.current.error).toBeNull();

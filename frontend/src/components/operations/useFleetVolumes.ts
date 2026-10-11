@@ -28,15 +28,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { FLEET_VOLUMES_API } from "./utils";
+import { fetchFleetVolumes } from "@/lib/api/operations/fleetReads";
 import {
   VOLUMES_NOT_YET_READ,
   volumesFetchFromFailure,
   volumesFetchFromPayload,
   type VolumesFetch,
 } from "./fleetVolumes";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { RESOURCE_POLL_INTERVAL_MS } from "./useFleetResourceSamples";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
@@ -44,14 +42,11 @@ import { useSingleFlightPoll } from "./useSingleFlightPoll";
 export async function readFleetVolumes(): Promise<VolumesFetch> {
   let res: Response;
   try {
-    res = await httpClient.fetch(
-      FLEET_VOLUMES_API,
-      COORD_DASHBOARD_POLL_OPTIONS
-    );
+    res = await fetchFleetVolumes();
   } catch (err) {
     return {
       state: "unavailable",
-      reason: `Request to ${FLEET_VOLUMES_API} failed: ${
+      reason: `Request to the fleet-volumes route failed: ${
         (err as Error)?.message ?? "unknown error"
       }`,
     };

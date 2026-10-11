@@ -67,8 +67,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import {
+  fetchBlastRadiusBlocks,
+  fetchMergeQueue,
+  fetchPrMergePrsIncludingMerged,
+  fetchPrMergePrsWithMergedCount,
+  fetchPrMergeSuggestions,
+  postSuggestionAction,
+} from "@/lib/api/operations/prMergeBoard";
+import { fetchMergeEconomics } from "@/lib/api/operations/prMerge";
+import { coordEventsWsUrl } from "./utils";
 import { isMergedPr } from "./prPipeline";
 import { normalizeMergeEconomics } from "./mergeEconomics";
 import type {
@@ -310,10 +318,7 @@ export function useMergePipelineData(
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/merge/queue`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchMergeQueue();
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as QueueResponse | ProposalDetail[];
       const list = Array.isArray(body) ? body : (body.proposals ?? []);
@@ -344,10 +349,7 @@ export function useMergePipelineData(
   // the read that took the API down on 2026-07-21.
   const fetchPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchPrMergePrsWithMergedCount(MERGED_LOOKBACK_HOURS);
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) {
@@ -398,15 +400,12 @@ export function useMergePipelineData(
   // for why this must never ride the hot poll.
   const fetchMergedPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`,
-        // No client retry. The client retries every 5xx up to 3 times, and each
-        // attempt is a full coord query (14-21s for a 48h window): a coord that
-        // is already struggling would be asked the same expensive question four
-        // times per poll. The next poll IS the retry, on the cold cadence this
-        // read is meant to have.
-        { maxRetries: 0 }
-      );
+      // No client retry (see `fetchPrMergePrsIncludingMerged`). The client
+      // retries every 5xx up to 3 times, and each attempt is a full coord query
+      // (14-21s for a 48h window): a coord that is already struggling would be
+      // asked the same expensive question four times per poll. The next poll
+      // IS the retry, on the cold cadence this read is meant to have.
+      const res = await fetchPrMergePrsIncludingMerged(MERGED_LOOKBACK_HOURS);
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) {
@@ -462,21 +461,13 @@ export function useMergePipelineData(
   // `{ repos: {...} }` wrapper, or an array of `{ repo, ...economics }`.
   const fetchEconomics = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/merge-economics`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setEconomicsByRepo({});
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
+      // A non-2xx rejects (404 included): every failure lands on `{}`, the
+      // same fallback the 404 arm used to name.
+      const body = await fetchMergeEconomics();
       // One shared normalizer (`mergeEconomics.ts`): coord's no-repo answer
       // is `{as_of, repos: [ {repo, ...} ]}`, which the inline version here
       // used to key by array INDEX.
-      const map = normalizeMergeEconomics(await res.json()).byRepo;
+      const map = normalizeMergeEconomics(body).byRepo;
       if (!cleanedUpRef.current) setEconomicsByRepo(map);
     } catch (err) {
       log.warn("fetchEconomics failed", err);
@@ -486,10 +477,7 @@ export function useMergePipelineData(
 
   const fetchSuggestions = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/suggestions`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchPrMergeSuggestions();
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) setSuggestions([]);
@@ -510,10 +498,7 @@ export function useMergePipelineData(
 
   const fetchGateBlocks = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const res = await fetchBlastRadiusBlocks();
       if (!res.ok) {
         if (res.status === 404) {
           if (!cleanedUpRef.current) {
@@ -562,13 +547,7 @@ export function useMergePipelineData(
     ) => {
       setSuggestionBusy(alertId);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/suggestions/${alertId}/${action}`,
-          {
-            method: "POST",
-            body: JSON.stringify(body ?? {}),
-          }
-        );
+        const res = await postSuggestionAction(alertId, action, body ?? {});
         if (!res.ok) {
           const text = await res.text();
           log.warn(`suggestion ${action} failed`, res.status, text);

@@ -54,7 +54,8 @@ const get = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
+    fetch: async (...args: unknown[]) =>
+      new Response(JSON.stringify(await get(...args))),
     post: vi.fn(),
   },
 }));
@@ -155,7 +156,9 @@ describe("coord-lands Spec-CI selectors survive the Wave 2 migration", () => {
     render(<CoordLandsPage />);
 
     await waitFor(() => {
-      expect(screen.getAllByTestId("coord-land-card").length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId("coord-land-card").length).toBeGreaterThan(
+        0
+      );
     });
 
     const missing: string[] = [];
@@ -184,10 +187,18 @@ describe("coord-lands Spec-CI selectors survive the Wave 2 migration", () => {
     // Nothing has been clicked. These four are asserted by the spec in a state
     // with no transitions, so they must be here WITHOUT an expansion.
     const row = screen.getByTestId("coord-land-card");
-    expect(row.querySelector("[data-testid='coord-land-crossrepo-badge']")).not.toBeNull();
-    expect(row.querySelector("[data-testid='coord-land-outcome-badge']")).not.toBeNull();
-    expect(row.querySelector("[data-testid='coord-land-settled-badge']")).not.toBeNull();
-    expect(row.querySelector("[data-testid='coord-land-verdicts']")).not.toBeNull();
+    expect(
+      row.querySelector("[data-testid='coord-land-crossrepo-badge']")
+    ).not.toBeNull();
+    expect(
+      row.querySelector("[data-testid='coord-land-outcome-badge']")
+    ).not.toBeNull();
+    expect(
+      row.querySelector("[data-testid='coord-land-settled-badge']")
+    ).not.toBeNull();
+    expect(
+      row.querySelector("[data-testid='coord-land-verdicts']")
+    ).not.toBeNull();
     // ...and the detail is genuinely absent until it is asked for (R5).
     expect(
       screen.queryByTestId("coord-land-crossrepo-panel")

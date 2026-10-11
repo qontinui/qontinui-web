@@ -7,7 +7,7 @@
  * Phase 4b. Two per-repo coord settings, each proxied by
  * `backend/app/api/v1/endpoints/repo_followup_dials.py`:
  *
- * - **Post-merge follow-up scope** (`/api/v1/operations/post-merge-followup-scope`)
+ * - **Post-merge follow-up scope** (`/operations/post-merge-followup-scope`)
  *   — whether a merged PR in this repo spawns its follow-up session: every
  *   merge (`all`, the default), only merges touching the repo's code globs
  *   (`code_only`), or never (`none`). The read also carries the fleet
@@ -15,7 +15,7 @@
  *   nothing, so a scope set here does not yet stop any spawn. That has to be
  *   on screen beside the setting, or an operator who sets `none` believes
  *   follow-ups stopped when they did not.
- * - **Continuation-delivery mode** (`/api/v1/operations/continuation-delivery-mode`)
+ * - **Continuation-delivery mode** (`/operations/continuation-delivery-mode`)
  *   — how work is delivered back to an author session.
  *
  * The rules this module holds:
@@ -42,11 +42,6 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console";
-
-export const POST_MERGE_SCOPE_API =
-  "/api/v1/operations/post-merge-followup-scope";
-export const CONTINUATION_DELIVERY_API =
-  "/api/v1/operations/continuation-delivery-mode";
 
 export type FollowupScope = "all" | "code_only" | "none";
 export const FOLLOWUP_SCOPES: readonly FollowupScope[] = [

@@ -15,6 +15,19 @@ const patchMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    // The hooks go through the typed /operations client (httpClient.fetch);
+    // adapt it onto the per-verb mocks the assertions below read.
+    fetch: async (url: string, init?: { method?: string; body?: string }) => {
+      const method = init?.method;
+      const body = init?.body ? JSON.parse(init.body) : undefined;
+      const result =
+        method === "GET"
+          ? await getMock(url)
+          : method === "PATCH"
+            ? await patchMock(url, body)
+            : undefined;
+      return new Response(JSON.stringify(result), { status: 200 });
+    },
     get: (...args: unknown[]) => getMock(...args),
     patch: (...args: unknown[]) => patchMock(...args),
     put: vi.fn(),
@@ -27,7 +40,6 @@ vi.mock("sonner", () => ({
 }));
 
 import { useTranscriptSyncPolicy } from "./useTranscriptSyncPolicy";
-import { TRANSCRIPT_SYNC_API } from "../types";
 
 const view = (enabled: boolean | null) => ({
   transcript_sync_enabled: enabled,
@@ -52,7 +64,9 @@ describe("useTranscriptSyncPolicy", () => {
     getMock.mockResolvedValueOnce(view(true));
     const { result } = renderHook(() => useTranscriptSyncPolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(getMock).toHaveBeenCalledWith(TRANSCRIPT_SYNC_API);
+    expect(getMock).toHaveBeenCalledWith(
+      "/api/v1/operations/tenant-policy/transcript-sync"
+    );
 
     patchMock.mockResolvedValueOnce({
       written: true,
@@ -63,9 +77,12 @@ describe("useTranscriptSyncPolicy", () => {
       await result.current.setEnabled(false);
     });
 
-    expect(patchMock).toHaveBeenCalledWith(TRANSCRIPT_SYNC_API, {
-      transcript_sync_enabled: false,
-    });
+    expect(patchMock).toHaveBeenCalledWith(
+      "/api/v1/operations/tenant-policy/transcript-sync",
+      {
+        transcript_sync_enabled: false,
+      }
+    );
     expect(result.current.policy?.transcript_sync_enabled).toBe(false);
     expect(result.current.readbackError).toBeNull();
   });
@@ -96,7 +113,7 @@ describe("useTranscriptSyncPolicy", () => {
 
     patchMock.mockRejectedValueOnce(
       new Error(
-        `PATCH ${TRANSCRIPT_SYNC_API} failed: 504 - {"detail":"timeout waiting for coord"}`
+        `PATCH /api/v1/operations/tenant-policy/transcript-sync failed: 504 - {"detail":"timeout waiting for coord"}`
       )
     );
     await act(async () => {
@@ -113,7 +130,9 @@ describe("useTranscriptSyncPolicy", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     patchMock.mockRejectedValueOnce(
-      new Error(`PATCH ${TRANSCRIPT_SYNC_API} failed: 403 - admin_required`)
+      new Error(
+        `PATCH /api/v1/operations/tenant-policy/transcript-sync failed: 403 - admin_required`
+      )
     );
     await act(async () => {
       await result.current.setEnabled(false);

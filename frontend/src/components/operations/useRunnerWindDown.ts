@@ -20,9 +20,11 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import {
+  fetchDeviceFleetSessions,
+  fetchDeviceResourceSample,
+  postSessionControlRequest,
+} from "@/lib/api/operations/fleetReads";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
   describeControlError,
@@ -39,24 +41,6 @@ export const RUNNER_POLL_MS = 15_000;
 
 /** Coord's `MAX_LIMIT` on the census. Coord clamps; `nextCursor` says the rest. */
 export const FLEET_SESSIONS_LIMIT = 500;
-
-export function deviceReadinessUrl(deviceId: string): string {
-  return (
-    `${OPERATIONS_API}/fleet/resource-samples?device_id=` +
-    `${encodeURIComponent(deviceId)}&history=false`
-  );
-}
-
-export function deviceFleetSessionsUrl(deviceId: string): string {
-  return (
-    `${OPERATIONS_API}/sessions/fleet?device_id=` +
-    `${encodeURIComponent(deviceId)}&limit=${FLEET_SESSIONS_LIMIT}`
-  );
-}
-
-export function sessionControlUrl(sessionId: string): string {
-  return `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/control`;
-}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -121,10 +105,7 @@ const SESSIONS_LOADING: FleetSessionsRead = { kind: "loading" };
 
 async function loadReadiness(deviceId: string): Promise<ReadinessRead> {
   try {
-    const res = await httpClient.fetch(
-      deviceReadinessUrl(deviceId),
-      COORD_DASHBOARD_POLL_OPTIONS
-    );
+    const res = await fetchDeviceResourceSample(deviceId);
     if (!res.ok) {
       return {
         kind: "read_failed",
@@ -151,10 +132,7 @@ async function loadFleetSessions(
       ? { ...previous, refreshError: reason }
       : { kind: "failed", reason };
   try {
-    const res = await httpClient.fetch(
-      deviceFleetSessionsUrl(deviceId),
-      COORD_DASHBOARD_POLL_OPTIONS
-    );
+    const res = await fetchDeviceFleetSessions(deviceId, FLEET_SESSIONS_LIMIT);
     if (res.status === 404) {
       return fail(
         "coord serves no per-device session census on this deployment " +
@@ -219,10 +197,7 @@ export async function postSessionControl(input: {
   const reason = input.reason?.trim();
   if (reason) body.reason = reason;
   try {
-    const res = await httpClient.fetch(sessionControlUrl(input.sessionId), {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    const res = await postSessionControlRequest(input.sessionId, body);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       const described = describeControlError(res.status, text);

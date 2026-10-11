@@ -54,19 +54,16 @@ import { DevActionsTile } from "@/components/operations";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import {
+  fetchRecentAgentLogs,
+  type RecentAgentLogsResponse,
+} from "@/lib/api/operations/coordAgentLogs";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
 const RECENT_LIMIT = 200;
 const ALL_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
 type LevelKey = (typeof ALL_LEVELS)[number];
-
-interface RecentResponse {
-  logs?: AgentLogRow[];
-}
 
 /**
  * The row's level, through the SAME normaliser the badge renders with.
@@ -150,7 +147,7 @@ function deriveAgentsHealth(
 
 export default function CoordAgentsRecentPage() {
   const router = useRouter();
-  const [data, setData] = useState<RecentResponse | null>(null);
+  const [data, setData] = useState<RecentAgentLogsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Level multi-select. Empty == "all".
@@ -161,17 +158,12 @@ export default function CoordAgentsRecentPage() {
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const qs = new URLSearchParams();
-      qs.set("limit", String(RECENT_LIMIT));
-      const body = await httpClient.get<unknown>(
-        `${API}/agent-logs/recent?${qs.toString()}`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchRecentAgentLogs(RECENT_LIMIT);
       if (!isCurrent()) return;
       // Tolerate bare list shape too.
-      const normalized: RecentResponse = Array.isArray(body)
+      const normalized: RecentAgentLogsResponse = Array.isArray(body)
         ? { logs: body }
-        : (body as RecentResponse);
+        : (body as RecentAgentLogsResponse);
       setData(normalized);
       setError(null);
     } catch (e) {

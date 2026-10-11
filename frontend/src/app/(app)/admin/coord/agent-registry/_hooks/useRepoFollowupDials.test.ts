@@ -15,6 +15,19 @@ const listRepos = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    // The typed /operations client reads over `httpClient.fetch` (plan
+    // 2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls
+    // Phase 7): route it through the same table. A rejection passes through
+    // unchanged, so error-path tests see the identical Error.
+    fetch: async (url: string, init?: { method?: string; body?: string }) =>
+      new Response(
+        JSON.stringify(
+          init?.method === "PUT"
+            ? await httpPut(url, JSON.parse(init.body ?? "null"))
+            : await httpGet(url)
+        ),
+        { status: 200 }
+      ),
     get: (...a: unknown[]) => httpGet(...a),
     put: (...a: unknown[]) => httpPut(...a),
   },
