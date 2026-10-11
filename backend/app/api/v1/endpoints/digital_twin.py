@@ -17,7 +17,10 @@ so there is one ContextVar and one auth posture.
 Only **snapshot** sub-spaces (no required args → a meaningful whole-sub-space
 verdict) are live-probed. Every other manifest row (ci/log/ast/type/
 origin_resolution, the process + intent rows, …) renders the manifest's static
-claim; the ones a coord tool answers are asked through Ask the Twin, not here.
+claim. Where a coord tool answers such a row, the row's ``ask_via`` says where
+on the page it can be asked: Ask the Twin, the Delivery tab, or nowhere —
+coord withholds the tools of some rows (log, ast, type and origin_resolution
+among them) from the device session Ask the Twin runs on.
 """
 
 import asyncio
@@ -55,12 +58,21 @@ router = APIRouter()
 _TWIN_PROBE_TIMEOUT = httpx.Timeout(8.0, connect=4.0)
 
 # The SNAPSHOT sub-spaces the matrix live-probes — exactly the ids coord's
-# ``subspace_tool`` map in ``twin_routes.rs`` serves (guarded there by a unit
-# test; ``auth`` is the one sub-space coord deliberately leaves unmapped). The
-# frontend manifest's ``snapshot`` rows are the third copy of this list, and
-# ``lifecycle.test.ts`` pins it against this tuple. If this list and coord's map
-# drift, coord answers 404 for an unmapped id and the cell degrades to
-# ``no_snapshot_tool`` — benign, never a crash.
+# ``subspace_tool`` map in ``twin_routes.rs`` serves (``auth`` is the one
+# sub-space coord deliberately leaves unmapped).
+#
+# This tuple is a HAND COPY of coord's map. coord is another repo, so no test
+# here can read it; ``tests/test_digital_twin_subspaces.py`` compares the tuple
+# with a hand-copied list of coord's ids. Re-verify both against
+# ``subspace_tool`` whenever either side changes. If they drift, coord answers
+# 404 for an unmapped id and the cell degrades to ``no_snapshot_tool`` — benign,
+# never a crash.
+#
+# The frontend manifest's ``snapshot`` rows must equal this tuple, and that IS
+# pinned from both sides, because each side's CI runs only on its own paths:
+# ``tests/test_digital_twin_subspaces.py`` reads the manifest, and
+# ``_lib/lifecycle.test.ts`` parses this literal. Keep it a flat tuple of
+# string literals (comments allowed) so that parse keeps working.
 _PROBEABLE_SUBSPACES: tuple[str, ...] = (
     "release",
     "schema",
