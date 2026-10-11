@@ -24,11 +24,20 @@ const del = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: (...args: unknown[]) => post(...args),
-    patch: (...args: unknown[]) => patch(...args),
-    delete: (...args: unknown[]) => del(...args),
-    put: vi.fn(),
+    // The policy calls go through `httpClient.fetch` (the typed /operations
+    // client); route each request onto the per-verb mock the assertions read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const body = JSON.parse(init.body ?? "null");
+      const out =
+        init.method === "POST"
+          ? await post(url, body)
+          : init.method === "PATCH"
+            ? await patch(url, body)
+            : init.method === "DELETE"
+              ? await del(url)
+              : await get(url);
+      return new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 

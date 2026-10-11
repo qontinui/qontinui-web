@@ -23,18 +23,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { FleetPolicyView } from "../../_shared/fleetPolicy";
+import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const out =
+        init.method === "GET"
+          ? await getMock(url)
+          : await putMock(url, JSON.parse(init.body ?? "null"));
+      return new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 vi.mock("sonner", () => ({
