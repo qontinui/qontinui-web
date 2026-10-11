@@ -11,13 +11,14 @@
  * bearer, `X-Qontinui-Active-Tenant` (so the modal now honours the operator's
  * selected tenant) and a stated retry policy.
  *
- * Each function calls `httpClient` directly with its URL inline over
- * `OPERATIONS_BASE`; a shared `request(path)` helper would be a wrapper of a
- * wrapper, which `route-walker.test.ts` cannot resolve.
+ * Each function calls `httpClient.fetch` directly with its URL inline over
+ * `OPERATIONS_BASE` (same-origin — see `base.ts`); a shared `request(path)`
+ * helper would be a wrapper of a wrapper, which `route-walker.test.ts` cannot
+ * resolve.
  */
 
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_BASE } from "./base";
+import { OPERATIONS_BASE, readJson } from "./base";
 
 /** One row of coord's per-device Claude account feed, as served by the
  *  qontinui-web proxy `GET /operations/claude-accounts` (plan
@@ -69,23 +70,28 @@ export interface ClaudeAccountsPayload {
 
 /**
  * `GET /claude-accounts` — the tenant-wide Claude account roster
- * (`operations.py` `get_claude_accounts`, proxying coord's
+ * (`operations/__init__.py` `get_claude_accounts`, proxying coord's
  * `/coord/claude-accounts/usage`), parsed.
  *
- * Rejects with `httpClient.get`'s own error (`GET <url> failed: <status> -
- * <body>`), which `httpStatusOf` reads the status back out of. The body is
- * returned as served: `accounts` is typed `unknown` because a row this
- * surface cannot read is dropped and counted by the caller, never guessed at.
+ * Same-origin over `OPERATIONS_BASE` through `httpClient.fetch`, with the
+ * init `httpClient.get` used to send (`method: "GET"`, declared
+ * `idempotent`). A non-2xx rejects through `readJson` with
+ * `GET /api/v1/operations/claude-accounts failed: <status> - <body>`, which
+ * `httpStatusOf` reads the status back out of. The body is returned as
+ * served: `accounts` is typed `unknown` because a row this surface cannot
+ * read is dropped and counted by the caller, never guessed at.
  */
-export function fetchClaudeAccounts(): Promise<ClaudeAccountsPayload> {
-  return httpClient.get<ClaudeAccountsPayload>(
-    `${OPERATIONS_BASE}/claude-accounts`,
-    { idempotent: true }
-  );
+export async function fetchClaudeAccounts(): Promise<ClaudeAccountsPayload> {
+  const url = `${OPERATIONS_BASE}/claude-accounts`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<ClaudeAccountsPayload>(res, `GET ${url}`);
 }
 
 /**
- * `POST /agents/spawn` — mint a coord agent (`operations.py`
+ * `POST /agents/spawn` — mint a coord agent (`operations/__init__.py`
  * `post_agents_spawn`, proxying coord's `/agents/spawn`). Returns the raw
  * `Response`.
  *

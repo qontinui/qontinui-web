@@ -187,6 +187,13 @@ _COORD_MERGED_READ_TIMEOUT = httpx.Timeout(45.0, connect=5.0)
 logger = structlog.get_logger(__name__)
 router = APIRouter()
 
+# The transport failures the coord proxy helpers raise THEMSELVES (not coord's
+# body). Callers that scrub coord's own 5xx text (``fleet_targets``) match on
+# these to keep web's own, safe messages, so ``_proxy_coord_post`` and
+# ``_proxy_coord_delete`` raise exactly these constants.
+COORD_UNREACHABLE_DETAIL = "coord is not reachable"
+COORD_TIMEOUT_DETAIL = "timeout waiting for coord"
+
 
 # ---- Tenant resolution dependency ---------------------------------------
 #
@@ -3328,12 +3335,12 @@ async def _proxy_coord_post(
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
-                detail="coord is not reachable",
+                detail=COORD_UNREACHABLE_DETAIL,
             )
         except httpx.TimeoutException:
             raise HTTPException(
                 status_code=504,
-                detail="timeout waiting for coord",
+                detail=COORD_TIMEOUT_DETAIL,
             )
     if resp.status_code >= 400:
         raise HTTPException(
@@ -6847,12 +6854,12 @@ async def _proxy_coord_delete(
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
-                detail="coord is not reachable",
+                detail=COORD_UNREACHABLE_DETAIL,
             )
         except httpx.TimeoutException:
             raise HTTPException(
                 status_code=504,
-                detail="timeout waiting for coord",
+                detail=COORD_TIMEOUT_DETAIL,
             )
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
@@ -7915,7 +7922,7 @@ async def websocket_coord_events(
 
         async def send_keepalive() -> None:
             # Runs for the life of the bridge, independent of upstream
-            # traffic — an idle `strategy`/`claims` subscription can go
+            # traffic — an idle `claims` subscription can go
             # minutes between real frames, and that idle gap is exactly when
             # a proxy on the browser<->backend leg times the socket out
             # (finding 67329129). Ends only via cancellation (the other pump

@@ -3,7 +3,7 @@ import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
-} from "@/services/workflow-documentation-service";
+} from "@/services/workflow-documentation";
 import {
   DocumentationNode,
   DocumentationFilter,

@@ -8,22 +8,19 @@ import userEvent from "@testing-library/user-event";
  * `spawnAgent`), so that is what is mocked — by specifier, the way every
  * other `httpClient` consumer's suite does it.
  *
- * `get` mirrors `HttpClient.get`'s contract exactly where the modal depends
- * on it: a 2xx resolves to the parsed body, anything else REJECTS with
+ * All three calls go through `fetch`, which hands back the response as is;
+ * the client's own reader (`readJson`) turns a non-2xx read into
  * `GET <url> failed: <status> - <body>` — the shape `httpStatusOf` reads the
- * status back out of. `fetch` (the spawn POST) hands back the response as is.
- * Both route to `fetchMock` / `accountsResponse` below, so each case still
- * says what the server answered and nothing about the transport.
+ * status back out of. Calls route to `fetchMock` / `accountsResponse` below,
+ * so each case still says what the server answered and nothing about the
+ * transport.
  */
 const net = vi.hoisted(() => ({
-  get: (_url: string, _init?: unknown): Promise<unknown> =>
-    Promise.reject(new Error("net.get not wired")),
   fetch: (_url: string, _init?: unknown): Promise<unknown> =>
     Promise.reject(new Error("net.fetch not wired")),
 }));
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (url: string, init?: unknown) => net.get(url, init),
     fetch: (url: string, init?: unknown) => net.fetch(url, init),
   },
 }));
@@ -131,20 +128,12 @@ function accountsOf(
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
-/** `HttpClient.get` over a response-shaped answer: the body on a 2xx, the
- *  client's own rejection otherwise. */
-async function asGet(url: string, answer: unknown): Promise<unknown> {
-  const res = (await answer) as {
-    ok: boolean;
-    status: number;
-    json: () => Promise<unknown>;
-    text?: () => Promise<string>;
-  };
-  if (!res.ok) {
-    const text = res.text ? await res.text() : "";
-    throw new Error(`GET ${url} failed: ${res.status} - ${text}`);
-  }
-  return res.json();
+/** A response-shaped answer for one of the two READS, with an empty body text
+ *  when the case stubbed none — what the reads saw as the body before they
+ *  moved from `httpClient.get` onto `fetch`. */
+async function asRead(answer: unknown): Promise<unknown> {
+  const res = (await answer) as { text?: () => Promise<string> };
+  return res.text ? res : { ...res, text: async () => "" };
 }
 /** What the (independent) `/claude-accounts` fetch answers.
  *
@@ -158,11 +147,12 @@ let accountsResponse: unknown;
 beforeEach(() => {
   fetchMock = vi.fn();
   accountsResponse = accountsOf([]);
-  net.get = (url, init) =>
+  net.fetch = (url, init) =>
     url.includes("/claude-accounts")
-      ? asGet(url, accountsResponse)
-      : asGet(url, fetchMock(url, init));
-  net.fetch = (url, init) => fetchMock(url, init);
+      ? asRead(accountsResponse)
+      : url.includes("/fleet/health")
+        ? asRead(fetchMock(url, init))
+        : fetchMock(url, init);
 });
 
 afterEach(() => {

@@ -1,5 +1,5 @@
 import React from "react";
-import { ActionComment } from "@/services/workflow-documentation-service";
+import { ActionComment } from "@/services/workflow-documentation";
 import { MessageSquare, Search } from "lucide-react";
 import { ActionWithComment } from "../types";
 import { CommentCard } from "./CommentCard";

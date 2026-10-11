@@ -234,6 +234,14 @@ export type MergeStatusToken =
    *  the verdict surface and this one tell ONE story about a PR. */
   | "required-checks-missing"
   | "blast-radius-block"
+  /** A `coord:stacked-on=` / `coord:downstream-of=` edge names an upstream PR
+   *  that is CLOSED and did not land — an edge that can never clear on its
+   *  own. coord's `BlockReason::DependencyUpstreamClosed` wire code, emitted
+   *  from the predicate-token arm (ahead of every ready/queued arm) and given
+   *  its own token by qontinui-coord#2819 so it stops reading as an ordinary
+   *  cross-repo wait. The move is the author's: re-anchor the label onto the
+   *  successor PR, or remove it if the upstream's content already landed. */
+  | "dependency-upstream-closed"
   | "ready"
   | "queued"
   /** coord cannot clone the repo (deleted/renamed, or the GitHub App's access
