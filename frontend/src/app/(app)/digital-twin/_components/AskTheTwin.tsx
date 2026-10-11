@@ -27,14 +27,42 @@ import { useChatWebSocket } from "@/hooks/useChatWebSocket";
  *
  * Phase 2 scope: single ephemeral session, single-slot question queue. We seed
  * the first message with a twin-oriented preamble so the agent grounds its
- * answer in the twin tools (when it has them) and reports credibility.
+ * answer in the twin tools and reports credibility — and, since this page
+ * cannot see whether the session got those tools, so the answer itself says
+ * when it did not.
  */
 
 const TWIN_PREAMBLE =
   "You are answering using Qontinui's digital twin. Ground your answer in live " +
   "observed state by calling the coordination layer's digital-twin query tools " +
   "(coord_query_* / coord_is_*), and state the coverage / credibility / staleness " +
-  "of what you report so the reader knows how much to trust it. Question: ";
+  "of what you report so the reader knows how much to trust it. If those tools " +
+  "are not available in this session, say so plainly at the start of your " +
+  "answer and do not present anything as observed state. Question: ";
+
+/**
+ * The line under a busy Ask button, saying only what this page knows.
+ *
+ * Only the runner's `processing` state says its agent is working. Streamed
+ * text says output arrived, not that more is coming: the backend relay
+ * forwards the runner's output but not its session state (`devices_ws.py`
+ * `_route_device_message`), so until it does, this page is not told when an
+ * answer finishes.
+ */
+function busyHint(
+  sessionGone: boolean,
+  processing: boolean,
+  streaming: boolean
+): string {
+  // A session that can no longer answer is not working on anything: only a
+  // queued question can keep the page busy then, and it waits on the socket.
+  if (sessionGone) return "Connecting to your runner…";
+  if (processing) return "Your runner’s agent is working on an answer…";
+  if (streaming) {
+    return "Receiving your runner’s answer — this page has not been told whether it is finished.";
+  }
+  return "Connecting to your runner…";
+}
 
 export function AskTheTwin() {
   // Asking starts a NEW AI session, so it goes only where new work may go:
@@ -132,9 +160,11 @@ export function AskTheTwin() {
   // on `queued` alone — the one-shot clears it immediately after
   // createSession, so the stream/processing signals carry the rest. A session
   // that can no longer answer ends the wait: nothing more is coming from it.
-  const busy =
-    !!queued ||
-    (!sessionGone && (sessionState === "processing" || !!streamingContent));
+  // (A failed session's partial output stays in `streamingContent` — the hook
+  // flushes it only on `ready` / `closed` — so without that guard the Ask
+  // button stayed disabled under "Asking again starts a fresh session.")
+  const processing = !sessionGone && sessionState === "processing";
+  const busy = !!queued || processing || (!sessionGone && !!streamingContent);
 
   const handleSubmit = useCallback(() => {
     const q = input.trim();
@@ -212,8 +242,17 @@ export function AskTheTwin() {
               </span>
               <div className="whitespace-pre-wrap break-words">
                 {streamingContent}
-                {!sessionGone && (
-                  <span className="ml-0.5 inline-block animate-pulse">▍</span>
+                {/* A pulsing caret says "more is coming" — shown only while
+                    the runner says its agent is working, never merely
+                    because text arrived (see `busyHint`). */}
+                {processing && (
+                  <span
+                    aria-hidden="true"
+                    data-testid="ask-the-twin-caret"
+                    className="ml-0.5 inline-block animate-pulse"
+                  >
+                    ▍
+                  </span>
                 )}
               </div>
             </div>
@@ -277,9 +316,7 @@ export function AskTheTwin() {
       </div>
       {busy && (
         <p className="mt-1.5 text-xs text-muted-foreground">
-          {sessionState === "processing" || streamingContent
-            ? "Your runner’s agent is working on an answer…"
-            : "Connecting to your runner…"}
+          {busyHint(sessionGone, processing, !!streamingContent)}
         </p>
       )}
       <p className="mt-2 text-xs text-muted-foreground">

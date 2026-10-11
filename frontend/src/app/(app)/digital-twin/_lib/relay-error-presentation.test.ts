@@ -212,9 +212,11 @@ describe("explainRelayFailure — the runner's own refusal", () => {
       NOW
     );
 
+    // The pointer is advice, not a claim that THIS runner registered the id:
+    // older runners do not self-register.
     expect(out.cause).toBe(
       'The runner has no app registered as "qontinui-web" (app-not-found).' +
-        ' The runner registers its own UI as "qontinui-runner".'
+        ' Recent runners register their own UI as "qontinui-runner" — try that id.'
     );
     expect(out.cause).not.toContain("The relay answered");
     expect(out.requestId).toBe("req-7");

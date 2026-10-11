@@ -31,6 +31,11 @@ interface ChatWebSocketReturn {
    * reported none. Cleared when a new request starts (`createSession`,
    * `sendMessage`). A session `error` state with no message leaves this
    * `null` — read `sessionState` for that.
+   *
+   * "This conversation's" is enforced as far as the wire allows: a frame
+   * that names another run is ignored once this conversation knows its own
+   * (see {@link frameRunId}), and a `chat_created` this hook did not ask for
+   * is ignored. A frame that names no run cannot be told apart and is read.
    */
   sessionError: string | null;
   messages: AiMessage[];
@@ -67,6 +72,30 @@ function errorText(...candidates: unknown[]): string | null {
 }
 
 /**
+ * The run a frame says it is about, or `null` when it names none.
+ *
+ * The runner's direct replies name it at the top level as `task_run_id`
+ * (`chat_session_state`, `chat_message_ack`, `error`, `chat_output`, …). Its
+ * broadcast frames carry an event payload under `data`, whose
+ * `AiOutputEvent` / `SessionStateEvent` spell it `taskRunId` (qontinui-runner
+ * `mcp/shared.rs`, `commands/ai_session.rs`). A relay chat session's own
+ * output names no run: the runner spawns it without a session context
+ * (`backend_relay.rs` `handle_chat_create`). The backend's own frames name
+ * none either.
+ */
+function frameRunId(msg: Record<string, unknown>): string | null {
+  if (typeof msg.task_run_id === "string" && msg.task_run_id) {
+    return msg.task_run_id;
+  }
+  const data = msg.data;
+  if (typeof data === "object" && data !== null) {
+    const run = (data as Record<string, unknown>).taskRunId;
+    if (typeof run === "string" && run) return run;
+  }
+  return null;
+}
+
+/**
  * Core chat WebSocket hook.
  *
  * Connects to the backend chat WebSocket relay and handles bidirectional
@@ -89,7 +118,10 @@ export function useChatWebSocket({
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 10;
+  /** The run this conversation is about; `null` until one is known. */
   const activeTaskRunIdRef = useRef<string | null>(null);
+  /** A `chat_create` this hook sent that no `chat_created` has answered. */
+  const createPendingRef = useRef(false);
   const streamingBufferRef = useRef("");
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -201,6 +233,20 @@ export function useChatWebSocket({
     (msg: Record<string, unknown>) => {
       const type = msg.type as string;
 
+      // The backend relay sends every chat socket of a device the same runner
+      // frames (`chat_relay.py`, channel `runner:chat_response:{id}`), so
+      // frames about other runs on that runner — another tab's chat, a
+      // workflow agent — arrive here too. One that names a run other than
+      // this conversation's is not this conversation's: it must not set its
+      // state, its error or its answer. Until this conversation knows its own
+      // run, nothing can be told apart, and every frame is read.
+      const run = frameRunId(msg);
+      const active = activeTaskRunIdRef.current;
+      if (run !== null && active !== null && run !== active) {
+        log.debug("Ignoring a frame about another run:", type, run);
+        return;
+      }
+
       switch (type) {
         case "connected":
           // Connection established
@@ -210,6 +256,15 @@ export function useChatWebSocket({
           break;
 
         case "chat_created": {
+          // The runner's reply carries no request id, so nothing on it says
+          // which chat socket asked. One this hook did not ask for is another
+          // tab's: adopting it would point this conversation at that session
+          // (or report that tab's refusal here).
+          if (!createPendingRef.current) {
+            log.debug("Ignoring a chat_created this hook did not request");
+            break;
+          }
+          createPendingRef.current = false;
           // A refused create — the runner's spawn-authorization or drain
           // refusal, or a failed task-run insert (`handle_chat_create`) —
           // answers `{ type: "chat_created", error }` with no id and no
@@ -400,9 +455,12 @@ export function useChatWebSocket({
       //
       // A new session starts from the no-session baseline (`disconnected`,
       // the initial state): the previous session's error, or its last state
-      // (`error`, `closed`, a stale `ready`), is not this one's.
+      // (`error`, `closed`, a stale `ready`), is not this one's. Nor is its
+      // run: this conversation is about the run the coming `chat_created`
+      // names, so until then there is none to send to or filter by.
       setSessionError(null);
       setSessionState("disconnected");
+      activeTaskRunIdRef.current = null;
       if (displayText) {
         setMessages((prev) => [
           ...prev,
@@ -422,6 +480,8 @@ export function useChatWebSocket({
           ...(initialPrompt ? { prompt: initialPrompt } : {}),
         },
       });
+      // Only a create that went out can be answered.
+      createPendingRef.current = sent;
       if (!sent) {
         setSessionError(
           "Not connected to the chat relay — the request was not sent."
