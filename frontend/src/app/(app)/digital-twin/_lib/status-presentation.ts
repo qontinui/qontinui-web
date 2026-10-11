@@ -13,10 +13,13 @@ export interface StatusStyle {
 }
 
 /**
- * Solid dots are probe results (live verdicts from this page's snapshot
- * probe). The two built-but-unprobed statuses — `interactive` and `unprobed` —
- * are manifest claims, so they render as hollow rings and never reuse the
- * green / amber live vocabulary.
+ * Coloured solid dots (emerald / amber / sky / red) are probe results — live
+ * verdicts from this page's snapshot probe. The two built-but-unprobed
+ * statuses — `interactive` and `unprobed` — are manifest claims, so they
+ * render as hollow rings and never reuse the green / amber live vocabulary.
+ * Solid neutral zinc marks a row with no verdict to show: the roadmap
+ * (`planned`, `not-built`), a probe still in flight (`probing`) and an access
+ * refusal (`restricted`).
  */
 export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   implemented: {
@@ -44,14 +47,14 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     dot: "border border-indigo-500 bg-transparent",
     border: "border-l-indigo-500",
     meaning:
-      "Built — a coord tool answers it; ask it in Ask the Twin. Not probed on this page.",
+      "Built — a coord tool answers it; ask it in Ask the Twin (Completeness tab). Not probed on this page.",
   },
   unprobed: {
     label: "Built · unprobed",
     dot: "border border-zinc-500 bg-transparent dark:border-zinc-400",
     border: "border-l-zinc-500 dark:border-l-zinc-400",
     meaning:
-      "The manifest claims this observer is built; nothing on this page probes it — a claim, not a live verdict.",
+      "The manifest claims this observer is built; this page's twin probe does not cover it — a claim, not a live verdict.",
   },
   planned: {
     label: "Planned",
@@ -122,6 +125,43 @@ export function presentStatus(
   }
   return { ...style, ...INTERACTIVE_ELSEWHERE[row.ask_via] };
 }
+
+/**
+ * How this page can read a row: what its `query_kind`, refined by `ask_via`,
+ * means here (the detail drawer's "On this page" field). The raw `query_kind`
+ * would mislead — `parameterized` means "a coord tool answers it, but this
+ * page does not probe it", even for a tool coord's own catalog lists as kind
+ * `snapshot` (twin_fidelity, workers, cost).
+ */
+export function pageAccessLabel(
+  row: Pick<ResolvedSubspace, "query_kind" | "ask_via">
+): string {
+  switch (row.query_kind) {
+    case "snapshot":
+      return "Live-probed";
+    case "none":
+      return "Manifest claim (no coord tool)";
+    case "parameterized":
+      switch (row.ask_via) {
+        case "delivery-tab":
+          return "Delivery tab";
+        case "not-on-this-page":
+          return "Not askable here";
+        default:
+          return "Ask the Twin (Completeness tab)";
+      }
+  }
+}
+
+/**
+ * Fills for the bars and gauges that COUNT rows. A count of probe answers uses
+ * the live green; a count of manifest claims uses the claim indigo (the hue of
+ * the `interactive` ring), never a live colour.
+ */
+export const COUNT_FILLS = {
+  live: "bg-emerald-500",
+  claim: "bg-indigo-300 dark:bg-indigo-700",
+} as const;
 
 export function formatStaleness(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return "live";

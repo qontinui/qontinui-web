@@ -14,6 +14,7 @@ import {
 } from "../_lib/lifecycle";
 import type { CoverageCounts, LifecycleStageInfo } from "../_lib/lifecycle";
 import { resolveSubspaces } from "../_lib/resolve";
+import { COUNT_FILLS } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
@@ -23,14 +24,20 @@ import {
 } from "./TwinProbeNotices";
 
 /**
- * Honesty-bar segments, in order. Only the first is a live verdict; the rest
- * are probes that did not answer, manifest claims, and the roadmap.
+ * Honesty-bar segments, in order. Only the first is a live verdict; then come
+ * probes still in flight (no verdict yet), probes that did not answer,
+ * manifest claims, and the roadmap.
  */
 const SEGMENTS = [
   {
     key: "live",
     label: "live-probed, answering",
-    className: "bg-emerald-500",
+    className: COUNT_FILLS.live,
+  },
+  {
+    key: "pending",
+    label: "probing…",
+    className: "animate-pulse bg-zinc-400",
   },
   {
     key: "silent",
@@ -40,7 +47,7 @@ const SEGMENTS = [
   {
     key: "claim",
     label: "built (claim)",
-    className: "bg-indigo-300 dark:bg-indigo-700",
+    className: COUNT_FILLS.claim,
   },
   {
     key: "unbuilt",
@@ -54,7 +61,8 @@ type SegmentKey = (typeof SEGMENTS)[number]["key"];
 function segmentValues(c: CoverageCounts): Record<SegmentKey, number> {
   return {
     live: c.live,
-    silent: c.probed - c.live,
+    pending: c.pending,
+    silent: c.probed - c.live - c.pending,
     claim: c.manifestBuilt,
     unbuilt: c.planned + c.notBuilt,
   };
@@ -84,10 +92,11 @@ function HonestyBar({ counts }: { counts: CoverageCounts }) {
   );
 }
 
-function HonestyLegend() {
+/** The legend; the probing entry shows only while a probe is in flight. */
+function HonestyLegend({ probing }: { probing: boolean }) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-      {SEGMENTS.map((s) => (
+      {SEGMENTS.filter((s) => probing || s.key !== "pending").map((s) => (
         <li key={s.key} className="flex items-center gap-1.5">
           <span className={cn("size-2 rounded-full", s.className)} />
           {s.label}
@@ -103,7 +112,8 @@ function CountItem({
   of,
 }: {
   label: string;
-  value: number;
+  /** `"probing"` while the count has no verdict yet. */
+  value: number | "probing";
   of?: number;
 }) {
   return (
@@ -113,25 +123,38 @@ function CountItem({
         {label}
       </dt>
       <dd className="order-1 text-base font-semibold tabular-nums">
-        {value}
-        {of !== undefined && (
+        {value === "probing" ? (
           <span className="text-xs font-normal text-muted-foreground">
-            /{of}
+            probing…
           </span>
+        ) : (
+          <>
+            {value}
+            {of !== undefined && (
+              <span className="text-xs font-normal text-muted-foreground">
+                /{of}
+              </span>
+            )}
+          </>
         )}
       </dd>
     </div>
   );
 }
 
-/** The three labelled counts every stage shows: live vs claim vs roadmap. */
+/**
+ * The three labelled counts every stage shows: live vs claim vs roadmap.
+ * While a probe is in flight the live count has no verdict, so it reads
+ * "probing…" rather than a "0/N" that would look like silence.
+ */
 function StageCounts({ counts }: { counts: CoverageCounts }) {
+  const probing = counts.pending > 0;
   return (
     <dl className="grid grid-cols-3 gap-2">
       <CountItem
         label="live-probed"
-        value={counts.live}
-        of={counts.probed > 0 ? counts.probed : undefined}
+        value={probing ? "probing" : counts.live}
+        of={!probing && counts.probed > 0 ? counts.probed : undefined}
       />
       <CountItem label="built (claim)" value={counts.manifestBuilt} />
       <CountItem
@@ -143,15 +166,20 @@ function StageCounts({ counts }: { counts: CoverageCounts }) {
 }
 
 /** Say in words when nothing at a stage is live-verified. */
-function liveProbeNote(
-  counts: CoverageCounts,
-  probing: boolean
-): string | null {
+function liveProbeNote(counts: CoverageCounts): string | null {
   if (counts.probed === 0) {
     return "No live probe at this stage — every status here is a manifest claim.";
   }
-  if (counts.live > 0) return null;
-  return probing ? "Probing…" : "No live probe answering at this stage.";
+  // While a probe is in flight the live-probed count itself reads "probing…".
+  if (counts.pending > 0 || counts.live > 0) return null;
+  return "No live probe answering at this stage.";
+}
+
+/** A twin card's live-probe count — in words while it has no verdict yet. */
+function liveProbeSummary(counts: CoverageCounts): string {
+  if (counts.pending > 0) return "probing…";
+  if (counts.probed === 0) return "no live probe";
+  return `${counts.live}/${counts.probed} live-probed`;
 }
 
 interface StageSectionProps {
@@ -179,10 +207,7 @@ function StageSection({
     type: "custom",
   });
   const headingId = `${uiId}-heading`;
-  const note = liveProbeNote(
-    counts,
-    rows.some((r) => r.cellStatus === "probing")
-  );
+  const note = liveProbeNote(counts);
 
   return (
     <li>
@@ -243,7 +268,8 @@ function StageSection({
         {/* A row shows under every stage it observes, so its cell id is
             scoped by stage — UI Bridge ids must be unique among mounted
             elements (the matrix's `digital-twin-cell-<id>` is unmounted
-            while this tab is open). */}
+            while this tab is open). The label names the stage too, so
+            label-based targeting is as unambiguous as the id. */}
         <div className="grid grid-cols-1 content-start gap-2 sm:grid-cols-2 2xl:grid-cols-3">
           {rows.map((row) => (
             <SubspaceCell
@@ -251,6 +277,7 @@ function StageSection({
               row={row}
               onSelect={onSelect}
               uiId={`${uiId}-cell-${row.id}`}
+              uiLabel={`Digital Twin sub-space cell: ${row.id} (${stage.label} stage)`}
             />
           ))}
         </div>
@@ -277,6 +304,7 @@ export function LifecycleView() {
   );
   const byStage = useMemo(() => stageSummary(rows), [rows]);
   const byTwin = useMemo(() => twinSummary(rows), [rows]);
+  const probing = rows.some((r) => r.cellStatus === "probing");
 
   if (data?.restricted) return <TwinAccessRestricted />;
 
@@ -317,18 +345,16 @@ export function LifecycleView() {
                 </div>
                 <HonestyBar counts={counts} />
                 <p className="text-[11px] tabular-nums text-muted-foreground">
-                  {counts.probed > 0
-                    ? `${counts.live}/${counts.probed} live-probed`
-                    : "no live probe"}{" "}
-                  · {counts.manifestBuilt} built (claim) ·{" "}
-                  {counts.planned + counts.notBuilt} planned / not built
+                  {liveProbeSummary(counts)} · {counts.manifestBuilt} built
+                  (claim) · {counts.planned + counts.notBuilt} planned / not
+                  built
                 </p>
               </li>
             );
           })}
         </ul>
 
-        <HonestyLegend />
+        <HonestyLegend probing={probing} />
       </section>
 
       {isError && <CoordUnreachableBanner error={error} />}

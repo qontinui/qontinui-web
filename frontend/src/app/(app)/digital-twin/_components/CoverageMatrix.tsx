@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
 import { resolveSubspaces, summarize } from "../_lib/resolve";
+import { COUNT_FILLS } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
@@ -21,24 +23,37 @@ function Gauge({
   value,
   total,
   label,
+  barClassName,
+  pending = false,
+  testId,
 }: {
   value: number;
   total: number;
   label: string;
+  /** The fill: `COUNT_FILLS.live` for probe answers, `.claim` for claims. */
+  barClassName: string;
+  /** The count has no verdict yet (its probe is in flight). */
+  pending?: boolean;
+  testId: string;
 }) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  const pct = !pending && total > 0 ? Math.round((value / total) * 100) : 0;
   return (
-    <div className="flex flex-col gap-1">
+    <div data-testid={testId} className="flex flex-col gap-1">
       <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tabular-nums">
-          {value}
-          <span className="text-base text-muted-foreground">/{total}</span>
-        </span>
+        {pending ? (
+          <span className="text-base text-muted-foreground">probing…</span>
+        ) : (
+          <span className="text-2xl font-semibold tabular-nums">
+            {value}
+            <span className="text-base text-muted-foreground">/{total}</span>
+          </span>
+        )}
         <span className="text-sm text-muted-foreground">{label}</span>
       </div>
       <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-emerald-500 transition-all"
+          data-slot="gauge-fill"
+          className={cn("h-full rounded-full transition-all", barClassName)}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -64,15 +79,21 @@ export function CoverageMatrix() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-8 rounded-lg border border-border bg-card p-4">
         <Gauge
+          testId="digital-twin-gauge-live"
           value={summary.responding}
           total={summary.snapshotTotal}
+          pending={summary.pending > 0}
           label="live observers responding (this tenant)"
+          barClassName={COUNT_FILLS.live}
         />
-        {/* A static count over the checked-in manifest — never a probe. */}
+        {/* A static count over the checked-in manifest — never a probe, so
+            it fills with the claim colour, not the live green. */}
         <Gauge
+          testId="digital-twin-gauge-built"
           value={summary.built}
           total={summary.total}
           label="sub-spaces built (manifest claim)"
+          barClassName={COUNT_FILLS.claim}
         />
       </div>
 

@@ -13,7 +13,9 @@
  *    backend probes exactly `_PROBEABLE_SUBSPACES` in
  *    `backend/app/api/v1/endpoints/digital_twin.py`).
  *  - `parameterized` — a coord tool answers it (with or without arguments),
- *    but this page does not probe it; ask it via Ask the Twin.
+ *    but this page does not probe it. The row's `ask_via` says where on this
+ *    page it can be asked: Ask the Twin, the Delivery tab, or nowhere (coord
+ *    withholds some tools from the device session Ask the Twin runs on).
  *  - `none` — no coord query tool.
  *
  * Statuses on `parameterized` and `none` rows are manifest claims, not live

@@ -16,7 +16,7 @@ import { Code2, Loader2, Sparkles } from "lucide-react";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
-import { presentStatus } from "../_lib/status-presentation";
+import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 
 interface SubspaceDetailProps {
@@ -114,7 +114,10 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
           <Field label="Tier" value={`Tier ${row.tier}`} />
           <Field label="Layer" value={row.layer} />
           <Field label="Research status" value={row.research_status} />
-          <Field label="Query kind" value={row.query_kind} />
+          {/* What the row's query_kind + ask_via mean HERE — the raw
+              query_kind reads `parameterized` even for a tool coord's own
+              catalog lists as kind `snapshot`. */}
+          <Field label="On this page" value={pageAccessLabel(row)} />
 
           {summary && (
             <>

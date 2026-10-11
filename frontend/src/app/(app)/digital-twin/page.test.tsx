@@ -1,15 +1,33 @@
 /**
- * The Explorer's tab contract — what Spec CI's `digital-twin-lifecycle-view`
- * transition walks (specs/pages/digital-twin/state-machine.derived.json):
- * Completeness is the default tab, Lifecycle sits second, and switching to it
- * mounts the stage pipeline while UNMOUNTING the matrix (Radix Tabs unmounts
- * inactive content) — which is what lets the two views register different
- * UI Bridge ids for the same row without ever colliding.
+ * The Explorer's tab contract, walked by Spec CI's own ids.
+ *
+ * Like the sibling `page.specSelectors.test.tsx` files, this READS the
+ * committed `specs/pages/digital-twin/state-machine.derived.json` at test time
+ * and holds no copy of its ids: it resolves every `id` criterion of the
+ * initial-render states, then walks every transition in spec order — on one
+ * page load, as Spec CI does — with the spec's own route-stub bodies as the
+ * data. The two `role: heading` criteria are not checked here: they resolve
+ * through content discovery rather than an id, and one of them is the Ask the
+ * Twin panel, which this file mocks out.
+ *
+ * The UI Bridge is modelled as the registry Spec CI's matcher reads: an id
+ * resolves to the element its `useUIElement` ref is attached to, and only while
+ * that element is mounted. Two mounted elements registering one id fail the
+ * test, because the real registry cannot tell them apart. That is what makes
+ * the Lifecycle tab's contract checkable: switching to it mounts the stage
+ * pipeline while UNMOUNTING the matrix (Radix Tabs unmounts inactive content),
+ * so the two views register different ids for the same row and never collide.
+ *
+ * A jsdom render is not a browser and is not the Spec CI executor; Spec CI's
+ * own run stays the authoritative check.
  */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SubspaceProbe, SubspacesProbeResponse } from "./_lib/types";
+import type { SubspacesProbeResponse } from "./_lib/types";
 
 const state = vi.hoisted(() => ({
   probe: {
@@ -18,43 +36,148 @@ const state = vi.hoisted(() => ({
     isError: false,
     error: null as unknown,
   },
+  /** Raw verdict bodies by sub-space id (the drawer's `useSubspaceRaw`). */
+  rawById: {} as Record<string, unknown>,
+  /** The delivery verdict body a submitted lookup resolves to. */
+  delivery: undefined as unknown,
+  /** The UI Bridge registry: the mounted element per id. */
+  registry: new Map<string, HTMLElement>(),
+  /** Ids registered by two mounted elements at once. */
+  duplicates: [] as string[],
 }));
 
 vi.mock("./_hooks/useDigitalTwinSubspaces", () => ({
   useDigitalTwinSubspaces: () => state.probe,
 }));
 vi.mock("./_hooks/useSubspaceRaw", () => ({
-  useSubspaceRaw: () => ({
-    data: undefined,
+  useSubspaceRaw: (id: string | null, enabled: boolean) => ({
+    data: enabled && id ? state.rawById[id] : undefined,
     isLoading: false,
     isError: false,
     error: null,
   }),
 }));
-vi.mock("@qontinui/ui-bridge/react", () => ({
-  useUIElement: () => ({ ref: () => {} }),
+vi.mock("./_hooks/useDeliveryVerdict", () => ({
+  useDeliveryVerdict: (slug: string) => ({
+    data: slug.trim() ? state.delivery : undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    isFetching: false,
+  }),
 }));
-// The tab contract under test needs none of the runner / catalog panels.
+vi.mock("@qontinui/ui-bridge/react", () => ({
+  useUIElement: ({ id }: { id: string }) => ({
+    ref: (el: HTMLElement | null) => {
+      if (!el) {
+        state.registry.delete(id);
+        return;
+      }
+      const prior = state.registry.get(id);
+      if (prior && prior !== el && prior.isConnected) {
+        state.duplicates.push(id);
+      }
+      state.registry.set(id, el);
+    },
+  }),
+}));
+// Panels no transition drives and no `id` criterion names: coord's catalog,
+// and the runner-only Ask the Twin and UI Bridge panels (Spec CI runs with no
+// connected runner).
 vi.mock("./_components/TwinCatalog", () => ({ TwinCatalog: () => null }));
 vi.mock("./_components/AskTheTwin", () => ({ AskTheTwin: () => null }));
-vi.mock("./_components/DeliveryVerdictCard", () => ({
-  DeliveryVerdictCard: () => null,
-}));
 vi.mock("./_components/UiBridgePanel", () => ({ UiBridgePanel: () => null }));
 
-import { manifest } from "./_lib/resolve";
 import DigitalTwinPage from "./page";
 
+interface SpecAction {
+  type: string;
+  target: { id: string };
+  params?: { text?: string };
+  waitAfter?: { type: string; query?: { id: string } };
+}
+interface DerivedSpec {
+  states: {
+    id: string;
+    assertions: { id: string; target?: { criteria?: { id?: string } } }[];
+  }[];
+  transitions: { id: string; actions: SpecAction[] }[];
+  metadata: { routeStubs: { urlPattern: string; body: unknown }[] };
+}
+
+const SPEC: DerivedSpec = JSON.parse(
+  readFileSync(
+    resolve(
+      __dirname,
+      "../../../../specs/pages/digital-twin/state-machine.derived.json"
+    ),
+    "utf-8"
+  )
+);
+
+/** The body the spec stubs `urlPattern` with. */
+function stubBody(urlPattern: string): unknown {
+  const stub = SPEC.metadata.routeStubs.find(
+    (s) => s.urlPattern === urlPattern
+  );
+  if (!stub) throw new Error(`the spec stubs no route ${urlPattern}`);
+  return stub.body;
+}
+
+/** Every `id` criterion the initial-render states assert. */
+function initialRenderIds(stateId?: string): string[] {
+  return SPEC.states
+    .filter((s) => stateId === undefined || s.id === stateId)
+    .flatMap((s) => s.assertions)
+    .map((a) => a.target?.criteria?.id)
+    .filter((id): id is string => id !== undefined);
+}
+
+function isMounted(id: string): boolean {
+  return state.registry.get(id)?.isConnected === true;
+}
+
+/** The mounted element the registry holds for `id`; throws when none is. */
+function registered(id: string): HTMLElement {
+  const el = state.registry.get(id);
+  if (!el?.isConnected) throw new Error(`no mounted UI Bridge element ${id}`);
+  return el;
+}
+
+/** Perform one spec action, then wait for its `waitAfter` element. */
+async function perform(
+  user: ReturnType<typeof userEvent.setup>,
+  action: SpecAction
+): Promise<void> {
+  const target = registered(action.target.id);
+  if (action.type === "click") {
+    await user.click(target);
+  } else if (action.type === "type") {
+    await user.type(target, action.params?.text ?? "");
+  } else {
+    throw new Error(`this walker does not perform "${action.type}" actions`);
+  }
+  const awaited = action.waitAfter?.query?.id;
+  if (action.waitAfter?.type === "element" && awaited) {
+    await waitFor(() => expect(isMounted(awaited), awaited).toBe(true));
+  }
+}
+
 beforeEach(() => {
-  const subspaces: SubspaceProbe[] = manifest.subspaces
-    .filter((s) => s.query_kind === "snapshot")
-    .map((s) => ({ id: s.id, status: "implemented" }));
   state.probe = {
-    data: { subspaces, probed: subspaces.length, restricted: false },
+    data: stubBody(
+      "**/api/v1/digital-twin/subspaces"
+    ) as SubspacesProbeResponse,
     isLoading: false,
     isError: false,
     error: null,
   };
+  state.rawById = {
+    schema: stubBody("**/api/v1/digital-twin/subspace/schema/raw"),
+  };
+  state.delivery = stubBody("**/api/v1/digital-twin/delivery/verdict**");
+  state.registry.clear();
+  state.duplicates = [];
 });
 
 describe("DigitalTwinPage tabs", () => {
@@ -68,23 +191,52 @@ describe("DigitalTwinPage tabs", () => {
     ]);
   });
 
-  it("opens on Completeness, and Lifecycle swaps the matrix for the stage pipeline and back", () => {
+  it("registers every id the spec's initial-render states assert", () => {
     render(<DigitalTwinPage />);
-    // Default: the matrix cells Spec CI asserts are mounted; no stage is.
-    expect(screen.getByTestId("digital-twin-cell-schema")).toBeInTheDocument();
-    expect(screen.queryByTestId("digital-twin-stage-verify")).toBeNull();
+    const ids = initialRenderIds();
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.filter((id) => !isMounted(id))).toEqual([]);
+    expect(state.duplicates).toEqual([]);
+  });
 
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Lifecycle" }));
-    expect(screen.getByTestId("digital-twin-stage-verify")).toBeInTheDocument();
-    // The matrix unmounted, so its unscoped cell ids are gone while the
-    // stage-scoped ones for the same row are present.
-    expect(screen.queryByTestId("digital-twin-cell-schema")).toBeNull();
-    expect(
-      screen.getByTestId("digital-twin-stage-release-cell-schema")
-    ).toBeInTheDocument();
+  it("walks every Spec CI transition in spec order, by the spec's own ids", async () => {
+    // The Lifecycle tab's transition is one of them, ahead of the drawer.
+    const order = SPEC.transitions.map((t) => t.id);
+    expect(order).toContain("digital-twin-lifecycle-view");
+    expect(order.indexOf("digital-twin-lifecycle-view")).toBeLessThan(
+      order.indexOf("digital-twin-open-drawer")
+    );
 
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Completeness" }));
-    expect(screen.getByTestId("digital-twin-cell-schema")).toBeInTheDocument();
-    expect(screen.queryByTestId("digital-twin-stage-verify")).toBeNull();
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+    for (const transition of SPEC.transitions) {
+      for (const action of transition.actions) {
+        await perform(user, action);
+      }
+    }
+    expect(state.duplicates).toEqual([]);
+  });
+
+  it("unmounts the matrix while Lifecycle is open, so no row's id is registered twice", async () => {
+    const lifecycle = SPEC.transitions.find(
+      (t) => t.id === "digital-twin-lifecycle-view"
+    )!;
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+
+    // The transition's first action switches to the Lifecycle tab.
+    await perform(user, lifecycle.actions[0]!);
+    const matrixIds = initialRenderIds("digital-twin-matrix");
+    expect(matrixIds.length).toBeGreaterThan(0);
+    for (const id of matrixIds) {
+      // The matrix cell is gone, and its row is present under stage-scoped ids.
+      expect(isMounted(id), id).toBe(false);
+      const row = id.replace(/^digital-twin-cell-/, "");
+      const scoped = Array.from(state.registry.keys()).filter((key) =>
+        new RegExp(`^digital-twin-stage-[a-z]+-cell-${row}$`).test(key)
+      );
+      expect(scoped.length, row).toBeGreaterThan(0);
+    }
+    expect(state.duplicates).toEqual([]);
   });
 });
