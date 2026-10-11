@@ -714,8 +714,56 @@ describe("<RedMainBanner> claim and remediation", () => {
     const banner = await screen.findByTestId("red-main-banner");
     expect(banner.textContent).toContain("main status UNKNOWN");
     expect(banner.textContent).not.toMatch(/main is red/i);
+    expect(banner.textContent).not.toMatch(/main is green/i);
     expect(
       banner.querySelector('[data-baseline-freshness="all_contradicted"]')
+    ).not.toBeNull();
+    const workflows = screen.getByTestId("red-main-workflows");
+    expect(workflows.textContent).toBe("red push baseline: CI");
+    expect(banner.textContent).not.toContain("failing:");
+  });
+
+  it("keeps RED and the failing label on partial evidence in the mounted banner", async () => {
+    getMock.mockResolvedValue([
+      alertRow(
+        {},
+        {
+          workflows: ["CI", "release"],
+          baseline_freshness: {
+            read: "ok",
+            all_contradicted: false,
+            workflows: [
+              {
+                workflow: "CI",
+                baseline_run_id: 1,
+                verdict: "contradicted",
+                newer_run_id: 2,
+                newer_event: "schedule",
+                newer_conclusion: "success",
+              },
+              {
+                workflow: "release",
+                baseline_run_id: 3,
+                verdict: "corroborated",
+                newer_run_id: 4,
+                newer_event: "schedule",
+                newer_conclusion: "failure",
+              },
+            ],
+          },
+        }
+      ),
+    ]);
+    render(<RedMainBanner />);
+
+    const banner = await screen.findByTestId("red-main-banner");
+    expect(banner.textContent).toMatch(/main is RED/);
+    expect(banner.textContent).not.toContain("main status UNKNOWN");
+    expect(screen.getByTestId("red-main-workflows").textContent).toBe(
+      "failing: CI, release"
+    );
+    expect(
+      banner.querySelector('[data-baseline-freshness="partial"]')
     ).not.toBeNull();
   });
 

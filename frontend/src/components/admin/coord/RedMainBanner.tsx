@@ -689,8 +689,17 @@ export function RedMainBanner() {
             {redMainHeadline(a, nowMs)}
           </span>
           {a.workflows.length > 0 && (
-            <span className="text-xs font-mono text-red-100">
-              failing: {a.workflows.join(", ")}
+            <span
+              className="text-xs font-mono text-red-100"
+              data-testid="red-main-workflows"
+            >
+              {/* When newer passing runs contradict every red push baseline,
+                  coord's evidence says these workflows are NOT currently
+                  failing — label them as the stale baseline, never "failing". */}
+              {a.baselineFreshness === "all_contradicted"
+                ? "red push baseline"
+                : "failing"}
+              : {a.workflows.join(", ")}
             </span>
           )}
           {stale && lastSuccessAt !== null && (
