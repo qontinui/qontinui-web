@@ -3,6 +3,7 @@ import {
   resumeAccount,
   resumeBlockedReason,
   transcriptText,
+  unknownDetailText,
   unknownReasonText,
   verdictLabel,
 } from "./unfinished";
@@ -67,7 +68,22 @@ describe("unfinished helpers", () => {
     expect(unknownReasonText(v("schema_migration_pending"))).toMatch(
       /migrated/
     );
+    expect(unknownReasonText(v("candidate_query_failed"))).toMatch(
+      /query for closed sessions failed/
+    );
     expect(unknownReasonText(v(null))).toMatch(/no reason/);
+  });
+  it("passes coord's detail through, and a blank one is absent", () => {
+    const v = (detail: string | null): UnfinishedSessionsView => ({
+      state: "unknown",
+      reason: "census_unreadable",
+      detail,
+      sessions: null,
+      truncated: false,
+    });
+    expect(unknownDetailText(v(" pool timed out "))).toBe("pool timed out");
+    expect(unknownDetailText(v("  "))).toBeNull();
+    expect(unknownDetailText(v(null))).toBeNull();
   });
   it("an absent transcript block is unknown", () => {
     expect(transcriptText(row({ transcript: null }))).toBe(

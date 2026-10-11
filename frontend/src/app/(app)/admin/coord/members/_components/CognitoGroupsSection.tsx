@@ -21,22 +21,18 @@ import {
   fetchCognitoGroupUsers,
   fetchGroupTenantRoles,
   type CognitoGroupCreate,
+  type CognitoGroupRow,
+  type CognitoGroupUserRow,
+  type GroupTenantRoleRow,
 } from "@/lib/api/operations/cognitoGroups";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { CollapsiblePanel } from "@/components/console";
-import type {
-  CognitoGroupRow,
-  CognitoGroupsResponse,
-  CognitoGroupUserRow,
-  CognitoGroupUsersResponse,
-  GroupTenantRoleRow,
-  GroupTenantRolesResponse,
-} from "../_types";
 import {
   groupNameProblem,
   requireRows,
   suggestGroupName,
 } from "../_lib/groupName";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { GroupNameHint } from "./GroupNameHint";
 import { CognitoGroupItem } from "./CognitoGroupItem";
 import { log } from "../_lib/log";
@@ -116,9 +112,7 @@ export function CognitoGroupsSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchCognitoGroups();
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as CognitoGroupsResponse;
+      const json = await fetchCognitoGroups();
       // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
       // not the list is UNKNOWN, not "no groups". `?? []` would render "No
       // Cognito groups yet." for a pool that may be full of them, and a
@@ -126,7 +120,7 @@ export function CognitoGroupsSection({
       setGroups(requireRows<CognitoGroupRow>(json?.groups, "cognito groups"));
     } catch (err) {
       log.warn("load cognito groups failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(operationsErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -146,9 +140,7 @@ export function CognitoGroupsSection({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetchGroupTenantRoles();
-        if (!res.ok) throw new Error(await backendErrorMessage(res));
-        const json = (await res.json()) as GroupTenantRolesResponse;
+        const json = await fetchGroupTenantRoles();
         // A successful STATUS is not a successful READ. `group_tenant_roles`
         // is declared non-optional, so a `?? []` here is dead per the types
         // and live at runtime — and what it would fabricate is precisely the
@@ -199,9 +191,7 @@ export function CognitoGroupsSection({
       await Promise.all(
         groups.map(async (g) => {
           try {
-            const res = await fetchCognitoGroupUsers(g.group_name);
-            if (!res.ok) throw new Error(await backendErrorMessage(res));
-            const json = (await res.json()) as CognitoGroupUsersResponse;
+            const json = await fetchCognitoGroupUsers(g.group_name);
             // `memberErrors` is the mechanism #1111 held up as the model — a
             // failed probe becomes "members unknown" rather than a count. But
             // it is reached only from this `catch`, so a malformed 200 walked
@@ -249,15 +239,14 @@ export function CognitoGroupsSection({
     try {
       const body: CognitoGroupCreate = { group_name };
       if (newDescription.trim()) body.description = newDescription.trim();
-      const res = await createCognitoGroup(body);
-      if (res.status === 409) {
-        toast.error(`A Cognito group named "${group_name}" already exists.`);
-        return;
-      }
-      if (!res.ok) {
-        // One prefix, not two — the `catch` below adds "Create failed:", and
-        // the backend's 400 already names the reason.
-        throw new Error(await backendErrorMessage(res));
+      try {
+        await createCognitoGroup(body);
+      } catch (err) {
+        if (httpStatusOf(err) === 409) {
+          toast.error(`A Cognito group named "${group_name}" already exists.`);
+          return;
+        }
+        throw err;
       }
       toast.success(`Created group ${group_name}`);
       setNewName("");
@@ -265,9 +254,9 @@ export function CognitoGroupsSection({
       await load();
     } catch (err) {
       log.warn("create cognito group failed", err);
-      toast.error(
-        `Create failed: ${err instanceof Error ? err.message : String(err)}`
-      );
+      // One prefix, not two — "Create failed:" here, and the backend's 400
+      // already names the reason.
+      toast.error(`Create failed: ${operationsErrorMessage(err)}`);
     } finally {
       setCreating(false);
     }

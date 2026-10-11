@@ -59,9 +59,11 @@ function response(
     items: [candidate()],
     count: 1,
     total: 606,
-    offset: 0,
+    truncated: true,
+    next_cursor: "opaque",
+    bound_kind: "exact",
     limit: 25,
-    ordering: "oldest_vetted_first",
+    ordering: "oldest_captured_first",
     coord_available: true,
     work_unit_population_state: "included",
     work_unit_population_reason: null,
@@ -99,7 +101,8 @@ describe("/admin/coord/plan-candidates consumes /plan-library/candidates", () =>
     await screen.findByTestId("coord-candidate-row");
     const url = String(get.mock.calls[0]?.[0]);
     expect(url).toContain("/api/v1/plan-library/candidates");
-    expect(url).toContain("offset=0");
+    expect(url).not.toContain("offset=");
+    expect(url).not.toContain("cursor=");
     expect(url).toContain("limit=25");
   });
 
@@ -109,7 +112,7 @@ describe("/admin/coord/plan-candidates consumes /plan-library/candidates", () =>
 
     expect(
       await screen.findByTestId("coord-candidates-ordering")
-    ).toHaveTextContent("oldest_vetted_first");
+    ).toHaveTextContent("oldest_captured_first");
     const page = screen.getByTestId("coord-plan-candidates-page");
     expect(page).not.toHaveTextContent(/sort by (score|priority)/i);
   });

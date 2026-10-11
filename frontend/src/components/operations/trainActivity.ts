@@ -174,6 +174,14 @@ export type PauseReasonCode =
    *  `waiting` grade would promise an end that is not coming. Plan
    *  `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`. */
   | "terminal-proposal-held"
+  /** coord's `dependency-upstream-closed` merge_status: a `coord:stacked-on=`
+   *  / `coord:downstream-of=` label names an upstream PR that is CLOSED and
+   *  did not land (qontinui-coord#2819). `blocking`: the edge never clears on
+   *  its own — coord classifies it `AuthorActs` — so the `waiting` grade would
+   *  promise a land of the upstream that is not coming. Mapped rather than
+   *  left to `unrecognized-status`, which would call a fully diagnosed state
+   *  a token this bundle cannot name and rank it below `ci-pending`. */
+  | "dependency-upstream-closed"
   | "ci-failed"
   | "ci-pending"
   | "conflicts"
@@ -248,29 +256,32 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   // move, and both outrank the plain per-PR CI/review states because the PR
   // is otherwise READY — nothing but this hold stands between it and a land.
   "terminal-proposal-held": 9,
-  "ci-failed": 10,
+  // Same neighbourhood and the same reasoning: a coord-diagnosed hold that no
+  // timer clears and that the author must move (re-anchor or remove a label).
+  "dependency-upstream-closed": 10,
+  "ci-failed": 11,
   // Sits with the CI-dimension reasons rather than beside `review-required`,
   // matching coord's own dimension mapping for this code
   // (`merge_verdict.rs`: `"required-checks-missing" => Some("ci")`). The whole
   // point of the split is that this block belongs to CI, not to a reviewer, so
   // ranking it next to `review-required` would re-tell the story we removed.
-  "required-checks-missing": 11,
-  conflicts: 12,
-  "blast-radius-block": 13,
-  "review-required": 14,
-  "behind-base": 15,
-  "ci-pending": 16,
-  draft: 17,
+  "required-checks-missing": 12,
+  conflicts: 13,
+  "blast-radius-block": 14,
+  "review-required": 15,
+  "behind-base": 16,
+  "ci-pending": 17,
+  draft: 18,
   // Beside `draft`, and for the same reason: neither is a cause of the pause,
   // so neither may outrank a reason that is. Nothing below it is reachable
   // alongside it — `no-candidates` is emitted only when `reasons` is otherwise
   // EMPTY — so this rank is read against the reasons ABOVE it and nothing else.
-  "landed-open": 18,
+  "landed-open": 19,
   // Last before `no-candidates`: a token we cannot name explains less than any
   // reason we CAN name, so it never outranks a real diagnosis — but it still
   // sorts above "nothing to do", which would be a false all-clear.
-  "unrecognized-status": 19,
-  "no-candidates": 20,
+  "unrecognized-status": 20,
+  "no-candidates": 21,
 };
 
 const REASON_META: Record<
@@ -303,6 +314,10 @@ const REASON_META: Record<
   // and a hold that no timer clears is a block.
   "terminal-proposal-held": {
     label: "Terminal proposal held",
+    severity: "blocking",
+  },
+  "dependency-upstream-closed": {
+    label: "Depends on a closed PR",
     severity: "blocking",
   },
   "ci-failed": { label: "CI red", severity: "blocking" },
@@ -346,6 +361,9 @@ const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
   // reason — never `orchestrator-stalled` (that is the alarm the split exists
   // to stop raising) and never the unknown-token fallback.
   "terminal-proposal-held": "terminal-proposal-held",
+  // A dep edge onto a CLOSED, unlanded upstream. Its own reason, never the
+  // unknown-token fallback: coord diagnosed it and names the dead parent.
+  "dependency-upstream-closed": "dependency-upstream-closed",
   // coord landed it at this head; GitHub has not closed it yet. Mapped rather
   // than left to the unknown-token fallback, which grades `blocking`.
   "landed-open": "landed-open",
@@ -2011,6 +2029,14 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
         `coord will not re-cut it. Not an orchestrator stall: the move is ` +
         `the author's or the operator's, and coord names it in each PR's ` +
         `blocking summary (PRs tab).`
+      );
+    case "dependency-upstream-closed":
+      return (
+        `${n} PR${plural} held by a dependency label naming an upstream PR ` +
+        `that is closed and did not land, so the edge can never clear on its ` +
+        `own. The author's move: re-anchor the label onto the successor PR, ` +
+        `or remove it if the upstream's content already landed (each PR's ` +
+        `blocking summary names the dead parent).`
       );
     // Reached only when coord's health read is unavailable, so there is no
     // readiness-onset clock and no proposal error to quote — but this is the

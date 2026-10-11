@@ -36,13 +36,12 @@ import {
   createGroupTenantRole,
   deleteGroupTenantRole,
   fetchGroupTenantRoles,
+  type GroupTenantRoleRow,
 } from "@/lib/api/operations/cognitoGroups";
+import type { CoordMemberRole } from "@/lib/api/operations/coordMembers";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { CollapsiblePanel } from "@/components/console";
-import type {
-  CoordRole,
-  GroupTenantRoleRow,
-  GroupTenantRolesResponse,
-} from "../_types";
 import {
   groupNameProblem,
   requireRows,
@@ -55,7 +54,6 @@ import {
   TIER_OPTIONS,
   tierLabel,
 } from "../_lib/tenantLabels";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { GroupNameHint } from "./GroupNameHint";
 import { log } from "../_lib/log";
 
@@ -79,7 +77,7 @@ export function GroupTenantRolesSection({
   // Add-mapping form state.
   const [groupId, setGroupId] = useState("");
   const [tenantSlug, setTenantSlug] = useState("");
-  const [role, setRole] = useState<CoordRole>("operator");
+  const [role, setRole] = useState<CoordMemberRole>("operator");
   const [autoCreate, setAutoCreate] = useState(true);
   // Create the Cognito group as part of the same action (superuser-only — pool
   // -wide group creation requires staff access). Folds the previously-separate
@@ -102,9 +100,7 @@ export function GroupTenantRolesSection({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchGroupTenantRoles();
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as GroupTenantRolesResponse;
+      const json = await fetchGroupTenantRoles();
       // A successful STATUS is not a successful READ — the same rule the
       // blast-radius read of this SAME endpoint applies below. `?? []` is dead
       // per the types (`group_tenant_roles` is declared non-optional) and live
@@ -120,7 +116,7 @@ export function GroupTenantRolesSection({
       );
     } catch (err) {
       log.warn("load group-tenant-roles failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(operationsErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -156,36 +152,40 @@ export function GroupTenantRolesSection({
       let groupCreated = false;
       let groupReused = false;
       if (alsoCreateGroup && isSuperuser) {
-        const gres = await createCognitoGroup({
-          group_name: gid,
-          description: `${tierLabel(role)} for ${slug}`,
-        });
-        if (gres.status === 409) {
+        try {
+          await createCognitoGroup({
+            group_name: gid,
+            description: `${tierLabel(role)} for ${slug}`,
+          });
+          groupCreated = true;
+        } catch (err) {
+          // ONE prefix, not two. Any other failure reaches the `catch` below,
+          // which adds "Add failed:" to `operationsErrorMessage` — the
+          // backend's own sentence (since #1099's follow-up a malformed name
+          // is a 400 that names the real reason). Nesting `HTTP 400
+          // {"detail":…}` in between made the reason the least readable part
+          // of the line.
+          if (httpStatusOf(err) !== 409) throw err;
           // Reusing an existing group is correct — SAYING so is the fix. This
           // arm used to be silent, and the success toast then read "Mapping
           // added", so the operator could not tell a group that was created
           // from one that was quietly reused.
           groupReused = true;
-        } else if (!gres.ok) {
-          // ONE prefix, not two. `backendErrorMessage` returns the backend's
-          // own sentence — and since #1099's follow-up a malformed name is a
-          // 400 that names the real reason — while the `catch` below adds
-          // "Add failed:". Nesting `HTTP 400 {"detail":…}` in between made the
-          // reason the least readable part of the line.
-          throw new Error(await backendErrorMessage(gres));
-        } else {
-          groupCreated = true;
         }
       }
       // Step 2: the group → tenant → role mapping.
-      const res = await createGroupTenantRole({
-        group_id: gid,
-        tenant_slug: slug,
-        role,
-        auto_create_tenant: autoCreate,
-      });
-      if (!res.ok) {
-        const reason = await backendErrorMessage(res);
+      try {
+        await createGroupTenantRole({
+          group_id: gid,
+          tenant_slug: slug,
+          role,
+          auto_create_tenant: autoCreate,
+        });
+      } catch (err) {
+        // Only a status answer is the mapping REFUSED; anything else (the
+        // request never landed) reaches the `catch` below as it is.
+        if (httpStatusOf(err) === null) throw err;
+        const reason = operationsErrorMessage(err);
         // A partial failure LEAVES A POOL-WIDE GROUP BEHIND. Reporting only
         // the mapping failure hides an orphan that a non-superuser cannot even
         // see, let alone clean up — so the message has to name it.
@@ -216,9 +216,7 @@ export function GroupTenantRolesSection({
       await load();
     } catch (err) {
       log.warn("add mapping failed", err);
-      toast.error(
-        `Add failed: ${err instanceof Error ? err.message : String(err)}`
-      );
+      toast.error(`Add failed: ${operationsErrorMessage(err)}`);
     } finally {
       setSubmitting(false);
     }
@@ -237,19 +235,16 @@ export function GroupTenantRolesSection({
       const key = `${row.group_id}:${row.tenant_slug}:${row.role}`;
       setBusy(key);
       try {
-        const res = await deleteGroupTenantRole({
+        await deleteGroupTenantRole({
           group_id: row.group_id,
           tenant_slug: row.tenant_slug,
           role: row.role,
         });
-        if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success("Mapping deleted");
         await load();
       } catch (err) {
         log.warn("delete mapping failed", err);
-        toast.error(
-          `Delete failed: ${err instanceof Error ? err.message : String(err)}`
-        );
+        toast.error(`Delete failed: ${operationsErrorMessage(err)}`);
       } finally {
         setBusy(null);
       }
@@ -281,25 +276,29 @@ export function GroupTenantRolesSection({
           r.role === row.role
       );
       try {
-        const res = await createGroupTenantRole({
-          group_id: row.group_id,
-          tenant_slug: currentSlug,
-          role: row.role,
-          auto_create_tenant:
-            existing?.auto_create_tenant ?? row.auto_create_tenant,
-        });
-        if (!res.ok) {
+        try {
+          await createGroupTenantRole({
+            group_id: row.group_id,
+            tenant_slug: currentSlug,
+            role: row.role,
+            auto_create_tenant:
+              existing?.auto_create_tenant ?? row.auto_create_tenant,
+          });
+        } catch (err) {
+          if (httpStatusOf(err) === null) throw err;
           throw new Error(
-            `${await backendErrorMessage(res)} The mapping under ${row.tenant_slug} is unchanged.`
+            `${operationsErrorMessage(err)} The mapping under ${row.tenant_slug} is unchanged.`
           );
         }
-        const del = await deleteGroupTenantRole({
-          group_id: row.group_id,
-          tenant_slug: row.tenant_slug,
-          role: row.role,
-        });
-        if (!del.ok) {
-          const reason = await backendErrorMessage(del);
+        try {
+          await deleteGroupTenantRole({
+            group_id: row.group_id,
+            tenant_slug: row.tenant_slug,
+            role: row.role,
+          });
+        } catch (err) {
+          if (httpStatusOf(err) === null) throw err;
+          const reason = operationsErrorMessage(err);
           toast.error(
             `Mapping re-created under ${currentSlug}, but the old row under ${row.tenant_slug} was NOT deleted and still grants at every login — delete it from this table. Delete failed because: ${reason}`
           );
@@ -308,9 +307,7 @@ export function GroupTenantRolesSection({
         toast.success(`Mapping moved to ${currentSlug}`);
       } catch (err) {
         log.warn("move mapping failed", err);
-        toast.error(
-          `Move failed: ${err instanceof Error ? err.message : String(err)}`
-        );
+        toast.error(`Move failed: ${operationsErrorMessage(err)}`);
       } finally {
         // Reload on every outcome: even a failed move may have changed the
         // table (the create landed, the delete did not). The row stays busy
@@ -516,7 +513,7 @@ export function GroupTenantRolesSection({
               <Label htmlFor="map-role">Role tier</Label>
               <Select
                 value={role}
-                onValueChange={(v) => setRole(v as CoordRole)}
+                onValueChange={(v) => setRole(v as CoordMemberRole)}
               >
                 <SelectTrigger
                   id="map-role"

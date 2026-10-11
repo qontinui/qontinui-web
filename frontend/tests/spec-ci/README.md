@@ -155,7 +155,7 @@ source-controlled registry, `crawl-baseline.ts`:
 - `GLOBAL_SERVER_WAIVERS` — same-origin-5xx **URL classes** that are
   CI-environment-unavoidable on any route (`/coord-api/*` — no coord process in
   CI; `/api/vga/*` — Next server routes hitting a private-subnet RDS; the
-  coord-backed `/api/v1/operations/*`, `/api/v1/strategy/*` and similar
+  coord-backed `/api/v1/operations/*` and similar
   backend proxies). Both lanes apply them: the crawl lane through
   `applyCrawlWaivers`, the spec lane through `isGloballyWaivedServerUrl`.
 

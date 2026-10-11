@@ -1172,6 +1172,14 @@ def test_repo_relative_never_raises_and_has_one_home() -> None:
     assert notifier._pretty_path("rev", None) == "rev"
 
 
+def test_repo_relative_renders_forward_slashes_inside_the_repo() -> None:
+    """The in-repo arm renders ``/`` on every OS, not the platform separator."""
+    from _gate_lib import REPO_ROOT, repo_relative
+
+    path = REPO_ROOT / "backend" / "alembic" / "versions" / "x.py"
+    assert repo_relative(path) == "backend/alembic/versions/x.py"
+
+
 def test_the_gate_unknown_arm_is_pinned_too() -> None:
     """Mirror of `test_the_unknown_comment_says_unknown_and_not_a_head_split`.
 
