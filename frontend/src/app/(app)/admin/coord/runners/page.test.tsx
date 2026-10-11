@@ -202,11 +202,14 @@ beforeEach(() => {
     detail: null,
   });
   httpGet.mockReset();
-  httpGet.mockResolvedValue({
-    devices: [{ device_id: DEVICE, hostname: "spaceship", state: "healthy" }],
-  });
   httpFetch.mockReset();
   httpFetch.mockImplementation(async (url: string) => {
+    // The device roster: `useFleetHealth` reads it through `httpClient.fetch`
+    // (the typed operations client), not `httpClient.get`.
+    if (url.includes("/fleet/health"))
+      return res(200, {
+        devices: [{ device_id: DEVICE, hostname: "spaceship", state: "healthy" }],
+      });
     if (url.includes("/control")) return controlResponse;
     if (url.includes("/fleet/worktree-cap")) return worktreeCapResponse;
     if (url.includes("/fleet/drain")) return res(200, { drained: {} });
@@ -407,7 +410,11 @@ describe("/admin/coord/runners", () => {
     render(<CoordRunnersPage />);
     expect(await screen.findByTestId("coord-runners-no-device")).toBeInTheDocument();
     expect(screen.getByTestId("coord-runners-device-picker")).toBeInTheDocument();
-    await waitFor(() => expect(httpGet).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        httpFetch.mock.calls.some(([url]) => String(url).includes("/fleet/health"))
+      ).toBe(true)
+    );
     expect(
       httpFetch.mock.calls.some(
         ([url]) =>

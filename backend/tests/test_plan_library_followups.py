@@ -451,20 +451,27 @@ class TestOpenFollowupRead:
 
         page = (await client.get(f"{API_PREFIX}/followups?limit=2")).json()
         assert len(page["items"]) == 2
-        # ``count`` is THIS page's length; ``total`` the unpaged queue.
+        # ``count`` is THIS page's length; ``total`` counts from the page's
+        # start, which on the first page is the whole queue.
         assert page["count"] == 2
         assert page["total"] == 3
         assert page["limit"] == 2
+        assert page["truncated"] is True
 
-        rest = (await client.get(f"{API_PREFIX}/followups?offset=2&limit=2")).json()
+        rest = (
+            await client.get(
+                f"{API_PREFIX}/followups",
+                params={"limit": 2, "cursor": page["next_cursor"]},
+            )
+        ).json()
         assert len(rest["items"]) == 1
         assert rest["count"] == 1
-        assert rest["total"] == 3
-
-        empty = (await client.get(f"{API_PREFIX}/followups?offset=3&limit=2")).json()
-        assert empty["items"] == []
-        assert empty["count"] == 0
-        assert empty["total"] == 3
+        assert rest["total"] == 1
+        assert rest["truncated"] is False
+        assert rest["next_cursor"] is None
+        assert {i["edge_id"] for i in page["items"]}.isdisjoint(
+            {i["edge_id"] for i in rest["items"]}
+        )
 
     async def test_candidates_folds_in_work_that_has_no_plan_yet(
         self, client: httpx.AsyncClient
@@ -482,7 +489,7 @@ class TestOpenFollowupRead:
         assert payload["count"] == len(payload["items"]) >= 1
         assert payload["open_followups"][0]["note"] == "unowned work"
         # The existing candidate shape is untouched.
-        assert payload["ordering"] == "oldest_vetted_first"
+        assert payload["ordering"] == "oldest_captured_first"
         assert any(item["id"] == plan for item in payload["items"])
         assert "spawned_followups" not in payload["items"][0]
 

@@ -1695,6 +1695,35 @@ class TestClientSuppliedEmbeddings:
         assert body["hits"][0]["vector_rank"] == 1
         assert body["hits"][0]["cosine_similarity"] is not None
 
+    def test_query_discloses_its_bound_over_real_arms(self, mc: MemoryClient) -> None:
+        """Plan 2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus
+        Phase 3: three lexical matches, limit 2 — the ranking is cut, both
+        arms stayed under ARM_LIMIT, so the bound is exact over the pool and
+        every envelope key is served (null included), never a cursor."""
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(f"the quokka {suffix} smiles at noon")
+                    for suffix in ("alpha", "beta", "gamma")
+                ]
+            },
+        )
+        resp = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "quokka smiles", "limit": 2}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["hits"]) == 2
+        assert body["truncated"] is True
+        assert body["bound_kind"] == "exact"
+        assert body["total"] == 3
+        assert (body["count"], body["shown"], body["limit"]) == (2, 2, 2)
+        assert "next_cursor" in body and body["next_cursor"] is None
+        assert "filter_narrowed" in body and body["filter_narrowed"] is None
+        assert body["available"] is True
+        assert body["enumerate_via"] == "GET /api/v1/memory/records"
+
     def test_query_wrong_dim_embedding_is_422(self, mc: MemoryClient) -> None:
         resp = mc.client.post(
             "/api/v1/memory/query",

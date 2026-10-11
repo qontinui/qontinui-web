@@ -8,7 +8,7 @@ import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { MergeEnabledControl } from "./MergeEnabledControl";
 import { MergeEnabledBadge, pinChoice } from "./pinChoice";
 import { fmtRate, fmtSecs, ratingColor, ratingColorInverse } from "./format";
-import type { RepoSlo, SloResponse } from "./types";
+import type { RepoSlo, SloResponse } from "@/lib/api/operations/prMerge";
 
 function SloRepoCard({
   slo,

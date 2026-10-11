@@ -26,11 +26,13 @@
  * decided it. Building a third join would have been the exact defect the
  * parent plan documents.
  *
- * **`ordering: slug_asc` is the real fix, not the limit.** Plan stems are
- * date-prefixed, so slug order is chronological order — and stable across
- * requests in a way a mutable timestamp is not. New plans carry today's date
- * and therefore APPEND, which is what makes offset paging over this route
- * sound.
+ * **`ordering: stem_date_asc` is the real fix, not the limit.** Each stem's
+ * position is a pure function of the stem (its date prefix, then a uuid5
+ * tiebreak), so it is chronological by authoring day and IMMUTABLE. The route
+ * pages by an opaque keyset cursor over it (plan
+ * `2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` Phase 4):
+ * a stem added or removed between two reads can no longer shift the window,
+ * which `offset` paging — now deleted — could.
  *
  * ## Five read states, not four
  *
@@ -45,7 +47,7 @@
  *
  * ## The status filter is CLIENT-side here, and says so
  *
- * `/reconciliation` takes `offset`, `limit` and `include_coord` — there is no
+ * `/reconciliation` takes `cursor`, `limit` and `include_coord` — there is no
  * `status` parameter. So unlike the old page's server-side filter, this one
  * narrows the ROWS ON THIS PAGE and nothing else. A control that silently
  * turned into a page-scoped filter would be the same class of mislabel this
@@ -164,6 +166,7 @@ import {
   pageFiltersActive,
   type PageFilters,
 } from "./rowFilters";
+import { useCursorPager } from "@/components/admin/coord/cursorPager";
 import { DEFAULT_THROUGHPUT_DAYS } from "./throughput";
 import { useArtifactDocument } from "./useArtifactDocument";
 import { useDeriveMode } from "./useDeriveMode";
@@ -204,7 +207,8 @@ export default function CoordPlansListPage() {
   /** The search in force — sent to the route, so it is part of the QUESTION. */
   const [q, setQ] = useState("");
   const [throughputDays, setThroughputDays] = useState(DEFAULT_THROUGHPUT_DAYS);
-  const [offset, setOffset] = useState(0);
+  const pager = useCursorPager();
+  const { cursor, start, reset: resetPager } = pager;
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<ReconciliationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +244,7 @@ export default function CoordPlansListPage() {
   /**
    * Phase 4a — the capture census, on its own read state.
    *
-   * It is NOT re-read when the window changes: offset and limit are questions
+   * It is NOT re-read when the window changes: cursor and limit are questions
    * about the reconciliation page, and this census is about the whole artifact
    * store. `captureFailed` is kept beside the body rather than replacing it,
    * so a failed refresh leaves the previous census on screen and labelled,
@@ -263,7 +267,9 @@ export default function CoordPlansListPage() {
     async (guard: ReadGuard) => {
       try {
         const qs = new URLSearchParams();
-        qs.set("offset", String(offset));
+        // Keyset paging: the previous page's `next_cursor`, verbatim. A cursor
+        // is bound to `q`, so a new search always restarts at page one.
+        if (cursor !== null) qs.set("cursor", cursor);
         qs.set("limit", String(limit));
         if (q !== "") qs.set("q", q);
         // Phase 6 — custody makes coord resolve live sessions for the whole
@@ -313,7 +319,7 @@ export default function CoordPlansListPage() {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [offset, limit, q]
+    [cursor, limit, q]
   );
 
   // The WINDOW is the question. Changing it makes the rows in `data` answers
@@ -398,10 +404,13 @@ export default function CoordPlansListPage() {
   );
 
   // A new search is a new population: page 1 of it, not page N of the old.
-  const onSearch = useCallback((next: string) => {
-    setOffset(0);
-    setQ(next);
-  }, []);
+  const onSearch = useCallback(
+    (next: string) => {
+      resetPager();
+      setQ(next);
+    },
+    [resetPager]
+  );
 
   const rows = useMemo(() => data?.items ?? [], [data]);
   const shown = useMemo(
@@ -429,7 +438,10 @@ export default function CoordPlansListPage() {
       rows.every((row) => !row.axis_a.readable),
     [rows, filters]
   );
-  const window = useMemo(() => (data ? describeWindow(data) : null), [data]);
+  const window = useMemo(
+    () => (data ? describeWindow(data, start) : null),
+    [data, start]
+  );
   const disclosure = useMemo(
     () => (data ? deriveDisclosure(data) : null),
     [data]
@@ -464,7 +476,7 @@ export default function CoordPlansListPage() {
   // against the current time rather than frozen at the first render.
   const custodyAge = describeCustodyAge(custodyHold, custodySource, Date.now());
 
-  const canPageBack = offset > 0;
+  const canPageBack = pager.canPrev;
   const canPageForward = window?.hasMore ?? false;
 
   return (
@@ -523,7 +535,7 @@ export default function CoordPlansListPage() {
         <Select
           value={String(limit)}
           onValueChange={(v) => {
-            setOffset(0);
+            resetPager();
             setLimit(Number(v));
           }}
         >
@@ -543,7 +555,7 @@ export default function CoordPlansListPage() {
           </SelectContent>
         </Select>
         <RefreshButton
-          key={`${offset}:${limit}:${q}`}
+          key={`${cursor ?? ""}:${limit}:${q}`}
           onRefresh={refresh}
           label="Refresh reconciliation"
           title={`Re-reads the reconciliation now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
@@ -611,8 +623,13 @@ export default function CoordPlansListPage() {
               <span className="font-mono">{window.lastStem}</span>
             </>
           )}
-          , offset {window.offset}, page size {window.limit ?? "unstated"},
-          ordered{" "}
+          {window.shown > 0 && (
+            <>
+              {" "}
+              (rows {window.start + 1}–{window.start + window.shown})
+            </>
+          )}
+          , page size {window.limit ?? "unstated"}, ordered{" "}
           <span
             className="font-mono"
             data-testid="coord-plans-window-ordering"
@@ -791,7 +808,7 @@ export default function CoordPlansListPage() {
           variant="outline"
           size="sm"
           disabled={!canPageBack}
-          onClick={() => setOffset((o) => Math.max(0, o - limit))}
+          onClick={pager.prev}
           data-testid="coord-plans-page-prev"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -801,13 +818,10 @@ export default function CoordPlansListPage() {
           variant="outline"
           size="sm"
           disabled={!canPageForward}
-          onClick={() => setOffset((o) => o + limit)}
+          onClick={() => {
+            if (window?.nextCursor) pager.next(window.nextCursor, window.shown);
+          }}
           data-testid="coord-plans-page-next"
-          title={
-            window?.total === null
-              ? "The route served no total, so 'more' is inferred from a full page."
-              : undefined
-          }
         >
           Next
           <ChevronRight className="h-4 w-4" aria-hidden="true" />

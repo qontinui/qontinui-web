@@ -7,10 +7,14 @@ export async function GET(
   { params }: { params: Promise<{ runId: string }> }
 ) {
   const { runId } = await params;
-  return proxyToBackend(request, `/api/v1/execution/runs/${runId}/tree`, {
-    tokenSources: ["cookie", "header"],
-    onMissingToken: "401",
-    unauthorizedBodyKey: "detail",
-    errorBody: "detail",
-  });
+  return proxyToBackend(
+    request,
+    `/api/v1/execution/runs/${encodeURIComponent(runId)}/tree`,
+    {
+      tokenSources: ["cookie", "header"],
+      onMissingToken: "401",
+      unauthorizedBodyKey: "detail",
+      errorBody: "detail",
+    }
+  );
 }

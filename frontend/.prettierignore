@@ -18,3 +18,8 @@ tsconfig.tsbuildinfo
 # break the Py↔TS parity test. See src/lib/vga/canonical.parity.test.ts.
 test-fixtures/vga/canonical-state-machine.canonical.json
 test-fixtures/vga/canonical-state-machine.json
+
+# Raw openapi-typescript output, drift-gated byte-for-byte against
+# `npm run generate-api-types:local` in frontend-ci.yml — prettier would
+# reformat it and turn the gate red.
+src/lib/api-client/generated-types.ts

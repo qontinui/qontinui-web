@@ -14,15 +14,27 @@ type Context = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: Context) {
   const { id } = await params;
-  return proxyToBackend(request, `/api/v1/ai-tasks/${id}`, OPTIONS);
+  return proxyToBackend(
+    request,
+    `/api/v1/ai-tasks/${encodeURIComponent(id)}`,
+    OPTIONS
+  );
 }
 
 export async function PATCH(request: NextRequest, { params }: Context) {
   const { id } = await params;
-  return proxyToBackend(request, `/api/v1/ai-tasks/${id}`, OPTIONS);
+  return proxyToBackend(
+    request,
+    `/api/v1/ai-tasks/${encodeURIComponent(id)}`,
+    OPTIONS
+  );
 }
 
 export async function DELETE(request: NextRequest, { params }: Context) {
   const { id } = await params;
-  return proxyToBackend(request, `/api/v1/ai-tasks/${id}`, OPTIONS);
+  return proxyToBackend(
+    request,
+    `/api/v1/ai-tasks/${encodeURIComponent(id)}`,
+    OPTIONS
+  );
 }

@@ -670,6 +670,5 @@ function getCachedAnalysis(workflows: Workflow[]): DependencyAnalysis {
 ## See Also
 
 - [Organization Guide](./organization.md) - Manage workflow hierarchy
-- [Version Control](./version-control.md) - Track dependency changes over time
 - [Best Practices](./best-practices.md) - Recommended patterns
 - [API Reference](./api-reference.md) - Complete API documentation

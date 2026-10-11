@@ -99,6 +99,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Benign supersession, DECLARED (coord reads this; plan
+  # 2026-10-01-coord-train-waits-on-redundant-post-land-verification
+  # Decision 4): this workflow is a non-gating coverage producer, so a newer
+  # main run superseding an older one loses no verification. Coord's no-reap
+  # gate does not wait on it, its main-green read does not count it, and its
+  # main-red fingerprint ignores it (a non-passing run here held web's train at
+  # main-red on 2026-09-30). Remove this line and coord treats the workflow as
+  # verification again.
+  COORD_SUPERSESSION: benign
   PYTHON_VERSION: '3.12'
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
@@ -337,7 +346,6 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
-            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
