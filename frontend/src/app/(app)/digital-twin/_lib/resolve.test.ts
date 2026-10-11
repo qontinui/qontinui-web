@@ -207,6 +207,15 @@ describe("summarize", () => {
     expect(s.built).toBeLessThanOrEqual(s.total);
   });
 
+  it("counts snapshot rows as pending, never as not responding, while the probe loads", () => {
+    const loading = summarize(resolveSubspaces(undefined, true));
+    expect(loading.snapshotTotal).toBeGreaterThan(0);
+    expect(loading.pending).toBe(loading.snapshotTotal);
+    expect(loading.responding).toBe(0);
+    // Once loaded, a missing probe is an error, not a probe in flight.
+    expect(summarize(resolveSubspaces([], false)).pending).toBe(0);
+  });
+
   it("counts built from the manifest claim alone, independent of the probe", () => {
     const claimed = manifest.subspaces.filter(
       (s) =>

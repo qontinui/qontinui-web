@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -14,32 +14,59 @@ import {
 import { manifest, resolveSubspaces } from "./resolve";
 import type { LifecycleStage, ResolvedSubspace, TwinPlant } from "./types";
 
-/**
- * The ids the backend live-probes — a copy of `_PROBEABLE_SUBSPACES` in
- * `backend/app/api/v1/endpoints/digital_twin.py`, which mirrors coord
- * `twin_routes.rs` `subspace_tool`. A `snapshot` row outside this list
- * resolves to `error` forever; a probed id with no snapshot row is a probe
- * nobody renders. Change the three copies together.
- */
-const BACKEND_PROBEABLE_SUBSPACES = [
-  "release",
-  "schema",
-  "infra",
-  "infra_health",
-  "config",
-  "health",
-  "deps",
-  "route_serving",
-  "client_telemetry",
-  "worktree",
-  "memory",
-];
-
 const STAGE_IDS: LifecycleStage[] = LIFECYCLE_STAGES.map((s) => s.id);
 const TWIN_IDS: TwinPlant[] = TWIN_PLANTS.map((t) => t.id);
 
-/** `src/app` — this file lives in `src/app/(app)/digital-twin/_lib`. */
+/** `src/app` — this file lives in `frontend/src/app/(app)/digital-twin/_lib`. */
 const APP_DIR = join(__dirname, "..", "..", "..");
+
+/** The backend module whose `_PROBEABLE_SUBSPACES` the page's probe fans out over. */
+const PROBE_MODULE = join(
+  APP_DIR,
+  "..",
+  "..",
+  "..",
+  "backend",
+  "app",
+  "api",
+  "v1",
+  "endpoints",
+  "digital_twin.py"
+);
+
+/**
+ * The ids the backend live-probes, parsed from the `_PROBEABLE_SUBSPACES`
+ * literal in `backend/app/api/v1/endpoints/digital_twin.py` — read, not
+ * copied, so the manifest is pinned to the tuple itself. (The tuple in turn is
+ * a hand copy of coord `twin_routes.rs` `subspace_tool`, which no test in this
+ * repo can read.) The backend test pins the same equality from its side by
+ * reading the manifest, because each side's CI runs only on its own paths.
+ *
+ * Fails closed: a tuple it cannot find, a line it cannot parse, or an empty
+ * list throws rather than comparing the manifest against nothing.
+ */
+function backendProbeableSubspaces(): string[] {
+  const source = readFileSync(PROBE_MODULE, "utf-8");
+  const literal =
+    /^_PROBEABLE_SUBSPACES: tuple\[str, \.\.\.\] = \(\r?\n([\s\S]*?)^\)/m.exec(
+      source
+    );
+  if (!literal) {
+    throw new Error(`no _PROBEABLE_SUBSPACES tuple in ${PROBE_MODULE}`);
+  }
+  const ids: string[] = [];
+  for (const line of literal[1].split(/\r?\n/)) {
+    const item = line.replace(/#.*$/, "").trim();
+    if (item === "") continue;
+    const id = /^"([a-z0-9_]+)",?$/.exec(item)?.[1];
+    if (!id) {
+      throw new Error(`unparseable _PROBEABLE_SUBSPACES entry: ${line.trim()}`);
+    }
+    ids.push(id);
+  }
+  if (ids.length === 0) throw new Error("_PROBEABLE_SUBSPACES parsed empty");
+  return ids;
+}
 
 /** Whether `href` resolves to a page under `src/app` or one of its route groups. */
 function routeExists(href: string): boolean {
@@ -124,11 +151,15 @@ describe("manifest twin + lifecycle fields", () => {
   });
 
   it("marks a row snapshot only when the backend probes it, and probes only snapshot rows", () => {
+    // A `snapshot` row outside the tuple resolves to `error` forever; a probed
+    // id with no snapshot row is a probe nothing renders.
     const snapshotIds = manifest.subspaces
       .filter((s) => s.query_kind === "snapshot")
       .map((s) => s.id)
       .sort();
-    expect(snapshotIds).toEqual([...BACKEND_PROBEABLE_SUBSPACES].sort());
+    const probed = backendProbeableSubspaces();
+    expect(new Set(probed).size, "duplicate probe id").toBe(probed.length);
+    expect(snapshotIds).toEqual([...probed].sort());
   });
 
   it("keeps every description to one line of at most 160 characters", () => {
@@ -207,6 +238,7 @@ describe("stageSummary", () => {
     expect(verify).toEqual({
       probed: 3,
       live: 2, // implemented + partial answer; blind does not
+      pending: 0,
       manifestBuilt: 2, // the parameterized and the none row — claims
       interactive: 1,
       planned: 1,
@@ -219,12 +251,22 @@ describe("stageSummary", () => {
     expect(stageSummary(FIXTURE).intent).toEqual({
       probed: 0,
       live: 0,
+      pending: 0,
       manifestBuilt: 0,
       interactive: 0,
       planned: 0,
       notBuilt: 0,
       total: 0,
     });
+  });
+
+  it("counts a probe still in flight as pending — neither answering nor silent", () => {
+    const counts = coverageOf([
+      row("in_flight", ["verify"], "snapshot", "implemented", "probing"),
+      row("answered", ["verify"], "snapshot", "implemented", "implemented"),
+      row("silent", ["verify"], "snapshot", "partial", "error"),
+    ]);
+    expect(counts).toMatchObject({ probed: 3, live: 1, pending: 1 });
   });
 
   it("puts every real row of every stage in exactly one bucket", () => {
@@ -234,8 +276,18 @@ describe("stageSummary", () => {
       expect(c.probed + c.manifestBuilt + c.planned + c.notBuilt, stage).toBe(
         c.total
       );
-      // No probe answered: nothing is live, whatever the manifest claims.
+      // No probe answered: nothing is live, whatever the manifest claims —
+      // and nothing is pending either, because the probe is not in flight.
       expect(c.live, stage).toBe(0);
+      expect(c.pending, stage).toBe(0);
+    }
+  });
+
+  it("counts every probed row of every stage as pending while the probe loads", () => {
+    const summary = stageSummary(resolveSubspaces(undefined, true));
+    for (const stage of STAGE_IDS) {
+      expect(summary[stage].pending, stage).toBe(summary[stage].probed);
+      expect(summary[stage].live, stage).toBe(0);
     }
   });
 });
