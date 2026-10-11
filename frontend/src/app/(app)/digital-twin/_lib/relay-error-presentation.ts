@@ -120,13 +120,14 @@ function explainRunnerRefusal(
         ? runner.detail.appId
         : undefined;
     const which = appId ? `"${appId}"` : "that id";
-    // The runner registers its own UI on every start
-    // (`ensure_self_registered`); naming that id is the one pointer this
-    // answer supports. Omitted when it is the id that just failed.
+    // The one pointer this answer supports, phrased as advice rather than as
+    // a fact about THIS runner: recent runners register their own UI under
+    // that id, but older builds do not, and a current one can fail to (see
+    // `RUNNER_APP_ID`). Omitted when it is the id that just failed.
     const pointer =
       appId === RUNNER_APP_ID
         ? ""
-        : ` The runner registers its own UI as "${RUNNER_APP_ID}".`;
+        : ` Recent runners register their own UI as "${RUNNER_APP_ID}" — try that id.`;
     return `The runner has no app registered as ${which} (app-not-found).${pointer}`;
   }
   const answered =

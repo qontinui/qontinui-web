@@ -1,7 +1,8 @@
 /**
  * Shapes for the runner's Spec API + live snapshot, read through the relay,
- * and what the tab derives from them (`summarizeSpecGraph`,
- * `snapshotHasElementTree`). Kept loose (optional fields, index signatures)
+ * what the tab derives from them (`summarizeSpecGraph`,
+ * `snapshotHasElementTree`), and the app-id rule the runner's registry
+ * enforces (`isValidAppId`). Kept loose (optional fields, index signatures)
  * because they originate from the runner and the digital-twin tab only
  * summarizes + shows raw — but each field named here is one the runner
  * actually sends (qontinui-runner `spec_api/handlers.rs`
@@ -10,11 +11,44 @@
  */
 
 /**
- * The runner's own UI app id — the one id every runner registers for itself
- * on start (qontinui-runner `spec_api::storage::RUNNER_APP_ID`, registered by
- * `ensure_self_registered`).
+ * The runner's own UI app id (qontinui-runner
+ * `spec_api::storage::RUNNER_APP_ID`). Runners register it for themselves at
+ * start-up (`database/pg/apps.rs` `ensure_self_registered`) since 85d61ed2b,
+ * committed 2026-09-07 — older builds do not, and even a current one skips or
+ * fails it, logged and non-fatal, when it cannot resolve its repo root or
+ * write the row. So it is the id most likely to be registered, not one that
+ * always is.
  */
 export const RUNNER_APP_ID = "qontinui-runner";
+
+/**
+ * The shape the runner's app registry admits, and so the only ids it can ever
+ * have registered (qontinui-schemas `rust/src/apps.rs` `validate_app_id`, run
+ * on every insert): 1–64 lowercase ASCII letters, digits and hyphens, not
+ * starting with a hyphen.
+ */
+const APP_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** What {@link isValidAppId} requires, in words, for an inline message. */
+export const APP_ID_RULE =
+  "1–64 lowercase letters, digits and hyphens, starting with a letter or digit";
+
+/**
+ * Whether `id` is an app id a runner could have registered.
+ *
+ * Anything else can never answer — at best the runner says `app-not-found`
+ * — and many such ids cannot even be asked for as one id. The relay path is
+ * decoded before it is checked or forwarded (backend `runner_proxy`,
+ * `{path:path}`), so percent-encoding does not keep an id to one path
+ * segment: a `/` — encoded or not — becomes extra segments, which the
+ * runner's relay allowlist refuses with a 403 (`relay_path_policy.rs`
+ * `normalize_relay_path`), and the backend refuses most other characters
+ * with a 400 (`device_bridge_ws.py` `_SAFE_PATH_RE`). So the panel says the
+ * id is not valid instead of sending it.
+ */
+export function isValidAppId(id: string): boolean {
+  return APP_ID_RE.test(id);
+}
 
 /**
  * The spec list's per-page `config` — a bundled-page PROJECTION

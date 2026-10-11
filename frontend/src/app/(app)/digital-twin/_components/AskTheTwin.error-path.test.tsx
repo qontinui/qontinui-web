@@ -20,6 +20,10 @@
  *    for the next question;
  *  - the backend's `error` frame (it could not forward the request) was only
  *    logged.
+ *
+ * A failure after part of an answer streamed is the hard case: the partial
+ * text stays in the hook's `streamingContent`, and the page has to stop
+ * waiting anyway.
  */
 
 import {
@@ -94,12 +98,67 @@ async function renderConnected(): Promise<FakeWebSocket> {
   return ws;
 }
 
-function ask(question: string) {
+function typeQuestion(question: string) {
   fireEvent.change(
     screen.getByPlaceholderText("Ask a question about the digital twin…"),
     { target: { value: question } }
   );
-  fireEvent.click(screen.getByRole("button", { name: /ask/i }));
+}
+
+function askButton(): HTMLButtonElement {
+  return screen.getByRole("button", { name: /ask/i }) as HTMLButtonElement;
+}
+
+function ask(question: string) {
+  typeQuestion(question);
+  fireEvent.click(askButton());
+}
+
+const WORKING = "Your runner’s agent is working on an answer…";
+const RECEIVING =
+  "Receiving your runner’s answer — this page has not been told whether it is finished.";
+
+/**
+ * Ask, have the runner create `run-1`, report it processing and stream part
+ * of an answer — the moment a session failure used to leave the page stuck.
+ */
+async function askAndStreamPartialAnswer(ws: FakeWebSocket) {
+  ask("which observers are blind?");
+  await waitFor(() => expect(ws.requests()).toHaveLength(1));
+  act(() =>
+    ws.push({
+      type: "chat_created",
+      id: "run-1",
+      task_name: "Digital Twin question",
+      state: "initializing",
+    })
+  );
+  act(() => ws.push({ type: "chat_session_state", state: "processing" }));
+  act(() =>
+    ws.push({
+      type: "chat_response",
+      data: { line: "partial answer", source: "claude", taskRunId: null },
+    })
+  );
+  // The stream is live: the runner says its agent is working.
+  expect(screen.getByText("partial answer")).toBeTruthy();
+  expect(screen.getByTestId("ask-the-twin-caret")).toBeTruthy();
+  expect(screen.getByText(WORKING)).toBeTruthy();
+  expect(askButton().disabled).toBe(true);
+}
+
+/** After a failure: nothing claims more is coming, and Ask works again. */
+async function expectWaitEnded() {
+  await screen.findByTestId("ask-the-twin-error");
+  // What the runner did send stays on screen …
+  expect(screen.getByText("partial answer")).toBeTruthy();
+  // … but nothing says more of it is coming …
+  expect(screen.queryByTestId("ask-the-twin-caret")).toBeNull();
+  expect(screen.queryByText(WORKING)).toBeNull();
+  expect(screen.queryByText(RECEIVING)).toBeNull();
+  // … and "Asking again starts a fresh session" is true: Ask is usable.
+  typeQuestion("try again");
+  expect(askButton().disabled).toBe(false);
 }
 
 beforeEach(() => {
@@ -177,9 +236,7 @@ describe("AskTheTwin error paths", () => {
       })
     );
     act(() => ws.push({ type: "chat_session_state", state: "processing" }));
-    expect(
-      screen.getByText("Your runner’s agent is working on an answer…")
-    ).toBeTruthy();
+    expect(screen.getByText(WORKING)).toBeTruthy();
 
     act(() => ws.push({ type: "chat_session_state", state: "error" }));
 
@@ -187,13 +244,36 @@ describe("AskTheTwin error paths", () => {
     expect(alert.textContent).toContain(
       "The runner reported the session failed and gave no reason."
     );
-    expect(
-      screen.queryByText("Your runner’s agent is working on an answer…")
-    ).toBeNull();
+    expect(screen.queryByText(WORKING)).toBeNull();
 
     ask("try again");
     await waitFor(() => expect(ws.requests()).toHaveLength(2));
     expect(ws.requests()[1]).toMatchObject({ type: "chat_create" });
+  });
+
+  // The two below are the case the `!sessionGone` guard on `busy` exists for:
+  // the session fails AFTER streaming part of an answer. The hook keeps that
+  // partial text in `streamingContent` (it flushes only on `ready` /
+  // `closed`), so without the guard the page stayed busy under an alert that
+  // says asking again starts a fresh session.
+  it("a session error state after partial output ends the wait", async () => {
+    const ws = await renderConnected();
+    await askAndStreamPartialAnswer(ws);
+
+    act(() => ws.push({ type: "chat_session_state", state: "error" }));
+
+    await expectWaitEnded();
+  });
+
+  it("an error frame after partial output ends the wait", async () => {
+    const ws = await renderConnected();
+    await askAndStreamPartialAnswer(ws);
+
+    // The error frame sets no session state, so `processing` is still what
+    // the runner last reported — the failure alone has to end the wait.
+    act(() => ws.push({ type: "error", message: "Runner is not connected." }));
+
+    await expectWaitEnded();
   });
 
   it("a relay error frame (runner not connected) is shown, not only logged", async () => {
@@ -216,5 +296,63 @@ describe("AskTheTwin error paths", () => {
         /uses the twin’s tools only if the runner could provision them/
       )
     ).toBeTruthy();
+  });
+
+  it("tells the agent to say so when it has no twin tools", async () => {
+    // The page cannot see whether the session got the tools; the answer can.
+    const ws = await renderConnected();
+
+    ask("is coord live?");
+    await waitFor(() => expect(ws.requests()).toHaveLength(1));
+
+    const prompt = (ws.requests()[0]?.params as { prompt?: string } | undefined)
+      ?.prompt;
+    expect(prompt).toContain(
+      "If those tools are not available in this session, say so plainly"
+    );
+    expect(prompt).toContain("do not present anything as observed state");
+  });
+});
+
+/**
+ * The busy line says only what the page knows. The backend relay forwards the
+ * runner's output (`chat_response`) but not its session state, so streamed
+ * text is all the page sees of a running answer — never that it finished.
+ */
+describe("AskTheTwin busy line", () => {
+  it("streamed text with no reported state is 'receiving', not 'working'", async () => {
+    const ws = await renderConnected();
+
+    ask("which observers are blind?");
+    await waitFor(() => expect(ws.requests()).toHaveLength(1));
+    // Exactly what reaches the page today: output, and no state frame.
+    act(() =>
+      ws.push({
+        type: "chat_response",
+        data: { line: "Observers: ", source: "claude", taskRunId: null },
+      })
+    );
+
+    expect(screen.getByText(RECEIVING)).toBeTruthy();
+    expect(screen.queryByText(WORKING)).toBeNull();
+    // No pulsing caret: nothing says more text is coming.
+    expect(screen.queryByTestId("ask-the-twin-caret")).toBeNull();
+  });
+
+  it("a question queued after a failure waits on the socket, not on an agent", async () => {
+    const ws = await renderConnected();
+    await askAndStreamPartialAnswer(ws);
+    act(() => ws.push({ type: "chat_session_state", state: "error" }));
+    await screen.findByTestId("ask-the-twin-error");
+
+    // The socket errors (it is not closed yet, so the failed session's
+    // partial output is still on screen), and a question is asked.
+    act(() => ws.onerror?.());
+    ask("try again");
+
+    expect(askButton().disabled).toBe(true);
+    expect(screen.getByText("Connecting to your runner…")).toBeTruthy();
+    expect(screen.queryByText(WORKING)).toBeNull();
+    expect(screen.queryByText(RECEIVING)).toBeNull();
   });
 });

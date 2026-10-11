@@ -2,10 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { runnerProxyGet } from "../_lib/runner-relay";
-import type {
-  SpecGraphResponse,
-  SpecListResponse,
-  UiBridgeSnapshot,
+import {
+  isValidAppId,
+  type SpecGraphResponse,
+  type SpecListResponse,
+  type UiBridgeSnapshot,
 } from "../_lib/ui-bridge-types";
 
 /**
@@ -18,12 +19,18 @@ import type {
  */
 
 /**
- * The relay path for an app's Spec API route. The App field is free text, so
- * the id is encoded to stay ONE path segment — the runner's relay allowlist
- * matches `/apps/{app_id}/…` with exactly one segment for the id.
+ * The relay path for an app's Spec API route. The runner's relay allowlist
+ * matches `/apps/{app_id}/…` with exactly one segment for the id, and an id
+ * that passes `isValidAppId` is one segment as written. Nothing else is ever
+ * built into a path — not even by a manual `refetch()`, which runs a disabled
+ * query too. Encoding would not have helped: the relay decodes the path
+ * before it checks or forwards it.
  */
 function specPath(appId: string, leaf: "list" | "graph"): string {
-  return `apps/${encodeURIComponent(appId)}/spec/${leaf}`;
+  if (!isValidAppId(appId)) {
+    throw new Error(`"${appId}" is not a valid app id.`);
+  }
+  return `apps/${appId}/spec/${leaf}`;
 }
 
 /** CACHED: the runner's discovered spec pages for `appId`. */
@@ -36,8 +43,9 @@ export function useRunnerSpecList(deviceId: string | null, appId: string) {
         specPath(appId, "list"),
         { timeoutMs: 8000 }
       ),
-    // An empty App field names no app: there is nothing to ask for.
-    enabled: !!deviceId && appId !== "",
+    // An empty or malformed App field names no app a runner could have
+    // registered: there is nothing to ask for.
+    enabled: !!deviceId && isValidAppId(appId),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,
@@ -54,7 +62,7 @@ export function useRunnerSpecGraph(deviceId: string | null, appId: string) {
         specPath(appId, "graph"),
         { timeoutMs: 8000 }
       ),
-    enabled: !!deviceId && appId !== "",
+    enabled: !!deviceId && isValidAppId(appId),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,

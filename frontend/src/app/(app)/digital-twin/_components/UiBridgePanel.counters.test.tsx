@@ -15,7 +15,14 @@
  */
 
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunnerTarget } from "@/lib/runner/target";
@@ -178,6 +185,13 @@ function renderPanel() {
 const count = (label: string) =>
   screen.getByTestId(`ui-bridge-count-${label}`).textContent;
 
+/** The "Live (automation)" card — the snapshot's half of the tab. */
+function liveCard(): HTMLElement {
+  const card = screen.getByText("Live (automation)").closest("section");
+  if (!card) throw new Error("no Live (automation) card");
+  return card;
+}
+
 beforeEach(() => {
   state.target = { kind: "runner", runner: { id: DESK }, locality: "unknown" };
   snapshotBody = SNAPSHOT_ENVELOPE;
@@ -229,8 +243,16 @@ describe("UiBridgePanel counters (real hooks, real-shaped bodies)", () => {
 
     await waitFor(() => expect(count("elements")).toBe("3 elements"));
     expect(count("components")).toBe("1 components");
-    // The payload carries no states/activeStates, so no counter claims "0".
-    expect(screen.queryByTestId("ui-bridge-count-active")).toBeNull();
+    // The payload carries no states/activeStates, so no counter claims them.
+    // Scoped to the Live card (the Processed card rightly counts states), and
+    // checked by text as well as by test id: the old counters had no ids.
+    const live = liveCard();
+    expect(
+      within(live)
+        .getAllByTestId(/^ui-bridge-count-/)
+        .map((el) => el.getAttribute("data-testid"))
+    ).toEqual(["ui-bridge-count-elements", "ui-bridge-count-components"]);
+    expect(within(live).queryAllByText(/\b(states|active)\b/)).toHaveLength(0);
     expect(requested).toContain("ui-bridge/control/snapshot");
   });
 
@@ -269,12 +291,53 @@ describe("UiBridgePanel counters (real hooks, real-shaped bodies)", () => {
       target: { value: "qontinui-web" },
     });
 
-    // The list and the graph fail alike, so they share one alert.
-    const alert = await screen.findByRole("alert");
+    // The list and the graph fail alike, so ONE alert names both. Wait for
+    // that grouped box specifically: the first alert to appear can be either
+    // query's own, before the other has failed.
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "spec pages or the state-machine graph for qontinui-web"
+      )
+    );
+    const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain(
       'The runner has no app registered as "qontinui-web" (app-not-found).'
     );
     expect(alert.textContent).not.toContain("The relay answered HTTP 404");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
+
+  it.each(["qontinui/web", "Qontinui-Runner", "qontinui web"])(
+    "does not send %j, an id the runner could never have registered",
+    async (appId) => {
+      renderPanel();
+      // Let the default id's reads settle, so what follows is about the edit.
+      await waitFor(() => expect(count("states")).toBe("5 states"));
+      requested.length = 0;
+
+      fireEvent.change(screen.getByLabelText("App"), {
+        target: { value: appId },
+      });
+      // Give any request the edit could start time to be made.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const message = screen.getByTestId("ui-bridge-app-id-invalid");
+      expect(message.textContent).toContain(appId);
+      expect(message.textContent).toContain("is not a valid app id");
+      expect(screen.getByLabelText("App").getAttribute("aria-invalid")).toBe(
+        "true"
+      );
+      expect(
+        (screen.getByRole("button", { name: /refresh/i }) as HTMLButtonElement)
+          .disabled
+      ).toBe(true);
+      // Nothing was asked of the runner, so there is no relay failure to show
+      // and no count for an app that was never read.
+      expect(requested).toEqual([]);
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByTestId("ui-bridge-count-pages")).toBeNull();
+    }
+  );
 });
