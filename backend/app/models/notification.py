@@ -33,19 +33,6 @@ class NotificationType(StrEnum):
     SHARE = "share"
     COMMENT = "comment"
     REPLY = "reply"
-    # RETIRED — the five labels below have no producer (plan
-    # 2026-09-19-delete-producerless-notification-types-and-their-toggles
-    # re-verified by repo-wide grep). Kept ONLY so a row stored before
-    # migration notif_producerless_01_drop_enum_values deleted them still
-    # loads if this image serves first (Enum(NotificationType) maps stored
-    # member NAMES). Nothing may write them. Removed, with the dead
-    # email_team_invites / in_app_team_invites / in_app_project_updates
-    # columns, by Phase 3 of that plan once this image is the one serving.
-    LOCK_RELEASED = "lock_released"
-    PROJECT_UPDATE = "project_update"
-    TEAM_INVITE = "team_invite"
-    ACCESS_GRANTED = "access_granted"
-    ACCESS_REVOKED = "access_revoked"
 
 
 class Notification(Base):
@@ -151,17 +138,6 @@ class NotificationPreferences(Base):
     in_app_comments = Column(Boolean, default=True, nullable=False)
     in_app_shares = Column(Boolean, default=True, nullable=False)
     in_app_replies = Column(Boolean, default=True, nullable=False)
-
-    # RETIRED — these three toggles gate nothing (their notification types
-    # have no producer) and are no longer read or exposed anywhere. The
-    # mappings stay ONLY so this image's INSERTs still supply a value if it
-    # serves before migration notif_producerless_01_drop_enum_values: the
-    # columns are NOT NULL and have no server default until that revision
-    # gives them one. Removed, with the columns, by Phase 3 of plan
-    # 2026-09-19-delete-producerless-notification-types-and-their-toggles.
-    email_team_invites = Column(Boolean, default=True, nullable=False)
-    in_app_team_invites = Column(Boolean, default=True, nullable=False)
-    in_app_project_updates = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
