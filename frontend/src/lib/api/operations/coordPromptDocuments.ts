@@ -695,8 +695,8 @@ export async function listSessionComplianceConfigVersions(): Promise<ListConfigV
 
 /**
  * `PUT /coord/session-compliance/config` — `put_session_compliance_config`.
- * Coord versions the row; the body is a full assignment of the fields sent, so
- * a repeat is harmless (`PUT`, idempotent by method).
+ * Coord versions the row; the body is a full assignment of the fields sent.
+ * Retried by method (`PUT`), exactly as the old `httpClient.put` call was.
  */
 export async function saveSessionComplianceConfig(
   patch: SessionComplianceConfigUpdate
