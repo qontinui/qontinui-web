@@ -19,6 +19,12 @@ interface SubspaceCellProps {
    * scoped id, because a UI Bridge id must be unique among mounted elements.
    */
   uiId?: string;
+  /**
+   * UI Bridge label. Defaults to `Digital Twin sub-space cell: <id>`. A view
+   * that passes a scoped `uiId` passes a matching qualified label too, so
+   * label-based targeting is as unambiguous as the id.
+   */
+  uiLabel?: string;
 }
 
 /**
@@ -27,7 +33,12 @@ interface SubspaceCellProps {
  * credibility / staleness) — the goal-#3/#4 usefulness+accuracy signal —
  * verbatim from coord.
  */
-export function SubspaceCell({ row, onSelect, uiId }: SubspaceCellProps) {
+export function SubspaceCell({
+  row,
+  onSelect,
+  uiId,
+  uiLabel,
+}: SubspaceCellProps) {
   const style = presentStatus(row);
   const metrics = row.query_kind === "snapshot" ? row.metrics : undefined;
   const id = uiId ?? `digital-twin-cell-${row.id}`;
@@ -36,7 +47,7 @@ export function SubspaceCell({ row, onSelect, uiId }: SubspaceCellProps) {
   // stable id (e.g. `digital-twin-cell-schema`) for automation + spec-checks.
   const { ref } = useUIElement({
     id,
-    label: `Digital Twin sub-space cell: ${row.id}`,
+    label: uiLabel ?? `Digital Twin sub-space cell: ${row.id}`,
     type: "button",
   });
 

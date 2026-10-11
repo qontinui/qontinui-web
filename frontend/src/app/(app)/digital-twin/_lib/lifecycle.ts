@@ -193,6 +193,12 @@ export interface CoverageCounts {
   /** Of `probed`: rows ANSWERING (implemented or partial cell status). */
   live: number;
   /**
+   * Of `probed`: rows whose probe is still in flight (cell status `probing`).
+   * They have no verdict yet — neither answering nor silent — so while any
+   * are pending a view says "probing…" instead of counting them.
+   */
+  pending: number;
+  /**
    * Non-snapshot rows the manifest claims are built (implemented or partial).
    * A claim, not a live verdict.
    */
@@ -214,6 +220,7 @@ export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
   const counts: CoverageCounts = {
     probed: 0,
     live: 0,
+    pending: 0,
     manifestBuilt: 0,
     interactive: 0,
     planned: 0,
@@ -225,6 +232,8 @@ export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
       counts.probed += 1;
       if (r.cellStatus === "implemented" || r.cellStatus === "partial") {
         counts.live += 1;
+      } else if (r.cellStatus === "probing") {
+        counts.pending += 1;
       }
     } else if (claimsBuilt(r.research_status)) {
       counts.manifestBuilt += 1;

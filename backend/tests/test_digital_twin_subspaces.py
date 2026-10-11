@@ -1,8 +1,11 @@
 """Tests for the Digital Twin Explorer matrix endpoint + classification.
 
-Two layers:
+Three layers:
   - Pure `_classify` unit tests: the envelope → cell-status rubric (the goal
     #3/#4 surface — how a DriftVerdict becomes implemented / partial / blind).
+  - The probe list itself: `_PROBEABLE_SUBSPACES` against a hand-copied list
+    of coord's snapshot ids, and against the frontend manifest's `snapshot`
+    rows, read from disk.
   - An integration test over `GET /api/v1/digital-twin/subspaces` with a mocked
     coord: per-sub-space probe → cell, with honest blind/error degradation.
 
@@ -10,7 +13,9 @@ Mirrors the proxy-test pattern in ``test_operations_gates_proxy.py``: minimal
 FastAPI app + mocked ``httpx.AsyncClient`` so no live coord/runner is needed.
 """
 
+import json
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -23,9 +28,12 @@ from app.api.v1.endpoints.digital_twin import _PROBEABLE_SUBSPACES, _classify
 
 API_PREFIX = "/api/v1/digital-twin"
 
-# coord ``twin_routes.rs`` ``subspace_tool`` serves exactly these snapshot ids
-# (``memory`` since 2026-07-10). The frontend manifest's ``snapshot`` rows are
-# the third copy, pinned to the same list by ``_lib/lifecycle.test.ts``.
+# The snapshot ids coord ``twin_routes.rs`` ``subspace_tool`` serves
+# (``memory`` since 2026-07-10), HAND-COPIED from qontinui-coord: coord is
+# another repo, so nothing in this suite can read its map. This copy stays
+# right only while someone re-verifies it against ``subspace_tool`` whenever
+# coord's map or ``_PROBEABLE_SUBSPACES`` changes (last checked 2026-10-11, on
+# qontinui-coord origin/main f608425968df).
 _COORD_SNAPSHOT_SUBSPACES = {
     "release",
     "schema",
@@ -39,6 +47,39 @@ _COORD_SNAPSHOT_SUBSPACES = {
     "worktree",
     "memory",
 }
+
+# backend/tests/x.py -> parents[2] == the repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+# The frontend manifest — the matrix's denominator, whose ``snapshot`` rows are
+# the ids the page expects this backend to probe.
+_MANIFEST = (
+    _REPO_ROOT
+    / "frontend"
+    / "src"
+    / "app"
+    / "(app)"
+    / "digital-twin"
+    / "_lib"
+    / "subspaces.manifest.json"
+)
+
+
+def _manifest_snapshot_ids() -> set[str]:
+    """The ``id`` of every ``query_kind: snapshot`` manifest row.
+
+    Fails closed: a missing manifest, or one with no snapshot rows, fails the
+    test instead of comparing the probe list against an empty set.
+    """
+    if not _MANIFEST.is_file():
+        pytest.fail(
+            f"Manifest not found: {_MANIFEST}. The probe list is pinned to its "
+            "snapshot rows; if the manifest moved, update _MANIFEST."
+        )
+    rows = json.loads(_MANIFEST.read_text(encoding="utf-8"))["subspaces"]
+    ids = {row["id"] for row in rows if row["query_kind"] == "snapshot"}
+    if not ids:
+        pytest.fail(f"No snapshot rows in {_MANIFEST}; the pin would be vacuous.")
+    return ids
 
 
 # ---------------------------------------------------------------------------
@@ -172,17 +213,33 @@ def _status_response(status_code: int) -> MagicMock:
 
 
 class TestSubspacesEndpoint:
-    def test_probes_exactly_the_coord_snapshot_map(self):
-        """The probe list is coord's snapshot map — no more, no less.
+    def test_probe_list_matches_pinned_coord_snapshot_ids(self):
+        """The probe list equals the hand-copied list of coord's snapshot ids.
 
-        A missing id is a sub-space coord serves that the page never asks
-        about (``memory`` sat unprobed from 2026-07-10 until this pin); an extra
-        id 404s at coord and renders as a permanent error cell.
+        A pin against a COPY, not against coord: a change to coord's map leaves
+        this green until someone updates ``_COORD_SNAPSHOT_SUBSPACES``. What it
+        does catch is an edit to the tuple alone. A missing id is a sub-space
+        coord serves that the page never asks about (``memory`` sat unprobed
+        from 2026-07-10 until this test); an extra id 404s at coord and renders
+        as a permanent error cell.
         """
         assert set(_PROBEABLE_SUBSPACES) == _COORD_SNAPSHOT_SUBSPACES
         assert len(_PROBEABLE_SUBSPACES) == len(_COORD_SNAPSHOT_SUBSPACES)
         # `auth` stays out on purpose (recon-sensitive; coord leaves it unmapped).
         assert "auth" not in _PROBEABLE_SUBSPACES
+
+    def test_probe_list_matches_the_manifest_snapshot_rows(self):
+        """The probe list equals the frontend manifest's ``snapshot`` rows.
+
+        A real pin: it reads the manifest itself. A manifest ``snapshot`` row
+        this backend does not probe resolves to ``error`` forever on the page;
+        a probed id with no ``snapshot`` row is a probe nothing renders.
+        ``_lib/lifecycle.test.ts`` asserts the same equality from the frontend
+        side by parsing the tuple, because each side's CI runs only on its own
+        paths: this test catches a backend-only edit, that one a frontend-only
+        edit.
+        """
+        assert _manifest_snapshot_ids() == set(_PROBEABLE_SUBSPACES)
 
     def test_probes_all_and_classifies_per_subspace(self):
         client = TestClient(_build_test_app())

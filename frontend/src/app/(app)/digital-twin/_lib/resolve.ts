@@ -7,8 +7,10 @@
  *   These are the only live verdicts on the page.
  * - Built (implemented / partial) rows this page does not probe show a CLAIM
  *   status, never the live vocabulary: `interactive` when a coord tool answers
- *   them (a `parameterized` row — ask it in Ask the Twin), `unprobed` when no
- *   coord tool does (a `none` row).
+ *   them (a `parameterized` row, whose `ask_via` says where on this page it can
+ *   be asked — Ask the Twin, the Delivery tab, or nowhere, because coord
+ *   withholds some tools from device sessions), `unprobed` when no coord tool
+ *   does (a `none` row).
  * - Unbuilt rows show their research status (`planned` / `not-built`) whatever
  *   their query kind.
  */
@@ -61,9 +63,10 @@ function resolveOne(
     };
   }
 
-  // Built, but nothing on this page probes it — a manifest claim either way.
-  // A coord tool answers a parameterized row on demand (Ask the Twin); a `none`
-  // row has no coord tool at all.
+  // Built, but this page's twin probe does not cover it — a manifest claim
+  // either way. A coord tool answers a parameterized row on demand (its
+  // `ask_via` says where on this page, if anywhere); a `none` row has no coord
+  // tool at all.
   return {
     ...entry,
     cellStatus:
@@ -89,6 +92,12 @@ export interface CompletenessSummary {
    * working twin. Blind / error / probing are NOT counted.
    */
   responding: number;
+  /**
+   * Snapshot observers whose probe is still in flight (`probing`) — no verdict
+   * yet, so while any are pending the gauge says "probing…" instead of a
+   * count that would read as "not responding".
+   */
+  pending: number;
   /** Total snapshot observers probed. */
   snapshotTotal: number;
   /**
@@ -102,6 +111,7 @@ export interface CompletenessSummary {
 
 export function summarize(rows: ResolvedSubspace[]): CompletenessSummary {
   let responding = 0;
+  let pending = 0;
   let snapshotTotal = 0;
   let built = 0;
   for (const r of rows) {
@@ -109,11 +119,13 @@ export function summarize(rows: ResolvedSubspace[]): CompletenessSummary {
       snapshotTotal += 1;
       if (r.cellStatus === "implemented" || r.cellStatus === "partial") {
         responding += 1;
+      } else if (r.cellStatus === "probing") {
+        pending += 1;
       }
     }
     if (claimsBuilt(r.research_status)) {
       built += 1;
     }
   }
-  return { responding, snapshotTotal, built, total: rows.length };
+  return { responding, pending, snapshotTotal, built, total: rows.length };
 }

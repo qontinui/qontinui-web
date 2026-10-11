@@ -1,12 +1,13 @@
 /**
  * The Lifecycle tab renders the twin of the software-development process: one
  * section per lifecycle stage, a row under every stage it observes (so cell
- * ids are scoped by stage — UI Bridge ids must be unique among mounted
- * elements), and honest coverage: a planned row reads Planned / Not built, a
- * static claim never reads Live, and a stage nothing probes says so in words.
+ * ids AND labels are scoped by stage — UI Bridge targets must be unambiguous
+ * among mounted elements), and honest coverage: a planned row reads Planned /
+ * Not built, a static claim never reads Live, a stage nothing probes says so
+ * in words, and a probe still in flight reads "probing…", never a count.
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SubspaceProbe, SubspacesProbeResponse } from "../_lib/types";
 
@@ -17,7 +18,10 @@ const state = vi.hoisted(() => ({
     isError: false,
     error: null as unknown,
   },
-  uiIds: [] as string[],
+  /** The UI Bridge registry: mounted element + label per id. */
+  registry: new Map<string, { el: HTMLElement; label?: string }>(),
+  /** Ids registered by two mounted elements at once. */
+  duplicates: [] as string[],
 }));
 
 vi.mock("../_hooks/useDigitalTwinSubspaces", () => ({
@@ -32,10 +36,20 @@ vi.mock("../_hooks/useSubspaceRaw", () => ({
   }),
 }));
 vi.mock("@qontinui/ui-bridge/react", () => ({
-  useUIElement: ({ id }: { id: string }) => {
-    state.uiIds.push(id);
-    return { ref: () => {} };
-  },
+  // An id resolves to the element its ref is attached to, only while mounted.
+  useUIElement: ({ id, label }: { id: string; label?: string }) => ({
+    ref: (el: HTMLElement | null) => {
+      if (!el) {
+        state.registry.delete(id);
+        return;
+      }
+      const prior = state.registry.get(id);
+      if (prior && prior.el !== el && prior.el.isConnected) {
+        state.duplicates.push(id);
+      }
+      state.registry.set(id, { el, label });
+    },
+  }),
 }));
 
 import { LIFECYCLE_STAGES } from "../_lib/lifecycle";
@@ -56,6 +70,13 @@ function stageSection(stage: string): HTMLElement {
   return screen.getByTestId(`digital-twin-stage-${stage}`);
 }
 
+/** The stages at least one snapshot (live-probed) row observes. */
+const PROBED_STAGES = LIFECYCLE_STAGES.map((s) => s.id).filter((stage) =>
+  manifest.subspaces.some(
+    (s) => s.query_kind === "snapshot" && s.stages.includes(stage)
+  )
+);
+
 beforeEach(() => {
   state.probe = {
     data: probeAll({ deps: "blind" }),
@@ -63,7 +84,8 @@ beforeEach(() => {
     isError: false,
     error: null,
   };
-  state.uiIds = [];
+  state.registry.clear();
+  state.duplicates = [];
 });
 
 describe("LifecycleView", () => {
@@ -79,7 +101,7 @@ describe("LifecycleView", () => {
     );
     // Each stage registers with the UI Bridge under its own id.
     for (const stage of LIFECYCLE_STAGES) {
-      expect(state.uiIds).toContain(`digital-twin-stage-${stage.id}`);
+      expect(state.registry.has(`digital-twin-stage-${stage.id}`)).toBe(true);
     }
   });
 
@@ -89,6 +111,7 @@ describe("LifecycleView", () => {
       container.querySelectorAll<HTMLElement>("[data-testid]")
     ).map((el) => el.dataset.testid!);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(state.duplicates).toEqual([]);
     // The matrix's unscoped ids are not mounted by this view.
     expect(ids.filter((id) => id.startsWith("digital-twin-cell-"))).toEqual([]);
     // A row observing five stages renders once under each of them.
@@ -100,6 +123,15 @@ describe("LifecycleView", () => {
         )
       ).toBeInTheDocument();
     }
+  });
+
+  it("gives every stage copy of a cell its own UI Bridge label", () => {
+    render(<LifecycleView />);
+    const labels = Array.from(state.registry.values()).map((v) => v.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(
+      state.registry.get("digital-twin-stage-plan-cell-process_log")?.label
+    ).toBe("Digital Twin sub-space cell: process_log (Plan stage)");
   });
 
   it("renders planned and not-built rows as Planned / Not built", () => {
@@ -142,6 +174,84 @@ describe("LifecycleView", () => {
     // intent: nothing at this stage is probed.
     expect(
       within(stageSection("intent")).getByText(/No live probe at this stage/)
+    ).toBeInTheDocument();
+  });
+
+  it("says probing… — never a 0/N count or a not-answering bar — while the probe is in flight", () => {
+    state.probe = {
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+    };
+    const { container } = render(<LifecycleView />);
+    expect(PROBED_STAGES.length).toBeGreaterThan(0);
+    for (const stage of PROBED_STAGES) {
+      expect(
+        within(stageSection(stage)).getByText("live-probed").parentElement,
+        stage
+      ).toHaveTextContent("probing…");
+    }
+    // No count reads as silence: no "0/N", and no bar segment claims a
+    // probed row is "not answering" before any probe has returned.
+    expect(container.textContent).not.toMatch(/\b0\/\d/);
+    expect(container.querySelectorAll('[title*="not answering"]')).toHaveLength(
+      0
+    );
+    // The in-flight probes get their own neutral segment instead.
+    expect(
+      container.querySelectorAll('[title$="probing…"]').length
+    ).toBeGreaterThan(0);
+    // A stage nothing probes still says so — that is a fact, not a pending one.
+    expect(
+      within(stageSection("intent")).getByText(/No live probe at this stage/)
+    ).toBeInTheDocument();
+  });
+
+  it("opens the existing detail drawer from a stage cell, with the twin, stages and plan", () => {
+    render(<LifecycleView />);
+    fireEvent.click(
+      screen.getByTestId("digital-twin-stage-plan-cell-process_log")
+    );
+    const drawer = within(screen.getByRole("dialog"));
+    expect(drawer.getByText("Process twin")).toBeInTheDocument();
+    expect(
+      drawer.getByText("Plan, Implement, Integrate, Release, Learn")
+    ).toBeInTheDocument();
+    expect(
+      drawer.getByText("2026-10-11-process-twin-event-log-and-flow-metrics")
+    ).toBeInTheDocument();
+    // What the row means on this page — not its raw query_kind.
+    expect(drawer.getByText("On this page")).toBeInTheDocument();
+    expect(
+      drawer.getByText("Manifest claim (no coord tool)")
+    ).toBeInTheDocument();
+    expect(drawer.queryByText("Query kind")).toBeNull();
+  });
+
+  it("warns when coord is unreachable and still renders every stage from the manifest", () => {
+    state.probe = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("connect ECONNREFUSED"),
+    };
+    const { container } = render(<LifecycleView />);
+    expect(
+      screen.getByText(
+        /Could not reach the coordination layer: connect ECONNREFUSED/
+      )
+    ).toBeInTheDocument();
+    expect(
+      container.querySelectorAll('section[data-testid^="digital-twin-stage-"]')
+    ).toHaveLength(LIFECYCLE_STAGES.length);
+    // The probe failed rather than being in flight: nothing reads "probing…",
+    // and a probed stage says no live probe is answering.
+    expect(screen.queryByText("probing…")).toBeNull();
+    expect(
+      within(stageSection("release")).getByText(
+        "No live probe answering at this stage."
+      )
     ).toBeInTheDocument();
   });
 
