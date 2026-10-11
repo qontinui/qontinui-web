@@ -19,9 +19,26 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.v1.endpoints.digital_twin import _classify
+from app.api.v1.endpoints.digital_twin import _PROBEABLE_SUBSPACES, _classify
 
 API_PREFIX = "/api/v1/digital-twin"
+
+# coord ``twin_routes.rs`` ``subspace_tool`` serves exactly these snapshot ids
+# (``memory`` since 2026-07-10). The frontend manifest's ``snapshot`` rows are
+# the third copy, pinned to the same list by ``_lib/lifecycle.test.ts``.
+_COORD_SNAPSHOT_SUBSPACES = {
+    "release",
+    "schema",
+    "infra",
+    "infra_health",
+    "config",
+    "health",
+    "deps",
+    "route_serving",
+    "client_telemetry",
+    "worktree",
+    "memory",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +172,18 @@ def _status_response(status_code: int) -> MagicMock:
 
 
 class TestSubspacesEndpoint:
+    def test_probes_exactly_the_coord_snapshot_map(self):
+        """The probe list is coord's snapshot map — no more, no less.
+
+        A missing id is a sub-space coord serves that the page never asks
+        about (``memory`` sat unprobed from 2026-07-10 until this pin); an extra
+        id 404s at coord and renders as a permanent error cell.
+        """
+        assert set(_PROBEABLE_SUBSPACES) == _COORD_SNAPSHOT_SUBSPACES
+        assert len(_PROBEABLE_SUBSPACES) == len(_COORD_SNAPSHOT_SUBSPACES)
+        # `auth` stays out on purpose (recon-sensitive; coord leaves it unmapped).
+        assert "auth" not in _PROBEABLE_SUBSPACES
+
     def test_probes_all_and_classifies_per_subspace(self):
         client = TestClient(_build_test_app())
 
@@ -190,8 +219,11 @@ class TestSubspacesEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         by_id = {s["id"]: s for s in body["subspaces"]}
-        assert body["probed"] == len(body["subspaces"])
+        assert body["probed"] == len(body["subspaces"]) == len(_PROBEABLE_SUBSPACES)
+        assert set(by_id) == _COORD_SNAPSHOT_SUBSPACES
         assert by_id["release"]["status"] == "implemented"
+        # Ξ_Memory rides the same verdict route as every other snapshot cell.
+        assert by_id["memory"]["status"] == "implemented"
         assert by_id["infra"]["status"] == "partial"
         assert by_id["config"]["status"] == "blind"
         assert by_id["worktree"]["status"] == "no_snapshot_tool"

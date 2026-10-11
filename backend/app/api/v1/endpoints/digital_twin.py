@@ -15,9 +15,9 @@ exact bearer-forwarding + tenant-resolution helpers proven in ``operations.py``
 so there is one ContextVar and one auth posture.
 
 Only **snapshot** sub-spaces (no required args → a meaningful whole-sub-space
-verdict) are live-probed. Parameterized-query sub-spaces (ci/log/ast/type/
-origin_resolution) are interactive-only and surfaced from the manifest's static
-status in Phase 2's explorer, not here.
+verdict) are live-probed. Every other manifest row (ci/log/ast/type/
+origin_resolution, the process + intent rows, …) renders the manifest's static
+claim; the ones a coord tool answers are asked through Ask the Twin, not here.
 """
 
 import asyncio
@@ -54,10 +54,13 @@ router = APIRouter()
 # "error", never hang the matrix.
 _TWIN_PROBE_TIMEOUT = httpx.Timeout(8.0, connect=4.0)
 
-# The fleet-wide SNAPSHOT sub-spaces the matrix live-probes. Mirrors the
-# ``subspace_tool`` map in coord ``twin_routes.rs`` (guarded there by a unit
-# test). If this list and coord's map drift, coord answers 404 for an unmapped
-# id and the cell degrades to ``no_snapshot_tool`` — benign, never a crash.
+# The SNAPSHOT sub-spaces the matrix live-probes — exactly the ids coord's
+# ``subspace_tool`` map in ``twin_routes.rs`` serves (guarded there by a unit
+# test; ``auth`` is the one sub-space coord deliberately leaves unmapped). The
+# frontend manifest's ``snapshot`` rows are the third copy of this list, and
+# ``lifecycle.test.ts`` pins it against this tuple. If this list and coord's map
+# drift, coord answers 404 for an unmapped id and the cell degrades to
+# ``no_snapshot_tool`` — benign, never a crash.
 _PROBEABLE_SUBSPACES: tuple[str, ...] = (
     "release",
     "schema",
@@ -74,6 +77,11 @@ _PROBEABLE_SUBSPACES: tuple[str, ...] = (
     # explorer only).
     "client_telemetry",
     "worktree",
+    # Ξ_Memory (coord_query_memory_state; coord mapped it 2026-07-10). The
+    # no-arg call is the snapshot for the CALLER'S tenant — coord carries the
+    # verified operator's tenant into the tool — so it scopes like every other
+    # probe here.
+    "memory",
 )
 
 # Coverage at/above this counts as a fully-wired observer. Below it (but > 0 and

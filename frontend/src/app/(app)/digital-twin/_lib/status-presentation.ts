@@ -12,6 +12,12 @@ export interface StatusStyle {
   meaning: string;
 }
 
+/**
+ * Solid dots are probe results (live verdicts from this page's snapshot
+ * probe). The two built-but-unprobed statuses — `interactive` and `unprobed` —
+ * are manifest claims, so they render as hollow rings and never reuse the
+ * green / amber live vocabulary.
+ */
 export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   implemented: {
     label: "Live",
@@ -23,19 +29,29 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     label: "Partial",
     dot: "bg-amber-500",
     border: "border-l-amber-500",
-    meaning: "Observer answering, but some dimensions are unconfigured (coverage < 1).",
+    meaning:
+      "Observer answering, but some dimensions are unconfigured (coverage < 1).",
   },
   blind: {
     label: "Blind",
     dot: "bg-sky-500",
     border: "border-l-sky-500",
-    meaning: "Observer exists but is disabled / unconfigured for this tenant — not the same as unbuilt.",
+    meaning:
+      "Observer exists but is disabled / unconfigured for this tenant — not the same as unbuilt.",
   },
   interactive: {
-    label: "Interactive",
-    dot: "bg-indigo-500",
+    label: "Built · ask it",
+    dot: "border border-indigo-500 bg-transparent",
     border: "border-l-indigo-500",
-    meaning: "Built, but a parameterized query — ask it a specific question in the explorer (Phase 2).",
+    meaning:
+      "Built — a coord tool answers it; ask it in Ask the Twin. Not probed on this page.",
+  },
+  unprobed: {
+    label: "Built · unprobed",
+    dot: "border border-zinc-500 bg-transparent dark:border-zinc-400",
+    border: "border-l-zinc-500 dark:border-l-zinc-400",
+    meaning:
+      "The manifest claims this observer is built; nothing on this page probes it — a claim, not a live verdict.",
   },
   planned: {
     label: "Planned",
@@ -53,13 +69,15 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     label: "Restricted",
     dot: "bg-zinc-400",
     border: "border-l-zinc-400",
-    meaning: "Access restricted — the twin is limited to internal operators for this tenant.",
+    meaning:
+      "Access restricted — the twin is limited to internal operators for this tenant.",
   },
   error: {
     label: "Error",
     dot: "bg-red-500",
     border: "border-l-red-500",
-    meaning: "The observer was probed but the live read failed — honest error, never a fabricated ok.",
+    meaning:
+      "The observer was probed but the live read failed — honest error, never a fabricated ok.",
   },
   probing: {
     label: "Probing…",
