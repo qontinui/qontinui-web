@@ -1,7 +1,7 @@
 """coord.success_metric_history — one row per executed metric measurement
 
 Revision ID: coord_smhist_01_success_metric_history
-Revises: census_idx_01_device_repo_path_observed
+Revises: kpi_01_phase_token_usage_cost_precision
 Create Date: 2026-09-22
 
 Phase 2 of plan
@@ -429,7 +429,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_smhist_01_success_metric_history"
-down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
+down_revision: str | Sequence[str] | None = "kpi_01_phase_token_usage_cost_precision"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
