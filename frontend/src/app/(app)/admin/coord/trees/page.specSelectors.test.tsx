@@ -50,8 +50,10 @@ const get = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: vi.fn(),
+    // The page reads through `lib/api/operations/coordDelivery.ts`, which
+    // calls `httpClient.fetch`; this routes it through the same per-URL stub.
+    fetch: async (url: string) =>
+      new Response(JSON.stringify(await get(url))),
   },
 }));
 
