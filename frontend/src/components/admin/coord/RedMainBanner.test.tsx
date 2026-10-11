@@ -687,6 +687,38 @@ describe("<RedMainBanner> claim and remediation", () => {
     );
   });
 
+  it("renders a contradicted red baseline as UNKNOWN in the mounted banner", async () => {
+    getMock.mockResolvedValue([
+      alertRow(
+        {},
+        {
+          baseline_freshness: {
+            read: "ok",
+            all_contradicted: true,
+            workflows: [
+              {
+                workflow: "CI",
+                baseline_run_id: 1,
+                verdict: "contradicted",
+                newer_run_id: 2,
+                newer_event: "schedule",
+                newer_conclusion: "success",
+              },
+            ],
+          },
+        }
+      ),
+    ]);
+    render(<RedMainBanner />);
+
+    const banner = await screen.findByTestId("red-main-banner");
+    expect(banner.textContent).toContain("main status UNKNOWN");
+    expect(banner.textContent).not.toMatch(/main is red/i);
+    expect(
+      banner.querySelector('[data-baseline-freshness="all_contradicted"]')
+    ).not.toBeNull();
+  });
+
   it("shows coord's own active remediation, read only", async () => {
     getMock.mockResolvedValue([
       alertRow({}, { fix_session: { state: "running", agent_id: "abc" } }),
