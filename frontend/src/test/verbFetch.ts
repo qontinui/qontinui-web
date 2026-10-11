@@ -11,6 +11,11 @@
  * as a 200 JSON `Response` (`undefined` as `null`). A rejection passes through
  * unchanged, so an error-path test sees the identical `Error`.
  *
+ * This is NOT a transport test. The adapter drops the request options, always
+ * answers 200, and never runs `readJson`, so a suite using it cannot see the
+ * URL, the `idempotent` flag, the error string or the empty-2xx path. Those are
+ * pinned in each client module's own test (e.g. `coordPromptDocuments.test.ts`).
+ *
  * Use inside an async `vi.mock` factory, which is hoisted above the suite's
  * consts and imports — load this module with `await import` there, and keep
  * passing arrow indirections, not the mocks themselves:
