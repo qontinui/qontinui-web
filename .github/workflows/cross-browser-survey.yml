@@ -591,7 +591,10 @@ jobs:
           echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
           (cd /tmp/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
           for i in $(seq 1 15); do
-            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
+            # Quiet probe: the first poll usually lands before the server
+            # binds, and its "curl: (7)" line reads like a failure. The
+            # unconditional check after the loop stays loud.
+            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null 2>&1; then
               echo "local JWKS up after ${i}s"
               break
             fi
@@ -625,6 +628,12 @@ jobs:
           COGNITO_USER_POOL_ID: spec-ci-local-pool
           COGNITO_ISSUER: http://127.0.0.1:8770
           COGNITO_ALLOWED_AUDIENCES: spec-ci-local
+          # Authenticate the backend's GitHub Releases fetch
+          # (backend/app/api/v1/endpoints/releases.py reads GITHUB_TOKEN). Shared
+          # runner IPs exhaust the 60/hr anonymous api.github.com limit, which
+          # empties the release payload and fails the Download Page specs; the
+          # token lifts it to 5000/hr. Mirrors e2e-playwright-stack.yml.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx playwright test --project="${{ matrix.browser }}"
 
