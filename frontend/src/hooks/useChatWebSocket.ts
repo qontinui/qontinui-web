@@ -22,12 +22,23 @@ interface ChatWebSocketOptions {
 interface ChatWebSocketReturn {
   isConnected: boolean;
   sessionState: AiSessionState;
+  /**
+   * The last error the runner or the relay reported for this conversation's
+   * latest request, in its own words: a refused spawn (`chat_created` with
+   * `error`), a session `error` state that carried a message, an unaccepted
+   * message (`chat_message_ack` with `success: false`), an `error` frame, or
+   * a request the socket could not send. `null` when the latest request has
+   * reported none. Cleared when a new request starts (`createSession`,
+   * `sendMessage`). A session `error` state with no message leaves this
+   * `null` — read `sessionState` for that.
+   */
+  sessionError: string | null;
   messages: AiMessage[];
   streamingContent: string;
   createSession: (
     taskName?: string,
     initialPrompt?: string,
-    displayText?: string,
+    displayText?: string
   ) => boolean;
   sendMessage: (content: string) => void;
   interruptSession: (taskRunId: string) => void;
@@ -40,6 +51,19 @@ interface ChatWebSocketReturn {
   renameSession: (taskRunId: string, name: string) => void;
   loadSession: (taskRunId: string) => void;
   isGeneratingWorkflow: boolean;
+}
+
+/**
+ * The first candidate that is a non-empty string. Every emitter sends its
+ * error text as a string today (runner `handle_chat_create` /
+ * `handle_chat_message`, backend `runner_chat_ws.py`); anything else is not
+ * rendered verbatim.
+ */
+function errorText(...candidates: unknown[]): string | null {
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+  }
+  return null;
 }
 
 /**
@@ -56,6 +80,7 @@ export function useChatWebSocket({
   const [isConnected, setIsConnected] = useState(false);
   const [sessionState, setSessionState] =
     useState<AiSessionState>("disconnected");
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
   const [isGeneratingWorkflow, setIsGeneratingWorkflow] = useState(false);
@@ -185,6 +210,20 @@ export function useChatWebSocket({
           break;
 
         case "chat_created": {
+          // A refused create — the runner's spawn-authorization or drain
+          // refusal, or a failed task-run insert (`handle_chat_create`) —
+          // answers `{ type: "chat_created", error }` with no id and no
+          // state: NO session exists. Report it, and never announce it as a
+          // created session: `onSessionCreated(undefined)` would route a
+          // caller to a session that is not there, and a follow-up would wait
+          // forever on a `ready` that cannot come.
+          if (msg.error) {
+            setSessionError(
+              errorText(msg.error) ?? "The runner refused to start a session."
+            );
+            setSessionState("error");
+            break;
+          }
           const id = msg.id as string;
           const taskName = (msg.task_name as string) || "New Chat";
           const state = msg.state as string;
@@ -223,6 +262,15 @@ export function useChatWebSocket({
           const canSend = msg.can_send as boolean;
           const canInterrupt = msg.can_interrupt as boolean;
 
+          if (state === "error") {
+            // Keep the session's own words when the frame carries any; an
+            // error state with no message leaves `sessionError` null.
+            const data = msg.data as Record<string, unknown> | undefined;
+            setSessionError(
+              errorText(msg.error, msg.message, data?.error, data?.message)
+            );
+          }
+
           // When transitioning from processing to ready, flush streaming buffer
           if (
             (state === "ready" || state === "closed") &&
@@ -249,9 +297,14 @@ export function useChatWebSocket({
         }
 
         case "chat_message_ack": {
-          const success = msg.success as boolean;
-          if (!success) {
+          // `success: false` means the runner did not take the message (e.g.
+          // "No active session for task_run_id"): no answer is coming, so it
+          // is reported, not only logged. A missing `success` is no failure.
+          if (msg.success === false) {
             console.error("[useChatWebSocket] Message send failed:", msg.error);
+            setSessionError(
+              errorText(msg.error) ?? "The runner did not accept the message."
+            );
           }
           const ackState = msg.state as string;
           if (ackState) {
@@ -303,9 +356,15 @@ export function useChatWebSocket({
           console.warn("[useChatWebSocket] Warning:", msg.message);
           break;
 
-        case "error":
-          console.error("[useChatWebSocket] Error:", msg.message);
+        case "error": {
+          // The backend spells its text `message` ("Runner is not
+          // connected." when it could not forward a request); the runner
+          // spells it `error`. Either way the request it answers failed.
+          const text = errorText(msg.error, msg.message);
+          console.error("[useChatWebSocket] Error:", text);
+          setSessionError(text ?? "The relay reported an error.");
           break;
+        }
 
         case "runner_disconnected":
           setSessionState("disconnected");
@@ -331,13 +390,19 @@ export function useChatWebSocket({
     (
       taskName?: string,
       initialPrompt?: string,
-      displayText?: string,
+      displayText?: string
     ): boolean => {
       // One-shot: when `initialPrompt` is supplied it becomes the session's FIRST
       // turn (the runner reads `params.prompt`), so the session answers it
       // directly — no separate wait-for-ready → sendMessage handshake. Render the
       // human-facing `displayText` (e.g. the raw question, without the preamble)
       // immediately so the conversation shows what was asked.
+      //
+      // A new session starts from the no-session baseline (`disconnected`,
+      // the initial state): the previous session's error, or its last state
+      // (`error`, `closed`, a stale `ready`), is not this one's.
+      setSessionError(null);
+      setSessionState("disconnected");
       if (displayText) {
         setMessages((prev) => [
           ...prev,
@@ -350,13 +415,19 @@ export function useChatWebSocket({
         streamingBufferRef.current = "";
         setStreamingContent("");
       }
-      return sendWs({
+      const sent = sendWs({
         type: "chat_create",
         params: {
           task_name: taskName || "New Chat",
           ...(initialPrompt ? { prompt: initialPrompt } : {}),
         },
       });
+      if (!sent) {
+        setSessionError(
+          "Not connected to the chat relay — the request was not sent."
+        );
+      }
+      return sent;
     },
     [sendWs]
   );
@@ -375,11 +446,17 @@ export function useChatWebSocket({
       streamingBufferRef.current = "";
       setStreamingContent("");
 
-      sendWs({
+      setSessionError(null);
+      const sent = sendWs({
         type: "chat_message",
         task_run_id: activeTaskRunIdRef.current,
         content,
       });
+      if (!sent) {
+        setSessionError(
+          "Not connected to the chat relay — the message was not sent."
+        );
+      }
     },
     [sendWs]
   );
@@ -482,6 +559,7 @@ export function useChatWebSocket({
   return {
     isConnected,
     sessionState,
+    sessionError,
     messages,
     streamingContent,
     createSession,
