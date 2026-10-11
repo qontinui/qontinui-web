@@ -1,7 +1,7 @@
 """coord.prompt_document_claim_states — add the claim ``lifecycle``
 
 Revision ID: coord_pdclaims_02_claim_lifecycle
-Revises: census_idx_01_device_repo_path_observed
+Revises: kpi_01_phase_token_usage_cost_precision
 Create Date: 2026-09-22
 
 Phase 1 of plan
@@ -293,7 +293,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_pdclaims_02_claim_lifecycle"
-down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
+down_revision: str | Sequence[str] | None = "kpi_01_phase_token_usage_cost_precision"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
