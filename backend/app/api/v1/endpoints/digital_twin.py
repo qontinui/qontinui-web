@@ -73,8 +73,9 @@ _PROBEABLE_SUBSPACES: tuple[str, ...] = (
     # NOTE: `auth` is intentionally absent — coord_query_auth_config exposes
     # Cognito pool wiring / tenancy graph (the most recon-sensitive sub-space),
     # so coord drops it from its snapshot map (/coord/twin/auth/verdict 404s) and
-    # we don't probe it. The manifest marks `auth` parameterized (interactive
-    # explorer only).
+    # we don't probe it. The manifest marks `auth` parameterized — a static
+    # claim; coord also withholds the tool from device sessions, so Ask the Twin
+    # cannot ask it either.
     "client_telemetry",
     "worktree",
     # Ξ_Memory (coord_query_memory_state; coord mapped it 2026-07-10). The

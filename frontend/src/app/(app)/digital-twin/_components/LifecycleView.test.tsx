@@ -126,6 +126,10 @@ describe("LifecycleView", () => {
     expect(
       screen.getByTestId("digital-twin-stage-plan-cell-gates")
     ).toHaveTextContent("Built · ask it");
+    // A built row whose coord tool Ask the Twin cannot call says so.
+    const cost = screen.getByTestId("digital-twin-stage-operate-cell-cost");
+    expect(cost).toHaveTextContent("Built · not askable here");
+    expect(cost).not.toHaveTextContent("Built · ask it");
   });
 
   it("counts live probes per stage and says so when a stage has none", () => {
