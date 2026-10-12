@@ -1,7 +1,7 @@
 """agent.work_artifacts — the specification family: kinds, trace relations, stable refs
 
 Revision ID: plan_library_11_spec_artifacts
-Revises: devcred_01_credential_deny_and_bound_pair_codes
+Revises: twin_fidelity_01_coord_twin_fidelity_observations
 Create Date: 2026-10-10
 
 Phase 6 step 1 of ``2026-10-09-spec-front-end-of-the-software-factory``
@@ -104,7 +104,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "plan_library_11_spec_artifacts"
-down_revision: str = "devcred_01_credential_deny_and_bound_pair_codes"
+down_revision: str = "twin_fidelity_01_coord_twin_fidelity_observations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
