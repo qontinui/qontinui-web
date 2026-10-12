@@ -1,12 +1,5 @@
 [
   {
-    "file": "app/(app)/admin/coord/work-units/page.tsx",
-    "method": "GET",
-    "path": "<unresolved> url #1",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
     "file": "app/(app)/workflow-viz/_hooks/useHistoricalData.ts",
     "method": "GET",
     "path": "/api/v1/historical/test-run/{param}",
