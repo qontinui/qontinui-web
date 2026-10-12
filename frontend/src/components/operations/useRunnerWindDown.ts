@@ -20,8 +20,13 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchDeviceFleetSessions,
+  postSessionControl as postSessionControlRequest,
+  type SessionControlAck,
+} from "@/lib/api/operations/agents";
+import { fetchDeviceResourceSample } from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
@@ -39,24 +44,6 @@ export const RUNNER_POLL_MS = 15_000;
 
 /** Coord's `MAX_LIMIT` on the census. Coord clamps; `nextCursor` says the rest. */
 export const FLEET_SESSIONS_LIMIT = 500;
-
-export function deviceReadinessUrl(deviceId: string): string {
-  return (
-    `${OPERATIONS_API}/fleet/resource-samples?device_id=` +
-    `${encodeURIComponent(deviceId)}&history=false`
-  );
-}
-
-export function deviceFleetSessionsUrl(deviceId: string): string {
-  return (
-    `${OPERATIONS_API}/sessions/fleet?device_id=` +
-    `${encodeURIComponent(deviceId)}&limit=${FLEET_SESSIONS_LIMIT}`
-  );
-}
-
-export function sessionControlUrl(sessionId: string): string {
-  return `${OPERATIONS_API}/sessions/${encodeURIComponent(sessionId)}/control`;
-}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -120,26 +107,28 @@ const READINESS_LOADING: ReadinessRead = { kind: "loading" };
 const SESSIONS_LOADING: FleetSessionsRead = { kind: "loading" };
 
 async function loadReadiness(deviceId: string): Promise<ReadinessRead> {
+  let body: unknown;
   try {
-    const res = await httpClient.fetch(
-      deviceReadinessUrl(deviceId),
+    body = await fetchDeviceResourceSample(
+      deviceId,
       COORD_DASHBOARD_POLL_OPTIONS
     );
-    if (!res.ok) {
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
       return {
         kind: "read_failed",
         reason:
-          `the resource-sample read returned HTTP ${res.status}, so nothing ` +
+          `the resource-sample read returned HTTP ${status}, so nothing ` +
           "is known about this runner's readiness",
       };
     }
-    return resolveReadiness(await res.json(), deviceId);
-  } catch (err) {
     return {
       kind: "read_failed",
       reason: `the resource-sample read failed — ${errorText(err)}`,
     };
   }
+  return resolveReadiness(body, deviceId);
 }
 
 async function loadFleetSessions(
@@ -150,32 +139,35 @@ async function loadFleetSessions(
     previous?.kind === "ok"
       ? { ...previous, refreshError: reason }
       : { kind: "failed", reason };
+  let body: unknown;
   try {
-    const res = await httpClient.fetch(
-      deviceFleetSessionsUrl(deviceId),
+    body = await fetchDeviceFleetSessions(
+      deviceId,
+      FLEET_SESSIONS_LIMIT,
       COORD_DASHBOARD_POLL_OPTIONS
     );
-    if (res.status === 404) {
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status === 404) {
       return fail(
         "coord serves no per-device session census on this deployment " +
           "(GET /coord/sessions/fleet answered 404)"
       );
     }
-    if (!res.ok) {
-      return fail(`the session census returned HTTP ${res.status}`);
+    if (status !== null) {
+      return fail(`the session census returned HTTP ${status}`);
     }
-    const parsed = parseFleetSessions(await res.json());
-    if (!parsed.ok) return fail(parsed.reason);
-    return {
-      kind: "ok",
-      rows: parsed.rows,
-      hasMore: parsed.hasMore,
-      workAxisColumnsPresent: parsed.workAxisColumnsPresent,
-      refreshError: null,
-    };
-  } catch (err) {
     return fail(`the session census could not be read — ${errorText(err)}`);
   }
+  const parsed = parseFleetSessions(body);
+  if (!parsed.ok) return fail(parsed.reason);
+  return {
+    kind: "ok",
+    rows: parsed.rows,
+    hasMore: parsed.hasMore,
+    workAxisColumnsPresent: parsed.workAxisColumnsPresent,
+    refreshError: null,
+  };
 }
 
 export function useDeviceReadiness(deviceId: string): {
@@ -218,31 +210,15 @@ export async function postSessionControl(input: {
   };
   const reason = input.reason?.trim();
   if (reason) body.reason = reason;
+  let ack: SessionControlAck | null;
   try {
-    const res = await httpClient.fetch(sessionControlUrl(input.sessionId), {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      const described = describeControlError(res.status, text);
-      return { ok: false, status: res.status, ...described };
-    }
-    let eventId: string | null = null;
-    try {
-      const parsed: unknown = await res.json();
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        typeof (parsed as { event_id?: unknown }).event_id === "string"
-      ) {
-        eventId = (parsed as { event_id: string }).event_id;
-      }
-    } catch {
-      // A 202 whose body will not parse still recorded the request.
-    }
-    return { ok: true, eventId };
+    ack = await postSessionControlRequest(input.sessionId, body);
   } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
+      const described = describeControlError(status, httpBodyOf(err) ?? "");
+      return { ok: false, status, ...described };
+    }
     return {
       ok: false,
       status: null,
@@ -250,4 +226,10 @@ export async function postSessionControl(input: {
       message: `The request could not be sent — ${errorText(err)}`,
     };
   }
+  // A 202 whose body will not parse (`null`) still recorded the request.
+  const eventId =
+    ack !== null && typeof ack === "object" && typeof ack.event_id === "string"
+      ? ack.event_id
+      : null;
+  return { ok: true, eventId };
 }

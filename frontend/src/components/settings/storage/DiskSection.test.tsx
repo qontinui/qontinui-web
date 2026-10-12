@@ -112,6 +112,7 @@ function volumesResponse(body: unknown, ok = true, status = 200) {
     ok,
     status,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   } as unknown as Response;
 }
 
