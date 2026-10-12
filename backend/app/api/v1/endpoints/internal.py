@@ -1,0 +1,171 @@
+"""Service-to-service internal endpoints (coord -> web; no user surface).
+
+Plan ``2026-10-12-operator-action-items-pushed-to-the-phone`` Phase 3:
+
+    POST /api/v1/internal/coord-push
+
+Coord owns operator action items and their push state; web owns the Expo
+push tokens (``auth.push_devices``) and the only Expo client in the fleet. So
+coord resolves an item's recipients to web user ids and asks web to push to
+them. This route looks up those users' active tokens, sends one Expo batch,
+and answers per-request COUNTS — coord stamps them on the item as its push
+state (D4), so a failure is visible on the item rather than lost here.
+
+**Auth is a shared service secret and nothing else.** Coord presents
+``X-Coord-Service-Secret``; it is compared to ``settings.COORD_WEB_SERVICE_SECRET``
+in constant time. An EMPTY setting means the hop is unconfigured and every
+call is rejected with 401 — an unauthenticated call is never accepted. No
+global middleware guards ``/api/v1/internal/*`` (``main.py`` registers none),
+so :func:`_require_coord_secret` is the only gate on this module; every route
+added here must carry it.
+
+Who may make web send a push is a new authorization decision (plan D2,
+security content trigger 5): only a holder of the coord service secret, and
+only to the user ids it names. The route is not proxied by ``/operations``.
+"""
+
+from __future__ import annotations
+
+import hmac
+from typing import Any, Literal
+from uuid import UUID
+
+import structlog
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_async_db
+from app.core.config import settings
+from app.models.push_device import PushDevice
+from app.services.push_notifications import (
+    MAX_REPORTED_ERRORS,
+    send_push_notifications_with_result,
+)
+
+logger = structlog.get_logger(__name__)
+
+router = APIRouter()
+
+SECRET_HEADER = "X-Coord-Service-Secret"
+
+
+def _require_coord_secret(
+    x_coord_service_secret: str | None = Header(default=None, alias=SECRET_HEADER),
+) -> None:
+    """Authenticate the coord service call via the shared secret.
+
+    Rejects (401) when the secret is unconfigured (empty) — the hop is then
+    OFF and no call is ever accepted — or when the presented header does not
+    constant-time match. The response never says which of the two failed.
+    """
+    configured = settings.COORD_WEB_SERVICE_SECRET or ""
+    presented = x_coord_service_secret or ""
+    if not configured or not hmac.compare_digest(
+        presented.encode("utf-8"), configured.encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or missing coord service secret",
+        )
+
+
+class CoordPushRequest(BaseModel):
+    """Body coord sends to ``POST /internal/coord-push``.
+
+    Deliberately carries NO ``category`` / ``channel_id`` (plan D7): a push
+    naming an Android channel the device has not created is not displayed
+    while Expo still returns an ``ok`` ticket, which would turn ``accepted``
+    into an invisible failure.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_ids: list[UUID] = Field(
+        min_length=1,
+        max_length=50,
+        description="Web user ids (auth.users.id) to push to. 1-50.",
+    )
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(max_length=4000)
+    data: dict[str, Any] = Field(
+        description="Opaque payload delivered to the app (e.g. the deep link)."
+    )
+    priority: Literal["high", "default"]
+    collapse_id: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Newer pushes with the same id replace older ones on the device.",
+    )
+
+
+class CoordPushResponse(BaseModel):
+    """Per-request counts coord records as the item's push state."""
+
+    users: int = Field(description="Distinct requested users with >= 1 active device.")
+    devices: int = Field(description="Active push devices the batch was sent to.")
+    accepted: int = Field(description="Tickets Expo answered with status ok.")
+    failed: int = Field(description="Messages without an ok ticket.")
+    deactivated: int = Field(
+        description="Tokens deactivated because their ticket said DeviceNotRegistered."
+    )
+    errors: list[str] = Field(
+        description=f"At most {MAX_REPORTED_ERRORS} error messages, first seen first."
+    )
+
+
+@router.post(
+    "/coord-push",
+    response_model=CoordPushResponse,
+    dependencies=[Depends(_require_coord_secret)],
+)
+async def coord_push(
+    body: CoordPushRequest,
+    db: AsyncSession = Depends(get_async_db),
+) -> CoordPushResponse:
+    """Push one notification to every active device of the named users.
+
+    ``devices: 0`` is an answer, not an error: coord maps it to the item's
+    ``no_devices`` state. Expo failures are counted, not raised, so the
+    response is always the counts — a non-2xx from this route means the call
+    itself was refused (401 secret, 422 body), never that Expo failed.
+    """
+    user_ids = list(dict.fromkeys(body.user_ids))
+    rows = (
+        await db.execute(
+            select(PushDevice.user_id, PushDevice.push_token).where(
+                PushDevice.user_id.in_(user_ids),
+                PushDevice.is_active == True,  # noqa: E712
+            )
+        )
+    ).all()
+    tokens = list(dict.fromkeys(row[1] for row in rows))
+    users_with_devices = len({row[0] for row in rows})
+
+    result = await send_push_notifications_with_result(
+        tokens,
+        body.title,
+        body.body,
+        data=body.data,
+        priority=body.priority,
+        collapse_id=body.collapse_id,
+        db=db,
+    )
+    logger.info(
+        "coord_push_handled",
+        requested_users=len(user_ids),
+        users=users_with_devices,
+        devices=result.devices,
+        accepted=result.accepted,
+        failed=result.failed,
+        deactivated=result.deactivated,
+    )
+    return CoordPushResponse(
+        users=users_with_devices,
+        devices=result.devices,
+        accepted=result.accepted,
+        failed=result.failed,
+        deactivated=result.deactivated,
+        errors=result.errors,
+    )

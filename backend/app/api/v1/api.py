@@ -76,6 +76,7 @@ from app.api.v1.endpoints import (
     identity_resolution,
     images,
     integration_testing,
+    internal,
     issues,
     known_issues,
     library,
@@ -236,6 +237,10 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Internal coord -> web service surface (no user auth; shared-secret gated).
+# `POST /internal/coord-push` sends operator-action-item pushes for coord
+# (plan 2026-10-12-operator-action-items-pushed-to-the-phone, Phase 3).
+api_router.include_router(internal.router, prefix="/internal", tags=["internal"])
 # Per-repo follow-up dials (post-merge follow-up scope, continuation-delivery
 # mode) — proxies of coord's two per-repo `tenant_repo_profiles` dials, under
 # the same `/operations` prefix as the fleet-policy proxy they copy, so the

@@ -986,6 +986,46 @@
         "title": "ActionExecutionResponse",
         "type": "object"
       },
+      "ActionItemResolveBody": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /operations/action-items/resolve``.\n\nMirrors coord's resolve request. **Coord remains the authority** \u2014 this is\ndefence in depth at the boundary and must never accept something coord\nrejects. ``extra=\"forbid\"`` makes a misspelled field a loud 422 here\ninstead of a silently dropped key.",
+        "properties": {
+          "item_id": {
+            "description": "The action item to resolve.",
+            "format": "uuid",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional resolution note, at most 1000 characters.",
+            "title": "Note"
+          },
+          "status": {
+            "description": "Terminal status. Re-sending the same one is idempotent; a different one answers coord's 409 `already_resolved`.",
+            "enum": [
+              "done",
+              "dismissed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "status"
+        ],
+        "title": "ActionItemResolveBody",
+        "type": "object"
+      },
       "ActionReliabilityStats": {
         "description": "Reliability statistics for an action type.",
         "properties": {
@@ -11603,6 +11643,118 @@
           "written_mode"
         ],
         "title": "ContinuationDeliveryModeWriteResult",
+        "type": "object"
+      },
+      "CoordPushRequest": {
+        "additionalProperties": false,
+        "description": "Body coord sends to ``POST /internal/coord-push``.\n\nDeliberately carries NO ``category`` / ``channel_id`` (plan D7): a push\nnaming an Android channel the device has not created is not displayed\nwhile Expo still returns an ``ok`` ticket, which would turn ``accepted``\ninto an invisible failure.",
+        "properties": {
+          "body": {
+            "maxLength": 4000,
+            "title": "Body",
+            "type": "string"
+          },
+          "collapse_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Newer pushes with the same id replace older ones on the device.",
+            "title": "Collapse Id"
+          },
+          "data": {
+            "additionalProperties": true,
+            "description": "Opaque payload delivered to the app (e.g. the deep link).",
+            "title": "Data",
+            "type": "object"
+          },
+          "priority": {
+            "enum": [
+              "high",
+              "default"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "user_ids": {
+            "description": "Web user ids (auth.users.id) to push to. 1-50.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "User Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "user_ids",
+          "title",
+          "body",
+          "data",
+          "priority"
+        ],
+        "title": "CoordPushRequest",
+        "type": "object"
+      },
+      "CoordPushResponse": {
+        "description": "Per-request counts coord records as the item's push state.",
+        "properties": {
+          "accepted": {
+            "description": "Tickets Expo answered with status ok.",
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "deactivated": {
+            "description": "Tokens deactivated because their ticket said DeviceNotRegistered.",
+            "title": "Deactivated",
+            "type": "integer"
+          },
+          "devices": {
+            "description": "Active push devices the batch was sent to.",
+            "title": "Devices",
+            "type": "integer"
+          },
+          "errors": {
+            "description": "At most 3 error messages, first seen first.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "failed": {
+            "description": "Messages without an ok ticket.",
+            "title": "Failed",
+            "type": "integer"
+          },
+          "users": {
+            "description": "Distinct requested users with >= 1 active device.",
+            "title": "Users",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "users",
+          "devices",
+          "accepted",
+          "failed",
+          "deactivated",
+          "errors"
+        ],
+        "title": "CoordPushResponse",
         "type": "object"
       },
       "CoordSignal": {
@@ -86981,6 +87133,66 @@
         ]
       }
     },
+    "/api/v1/internal/coord-push": {
+      "post": {
+        "description": "Push one notification to every active device of the named users.\n\n``devices: 0`` is an answer, not an error: coord maps it to the item's\n``no_devices`` state. Expo failures are counted, not raised, so the\nresponse is always the counts \u2014 a non-2xx from this route means the call\nitself was refused (401 secret, 422 body), never that Expo failed.",
+        "operationId": "api_v1_internal_coord_push_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Coord-Service-Secret",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coord-Service-Secret"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoordPushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoordPushResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Coord Push",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
     "/api/v1/issues": {
       "get": {
         "description": "List detected issues with optional filtering.",
@@ -90925,6 +91137,154 @@
         "summary": "Mark Notification Read",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/v1/operations/action-items": {
+      "get": {
+        "description": "Return the tenant's operator action items.\n\nResponse envelope mirrors coord:\n``{\"items\": [...], \"next_cursor\": str|null,\n\"counts\": {\"open\": N, \"done\": N, \"dismissed\": N}}``. ``counts`` are\nserver-computed over the whole tenant, not the page \u2014 consumers read them\nrather than counting ``items``.\n\nEvery param is forwarded **verbatim** and only when the caller set it;\nbounds live in coord (one clamp, one place). Tenant-scoped and\noperator-bearer-forwarding, same posture as ``/operations/notifications``.",
+        "operationId": "api_v1_operations_action_items_get",
+        "parameters": [
+          {
+            "description": "`open` (coord's default) | `done` | `dismissed` | `all`. Forwarded verbatim \u2014 coord owns the vocabulary and answers 400 otherwise.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`open` (coord's default) | `done` | `dismissed` | `all`. Forwarded verbatim \u2014 coord owns the vocabulary and answers 400 otherwise.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Opaque keyset cursor from a prior response's ``next_cursor``.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque keyset cursor from a prior response's ``next_cursor``.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Return at most this one item (any status).",
+            "in": "query",
+            "name": "item_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return at most this one item (any status).",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Operator Action Items Api V1 Operations Action Items Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Operator Action Items",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/action-items/resolve": {
+      "post": {
+        "description": "Resolve an action item as ``done`` or ``dismissed``.\n\nCoord answers ``{\"item\": {...}}``; ``resolved_by`` is the principal coord\nderives from the forwarded bearer, never a body field. Coord's 404 (an item\noutside the caller's tenant) and 409 ``already_resolved`` pass through with\ncoord's status.",
+        "operationId": "api_v1_operations_action_items_resolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionItemResolveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Operator Action Items Resolve Api V1 Operations Action Items Resolve Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Coord Operator Action Items Resolve",
+        "tags": [
+          "operations"
         ]
       }
     },
