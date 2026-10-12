@@ -1,22 +1,22 @@
-"""Shape test for the ``coord_proclog_01`` .. ``coord_proclog_05`` revisions.
+"""Shape test for the ``coord_proclog_01`` revision.
 
 Phase 1 of plan ``2026-10-11-process-twin-event-log-and-flow-metrics`` lands
-every table and source index the process twin reads, in one chain of five
-revisions. What this pins is the CONTRACT coord's projector and workers
+every table and source index the process twin reads in ONE revision (the
+``Migration Reversal Tested`` required check admits one added migration per
+PR). What this pins is the CONTRACT coord's projector and workers
 (Phases 2-9) depend on:
 
 1. **Source shapes coord's migration_classifier admits** — every upgrade
    ``op.execute`` is one static literal; no statement is a ``DROP``, no
    ``ALTER TABLE`` carries ``DROP`` and no ``ADD CONSTRAINT`` lacks ``NOT
-   VALID`` (each of those escalates the PR to an operator); the table
-   revisions build no index CONCURRENTLY, and every CONCURRENTLY build in
-   ``coord_proclog_05`` sits inside an ``autocommit_block`` and is ``IF NOT
-   EXISTS``. Every index's key columns, uniqueness, ``NULLS NOT DISTINCT`` and
+   VALID`` (each of those escalates the PR to an operator); the new-table
+   DDL runs in the migration's transaction (never inside the
+   ``autocommit_block``), and every CONCURRENTLY build sits inside the
+   ``autocommit_block`` and is ``IF NOT EXISTS``. Every index's key columns, uniqueness, ``NULLS NOT DISTINCT`` and
    partial predicate are read back from ``pg_get_indexdef`` and compared with
    the statement that created it.
-2. **The chain is linear and pinned** — each revision's one-line
-   ``down_revision`` is the one before it, and the first sits on the head it
-   was authored against.
+2. **The parent is pinned** — the one-line ``down_revision`` is the head the
+   revision was authored against.
 3. **No index names ``coord.gates.evaluated_at``** — the 10 s sweep rewrites
    it on every open gate, and an index on it would make each write non-HOT.
 4. **Absent at the parent; present, VALID and idempotent after** — a ``stamp``
@@ -55,10 +55,6 @@ from tests._alembic_harness import (
 _PARENT_REVISION_ID = "coord_agent_worktrees_client_allocation_id_01"
 _REVISIONS = [
     ("coord_proclog_01", "coord_proclog_01_process_log.py"),
-    ("coord_proclog_02", "coord_proclog_02_flow_snapshots.py"),
-    ("coord_proclog_03", "coord_proclog_03_conformance_verdicts.py"),
-    ("coord_proclog_04", "coord_proclog_04_forecasts.py"),
-    ("coord_proclog_05", "coord_proclog_05_source_stamp_indexes.py"),
 ]
 _HEAD_REVISION_ID = _REVISIONS[-1][0]
 
@@ -81,7 +77,7 @@ def _source(filename: str) -> str:
 
 
 @pytest.mark.parametrize("position", range(len(_REVISIONS)))
-def test_the_chain_is_linear_and_each_parent_is_on_one_line(position: int) -> None:
+def test_the_parent_is_pinned_and_on_one_line(position: int) -> None:
     revision_id, filename = _REVISIONS[position]
     parent = _PARENT_REVISION_ID if position == 0 else _REVISIONS[position - 1][0]
     source = _source(filename)
@@ -118,15 +114,18 @@ def test_upgrade_statements_are_static_and_concurrently_is_in_autocommit(
             "coord's migration_classifier rejects anything dynamic"
         )
     concurrent = [c for c in calls if "CONCURRENTLY" in (c.sql or "").upper()]
-    if revision_id == _HEAD_REVISION_ID:
-        assert len(concurrent) == len(calls) == _STAMP_INDEX_COUNT + 1
-        for call in concurrent:
+    assert len(concurrent) == _STAMP_INDEX_COUNT + 1, revision_id
+    for call in calls:
+        if call in concurrent:
             assert call.in_autocommit_block, (
                 "CREATE INDEX CONCURRENTLY outside autocommit_block fails at runtime"
             )
             assert "IF NOT EXISTS" in (call.sql or "").upper()
-    else:
-        assert not concurrent, f"{revision_id} builds indexes on NEW tables only"
+        else:
+            assert not call.in_autocommit_block, (
+                "new-table DDL must run in the migration's transaction, not in "
+                f"the autocommit block: {call.sql}"
+            )
 
 
 def _upgrade_sql(filename: str) -> list[str]:
@@ -364,7 +363,11 @@ def _assert_key_behaviour(engine: Engine) -> None:
             )
             assert (
                 conn.execute(
-                    text("SELECT count(*) FROM coord.process_event_objects")
+                    text(
+                        "SELECT count(*) FROM coord.process_event_objects "
+                        "WHERE event_id = :e"
+                    ),
+                    {"e": first},
                 ).scalar_one()
                 == 0
             )
@@ -386,7 +389,11 @@ def _assert_key_behaviour(engine: Engine) -> None:
             conn.execute(upsert)
             assert (
                 conn.execute(
-                    text("SELECT count(*) FROM coord.process_object_links")
+                    text(
+                        "SELECT count(*) FROM coord.process_object_links "
+                        "WHERE from_type = 'pr' AND from_id = 'o/r#1' "
+                        "AND source = 'work_unit_pr_citations'"
+                    )
                 ).scalar_one()
                 == 1
             )
