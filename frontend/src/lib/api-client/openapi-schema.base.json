@@ -28831,8 +28831,16 @@
         "type": "object"
       },
       "KindForkGroup": {
-        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.",
+        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.\n\n``family`` names which kind family forked: ``\"spec\"`` (the specification\nkinds) or ``\"plan\"`` (every other kind). Kinds are counted within one\nfamily, so a key forked in BOTH families is two groups sharing\n``(slug, source_repo)``; ``family`` is what tells them apart.",
         "properties": {
+          "family": {
+            "enum": [
+              "spec",
+              "plan"
+            ],
+            "title": "Family",
+            "type": "string"
+          },
           "kinds": {
             "items": {
               "type": "string"
@@ -28874,6 +28882,7 @@
         "required": [
           "slug",
           "source_repo",
+          "family",
           "kinds",
           "variant_count",
           "resolvable",

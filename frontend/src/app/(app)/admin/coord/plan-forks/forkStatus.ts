@@ -93,6 +93,12 @@ export interface DivergentGroup {
 export interface KindForkGroup {
   slug: string;
   source_repo?: string | null;
+  /**
+   * Which kind family forked. Kinds are counted within one family, so a key
+   * forked in BOTH is two groups sharing `(slug, source_repo)`. Absent on a
+   * backend that predates the field.
+   */
+  family?: "spec" | "plan";
   kinds: string[];
   variant_count: number;
   /** Exactly one variant is `kind_locked` — the scanner can heal it itself. */
@@ -180,6 +186,14 @@ export function describeContentFork(
  * re-deriving it from a payload this page may have filtered would be a second
  * spelling of one rule.
  */
+/**
+ * The list key for a kind-fork group. `(slug, source_repo)` alone is not
+ * unique: one key forked in both families is served as two groups.
+ */
+export function kindForkKey(group: KindForkGroup): string {
+  return `${group.slug}:${group.source_repo ?? "no-repo"}:${group.family ?? "no-family"}`;
+}
+
 export function describeKindFork(group: KindForkGroup): RowStatus<ForkKind> {
   if (group.resolvable) {
     return {
