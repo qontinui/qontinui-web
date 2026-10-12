@@ -9,10 +9,8 @@ Complete API documentation for all Workflow Builder services.
 - [WorkflowComponentsService](#workflowcomponentsservice)
 - [WorkflowTestingService](#workflowtestingservice)
 - [WorkflowAnalyticsService](#workflowanalyticsservice)
-- [WorkflowPerformanceAnalyzer](#workflowperformanceanalyzer)
 - [WorkflowComplexityAnalyzer](#workflowcomplexityanalyzer)
 - [WorkflowDocumentationService](#workflowdocumentationservice)
-- [WorkflowVersionControl](#workflowversioncontrol)
 
 ## WorkflowFolderManager
 
@@ -269,57 +267,6 @@ Gets performance trends over time.
 
 **Returns:** `TrendData[]`
 
-## WorkflowPerformanceAnalyzer
-
-Analyzes workflow performance and identifies bottlenecks.
-
-### Methods
-
-#### `analyzePerformance(workflow, executionData?)`
-Analyzes workflow performance.
-
-**Parameters:**
-- `workflow: Workflow`
-- `executionData?: ExecutionData`
-
-**Returns:** `PerformanceAnalysisResult`
-
-#### `identifyBottlenecks(workflow, executionData?)`
-Identifies performance bottlenecks.
-
-**Parameters:**
-- `workflow: Workflow`
-- `executionData?: ExecutionData`
-
-**Returns:** `PerformanceBottleneck[]`
-
-#### `generateSuggestions(workflow, executionData?)`
-Generates optimization suggestions.
-
-**Parameters:**
-- `workflow: Workflow`
-- `executionData?: ExecutionData`
-
-**Returns:** `OptimizationSuggestion[]`
-
-#### `comparePerformance(workflow1, workflow2)`
-Compares two workflows.
-
-**Parameters:**
-- `workflow1: Workflow`
-- `workflow2: Workflow`
-
-**Returns:** `PerformanceComparison`
-
-#### `generatePerformanceReport(workflow, executionData?)`
-Generates detailed performance report.
-
-**Parameters:**
-- `workflow: Workflow`
-- `executionData?: ExecutionData`
-
-**Returns:** `string` (Markdown)
-
 ## WorkflowComplexityAnalyzer
 
 Analyzes workflow complexity metrics.
@@ -391,75 +338,6 @@ Adds custom documentation section.
 
 **Returns:** `void`
 
-## WorkflowVersionControl
-
-Git-like version control for workflows.
-
-### Methods
-
-#### `createBranch(workflowId, name, fromBranchId?, description?)`
-Creates a new branch.
-
-**Parameters:**
-- `workflowId: string`
-- `name: string`
-- `fromBranchId?: string`
-- `description?: string`
-
-**Returns:** `Branch`
-
-#### `saveVersion(workflowId, branchId, workflow, message, author?)`
-Saves a new version.
-
-**Parameters:**
-- `workflowId: string`
-- `branchId: string`
-- `workflow: Workflow`
-- `message: string`
-- `author?: string`
-
-**Returns:** `Version`
-
-#### `createTag(workflowId, versionId, name, description?)`
-Creates a tag.
-
-**Parameters:**
-- `workflowId: string`
-- `versionId: string`
-- `name: string`
-- `description?: string`
-
-**Returns:** `Tag`
-
-#### `compareVersions(version1Id, version2Id)`
-Compares two versions.
-
-**Parameters:**
-- `version1Id: string`
-- `version2Id: string`
-
-**Returns:** `VersionDiff | null`
-
-#### `mergeBranch(sourceBranchId, targetBranchId, author?)`
-Merges branches.
-
-**Parameters:**
-- `sourceBranchId: string`
-- `targetBranchId: string`
-- `author?: string`
-
-**Returns:** `MergeResult`
-
-#### `rollbackToVersion(workflowId, versionId, author?)`
-Rolls back to a version.
-
-**Parameters:**
-- `workflowId: string`
-- `versionId: string`
-- `author?: string`
-
-**Returns:** `Version`
-
 ## Common Patterns
 
 ### Service Access
@@ -469,7 +347,6 @@ All services are singleton instances:
 ```typescript
 import { workflowFolderManager } from '@/services/workflow-folder-manager';
 import { workflowDependencyAnalyzer } from '@/services/workflow-dependency-analyzer';
-import { workflowVersionControl } from '@/services/workflow-version-control';
 // etc.
 ```
 
@@ -477,9 +354,9 @@ import { workflowVersionControl } from '@/services/workflow-version-control';
 
 ```typescript
 try {
-  const result = workflowVersionControl.createBranch(/* ... */);
+  const folder = workflowFolderManager.createFolder(/* ... */);
 } catch (error) {
-  console.error('Failed to create branch:', error.message);
+  console.error('Failed to create folder:', error.message);
 }
 ```
 

@@ -28,7 +28,17 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 from qontinui_schemas.common import utc_now
 from qontinui_schemas.generated.per_type.runner import (
@@ -53,17 +63,22 @@ from app.api.deps import (
 from app.config.redis_config import get_redis
 from app.core.error_codes import ErrorCode
 from app.crud import device_connection as device_connection_crud
-from app.crud import device_crud
+from app.crud import device_crud, pair_code_crud
 from app.crud import device_machine_credential_crud as dmk_crud
 from app.models.devenv import DeviceMachineCredential
 from app.models.device import Device
 from app.models.device_connection import DeviceConnection
 from app.models.user import User as UserModel
 from app.schemas.device import (
+    AuthorizeRedeemResponse,
     DeviceConnectionResponse,
+    DeviceCredentialOverviewResponse,
+    DeviceCredentialOverviewRow,
+    DeviceCredentialRevokeResponse,
     DeviceIdentityResponse,
     DeviceMachineCredentialExchangeResponse,
     DeviceMachineCredentialMintResponse,
+    DeviceMachineKeyPosture,
     DeviceResponse,
     DeviceTenantBinding,
     DispatchDeviceRequest,
@@ -73,14 +88,24 @@ from app.schemas.device import (
     PairConfirmRequest,
     PairConfirmResponse,
     PairConfirmTenantResult,
+    PendingRedeemPosture,
+    PendingRedeemResponse,
 )
 from app.services import coord_device
 from app.services.coord_identity import get_coord_identity
+from app.services.coord_jwks import (
+    CoordJWKSUnavailableError,
+    CoordTokenExpiredError,
+    CoordTokenInvalidError,
+    coord_jwks_client,
+    jwks_failure_log_fields,
+)
 from app.services.coord_proxy import post_to_coord
 from app.services.coord_service_account import (
     CoordServiceAccountDisabledError,
     coord_service_account,
 )
+from app.services.device_credential_deny import refuse_if_credential_revoked
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.workflow_dispatcher import HEALTHY_HEARTBEAT_WINDOW_SECONDS
 
@@ -91,6 +116,33 @@ router = APIRouter()
 # The nil UUID is a "no tenant" placeholder runner UI sign-in sends on first
 # pairing; ``pair_cli`` treats it as absent rather than forwarding it.
 _NIL_UUID = UUID(int=0)
+
+#: ``/self-mint`` renews a key only when it is absent, expired, or expires
+#: within this window; a key usable for longer is refused with a 409 rather
+#: than rotated (see :func:`self_mint_device_machine_credential`). The
+#: ``pair-cli`` auto-mint uses the same window, so a re-pair never rotates a
+#: key the runner can still use (coord finding ``414676cf``).
+SELF_MINT_RENEWAL_WINDOW = timedelta(days=7)
+
+#: How long past its ``exp`` a coord-signed device JWT still proves which box
+#: is polling ``/pending-redeem`` (plan
+#: ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-from-qontinui-web``
+#: Phase 2, "the anchor").
+PENDING_REDEEM_EXPIRED_GRACE = timedelta(days=30)
+
+#: The only ``mint_provenance`` a pending-redeem token may carry: coord's
+#: ``issue_device`` (pairing, device refresh, service-mint) stamps it. ABSENT is
+#: also admitted, but only for the exact ``issue_device`` claim shape — a token
+#: minted before provenance existed (2026-09-17) and still inside the 30-day
+#: grace. "Not bootstrap" is NOT the test: coord's own ``Claims`` docs name it
+#: the laundering path (a pre-provenance push token is ``sub_type=device`` too).
+_PAIRED_MINT_PROVENANCE = "paired"
+
+_DEVICE_SUB_TYPE = "device"
+
+# Non-auto-erroring so a missing bearer answers the typed 401 below rather
+# than HTTPBearer's untyped 403.
+_poll_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _extract_caller_token(request: Request) -> str | None:
@@ -145,6 +197,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
+                "error": "invalid_device_machine_key",
                 "code": "invalid_device_machine_key",
                 "message": "Missing or malformed device machine key.",
             },
@@ -154,6 +207,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
+                "error": "invalid_device_machine_key",
                 "code": "invalid_device_machine_key",
                 "message": "Device machine key not recognized.",
             },
@@ -162,6 +216,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_machine_key_revoked",
                 "code": "device_machine_key_revoked",
                 "message": "This device machine key has been revoked.",
             },
@@ -172,6 +227,7 @@ async def get_authenticated_device_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_machine_key_expired",
                 "code": "device_machine_key_expired",
                 "message": "This device machine key has expired.",
             },
@@ -742,6 +798,21 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
     return detail
 
 
+async def _refuse_revoked_pairing(
+    db: AsyncSession, device_id: UUID, *, door: str
+) -> None:
+    """Withhold a freshly paired device's JWT while its credentials are revoked.
+
+    A device an operator revoked is re-armed only by ``authorize-redeem`` —
+    never by re-pairing it — and web enforces that itself rather than trusting
+    coord to. The pairing doors call this after coord's reply, i.e. once coord
+    has established the caller may pair this device, so the revocation state
+    is disclosed only to someone who could already pair it. The JWT coord just
+    minted is discarded, and coord's own refresh refuses a revoked device.
+    """
+    await refuse_if_credential_revoked(db, device_id, door=door)
+
+
 @router.post(
     "/pair-confirm",
     response_model=PairConfirmResponse,
@@ -750,6 +821,7 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
 async def pair_confirm(
     *,
     request: Request,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
     payload: PairConfirmRequest,
 ) -> Any:
@@ -794,6 +866,18 @@ async def pair_confirm(
     # (coord resolves tenant from the pair-start flow it stored); the call
     # is kept purely as the linked-operator gate.
     await get_coord_identity(request)
+
+    # A device id that is not a UUID can name no device, so it cannot be
+    # checked for revocation below — refuse it rather than let it through.
+    if _as_uuid(payload.device_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "error": "device_id_malformed",
+                "code": "device_id_malformed",
+                "message": "device_id must be a UUID.",
+            },
+        )
 
     # The credential coord verifies is in the HEADERS: the web service
     # token + `X-Qontinui-User-Id` (arm B). The body carries no identity —
@@ -895,6 +979,10 @@ async def pair_confirm(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Coord pair-complete returned malformed device_id.",
         ) from exc
+
+    # Checked only AFTER coord accepted the caller for this device, so the
+    # revocation state is never disclosed to someone coord would refuse.
+    await _refuse_revoked_pairing(db, device_uuid, door="pair_confirm")
 
     logger.info(
         "pair_confirm_completed",
@@ -1041,25 +1129,51 @@ async def pair_cli(
             detail="Coord pair-cli returned malformed device_id.",
         ) from exc
 
+    # Checked only AFTER coord accepted the caller for this device, so the
+    # revocation state is never disclosed to someone coord would refuse.
+    await _refuse_revoked_pairing(db, device_uuid, door="pair_cli")
+
     # Auto-mint a device machine key (``dmk_``) for this device+owner so
     # every paired runner receives one out-of-box (zero extra setup) and can
     # recover a device JWT after a >30-day outage with no user session (4b).
     # Best-effort: a mint failure must NEVER fail the pairing — the runner
     # simply won't have the cold-start credential and falls back to the
     # interactive re-login path. Additive field; existing consumers ignore it.
+    #
+    # It mints ONLY when the device has no key, or its key is expired or
+    # within :data:`SELF_MINT_RENEWAL_WINDOW` of expiry (coord finding
+    # ``414676cf``). ``dmk_crud.mint`` keeps one row per device, so rotating
+    # a still-usable key on every call invalidated the runner's stored key
+    # whenever the runner failed to persist the new one. A usable key is kept
+    # and ``device_machine_key`` is ``None`` — the runner keeps the key it
+    # has. A revoked key, or a device whose credentials an operator revoked,
+    # is never re-armed here: only an operator's ``authorize-redeem`` does.
     device_machine_key: str | None = None
+    dmk_outcome = "minted"
     try:
-        tenant_raw = coord_body.get("tenant_id")
-        tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
-        device_machine_key, _cred = await dmk_crud.mint(
-            db,
-            device_id=device_uuid,
-            owner_user_id=current_user.id,
-            tenant_id=tenant_id,
-        )
-        await db.commit()
+        if await device_crud.get_credential_revoked_at(db, device_uuid) is not None:
+            dmk_outcome = "device_credential_revoked"
+        else:
+            tenant_raw = coord_body.get("tenant_id")
+            tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
+            device_machine_key, _cred = await dmk_crud.mint(
+                db,
+                device_id=device_uuid,
+                owner_user_id=current_user.id,
+                tenant_id=tenant_id,
+                refuse_if_revoked=True,
+                refuse_if_usable_beyond=SELF_MINT_RENEWAL_WINDOW,
+            )
+            await db.commit()
+    except dmk_crud.DeviceMachineKeyStillUsableError:
+        device_machine_key = None
+        dmk_outcome = "kept_usable_key"
+    except dmk_crud.DeviceMachineKeyRevokedError:
+        device_machine_key = None
+        dmk_outcome = "machine_key_revoked"
     except Exception as exc:  # noqa: BLE001 — never break pairing on mint
         device_machine_key = None
+        dmk_outcome = "failed"
         logger.warning(
             "pair_cli_dmk_automint_failed",
             user_id=str(current_user.id),
@@ -1072,6 +1186,7 @@ async def pair_cli(
         user_id=str(current_user.id),
         device_id=str(device_uuid),
         dmk_minted=device_machine_key is not None,
+        dmk_outcome=dmk_outcome,
     )
     return PairCliResponse(
         device_id=device_uuid,
@@ -1079,6 +1194,435 @@ async def pair_cli(
         user_id=current_user.id,
         device_machine_key=device_machine_key,
     )
+
+
+# ---------------------------------------------------------------------------
+# Operator credential controls — plan
+# ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-from-qontinui-web``
+#
+# * ``GET  /credential-overview`` — the caller's devices with web's own
+#   credential facts (machine key, device deny, pending authorization).
+# * ``POST /{device_id}/authorize-redeem`` — an operator authorizes ONE device
+#   to re-pair itself: mints a pair code bound to it (never returned here).
+# * ``GET  /{device_id}/pending-redeem`` — the credential-dark runner collects
+#   that code with its own EXPIRED-but-coord-signed device JWT.
+# * ``POST /{device_id}/machine-credential/revoke`` — fail-closed revoke.
+#
+# ``/credential-overview`` is declared before ``GET /{device_id}`` so the
+# literal segment is never parsed as a device id.
+# ---------------------------------------------------------------------------
+
+
+def _as_uuid(value: Any) -> UUID | None:
+    if value is None:
+        return None
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _operator_tenant_device(
+    request: Request, current_user: UserModel, device_id: UUID
+) -> UUID:
+    """Resolve ``device_id`` for an operator control and return its tenant.
+
+    The caller is a Cognito-authenticated user (the route's
+    ``get_current_active_user_async`` — a device JWT never resolves there),
+    linked to a coord operator (``/admin/coord/me``, which 403s an unlinked
+    caller). The device is read over coord's ownership boundary
+    (``/coord/devices/:id/owned``); a device the caller does not own is 404
+    ``device_not_found``. Its ``tenant_id`` must be one of the caller's
+    coord tenant memberships, else 403 ``device_not_in_tenant``.
+    """
+    identity = await get_coord_identity(request)
+    try:
+        row = await coord_device.get_owned_device(
+            request, device_id, str(current_user.id)
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "device_not_found",
+                    "code": "device_not_found",
+                    "message": "No such device among yours.",
+                },
+            ) from exc
+        raise
+    if _as_uuid(row.get("device_id")) != device_id:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error": "coord_device_state_malformed",
+                "code": "coord_device_state_malformed",
+                "message": "Coord answered for a different device.",
+            },
+        )
+    tenant_id = _as_uuid(row.get("tenant_id"))
+    if tenant_id is None or tenant_id not in identity.tenant_ids():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "device_not_in_tenant",
+                "code": "device_not_in_tenant",
+                "message": "This device is not in any of your tenants.",
+            },
+        )
+    return tenant_id
+
+
+@router.get("/credential-overview", response_model=DeviceCredentialOverviewResponse)
+async def credential_overview(
+    *,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """The caller's devices, in the caller's tenants, with web's credential
+    facts: machine key (presence / expiry / revocation), the device-scoped
+    deny, and any operator authorization still awaiting the runner.
+
+    Same auth and device set as ``GET /api/v1/devices`` (coord
+    ``/coord/devices/by-user``), narrowed to devices whose ``tenant_id`` is
+    one of the caller's coord tenant memberships. The deny is read from this
+    backend's own database — web authors and writes the column, so its value
+    is authoritative here — never defaulted from a coord JSON row that might
+    omit it.
+    Credential POSTURE is coord's ``GET /coord/status`` and is joined on
+    ``device_id`` by the client, not served here.
+    """
+    identity = await get_coord_identity(request)
+    tenants = set(identity.tenant_ids())
+    rows = await coord_device.list_devices_for_user(request, str(current_user.id))
+
+    in_tenant: list[tuple[UUID, dict[str, Any]]] = []
+    for row in rows:
+        device_id = _as_uuid(row.get("device_id"))
+        if device_id is None or _as_uuid(row.get("tenant_id")) not in tenants:
+            continue
+        in_tenant.append((device_id, row))
+
+    device_ids = [device_id for device_id, _ in in_tenant]
+    keys = await dmk_crud.list_for_devices(db, device_ids)
+    pending = await pair_code_crud.pending_for_devices(db, device_ids)
+    denies = await device_crud.credential_revoked_at_for_devices(db, device_ids)
+
+    devices: list[DeviceCredentialOverviewRow] = []
+    for device_id, row in in_tenant:
+        cred = keys.get(device_id)
+        code = pending.get(device_id)
+        devices.append(
+            DeviceCredentialOverviewRow(
+                device_id=device_id,
+                hostname=row.get("hostname"),
+                machine_key=DeviceMachineKeyPosture(
+                    present=cred is not None,
+                    expires_at=cred.expires_at if cred else None,
+                    revoked_at=cred.revoked_at if cred else None,
+                ),
+                credential_revoked_at=denies.get(device_id),
+                pending_redeem=(
+                    PendingRedeemPosture(
+                        expires_at=code.expires_at, delivered_at=code.delivered_at
+                    )
+                    if code
+                    else None
+                ),
+            )
+        )
+    return DeviceCredentialOverviewResponse(devices=devices)
+
+
+@router.post(
+    "/{device_id}/authorize-redeem",
+    response_model=AuthorizeRedeemResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def authorize_redeem(
+    *,
+    request: Request,
+    device_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Authorize ONE device to re-pair itself, headless.
+
+    **Operator SSO only.** ``get_current_active_user_async`` verifies a
+    Cognito token (a coord device JWT, or any other bearer, is a 401), and
+    :func:`_operator_tenant_device` requires a linked coord operator whose
+    tenant holds the device. The target is the PATH ``device_id``; the route
+    declares no body, so nothing a caller sends can redirect it.
+
+    Effect, one transaction:
+
+    * mints an ordinary pair code through ``pair_code_crud`` BOUND to this
+      device, in the device's tenant, with
+      :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min — the
+      runner polls every 300 s), and expires any earlier pending code for the
+      device (the newest authorization supersedes);
+    * clears ``coord.devices.credential_revoked_at`` — re-arming is this
+      explicit act, never a side effect;
+    * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
+      enrol a fresh key (a usable key is left alone).
+
+    202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
+    the device collects it, through ``/pending-redeem``.
+    """
+    tenant_id = await _operator_tenant_device(request, current_user, device_id)
+
+    # Serialise concurrent authorizations (and a concurrent revoke) of this
+    # device on its row, so the supersede sweep below sees every older code.
+    if not await device_crud.lock_device_row(db, device_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "device_not_found",
+                "code": "device_not_found",
+                "message": "No device row to authorize; nothing was changed.",
+            },
+        )
+
+    # Mint first so ``except_code`` below can name the new code. Its collision
+    # retry uses a SAVEPOINT, so the row lock above survives it.
+    code_row = await pair_code_crud.mint_pair_code(
+        db,
+        tenant_id=tenant_id,
+        issued_by_user_id=current_user.id,
+        bound_device_id=device_id,
+        ttl=pair_code_crud.BOUND_PAIR_CODE_TTL,
+    )
+    superseded = await pair_code_crud.cancel_pending_for_device(
+        db, device_id, except_code=code_row.code
+    )
+    await device_crud.set_credential_revoked_at(db, device_id, None)
+    revoked_key_deleted = await dmk_crud.delete_if_revoked(db, device_id)
+    await db.commit()
+
+    logger.info(
+        "device_redeem_authorized",
+        user_id=str(current_user.id),
+        device_id=str(device_id),
+        tenant_id=str(tenant_id),
+        code_prefix=code_row.code[:2],
+        superseded=superseded,
+        revoked_key_deleted=revoked_key_deleted,
+        expires_at=code_row.expires_at.isoformat(),
+    )
+    return AuthorizeRedeemResponse(device_id=device_id, expires_at=code_row.expires_at)
+
+
+def _poll_refusal(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"error": code, "code": code, "message": message},
+    )
+
+
+async def _verify_poll_token(
+    credentials: HTTPAuthorizationCredentials | None, device_id: UUID
+) -> dict[str, Any]:
+    """The ``/pending-redeem`` trust anchor: a coord-signed DEVICE JWT for
+    THIS device, expired by no more than :data:`PENDING_REDEEM_EXPIRED_GRACE`.
+
+    * no bearer → 401 ``device_token_missing``
+    * JWKS unreachable → 503 ``device_auth_unavailable``
+    * past ``exp`` + 30 days → 401 ``device_token_expired_beyond_grace``
+    * bad signature / foreign issuer / malformed / no ``exp`` → 401
+      ``device_token_invalid``
+    * ``sub_type`` not ``device`` (agent, service, capability grant) → 403
+      ``not_a_device_principal``
+    * ``mint_provenance`` present and not ``paired`` → 403
+      ``device_token_provenance_refused``
+    * not the ``issue_device`` shape (``sub != "device:<path id>"`` or no
+      ``user_id`` — e.g. a push token) → 403 ``device_token_shape_refused``
+    * ``device_id`` claim missing/malformed → 401 ``device_token_invalid``;
+      not the path → 403 ``device_mismatch``
+    """
+    if credentials is None or not credentials.credentials:
+        raise _poll_refusal(
+            status.HTTP_401_UNAUTHORIZED,
+            "device_token_missing",
+            "A device token (Authorization: Bearer) is required.",
+        )
+    try:
+        claims = await coord_jwks_client.verify_token(
+            credentials.credentials,
+            expired_grace_s=int(PENDING_REDEEM_EXPIRED_GRACE.total_seconds()),
+        )
+    except CoordJWKSUnavailableError as exc:
+        logger.error("pending_redeem_jwks_unavailable", **jwks_failure_log_fields(exc))
+        raise _poll_refusal(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "device_auth_unavailable",
+            "Device authentication temporarily unavailable.",
+        ) from exc
+    except CoordTokenExpiredError as exc:
+        raise _poll_refusal(
+            status.HTTP_401_UNAUTHORIZED,
+            "device_token_expired_beyond_grace",
+            "The device token expired too long ago to prove this device; "
+            "re-pair it with a pair code.",
+        ) from exc
+    except CoordTokenInvalidError as exc:
+        logger.warning(
+            "pending_redeem_token_rejected",
+            device_id=str(device_id),
+            failure=type(exc).__name__,
+            error=str(exc),
+        )
+        raise _poll_refusal(
+            status.HTTP_401_UNAUTHORIZED,
+            "device_token_invalid",
+            "The device token did not verify.",
+        ) from exc
+
+    if claims.get("sub_type") != _DEVICE_SUB_TYPE:
+        raise _poll_refusal(
+            status.HTTP_403_FORBIDDEN,
+            "not_a_device_principal",
+            "This route accepts only a device token.",
+        )
+    provenance = claims.get("mint_provenance")
+    if provenance is not None and provenance != _PAIRED_MINT_PROVENANCE:
+        raise _poll_refusal(
+            status.HTTP_403_FORBIDDEN,
+            "device_token_provenance_refused",
+            "Only a pairing-issued device token proves a device.",
+        )
+    token_device = _as_uuid(claims.get("device_id"))
+    if token_device is None:
+        raise _poll_refusal(
+            status.HTTP_401_UNAUTHORIZED,
+            "device_token_invalid",
+            "The device token carries no usable device_id claim.",
+        )
+    if token_device != device_id:
+        raise _poll_refusal(
+            status.HTTP_403_FORBIDDEN,
+            "device_mismatch",
+            "The device token does not match this device.",
+        )
+    # The exact shape coord's ``issue_device`` mints (qontinui-coord
+    # ``jwt.rs``): ``sub = "device:<device_id>"`` and a user. A push token
+    # (``sub = "push:<session>"``, no user) or any other device-typed token
+    # without that shape proves no paired device, whatever its provenance.
+    if (
+        claims.get("sub") != f"device:{device_id}"
+        or _as_uuid(claims.get("user_id")) is None
+    ):
+        raise _poll_refusal(
+            status.HTTP_403_FORBIDDEN,
+            "device_token_shape_refused",
+            "Only a pairing-issued device token (device subject with a user) "
+            "proves a device.",
+        )
+    return claims
+
+
+@router.get(
+    "/{device_id}/pending-redeem",
+    response_model=PendingRedeemResponse,
+    responses={204: {"description": "Nothing is pending for this device."}},
+)
+async def pending_redeem(
+    *,
+    device_id: UUID,
+    response: Response,
+    db: AsyncSession = Depends(get_async_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_poll_bearer_scheme),
+) -> Any:
+    """Hand a credential-dark runner the pair code an operator authorized
+    for it — AT MOST ONCE.
+
+    Authenticated by the device's own coord-signed device JWT with expiry
+    TOLERATED up to 30 days (:func:`_verify_poll_token`): a third party that
+    knows only a ``device_id`` cannot forge one, and a stolen expired token
+    yields a code only after an operator authorized exactly this device. A
+    device whose credentials are revoked is refused (403
+    ``device_credential_revoked``; a failed read is a 503, never a pass).
+
+    200 ``{code, expires_at}`` exactly once per authorization (the code is
+    stamped delivered); 204 when nothing is pending. The runner then redeems
+    the code through the ordinary ``/pair-codes/{code}/redeem``.
+    """
+    await _verify_poll_token(credentials, device_id)
+    await refuse_if_credential_revoked(db, device_id, door="pending_redeem")
+
+    row = await pair_code_crud.claim_undelivered_for_device(db, device_id)
+    if row is None:
+        return Response(
+            status_code=status.HTTP_204_NO_CONTENT,
+            headers={"Cache-Control": "no-store"},
+        )
+    await db.commit()
+    # The body is a one-time credential: no cache may keep it.
+    response.headers["Cache-Control"] = "no-store"
+    logger.info(
+        "pending_redeem_delivered",
+        device_id=str(device_id),
+        code_prefix=row.code[:2],
+    )
+    return PendingRedeemResponse(code=row.code, expires_at=row.expires_at)
+
+
+@router.post(
+    "/{device_id}/machine-credential/revoke",
+    response_model=DeviceCredentialRevokeResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def revoke_device_credentials(
+    *,
+    request: Request,
+    device_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Revoke a device's credentials, fail-closed. Operator SSO, tenant-scoped
+    (same gate as :func:`authorize_redeem`).
+
+    One transaction: revokes the machine key (``dmk_crud.revoke`` — hash
+    cleared, so ``/exchange`` can never match it), sets
+    ``coord.devices.credential_revoked_at`` (every web door that issues this
+    device a credential, and coord's refresh/service-mint, refuse while it is
+    set), and expires any pending authorization. Only a later
+    ``authorize-redeem`` clears it. 404 ``device_not_found`` when there is no
+    ``coord.devices`` row to deny — nothing is committed then.
+    """
+    await _operator_tenant_device(request, current_user, device_id)
+
+    if not await device_crud.lock_device_row(db, device_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "device_not_found",
+                "code": "device_not_found",
+                "message": "No device row to revoke; nothing was changed.",
+            },
+        )
+    revoked_at = datetime.now(UTC)
+    await dmk_crud.revoke(db, device_id)
+    if not await device_crud.set_credential_revoked_at(db, device_id, revoked_at):
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "device_not_found",
+                "code": "device_not_found",
+                "message": "No device row to revoke; nothing was changed.",
+            },
+        )
+    cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
+    await db.commit()
+
+    logger.info(
+        "device_credentials_revoked",
+        user_id=str(current_user.id),
+        device_id=str(device_id),
+        pending_codes_cancelled=cancelled,
+    )
+    return DeviceCredentialRevokeResponse(device_id=device_id, revoked_at=revoked_at)
 
 
 # ---------------------------------------------------------------------------
@@ -1167,6 +1711,7 @@ async def dispatch_to_device(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
+                "error": "device_offline",
                 "code": "device_offline",
                 "message": "Device is not connected via WebSocket.",
             },
@@ -1186,6 +1731,7 @@ async def dispatch_to_device(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
+                "error": "dispatch_failed",
                 "code": "dispatch_failed",
                 "message": "Could not relay dispatch over WebSocket.",
             },
@@ -1230,6 +1776,10 @@ async def mint_device_machine_credential(
     the same check the single-device reads use); a non-owner gets 403. The
     device's ``tenant_id`` is resolved server-side from the owned coord row
     (never client-asserted). Returns the plaintext ``dmk_`` ONCE.
+
+    Refused (403 ``device_credential_revoked``) while an operator's revoke
+    stands — this mint rotates over a revoked key, so without the check it
+    would silently undo the revocation.
     """
     try:
         row = await coord_device.get_owned_device(
@@ -1243,6 +1793,7 @@ async def mint_device_machine_credential(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
+                    "error": "device_not_owned",
                     "code": "device_not_owned",
                     "message": "You do not own this device.",
                 },
@@ -1252,19 +1803,33 @@ async def mint_device_machine_credential(
     tenant_raw = row.get("tenant_id")
     tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
 
-    return await _mint_machine_credential(
-        db,
-        device_id=device_id,
-        owner_user_id=current_user.id,
-        tenant_id=tenant_id,
-        via="user_bearer",
-    )
+    await refuse_if_credential_revoked(db, device_id, door="mint")
 
-
-#: ``/self-mint`` renews a key only when it is absent, expired, or expires
-#: within this window; a key usable for longer is refused with a 409 rather
-#: than rotated (see :func:`self_mint_device_machine_credential`).
-SELF_MINT_RENEWAL_WINDOW = timedelta(days=7)
+    # ``refuse_if_revoked`` closes the race with a concurrent revoke: the revoke
+    # commits the key revocation and the device deny together, and
+    # ``dmk_crud.mint`` re-reads the key under ``FOR UPDATE``, so a mint that
+    # passed the deny check above still cannot rotate over a revoked key.
+    try:
+        return await _mint_machine_credential(
+            db,
+            device_id=device_id,
+            owner_user_id=current_user.id,
+            tenant_id=tenant_id,
+            via="user_bearer",
+            refuse_if_revoked=True,
+        )
+    except dmk_crud.DeviceMachineKeyRevokedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "device_credential_revoked",
+                "code": "device_credential_revoked",
+                "message": (
+                    "This device's credentials were revoked. Only an "
+                    "operator's Authenticate (authorize-redeem) re-arms it."
+                ),
+            },
+        ) from exc
 
 
 @router.post(
@@ -1313,6 +1878,9 @@ async def self_mint_device_machine_credential(
       ``coord_device_state_malformed``. In every
       one of these nothing is minted — an unanswered or unreadable lookup is
       UNKNOWN, never a licence to mint.
+    * a device whose credentials an operator revoked
+      (``coord.devices.credential_revoked_at``) → 403
+      ``device_credential_revoked`` (a failed read → 503).
     * an existing key that an operator REVOKED is not re-minted → 403
       ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``
       on rotation, so without this a device could undo its own revocation;
@@ -1389,10 +1957,13 @@ async def self_mint_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_mismatch",
                 "code": "device_mismatch",
                 "message": "Device token does not match this device.",
             },
         )
+
+    await refuse_if_credential_revoked(db, device_id, door="self_mint")
 
     tenant_id = await _self_mint_device_tenant(device_ctx, device_id)
 
@@ -1410,6 +1981,7 @@ async def self_mint_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_machine_key_revoked",
                 "code": "device_machine_key_revoked",
                 "message": (
                     "This device's machine key was revoked; re-mint it with "
@@ -1421,6 +1993,7 @@ async def self_mint_device_machine_credential(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
+                "error": "machine_key_still_usable",
                 "code": "machine_key_still_usable",
                 "message": (
                     "This device already holds a machine key usable for more "
@@ -1460,6 +2033,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
+                "error": "coord_device_lookup_unavailable",
                 "code": "coord_device_lookup_unavailable",
                 "message": (
                     "Coord could not confirm this device; nothing was minted. "
@@ -1471,6 +2045,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "coord_refused_device_token",
                 "code": "coord_refused_device_token",
                 "message": f"Coord refused this device token ({exc.status_code}).",
             },
@@ -1482,6 +2057,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_not_owned",
                 "code": "device_not_owned",
                 "message": "Coord does not know this device.",
             },
@@ -1490,6 +2066,7 @@ async def _self_mint_device_tenant(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_mismatch",
                 "code": "device_mismatch",
                 "message": "Coord answered for a different device.",
             },
@@ -1508,7 +2085,11 @@ async def _self_mint_device_tenant(
 def _coord_state_malformed(message: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"code": "coord_device_state_malformed", "message": message},
+        detail={
+            "error": "coord_device_state_malformed",
+            "code": "coord_device_state_malformed",
+            "message": message,
+        },
     )
 
 
@@ -1577,17 +2158,22 @@ async def exchange_device_machine_credential(
     forward (sliding session), then web calls coord's service-mint with its
     trusted service token; coord resolves the device's owner/tenant itself.
 
-    503 when the coord service bridge is disabled (``COORD_ADMIN_SECRET``
-    unset). A coord 4xx propagates as the matching client error.
+    403 ``device_credential_revoked`` while an operator's device-scoped revoke
+    stands (a failed read → 503). 503 when the coord service bridge is
+    disabled (``COORD_ADMIN_SECRET`` unset). A coord 4xx propagates as the
+    matching client error.
     """
     if cred.device_id != device_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
+                "error": "device_mismatch",
                 "code": "device_mismatch",
                 "message": "Device machine key does not match this device.",
             },
         )
+
+    await refuse_if_credential_revoked(db, device_id, door="exchange")
 
     # Fail fast + honest 503 before doing any work when coord is disabled.
     if not coord_service_account.enabled:
@@ -1629,6 +2215,7 @@ async def exchange_device_machine_credential(
             raise HTTPException(
                 status_code=coord_status,
                 detail={
+                    "error": "coord_mint_rejected",
                     "code": "coord_mint_rejected",
                     "message": "Coord rejected the device-token mint.",
                 },

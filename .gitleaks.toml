@@ -9,6 +9,11 @@ paths = [
   '''docs/examples/.*''',
   '''.*/__snapshots__/.*''',
   '''.*\.lock$''',
+  # Bounded-read cursor tokens minted by Rust for the cross-language codec test
+  # (plan 2026-09-05-every-bounded-read-... Phase 4): base64url of a public
+  # {version, sort key, micros, uuid, sha256 fingerprint} payload — opaque by
+  # contract, not secret, and high-entropy by construction.
+  '''backend/tests/fixtures/bounded_read/.*''',
 ]
 regexes = [
   '''(?i)(dummy|example|sample|test|placeholder|changeme|your[-_]?)[-_]?(secret|token|key|password)''',

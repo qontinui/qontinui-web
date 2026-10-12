@@ -7,7 +7,6 @@ Guide for migrating from legacy workflows to the new Workflow Builder system.
 - [Overview](#overview)
 - [Before You Start](#before-you-start)
 - [Migration Steps](#migration-steps)
-- [Migrate Snapshots to Version Control](#migrate-snapshots-to-version-control)
 - [Organize Existing Workflows](#organize-existing-workflows)
 - [Add Testing](#add-testing)
 - [Set Up Analytics](#set-up-analytics)
@@ -16,12 +15,11 @@ Guide for migrating from legacy workflows to the new Workflow Builder system.
 
 ## Overview
 
-This guide helps you migrate from the legacy workflow system to the new Workflow Builder with folders, version control, testing, and analytics.
+This guide helps you migrate from the legacy workflow system to the new Workflow Builder with folders, testing, and analytics.
 
 ### What's New
 
 - **Folder Organization**: Hierarchical folder structure with tags
-- **Version Control**: Git-like branches, versions, and tags
 - **Dependency Analysis**: Understand workflow relationships
 - **Testing Framework**: Comprehensive testing with assertions
 - **Analytics**: Performance metrics and trends
@@ -68,22 +66,7 @@ allWorkflows.forEach(wf => {
 
 ## Migration Steps
 
-### Step 1: Migrate Snapshots to Version Control
-
-If you have existing snapshots, migrate them to the new version control system:
-
-```typescript
-// Automatic migration
-const migratedCount = workflowVersionControl.migrateSnapshots();
-console.log(`Migrated ${migratedCount} snapshots to version control`);
-```
-
-This creates:
-- A `main` branch for each workflow
-- Versions from each snapshot (in chronological order)
-- Preserves snapshot metadata
-
-### Step 2: Create Folder Structure
+### Step 1: Create Folder Structure
 
 ```typescript
 // Plan your folder structure
@@ -114,7 +97,7 @@ folderStructure.forEach(path => {
 });
 ```
 
-### Step 3: Organize Workflows into Folders
+### Step 2: Organize Workflows into Folders
 
 ```typescript
 // Categorize workflows
@@ -141,7 +124,7 @@ Object.entries(categories).forEach(([path, workflowIds]) => {
 });
 ```
 
-### Step 4: Add Tags
+### Step 3: Add Tags
 
 ```typescript
 // Define tag mapping
@@ -159,33 +142,7 @@ Object.entries(tagMapping).forEach(([workflowId, tags]) => {
 });
 ```
 
-### Step 5: Create Version Control Branches
-
-```typescript
-// Create development branches for active workflows
-const activeworkflows = [
-  'login-workflow-1',
-  'checkout-workflow-1'
-];
-
-activeWorkflows.forEach(workflowId => {
-  // Get main branch
-  const branches = workflowVersionControl.getAllBranches(workflowId);
-  const mainBranch = branches.find(b => b.name === 'main');
-
-  if (mainBranch) {
-    // Create develop branch
-    workflowVersionControl.createBranch(
-      workflowId,
-      'develop',
-      mainBranch.id,
-      'Development branch'
-    );
-  }
-});
-```
-
-### Step 6: Add Tests
+### Step 4: Add Tests
 
 ```typescript
 // Create test cases for critical workflows
@@ -212,7 +169,7 @@ criticalWorkflows.forEach(workflow => {
 });
 ```
 
-### Step 7: Set Up Analytics
+### Step 5: Set Up Analytics
 
 ```typescript
 // Enable analytics tracking
@@ -230,7 +187,7 @@ historicalExecutions.forEach(execution => {
 });
 ```
 
-### Step 8: Analyze and Optimize
+### Step 6: Analyze and Optimize
 
 ```typescript
 // Analyze all workflows for issues
@@ -241,58 +198,12 @@ getAllWorkflows().forEach(workflow => {
     console.log(`${workflow.name} has many dependencies (${dependencies.length})`);
   }
 
-  // Check performance
-  const performance = workflowPerformanceAnalyzer.analyzePerformance(workflow);
-  if (performance.performanceScore < 50) {
-    console.log(`${workflow.name} has low performance score (${performance.performanceScore})`);
-  }
-
   // Check complexity
   const complexity = workflowComplexityAnalyzer.analyzeComplexity(workflow);
   if (complexity.cyclomaticComplexity > 10) {
     console.log(`${workflow.name} is complex (${complexity.cyclomaticComplexity})`);
   }
 });
-```
-
-## Migrate Snapshots to Version Control
-
-### Manual Migration
-
-If automatic migration doesn't work, migrate manually:
-
-```typescript
-import { WorkflowSnapshotsService } from '@/services/workflow-snapshots';
-
-function migrateSnapshotsManually(workflowId: string) {
-  const snapshotService = WorkflowSnapshotsService.getInstance();
-  const snapshots = snapshotService.getSnapshots(workflowId);
-
-  // Sort by timestamp
-  snapshots.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-  // Create main branch
-  let branches = workflowVersionControl.getAllBranches(workflowId);
-  if (branches.length === 0) {
-    workflowVersionControl.createBranch(workflowId, 'main');
-    branches = workflowVersionControl.getAllBranches(workflowId);
-  }
-
-  const mainBranch = branches[0];
-
-  // Create version for each snapshot
-  snapshots.forEach(snapshot => {
-    workflowVersionControl.saveVersion(
-      workflowId,
-      mainBranch.id,
-      snapshot.workflow,
-      snapshot.name,
-      snapshot.metadata?.author
-    );
-  });
-
-  console.log(`Migrated ${snapshots.length} snapshots for ${workflowId}`);
-}
 ```
 
 ## Common Issues
@@ -335,15 +246,6 @@ console.log('Tags:', tags);
 workflowFolderManager.addTag(workflowId, 'critical');
 ```
 
-### Issue: Version History Missing
-
-**Solution:**
-```typescript
-// Re-run migration
-workflowVersionControl.clearAll(workflowId);
-workflowVersionControl.migrateSnapshots();
-```
-
 ## Rollback Plan
 
 ### Prepare for Rollback
@@ -368,7 +270,6 @@ localStorage.setItem('pre-migration-backup', JSON.stringify(fullBackup));
 const backup = JSON.parse(localStorage.getItem('pre-migration-backup')!);
 
 // Clear new data
-workflowVersionControl.clearAll();
 workflowFolderManager.clearAll();
 
 // Restore workflows
@@ -387,12 +288,9 @@ backup.snapshots.forEach(snapshot => {
 - [ ] All workflows imported successfully
 - [ ] Folder structure created and organized
 - [ ] Tags applied to workflows
-- [ ] Version control branches created
-- [ ] Snapshots migrated to versions
 - [ ] Tests created for critical workflows
 - [ ] Analytics enabled and tracking
 - [ ] Dependencies analyzed
-- [ ] Performance analyzed
 - [ ] Documentation generated
 - [ ] Team trained on new system
 - [ ] Backup created and verified
@@ -405,12 +303,10 @@ After migration:
 2. **Create Documentation**: Generate docs for all workflows
 3. **Set Up CI/CD**: Integrate testing into your pipeline
 4. **Monitor Performance**: Track metrics and optimize
-5. **Establish Workflow**: Define branching and versioning strategy
-6. **Regular Maintenance**: Schedule periodic analysis and cleanup
+5. **Regular Maintenance**: Schedule periodic analysis and cleanup
 
 ## See Also
 
 - [Organization Guide](./organization.md) - Organize workflows
-- [Version Control](./version-control.md) - Use version control
 - [Testing Guide](./testing.md) - Create tests
 - [Best Practices](./best-practices.md) - Follow best practices

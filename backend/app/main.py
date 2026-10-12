@@ -269,7 +269,7 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # The plan-library exports' provenance sets. `X-Content-Sha256` overlaps
             # the tuple above by name; the other three say WHICH artifact and WHICH
             # VERSION that digest is over, and without them a reader gets a digest it
-            # cannot attribute. `CORPUS_EXPORT_HEADERS` carries `X-Export-Truncated`,
+            # cannot attribute. `CORPUS_EXPORT_HEADERS` carries `X-Bounded-Read`,
             # which is emitted on both branches precisely so its absence means
             # nothing — a rule CORS silently breaks when the header is unpublished.
             *ARTIFACT_EXPORT_HEADERS,
