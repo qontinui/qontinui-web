@@ -71,7 +71,7 @@ refusal names its reason:
    byte-for-byte per line, indentation and intra-line whitespace included.
    Building it also refuses, exactly where coord's skeleton does: a code
    character outside ASCII (Python NFKC-normalises identifiers, so
-   ``__ｄoc__`` would spell ``__doc__``) -- ``non_ascii_identifier``; a UTF-8
+   a fullwidth letter can spell ``__doc__``) -- ``non_ascii_identifier``; a UTF-8
    byte-order mark, which is such a character -- ``bom``; a form feed outside
    a string literal, which Python reads as layout -- ``form_feed``; a one-line
    literal that a backslash continues over a CRLF line ending, which coord's
@@ -291,7 +291,11 @@ DOCSTRING_PLACEHOLDER = "\x00<docstring>\x00"
 # what coord's `str::trim` (the empty-side test) and its backwards walk over
 # whitespace use. Python's `str.isspace` is a different set (it adds
 # U+001C..U+001F), so the set is spelled out.
-_RUST_WHITESPACE = frozenset("\t\n\x0b\x0c\r \x85\xa0                　")
+_RUST_WHITESPACE = frozenset(
+    "\t\n\x0b\x0c\r \x85\xa0\u1680"
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+    "\u2028\u2029\u202f\u205f\u3000"
+)
 
 _BARE_CR = re.compile(rb"\r(?!\n)")
 
@@ -329,9 +333,11 @@ def _refuse(reason: str) -> Verdict:
 
 
 def is_non_executable_edit(path: str, base: bytes, head: bytes) -> Verdict:
-    """True iff ``base`` -> ``head`` changes only comments, statement-position
-    plain string literals, blank lines and trailing whitespace (D8, clauses
-    0-6; see the module docstring). Both sides are RAW blob bytes."""
+    """``ok`` iff ``base`` -> ``head`` provably changes only comments,
+    statement-position plain string literals, blank lines and trailing
+    whitespace (D8, clauses 0-6; see the module docstring); otherwise the
+    refusal reason. Both sides are RAW blob bytes. Anything the proof cannot
+    establish is a refusal, never a pass."""
     if not path.lower().endswith(".py"):
         return _refuse("not_py")
     # An empty side is a failed read, not an empty revision (coord: the
@@ -501,7 +507,7 @@ def executable_skeleton(raw: bytes) -> list[str] | SkeletonRefusal:
         # Unreachable after `ast.parse`; kept so the placeholder stays
         # unspellable whatever the caller did.
         return parse_error
-    if text.startswith("﻿"):
+    if text.startswith("\ufeff"):
         # The tokenizer would strip it and shift every column on line 1;
         # coord reads it as a non-ASCII character in code.
         return SkeletonRefusal("bom")
