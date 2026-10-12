@@ -233,9 +233,38 @@ def test_credential_probe_specs_schema_roundtrip() -> None:
             {"updated_by": "   "},
         )
         for bad in bad_specs:
-            # A fresh tenant per case, so only the CHECK under test can refuse.
+            # A fresh tenant per case, so UNIQUE cannot be the refuser. A row
+            # may still break more than one CHECK (an account-id token also
+            # breaks token_names_probe_scope), so the no-account-id CHECK is
+            # pinned on its own expression below.
             with pytest.raises(sqlalchemy.exc.IntegrityError):
                 _spec(engine, _tenant(engine), **bad)
+
+        # The scope + region CHECKs already exclude any 12-digit run, so no
+        # insert can be refused by ck_..._token_no_account_id ALONE. Evaluate
+        # the installed expression directly, so a regression in it (e.g. back
+        # to a dash-sensitive run) still fails here.
+        check_def = scalar(
+            engine,
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conname = 'ck_credential_probe_specs_token_no_account_id'",
+        )
+        assert isinstance(check_def, str) and check_def.startswith("CHECK "), check_def
+        expr = check_def.removeprefix("CHECK ")
+        for token, admitted in (
+            ("cred:aws-ssm:eu-central-1", True),
+            ("cred:aws-ssm:123456789012", False),
+            ("cred:aws-ssm:1234-5678-9012", False),
+            ("cred:aws-ssm:123456-789012", False),
+        ):
+            assert (
+                scalar(
+                    engine,
+                    f"SELECT {expr} FROM (SELECT CAST(:tok AS text) AS token) s",
+                    tok=token,
+                )
+                is admitted
+            ), (token, check_def)
 
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not table_exists(engine, "coord", "credential_probe_specs")
