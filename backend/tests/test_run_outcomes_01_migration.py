@@ -354,8 +354,13 @@ def _assert_not_null(engine: Engine, column: str) -> None:
     assert orig.diag.column_name == column  # type: ignore[union-attr]
 
 
-def _count(engine: Engine) -> int:
-    value = scalar(engine, f"SELECT count(*) FROM coord.{_TABLE}")
+def _count(engine: Engine, *, tenant: uuid.UUID) -> int:
+    """Rows this test wrote: scoped to the test's own tenant, never global."""
+    value = scalar(
+        engine,
+        f"SELECT count(*) FROM coord.{_TABLE} WHERE tenant_id = :tenant",
+        tenant=tenant,
+    )
     assert isinstance(value, int)
     return value
 
@@ -464,7 +469,9 @@ def test_checks_nulls_and_the_one_per_dispatch_index_behave() -> None:
         # ref, repo and dispatch_id are nullable: a dispatch-less writer is allowed.
         _insert(engine, _row(ref=None, repo=None, dispatch_id=None))
         _insert(engine, _row(dispatch_id=None))
-        assert _count(engine) == 3, "dispatch-less rows are never deduplicated"
+        assert _count(engine, tenant=_TENANT) == 3, (
+            "dispatch-less rows are never deduplicated"
+        )
 
         dispatch = uuid.UUID("01a10dde-0000-7000-8000-0000000000d1")
         _insert(engine, _row(dispatch_id=dispatch))
@@ -487,7 +494,7 @@ def test_checks_nulls_and_the_one_per_dispatch_index_behave() -> None:
                 {"t": _TENANT, "d": dispatch},
             )
             assert dup.rowcount == 0, "a retried write is absorbed"
-        assert _count(engine) == 5
+        assert _count(engine, tenant=_TENANT) == 5
 
         with engine.connect() as conn:
             defaults = conn.execute(
@@ -665,7 +672,9 @@ def test_upgrade_is_idempotent() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
 
         assert table_exists(engine, _SCHEMA, _TABLE)
-        assert _count(engine) == 1, "the re-run must not disturb existing rows"
+        assert _count(engine, tenant=_TENANT) == 1, (
+            "the re-run must not disturb existing rows"
+        )
 
 
 @_needs_pg
@@ -681,4 +690,6 @@ def test_up_down_up_leaves_no_residue() -> None:
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
-        assert _count(engine) == 0, "the table comes back empty, not restored"
+        assert _count(engine, tenant=_TENANT) == 0, (
+            "the table comes back empty, not restored"
+        )
