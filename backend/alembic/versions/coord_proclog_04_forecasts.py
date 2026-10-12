@@ -56,34 +56,10 @@ def upgrade() -> None:
             p             DOUBLE PRECISION NOT NULL,
             predicted     JSONB NOT NULL DEFAULT '{}'::jsonb,
             resolved_at   TIMESTAMPTZ NULL,
-            observed      JSONB NULL
+            observed      JSONB NULL,
+            CONSTRAINT ck_process_forecasts_p CHECK (p >= 0 AND p <= 1),
+            CONSTRAINT ck_process_forecasts_horizon_secs CHECK (horizon_secs > 0)
         )
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_forecasts
-            DROP CONSTRAINT IF EXISTS ck_process_forecasts_p
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_forecasts
-            ADD CONSTRAINT ck_process_forecasts_p
-            CHECK (p >= 0 AND p <= 1)
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_forecasts
-            DROP CONSTRAINT IF EXISTS ck_process_forecasts_horizon_secs
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_forecasts
-            ADD CONSTRAINT ck_process_forecasts_horizon_secs
-            CHECK (horizon_secs > 0)
         """
     )
     # Issuing is idempotent: one forecast per question, object and entry time.

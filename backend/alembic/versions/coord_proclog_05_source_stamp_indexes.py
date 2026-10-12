@@ -29,9 +29,13 @@ NOT indexed here: ``pr_events.created_at``, ``commit_lineage.recorded_at``,
 Shape of each index
 ===================
 
-* **Partial, ``WHERE <stamp> IS NOT NULL``**: a row that never reaches a stamp
-  costs nothing, and only the lifecycle write that sets the stamp maintains
-  the index.
+* **Partial, ``WHERE <stamp> IS NOT NULL``**: on a NULLABLE lifecycle stamp
+  (``cleared_at``, ``retracted_at``, ``acked_at`` …) a row that never reaches
+  the stamp costs nothing, and only the write that sets it maintains the
+  index. On a NOT NULL stamp (``created_at``, ``occurred_at``,
+  ``transitioned_at`` …) the predicate is vacuous but harmless — the planner
+  still proves ``<stamp> > $1`` implies it — and is kept so every index has
+  one shape.
 * **Keyed ``(<stamp>, <primary key>)``**: the projector's keyset page orders
   by the stamp and breaks ties on the row key, so the index serves the order
   as well as the range.
@@ -59,9 +63,37 @@ the ~14-day gate archive.
 The other stamp indexes on ``coord.gates`` keep sweep writes HOT for the same
 reason: the sweep does not change those stamps' values on a tick that is not a
 transition, and HOT compares values, not the SET list.
+
+``updated_at`` indexes DO cost HOT, and that was weighed
+=========================================================
+
+Three sources have no lifecycle stamp but ``updated_at``: ``merge_proposals``
+(plan D1: a proposal re-enters ``queued`` with no stamp, so ``updated_at`` is
+the only way to see every status change), ``session_expectations`` (current
+status only) and ``session_compliance``. None had an index on ``updated_at``
+before, so every write that bumps it — a session check-in on
+``session_expectations``, a lease or requeue on ``merge_proposals`` — now
+maintains indexes instead of staying heap-only. Accepted: these are low-rate
+tables next to the gate sweep (one check-in per session phase boundary; one
+proposal write per scheduler decision), and the alternative for
+``merge_proposals`` is missing requeues entirely. The Phase 0 SQL census
+(owed; see the plan's status block) measures their update rates, and an index
+it shows too costly is dropped in a follow-up revision.
+
+For Phase 2's gates reader: the terminal index excludes archived rows, and
+``work_unit_derive_worker.rs`` sets ``archived_at`` directly, so a gate that
+fails or is withdrawn and is archived within one projector tick never appears
+here. The ``archived_at`` reader must therefore also project the terminal
+verdict of an archived gate whose terminal event was never projected.
+
+Revision 05 also changes live tables now, unlike 01-04: every insert or stamp
+update on the 21 indexed tables maintains the new indexes, and the planner may
+choose them for existing coord queries.
 """
 
 from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
 
@@ -70,6 +102,85 @@ revision: str = "coord_proclog_05"
 down_revision: str | Sequence[str] | None = "coord_proclog_04"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# Every index upgrade() builds, in build order; _require_valid() checks each.
+INDEX_NAMES: tuple[str, ...] = (
+    "ix_proclog_work_unit_status_history_transitioned_at",
+    "ix_proclog_work_units_created_at",
+    "ix_proclog_work_unit_pr_citations_cited_at",
+    "ix_proclog_work_unit_phase_attestations_attested_at",
+    "ix_proclog_work_unit_phase_attestations_retracted_at",
+    "ix_proclog_repo_branches_author_bound_at",
+    "ix_proclog_merge_proposals_updated_at",
+    "ix_proclog_gates_created_at",
+    "ix_proclog_gates_condition_met_since",
+    "ix_proclog_gates_cleared_at",
+    "ix_proclog_gates_continuation_dispatched_at",
+    "ix_proclog_gates_continuation_consumed_at",
+    "ix_proclog_gates_continuation_cancelled_at",
+    "ix_proclog_gates_continuation_expired_at",
+    "ix_proclog_gates_continuation_deferred_at",
+    "ix_proclog_gates_archived_at",
+    "ix_proclog_claims_audit_occurred_at",
+    "ix_proclog_operator_touches_emitted_at",
+    "ix_proclog_operator_touches_resolved_at",
+    "ix_proclog_operator_touch_classifications_classified_at",
+    "ix_proclog_agent_questions_created_at",
+    "ix_proclog_agent_questions_responded_at",
+    "ix_proclog_session_messages_created_at",
+    "ix_proclog_session_messages_delivered_at",
+    "ix_proclog_session_messages_read_at",
+    "ix_proclog_session_messages_acked_at",
+    "ix_proclog_findings_triaged_at",
+    "ix_proclog_alerts_claimed_at",
+    "ix_proclog_policy_rule_resolutions_outcome_labeled_at",
+    "ix_proclog_work_unit_dispatches_dispatched_at",
+    "ix_proclog_work_unit_dispatches_consumed_at",
+    "ix_proclog_session_expectations_updated_at",
+    "ix_proclog_deploy_signatures_created_at",
+    "ix_proclog_deploy_verifications_created_at",
+    "ix_proclog_session_compliance_updated_at",
+    "ix_proclog_session_policy_reads_read_at",
+    "ix_proclog_gates_terminal_unarchived",
+)
+
+
+def _require_valid() -> None:
+    """Refuse unless every index in ``INDEX_NAMES`` exists and is ``indisvalid``.
+
+    A cancelled, deadlocked or timed-out ``CREATE INDEX CONCURRENTLY`` leaves an
+    INVALID index behind, and ``IF NOT EXISTS`` then skips it on every re-run
+    while the revision reports success — the projector would sequentially scan
+    that table every tick while writes still pay to maintain the dead index.
+    The ``census_idx_01`` / ``coord_test_results_idx_01`` precedent.
+    """
+    rows = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT c.relname, i.indisvalid FROM pg_index i "
+                "JOIN pg_class c ON c.oid = i.indexrelid "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = 'coord' AND c.relname = ANY(:names)"
+            ),
+            {"names": list(INDEX_NAMES)},
+        )
+        .all()
+    )
+    valid = {row[0]: bool(row[1]) for row in rows}
+    bad = [
+        f"coord.{name} is {'INVALID' if name in valid else 'absent'}"
+        for name in INDEX_NAMES
+        if not valid.get(name, False)
+    ]
+    if bad:
+        raise RuntimeError(
+            "after CREATE INDEX CONCURRENTLY IF NOT EXISTS: "
+            + "; ".join(bad)
+            + ". A killed concurrent build left each INVALID one (IF NOT EXISTS "
+            "skipped it). Run `DROP INDEX CONCURRENTLY coord.<name>` for each "
+            "and re-run this revision."
+        )
 
 
 def upgrade() -> None:
@@ -374,6 +485,7 @@ def upgrade() -> None:
                 WHERE verdict <> 'open' AND archived_at IS NULL
             """
         )
+        _require_valid()
 
 
 def downgrade() -> None:
