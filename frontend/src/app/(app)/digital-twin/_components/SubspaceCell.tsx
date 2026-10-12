@@ -28,8 +28,8 @@ interface SubspaceCellProps {
 }
 
 /**
- * One sub-space tile. Shows the symbol, name, twin and status; for live
- * snapshot observers it also surfaces the credibility envelope (coverage /
+ * One sub-space tile. Shows the symbol, name, twin and status; for live-probed
+ * observers it also surfaces the credibility envelope (coverage /
  * credibility / staleness) — the goal-#3/#4 usefulness+accuracy signal —
  * verbatim from coord.
  */
@@ -40,7 +40,7 @@ export function SubspaceCell({
   uiLabel,
 }: SubspaceCellProps) {
   const style = presentStatus(row);
-  const metrics = row.query_kind === "snapshot" ? row.metrics : undefined;
+  const metrics = row.liveProbed ? row.metrics : undefined;
   const id = uiId ?? `digital-twin-cell-${row.id}`;
 
   // Register with the UI Bridge so the cell is discoverable + clickable by a
