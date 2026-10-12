@@ -89,14 +89,18 @@ _TERMINAL_FRAME_LIMIT = 65536
 # (``frontend/src/hooks/useChatWebSocket.ts``). The chat arm of
 # :func:`_route_device_message` says why relaying them is safe.
 #
-# ``chat_session_state`` arrives here only as a REPLY: to a
-# ``chat_session_state`` request, a ``chat_interrupt`` or a ``chat_close``.
-# The runner's ``handle_outbound`` would also rewrap a ``session-state``
-# broadcast into one, but nothing produces that broadcast (qontinui-runner
-# c40d7ebd1, 2026-10-11: ``emit_session_state`` emits only the Tauri event
-# ``claude-session-state``). So no frame tells a chat page that its session
-# went idle after an answer; this relay cannot forward a frame that is never
-# sent.
+# ``chat_session_state`` arrives here two ways. As a REPLY: to a
+# ``chat_session_state`` request, a ``chat_interrupt`` or a ``chat_close``. And
+# as a BROADCAST on every session state transition: the runner's
+# ``emit_session_state_ex`` also publishes the transition on its
+# ``session-state`` event channel, which ``handle_outbound`` rewraps as
+# ``{"type": "chat_session_state", "data": {taskRunId, sessionId, state}}``
+# (plan 2026-10-12-digital-twin-runner-panels-end-to-end, Phase 2). That
+# broadcast is what tells a chat page its session went idle after an answer.
+# A runner build that predates it (through qontinui-runner c40d7ebd1,
+# 2026-10-11, ``emit_session_state`` emitted only the Tauri event
+# ``claude-session-state``) sends the replies alone. Both shapes share one
+# type, so the routing below relays either without telling them apart.
 #
 # ``chat_workflow_generating`` is absent on purpose: the client sets that state
 # itself when it asks for a workflow, and nothing on the runner sends it.
@@ -1329,9 +1333,9 @@ async def _route_device_message(
     # saw a refused spawn (``chat_created`` with ``error``), never got the
     # ``chat_session_state`` reply to a load, an interrupt or a close, and
     # never got a loaded conversation (``chat_output``) or a generated workflow
-    # (``chat_workflow_generated``). It is still not told when a session goes
-    # idle after an answer: that would be the runner's ``session-state``
-    # broadcast, which nothing produces (see ``_CHAT_FRAME_TYPES``).
+    # (``chat_workflow_generated``). The runner's ``session-state`` broadcast,
+    # which tells it when a session goes idle after an answer, rides the same
+    # ``chat_session_state`` type (see ``_CHAT_FRAME_TYPES``).
     #
     # Why relaying them is safe, and keeps them attributable:
     #   * Scope: the frame is published on THIS device's chat channel only
