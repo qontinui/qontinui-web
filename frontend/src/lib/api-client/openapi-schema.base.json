@@ -11325,7 +11325,8 @@
         "description": "Body coord sends to ``POST /internal/coord-push``.\n\nDeliberately carries NO ``category`` / ``channel_id`` (plan D7): a push\nnaming an Android channel the device has not created is not displayed\nwhile Expo still returns an ``ok`` ticket, which would turn ``accepted``\ninto an invisible failure.",
         "properties": {
           "body": {
-            "maxLength": 4000,
+            "description": "Notification body. Coord sends at most 180 characters.",
+            "maxLength": 1000,
             "title": "Body",
             "type": "string"
           },
@@ -11344,7 +11345,7 @@
           },
           "data": {
             "additionalProperties": true,
-            "description": "Opaque payload delivered to the app (e.g. the deep link).",
+            "description": "Opaque payload delivered to the app (e.g. the deep link). At most 1024 bytes as serialized JSON.",
             "title": "Data",
             "type": "object"
           },

@@ -7,7 +7,7 @@ must hold, each with the mutation that turns it red:
   header -> 401, right -> 200 (dropping the empty-secret check, or comparing
   with ``==`` on an empty configured value, fails);
 * the body is ``extra="forbid"`` and bounded (1-50 users, title <= 200,
-  body <= 4000, priority high|default), and carries no ``category`` /
+  body <= 1000, data <= 1024 bytes of JSON, priority high|default), and carries no ``category`` /
   ``channel_id`` (plan D7);
 * no active tokens -> ``devices: 0`` and Expo is never called;
 * a ticket mix is counted positionally: ``ok`` -> accepted, errors -> failed,
@@ -55,15 +55,21 @@ class _UpdateResult:
 class FakeSession:
     """Answers the token SELECT from ``devices`` and records every UPDATE."""
 
-    def __init__(self, devices: list[tuple[UUID, str]]) -> None:
+    def __init__(
+        self, devices: list[tuple[UUID, str]], *, update_raises: bool = False
+    ) -> None:
         self.devices = devices
+        self.update_raises = update_raises
         self.selects: list[Any] = []
         self.updates: list[Any] = []
         self.commits = 0
+        self.rollbacks = 0
 
     async def execute(self, stmt: Any) -> Any:
         if isinstance(stmt, Update):
             self.updates.append(stmt)
+            if self.update_raises:
+                raise RuntimeError("deadlock detected")
             params = stmt.compile(dialect=postgresql.dialect()).params
             tokens = next(v for v in params.values() if isinstance(v, list))
             return _UpdateResult(len(tokens))
@@ -72,6 +78,9 @@ class FakeSession:
 
     async def commit(self) -> None:
         self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
 
 
 def _deactivated_tokens(session: FakeSession) -> list[str]:
@@ -167,7 +176,8 @@ class TestBodyValidation:
             {"user_ids": ["not-a-uuid"]},
             {"title": ""},
             {"title": "x" * 201},
-            {"body": "x" * 4001},
+            {"body": "x" * 1001},
+            {"data": {"blob": "x" * 1100}},
             {"priority": "urgent"},
             {"data": "not-an-object"},
             {"category": "operator_action"},
@@ -189,7 +199,8 @@ class TestBodyValidation:
             json=_body(
                 user_ids=[str(uuid4()) for _ in range(50)],
                 title="x" * 200,
-                body="x" * 4000,
+                body="x" * 1000,
+                data={"blob": "x" * 1000},
                 priority="default",
                 collapse_id=None,
             ),
@@ -299,7 +310,81 @@ class TestDelivery:
         assert "ConnectError" in body["errors"][0]
 
 
+class TestDeactivationFailure:
+    def test_failed_update_is_rolled_back_and_the_counts_still_return(
+        self, configured, expo
+    ):
+        session = FakeSession([(uuid4(), "t-dead")], update_raises=True)
+        expo["handler"] = lambda _req: httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"status": "error", "details": {"error": "DeviceNotRegistered"}}
+                ]
+            },
+        )
+        resp = TestClient(_app(session)).post(
+            URL, json=_body(), headers={"X-Coord-Service-Secret": SECRET}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert (body["failed"], body["deactivated"]) == (1, 0)
+        assert any("deactivation failed" in e for e in body["errors"])
+        assert session.rollbacks == 1
+        assert session.commits == 0
+
+
 class TestSenderDirect:
+    @pytest.mark.asyncio
+    async def test_more_than_100_tokens_are_chunked_and_summed(self, expo):
+        tokens = [f"t{i}" for i in range(250)]
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent = json.loads(request.content)
+            assert len(sent) <= 100
+            # Positional within the chunk: kill exactly token t150.
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"status": "error", "details": {"error": "DeviceNotRegistered"}}
+                        if m["to"] == "t150"
+                        else {"status": "ok"}
+                        for m in sent
+                    ]
+                },
+            )
+
+        expo["handler"] = handler
+        session = FakeSession([])
+        result = await push_notifications.send_push_notifications_with_result(
+            tokens,
+            "t",
+            "b",
+            db=session,  # type: ignore[arg-type]
+        )
+        assert [len(r) for r in expo["requests"]] == [100, 100, 50]
+        assert (result.devices, result.accepted, result.failed) == (250, 249, 1)
+        assert _deactivated_tokens(session) == ["t150"]
+
+    @pytest.mark.asyncio
+    async def test_one_failed_chunk_fails_only_its_own_messages(self, expo):
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                return httpx.Response(502, text="bad gateway")
+            sent = json.loads(request.content)
+            return httpx.Response(200, json={"data": [{"status": "ok"} for _ in sent]})
+
+        expo["handler"] = handler
+        result = await push_notifications.send_push_notifications_with_result(
+            [f"t{i}" for i in range(150)], "t", "b"
+        )
+        assert (result.accepted, result.failed) == (100, 50)
+        assert "502" in result.errors[0]
+
     @pytest.mark.asyncio
     async def test_errors_are_capped_at_three(self, expo):
         expo["handler"] = lambda _req: httpx.Response(

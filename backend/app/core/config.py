@@ -252,9 +252,9 @@ class Settings(BaseSettings):
     # presents this in the ``X-Coord-Service-Secret`` header on
     # ``POST /api/v1/internal/coord-push``; the backend constant-time compares.
     # Empty (the default) means the hop is UNCONFIGURED and the route rejects
-    # EVERY call with 401 — an unauthenticated call is never accepted. The
-    # deployed task definition mounts it from
-    # ``qontinui/staging/coord/web_service_secret``, the same secret coord reads.
+    # EVERY call with 401 — an unauthenticated call is never accepted. Which
+    # secret each side mounts is recorded in that plan's "What exists" table
+    # (the coord -> web internal channel row); the value must match coord's.
     COORD_WEB_SERVICE_SECRET: str = Field(
         default="",
         description=(

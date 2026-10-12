@@ -19,6 +19,12 @@ global middleware guards ``/api/v1/internal/*`` (``main.py`` registers none),
 so :func:`_require_coord_secret` is the only gate on this module; every route
 added here must carry it.
 
+**Payload bounds.** Expo refuses a push larger than 4 KB, so the body is
+bounded to :data:`MAX_PUSH_BODY_CHARS` characters (tighter than the plan's
+original 4000 — coord sends at most 180) and ``data`` to
+:data:`MAX_PUSH_DATA_BYTES` bytes of serialized JSON; either above its bound is
+a 422 here rather than an Expo failure counted as ``failed``.
+
 Who may make web send a push is a new authorization decision (plan D2,
 security content trigger 5): only a holder of the coord service secret, and
 only to the user ids it names. The route is not proxied by ``/operations``.
@@ -27,12 +33,13 @@ only to the user ids it names. The route is not proxied by ``/operations``.
 from __future__ import annotations
 
 import hmac
+import json
 from typing import Any, Literal
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,6 +56,14 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 SECRET_HEADER = "X-Coord-Service-Secret"
+
+# Expo rejects a push whose payload exceeds 4 KB. The plan's contract allowed
+# a 4000-character body, which together with title and data could pass that
+# ceiling and fail at Expo instead of here. Coord sends at most the first 180
+# characters of an item's body, so these bounds cost coord nothing and keep
+# every accepted request well under Expo's limit.
+MAX_PUSH_BODY_CHARS = 1000
+MAX_PUSH_DATA_BYTES = 1024
 
 
 def _require_coord_secret(
@@ -88,9 +103,13 @@ class CoordPushRequest(BaseModel):
         description="Web user ids (auth.users.id) to push to. 1-50.",
     )
     title: str = Field(min_length=1, max_length=200)
-    body: str = Field(max_length=4000)
+    body: str = Field(
+        max_length=MAX_PUSH_BODY_CHARS,
+        description="Notification body. Coord sends at most 180 characters.",
+    )
     data: dict[str, Any] = Field(
-        description="Opaque payload delivered to the app (e.g. the deep link)."
+        description="Opaque payload delivered to the app (e.g. the deep link). "
+        f"At most {MAX_PUSH_DATA_BYTES} bytes as serialized JSON."
     )
     priority: Literal["high", "default"]
     collapse_id: str | None = Field(
@@ -98,6 +117,17 @@ class CoordPushRequest(BaseModel):
         max_length=200,
         description="Newer pushes with the same id replace older ones on the device.",
     )
+
+    @field_validator("data")
+    @classmethod
+    def _data_fits_expo(cls, value: dict[str, Any]) -> dict[str, Any]:
+        size = len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+        if size > MAX_PUSH_DATA_BYTES:
+            raise ValueError(
+                f"data is {size} bytes as JSON; at most {MAX_PUSH_DATA_BYTES} "
+                "fit beside the title and body in Expo's 4 KB payload"
+            )
+        return value
 
 
 class CoordPushResponse(BaseModel):

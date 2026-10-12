@@ -99,6 +99,9 @@ class PushResult:
 
 MAX_REPORTED_ERRORS = 3
 
+# Expo's documented ceiling on messages per push request.
+EXPO_MAX_MESSAGES_PER_REQUEST = 100
+
 # Expo's ticket ``details.error`` for a token that no longer addresses an
 # installed app. The token can never succeed again, so it is deactivated.
 DEVICE_NOT_REGISTERED = "DeviceNotRegistered"
@@ -147,58 +150,34 @@ async def _deactivate_tokens(db: AsyncSession, tokens: list[str]) -> int:
     return int(getattr(result, "rowcount", 0) or 0)
 
 
-async def send_push_notifications_with_result(
+async def _send_chunk(
+    client: httpx.AsyncClient,
     tokens: list[str],
-    title: str,
-    body: str,
-    data: dict | None = None,
-    priority: str = "default",
-    collapse_id: str | None = None,
-    *,
-    db: AsyncSession | None = None,
-) -> PushResult:
-    """Send one batch via the Expo Push API and report what happened.
-
-    Never raises for a delivery failure: a network error or a non-200 marks
-    every message failed and records the reason in ``errors``. Tickets are
-    POSITIONAL to the message list (Expo's contract), which is how a
-    ``DeviceNotRegistered`` ticket is mapped back to its token.
-
-    ``db`` — when given, tokens whose ticket reports ``DeviceNotRegistered``
-    are deactivated in that session (and committed). Without it nothing is
-    written, which is the fire-and-forget caller's behaviour.
-
-    Args:
-        collapse_id: If set, newer notifications with the same collapse_id
-            replace older ones on the device (maps to Expo's ``_collapseId``
-            / APNs ``apns-collapse-id`` / FCM ``collapse_key``).
-    """
-    result = PushResult(devices=len(tokens))
-    if not tokens:
-        return result
-
-    messages = _build_messages(tokens, title, body, data, priority, collapse_id)
-
+    messages: list[dict],
+    result: PushResult,
+    dead_tokens: list[str],
+) -> None:
+    """POST one chunk (<= :data:`EXPO_MAX_MESSAGES_PER_REQUEST`) and fold its
+    tickets into ``result``. Tickets are positional WITHIN the chunk."""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                EXPO_PUSH_URL,
-                json=messages,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
-            )
+        response = await client.post(
+            EXPO_PUSH_URL,
+            json=messages,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        )
     except Exception as e:
-        result.failed = len(tokens)
+        result.failed += len(tokens)
         _add_error(result, f"expo request failed: {type(e).__name__}: {e}")
         logger.warning(
             "push_notification_send_failed", error=str(e), token_count=len(tokens)
         )
-        return result
+        return
 
     if response.status_code != 200:
-        result.failed = len(tokens)
+        result.failed += len(tokens)
         _add_error(
             result, f"expo answered HTTP {response.status_code}: {response.text[:200]}"
         )
@@ -207,7 +186,7 @@ async def send_push_notifications_with_result(
             status=response.status_code,
             body=response.text[:500],
         )
-        return result
+        return
 
     try:
         payload = response.json()
@@ -215,19 +194,20 @@ async def send_push_notifications_with_result(
         payload = None
     tickets = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(tickets, list):
-        result.failed = len(tokens)
+        result.failed += len(tokens)
         request_errors = (
             payload.get("errors") if isinstance(payload, dict) else None
         ) or []
+        reported = False
         for err in request_errors:
             if isinstance(err, dict):
                 _add_error(result, str(err.get("message") or err.get("code")))
-        if not result.errors:
+                reported = True
+        if not reported:
             _add_error(result, "expo answered 200 without a ticket list")
         logger.warning("push_notification_no_tickets", body=response.text[:500])
-        return result
+        return
 
-    dead_tokens: list[str] = []
     for index, token in enumerate(tokens):
         ticket = tickets[index] if index < len(tickets) else None
         if isinstance(ticket, dict) and ticket.get("status") == "ok":
@@ -245,10 +225,67 @@ async def send_push_notifications_with_result(
         if error_code == DEVICE_NOT_REGISTERED:
             dead_tokens.append(token)
 
+
+async def send_push_notifications_with_result(
+    tokens: list[str],
+    title: str,
+    body: str,
+    data: dict | None = None,
+    priority: str = "default",
+    collapse_id: str | None = None,
+    *,
+    db: AsyncSession | None = None,
+) -> PushResult:
+    """Send via the Expo Push API and report what happened.
+
+    Expo accepts at most :data:`EXPO_MAX_MESSAGES_PER_REQUEST` messages per
+    request, so the tokens are sent in chunks of that size and the per-chunk
+    results are summed. Never raises for a delivery failure: a network error
+    or a non-200 marks every message of THAT chunk failed and records the
+    reason in ``errors``. Tickets are POSITIONAL to each chunk's message list
+    (Expo's contract), which is how a ``DeviceNotRegistered`` ticket is mapped
+    back to its token.
+
+    ``db`` — when given, tokens whose ticket reports ``DeviceNotRegistered``
+    are deactivated in that session (and committed). A failed deactivation is
+    rolled back and recorded in ``errors`` rather than raised: the push has
+    already been accepted, and a 5xx here would make coord retry it as a
+    duplicate. Without ``db`` nothing is written, which is the
+    fire-and-forget caller's behaviour.
+
+    Args:
+        collapse_id: If set, newer notifications with the same collapse_id
+            replace older ones on the device (maps to Expo's ``_collapseId``
+            / APNs ``apns-collapse-id`` / FCM ``collapse_key``).
+    """
+    result = PushResult(devices=len(tokens))
+    if not tokens:
+        return result
+
+    messages = _build_messages(tokens, title, body, data, priority, collapse_id)
+    dead_tokens: list[str] = []
+    step = EXPO_MAX_MESSAGES_PER_REQUEST
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for start in range(0, len(tokens), step):
+            await _send_chunk(
+                client,
+                tokens[start : start + step],
+                messages[start : start + step],
+                result,
+                dead_tokens,
+            )
+
     if dead_tokens and db is not None:
         try:
             result.deactivated = await _deactivate_tokens(db, dead_tokens)
         except Exception as e:
+            try:
+                await db.rollback()
+            except Exception as rollback_error:
+                logger.warning(
+                    "push_token_deactivation_rollback_failed",
+                    error=str(rollback_error),
+                )
             _add_error(result, f"token deactivation failed: {type(e).__name__}")
             logger.warning(
                 "push_token_deactivation_failed",
