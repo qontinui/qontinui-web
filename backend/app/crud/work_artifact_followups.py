@@ -281,6 +281,12 @@ async def _lock_followup(db: AsyncSession, edge_id: UUID) -> WorkArtifactEdge:
                 select(WorkArtifactEdge)
                 .where(WorkArtifactEdge.id == edge_id)
                 .with_for_update()
+                # The session may already hold this edge (the route's
+                # ``get_edge``; ``expire_on_commit=False``): without this the
+                # locked read hands back the CACHED attributes, and every
+                # state check below — the compare-and-set included — would
+                # judge what the caller read, not what the row holds.
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
@@ -316,8 +322,11 @@ async def replace_anchors(
     """
     edge = await _lock_followup(db, edge_id)
     current = await load_anchors(db, [edge.id])
-    stored = sorted(_anchor_key(a) for a in current[edge.id])
-    requested = sorted(spec.key() for spec in anchors)
+    # Compared as MULTISETS, never sorted: one path may carry a line-less
+    # anchor beside a lined one, and ordering ``None`` against an ``int``
+    # raises — a 500 on every PUT to a row stored that way.
+    stored = Counter(_anchor_key(a) for a in current[edge.id])
+    requested = Counter(spec.key() for spec in anchors)
     reason = None if anchors else unanchored_reason
     class_change = size_class is not None and (
         size_class != edge.size_class or size_class_source != edge.size_class_source
@@ -383,6 +392,8 @@ async def transition_followup(
     commit: str | None = None,
     note: str | None = None,
     now: datetime | None = None,
+    expect_state: str | None = None,
+    expect_pr: str | None = None,
 ) -> tuple[WorkArtifactEdge, bool]:
     """Move a follow-up to ``to`` — the ONLY writer of the closure columns.
 
@@ -407,6 +418,16 @@ async def transition_followup(
     ``(edge, False)``, nothing written. One that contradicts them (``fixing``
     under a different PR, say) is a :class:`FollowupTransitionConflict`, as is
     any illegal move and any claimed follow-up.
+
+    ``expect_state`` / ``expect_pr`` are an optional compare-and-set
+    precondition, checked under the row lock BEFORE anything else: when given,
+    the row must still be in ``expect_state`` (and, for ``expect_pr``, held
+    under that PR) or the call raises :class:`FollowupTransitionConflict`
+    naming the current state, and writes nothing. A caller acting on a state
+    it read earlier (the reconcile, which read a page of ``fixing`` rows)
+    passes what it read, so a row another writer moved in between — even
+    through a path back to a state the transition table would accept, e.g.
+    ``fixing(A) → open → dismissed`` — is left as that writer left it.
     """
     edge = await _lock_followup(db, edge_id)
     current = followup_state(edge) or "open"
@@ -425,6 +446,20 @@ async def transition_followup(
         raise conflict(
             f"follow-up {edge_id} is claimed by artifact {edge.to_id}; a claimed "
             "follow-up has no closure state of its own"
+        )
+
+    if (expect_state is not None and current != expect_state) or (
+        expect_pr is not None and edge.resolution_pr != expect_pr
+    ):
+        held = f"'{current}'" + (
+            f" under {edge.resolution_pr}" if edge.resolution_pr else ""
+        )
+        wanted = f"'{expect_state or current}'" + (
+            f" under {expect_pr}" if expect_pr else ""
+        )
+        raise conflict(
+            f"follow-up {edge_id} is {held}, not {wanted} as the caller read it; "
+            "another writer moved it, and its move stands"
         )
 
     replay = _replay_matches(edge, to, pr=pr, commit=commit, note=note)
@@ -762,6 +797,8 @@ async def _settle_one(
                 actor=actor,
                 pr=citation,
                 commit=verdict.land_commit,
+                expect_state="fixing",
+                expect_pr=citation,
                 note=(
                     f"coord land record: {citation} landed via "
                     f"{verdict.via or 'an unstated path'}"
@@ -782,6 +819,8 @@ async def _settle_one(
                 edge_id,
                 to="open",
                 actor=actor,
+                expect_state="fixing",
+                expect_pr=citation,
                 note=f"coord land record: {citation} closed without landing",
             )
             if changed:
@@ -789,8 +828,9 @@ async def _settle_one(
             else:
                 outcome.raced += 1
     except (FollowupTransitionConflict, FollowupTransitionInvalid):
-        # Another writer moved the row between the page read and the lock;
-        # its move stands.
+        # Another writer moved the row between the page read and the lock —
+        # the compare-and-set on ``fixing`` under ``citation`` refused it, or
+        # the move is otherwise no longer legal; its move stands.
         outcome.raced += 1
 
 
@@ -817,8 +857,11 @@ async def reconcile_fixing_followups(
     ``(created_at, id)``, ``page_size`` rows at a time, so rows this pass
     moves out of ``fixing`` cannot shift the pages still ahead; each DISTINCT
     PR is read once per pass. Every move goes through
-    :func:`transition_followup` (row lock + re-check), so a row another writer
-    moved in the meantime is left as that writer left it and counted ``raced``.
+    :func:`transition_followup` under a compare-and-set precondition
+    (``expect_state="fixing"``, ``expect_pr=<the citation read>``, checked
+    under the row lock), so a row another writer moved in the meantime — even
+    one that came back through ``open`` to ``dismissed`` or to ``fixing``
+    under another PR — is left as that writer left it and counted ``raced``.
     """
     if max_rows < 1:
         raise ValueError("max_rows must be at least 1")

@@ -514,6 +514,118 @@ class TestReconcileCore:
         await async_db_session.refresh(edge)
         assert edge.resolution is None  # the other writer's move stands
 
+    async def test_a_stale_reopen_does_not_undo_a_dismissal_made_under_the_pass(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """fixing(A) → open → dismissed by the operator, while the pass holds
+        A's ``closed_unlanded`` verdict: the reopen arm must not reopen the
+        dismissal (``dismissed → open`` is legal with a reason, so only the
+        compare-and-set on ``fixing`` under A stops it)."""
+        edge = await _crud_fixing(async_db_session, "dismissed-under", 1)
+
+        class _DismissesTheRow(_Reader):
+            async def read(self, repo, pr_number):
+                await followups_crud.transition_followup(
+                    async_db_session, edge.id, to="open", actor="someone else"
+                )
+                await followups_crud.transition_followup(
+                    async_db_session,
+                    edge.id,
+                    to="dismissed",
+                    actor="operator",
+                    note="not worth fixing",
+                )
+                return await super().read(repo, pr_number)
+
+        reader = _DismissesTheRow({1: followups_crud.LandVerdict("closed_unlanded")})
+        outcome = await followups_crud.reconcile_fixing_followups(
+            async_db_session, reader=reader, actor="test"
+        )
+        assert outcome.examined == 1
+        assert outcome.raced == 1
+        assert outcome.reopened == 0
+        await async_db_session.refresh(edge)
+        assert edge.resolution == "dismissed"  # the operator's move stands
+        assert edge.resolution_note == "not worth fixing"
+        assert edge.resolved_by == "operator"
+        assert [h["to"] for h in edge.resolution_history] == [
+            "fixing",
+            "open",
+            "dismissed",
+        ]
+
+    async def test_a_stale_reopen_does_not_undo_another_prs_fixing_hold(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """fixing(A) → open → fixing(B), while the pass holds A's
+        ``closed_unlanded`` verdict: B's hold must survive — the row IS
+        ``fixing``, so only the PR half of the compare-and-set catches it."""
+        edge = await _crud_fixing(async_db_session, "rehung-under", 1)
+        other_pr = f"{REPO}#2"
+
+        class _RehangsTheRow(_Reader):
+            async def read(self, repo, pr_number):
+                await followups_crud.transition_followup(
+                    async_db_session, edge.id, to="open", actor="someone else"
+                )
+                await followups_crud.transition_followup(
+                    async_db_session,
+                    edge.id,
+                    to="fixing",
+                    actor="someone else",
+                    pr=other_pr,
+                )
+                return await super().read(repo, pr_number)
+
+        reader = _RehangsTheRow({1: followups_crud.LandVerdict("closed_unlanded")})
+        outcome = await followups_crud.reconcile_fixing_followups(
+            async_db_session, reader=reader, actor="test"
+        )
+        assert outcome.examined == 1
+        assert outcome.raced == 1
+        assert outcome.reopened == 0
+        await async_db_session.refresh(edge)
+        assert edge.resolution == "fixing"  # B's hold stands
+        assert edge.resolution_pr == other_pr
+        assert [h["to"] for h in edge.resolution_history] == [
+            "fixing",
+            "open",
+            "fixing",
+        ]
+
+    async def test_the_compare_and_set_refuses_and_names_the_current_state(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        edge = await _crud_fixing(async_db_session, "cas", 1)
+        with pytest.raises(followups_crud.FollowupTransitionConflict) as refused:
+            await followups_crud.transition_followup(
+                async_db_session,
+                edge.id,
+                to="open",
+                actor="test",
+                expect_state="fixing",
+                expect_pr=f"{REPO}#9",
+            )
+        assert refused.value.current_state == "fixing"
+        assert refused.value.resolution_pr == f"{REPO}#1"
+        assert "fixing" in str(refused.value)
+        await async_db_session.refresh(edge)
+        assert edge.resolution == "fixing"
+        assert edge.resolution_pr == f"{REPO}#1"
+
+        # The precondition holding, the move goes through as before.
+        _, changed = await followups_crud.transition_followup(
+            async_db_session,
+            edge.id,
+            to="open",
+            actor="test",
+            expect_state="fixing",
+            expect_pr=f"{REPO}#1",
+        )
+        assert changed is True
+        await async_db_session.refresh(edge)
+        assert edge.resolution is None
+
     async def test_the_walk_pages_and_caps_honestly(
         self, async_db_session: AsyncSession
     ) -> None:
