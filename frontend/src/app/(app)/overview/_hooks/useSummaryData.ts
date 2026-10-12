@@ -14,8 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import { fetchPlans } from "@/lib/api/operations/coordPlans";
 import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   useResourceList,
@@ -32,7 +31,6 @@ import {
 } from "../_lib/intent";
 import { summarizeProgress, type Progress } from "../_lib/progress";
 
-const API = "/api/v1/operations";
 export const INTENT_RESOURCE = "intent_documents";
 const INTENT_PATH = "intent-documents";
 
@@ -62,10 +60,7 @@ async function loadProgress(): Promise<Progress> {
     limit: String(PLAN_FETCH_LIMIT),
     exclude_slug_prefix: SHEPHERD_SLUG_PREFIX,
   });
-  const body = await httpClient.get<{
-    work_units?: CoordPlanRow[];
-    plans?: CoordPlanRow[];
-  }>(`${API}/plans?${qs.toString()}`);
+  const body = await fetchPlans(qs);
   const rows = body.work_units ?? body.plans ?? [];
   return summarizeProgress(rows, { fetchLimit: PLAN_FETCH_LIMIT });
 }
