@@ -162,6 +162,26 @@ export type PauseReasonCode =
   /** Every global merge slot is occupied; nothing can be dispatched. */
   | "slots-saturated"
   | "conflict-strand"
+  /** coord's `terminal-proposal-held` merge_status: green + CLEAN + open, but
+   *  the train's only proposal at this head is TERMINAL and HELD, so coord
+   *  will not re-cut it. A diagnosed BLOCK, not an orchestrator stall — it was
+   *  split out of `ready-but-unlanded` precisely so it stops raising
+   *  `orchestrator-stalled` ("the train should have taken it"). The move is
+   *  mixed (the author's: linearize / close / push a new head; the
+   *  operator's: a hardcap cancel-unblock) and coord names it in
+   *  `blocking_summary`, so the copy points there rather than guessing.
+   *  `blocking`, like `conflict-strand`: nothing clears it on a timer, so the
+   *  `waiting` grade would promise an end that is not coming. Plan
+   *  `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`. */
+  | "terminal-proposal-held"
+  /** coord's `dependency-upstream-closed` merge_status: a `coord:stacked-on=`
+   *  / `coord:downstream-of=` label names an upstream PR that is CLOSED and
+   *  did not land (qontinui-coord#2819). `blocking`: the edge never clears on
+   *  its own — coord classifies it `AuthorActs` — so the `waiting` grade would
+   *  promise a land of the upstream that is not coming. Mapped rather than
+   *  left to `unrecognized-status`, which would call a fully diagnosed state
+   *  a token this bundle cannot name and rank it below `ci-pending`. */
+  | "dependency-upstream-closed"
   | "ci-failed"
   | "ci-pending"
   | "conflicts"
@@ -232,29 +252,36 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   // leave these proposals behind the repo's own cap.
   "queued-behind-repo-cap": 7,
   "conflict-strand": 8,
-  "ci-failed": 9,
+  // Beside its strand sibling: both are coord-diagnosed holds a human must
+  // move, and both outrank the plain per-PR CI/review states because the PR
+  // is otherwise READY — nothing but this hold stands between it and a land.
+  "terminal-proposal-held": 9,
+  // Same neighbourhood and the same reasoning: a coord-diagnosed hold that no
+  // timer clears and that the author must move (re-anchor or remove a label).
+  "dependency-upstream-closed": 10,
+  "ci-failed": 11,
   // Sits with the CI-dimension reasons rather than beside `review-required`,
   // matching coord's own dimension mapping for this code
   // (`merge_verdict.rs`: `"required-checks-missing" => Some("ci")`). The whole
   // point of the split is that this block belongs to CI, not to a reviewer, so
   // ranking it next to `review-required` would re-tell the story we removed.
-  "required-checks-missing": 10,
-  conflicts: 11,
-  "blast-radius-block": 12,
-  "review-required": 13,
-  "behind-base": 14,
-  "ci-pending": 15,
-  draft: 16,
+  "required-checks-missing": 12,
+  conflicts: 13,
+  "blast-radius-block": 14,
+  "review-required": 15,
+  "behind-base": 16,
+  "ci-pending": 17,
+  draft: 18,
   // Beside `draft`, and for the same reason: neither is a cause of the pause,
   // so neither may outrank a reason that is. Nothing below it is reachable
   // alongside it — `no-candidates` is emitted only when `reasons` is otherwise
   // EMPTY — so this rank is read against the reasons ABOVE it and nothing else.
-  "landed-open": 17,
+  "landed-open": 19,
   // Last before `no-candidates`: a token we cannot name explains less than any
   // reason we CAN name, so it never outranks a real diagnosis — but it still
   // sorts above "nothing to do", which would be a false all-clear.
-  "unrecognized-status": 18,
-  "no-candidates": 19,
+  "unrecognized-status": 20,
+  "no-candidates": 21,
 };
 
 const REASON_META: Record<
@@ -278,6 +305,21 @@ const REASON_META: Record<
   { label: string; severity: PauseSeverity }
 > = {
   "conflict-strand": { label: "Stranded in conflict", severity: "blocking" },
+  // `blocking`, not `waiting` — no timer clears a held terminal proposal —
+  // and deliberately NOT the `orchestrator-stalled` row: coord is not failing
+  // to act here, it has diagnosed a hold and says whose move it is in the
+  // PR's `blocking_summary`. The grade differs from /prs on purpose: there
+  // `prStatus.ts` floors it at `waiting`/amber because WHOSE move it is cannot
+  // be read off the token alone; here the axis is "why is the train paused",
+  // and a hold that no timer clears is a block.
+  "terminal-proposal-held": {
+    label: "Terminal proposal held",
+    severity: "blocking",
+  },
+  "dependency-upstream-closed": {
+    label: "Depends on a closed PR",
+    severity: "blocking",
+  },
   "ci-failed": { label: "CI red", severity: "blocking" },
   // `blocking`, not `waiting`. coord reconciles `required_checks_satisfied`
   // against GitHub's own aggregate at hydration, so a surviving `false` is a
@@ -315,6 +357,13 @@ const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
   "blast-radius-block": "blast-radius-block",
   draft: "draft",
   "ready-but-unlanded": "orchestrator-stalled",
+  // The HELD half of what used to be `ready-but-unlanded`. Mapped to its own
+  // reason — never `orchestrator-stalled` (that is the alarm the split exists
+  // to stop raising) and never the unknown-token fallback.
+  "terminal-proposal-held": "terminal-proposal-held",
+  // A dep edge onto a CLOSED, unlanded upstream. Its own reason, never the
+  // unknown-token fallback: coord diagnosed it and names the dead parent.
+  "dependency-upstream-closed": "dependency-upstream-closed",
   // coord landed it at this head; GitHub has not closed it yet. Mapped rather
   // than left to the unknown-token fallback, which grades `blocking`.
   "landed-open": "landed-open",
@@ -331,6 +380,17 @@ const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
  * reason for PRs the train is actively carrying.
  */
 const PROGRESS_STATUSES = new Set<string>(["ready", "queued"]);
+
+/**
+ * Tokens that EXONERATE a PR from coord's health `ready_unmerged` list, which
+ * is built from frozen readiness signals and carries no verdict of its own.
+ * `landed-open`: the work is already on the base branch. `terminal-proposal-held`:
+ * coord diagnosed a held terminal proposal — a block, not a stall.
+ */
+const NOT_STALLED_STATUSES = new Set<string>([
+  "landed-open",
+  "terminal-proposal-held",
+]);
 
 // ----------------------------------------------------------------------------
 // Rows
@@ -758,6 +818,65 @@ export function effectiveMergeStatus(
 // Fleet summary
 // ----------------------------------------------------------------------------
 
+/**
+ * coord's `ready_unmerged` totals, minus the entries the per-repo rows
+ * EXONERATED.
+ *
+ * `buildRepoTrainRows` drops a health entry whose PR's own row carries a
+ * {@link NOT_STALLED_STATUSES} token (`landed-open`, `terminal-proposal-held`):
+ * coord builds the list from frozen CLEAN/green signals with no verdict term,
+ * so those PRs are listed but are not stalls. Reading the raw `count` here
+ * would put them back one level up — in the headline KPI and in the
+ * `suppressed-train` blocking banner.
+ *
+ * Why subtract rather than sum `rows[].readyUnmerged`: coord's `count` may
+ * exceed the `prs` it lists, and a caller may pass health without rows. Only
+ * an entry the rows POSITIVELY dropped is subtracted — an entry for a repo
+ * with no row stays counted, which is the right direction for an alarm.
+ */
+function deriveReadyUnmergedTotals(
+  health: TrainHealth | null,
+  rows: RepoTrainRow[]
+): { readyUnmergedCount: number; readyUnmergedMaxAgeSecs: number | null } {
+  const rawCount = health?.ready_unmerged?.count ?? 0;
+  const rawMaxAge = health?.ready_unmerged?.max_age_seconds ?? null;
+  const listed = health?.ready_unmerged?.prs ?? [];
+  const rowByRepo = new Map(rows.map((r) => [r.repo, r]));
+  const exonerated = listed.filter((entry) => {
+    const row = rowByRepo.get(entry.repo);
+    if (!row) return false;
+    return !row.readyUnmerged.some((r) => r.pr_number === entry.pr_number);
+  });
+  if (exonerated.length === 0) {
+    return { readyUnmergedCount: rawCount, readyUnmergedMaxAgeSecs: rawMaxAge };
+  }
+  const dropped = new Set(exonerated);
+  const remainingAges = listed
+    .filter((entry) => !dropped.has(entry))
+    .map((entry) => entry.age_seconds ?? null)
+    .filter((a): a is number => a != null);
+  // Keep coord's own max unless an exonerated entry provably OWNED it: coord
+  // may count PRs it does not list, so the listed remainder can understate the
+  // true oldest. Only when a dropped PR is at least that old is the raw max
+  // known to be wrong — then recompute from the listed remainder, and with
+  // nothing left carrying an age, the oldest age is unknown (null).
+  const exonAges = exonerated
+    .map((entry) => entry.age_seconds ?? null)
+    .filter((a): a is number => a != null);
+  const heldOwnedMax =
+    rawMaxAge != null && exonAges.some((a) => a >= rawMaxAge);
+  let maxAge: number | null;
+  if (rawMaxAge != null && !heldOwnedMax) {
+    maxAge = rawMaxAge;
+  } else {
+    maxAge = remainingAges.length ? Math.max(...remainingAges) : null;
+  }
+  return {
+    readyUnmergedCount: Math.max(0, rawCount - exonerated.length),
+    readyUnmergedMaxAgeSecs: maxAge,
+  };
+}
+
 export function buildTrainSummary(
   health: TrainHealth | null,
   rows: RepoTrainRow[],
@@ -788,9 +907,8 @@ export function buildTrainSummary(
   // these names.
   const mergeBlockedRepos = health?.dry_run?.repos ?? [];
   const mergeBlockedPrs = health?.dry_run?.would_merge_blocked_by_dry_run ?? 0;
-  const readyUnmergedCount = health?.ready_unmerged?.count ?? 0;
-  const readyUnmergedMaxAgeSecs =
-    health?.ready_unmerged?.max_age_seconds ?? null;
+  const { readyUnmergedCount, readyUnmergedMaxAgeSecs } =
+    deriveReadyUnmergedTotals(health, rows);
 
   const activeRepoCount = rows.filter((r) => r.activity.kind !== "idle").length;
   const inFlightCount = rows.reduce((n, r) => n + r.inFlightCount, 0);
@@ -1221,13 +1339,20 @@ export function buildRepoTrainRows(
     // entry, which carries no verdict): absent a row, or absent the token,
     // nothing is filtered — the alarm keeps firing, which is the right
     // direction for an alarm.
-    const landedOpenPrNumbers = new Set(
+    //
+    // `terminal-proposal-held` is exonerated the same way and for the same
+    // reason: its frozen signals are CLEAN and green too, but coord has
+    // diagnosed a HELD terminal proposal it will not re-cut. Leaving it in
+    // `ready` would re-raise exactly the `orchestrator-stalled` alarm the
+    // token was split out of `ready-but-unlanded` to stop raising, and would
+    // duplicate the PR under its own `terminal-proposal-held` reason.
+    const notStalledPrNumbers = new Set(
       repoPrs
-        .filter((p) => effectiveMergeStatus(p, null) === "landed-open")
+        .filter((p) => NOT_STALLED_STATUSES.has(effectiveMergeStatus(p, null)))
         .map((p) => p.pr_number)
     );
     const ready = (readyByRepo.get(repo) ?? [])
-      .filter((r) => !landedOpenPrNumbers.has(r.pr_number))
+      .filter((r) => !notStalledPrNumbers.has(r.pr_number))
       .sort((a, b) => (b.age_seconds ?? 0) - (a.age_seconds ?? 0));
 
     const repoSlots = slotsByRepo.get(repo) ?? null;
@@ -1896,6 +2021,22 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
         } current head, still shown open by GitHub. Not backlog and not the ` +
         `author's move: coord's own sweep closes ${n === 1 ? "it" : "them"} — ` +
         `read the pr_merge_phantom_open_stuck alert when it does not.`
+      );
+    case "terminal-proposal-held":
+      return (
+        `${n} PR${plural} green and CLEAN whose only merge proposal at ` +
+        `${n === 1 ? "its" : "their"} current head is terminal and held — ` +
+        `coord will not re-cut it. Not an orchestrator stall: the move is ` +
+        `the author's or the operator's, and coord names it in each PR's ` +
+        `blocking summary (PRs tab).`
+      );
+    case "dependency-upstream-closed":
+      return (
+        `${n} PR${plural} held by a dependency label naming an upstream PR ` +
+        `that is closed and did not land, so the edge can never clear on its ` +
+        `own. The author's move: re-anchor the label onto the successor PR, ` +
+        `or remove it if the upstream's content already landed (each PR's ` +
+        `blocking summary names the dead parent).`
       );
     // Reached only when coord's health read is unavailable, so there is no
     // readiness-onset clock and no proposal error to quote — but this is the

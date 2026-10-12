@@ -279,6 +279,12 @@ export type PrMergeStatus =
   | "ready"
   | "queued"
   | "ready-but-unlanded"
+  // green + CLEAN, but the only proposal at this head is TERMINAL and HELD —
+  // coord will not re-cut it. Split out of `ready-but-unlanded` (which keeps
+  // the no-proposal stall); the move, author's or operator's, is named in
+  // `blocking_summary`. Plan
+  // `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`.
+  | "terminal-proposal-held"
   // repo cannot be cloned by coord (deleted/renamed or GitHub App access
   // revoked) — not fixable by a rebase or reevaluate.
   | "repo-unreachable"
@@ -288,6 +294,12 @@ export type PrMergeStatus =
   // future non-specific predicate block all land here, with the specific code
   // named in `blocking_summary`.
   | "predicate-blocked"
+  // a `coord:stacked-on=` / `coord:downstream-of=` edge names an upstream PR
+  // that is CLOSED and did not land, so the edge can never clear on its own.
+  // coord's own `BlockReason::DependencyUpstreamClosed` wire code, given its
+  // own token (out of `predicate-blocked`) by qontinui-coord#2819: the move is
+  // the author's — re-anchor the label onto the successor, or remove it.
+  | "dependency-upstream-closed"
   // coord LANDED this PR at its CURRENT head and GitHub still shows it open —
   // the phantom-open ff-land window, keyed on coord's `land_stamp ==
   // current_head`. Not a block and not a stall: the work is on the base branch

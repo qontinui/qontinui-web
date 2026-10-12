@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { fetchSymbolClaims } from "@/lib/api/operations/symbolClaims";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import {
-  SYMBOL_CLAIMS_API,
-  SYMBOL_CLAIMS_POLL_MS,
-  SYMBOL_CLAIMS_TOP_N,
-} from "./utils";
-import type { SymbolClaim, SymbolClaimsResponse } from "./types";
+import { SYMBOL_CLAIMS_POLL_MS, SYMBOL_CLAIMS_TOP_N } from "./utils";
+import type { SymbolClaim } from "./types";
 
 const log = createLogger("SymbolClaimsStream");
 
@@ -79,21 +75,14 @@ export function useSymbolClaimsStream(): UseSymbolClaimsStreamResult {
 
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(
-        SYMBOL_CLAIMS_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as SymbolClaimsResponse;
+      const data = await fetchSymbolClaims();
       if (cleanedUpRef.current) return;
       const grouped = groupAndCapSymbolClaims(data.holders ?? []);
       setByMachine(grouped);
       setError(null);
     } catch (err) {
       if (cleanedUpRef.current) return;
-      const msg = err instanceof Error ? err.message : "fetch failed";
+      const msg = statusOnlyErrorText(err, "fetch failed");
       log.warn("GET /symbol-claims failed:", msg);
       setError(msg);
     }

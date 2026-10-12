@@ -34,7 +34,7 @@ import {
 } from "./ciRunnerMirror";
 
 /**
- * A SAME-ORIGIN literal, matching `FLEET_HEALTH_API`'s convention rather than
+ * A relative literal, matching `OPERATIONS_BASE`'s convention rather than
  * `OPERATIONS_API`'s prefixed one. The console has both today; reconcile them
  * in a change that is about that.
  */

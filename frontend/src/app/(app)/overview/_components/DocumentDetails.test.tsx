@@ -19,6 +19,9 @@ const page: PageRecord = {
   updated_at: "2026-09-26T00:00:00Z",
   created_by: null,
   updated_by: null,
+  source_repo: null,
+  source_path: null,
+  source_sha: null,
 };
 
 const draft = {

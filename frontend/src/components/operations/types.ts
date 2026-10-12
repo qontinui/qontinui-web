@@ -13,7 +13,7 @@ import type {
   RunnerCapabilityRecord,
   RunnerReportsMeta,
   RunnerWedgeIncident,
-} from "./useFleetHealth";
+} from "@/lib/api/operations/coordFleet";
 
 export interface ClaudeSessionInfo {
   pid: number;

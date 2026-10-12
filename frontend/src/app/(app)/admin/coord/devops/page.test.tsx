@@ -43,7 +43,16 @@ const httpFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
-    fetch: (...args: unknown[]) => httpFetch(...args),
+    // `/fleet/health` is read through `httpClient.fetch` (the typed client's
+    // `fetchFleetHealth`). This suite's routes answer it in `httpGet`'s table
+    // as a parsed body, so that one fetch read is served from there as a 200
+    // Response, and a rejection passes through exactly as `get`'s did.
+    fetch: async (url: string, init?: unknown) =>
+      String(url).includes("fleet/health")
+        ? new Response(JSON.stringify(await httpGet(url, init)), {
+            status: 200,
+          })
+        : httpFetch(url, init),
   },
 }));
 
@@ -2762,9 +2771,10 @@ describe("/admin/coord/devops — GitHub-hosted CI", () => {
     window.localStorage.clear();
   });
 
-  it("mounts the panel open, and a coord without the read renders it UNKNOWN", async () => {
-    // `mockRoutes` rejects every route it does not know, which is exactly a
-    // coord/web build that serves neither the hosted-CI read nor the dial yet.
+  // Plan `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 6: the panel
+  // moved to Dev Ops ▸ CI. The Overview keeps a link and mounts nothing — one
+  // mount in the tree, so the setting has exactly one home.
+  it("links to the CI page instead of mounting the panel", async () => {
     mockRoutes({
       devices: [coordDevice("d-1", "msi", "healthy")],
       runners: [runner("msi")],
@@ -2772,13 +2782,12 @@ describe("/admin/coord/devops — GitHub-hosted CI", () => {
     });
     render(<CoordDevOpsPage />);
 
-    const panel = await screen.findByTestId("github-hosted-ci-panel");
-    expect(
-      await within(panel).findByTestId("github-hosted-ci-repos-error")
-    ).toBeInTheDocument();
-    expect(
-      within(panel).getByTestId("github-hosted-ci-tenant-effective").textContent
-    ).toBe("–");
+    const link = await screen.findByTestId("coord-devops-hosted-ci-link");
+    expect(link.getAttribute("href")).toBe("/admin/coord/ci");
+    expect(screen.queryByTestId("github-hosted-ci-panel")).toBeNull();
+    // The Overview issues none of the panel's reads any more.
+    const urls = httpGet.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes("/ci-hosting"))).toBe(false);
   });
 });
 

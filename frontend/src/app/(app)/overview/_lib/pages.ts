@@ -24,6 +24,20 @@ export interface PageRecord {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+  /** The GitHub `owner/name` a published document mirrors (e.g.
+   *  `qontinui/qontinui-dev-notes`); null for a document written here. Plan
+   *  `2026-10-07-agents-publish-documents-to-the-project-overview` D3. */
+  source_repo: string | null;
+  /** The file's path inside `source_repo`. */
+  source_path: string | null;
+  /** The git sha the current body was taken from. */
+  source_sha: string | null;
+  /** The device whose credential made the latest version, when a device did
+   *  (D2). Sent on a single-page read; a list read may leave it out. */
+  via_device?: string | null;
+  /** The session the publisher REPORTED (`X-Overview-Session`) — a
+   *  volunteered label, never proof of who wrote it. */
+  via_session?: string | null;
 }
 
 export interface PageVersionSummary {
@@ -87,6 +101,47 @@ export function documentMeta(
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+// ---------------------------------------------------------------------------
+// Provenance: a document published from a repository file (plan
+// `2026-10-07-agents-publish-documents-to-the-project-overview` D3, D6).
+// ---------------------------------------------------------------------------
+
+/** Whether a document mirrors a repository file. */
+export function mirrorsRepo(page: Pick<PageRecord, "source_repo">): boolean {
+  return typeof page.source_repo === "string" && page.source_repo !== "";
+}
+
+/** A git sha as people read it: its first seven characters. */
+export function shortSha(sha: string): string {
+  return sha.slice(0, 7);
+}
+
+/** An id (a device's, a session's) as people read it: its first eight
+ *  characters, which for a uuid is its first group. */
+export function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/** The mirrored file at the sha it was taken from, on GitHub; null when the
+ *  document does not name a repo, a path and a sha — or when its
+ *  `source_repo` is a bare name with no owner, which no URL can be built
+ *  from without guessing one. `source_repo` is the GitHub `owner/name`. */
+export function sourceFileUrl(
+  page: Pick<PageRecord, "source_repo" | "source_path" | "source_sha">
+): string | null {
+  const { source_repo: repo, source_path: path, source_sha: sha } = page;
+  if (!repo || !path || !sha) return null;
+  const parts = repo.split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const encodedRepo = parts.map(encodeURIComponent).join("/");
+  const encodedPath = path
+    .replace(/^\/+/, "")
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+  return `https://github.com/${encodedRepo}/blob/${encodeURIComponent(sha)}/${encodedPath}`;
 }
 
 // ---------------------------------------------------------------------------

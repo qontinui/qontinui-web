@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { FleetHealthDevice } from "./useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 /**
  * How one device's coord state reads in the picker.

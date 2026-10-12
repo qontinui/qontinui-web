@@ -27,7 +27,6 @@ test Postgres, skipped when none is reachable.
 from __future__ import annotations
 
 import json
-import re
 import uuid
 
 import pytest
@@ -39,6 +38,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     index_exists,
     run_alembic,
@@ -55,9 +55,7 @@ def _parent_revision_id() -> str:
     source = (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
         encoding="utf-8"
     )
-    match = re.search(r'^down_revision:.*=\s*"([^"]+)"', source, re.MULTILINE)
-    assert match, f"{_REVISION_FILENAME} must declare a down_revision"
-    return match.group(1)
+    return declared_parent_revision_id(source, _REVISION_FILENAME)
 
 
 _PARENT_REVISION_ID = _parent_revision_id()

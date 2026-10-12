@@ -13,9 +13,6 @@ import {
 // Permission hook
 import { useProjectPermissions } from "@/hooks/useProjectPermissions";
 
-// Permission gate component
-import { PermissionGate } from "@/components/collaboration/PermissionGate";
-
 // Collaboration context
 import { useCollaboration } from "@/contexts/collaboration-context";
 
@@ -52,15 +49,6 @@ function Component({ project }) {
   const { canEdit } = useProjectPermissions(project);
 
   return canEdit ? <Editor /> : <ReadOnly />;
-}
-
-// Using PermissionGate
-function Component({ project }) {
-  return (
-    <PermissionGate project={project} requiredPermission="edit">
-      <Editor />
-    </PermissionGate>
-  );
 }
 ```
 
@@ -206,29 +194,6 @@ const {
 } = useCollaboration();
 ```
 
-## Component Props
-
-### PermissionGate
-
-```typescript
-interface PermissionGateProps {
-  // New API (recommended)
-  project?: ProjectWithPermissions;
-  requiredPermission?: PermissionLevel | Permission | Array<...>;
-
-  // Legacy API (still supported)
-  userPermissions?: Permission[];
-  userRole?: string;
-
-  // Display options
-  fallback?: React.ReactNode;
-  showMessage?: boolean;
-  className?: string;
-
-  children: React.ReactNode;
-}
-```
-
 ## TypeScript Types
 
 ```typescript
@@ -270,7 +235,7 @@ interface User {
 **When to use what?**
 
 - **Simple boolean check in component**: Use `useProjectPermissions` hook
-- **Conditionally render JSX**: Use `PermissionGate` component
+- **Conditionally render JSX**: Use the hook's booleans (`canEdit && <Editor />`)
 - **Permission check in utility function**: Use `canUserEdit()` etc functions
 - **Within collaboration features**: Use `useCollaboration` context
 - **Just need one specific check**: Use convenience hooks like `useCanEditProject`
@@ -345,7 +310,7 @@ const features =
 ## Best Practices
 
 1. **Use the hook for component logic**: `useProjectPermissions(project)`
-2. **Use PermissionGate for JSX**: Cleaner than conditional rendering
+2. **Gate JSX on the hook's booleans**: `canEdit && <Editor />`, or a ternary for a fallback
 3. **Check permissions early**: Fail fast and show appropriate UI
 4. **Handle loading states**: `isLoading` from the hook
 5. **Provide fallbacks**: Show locked state instead of hiding completely

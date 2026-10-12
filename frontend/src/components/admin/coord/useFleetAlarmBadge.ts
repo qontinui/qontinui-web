@@ -80,9 +80,9 @@ import {
   type ResourceSamplesResponse,
 } from "@/components/operations/fleetResources";
 import {
-  FLEET_HEALTH_API,
+  fetchFleetHealth,
   type FleetHealthPayload,
-} from "@/components/operations/useFleetHealth";
+} from "@/lib/api/operations/coordFleet";
 import {
   DEFAULT_WINDOW_SECS,
   FLEET_RESOURCE_SAMPLES_API,
@@ -213,10 +213,7 @@ export function useFleetAlarmBadge(): FleetAlarm {
       // No client retries (plan
       // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
       // D5): the next tick is the retry.
-      httpClient.get<FleetHealthPayload>(
-        FLEET_HEALTH_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      ),
+      fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS),
       httpClient.get<ResourceSamplesResponse>(
         `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${DEFAULT_WINDOW_SECS}`,
         COORD_DASHBOARD_POLL_OPTIONS

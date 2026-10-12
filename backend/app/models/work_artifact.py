@@ -202,6 +202,15 @@ class WorkArtifact(Base):
         Index("ix_work_artifacts_kind_slug", "kind", "slug"),
         Index("ix_work_artifacts_repos", "repos", postgresql_using="gin"),
         Index("ix_work_artifacts_intent_refs", "intent_refs", postgresql_using="gin"),
+        # The keyset walk's index (``plan_library_10_keyset_walk_indexes``):
+        # the org scope's NULL-collapsing expression, then the IMMUTABLE
+        # ``(created_at, id)`` every plan-library walk keys on (D8).
+        Index(
+            "ix_work_artifacts_org_created_id",
+            text(_IDENTITY_ORG_EXPR),
+            "created_at",
+            "id",
+        ),
         # The body is SEARCH_TSVECTOR_SQL itself, never a copy of it — a
         # second spelling here is exactly the drift the constant exists to
         # prevent, and it stayed invisible for as long as it existed because
@@ -461,6 +470,14 @@ class WorkArtifactEdge(Base):
         ),
         Index("ix_work_artifact_edges_from_id", "from_id"),
         Index("ix_work_artifact_edges_to_id", "to_id"),
+        # ``/followups``' keyset walk over the open queue only
+        # (``plan_library_10_keyset_walk_indexes``).
+        Index(
+            "ix_work_artifact_edges_open_followups_created_id",
+            "created_at",
+            "id",
+            postgresql_where=text("relation = 'spawned_followup' AND to_id IS NULL"),
+        ),
         # The duplicate guard for OPEN follow-ups. The unique index above
         # cannot constrain them — SQL NULLs are distinct, so every null-target
         # row is unique to it regardless of content. Two DIFFERENT follow-ups

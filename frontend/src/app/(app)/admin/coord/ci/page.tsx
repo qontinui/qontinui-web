@@ -13,6 +13,15 @@
  *     never a second fetch (`deriveCiHealth`). It is never green while any
  *     pool is not measured, any pool's `required` is unknown, or either read
  *     failed or never landed: UNKNOWN renders UNKNOWN.
+ *  1a. **GitHub-hosted CI** — the per-tenant setting with per-repo overrides
+ *     (`GithubHostedCiPanel`, plan
+ *     `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting`), moved
+ *     here from the Overview by Phase 6: a control belongs with what it
+ *     governs, and turning hosted CI off moves load onto these pools. The page
+ *     is member-visible; the panel's WRITES are offered to an admin of the
+ *     ACTIVE tenant only, the predicate `require_coord_tenant_admin` applies.
+ *     Its reads are its own and live inside its `CollapsiblePanel`, so a closed
+ *     panel polls nothing (R7) and the strip depends on none of them.
  *  2. **Pools** — one row per runner label set, expanding in place (R5) to
  *     each repo that uses it and its open alerts.
  *  3. **Repos** — main verdict, PR checks, candidate-CI p90, and the 24 h
@@ -55,6 +64,9 @@ import {
   rowAccentProps,
 } from "@/components/console";
 import { useCiStatusStream } from "@/components/operations/useCiStatusStream";
+import { useAuth } from "@/contexts/auth-context";
+import { useTenant } from "@/contexts/tenant-context";
+import { isActiveTenantCoordAdmin } from "@/lib/coord-admin";
 import type { RepoCiRow } from "@/components/operations/types";
 import {
   CI_OVERVIEW_POLL_MS,
@@ -76,6 +88,7 @@ import {
   type RepoRowModel,
 } from "./_lib/ciDashboardStatus";
 import { useCiEconomics, useCiOverview } from "./_lib/useCiReads";
+import { GithubHostedCiPanel } from "./_components/GithubHostedCiPanel";
 
 /** A figure that may refuse to answer: amber `–` with the reason as its title. */
 function CellText({
@@ -571,6 +584,16 @@ function ReposSection({
 export default function CoordCiPage() {
   const overview = useCiOverview();
   const ciStatus = useCiStatusStream();
+  // Admin IN THE ACTIVE TENANT — what `require_coord_tenant_admin` checks on
+  // the hosted-CI write. `useAuth().isCoordAdmin` is a union across tenants
+  // and would offer an admin of project A a write that 403s on project B.
+  const { user } = useAuth();
+  const { tenants, activeTenantId } = useTenant();
+  const canAdminActiveTenant = isActiveTenantCoordAdmin({
+    user,
+    tenants,
+    activeTenantId,
+  });
   const [expandedPool, setExpandedPool] = useState<string | null>(null);
   // The page's clock: the overview read ages by TIME, and the coord that went
   // quiet is exactly the one that sends nothing to re-render the page.
@@ -639,6 +662,8 @@ export default function CoordCiPage() {
         detail={health.detail ?? undefined}
         badges={health.badges}
       />
+
+      <GithubHostedCiPanel isAdmin={canAdminActiveTenant} />
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <RefreshButton

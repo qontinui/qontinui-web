@@ -33,11 +33,6 @@ class NotificationType(StrEnum):
     SHARE = "share"
     COMMENT = "comment"
     REPLY = "reply"
-    LOCK_RELEASED = "lock_released"
-    PROJECT_UPDATE = "project_update"
-    TEAM_INVITE = "team_invite"
-    ACCESS_GRANTED = "access_granted"
-    ACCESS_REVOKED = "access_revoked"
 
 
 class Notification(Base):
@@ -137,15 +132,12 @@ class NotificationPreferences(Base):
     email_comments = Column(Boolean, default=True, nullable=False)
     email_shares = Column(Boolean, default=True, nullable=False)
     email_replies = Column(Boolean, default=True, nullable=False)
-    email_team_invites = Column(Boolean, default=True, nullable=False)
 
     # In-app notification preferences
     in_app_mentions = Column(Boolean, default=True, nullable=False)
     in_app_comments = Column(Boolean, default=True, nullable=False)
     in_app_shares = Column(Boolean, default=True, nullable=False)
     in_app_replies = Column(Boolean, default=True, nullable=False)
-    in_app_team_invites = Column(Boolean, default=True, nullable=False)
-    in_app_project_updates = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -172,7 +164,6 @@ class NotificationPreferences(Base):
             NotificationType.COMMENT: self.email_comments,
             NotificationType.SHARE: self.email_shares,
             NotificationType.REPLY: self.email_replies,
-            NotificationType.TEAM_INVITE: self.email_team_invites,
         }
         # Email defaults OFF for unmapped types (conservative).
         result = mapping.get(notification_type, False)
@@ -185,8 +176,6 @@ class NotificationPreferences(Base):
             NotificationType.COMMENT: self.in_app_comments,
             NotificationType.SHARE: self.in_app_shares,
             NotificationType.REPLY: self.in_app_replies,
-            NotificationType.TEAM_INVITE: self.in_app_team_invites,
-            NotificationType.PROJECT_UPDATE: self.in_app_project_updates,
         }
         # In-app defaults ON for unmapped types.
         result = mapping.get(notification_type, True)

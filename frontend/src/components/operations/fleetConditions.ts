@@ -57,7 +57,7 @@ import { relativeTime } from "@/components/console/time";
 import type {
   FleetHealthConditions,
   FleetHealthPayload,
-} from "./useFleetHealth";
+} from "@/lib/api/operations/coordFleet";
 
 /** Traffic-light level, same vocabulary as `console/HealthStrip`. */
 export type FleetConditionsLevel = "green" | "amber" | "red";

@@ -39,7 +39,8 @@ import {
 import { useFleetVolumes } from "./useFleetVolumes";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { isCiRunnerDevice } from "./useFleetHealth";
-import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
+import type { UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
 import { resolveDeviceDrain, resolveDrainTarget } from "./fleetDrain";
 import type { UseFleetDrainResult } from "./useFleetDrain";

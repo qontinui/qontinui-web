@@ -49,17 +49,17 @@ import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
-  FLEET_HEALTH_API,
+  fetchFleetHealth,
   type FleetHealthDevice,
   type FleetHealthPayload,
-} from "@/components/operations/useFleetHealth";
+} from "@/lib/api/operations/coordFleet";
 import {
   parseFleetDrain,
   resolveDeviceDrain,
   type FleetDrainRead,
 } from "@/components/operations/fleetDrain";
 
-/** `GET /api/v1/operations/fleet/drain`, same-origin like `FLEET_HEALTH_API`. */
+/** `GET /api/v1/operations/fleet/drain` — the relative form, like `OPERATIONS_BASE`. */
 export const CONDITIONS_FLEET_DRAIN_API = "/api/v1/operations/fleet/drain";
 
 /**
@@ -147,7 +147,7 @@ export function useRunnerHint(): RunnerHintKind | null {
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     const [health, drainBody] = await Promise.allSettled([
-      httpClient.get<unknown>(FLEET_HEALTH_API, COORD_DASHBOARD_POLL_OPTIONS),
+      fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS),
       httpClient.get<unknown>(
         CONDITIONS_FLEET_DRAIN_API,
         COORD_DASHBOARD_POLL_OPTIONS

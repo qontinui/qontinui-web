@@ -305,6 +305,13 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.api.deps._resolve_actor_principal": (
         "a plain coroutine the dual-auth dependencies call by hand; never a Depends()"
     ),
+    "app.api.v1.endpoints.devices._verify_poll_token": (
+        "a plain coroutine the GET-only pending-redeem handler calls by hand"
+    ),
+    "app.api.v1.endpoints.devices.pending_redeem": (
+        "a GET route (the runner's pending-redeem poll) — no write METHOD, so "
+        "never in the population"
+    ),
     "app.api.v1.endpoints.devices_ws.websocket_device_unified_endpoint": (
         "a WebSocket endpoint — no write METHOD, so never in the population"
     ),
