@@ -481,6 +481,7 @@ def _assert_anchor_checks(engine: Engine, ids: dict[str, str]) -> None:
         (shape, {"path": "trail.py "}),
         (shape, {"path": "new\nline.py"}),
         (shape, {"path": "del\x7f.py"}),
+        (shape, {"path": "c1\x85.py"}),
         (shape, {"path": "x" * 1025}),
         ("ck_work_artifact_edge_anchors_lines", {"line_start": 0}),
         ("ck_work_artifact_edge_anchors_lines", {"line_end": 4}),
