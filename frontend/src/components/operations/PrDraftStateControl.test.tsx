@@ -134,7 +134,7 @@ describe("PrDraftStateControl", () => {
 
   describe("direction asymmetry", () => {
     it("confirms the release-to-train consequence before undrafting", async () => {
-      fetchMock.mockResolvedValue({ ok: true } as Response);
+      fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
       const { onActed } = renderControl({ prState: "draft" });
 
       fireEvent.click(screen.getByTestId("pr-ready-for-review"));
@@ -156,7 +156,7 @@ describe("PrDraftStateControl", () => {
     });
 
     it("holds in one click when no proposal is in flight", async () => {
-      fetchMock.mockResolvedValue({ ok: true } as Response);
+      fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
       renderControl({ prState: "open", hasActiveProposal: false });
 
       fireEvent.click(screen.getByTestId("pr-convert-to-draft"));
@@ -173,7 +173,7 @@ describe("PrDraftStateControl", () => {
   // hold action must not imply "drafting = stop".
   describe("in-flight-proposal hazard", () => {
     it("warns before holding a PR that has a live proposal", async () => {
-      fetchMock.mockResolvedValue({ ok: true } as Response);
+      fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
       renderControl({ prState: "open", hasActiveProposal: true });
 
       fireEvent.click(screen.getByTestId("pr-convert-to-draft"));
