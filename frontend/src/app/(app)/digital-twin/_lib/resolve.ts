@@ -102,7 +102,7 @@ export interface CompletenessSummary {
    * Snapshot observers probed and NOT refused — the gauge's denominator. A
    * `restricted` cell is an access decision, not an observer that failed to
    * answer, so it is excluded here and counted in `restricted` instead;
-   * otherwise a tenant refused the SystemTenant sub-spaces (coord#3128) would
+   * otherwise a tenant refused the SystemTenant sub-spaces (per qontinui-coord#3128) would
    * read "2/11 responding", as if nine observers were down.
    */
   snapshotTotal: number;

@@ -41,7 +41,7 @@ import { CoverageMatrix } from "./CoverageMatrix";
 const SNAPSHOT_IDS = manifest.subspaces
   .filter((s) => s.query_kind === "snapshot")
   .map((s) => s.id);
-/** The snapshot sub-spaces qontinui-coord#3128 refuses to a non-system tenant. */
+/** The snapshot sub-spaces coord refuses to a non-system tenant (per qontinui-coord#3128). */
 const SYSTEM_TENANT_SUBSPACES = new Set([
   "release",
   "schema",
@@ -127,7 +127,7 @@ describe("CoverageMatrix gauges", () => {
 
 describe("CoverageMatrix restriction", () => {
   // coord 403s a SystemTenant-scoped cell for a non-system tenant while the
-  // tenant's other cells answer (qontinui-coord#3128). The backend raises the
+  // tenant's other cells answer (per qontinui-coord#3128). The backend raises the
   // grid-level `restricted` flag only when EVERY probed cell is restricted, so
   // one restricted cell must render as that cell — not hide the whole grid.
   it("renders the grid with one restricted cell and no access notice when only one cell is restricted", () => {
@@ -157,7 +157,7 @@ describe("CoverageMatrix restriction", () => {
   });
 
   it("counts restricted cells beside the live gauge, never in its denominator", () => {
-    // qontinui-coord#3128 split: nine SystemTenant cells refused, two answer.
+    // The split per qontinui-coord#3128: nine SystemTenant cells refused, two answer.
     const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
       id,
       status: SYSTEM_TENANT_SUBSPACES.has(id) ? "restricted" : "implemented",

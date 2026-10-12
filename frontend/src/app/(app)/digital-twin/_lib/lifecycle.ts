@@ -196,7 +196,7 @@ export interface CoverageCounts {
   /**
    * Snapshot rows coord refused for this tenant (cell status `restricted`):
    * an access decision, not a silent observer, so they sit outside `probed`
-   * rather than reading as "probed, not answering" (coord#3128 refuses the
+   * rather than reading as "probed, not answering" (once qontinui-coord#3128 lands, coord refuses the
    * SystemTenant sub-spaces per cell to a non-system tenant).
    */
   restricted: number;
