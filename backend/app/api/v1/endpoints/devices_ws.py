@@ -84,10 +84,19 @@ _TERMINAL_FRAME_LIMIT = 65536
 
 # Every frame type qontinui-runner writes for the device's CHAT sockets
 # (``runner_chat_ws.py``): the ``mcp/backend_relay.rs`` ``handle_chat_*``
-# replies, plus ``chat_response`` / ``chat_session_state`` rewrapped from its
-# ``ai-output`` / ``session-state`` broadcasts. The web chat client consumes
-# each one (``frontend/src/hooks/useChatWebSocket.ts``). The chat arm of
+# replies, plus ``chat_response`` rewrapped from its ``ai-output`` broadcast.
+# The web chat client consumes each one
+# (``frontend/src/hooks/useChatWebSocket.ts``). The chat arm of
 # :func:`_route_device_message` says why relaying them is safe.
+#
+# ``chat_session_state`` arrives here only as a REPLY: to a
+# ``chat_session_state`` request, a ``chat_interrupt`` or a ``chat_close``.
+# The runner's ``handle_outbound`` would also rewrap a ``session-state``
+# broadcast into one, but nothing produces that broadcast (qontinui-runner
+# c40d7ebd1, 2026-10-11: ``emit_session_state`` emits only the Tauri event
+# ``claude-session-state``). So no frame tells a chat page that its session
+# went idle after an answer; this relay cannot forward a frame that is never
+# sent.
 #
 # ``chat_workflow_generating`` is absent on purpose: the client sets that state
 # itself when it asks for a workflow, and nothing on the runner sends it.
@@ -1317,9 +1326,12 @@ async def _route_device_message(
     # were found and restored twice since (``terminal_output`` /
     # ``terminal_exit``, then the terminal-RPC replies below); this is the chat
     # half. Without it a chat page never learned the run it had created, never
-    # saw its session go idle after an answer, never saw a refused spawn
-    # (``chat_created`` with ``error``), and never got a loaded conversation
-    # (``chat_output``) or a generated workflow (``chat_workflow_generated``).
+    # saw a refused spawn (``chat_created`` with ``error``), never got the
+    # ``chat_session_state`` reply to a load, an interrupt or a close, and
+    # never got a loaded conversation (``chat_output``) or a generated workflow
+    # (``chat_workflow_generated``). It is still not told when a session goes
+    # idle after an answer: that would be the runner's ``session-state``
+    # broadcast, which nothing produces (see ``_CHAT_FRAME_TYPES``).
     #
     # Why relaying them is safe, and keeps them attributable:
     #   * Scope: the frame is published on THIS device's chat channel only
@@ -1337,7 +1349,10 @@ async def _route_device_message(
     #     socket that asked: every chat socket of the device receives them. A
     #     client must keep to its own conversation by that identity, and take
     #     a ``chat_created`` (which no client can recognise as its own) only
-    #     while it has a create outstanding.
+    #     while it has a create outstanding — ``useChatWebSocket`` does both.
+    #     A relay chat session's own output names no run (the runner spawns
+    #     it without a session context, ``handle_chat_create``), so two chats
+    #     on one device cannot tell each other's ``chat_response`` apart.
     #   * Closed set: a ``chat_*`` type is chat's by name, so it is relayed
     #     even when it names no run. ``error`` is shared with the terminal and
     #     remote paths, so only one the runner attributed to a chat run is

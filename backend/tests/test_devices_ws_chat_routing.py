@@ -4,7 +4,7 @@ The router used to relay ``chat_response`` alone, so the runner's replies to
 the chat requests the relay forwarded — ``chat_created`` (a refused spawn
 included), ``chat_session_state``, ``chat_message_ack``, ``chat_output``, … —
 fell through to ``devices_ws_unhandled_message`` and were dropped. A chat page
-then never learned the run it had created and never saw its session go idle.
+then never learned the run it had created.
 
 Pinned here:
 
@@ -13,13 +13,20 @@ Pinned here:
 2. ``error`` is relayed to them only when the runner attributed it to a chat
    run — an uncorrelated one stays on the fall-through, and one correlated by
    ``request_id`` stays on the terminal channel;
-3. a secondary that does not own the device's relay pointer cannot speak for
+3. a frame of any OTHER type is not chat's because it names a run: it stays on
+   the arm its type selects, though the chat arm sits above them all;
+4. a secondary that does not own the device's relay pointer cannot speak for
    the device on chat;
-4. a relayed frame reaches the chat sockets of THAT device and no other.
+5. a relayed frame is published on THAT device's chat channel, and only a
+   chat socket ``runner_chat_ws.py`` admitted for the device's owner is
+   subscribed to it.
 
 The frames are the runner's own wire shapes (qontinui-runner
 ``src-tauri/src/mcp/backend_relay.rs``: the ``handle_chat_*`` replies, and the
-``ai-output`` / ``session-state`` broadcasts ``handle_outbound`` rewraps).
+``ai-output`` broadcast ``handle_outbound`` rewraps as ``chat_response``).
+``handle_outbound`` would rewrap a ``session-state`` broadcast as a
+``chat_session_state`` too, but nothing on the runner produces that broadcast
+(qontinui-runner c40d7ebd1, 2026-10-11), so no such shape is pinned here.
 """
 
 from __future__ import annotations
@@ -27,13 +34,18 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from fastapi import WebSocketDisconnect, status
+from sqlalchemy.sql import operators
+from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
+from starlette.websockets import WebSocketState
 
-from app.api.v1.endpoints import devices_ws
+from app.api.v1.endpoints import devices_ws, runner_chat_ws
 from app.services.runner_websocket_manager import RunnerWebSocketManager
 
 
@@ -77,13 +89,6 @@ _RUNNER_CHAT_FRAMES: list[tuple[str, dict[str, Any]]] = [
             "can_interrupt": False,
             "session_id": "run-1",
             "user_interacted": True,
-        },
-    ),
-    (
-        "chat_session_state-broadcast",
-        {
-            "type": "chat_session_state",
-            "data": {"taskRunId": "run-1", "sessionId": "run-1", "state": "ready"},
         },
     ),
     (
@@ -140,17 +145,42 @@ _RUNNER_CHAT_FRAMES: list[tuple[str, dict[str, Any]]] = [
             "error": "No conversation history available",
         },
     ),
+    # The ``ai-output`` broadcast (``mcp/shared.rs`` ``AiOutputEvent``). A
+    # relay chat session is spawned without a session context, so its own
+    # output names no run; a workflow agent's output names its run.
     (
-        "chat_response-broadcast",
+        "chat_response-relay-chat",
         {
             "type": "chat_response",
             "data": {
-                "id": "out-1",
-                "timestamp": 1760169600,
+                "id": "ai-1760169600000-17",
+                "timestamp": 1760169600000,
                 "line": "The twin reports 3 open PRs.",
                 "source": "claude",
-                "taskRunId": "run-1",
-                "sessionId": "run-1",
+                "actionId": None,
+                "taskRunId": None,
+                "sessionId": None,
+                "sessionName": None,
+                "phase": None,
+                "phaseIteration": None,
+            },
+        },
+    ),
+    (
+        "chat_response-workflow-agent",
+        {
+            "type": "chat_response",
+            "data": {
+                "id": "ai-1760169600001-18",
+                "timestamp": 1760169600001,
+                "line": "Running the verification phase.",
+                "source": "claude",
+                "actionId": None,
+                "taskRunId": "run-7",
+                "sessionId": "run-7-agentic-1",
+                "sessionName": "Fix login",
+                "phase": "agentic",
+                "phaseIteration": 1,
             },
         },
     ),
@@ -263,6 +293,60 @@ async def test_a_request_id_outranks_a_run_id_on_an_error() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("frame", "lands_on"),
+    [
+        (
+            {
+                "type": "terminal_output",
+                "terminal_id": "t1",
+                "data": "x",
+                "task_run_id": "run-1",
+            },
+            "terminal",
+        ),
+        (
+            {"type": "terminal_sessions", "terminals": [], "task_run_id": "run-1"},
+            "terminal",
+        ),
+        (
+            {"type": "devenv_enroll_ack", "ok": True, "task_run_id": "run-1"},
+            "devenv_enroll_ack",
+        ),
+        ({"type": "runner_frame_nobody_routes", "task_run_id": "run-1"}, "unhandled"),
+    ],
+    ids=["terminal_output", "terminal-rpc-reply", "devenv_enroll_ack", "unknown-type"],
+)
+async def test_a_non_error_frame_naming_a_run_is_not_chats(
+    frame: dict[str, Any], lands_on: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``error`` is the one type chat borrows from the shared vocabulary.
+
+    A ``task_run_id`` on any other type does not make the frame chat's: it
+    stays on the arm its type selects, even though the chat arm sits above
+    every one of them.
+    """
+    fake_logger = MagicMock()
+    monkeypatch.setattr(devices_ws, "logger", fake_logger)
+    expected = copy.deepcopy(frame)
+    manager = _Manager()
+
+    await devices_ws._route_device_message(frame, "dev-1", "user-1", manager)
+
+    manager.send_chat_response_to_mobiles.assert_not_called()
+    if lands_on == "terminal":
+        manager.send_terminal_response_to_mobiles.assert_awaited_once_with(
+            "dev-1", expected
+        )
+    else:
+        manager.send_terminal_response_to_mobiles.assert_not_called()
+    if lands_on == "devenv_enroll_ack":
+        assert "devices_ws_devenv_enroll_ack" in _events(fake_logger.info)
+    if lands_on == "unhandled":
+        assert "devices_ws_unhandled_message" in _events(fake_logger.debug)
+
+
+@pytest.mark.asyncio
 async def test_an_unknown_chat_type_still_hits_the_fallthrough(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -321,8 +405,8 @@ async def test_a_secondary_holding_the_relay_pointer_is_relayed_like_a_primary()
 
 
 # ---------------------------------------------------------------------------
-# Scope: through the real manager and chat relay, a relayed frame reaches the
-# chat sockets of the device that sent it and no other device's.
+# Scope, half 1: through the real manager and chat relay, a relayed frame is
+# published on the chat channel of the device that sent it.
 # ---------------------------------------------------------------------------
 
 
@@ -374,10 +458,12 @@ class _ChatSocket:
 
 
 @pytest.mark.asyncio
-async def test_a_relayed_chat_frame_reaches_only_its_own_devices_chat_sockets() -> None:
+async def test_a_relayed_chat_frame_is_published_on_its_own_devices_chat_channel() -> (
+    None
+):
     redis = _Redis()
     manager = RunnerWebSocketManager(redis)  # type: ignore[arg-type]
-    device, other_device = uuid4(), uuid4()
+    device = uuid4()
     frame = {"type": "chat_created", "id": "run-1", "state": "initializing"}
 
     await devices_ws._route_device_message(
@@ -387,12 +473,152 @@ async def test_a_relayed_chat_frame_reaches_only_its_own_devices_chat_sockets() 
     assert [channel for channel, _ in redis.published] == [
         f"runner:chat_response:{device}"
     ]
-
-    own_socket, other_socket = _ChatSocket(), _ChatSocket()
-    relay = manager._chat_relay
-    await relay._listen_for_responses(str(device), own_socket, "own")  # type: ignore[arg-type]
-    await relay._listen_for_responses(str(other_device), other_socket, "other")  # type: ignore[arg-type]
-
-    assert own_socket.sent == [frame]
-    assert other_socket.sent == []
     assert json.loads(redis.published[0][1]) == frame
+
+    chat_socket = _ChatSocket()
+    await manager._chat_relay._listen_for_responses(str(device), chat_socket, "own")  # type: ignore[arg-type]
+    assert chat_socket.sent == [frame]
+
+
+# ---------------------------------------------------------------------------
+# Scope, half 2: who may subscribe to that channel. The channel is named by
+# the device id alone, so a channel name keeps no one out; what keeps another
+# user's socket off it is the ownership check ``runner_chat_ws.py`` makes
+# before it subscribes a socket. Driven through the real endpoint.
+# ---------------------------------------------------------------------------
+
+_OWNER = uuid4()
+_STRANGER = uuid4()
+_CHAT_DEVICE = uuid4()
+
+
+def _where_equalities(stmt: Any) -> dict[str, Any]:
+    """A SELECT's ``column == value`` WHERE criteria, keyed by column.
+
+    Any other criterion shape fails here, loudly, so a rewritten query cannot
+    pass by matching nothing this helper understands.
+    """
+    where = stmt.whereclause
+    clauses = list(where.clauses) if isinstance(where, BooleanClauseList) else [where]
+    equalities: dict[str, Any] = {}
+    for clause in clauses:
+        assert isinstance(clause, BinaryExpression), clause
+        assert clause.operator is operators.eq, clause
+        equalities[clause.left.key] = clause.right.value
+    return equalities
+
+
+class _DeviceTable:
+    """``AsyncSessionLocal`` over an in-memory ``devices`` table.
+
+    It applies the endpoint's OWN query to its rows, so what is measured is
+    the query the endpoint builds: drop a criterion from it and a row it must
+    not see comes back.
+    """
+
+    def __init__(self, *rows: SimpleNamespace) -> None:
+        self._rows = rows
+
+    def __call__(self) -> _DeviceTable:
+        return self
+
+    async def __aenter__(self) -> _DeviceTable:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def execute(self, stmt: Any) -> MagicMock:
+        wanted = _where_equalities(stmt)
+        matches = [
+            row
+            for row in self._rows
+            if all(getattr(row, key) == value for key, value in wanted.items())
+        ]
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = matches[0] if matches else None
+        return result
+
+
+class _ChatClient:
+    """A chat client at the handshake; once admitted it hangs up at once."""
+
+    def __init__(self) -> None:
+        self.cookies: dict[str, str] = {}
+        self.client_state = WebSocketState.CONNECTED
+        self.application_state = WebSocketState.CONNECTED
+        self.sent: list[dict[str, Any]] = []
+        self.close_codes: list[int] = []
+
+    async def accept(self) -> None:
+        return None
+
+    async def send_json(self, payload: dict[str, Any]) -> None:
+        self.sent.append(payload)
+
+    async def receive_json(self) -> dict[str, Any]:
+        raise WebSocketDisconnect(code=1000)
+
+    async def close(self, code: int = 1000, reason: str | None = None) -> None:
+        self.close_codes.append(code)
+        self.application_state = WebSocketState.DISCONNECTED
+
+
+async def _open_chat_socket(
+    monkeypatch: pytest.MonkeyPatch, caller: Any
+) -> tuple[_ChatClient, MagicMock]:
+    """Open ``/devices/{_CHAT_DEVICE}/chat`` as ``caller``; the device is
+    ``_OWNER``'s."""
+    manager = MagicMock()
+    manager.is_connected = MagicMock(return_value=True)
+    manager.connect_mobile_chat = AsyncMock()
+    manager.disconnect_mobile_chat = AsyncMock()
+    monkeypatch.setattr(
+        runner_chat_ws,
+        "get_current_user_from_ws",
+        AsyncMock(return_value=SimpleNamespace(id=caller)),
+    )
+    monkeypatch.setattr(
+        runner_chat_ws,
+        "AsyncSessionLocal",
+        _DeviceTable(SimpleNamespace(device_id=_CHAT_DEVICE, user_id=_OWNER)),
+    )
+    monkeypatch.setattr(runner_chat_ws, "get_redis", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        runner_chat_ws,
+        "get_runner_websocket_manager",
+        AsyncMock(return_value=manager),
+    )
+    client = _ChatClient()
+
+    await runner_chat_ws.websocket_runner_chat_endpoint(
+        client,  # type: ignore[arg-type]
+        runner_id=_CHAT_DEVICE,
+        token="a-valid-user-token",
+    )
+    return client, manager
+
+
+@pytest.mark.asyncio
+async def test_a_user_who_does_not_own_the_device_is_never_subscribed_to_its_chat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, manager = await _open_chat_socket(monkeypatch, caller=_STRANGER)
+
+    manager.connect_mobile_chat.assert_not_called()
+    assert client.sent == [
+        {"type": "error", "message": "Runner not found or not owned by you"}
+    ]
+    assert client.close_codes[0] == status.WS_1008_POLICY_VIOLATION
+
+
+@pytest.mark.asyncio
+async def test_the_devices_owner_is_subscribed_to_its_chat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control: the same harness admits the owner, so the refusal above is
+    the ownership check and not a harness that admits no one."""
+    client, manager = await _open_chat_socket(monkeypatch, caller=_OWNER)
+
+    manager.connect_mobile_chat.assert_awaited_once_with(_CHAT_DEVICE, client, _OWNER)
+    assert client.sent[0]["type"] == "connected"

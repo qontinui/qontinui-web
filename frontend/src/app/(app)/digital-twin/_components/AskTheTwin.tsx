@@ -44,10 +44,12 @@ const TWIN_PREAMBLE =
  * The line under a busy Ask button, saying only what this page knows.
  *
  * Only the runner's `processing` state says its agent is working. Streamed
- * text says output arrived, not that more is coming: the backend relay
- * forwards the runner's output but not its session state (`devices_ws.py`
- * `_route_device_message`), so until it does, this page is not told when an
- * answer finishes.
+ * text says output arrived, not that more is coming, and nothing tells this
+ * page when an answer finishes. The backend relay forwards the runner's
+ * `chat_session_state` frames (`devices_ws.py` `_route_device_message`), but
+ * the runner sends one only in reply to a request — a load, an interrupt, a
+ * close — and this component makes none. The runner's `session-state`
+ * broadcast, which would announce `ready` after an answer, has no producer.
  */
 function busyHint(
   sessionGone: boolean,
