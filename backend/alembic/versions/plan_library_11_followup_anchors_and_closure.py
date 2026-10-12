@@ -258,7 +258,7 @@ def upgrade() -> None:
         "CHECK (path <> '' AND length(path) <= 1024 "
         "AND left(path, 1) NOT IN ('/', ' ') AND right(path, 1) NOT IN ('/', ' ') "
         "AND strpos(path, chr(92)) = 0 AND strpos(path, '//') = 0 "
-        "AND path !~ '(^|/)[.][.]?(/|$)' AND path !~ '[[:cntrl:]]'), "
+        "AND path !~ '(^|/)[.][.]?(/|$)' AND path !~ ('[' || chr(1) || '-' || chr(31) || chr(127) || ']')), "
         "CONSTRAINT ck_work_artifact_edge_anchors_lines "
         "CHECK ((line_start IS NULL OR line_start >= 1) AND (line_end IS NULL "
         "OR (line_start IS NOT NULL AND line_end >= line_start))), "
