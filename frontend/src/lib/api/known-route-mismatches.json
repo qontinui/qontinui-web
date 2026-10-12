@@ -14,13 +14,6 @@
     "kind": "no-path"
   },
   {
-    "file": "components/admin/coord/GapRow.tsx",
-    "method": "POST",
-    "path": "/api/v1/operations/coord/prompt-documents/policy/{param}/clauses",
-    "reason": "dead",
-    "kind": "no-path"
-  },
-  {
     "file": "components/overview/editing/api.ts",
     "method": "GET",
     "path": "/api/v1/overview/{param} #1",
