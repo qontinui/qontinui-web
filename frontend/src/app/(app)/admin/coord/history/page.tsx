@@ -46,11 +46,10 @@ import {
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { httpClient } from "@/services/service-factory";
+import { fetchPlans, planRowsOf } from "@/lib/api/operations/coordPlans";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 type SectionId = "shipped" | "archived";
@@ -98,12 +97,9 @@ function useSection(status: SectionId): SectionState & { refetch: () => void } {
         const qs = new URLSearchParams();
         qs.set("status", status);
         qs.set("limit", "50");
-        const body = await httpClient.get<{ plans?: CoordPlanRow[] }>(
-          `${API}/plans?${qs.toString()}`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchPlans(qs, COORD_DASHBOARD_POLL_OPTIONS);
         if (!isCurrent()) return;
-        const plans = body.plans ?? [];
+        const plans = planRowsOf(body);
         setState({ plans, count: plans.length, settled: true, error: null });
       } catch (e) {
         if (!isCurrent()) return;
