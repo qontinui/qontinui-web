@@ -184,20 +184,25 @@ export default function CoordPlanFollowupsPage() {
     onQuestionChange: resetWindow,
   });
 
-  const changeView = useCallback(
-    (next: FollowupView) => {
-      if (next === view) return;
-      resetPager();
-      setView(next);
-    },
-    [view, resetPager]
-  );
-
   // ── Dismiss ────────────────────────────────────────────────────────────
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [dismissError, setDismissError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const changeView = useCallback(
+    (next: FollowupView) => {
+      if (next === view) return;
+      resetPager();
+      setView(next);
+      // A reason typed for a row in the old view belongs to that row; it must
+      // not reappear, pre-filled, when the view comes back.
+      setDismissing(null);
+      setReason("");
+      setDismissError(null);
+    },
+    [view, resetPager]
+  );
 
   const openDismiss = (edgeId: string) => {
     setDismissing(edgeId);
