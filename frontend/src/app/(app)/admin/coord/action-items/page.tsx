@@ -12,8 +12,9 @@
  * Composed from `components/console` (`frontend/docs/console-ui-style-guide.md`):
  *
  * - **R1** — a `<HealthStrip>` derived from the envelope already fetched:
- *   red when an owed item's push did not land (the console is then the only
- *   place telling the operator), amber when items are owed, green otherwise.
+ *   red when anything is owed (an open item is the operator's own move — R3),
+ *   with push delivery as its own "not on phone" signal; amber when the read
+ *   failed or has not answered; green when nothing is owed.
  * - **R6** — Open / Done / Dismissed tabs whose counts are coord's
  *   server-computed `counts` (never `items.length`, which is the page size),
  *   and `–` until the first read answers.
@@ -40,6 +41,7 @@ import { ActionItemRow } from "@/components/admin/coord/ActionItemRow";
 import {
   ACTION_ITEM_RESOLVE_OPTIONS,
   deriveActionItemsHealth,
+  isAlreadyResolved,
   isMigrationPending,
   type ActionItemCounts,
   type ActionItemResolution,
@@ -71,7 +73,12 @@ export default function CoordActionItemsPage() {
   // does not make them unknown.
   const [counts, setCounts] = useState<ActionItemCounts | null>(null);
   const [readError, setReadError] = useState<unknown>(null);
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  // A set, not one id: two rows may be resolving at once, and clearing a
+  // single slot when the first finishes would re-enable the second's buttons
+  // while its request is still out.
+  const [resolvingIds, setResolvingIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [resolveErrors, setResolveErrors] = useState<Record<string, unknown>>(
     {}
   );
@@ -108,7 +115,8 @@ export default function CoordActionItemsPage() {
 
   const onResolve = useCallback(
     async (item: CoordActionItem, status: ActionItemResolution) => {
-      setResolvingId(item.item_id);
+      const id = item.item_id;
+      setResolvingIds((prev) => new Set(prev).add(id));
       setResolveErrors((prev) => {
         const next = { ...prev };
         delete next[item.item_id];
@@ -125,10 +133,17 @@ export default function CoordActionItemsPage() {
       } catch (e) {
         setResolveErrors((prev) => ({
           ...prev,
-          [item.item_id]: operationsErrorReading(e),
+          [id]: operationsErrorReading(e),
         }));
+        // 409 `already_resolved`: someone (the phone, an agent) resolved it
+        // first. The refusal says so; the re-read shows the item's real state.
+        if (isAlreadyResolved(e)) await refresh();
       } finally {
-        setResolvingId(null);
+        setResolvingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
       }
     },
     [refresh]
@@ -156,7 +171,7 @@ export default function CoordActionItemsPage() {
     {
       key: "open",
       label: <>open {counts ? counts.open : "–"}</>,
-      tone: counts && counts.open > 0 ? "waiting" : "muted",
+      tone: counts && counts.open > 0 ? "attention" : "muted",
       "data-testid": "action-items-open-count",
     },
     {
@@ -183,8 +198,9 @@ export default function CoordActionItemsPage() {
     id,
     label: TAB_LABEL[id],
     count: counts ? counts[id] : null,
-    attention:
-      id === "open" && health.undelivered !== null && health.undelivered > 0,
+    // Every open item is the operator's own move (R3), so a non-zero Open
+    // count is the one count here that needs a human.
+    attention: id === "open" && !!counts && counts.open > 0,
   }));
 
   const tabTotal = counts ? counts[tab] : null;
@@ -245,7 +261,7 @@ export default function CoordActionItemsPage() {
                 expanded={ctx.expanded}
                 onToggle={ctx.onToggle}
                 onResolve={onResolve}
-                resolving={resolvingId === item.item_id}
+                resolving={resolvingIds.has(item.item_id)}
                 resolveError={resolveErrors[item.item_id] ?? null}
               />
             )}

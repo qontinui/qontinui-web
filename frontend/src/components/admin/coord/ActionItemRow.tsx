@@ -30,6 +30,7 @@ import {
   presentLink,
   pushLabel,
   pushRemedy,
+  resolvedSentence,
   sourceChip,
   sourceSentence,
   type ActionItemResolution,
@@ -226,9 +227,7 @@ export function ActionItemRow({
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
-                {item.status === "done" ? "Marked done" : "Dismissed"}
-                {item.resolved_by ? ` by ${item.resolved_by}` : ""}
-                {item.resolution_note ? ` — ${item.resolution_note}` : ""}
+                {resolvedSentence(item)}
               </p>
             )}
             {resolveError != null && (

@@ -13,15 +13,16 @@
  *
  * ## The kinds, and why each lands where it does (R3)
  *
- * - `open_undelivered` — **`author`, red.** The item is open AND coord could
- *   not put it on the operator's phone (`failed`, `undeliverable`,
- *   `no_recipients`, `no_devices`). The whole point of the feature is that the
- *   operator is told; when the telling failed, this console is the only place
- *   left that says something is owed, and nothing else will clear it.
- * - `open` — **`waiting`, amber.** Open, and the push is pending or Expo
- *   accepted it. The plan specifies amber for an open item (Phase 3); the row
- *   says in words what is owed, and the item clears when the operator resolves
- *   it from the phone or here.
+ * - `open` — **`author`, red.** An open item is the OPERATOR's own move: it
+ *   exists because something is owed by him, and nothing else will resolve it.
+ *   That is R3's definition of red. The plan's Phase 3 text said "amber for
+ *   open", but amber means *something else will clear this*, which is false
+ *   for an owed to-do; this follows R3 instead (review decision on head
+ *   `eb26420c8`). It is red whether or not the push landed.
+ * - Push delivery is a SEPARATE signal, not a kind: an open item whose push
+ *   `failed`, was `undeliverable`, or had `no_recipients` / `no_devices` is
+ *   counted in the health strip's "not on phone" badge and explained in the
+ *   row's detail. It does not change the row's colour — the row is already red.
  * - `done` / `dismissed` — **`none`, calm.** Resolved; nothing is owed.
  * - `unknown` — **`waiting`, the ignorance floor.** A status this build has no
  *   meaning for (R3's stated exception: amber also covers "we do not know").
@@ -32,11 +33,10 @@ import {
   AUTHOR_RED,
   INERT,
   UNKNOWN_AMBER,
-  WAITING_AMBER,
   type RowStatus,
   type StatusPalette,
 } from "@/components/console/statusRow";
-import { httpStatusOf } from "./httpStatus";
+import { httpBodyOf, httpStatusOf } from "./httpStatus";
 
 // ---------------------------------------------------------------------------
 // Wire types — coord's Item JSON, passed through `/operations/action-items`.
@@ -116,25 +116,63 @@ export const ACTION_ITEM_RESOLVE_OPTIONS: { noRetryStatuses: number[] } = {
 };
 
 /**
- * Coord answers `503 schema_migration_pending` until the
- * `coord.operator_action_items` revision deploys. Read from the anchored
- * STATUS field, never a body substring — same reasoning as
- * `notificationStatus.isMigrationPending`.
+ * Coord's typed refusal code from a client-function rejection, or null.
+ *
+ * The `/operations/action-items*` proxies forward coord's error object
+ * (`structured_errors=True`), so the web envelope carries it as the top-level
+ * `error`. A body whose `message` / `detail` is itself coord's JSON text (a
+ * proxy hop that stringified it) is read one level deeper. Parsed as DATA from
+ * the anchored body — never a substring test, which would match the token
+ * quoted inside some other failure.
+ */
+export function coordErrorCode(err: unknown): string | null {
+  const body = httpBodyOf(err);
+  if (body === null) return null;
+  const parse = (text: unknown): Record<string, unknown> | null => {
+    if (typeof text !== "string") return null;
+    try {
+      const v: unknown = JSON.parse(text);
+      return v && typeof v === "object" && !Array.isArray(v)
+        ? (v as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  const top = parse(body);
+  if (!top) return null;
+  const codeOf = (o: Record<string, unknown> | null) =>
+    o && typeof o.error === "string" ? o.error : null;
+  const nested = codeOf(parse(top.message)) ?? codeOf(parse(top.detail));
+  const direct = codeOf(top);
+  // A generic status-derived code at the top (`SERVICE_UNAVAILABLE`) yields to
+  // coord's own code carried inside it.
+  return nested ?? direct;
+}
+
+/**
+ * Coord answers `503 {"error":"schema_migration_pending"}` until the
+ * `coord.operator_action_items` revision deploys. Only that code on a 503 is
+ * "not available yet"; any other 503 (a deadline, a down backend) is a read
+ * failure and must be loud.
  */
 export function isMigrationPending(err: unknown): boolean {
-  return httpStatusOf(err) === 503;
+  return (
+    httpStatusOf(err) === 503 &&
+    coordErrorCode(err) === "schema_migration_pending"
+  );
+}
+
+/** Coord's 409: the item was already resolved with the other status. */
+export function isAlreadyResolved(err: unknown): boolean {
+  return httpStatusOf(err) === 409;
 }
 
 // ---------------------------------------------------------------------------
 // Status → attention → palette.
 // ---------------------------------------------------------------------------
 
-export type ActionItemKind =
-  | "open_undelivered"
-  | "open"
-  | "done"
-  | "dismissed"
-  | "unknown";
+export type ActionItemKind = "open" | "done" | "dismissed" | "unknown";
 
 /** Push states that mean the phone was NOT told about an open item. */
 export const UNDELIVERED_PUSH_STATES: ReadonlySet<string> = new Set([
@@ -146,16 +184,14 @@ export const UNDELIVERED_PUSH_STATES: ReadonlySet<string> = new Set([
 
 export const ACTION_ITEM_ATTENTION_BY_KIND: Record<ActionItemKind, Attention> =
   {
-    open_undelivered: "author",
-    open: "waiting",
+    open: "author",
     done: "none",
     dismissed: "none",
     unknown: "waiting",
   };
 
 export const ACTION_ITEM_BADGE_CLASS: Record<ActionItemKind, string> = {
-  open_undelivered: AUTHOR_RED,
-  open: WAITING_AMBER,
+  open: AUTHOR_RED,
   done: INERT,
   dismissed: INERT,
   unknown: UNKNOWN_AMBER,
@@ -221,19 +257,10 @@ export function deriveActionItemStatus(
   item: Pick<CoordActionItem, "status" | "push">
 ): RowStatus<ActionItemKind> {
   if (item.status === "open") {
-    const state = item.push?.state;
-    if (isPushUndelivered(item)) {
-      return {
-        kind: "open_undelivered",
-        label: "Owed — not on your phone",
-        reason: pushLabel(state),
-        attention: ACTION_ITEM_ATTENTION_BY_KIND.open_undelivered,
-      };
-    }
     return {
       kind: "open",
-      label: "Owed",
-      reason: pushLabel(state),
+      label: isPushUndelivered(item) ? "Owed — not on your phone" : "Owed",
+      reason: pushLabel(item.push?.state),
       attention: ACTION_ITEM_ATTENTION_BY_KIND.open,
     };
   }
@@ -257,6 +284,23 @@ export function deriveActionItemStatus(
     reason: "a status this build has no meaning for — shown verbatim",
     attention: ACTION_ITEM_ATTENTION_BY_KIND.unknown,
   };
+}
+
+/** The resolved-state sentence for a non-open item, its status verbatim when unrecognised. */
+export function resolvedSentence(
+  item: Pick<CoordActionItem, "status" | "resolved_by" | "resolution_note">
+): string {
+  const verb =
+    item.status === "done"
+      ? "Marked done"
+      : item.status === "dismissed"
+        ? "Dismissed"
+        : `Status "${item.status || "none"}" (not recognised by this build)`;
+  return (
+    verb +
+    (item.resolved_by ? ` by ${item.resolved_by}` : "") +
+    (item.resolution_note ? ` — ${item.resolution_note}` : "")
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -344,15 +388,28 @@ export function deriveActionItemsHealth(state: {
       undeliveredIsFloor: false,
     };
   }
+  // A failed read makes everything on the page possibly stale, so it wins over
+  // whatever the last answer said — amber, the ignorance floor, whether or not
+  // an earlier read succeeded.
+  if (readFailed) {
+    const kept = loaded && counts !== null;
+    return {
+      level: "amber",
+      headline: kept
+        ? "Could not read action items — showing the last answer"
+        : "Could not read action items",
+      detail: kept
+        ? "the rows and counts below may be out of date"
+        : "the counts below are unknown, not zero",
+      undelivered: null,
+      undeliveredIsFloor: false,
+    };
+  }
   if (!loaded || counts === null) {
     return {
       level: "amber",
-      headline: readFailed
-        ? "Could not read action items"
-        : "Waiting for coord…",
-      detail: readFailed
-        ? "the counts below are unknown, not zero"
-        : "counts appear once the list arrives",
+      headline: "Waiting for coord…",
+      detail: "counts appear once the list arrives",
       undelivered: null,
       undeliveredIsFloor: false,
     };
@@ -365,23 +422,17 @@ export function deriveActionItemsHealth(state: {
       : null;
   const undeliveredIsFloor = tab === "open" && !!response?.next_cursor;
   const open = counts.open;
-  if (undelivered !== null && undelivered > 0) {
+  if (open > 0) {
+    const pushNote =
+      undelivered === null
+        ? "push delivery is counted on the Open tab"
+        : undelivered > 0
+          ? `${undelivered}${undeliveredIsFloor ? "+" : ""} did not reach your phone — read why on each row`
+          : "every one reached your phone or is about to";
     return {
       level: "red",
-      headline: `${undelivered}${undeliveredIsFloor ? "+" : ""} owed item${undelivered === 1 ? "" : "s"} did not reach your phone`,
-      detail: `${open} open in total — read why on each red row`,
-      undelivered,
-      undeliveredIsFloor,
-    };
-  }
-  if (open > 0) {
-    return {
-      level: "amber",
       headline: `${open} action item${open === 1 ? "" : "s"} owed by you`,
-      detail:
-        undelivered === null
-          ? "push problems are counted on the Open tab"
-          : "every open item reached your phone or is about to",
+      detail: pushNote,
       undelivered,
       undeliveredIsFloor,
     };

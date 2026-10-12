@@ -3,11 +3,13 @@ import { paletteDisagreements } from "@/components/console/attention";
 import {
   ACTION_ITEM_ATTENTION_BY_KIND,
   ACTION_ITEM_STATUS_PALETTE,
+  coordErrorCode,
   deriveActionItemStatus,
   deriveActionItemsHealth,
   isMigrationPending,
   presentLink,
   pushLabel,
+  resolvedSentence,
   sourceChip,
   type ActionItemsResponse,
   type CoordActionItem,
@@ -59,23 +61,29 @@ describe("actionItemStatus palette", () => {
 });
 
 describe("deriveActionItemStatus", () => {
-  it.each(["failed", "undeliverable", "no_recipients", "no_devices"])(
-    "an open item whose push is %s is red",
+  it.each([
+    "pending",
+    "accepted",
+    "failed",
+    "undeliverable",
+    "no_recipients",
+    "no_devices",
+    "something_new",
+  ])(
+    "an open item is red (the operator's move) when its push is %s",
     (state) => {
       const s = deriveActionItemStatus(item({ push: push(state) }));
-      expect(s.kind).toBe("open_undelivered");
+      expect(s.kind).toBe("open");
       expect(s.attention).toBe("author");
     }
   );
 
-  it.each(["pending", "accepted", "something_new"])(
-    "an open item whose push is %s is amber",
-    (state) => {
-      const s = deriveActionItemStatus(item({ push: push(state) }));
-      expect(s.kind).toBe("open");
-      expect(s.attention).toBe("waiting");
-    }
-  );
+  it("names an undelivered push in the label, not the colour", () => {
+    expect(
+      deriveActionItemStatus(item({ push: push("no_devices") })).label
+    ).toBe("Owed — not on your phone");
+    expect(deriveActionItemStatus(item()).label).toBe("Owed");
+  });
 
   it("a resolved item is calm even when its push failed", () => {
     for (const status of ["done", "dismissed"]) {
@@ -90,6 +98,23 @@ describe("deriveActionItemStatus", () => {
     expect(s.kind).toBe("unknown");
     expect(s.attention).toBe("waiting");
     expect(s.label).toBe("snoozed");
+  });
+});
+
+describe("resolvedSentence", () => {
+  it("says the status verbatim when it is not recognised", () => {
+    expect(resolvedSentence(item({ status: "snoozed" }))).toContain(
+      'Status "snoozed"'
+    );
+    expect(
+      resolvedSentence(
+        item({
+          status: "dismissed",
+          resolved_by: "operator:x",
+          resolution_note: "n/a",
+        })
+      )
+    ).toBe("Dismissed by operator:x — n/a");
   });
 });
 
@@ -118,22 +143,43 @@ describe("labels", () => {
 });
 
 describe("isMigrationPending", () => {
-  it("reads the anchored status, not the body", () => {
+  const err = (status: number, body: string) =>
+    new Error(
+      `GET /api/v1/operations/action-items failed: ${status} - ${body}`
+    );
+
+  it("needs a 503 AND coord's schema_migration_pending code", () => {
+    // The web envelope with coord's code forwarded at the top level.
     expect(
       isMigrationPending(
-        new Error(
-          'GET /api/v1/operations/action-items failed: 503 - {"error":"schema_migration_pending"}'
+        err(503, '{"error":"schema_migration_pending","message":"x"}')
+      )
+    ).toBe(true);
+    // Coord's JSON carried as text inside the envelope's message.
+    expect(
+      isMigrationPending(
+        err(
+          503,
+          '{"error":"SERVICE_UNAVAILABLE","message":"{\\"error\\":\\"schema_migration_pending\\"}"}'
         )
       )
     ).toBe(true);
+  });
+
+  it("any other 503 is a read failure, not migration pending", () => {
+    expect(isMigrationPending(err(503, '{"error":"deadline"}'))).toBe(false);
+    expect(isMigrationPending(err(503, "upstream down"))).toBe(false);
     expect(
-      isMigrationPending(
-        new Error(
-          "GET /api/v1/operations/action-items failed: 500 - failed: 503"
-        )
-      )
+      isMigrationPending(err(500, '{"error":"schema_migration_pending"}'))
     ).toBe(false);
     expect(isMigrationPending(new TypeError("Failed to fetch"))).toBe(false);
+  });
+
+  it("reads coord's code as data", () => {
+    expect(coordErrorCode(err(409, '{"error":"already_resolved"}'))).toBe(
+      "already_resolved"
+    );
+    expect(coordErrorCode(new TypeError("x"))).toBeNull();
   });
 });
 
@@ -168,7 +214,7 @@ describe("deriveActionItemsHealth", () => {
     expect(h.headline).toMatch(/not available/);
   });
 
-  it("is red when an open item did not reach the phone", () => {
+  it("is red when items are owed, and counts undelivered pushes separately", () => {
     const h = deriveActionItemsHealth({
       loaded: true,
       migrationPending: false,
@@ -180,10 +226,11 @@ describe("deriveActionItemsHealth", () => {
     expect(h.level).toBe("red");
     expect(h.undelivered).toBe(1);
     expect(h.undeliveredIsFloor).toBe(true);
-    expect(h.headline).toContain("1+");
+    expect(h.headline).toBe("2 action items owed by you");
+    expect(h.detail).toContain("1+ did not reach your phone");
   });
 
-  it("is amber when items are owed and all were delivered", () => {
+  it("is still red when items are owed and every push landed", () => {
     const h = deriveActionItemsHealth({
       loaded: true,
       migrationPending: false,
@@ -192,7 +239,7 @@ describe("deriveActionItemsHealth", () => {
       response: response([item(), item()]),
       counts,
     });
-    expect(h.level).toBe("amber");
+    expect(h.level).toBe("red");
     expect(h.undelivered).toBe(0);
   });
 
@@ -206,6 +253,35 @@ describe("deriveActionItemsHealth", () => {
       counts,
     });
     expect(h.undelivered).toBeNull();
+  });
+
+  it("a failed read after a success is amber and says it shows the last answer", () => {
+    const h = deriveActionItemsHealth({
+      loaded: true,
+      migrationPending: false,
+      readFailed: true,
+      tab: "open",
+      response: response([item({ push: push("failed") })]),
+      counts,
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "Could not read action items — showing the last answer"
+    );
+    expect(h.undelivered).toBeNull();
+  });
+
+  it("a failed first read is amber and unknown", () => {
+    const h = deriveActionItemsHealth({
+      loaded: false,
+      migrationPending: false,
+      readFailed: true,
+      tab: "open",
+      response: null,
+      counts: null,
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("Could not read action items");
   });
 
   it("is green when nothing is owed", () => {

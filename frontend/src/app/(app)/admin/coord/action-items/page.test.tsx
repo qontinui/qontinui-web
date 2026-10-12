@@ -263,4 +263,76 @@ describe("CoordActionItemsPage", () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId("action-items-empty")).toBeNull();
   });
+
+  it("an owed item is red even when its push landed", async () => {
+    httpGet.mockResolvedValue(envelope([actionItem()]));
+    render(<CoordActionItemsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-action-items-health")).toHaveAttribute(
+        "data-health-level",
+        "red"
+      )
+    );
+    expect(
+      screen.getByTestId("action-items-undelivered-count")
+    ).toHaveTextContent("not on phone 0");
+    const row = screen.getByTestId(`action-item-${ID_A}`);
+    expect(
+      within(row).getByRole("button", { expanded: false })
+    ).toHaveAttribute("data-attention", "author");
+  });
+
+  it("a 503 that is not migration-pending is a loud read failure", async () => {
+    httpGet.mockRejectedValue(
+      new Error(
+        'GET /api/v1/operations/action-items?status=open&limit=200 failed: 503 - {"error":"deadline","budget_ms":800}'
+      )
+    );
+    render(<CoordActionItemsPage />);
+    expect(
+      await screen.findByTestId("action-items-read-error")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("action-items-migration-pending")).toBeNull();
+  });
+
+  it("a failed refresh after a success keeps the rows and says so", async () => {
+    httpGet.mockResolvedValueOnce(envelope([actionItem()]));
+    httpGet.mockRejectedValue(
+      new Error("GET /api/v1/operations/action-items failed: 500 - boom")
+    );
+    const user = userEvent.setup();
+    render(<CoordActionItemsPage />);
+    await screen.findByTestId("action-item-title");
+    await user.click(screen.getByTestId("action-items-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-action-items-health")).toHaveTextContent(
+        "Could not read action items — showing the last answer"
+      )
+    );
+    expect(screen.getByTestId("coord-action-items-health")).toHaveAttribute(
+      "data-health-level",
+      "amber"
+    );
+    expect(screen.getByTestId("action-item-title")).toBeInTheDocument();
+  });
+
+  it("a 409 already_resolved shows the refusal and re-reads", async () => {
+    httpGet.mockResolvedValue(envelope([actionItem()]));
+    httpPost.mockRejectedValue(
+      new Error(
+        'POST /api/v1/operations/action-items/resolve failed: 409 - {"error":"already_resolved"}'
+      )
+    );
+    const user = userEvent.setup();
+    render(<CoordActionItemsPage />);
+    await user.click(await screen.findByTestId("action-item-title"));
+    const before = httpGet.mock.calls.length;
+    await user.click(screen.getByTestId(`action-item-done-${ID_A}`));
+    expect(
+      await screen.findByTestId("action-item-resolve-error")
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(httpGet.mock.calls.length).toBeGreaterThan(before)
+    );
+  });
 });

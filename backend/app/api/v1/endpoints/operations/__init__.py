@@ -4705,6 +4705,11 @@ async def post_coord_notifications_mark_read(
 # alembic revision deploys, coord answers ``503 {"error":
 # "schema_migration_pending"}``; that passes through verbatim and the page
 # reads it as "nothing to show yet", never as an error.
+#
+# Both proxies pass ``structured_errors=True`` so coord's typed refusal
+# (``schema_migration_pending``, ``already_resolved``) reaches the browser as
+# the envelope's top-level ``error`` rather than as JSON text inside
+# ``message`` — the page branches on that code, never on a substring.
 
 
 @router.get("/action-items")
@@ -4750,7 +4755,10 @@ async def get_coord_operator_action_items(
     if item_id is not None:
         params["item_id"] = item_id
     return await _proxy_coord_get(
-        "/coord/operator-action-items", params=params or None, tenant_id=tenant_id
+        "/coord/operator-action-items",
+        params=params or None,
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -4793,6 +4801,7 @@ async def post_coord_operator_action_items_resolve(
         "/coord/operator-action-items/resolve",
         body.model_dump(mode="json", exclude_none=True),
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 

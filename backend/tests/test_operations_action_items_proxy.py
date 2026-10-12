@@ -67,6 +67,8 @@ class TestListProxy:
             "item_id": item,
         }
         assert mock_get.call_args[1]["tenant_id"] == TENANT
+        # Coord's typed refusal must reach the page as a code, not as text.
+        assert mock_get.call_args[1]["structured_errors"] is True
 
     def test_sends_no_params_when_none_set(self):
         with patch_ops(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
@@ -115,6 +117,7 @@ class TestResolveProxy:
         assert args[0] == "/coord/operator-action-items/resolve"
         assert args[1] == {"item_id": str(item), "status": status, "note": "ok"}
         assert kwargs["tenant_id"] == TENANT
+        assert kwargs["structured_errors"] is True
 
     def test_absent_note_never_reaches_the_wire(self):
         item = uuid4()
