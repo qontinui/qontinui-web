@@ -56,6 +56,19 @@ import { LIFECYCLE_STAGES } from "../_lib/lifecycle";
 import { manifest } from "../_lib/resolve";
 import { LifecycleView } from "./LifecycleView";
 
+/** The snapshot sub-spaces qontinui-coord#3128 refuses to a non-system tenant. */
+const SYSTEM_TENANT_SUBSPACES = new Set([
+  "release",
+  "schema",
+  "infra",
+  "infra_health",
+  "config",
+  "health",
+  "deps",
+  "route_serving",
+  "client_telemetry",
+]);
+
 /** Every snapshot row answers `implemented` unless overridden. */
 function probeAll(
   overrides: Record<string, SubspaceProbe["status"]> = {}
@@ -267,5 +280,37 @@ describe("LifecycleView", () => {
     expect(
       container.querySelector('[data-testid^="digital-twin-stage-"]')
     ).toBeNull();
+  });
+});
+
+describe("LifecycleView restriction (qontinui-coord#3128 split)", () => {
+  beforeEach(() => {
+    state.probe = {
+      data: probeAll(
+        Object.fromEntries(
+          [...SYSTEM_TENANT_SUBSPACES].map((id) => [id, "restricted" as const])
+        )
+      ),
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+  });
+
+  it("keeps restricted probes out of the live counts and names them apart", () => {
+    render(<LifecycleView />);
+    // Every snapshot row at the release stage is SystemTenant-scoped.
+    const release = stageSection("release");
+    expect(release).toHaveTextContent(
+      "Every live probe at this stage is restricted for this tenant."
+    );
+    expect(release).toHaveTextContent("live-probed · 7 restricted");
+    expect(release).not.toHaveTextContent("No live probe answering");
+    // The access legend entry shows only when something is restricted.
+    expect(screen.getByText("restricted (access)")).toBeInTheDocument();
+    // Twin cards: the environment twin is wholly refused; the process twin's
+    // two probes answer, with nothing restricted to report.
+    expect(screen.getByText(/^9 restricted · /)).toBeInTheDocument();
+    expect(screen.getByText(/^2\/2 live-probed · /)).toBeInTheDocument();
   });
 });

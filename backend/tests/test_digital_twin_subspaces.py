@@ -48,6 +48,21 @@ _COORD_SNAPSHOT_SUBSPACES = {
     "memory",
 }
 
+# The snapshot sub-spaces qontinui-coord#3128 scopes to the SystemTenant, so a
+# non-system tenant is refused each of them per cell (403) while ``worktree``
+# and ``memory`` still answer. Hand-copied from that PR, like the list above.
+_SYSTEM_TENANT_SUBSPACES = {
+    "release",
+    "schema",
+    "infra",
+    "infra_health",
+    "config",
+    "health",
+    "deps",
+    "route_serving",
+    "client_telemetry",
+}
+
 # backend/tests/x.py -> parents[2] == the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 # The frontend manifest — the matrix's denominator, whose ``snapshot`` rows are
@@ -332,14 +347,16 @@ class TestSubspacesEndpoint:
         assert {s["status"] for s in body["subspaces"]} == {"restricted"}
 
     def test_one_restricted_cell_does_not_restrict_the_matrix(self):
-        # coord 403s a SystemTenant-scoped cell for a non-system tenant while the
-        # tenant's other cells answer (qontinui-coord#3128). The grid-level
-        # `restricted` flag hides the WHOLE matrix, so a single restricted cell
-        # must surface only as that cell's status, never as the flag.
+        # The realistic qontinui-coord#3128 split for a non-system tenant: coord
+        # 403s the nine SystemTenant-scoped sub-spaces per cell while worktree
+        # and memory answer. The grid-level `restricted` flag hides the WHOLE
+        # matrix, so restricted cells must surface only as their own status,
+        # never as the flag, while any cell still answers.
         client = TestClient(_build_test_app())
 
         def fake_get(url, **kwargs):
-            if "/twin/infra/" in url:
+            subspace = url.split("/twin/", 1)[1].split("/", 1)[0]
+            if subspace in _SYSTEM_TENANT_SUBSPACES:
                 return _status_response(403)
             return _verdict_response(1.0, "live_aws")
 
@@ -360,10 +377,12 @@ class TestSubspacesEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         assert body["restricted"] is False
-        restricted_ids = [
-            s["id"] for s in body["subspaces"] if s["status"] == "restricted"
-        ]
-        assert restricted_ids == ["infra"]
+        by_status: dict[str, set[str]] = {}
+        for s in body["subspaces"]:
+            by_status.setdefault(s["status"], set()).add(s["id"])
+        assert by_status["restricted"] == _SYSTEM_TENANT_SUBSPACES
+        assert len(by_status["restricted"]) == 9
+        assert by_status["implemented"] == {"worktree", "memory"}
         assert body["probed"] == len(_PROBEABLE_SUBSPACES)
 
     def test_empty_probe_list_is_not_restricted(self):
