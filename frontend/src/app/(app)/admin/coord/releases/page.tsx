@@ -13,8 +13,8 @@
  * v1.0.0/v1.0.1 case) is an observable drift instead of a manual discovery.
  *
  * Coord base URL + operator auth are reused exactly as the deploys/lands
- * siblings: `httpClient.get` (via `runnerReleasesService`) hits the web
- * backend at `/api/v1/operations/releases`, which forwards the operator's
+ * siblings: `fetchReleaseHistory` (`lib/api/operations/releases.ts`) hits the
+ * web backend's `/operations/releases` route, which forwards the operator's
  * Cognito bearer to coord. The frontend never talks to coord directly.
  *
  * The list auto-refreshes on a 30s poll (mirrors the deploys page) — a release
@@ -60,9 +60,9 @@ import {
   releaseState,
 } from "@/components/admin/coord/releaseStatus";
 import {
-  runnerReleasesService,
+  fetchReleaseHistory,
   type ReleaseHistoryEntry,
-} from "@/services/runner-releases-service";
+} from "@/lib/api/operations/releases";
 
 const POLL_INTERVAL_MS = 30_000;
 const REPO_DEBOUNCE_MS = 400;
@@ -216,7 +216,7 @@ export default function CoordReleasesPage() {
   const poll = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const body = await runnerReleasesService.list(
+        const body = await fetchReleaseHistory(
           {
             limit: 100,
             ...(appliedRepo ? { repo: appliedRepo } : {}),
