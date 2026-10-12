@@ -11,13 +11,18 @@ fleet-fresh routing (see plan
   receive test traffic for this app".
 
 The table is authored by alembic (``coord_test_targets`` revision) with a
-runtime self-heal on the coord side; the web backend reads AND writes it
-directly via this model — the same shared-Postgres posture the
-:class:`app.models.device.Device` model uses against ``coord.devices``.
+runtime self-heal on the coord side. The web backend only READS it through
+this model (the fleet UI's designation list, and ``fleet_targets``' read-back
+after a write) — the same shared-Postgres posture the
+:class:`app.models.device.Device` model uses against ``coord.devices``. coord
+is the sole writer: web's designation PUT/DELETE proxy to coord's
+``/coord/trees/test-targets`` routes (plan
+``2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to``).
 
-``tenant_id`` is NOT NULL: writes are operator-scoped (the writer resolves
-the caller's coord home tenant via ``operations.get_tenant_id``); the
-device-keyed runner read resolves the tenant server-side from ``device_id``.
+``tenant_id`` is NOT NULL: coord stamps the operator's EFFECTIVE tenant (home,
+unless ``X-Qontinui-Active-Tenant`` names a tenant they are a member of) and
+refuses a device that tenant has no ``coord.tenant_devices`` binding for; the
+device-keyed runner read serves rows of every tenant the device is bound to.
 """
 
 from datetime import datetime
