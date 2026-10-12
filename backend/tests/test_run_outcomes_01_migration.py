@@ -73,7 +73,7 @@ _REVISION_FILENAME = "run_outcomes_01_coord_run_outcomes.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "devcred_01_credential_deny_and_bound_pair_codes"
+_PARENT_REVISION_ID = "plan_library_11_followup_anchors_and_closure"
 
 _SCHEMA = "coord"
 _TABLE = "run_outcomes"
