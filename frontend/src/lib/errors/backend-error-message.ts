@@ -41,6 +41,19 @@ export type BackendErrorReading =
       refusal: DecodedRefusal;
     }
   | {
+      /**
+       * An envelope found INSIDE a string `detail` / `message` (a proxy
+       * relaying another service's body as text). Its sentence is shown, but
+       * it carries no typed next action: a string field may echo caller
+       * input, so a link or a copyable command built from it would let that
+       * input dress itself as a trusted affordance. Only an envelope at a
+       * structural position (`body.refusal`, `body.detail.refusal`, the body
+       * itself) is a `refusal`.
+       */
+      kind: "refusal_from_text";
+      sentence: string;
+    }
+  | {
       kind: "unstructured";
       /** Today's sentence: the first readable rung, or `HTTP <status>`. */
       sentence: string;
@@ -55,7 +68,7 @@ export function isBackendErrorReading(
   if (value === null || typeof value !== "object") return false;
   const v = value as { kind?: unknown; sentence?: unknown; refusal?: unknown };
   if (typeof v.sentence !== "string") return false;
-  if (v.kind === "unstructured") return true;
+  if (v.kind === "unstructured" || v.kind === "refusal_from_text") return true;
   if (v.kind !== "refusal") return false;
   // The fields the renderer reads, so a malformed reading is refused here
   // rather than crashing a render.
@@ -172,13 +185,12 @@ export function readErrorBody(
   status: number,
   limit: number = MAX_SENTENCE_LENGTH
 ): BackendErrorReading {
-  const refusal = refusalFromErrorText(text, 0);
-  if (refusal !== null) {
-    return {
-      kind: "refusal",
-      sentence: boundedRefusalSentence(refusal, limit),
-      refusal,
-    };
+  const found = refusalFromErrorText(text, 0);
+  if (found !== null) {
+    const sentence = boundedRefusalSentence(found.refusal, limit);
+    return found.structural
+      ? { kind: "refusal", sentence, refusal: found.refusal }
+      : { kind: "refusal_from_text", sentence };
   }
   const sentence = sentenceFromErrorText(text, 0, limit);
   // Parsed as JSON and carries no READABLE candidate on any rung — `{}`, a
@@ -201,12 +213,14 @@ export function readErrorBody(
  * body is then read the way it was before the contract. A string `detail` or
  * `message` that is itself a JSON object is a nested body (a proxy relaying
  * another service's answer) and is searched the same way, to the same depth
- * {@link sentenceFromErrorText} unwraps.
+ * {@link sentenceFromErrorText} unwraps — but an envelope found that way is
+ * reported `structural: false`, and gives its sentence only (see the
+ * `refusal_from_text` reading).
  */
 function refusalFromErrorText(
   text: string,
   depth: number
-): DecodedRefusal | null {
+): { refusal: DecodedRefusal; structural: boolean } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -227,15 +241,15 @@ function refusalFromErrorText(
   for (const candidate of candidates) {
     if (candidate === undefined) continue;
     const refusal = decodeRefusal(candidate);
-    if (refusal !== null) return refusal;
+    if (refusal !== null) return { refusal, structural: depth === 0 };
   }
   if (depth < MAX_ERROR_UNWRAP) {
     for (const nested of [detail, obj.message]) {
       if (typeof nested !== "string" || !nested.trimStart().startsWith("{")) {
         continue;
       }
-      const refusal = refusalFromErrorText(nested, depth + 1);
-      if (refusal !== null) return refusal;
+      const found = refusalFromErrorText(nested, depth + 1);
+      if (found !== null) return found;
     }
   }
   return null;
