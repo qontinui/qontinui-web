@@ -331,6 +331,64 @@ class TestSubspacesEndpoint:
         assert body["restricted"] is True
         assert {s["status"] for s in body["subspaces"]} == {"restricted"}
 
+    def test_one_restricted_cell_does_not_restrict_the_matrix(self):
+        # coord 403s a SystemTenant-scoped cell for a non-system tenant while the
+        # tenant's other cells answer (qontinui-coord#3128). The grid-level
+        # `restricted` flag hides the WHOLE matrix, so a single restricted cell
+        # must surface only as that cell's status, never as the flag.
+        client = TestClient(_build_test_app())
+
+        def fake_get(url, **kwargs):
+            if "/twin/infra/" in url:
+                return _status_response(403)
+            return _verdict_response(1.0, "live_aws")
+
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(),
+            ),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = fake_get
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["restricted"] is False
+        restricted_ids = [
+            s["id"] for s in body["subspaces"] if s["status"] == "restricted"
+        ]
+        assert restricted_ids == ["infra"]
+        assert body["probed"] == len(_PROBEABLE_SUBSPACES)
+
+    def test_empty_probe_list_is_not_restricted(self):
+        # `all()` over nothing is True; an empty matrix is not an access denial.
+        client = TestClient(_build_test_app())
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(),
+            ),
+            patch("app.api.v1.endpoints.digital_twin._PROBEABLE_SUBSPACES", ()),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = lambda url, **kw: _status_response(403)
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["probed"] == 0
+        assert body["restricted"] is False
+
 
 # ---------------------------------------------------------------------------
 # The tenant-switcher selection reaches coord, and the cache respects it
