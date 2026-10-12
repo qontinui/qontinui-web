@@ -211,6 +211,9 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     """Generic not found error"""
 
+    METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
+    """The path exists but does not support this HTTP method"""
+
     CONFLICT = "CONFLICT"
     """Generic conflict error"""
 
@@ -227,12 +230,27 @@ class ErrorCode(StrEnum):
     """An upstream service did not respond in time"""
 
 
-# Mapping of HTTP status codes to default error codes
+# Mapping of HTTP status codes to default error codes.
+#
+# ⚠️ A status missing here does NOT read as "no error" — ``get_default_error_code``
+# falls back to ``INTERNAL_SERVER_ERROR`` for anything absent, and that
+# fallback is a real defect class, not a safe default: it previously made a
+# genuine 405 (Starlette's own "this path exists, wrong method" response,
+# e.g. a GET against a POST-only route) carry an ``INTERNAL_SERVER_ERROR``
+# envelope while the HTTP status itself stayed a correct 405 — a caller
+# reading the JSON body's ``error`` field rather than the transport status
+# sees "unexpected server failure" instead of "wrong method, try another".
+# Found via ``GET /plan-library/{id}/edges`` (plan
+# ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``
+# Phase 5) 405ing against what was then a POST-only ``/plan-library/{id}/edges``.
+# Add a status here rather than trusting the fallback whenever a NEW route
+# shape can plausibly produce it.
 DEFAULT_ERROR_CODES = {
     400: ErrorCode.BAD_REQUEST,
     401: ErrorCode.UNAUTHORIZED,
     403: ErrorCode.FORBIDDEN,
     404: ErrorCode.NOT_FOUND,
+    405: ErrorCode.METHOD_NOT_ALLOWED,
     409: ErrorCode.CONFLICT,
     422: ErrorCode.VALIDATION_ERROR,
     423: ErrorCode.RESOURCE_LOCKED,
