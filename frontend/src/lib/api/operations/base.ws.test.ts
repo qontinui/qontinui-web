@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Pins `wsUrl` to the three arms `operationsWsBase()` in
- * `components/operations/utils.ts` has always had, plus
- * `activeTenantWsParam` and `statusOnlyErrorText`.
+ * Pins `wsUrl` to the three arms the retired `operationsWsBase()` of
+ * `components/operations/utils.ts` always had (deleted in Phase 7 batch 7),
+ * plus `activeTenantWsParam` and `statusOnlyErrorText`.
  */
 
 const apiConfig = vi.hoisted(() => ({ API_BASE_URL: "" }));
