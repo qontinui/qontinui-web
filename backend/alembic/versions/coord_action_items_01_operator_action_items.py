@@ -79,10 +79,11 @@ Ordering (alembic-sole-authorship)
 
 coord authors **zero** DDL (served policy ``production-and-cost``
 ``alembic-sole-authorship``). coord's store, routes and push worker (plan
-Phase 2) read and write this table only AFTER this revision has landed and been
-applied in prod; until then coord degrades on 42P01/42703 to
-``503 schema_migration_pending``. The table belongs in coord's
-``ALEMBIC_OWNED_TABLES`` and must NOT be added to ``CRITICAL_BOOT_TABLES``.
+Phase 2, not yet written) will read and write this table only AFTER this
+revision has landed and been applied in prod; until then Phase 2 will degrade
+on 42P01/42703 to ``503 schema_migration_pending``. The table will belong in
+coord's ``ALEMBIC_OWNED_TABLES`` and must NOT be added to
+``CRITICAL_BOOT_TABLES``.
 
 Idempotency: raw ``op.execute`` with ``IF NOT EXISTS`` (house convention for
 coord tables), and every identifier schema-qualified for

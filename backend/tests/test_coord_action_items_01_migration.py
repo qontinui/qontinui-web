@@ -30,10 +30,12 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    column_comment,
     declared_parent_revision_id,
     ephemeral_database,
     index_exists,
     run_alembic,
+    scalar,
     table_exists,
 )
 
@@ -68,10 +70,12 @@ def _insert(engine: Engine, **overrides: object) -> uuid.UUID:
     params: dict[str, object] = {
         "tid": _TENANT,
         "title": "Merge web#1780 and deploy",
+        "body": "",
         "links": "[]",
         "source_kind": "agent",
         "dedupe_key": None,
         "status": "open",
+        "resolution_note": None,
         "resolved_at_expr": None,
     }
     params.update(overrides)
@@ -81,10 +85,11 @@ def _insert(engine: Engine, **overrides: object) -> uuid.UUID:
             text(
                 f"""
                 INSERT INTO coord.operator_action_items
-                    (tenant_id, title, links, source_kind, created_by,
-                     dedupe_key, status, resolved_at)
-                VALUES (:tid, :title, CAST(:links AS jsonb), :source_kind,
-                        'agent:test', :dedupe_key, :status, {resolved_sql})
+                    (tenant_id, title, body, links, source_kind, created_by,
+                     dedupe_key, status, resolution_note, resolved_at)
+                VALUES (:tid, :title, :body, CAST(:links AS jsonb), :source_kind,
+                        'agent:test', :dedupe_key, :status, :resolution_note,
+                        {resolved_sql})
                 RETURNING item_id
                 """
             ),
@@ -142,6 +147,17 @@ def test_coord_action_items_01_checks_dedupe_and_reversal() -> None:
         for name in _INDEXES:
             assert index_exists(engine, name), f"missing index {name}"
 
+        # Both COMMENT ON statements landed.
+        table_comment = scalar(
+            engine,
+            "SELECT obj_description('coord.operator_action_items'::regclass, "
+            "'pg_class')",
+        )
+        assert isinstance(table_comment, str)
+        assert "2026-10-12-operator-action-items-pushed-to-the-phone" in table_comment
+        push_comment = column_comment(engine, _TABLE, "push_state")
+        assert push_comment is not None and "projection" in push_comment
+
         # A bare valid item takes the documented defaults.
         item = _insert(engine)
         with engine.connect() as conn:
@@ -168,6 +184,23 @@ def test_coord_action_items_01_checks_dedupe_and_reversal() -> None:
             resolved_at_expr=True,
         )
         _assert_rejected(engine, "ck_operator_action_items_title_len", title="")
+        # Upper bounds: exactly at the limit is accepted, one over is refused.
+        _insert(engine, title="t" * 200, body="b" * 4000)
+        _assert_rejected(engine, "ck_operator_action_items_title_len", title="t" * 201)
+        _assert_rejected(engine, "ck_operator_action_items_body_len", body="b" * 4001)
+        _insert(
+            engine,
+            status="done",
+            resolved_at_expr=True,
+            resolution_note="n" * 1000,
+        )
+        _assert_rejected(
+            engine,
+            "ck_operator_action_items_resolution_note_len",
+            status="done",
+            resolved_at_expr=True,
+            resolution_note="n" * 1001,
+        )
         _assert_rejected(
             engine, "ck_operator_action_items_links_array", links='{"a": 1}'
         )
@@ -222,6 +255,12 @@ def test_coord_action_items_01_checks_dedupe_and_reversal() -> None:
             source_kind="gate",
             dedupe_key="gate:g-1",
         )
+        # NULL gate dedupe keys never collide.
+        _insert(engine, source_kind="gate")
+        _insert(engine, source_kind="gate")
+        # Gate and agent dedupe are separate partial indexes: an open agent
+        # item with a gate item's key does not collide with it.
+        _insert(engine, source_kind="agent", dedupe_key="gate:g-1")
 
         # 5. Agent dedupe holds only while OPEN.
         first = _insert(engine, dedupe_key="agent:k-1")
@@ -230,6 +269,9 @@ def test_coord_action_items_01_checks_dedupe_and_reversal() -> None:
         )
         _resolve(engine, first)
         _insert(engine, dedupe_key="agent:k-1")  # reuse allowed once resolved
+        # Agent dedupe is tenant-isolated: another tenant's open item with the
+        # same key inserts while this tenant's is still open.
+        _insert(engine, tid=uuid.uuid4(), dedupe_key="agent:k-1")
         # NULL dedupe keys never collide.
         _insert(engine)
 
