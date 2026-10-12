@@ -173,10 +173,14 @@ async def _probe_subspace(
         return {"id": subspace, "status": "error", "error": "coord_unreachable"}
 
     if resp.status_code == 403:
-        # coord's twin tenant gate (require_twin_tenant) denied this operator —
-        # their home tenant is outside COORD_TWIN_ALLOWED_TENANT_IDS. Distinct
-        # from a tool failure: it's an access decision, surfaced as "restricted"
-        # so the UI shows a friendly access message instead of an all-error grid.
+        # coord refused THIS sub-space to this tenant: either its twin tenant
+        # gate (require_twin_tenant) denied the operator outright — home tenant
+        # outside COORD_TWIN_ALLOWED_TENANT_IDS, so every cell 403s — or, once
+        # qontinui-coord#3128 lands, the sub-space is SystemTenant-scoped and a
+        # non-system tenant is refused it per cell while its other cells answer.
+        # Either way it is an access decision, not a tool failure, so the cell
+        # is "restricted" (never "error"). The matrix-level `restricted` flag is
+        # derived below from ALL cells, not from this one.
         return {"id": subspace, "status": "restricted"}
     if resp.status_code == 404:
         # coord serves no snapshot tool for this id (parameterized/not-built).
@@ -281,11 +285,15 @@ async def get_twin_subspaces(
         results = await asyncio.gather(
             *(_probe_subspace(client, s, headers) for s in _PROBEABLE_SUBSPACES)
         )
-    # coord's twin tenant gate (when armed) 403s every route for an operator
-    # outside COORD_TWIN_ALLOWED_TENANT_IDS. Surface that as a top-level
-    # `restricted` flag so the UI shows a friendly access message rather than an
-    # all-"error" grid (an access decision, not an outage).
-    restricted = any(r.get("status") == "restricted" for r in results)
+    # coord answers 403 per sub-space: its twin tenant gate (when armed) denies
+    # every route for an operator outside COORD_TWIN_ALLOWED_TENANT_IDS, and a
+    # SystemTenant-scoped cell is denied to a non-system tenant on its own while
+    # the tenant's other cells answer. The top-level `restricted` flag replaces
+    # the WHOLE grid with an access notice, so it is set only when EVERY probed
+    # cell is restricted — one restricted cell renders as that cell's own
+    # "restricted" status, and the rest of the grid stays visible. An empty
+    # probe list is not a denial, so it is never restricted.
+    restricted = bool(results) and all(r.get("status") == "restricted" for r in results)
     payload = {
         "subspaces": list(results),
         "probed": len(results),
