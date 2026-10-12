@@ -673,6 +673,52 @@ class TestIntentDocumentWrites:
         assert body["current"]["body"].startswith("# Vision")
         assert coord.patches == []  # nothing reached coord
 
+    async def test_a_results_entry_written_after_open_refuses_the_save(
+        self, admin: httpx.AsyncClient, coord: FakeCoord
+    ) -> None:
+        """Plan ``2026-10-06-overview-objectives-view`` D2. A checkpoint
+        session's ``results:`` write lands between the moment the Objectives
+        card's "Edit text" opened the metric and the moment it saved. The save
+        is refused with the server's copy, and the entry survives untouched —
+        a prose save never re-attaches a frontmatter older than the store's."""
+        before = (
+            "---\n"
+            'metric: "merge-train-throughput-2026-10"\n'
+            "results: []\n"
+            "---\n"
+            "\n"
+            "# Merge-train throughput\n\nProse.\n"
+        )
+        coord.seed(
+            "success_metric", "merge-train-throughput-2026-10", before, version=2
+        )
+        record = f"{API}/intent-documents/success_metric:merge-train-throughput-2026-10"
+        opened = (await admin.get(record)).json()["item"]
+        assert opened["version"] == 2
+
+        # The checkpoint session's Step B `replace` (a new coord version).
+        recorded = before.replace(
+            "results: []\n",
+            'results:\n  - checkpoint: "checkpoint-1"\n'
+            '    finding_id: "00000000-0000-4000-8000-000000000001"\n'
+            '    posted_at: "2026-10-08T16:10:00Z"\n',
+        )
+        stored = coord.docs[("success_metric", "merge-train-throughput-2026-10")]
+        stored["body"] = recorded
+        stored["current_version"] = 3
+
+        response = await admin.patch(
+            record,
+            json={"body": opened["body"] + "\nAn edit from the card.\n"},
+            headers={"If-Match": f'"{opened["version"]}"'},
+        )
+        assert response.status_code == 409
+        assert response.json()["current_version"] == 3
+        assert response.json()["current"]["frontmatter"].count("finding_id") == 1
+        assert coord.patches == []
+        assert stored["body"] == recorded
+        assert stored["current_version"] == 3
+
     async def test_an_edit_keeps_the_frontmatter_and_is_logged(
         self, admin: httpx.AsyncClient, coord: FakeCoord, async_db_session: AsyncSession
     ) -> None:
