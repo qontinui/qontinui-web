@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { describeCoordPollError } from "@/components/operations/coordPollError";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
-import { operationsErrorMessage, readJson } from "./base";
+import {
+  backendError,
+  backendErrorMessage,
+} from "@/lib/errors/backend-error-message";
+import {
+  operationsErrorMessage,
+  operationsErrorReading,
+  readJson,
+} from "./base";
 
 /**
  * Pins the `/operations` client's one response reader against the contract
@@ -126,5 +133,57 @@ describe("operationsErrorMessage", () => {
       "Failed to fetch"
     );
     expect(operationsErrorMessage("plain")).toBe("plain");
+  });
+});
+
+describe("operationsErrorReading", () => {
+  const refusal = {
+    code: "workspace_root_unresolved",
+    next_action: { kind: "set_setting", target: "workspace_root" },
+    glossary_terms: ["tenant"],
+    observed_at: "2026-09-29T00:00:00Z",
+    source: "web_backend",
+  };
+
+  it("carries the refusal envelope a rejected body held", async () => {
+    const body = JSON.stringify({ error: "x", refusal });
+    const err = await rejection(
+      readJson(new Response(body, { status: 409 }), REQUEST)
+    );
+    const reading = operationsErrorReading(err);
+    expect(reading.kind).toBe("refusal");
+    // The sentence is the one operationsErrorMessage already shows.
+    expect(reading.sentence).toBe(operationsErrorMessage(err));
+  });
+
+  it("reads a pre-contract body as unstructured, with today's sentence", async () => {
+    const err = await rejection(
+      readJson(
+        new Response('{"detail":"Only admins may do that."}', { status: 403 }),
+        REQUEST
+      )
+    );
+    expect(operationsErrorReading(err)).toEqual({
+      kind: "unstructured",
+      sentence: "Only admins may do that.",
+    });
+  });
+
+  it("passes a BackendError's own reading through", async () => {
+    const err = await backendError(
+      new Response(JSON.stringify({ refusal }), { status: 409 })
+    );
+    expect(operationsErrorReading(err)).toBe(err.reading);
+  });
+
+  it("reads any other error as unstructured with its own message", () => {
+    expect(operationsErrorReading(new TypeError("Failed to fetch"))).toEqual({
+      kind: "unstructured",
+      sentence: "Failed to fetch",
+    });
+    expect(operationsErrorReading("plain")).toEqual({
+      kind: "unstructured",
+      sentence: "plain",
+    });
   });
 });
