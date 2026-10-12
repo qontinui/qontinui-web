@@ -1211,9 +1211,17 @@ def test_cli_rename_of_an_identical_file_fails_condition_b(repo: Repo) -> None:
 def test_cli_mode_change_fails_condition_b(repo: Repo) -> None:
     base = _base_and_branch(repo, {REV_PATH: DOC_EDIT.base})
     repo.write(REV_PATH, DOC_EDIT.head)
+    # The mode is set on disk AND in the index: with core.filemode=true
+    # (Linux) `commit`'s `add --all` re-stages the working-tree mode, so an
+    # index-only chmod would be undone; with core.filemode=false (Windows) the
+    # disk bit is ignored and the index flag is what persists.
+    target = repo.root / REV_PATH
+    target.chmod(target.stat().st_mode | 0o111)
     repo.git("add", REV_PATH)
     repo.git("update-index", "--chmod=+x", REV_PATH)
     head = repo.commit("doc edit and chmod +x")
+    # Prove the fixture did what it claims before judging the verdict.
+    assert repo.git("ls-tree", head, REV_PATH).startswith("100755 ")
     code, out, _ = _run_cli(repo, base, head)
     assert code == 1
     assert "(not exempt: mode_changed)" in out
