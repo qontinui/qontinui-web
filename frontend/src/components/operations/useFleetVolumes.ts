@@ -61,7 +61,7 @@ export async function readFleetVolumes(): Promise<VolumesFetch> {
     }
     return {
       state: "unavailable",
-      reason: `Request to /operations/fleet/volumes failed: ${
+      reason: `The fleet-volumes request failed: ${
         (err as Error)?.message ?? "unknown error"
       }`,
     };

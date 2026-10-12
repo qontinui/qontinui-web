@@ -107,11 +107,11 @@ const READINESS_LOADING: ReadinessRead = { kind: "loading" };
 const SESSIONS_LOADING: FleetSessionsRead = { kind: "loading" };
 
 async function loadReadiness(deviceId: string): Promise<ReadinessRead> {
-  let body: unknown;
   try {
-    body = await fetchDeviceResourceSample(
-      deviceId,
-      COORD_DASHBOARD_POLL_OPTIONS
+    // The parse stays inside the try: a resolver throw is a failed read too.
+    return resolveReadiness(
+      await fetchDeviceResourceSample(deviceId, COORD_DASHBOARD_POLL_OPTIONS),
+      deviceId
     );
   } catch (err) {
     const status = httpStatusOf(err);
@@ -128,7 +128,6 @@ async function loadReadiness(deviceId: string): Promise<ReadinessRead> {
       reason: `the resource-sample read failed — ${errorText(err)}`,
     };
   }
-  return resolveReadiness(body, deviceId);
 }
 
 async function loadFleetSessions(
@@ -139,13 +138,23 @@ async function loadFleetSessions(
     previous?.kind === "ok"
       ? { ...previous, refreshError: reason }
       : { kind: "failed", reason };
-  let body: unknown;
   try {
-    body = await fetchDeviceFleetSessions(
-      deviceId,
-      FLEET_SESSIONS_LIMIT,
-      COORD_DASHBOARD_POLL_OPTIONS
+    // The parse stays inside the try: a parser throw is a failed read too.
+    const parsed = parseFleetSessions(
+      await fetchDeviceFleetSessions(
+        deviceId,
+        FLEET_SESSIONS_LIMIT,
+        COORD_DASHBOARD_POLL_OPTIONS
+      )
     );
+    if (!parsed.ok) return fail(parsed.reason);
+    return {
+      kind: "ok",
+      rows: parsed.rows,
+      hasMore: parsed.hasMore,
+      workAxisColumnsPresent: parsed.workAxisColumnsPresent,
+      refreshError: null,
+    };
   } catch (err) {
     const status = httpStatusOf(err);
     if (status === 404) {
@@ -159,15 +168,6 @@ async function loadFleetSessions(
     }
     return fail(`the session census could not be read — ${errorText(err)}`);
   }
-  const parsed = parseFleetSessions(body);
-  if (!parsed.ok) return fail(parsed.reason);
-  return {
-    kind: "ok",
-    rows: parsed.rows,
-    hasMore: parsed.hasMore,
-    workAxisColumnsPresent: parsed.workAxisColumnsPresent,
-    refreshError: null,
-  };
 }
 
 export function useDeviceReadiness(deviceId: string): {
