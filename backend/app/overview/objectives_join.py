@@ -3,6 +3,12 @@
 Plan ``2026-10-06-overview-objectives-view`` D5–D7: which findings at a metric's
 key are checkpoint REPORTS (rules (a)/(b)/(c) and the late path), which report
 is each checkpoint's live head, and which verdict each declared criterion shows.
+
+Since Phase 4 a report's verdict ROWS come only from coord's checkpoint
+results table (:mod:`app.overview.objectives_results`); a finding's
+``artifact_refs.metric_checkpoint`` block is never turned into rows here. The
+block is still VALIDATED, so a report whose block cannot be read says so with
+the reason instead of "rows not yet recorded".
 """
 
 from __future__ import annotations
@@ -26,12 +32,10 @@ from app.overview.metric_checkpoint import (
     validate_metric_checkpoint,
 )
 from app.overview.objectives_frontmatter import (
-    as_number,
     parse_date,
     parse_time,
 )
 from app.overview.objectives_models import (
-    ActionRead,
     CheckpointDeclRead,
     CheckpointResultRead,
     CheckpointStatus,
@@ -49,7 +53,12 @@ from app.overview.objectives_models import (
     TallyRead,
     UnresolvedReason,
     UnresolvedResultRead,
-    WindowRead,
+)
+from app.overview.objectives_results import (
+    CoordCheckpointResults,
+    FindingRows,
+    MetricRows,
+    proxied_list_checkpoint_results,
 )
 
 logger = structlog.get_logger(__name__)
@@ -74,10 +83,10 @@ _CHECKPOINT_KEY = re.compile(r"^checkpoint-\d+$")
 # ===========================================================================
 
 
-class CoordFindings(Protocol):
-    """The two findings reads the join makes. The default goes through the
-    operations proxy (the caller's own bearer and active project); tests
-    substitute a fake."""
+class CoordFindings(CoordCheckpointResults, Protocol):
+    """The two findings reads the join makes, plus the checkpoint results
+    read. The default goes through the operations proxy (the caller's own
+    bearer and active project); tests substitute a fake."""
 
     async def list_for_keys(
         self, tenant_id: UUID, resource_keys: list[str], limit: int
@@ -104,6 +113,11 @@ class ProxiedCoordFindings:
             "/coord/findings", params={"finding_id": finding_id}, tenant_id=tenant_id
         )
         return result
+
+    async def list_checkpoint_results(
+        self, tenant_id: UUID, names: list[str], limit: int
+    ) -> dict[str, Any]:
+        return await proxied_list_checkpoint_results(tenant_id, names, limit)
 
 
 def coord_findings() -> CoordFindings:
@@ -232,23 +246,23 @@ def _ts(text: Any) -> datetime:
     return parsed or datetime.min.replace(tzinfo=UTC)
 
 
-def _row(raw: dict[str, Any], declared: set[str]) -> ResultRowRead:
-    window = raw.get("window")
-    action = raw.get("action")
-    return ResultRowRead(
-        id=raw["id"],
-        verdict=raw["verdict"],
-        value=as_number(raw.get("value")),
-        unit=raw.get("unit"),
-        value_text=raw.get("value_text"),
-        method=raw.get("method"),
-        door=raw.get("door"),
-        window=WindowRead.model_validate(window) if isinstance(window, dict) else None,
-        unknown_reason=raw.get("unknown_reason"),
-        cause=raw.get("cause"),
-        action=ActionRead.model_validate(action) if isinstance(action, dict) else None,
-        declared=raw["id"] in declared,
-    )
+def _report_time(report: ReportRead, rows: MetricRows) -> datetime:
+    """When a report was made, for ordering (head, D7 tie-break, the
+    out-of-date notice). Its finding's ``created_at``; for a stub whose
+    finding could not be read, its rows' latest ``measured_at``. A row's
+    ``recorded_at`` is when coord inserted it — a backfill can record a report
+    days after it was made — so it is used ONLY when no ``measured_at`` can be
+    read, and never the oldest possible time for a report that has rows."""
+    created = parse_time(report.created_at) if report.created_at else None
+    if created is not None:
+        return created
+    table = rows.by_finding.get(report.finding_id)
+    if table is not None:
+        for text in (table.measured_at, table.recorded_at):
+            parsed = parse_time(text) if text else None
+            if parsed is not None:
+                return parsed
+    return datetime.min.replace(tzinfo=UTC)
 
 
 def _addressed_block(finding: dict[str, Any], name: str) -> tuple[Any, bool]:
@@ -289,15 +303,36 @@ class _Placed:
     created: datetime
 
 
+#: A stub finding's key: the report's rows are in coord's table, but the
+#: finding itself could not be read by id — why.
+BODY_UNAVAILABLE = "_body_unavailable"
+
+
+def _table_checkpoint(table: FindingRows | None, declared_cps: list[str]) -> str | None:
+    """The checkpoint coord's table files a report under, when the document
+    declares it (or declares none). An undeclared one cannot be placed — the
+    same rule rule (a) applies to a block."""
+    if table is None:
+        return None
+    cp = table.checkpoint
+    if not cp.strip() or (declared_cps and cp not in declared_cps):
+        return None
+    return cp
+
+
 def _place(
     finding: dict[str, Any],
     metric: MetricRead,
     declared_cps: list[str],
     declared_criteria: set[str],
     recorded: dict[str, str | None],
+    rows: MetricRows,
 ) -> ReportRead | None:
-    """D6 point 2: a report if rule (a), (b) or (c) places it; else None."""
+    """D6 point 2: a report if coord's table, rule (a), (b) or (c) places it;
+    else None. Its verdict rows come only from the table (Phase 4)."""
     fid = str(finding["finding_id"])
+    table = rows.by_finding.get(fid)
+    t_cp = _table_checkpoint(table, declared_cps)
     block, names_this = _addressed_block(finding, metric.name)
     validation: ValidationResult | None = None
     a_cp: str | None = None
@@ -318,21 +353,28 @@ def _place(
         if len(hits) == 1:
             c_cp = hits[0]
 
-    checkpoint = a_cp or b_cp or c_cp
+    checkpoint = t_cp or a_cp or b_cp or c_cp
     if checkpoint is None:
         return None
     # The rules that AGREE with the placement; a disagreeing one is named in
     # `checkpoint_mismatch` instead.
     rules: list[tuple[PlacedBy, str | None]] = [
+        ("table", t_cp),
         ("block", a_cp),
         ("results", b_cp),
         ("checkpoint_key", c_cp),
     ]
     placed_by = [rule for rule, cp in rules if cp == checkpoint]
-    others = {cp for cp in (b_cp, c_cp) if cp}
+    others = {cp for cp in (a_cp, b_cp, c_cp) if cp}
     mismatch = None
     if len(others | {checkpoint}) > 1:
-        rule = "its result block" if a_cp else "the document's results list"
+        rule = (
+            "coord's results table"
+            if t_cp
+            else "its result block"
+            if a_cp
+            else "the document's results list"
+        )
         mismatch = (
             f"Placed under {checkpoint} by {rule}; another rule names "
             + ", ".join(sorted(others - {checkpoint}))
@@ -351,29 +393,58 @@ def _place(
         checkpoint_mismatch=mismatch,
         shape="prose_only",
         recorded=fid in recorded,
+        body_unavailable=_str(finding.get(BODY_UNAVAILABLE)),
     )
+    if validation is not None:
+        report.block_warnings = [f"{w.field}: {w.message}" for w in validation.warnings]
+
+    if table is not None and t_cp is not None:
+        if table.rows:
+            return _structured(report, table, declared_criteria, validation)
+        if table.marker == "invalid_block":
+            report.shape = "unreadable_block"
+            report.block_error = table.marker_text or (
+                "coord recorded the result block as invalid and gave no reason"
+            )
+            return report
+        if table.marker == "prose_only":
+            return report  # prose only, as coord's table files it
+
     if validation is None:
-        return report
-    report.block_warnings = [f"{w.field}: {w.message}" for w in validation.warnings]
+        return report  # no block: prose only
     if not validation.ok:
         report.shape = "unreadable_block"
         report.block_error = validation.summary()
         return report
-    assert isinstance(block, dict)
-    try:
-        rows = [_row(r, declared_criteria) for r in block["rows"]]
-    except Exception as exc:  # one finding degrades, never the page
-        logger.exception(
-            "overview_objectives_rows_unreadable", finding_id=report.finding_id
-        )
-        report.shape = "unreadable_block"
-        report.block_error = _crash_reason("its rows could not be read", exc)
-        return report
+    # A valid block and no rows in the table. Only a read that SUCCEEDED can
+    # say "not yet recorded"; any other read leaves the rows unvouched for.
+    report.shape = "rows_not_recorded" if rows.state == "ok" else "rows_unread"
+    return report
+
+
+def _structured(
+    report: ReportRead,
+    table: FindingRows,
+    declared_criteria: set[str],
+    validation: ValidationResult | None,
+) -> ReportRead:
     report.shape = "structured"
-    report.measured_at = block["measured_at"]
-    report.document_version = block["document"]["version"]
-    report.gate_id = block.get("gate_id")
-    report.rows = rows
+    report.measured_at = table.measured_at
+    report.document_version = table.document_version
+    report.gate_id = table.gate_id
+    report.rows = [
+        row.model_copy(update={"declared": row.id in declared_criteria})
+        for row in table.rows
+    ]
+    if validation is None and declared_criteria:
+        # No block to check (the finding could not be read): flag an
+        # undeclared row id the way the validator would.
+        report.block_warnings = [
+            f"{row.id!r} is not one of the document's criteria; shown under "
+            "the report and not counted"
+            for row in report.rows
+            if not row.declared
+        ]
     return report
 
 
@@ -413,17 +484,30 @@ def _unknown_reason_for(
     shape: ReportShape | None,
     has_report: bool,
     findings_read: FindingsReadState,
+    rows_read: FindingsReadState,
 ) -> str:
     """Why a declared criterion with no row reads UNKNOWN."""
+    if rows_read == "unavailable":
+        # Every verdict row comes from the results table: with it unread, no
+        # criterion of any metric can say more than "can't be read".
+        return "checkpoint_results_unreadable"
     if has_report:
         if shape == "prose_only":
             return "reported_prose_only"
         if shape == "unreadable_block":
             return "report_unreadable"
+        if shape == "rows_not_recorded":
+            return "rows_not_recorded"
+        if shape == "rows_unread" or rows_read == "truncated":
+            return "results_not_fully_read"
         return "not_reported"
     if status == "unreadable":
         return "results_unreadable"
-    if status == "not_fully_read" or findings_read == "truncated":
+    if (
+        status == "not_fully_read"
+        or findings_read == "truncated"
+        or rows_read == "truncated"
+    ):
         # Only THIS metric's page was full; other metrics are unaffected.
         return "results_not_fully_read"
     return "not_reported"
@@ -471,9 +555,11 @@ def join_results(
     listed: MetricFindings,
     by_id: dict[str, ByIdResult],
     now: datetime,
+    rows: MetricRows,
 ) -> None:
     """Fill ``checkpoint_results``, ``criteria_latest``, ``related_notes``."""
     metric.findings_read = listed.state
+    metric.checkpoint_results_read = rows.state
     declared_cps = [c.id for c in metric.checkpoints]
     declared_criteria = {c.id for c in metric.criteria}
     recorded: dict[str, str | None] = {}
@@ -490,6 +576,16 @@ def join_results(
         hit = by_id.get(fid)
         if hit is not None and hit.finding is not None:
             pool.setdefault(fid, hit.finding)
+    # Every report coord's table holds rows (or a marker) for: its body by
+    # id, or — when that read failed — a stub that still carries the rows.
+    for fid in rows.by_finding:
+        if fid in pool:
+            continue
+        hit = by_id.get(fid)
+        if hit is not None and hit.finding is not None:
+            pool[fid] = hit.finding
+        else:
+            pool[fid] = {"finding_id": fid, BODY_UNAVAILABLE: _stub_reason(hit)}
     superseded = {str(f["supersedes"]) for f in pool.values() if f.get("supersedes")}
     listed_ids = {str(f["finding_id"]) for f in listed.findings}
 
@@ -501,7 +597,9 @@ def join_results(
         if fid in superseded:
             continue
         try:
-            report = _place(finding, metric, declared_cps, declared_criteria, recorded)
+            report = _place(
+                finding, metric, declared_cps, declared_criteria, recorded, rows
+            )
         except Exception as exc:  # one finding degrades, never the page
             logger.exception(
                 "overview_objectives_placement_crashed",
@@ -513,11 +611,17 @@ def join_results(
             continue
         if report is not None:
             by_checkpoint.setdefault(report.checkpoint, []).append(
-                _Placed(report, _ts(report.created_at))
+                _Placed(report, _report_time(report, rows))
             )
-        elif fid in listed_ids or fid in recorded:
+        elif fid in listed_ids or fid in recorded or fid in rows.by_finding:
             note = None
-            if fid in recorded:
+            if fid in rows.by_finding:
+                note = (
+                    "coord's results table files it under "
+                    f"{rows.by_finding[fid].checkpoint}, a checkpoint this "
+                    "document does not declare."
+                )
+            elif fid in recorded:
                 note = (
                     "Recorded in the document's results list, but nothing "
                     "places it under a checkpoint."
@@ -562,17 +666,27 @@ def join_results(
                 [u for u in unresolved if u.checkpoint == cp],
                 notes,
                 listed,
+                rows,
                 now,
             )
         )
     metric.checkpoint_results = results
-    metric.criteria_latest = _latest(metric, results, order)
+    metric.criteria_latest = _latest(metric, results, order, rows)
     metric.tally_latest = _tally(metric.criteria_latest)
     notes.sort(key=lambda n: _ts(n.created_at), reverse=True)
     metric.related_notes = notes
     # An unresolved entry naming no checkpoint has no checkpoint row to sit
     # on; the card shows it at metric level instead of nowhere.
     metric.unresolved_results = [u for u in unresolved if not u.checkpoint]
+
+
+def _stub_reason(hit: ByIdResult | None) -> str:
+    if hit is None:
+        return (
+            f"The report's text was not read: one request reads at most "
+            f"{MAX_RESULT_ID_READS} reports by id."
+        )
+    return f"The report's text could not be read: {hit.detail or hit.reason}"
 
 
 def _unplaceable_note(
@@ -685,6 +799,8 @@ _SHAPE_STATUS: dict[ReportShape, CheckpointStatus] = {
     "structured": "reported",
     "prose_only": "reported_prose_only",
     "unreadable_block": "reported_unreadable",
+    "rows_not_recorded": "reported_rows_not_recorded",
+    "rows_unread": "not_fully_read",
 }
 
 
@@ -703,6 +819,7 @@ def _checkpoint_result(
     unresolved: list[UnresolvedResultRead],
     notes: list[RelatedNoteRead],
     listed: MetricFindings,
+    rows: MetricRows,
     now: datetime,
 ) -> CheckpointResultRead:
     due = decl.due if decl else None
@@ -723,6 +840,15 @@ def _checkpoint_result(
         result.status = _SHAPE_STATUS[head.shape]
         if head.shape == "unreadable_block":
             result.status_reason = head.block_error
+        elif head.shape == "rows_unread":
+            if rows.state == "unavailable":
+                result.status = "checkpoint_results_unreadable"
+            result.status_reason = rows.reason
+        elif head.shape == "rows_not_recorded":
+            result.status_reason = (
+                "The report carries a readable result, but coord's results "
+                "table holds no rows for it yet."
+            )
     elif any(u.reason != "superseded_or_missing" for u in unresolved):
         result.status = "unreadable"
         result.status_reason = "; ".join(u.detail for u in unresolved)
@@ -735,14 +861,21 @@ def _checkpoint_result(
     elif listed.state == "unavailable":
         result.status = "unreadable"
         result.status_reason = listed.reason
+    elif rows.state == "unavailable":
+        # The table also finds reports the 14-day list read cannot: with it
+        # unread, "no report found" would be a claim nobody checked.
+        result.status = "checkpoint_results_unreadable"
+        result.status_reason = rows.reason
     elif any(n.possible_report_for == cp for n in notes):
         result.status = "possible_report_unrecorded"
         result.status_reason = (
             "A possible report is listed under Related notes; not yet recorded."
         )
-    elif listed.state == "truncated":
+    elif listed.state == "truncated" or rows.state == "truncated":
         result.status = "not_fully_read"
-        result.status_reason = listed.reason
+        result.status_reason = (
+            listed.reason if listed.state == "truncated" else rows.reason
+        )
     elif closes is not None and now < closes:
         result.status = "awaiting"
     else:
@@ -753,11 +886,17 @@ def _checkpoint_result(
         )
 
     reason = _unknown_reason_for(
-        result.status, head.shape if head else None, head is not None, listed.state
+        result.status,
+        head.shape if head else None,
+        head is not None,
+        listed.state,
+        rows.state,
     )
-    rows = {r.id: r for r in head.rows} if head and head.shape == "structured" else {}
+    stated = {r.id: r for r in head.rows} if head and head.shape == "structured" else {}
     result.criteria = [
-        _criterion(decl_c, row=rows.get(decl_c.id), report=head, unknown_reason=reason)
+        _criterion(
+            decl_c, row=stated.get(decl_c.id), report=head, unknown_reason=reason
+        )
         for decl_c in metric.criteria
         if decl_c.checkpoint == cp
     ]
@@ -766,11 +905,15 @@ def _checkpoint_result(
 
 
 def _latest(
-    metric: MetricRead, results: list[CheckpointResultRead], order: list[str]
+    metric: MetricRead,
+    results: list[CheckpointResultRead],
+    order: list[str],
+    rows: MetricRows,
 ) -> list[CriterionResultRead]:
-    """D7: per declared criterion, the newest row across every checkpoint's
-    report (by ``measured_at``, then the later checkpoint, then the later
-    finding); a later report with no readable rows marks it possibly stale."""
+    """D7: per declared criterion, the newest table row across every
+    checkpoint's report (by ``measured_at``, then the later checkpoint, then
+    the later finding); a later report with no readable rows marks it
+    possibly stale."""
     index = {cp: i for i, cp in enumerate(order)}
     heads = [r.report for r in results if r.report is not None]
     candidates: dict[
@@ -783,7 +926,7 @@ def _latest(
             key = (
                 _ts(report.measured_at),
                 index.get(report.checkpoint, len(order)),
-                _ts(report.created_at),
+                _report_time(report, rows),
             )
             candidates.setdefault(row.id, []).append((key, row, report))
     by_cp = {r.id: r for r in results}
@@ -794,12 +937,14 @@ def _latest(
         if not found:
             own = by_cp.get(decl.checkpoint or "")
             reason = "not_reported"
-            if own is not None:
+            if rows.state == "unavailable":
+                reason = "checkpoint_results_unreadable"
+            elif own is not None:
                 match = next((c for c in own.criteria if c.id == decl.id), None)
                 reason = (match.unknown_reason if match else None) or reason
             elif metric.findings_read == "unavailable":
                 reason = "results_unreadable"
-            elif metric.findings_read == "truncated":
+            elif metric.findings_read == "truncated" or rows.state == "truncated":
                 reason = "results_not_fully_read"
             out.append(_criterion(decl, row=None, report=None, unknown_reason=reason))
             continue
@@ -814,12 +959,14 @@ def _latest(
             )
             for _, w, r in found[1:]
         ]
-        shown_at = _ts(report.created_at)
+        shown_at = _report_time(report, rows)
         later = [
-            h for h in heads if h.shape != "structured" and _ts(h.created_at) > shown_at
+            h
+            for h in heads
+            if h.shape != "structured" and _report_time(h, rows) > shown_at
         ]
         if later:
-            newest = max(later, key=lambda h: _ts(h.created_at))
+            newest = max(later, key=lambda h: _report_time(h, rows))
             item.out_of_date_notice = LaterReportNotice(
                 finding_id=newest.finding_id,
                 checkpoint=newest.checkpoint,
