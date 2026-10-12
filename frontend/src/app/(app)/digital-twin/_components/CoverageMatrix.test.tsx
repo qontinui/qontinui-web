@@ -6,9 +6,13 @@
  * and fills with the claim colour — never the live green.
  */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SubspaceProbe, SubspacesProbeResponse } from "../_lib/types";
+import type {
+  SubspaceProbe,
+  SubspacesProbeResponse,
+  TwinCatalogResponse,
+} from "../_lib/types";
 
 const state = vi.hoisted(() => ({
   probe: {
@@ -17,10 +21,20 @@ const state = vi.hoisted(() => ({
     isError: false,
     error: null as unknown,
   },
+  /** coord's served catalog; `undefined` = not read (the manifest stands in). */
+  catalog: undefined as TwinCatalogResponse | undefined,
 }));
 
 vi.mock("../_hooks/useDigitalTwinSubspaces", () => ({
   useDigitalTwinSubspaces: () => state.probe,
+}));
+vi.mock("../_hooks/useTwinCatalog", () => ({
+  useTwinCatalog: () => ({
+    data: state.catalog,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
 }));
 vi.mock("../_hooks/useSubspaceRaw", () => ({
   useSubspaceRaw: () => ({
@@ -36,6 +50,7 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 
 import { manifest } from "../_lib/resolve";
 import { COUNT_FILLS } from "../_lib/status-presentation";
+import { MANIFEST_SNAPSHOT_IDS, catalogDeclaring } from "../_lib/test-catalog";
 import { CoverageMatrix } from "./CoverageMatrix";
 
 const SNAPSHOT_IDS = manifest.subspaces
@@ -83,6 +98,7 @@ beforeEach(() => {
     isError: false,
     error: null,
   };
+  state.catalog = undefined;
 });
 
 describe("CoverageMatrix gauges", () => {
@@ -125,81 +141,148 @@ describe("CoverageMatrix gauges", () => {
   });
 });
 
-describe("CoverageMatrix restriction", () => {
-  // coord 403s a SystemTenant-scoped cell for a non-system tenant while the
-  // tenant's other cells answer (per qontinui-coord#3128). The backend raises the
-  // grid-level `restricted` flag only when EVERY probed cell is restricted, so
-  // one restricted cell must render as that cell — not hide the whole grid.
-  it("renders the grid with one restricted cell and no access notice when only one cell is restricted", () => {
-    const restrictedId = SNAPSHOT_IDS[0];
-    const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
-      id,
-      status: id === restrictedId ? "restricted" : "implemented",
-    }));
-    state.probe = {
-      data: { subspaces, probed: subspaces.length, restricted: false },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+/** A probe response: every id answers `implemented` unless overridden. */
+function probesFor(
+  ids: readonly string[],
+  overrides: Record<string, SubspaceProbe> = {},
+  restricted = false
+): SubspacesProbeResponse {
+  const subspaces: SubspaceProbe[] = ids.map(
+    (id) => overrides[id] ?? { id, status: "implemented" }
+  );
+  return { subspaces, probed: subspaces.length, restricted };
+}
+
+function setProbe(data: SubspacesProbeResponse) {
+  state.probe = { data, isLoading: false, isError: false, error: null };
+}
+
+describe("CoverageMatrix per-cell access", () => {
+  it("renders one refused sub-space as its own Restricted cell, never the access notice", () => {
+    setProbe(
+      probesFor(SNAPSHOT_IDS, {
+        release: { id: "release", status: "restricted" },
+      })
+    );
     render(<CoverageMatrix />);
-
-    expect(screen.queryByText("Access restricted")).not.toBeInTheDocument();
-    for (const id of SNAPSHOT_IDS) {
-      expect(screen.getByTestId(`digital-twin-cell-${id}`)).toBeInTheDocument();
-    }
-    expect(
-      screen.getByTestId(`digital-twin-cell-${restrictedId}`)
-    ).toHaveTextContent("Restricted");
-    expect(
-      screen.getByTestId(`digital-twin-cell-${SNAPSHOT_IDS[1]}`)
-    ).not.toHaveTextContent("Restricted");
-  });
-
-  it("counts restricted cells beside the live gauge, never in its denominator", () => {
-    // The split per qontinui-coord#3128: nine SystemTenant cells refused, two answer.
-    const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
-      id,
-      status: SYSTEM_TENANT_SUBSPACES.has(id) ? "restricted" : "implemented",
-    }));
-    state.probe = {
-      data: { subspaces, probed: subspaces.length, restricted: false },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-    render(<CoverageMatrix />);
-
-    const live = screen.getByTestId("digital-twin-gauge-live");
-    expect(live).toHaveTextContent("2/2");
-    expect(live).not.toHaveTextContent(`2/${SNAPSHOT_IDS.length}`);
-    expect(live).toHaveTextContent("· 9 restricted");
-    expect(gaugeFill("digital-twin-gauge-live").style.width).toBe("100%");
-  });
-
-  it("names no restricted count when nothing is restricted", () => {
-    render(<CoverageMatrix />);
-    expect(screen.getByTestId("digital-twin-gauge-live")).not.toHaveTextContent(
-      "restricted"
+    expect(screen.queryByText("Access restricted")).toBeNull();
+    const release = screen.getByTestId("digital-twin-cell-release");
+    expect(release).toHaveTextContent("Restricted");
+    expect(release).not.toHaveTextContent("Error");
+    expect(release.getAttribute("title")).toContain("Qontinui-internal");
+    // A refused sub-space is not an observer that failed to respond.
+    expect(screen.getByTestId("digital-twin-gauge-live")).toHaveTextContent(
+      `${SNAPSHOT_IDS.length - 1}/${SNAPSHOT_IDS.length - 1}`
+    );
+    expect(screen.getByTestId("digital-twin-gauge-notes")).toHaveTextContent(
+      "1 restricted (not yours to read)"
+    );
+    // The operator's other cells stay live beside it.
+    expect(screen.getByTestId("digital-twin-cell-memory")).toHaveTextContent(
+      "Live"
     );
   });
 
-  it("shows the access notice instead of the grid when every cell is restricted", () => {
-    const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
-      id,
-      status: "restricted",
-    }));
-    state.probe = {
-      data: { subspaces, probed: subspaces.length, restricted: true },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+  it("shows the whole-view access notice only when every probe was refused", () => {
+    const all = Object.fromEntries(
+      SNAPSHOT_IDS.map((id) => [id, { id, status: "restricted" as const }])
+    );
+    setProbe(probesFor(SNAPSHOT_IDS, all, true));
     render(<CoverageMatrix />);
-
     expect(screen.getByText("Access restricted")).toBeInTheDocument();
+  });
+
+  it("keeps answered cells visible even when the matrix is flagged restricted", () => {
+    setProbe(
+      probesFor(
+        SNAPSHOT_IDS,
+        { release: { id: "release", status: "restricted" } },
+        true
+      )
+    );
+    render(<CoverageMatrix />);
+    expect(screen.queryByText("Access restricted")).toBeNull();
+    expect(screen.getByTestId("digital-twin-cell-schema")).toHaveTextContent(
+      "Live"
+    );
+  });
+});
+
+describe("CoverageMatrix joined to coord's catalog", () => {
+  it("renders the envelope door and a report door as live cells", () => {
+    state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+    setProbe(
+      probesFor(MANIFEST_SNAPSHOT_IDS, {
+        outbound: {
+          id: "outbound",
+          status: "partial",
+          door_shape: "envelope",
+          metrics: {
+            coverage: 0.6,
+            credibility: 0.9,
+            posterior: null,
+            staleness_seconds: null,
+            provenance: "outbound_budget_observations",
+            drift_class: "none",
+          },
+        },
+        worktree: { id: "worktree", status: "served", door_shape: "report" },
+      })
+    );
+    render(<CoverageMatrix />);
+    const outbound = screen.getByTestId("digital-twin-cell-outbound");
+    expect(outbound).toHaveTextContent("Partial");
+    expect(outbound).toHaveTextContent("cov 60%");
+    const worktree = screen.getByTestId("digital-twin-cell-worktree");
+    expect(worktree).toHaveTextContent("Served");
+    expect(worktree).not.toHaveTextContent("Partial");
+    // The report door is probed, but it is not counted as an observer that
+    // is not responding: it leaves the live gauge's denominator.
+    const graded = MANIFEST_SNAPSHOT_IDS.length - 1;
+    expect(screen.getByTestId("digital-twin-gauge-live")).toHaveTextContent(
+      `${graded}/${graded}`
+    );
+    expect(screen.getByTestId("digital-twin-gauge-notes")).toHaveTextContent(
+      "1 served (a report, not graded)"
+    );
+    // The outbound drawer shows the envelope the probe carried: there is no
+    // twin-door raw read for an admin door.
+    fireEvent.click(outbound);
+    const drawer = within(screen.getByRole("dialog"));
+    expect(drawer.getByTestId("digital-twin-drawer-summary")).toHaveTextContent(
+      "Coverage 60%, credibility 90%"
+    );
+    expect(drawer.getByText("Live credibility envelope")).toBeInTheDocument();
+  });
+
+  it("names a probe coord declares that the manifest has no row for", () => {
+    const catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+    catalog.entries.push({
+      ...catalog.entries[0]!,
+      id: "zz_new",
+      subspace: "zz_new",
+    });
+    state.catalog = catalog;
+    setProbe(probesFor([...MANIFEST_SNAPSHOT_IDS, "zz_new"]));
+    render(<CoverageMatrix />);
     expect(
-      screen.queryByTestId(`digital-twin-cell-${SNAPSHOT_IDS[0]}`)
-    ).not.toBeInTheDocument();
+      screen.getByTestId("digital-twin-unlisted-probes")
+    ).toHaveTextContent(
+      "Declared by coord, not in this page's taxonomy: zz_new"
+    );
+  });
+
+  it("says Not served by coord for a snapshot row coord does not declare", () => {
+    const declared = MANIFEST_SNAPSHOT_IDS.filter((id) => id !== "schema");
+    state.catalog = catalogDeclaring(declared);
+    setProbe(probesFor(declared));
+    render(<CoverageMatrix />);
+    const schema = screen.getByTestId("digital-twin-cell-schema");
+    expect(schema).toHaveTextContent("Not served by coord");
+    expect(schema).not.toHaveTextContent("Error");
+    // The live gauge counts only what coord declares.
+    expect(screen.getByTestId("digital-twin-gauge-live")).toHaveTextContent(
+      `${declared.length}/${declared.length}`
+    );
   });
 });

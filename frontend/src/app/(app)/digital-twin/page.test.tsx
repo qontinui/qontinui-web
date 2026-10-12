@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SubspacesProbeResponse } from "./_lib/types";
+import type { SubspacesProbeResponse, TwinCatalogResponse } from "./_lib/types";
 
 const state = vi.hoisted(() => ({
   probe: {
@@ -36,6 +36,8 @@ const state = vi.hoisted(() => ({
     isError: false,
     error: null as unknown,
   },
+  /** coord's served catalog — the declaration the matrix joins to. */
+  catalog: undefined as TwinCatalogResponse | undefined,
   /** Raw verdict bodies by sub-space id (the drawer's `useSubspaceRaw`). */
   rawById: {} as Record<string, unknown>,
   /** The delivery verdict body a submitted lookup resolves to. */
@@ -50,6 +52,14 @@ const state = vi.hoisted(() => ({
 
 vi.mock("./_hooks/useDigitalTwinSubspaces", () => ({
   useDigitalTwinSubspaces: () => state.probe,
+}));
+vi.mock("./_hooks/useTwinCatalog", () => ({
+  useTwinCatalog: () => ({
+    data: state.catalog,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
 }));
 vi.mock("./_hooks/useSubspaceRaw", () => ({
   useSubspaceRaw: (id: string | null, enabled: boolean) => ({
@@ -179,6 +189,9 @@ beforeEach(() => {
     isError: false,
     error: null,
   };
+  state.catalog = stubBody(
+    "**/api/v1/digital-twin/catalog"
+  ) as TwinCatalogResponse;
   state.rawById = {
     schema: stubBody("**/api/v1/digital-twin/subspace/schema/raw"),
   };
