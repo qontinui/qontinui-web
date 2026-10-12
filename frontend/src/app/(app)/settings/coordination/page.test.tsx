@@ -14,8 +14,20 @@ import userEvent from "@testing-library/user-event";
 const get = vi.fn();
 const put = vi.fn();
 
+// The fixer dial reads and writes through the typed `/operations` client
+// (`lib/api/operations/prMerge`), which calls `httpClient.fetch`. This adapter
+// routes those calls back onto the `get` spy (the page test never saves the dial), so each test keeps
+// stating its transport as "the GET answers X" / "the PATCH rejects with Y".
+const patchViaFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    fetch: async (url: string, init?: RequestInit) => {
+      const body =
+        init?.method === "PATCH"
+          ? await patchViaFetch(url, JSON.parse(String(init.body)))
+          : await get(url);
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
     get: (...args: unknown[]) => get(...args),
     patch: vi.fn(),
     post: vi.fn(),

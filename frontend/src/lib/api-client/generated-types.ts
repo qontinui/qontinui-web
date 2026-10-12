@@ -5048,6 +5048,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/devices/credential-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Credential Overview
+         * @description The caller's devices, in the caller's tenants, with web's credential
+         *     facts: machine key (presence / expiry / revocation), the device-scoped
+         *     deny, and any operator authorization still awaiting the runner.
+         *
+         *     Same auth and device set as ``GET /api/v1/devices`` (coord
+         *     ``/coord/devices/by-user``), narrowed to devices whose ``tenant_id`` is
+         *     one of the caller's coord tenant memberships. The deny is read from this
+         *     backend's own database — web authors and writes the column, so its value
+         *     is authoritative here — never defaulted from a coord JSON row that might
+         *     omit it.
+         *     Credential POSTURE is coord's ``GET /coord/status`` and is joined on
+         *     ``device_id`` by the client, not served here.
+         */
+        get: operations["api_v1_devices_credential_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/me": {
         parameters: {
             query?: never;
@@ -5188,6 +5219,12 @@ export interface paths {
          *     Returns:
          *
          *     * **200** + :class:`PairCodeRedeemOut` on success.
+         *     * **404** for a device-bound code (operator ``authorize-redeem``) that
+         *       its device has not yet collected through ``/pending-redeem``.
+         *     * **403** ``pair_code_bound_to_other_device`` if a collected bound code
+         *       is presented for a different device; **403**
+         *       ``device_credential_revoked`` while the device's credentials are
+         *       revoked (a failed read of that state → **503**). Neither consumes it.
          *     * **404** if the code doesn't exist (or never did).
          *     * **409** if the code has already been redeemed (single-use).
          *     * **410** if the code has expired.
@@ -5360,6 +5397,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/devices/{device_id}/authorize-redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authorize Redeem
+         * @description Authorize ONE device to re-pair itself, headless.
+         *
+         *     **Operator SSO only.** ``get_current_active_user_async`` verifies a
+         *     Cognito token (a coord device JWT, or any other bearer, is a 401), and
+         *     :func:`_operator_tenant_device` requires a linked coord operator whose
+         *     tenant holds the device. The target is the PATH ``device_id``; the route
+         *     declares no body, so nothing a caller sends can redirect it.
+         *
+         *     Effect, one transaction:
+         *
+         *     * mints an ordinary pair code through ``pair_code_crud`` BOUND to this
+         *       device, in the device's tenant, with
+         *       :data:`~app.crud.pair_code_crud.BOUND_PAIR_CODE_TTL` (30 min — the
+         *       runner polls every 300 s), and expires any earlier pending code for the
+         *       device (the newest authorization supersedes);
+         *     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
+         *       explicit act, never a side effect;
+         *     * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
+         *       enrol a fresh key (a usable key is left alone).
+         *
+         *     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
+         *     the device collects it, through ``/pending-redeem``.
+         */
+        post: operations["api_v1_devices_device_id_authorize_redeem_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/{device_id}/dispatch": {
         parameters: {
             query?: never;
@@ -5411,8 +5489,10 @@ export interface paths {
          *     forward (sliding session), then web calls coord's service-mint with its
          *     trusted service token; coord resolves the device's owner/tenant itself.
          *
-         *     503 when the coord service bridge is disabled (``COORD_ADMIN_SECRET``
-         *     unset). A coord 4xx propagates as the matching client error.
+         *     403 ``device_credential_revoked`` while an operator's device-scoped revoke
+         *     stands (a failed read → 503). 503 when the coord service bridge is
+         *     disabled (``COORD_ADMIN_SECRET`` unset). A coord 4xx propagates as the
+         *     matching client error.
          */
         post: operations["api_v1_devices_device_id_machine_credential_exchange_post"];
         delete?: never;
@@ -5439,8 +5519,41 @@ export interface paths {
          *     the same check the single-device reads use); a non-owner gets 403. The
          *     device's ``tenant_id`` is resolved server-side from the owned coord row
          *     (never client-asserted). Returns the plaintext ``dmk_`` ONCE.
+         *
+         *     Refused (403 ``device_credential_revoked``) while an operator's revoke
+         *     stands — this mint rotates over a revoked key, so without the check it
+         *     would silently undo the revocation.
          */
         post: operations["api_v1_devices_device_id_machine_credential_mint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/{device_id}/machine-credential/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Device Credentials
+         * @description Revoke a device's credentials, fail-closed. Operator SSO, tenant-scoped
+         *     (same gate as :func:`authorize_redeem`).
+         *
+         *     One transaction: revokes the machine key (``dmk_crud.revoke`` — hash
+         *     cleared, so ``/exchange`` can never match it), sets
+         *     ``coord.devices.credential_revoked_at`` (every web door that issues this
+         *     device a credential, and coord's refresh/service-mint, refuse while it is
+         *     set), and expires any pending authorization. Only a later
+         *     ``authorize-redeem`` clears it. 404 ``device_not_found`` when there is no
+         *     ``coord.devices`` row to deny — nothing is committed then.
+         */
+        post: operations["api_v1_devices_device_id_machine_credential_revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5493,6 +5606,9 @@ export interface paths {
          *       ``coord_device_state_malformed``. In every
          *       one of these nothing is minted — an unanswered or unreadable lookup is
          *       UNKNOWN, never a licence to mint.
+         *     * a device whose credentials an operator revoked
+         *       (``coord.devices.credential_revoked_at``) → 403
+         *       ``device_credential_revoked`` (a failed read → 503).
          *     * an existing key that an operator REVOKED is not re-minted → 403
          *       ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``
          *       on rotation, so without this a device could undo its own revocation;
@@ -5566,6 +5682,38 @@ export interface paths {
          *     ``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.
          */
         post: operations["api_v1_devices_device_id_machine_credential_self_mint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/{device_id}/pending-redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending Redeem
+         * @description Hand a credential-dark runner the pair code an operator authorized
+         *     for it — AT MOST ONCE.
+         *
+         *     Authenticated by the device's own coord-signed device JWT with expiry
+         *     TOLERATED up to 30 days (:func:`_verify_poll_token`): a third party that
+         *     knows only a ``device_id`` cannot forge one, and a stolen expired token
+         *     yields a code only after an operator authorized exactly this device. A
+         *     device whose credentials are revoked is refused (403
+         *     ``device_credential_revoked``; a failed read is a 503, never a pass).
+         *
+         *     200 ``{code, expires_at}`` exactly once per authorization (the code is
+         *     stamped delivered); 204 when nothing is pending. The runner then redeems
+         *     the code through the ordinary ``/pair-codes/{code}/redeem``.
+         */
+        get: operations["api_v1_devices_device_id_pending_redeem_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7283,15 +7431,35 @@ export interface paths {
          * Designate Test Target
          * @description Designate ``device_id`` as a test host for ``app_id`` (upsert).
          *
-         *     Writes ``coord.test_targets`` stamped with the caller's effective coord
-         *     tenant (home unless the caller sends ``X-Qontinui-Active-Tenant``). Idempotent — re-designating updates ``auto_fresh``. The device
-         *     must be owned by the caller and the app must be registered.
+         *     The write is coord's: ``POST /coord/trees/test-targets/upsert`` with the
+         *     caller's bearer and ``X-Qontinui-Active-Tenant`` forwarded, so the row is
+         *     stamped with the caller's EFFECTIVE tenant and refused unless the device is
+         *     bound to it. Idempotent — re-designating updates ``auto_fresh``.
+         *
+         *     Web checks what coord does not, BEFORE calling it: the device must be owned
+         *     by the caller (404), the app must be registered (404), and an existing row
+         *     for the pair must not be stamped with another project (409
+         *     ``designation_in_other_project``) — coord's upsert would update that row
+         *     in place and keep its old stamp. A device the effective tenant has no
+         *     binding for is a 409 ``device_not_bound_to_project`` naming that project.
+         *     The response is the row as it now reads, joined with device + freshness.
          */
         put: operations["api_v1_fleet_test_targets_device_id_app_id_put"];
         post?: never;
         /**
          * Undesignate Test Target
-         * @description Remove a test-host designation (idempotent — 204 even if absent).
+         * @description Remove a test-host designation through coord.
+         *
+         *     coord's DELETE is scoped to the caller's EFFECTIVE tenant and answers
+         *     ``200 {"deleted": false}`` for a row stamped with any other tenant — which
+         *     is NOT a removal. So ``deleted: false`` is never taken as success on its
+         *     own: the row is read back. Absent means the designation the operator asked
+         *     to remove is gone (204, idempotent as before). Still present means it
+         *     lives in another project — 409 ``designation_in_other_project`` naming
+         *     it, since reporting success there would leave the device's runner serving
+         *     a designation the operator believes is removed — or, when it is still in
+         *     the selected project (a concurrent re-designation), 409
+         *     ``designation_not_removed``.
          */
         delete: operations["api_v1_fleet_test_targets_device_id_app_id_delete"];
         options?: never;
@@ -7641,6 +7809,31 @@ export interface paths {
         get: operations["api_v1_integration_testing_snapshots_run_id_screenshots_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/internal/coord-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Coord Push
+         * @description Push one notification to every active device of the named users.
+         *
+         *     ``devices: 0`` is an answer, not an error: coord maps it to the item's
+         *     ``no_devices`` state. Expo failures are counted, not raised, so the
+         *     response is always the counts — a non-2xx from this route means the call
+         *     itself was refused (401 secret, 422 body), never that Expo failed.
+         */
+        post: operations["api_v1_internal_coord_push_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8670,6 +8863,61 @@ export interface paths {
          */
         put: operations["api_v1_notifications_notification_id_read_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/action-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Operator Action Items
+         * @description Return the tenant's operator action items.
+         *
+         *     Response envelope mirrors coord:
+         *     ``{"items": [...], "next_cursor": str|null,
+         *     "counts": {"open": N, "done": N, "dismissed": N}}``. ``counts`` are
+         *     server-computed over the whole tenant, not the page — consumers read them
+         *     rather than counting ``items``.
+         *
+         *     Every param is forwarded **verbatim** and only when the caller set it;
+         *     bounds live in coord (one clamp, one place). Tenant-scoped and
+         *     operator-bearer-forwarding, same posture as ``/operations/notifications``.
+         */
+        get: operations["api_v1_operations_action_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/action-items/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Operator Action Items Resolve
+         * @description Resolve an action item as ``done`` or ``dismissed``.
+         *
+         *     Coord answers ``{"item": {...}}``; ``resolved_by`` is the principal coord
+         *     derives from the forwarded bearer, never a body field. Coord's 404 (an item
+         *     outside the caller's tenant) and 409 ``already_resolved`` pass through with
+         *     coord's status.
+         */
+        post: operations["api_v1_operations_action_items_resolve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16977,8 +17225,93 @@ export interface paths {
          *       targets: silently re-pointing the edge would erase the first claim with
          *       no trace and leave two callers each believing they own the work. The
          *       response names the current owner.
+         *     * **409** — already resolved (``fixing``, ``fixed``, ``already_fixed``,
+         *       ``dismissed``): it left the open queue through its resolution, and a row
+         *       holds at most one way out. The response names the resolution; reopen it
+         *       (``POST /plan-library/edges/{edge_id}/resolution``) first if an
+         *       artifact should own it instead.
          */
         patch: operations["api_v1_plan_library_edges_edge_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/plan-library/edges/{edge_id}/anchors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace a follow-up's file anchors (and optionally its size class)
+         * @description Say which files a follow-up is about — or why it names none.
+         *
+         *     ``anchors`` REPLACES the stored set: each is ``owner/name`` + a
+         *     repo-relative file path (forward slashes, no leading ``/``, no ``.`` /
+         *     ``..`` segment, not a directory), with optional ``line_start`` /
+         *     ``line_end`` / ``symbol`` hints. Matching is exact on ``(repo, path)``;
+         *     lines drift and are hints only. An EMPTY set needs ``unanchored_reason``
+         *     (an unanchored follow-up is visibly unanchored, never silently
+         *     unmatchable); a non-empty one clears it.
+         *
+         *     ``size_class`` + ``size_class_source`` (``declared`` | ``sweep``), when
+         *     supplied together, set the class; omitted, the stored class is kept.
+         *
+         *     This is the correction door for anchors: a wrong set is corrected by
+         *     PUTting the right one. ``changed: false`` means the body restated what was
+         *     stored and nothing was written. Works on any ``spawned_followup`` — open,
+         *     resolved or claimed — because what a follow-up is ABOUT does not change
+         *     with how it was closed.
+         */
+        put: operations["api_v1_plan_library_edges_edge_id_anchors_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-library/edges/{edge_id}/resolution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a follow-up through its closure states (fixing, fixed, …)
+         * @description Record how a follow-up left — or returned to — the open queue.
+         *
+         *     Legal transitions:
+         *
+         *     * ``open`` → ``fixing`` (``resolution_pr``: the open PR that fixes it) |
+         *       ``already_fixed`` (``resolution_commit``: the commit that fixed it
+         *       earlier) | ``dismissed`` (``resolution_note``: why — required);
+         *     * ``fixing`` → ``fixed`` (``resolution_commit``; normally written by the
+         *       reconcile from coord's land record, not by hand) | ``open`` (its PR
+         *       closed without landing);
+         *     * ``fixed`` / ``already_fixed`` / ``dismissed`` → ``open``, with a
+         *       ``resolution_note`` saying why the closure was wrong — the correction
+         *       verb for a wrong closure.
+         *
+         *     Anything else is a **409** ``followup_transition_conflict`` naming the
+         *     current state and the legal next ones, decided under a row lock (so it
+         *     names the state the row actually held). A claimed follow-up has no closure
+         *     state (409). Restating the current state's facts is an idempotent replay —
+         *     **200** with ``changed: false`` — while contradicting them (``fixing``
+         *     under a different PR) is a 409. A request missing what its target needs is
+         *     a **422**.
+         *
+         *     Every transition appends ``{from, to, at, by, pr, commit, note}`` to the
+         *     follow-up's ``resolution_history``.
+         */
+        post: operations["api_v1_plan_library_edges_edge_id_resolution_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/plan-library/export": {
@@ -17041,32 +17374,113 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Follow-ups a plan identified but nobody owns yet
-         * @description The queryable form of "worth its own plan".
+         * Follow-ups a plan identified, by state (open by default)
+         * @description The queryable form of "worth its own plan", and of its closure.
          *
          *     Phase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. A plan
          *     routinely surfaces work it deliberately does not do, and until this route
          *     that lived ONLY as prose in the plan body — unrecoverable from the data, so
          *     nothing could answer "show me follow-ups with no owning plan". It is now a
-         *     ``spawned_followup`` edge whose ``to_id`` is still NULL, and this is the
-         *     read that lists them.
+         *     ``spawned_followup`` edge, and this is the read that lists them.
          *
-         *     **Open only.** A follow-up that has been claimed
-         *     (``PATCH /plan-library/edges/{edge_id}``) is an ordinary two-ended
-         *     provenance edge and drops out of this list — but it is not deleted, and it
-         *     stays on the originating artifact's edge list, so the trail from "this plan
-         *     surfaced it" to "that plan owns it" survives the claim.
+         *     **Open by default** (``state=open``): nobody owns it and nothing closed it.
+         *     A follow-up leaves the open view two ways, and neither deletes it:
+         *
+         *     * **claimed** — an artifact owns it (``PATCH /plan-library/edges/{edge_id}``);
+         *       it becomes an ordinary two-ended provenance edge on the originating
+         *       artifact's edge list and is not in this read under any state;
+         *     * **resolved** — plan
+         *       ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``:
+         *       ``fixing`` while a PR that fixes it is open, then ``fixed`` once coord
+         *       observes the PR land; or ``already_fixed`` / ``dismissed``. Each is
+         *       readable here by ``state``.
+         *
+         *     Every row carries its ``state``, its file ``anchors`` and its size class,
+         *     so ``?state=open&anchored=false`` is the unanchored backlog and
+         *     ``?state=fixing`` the work held by open PRs.
          *
          *     **Oldest first**, and that is the useful default rather than an arbitrary
          *     one: an old unowned follow-up is work the fleet has known about and
          *     repeatedly not picked up. A keyset walk over the edge's immutable
-         *     ``(created_at, id)``: ``total`` counts the open follow-ups from this
+         *     ``(created_at, id)``: ``total`` counts the matching follow-ups from this
          *     page's start and ``next_cursor`` reaches the rest, so a bounded page can
-         *     never be mistaken for the whole queue.
+         *     never be mistaken for the whole set. A cursor is bound to the filters it
+         *     was minted under.
          */
         get: operations["api_v1_plan_library_followups_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-library/followups/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The open and fixing follow-ups anchored on a diff's files
+         * @description Which follow-ups are about the files this diff touches?
+         *
+         *     ``{repo: "owner/name", paths: [...]}`` (up to 500 repo-relative paths) →
+         *     every ``open`` and ``fixing`` follow-up with an anchor on one of them,
+         *     oldest first, each with ``matched_anchors`` (the anchors the request hit).
+         *     A ``fixing`` match is held by another PR and must not be folded twice.
+         *     Matching is EXACT on ``(repo, path)`` — line hints never take part.
+         *
+         *     A ``POST`` because 500 paths do not fit a query string; it reads and
+         *     changes nothing.
+         *
+         *     A zero is self-describing: ``repo_anchored_open_total`` (open follow-ups
+         *     anchored anywhere in this repo) and ``unanchored_open_total`` (open ones
+         *     that name no file at all, so no diff can ever match them) ride with every
+         *     answer, empty or not.
+         */
+        post: operations["api_v1_plan_library_followups_match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-library/followups/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Settle fixing follow-ups from coord's land record
+         * @description Move this organization's ``fixing`` follow-ups whose PR coord has settled.
+         *
+         *     For each ``fixing`` row (each distinct PR read once, from coord's
+         *     ``GET /coord/pr/{repo}/{n}/landed``): ``landed`` → ``fixed``, stamped with
+         *     coord's land commit when it holds one; ``closed_unlanded`` → back to
+         *     ``open``; ``pending`` → unchanged; ``unknown`` → unchanged and counted
+         *     with its reason. "Landed" is COORD's verdict, never GitHub's ``merged``
+         *     flag — a coord fast-forward land reads ``CLOSED`` with no ``mergedAt`` on
+         *     GitHub.
+         *
+         *     coord is read with the CALLER's bearer (the same probe ``/candidates``
+         *     uses, with its fail-fast circuit). A coord that cannot be read moves no
+         *     row: ``coord_available: false``, and every row it could not read is in
+         *     ``unknown`` — UNKNOWN, never "nothing to settle".
+         *
+         *     The hand-run and in-session door. The scheduled ``followup_reconcile``
+         *     task runs the SAME core over every organization through web's coord
+         *     service identity, so a follow-up closes even when no session asks.
+         */
+        post: operations["api_v1_plan_library_followups_reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17384,6 +17798,19 @@ export interface paths {
          *     the relation is inherently outgoing (this artifact surfaced that work).
          *     Re-posting the same note is idempotent on ``(from_id, relation, note)``,
          *     while a DIFFERENT note is a second follow-up — a plan may surface several.
+         *
+         *     A ``spawned_followup`` may also carry ``anchors`` (the files it is about:
+         *     ``{repo: "owner/name", path, line_start?, line_end?, symbol?}``),
+         *     ``size_class`` (``trivial`` | ``small`` | ``plan_sized``) and — when it names
+         *     no file — ``unanchored_reason``. All OPTIONAL for now (plan
+         *     ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down`` D3:
+         *     the refusal of the note-only shape lands after every writer sends the new
+         *     one). They are stored atomically with a new follow-up; a re-post that lands
+         *     on an existing one fills only what it lacks (anchors when it has none, a
+         *     class when it is unclassified) and never overwrites —
+         *     ``PUT /plan-library/edges/{edge_id}/anchors`` replaces. The response's
+         *     ``followup`` block is the row as stored, including its ``state``: a
+         *     re-post of a RESOLVED follow-up's note returns that resolved row.
          *
          *     Every other relation still REJECTS a null target here, with a 422 rather
          *     than a database error. That is deliberate belt and braces:
@@ -24737,6 +25164,34 @@ export interface components {
             to_state?: string | null;
         };
         /**
+         * ActionItemResolveBody
+         * @description Body for ``POST /operations/action-items/resolve``.
+         *
+         *     Mirrors coord's resolve request. **Coord remains the authority** — this is
+         *     defence in depth at the boundary and must never accept something coord
+         *     rejects. ``extra="forbid"`` makes a misspelled field a loud 422 here
+         *     instead of a silently dropped key.
+         */
+        ActionItemResolveBody: {
+            /**
+             * Item Id
+             * Format: uuid
+             * @description The action item to resolve.
+             */
+            item_id: string;
+            /**
+             * Note
+             * @description Optional resolution note, at most 1000 characters.
+             */
+            note?: string | null;
+            /**
+             * Status
+             * @description Terminal status. Re-sending the same one is idempotent; a different one answers coord's 409 `already_resolved`.
+             * @enum {string}
+             */
+            status: "done" | "dismissed";
+        };
+        /**
          * ActionReliabilityStats
          * @description Reliability statistics for an action type.
          */
@@ -26218,6 +26673,25 @@ export interface components {
              * @description User-assigned state grouping hint
              */
             stateHint?: string | null;
+        };
+        /**
+         * AuthorizeRedeemResponse
+         * @description Response body (202) for ``POST /api/v1/devices/{id}/authorize-redeem``.
+         *
+         *     Carries NO code: the code is delivered only to the device itself, through
+         *     ``/pending-redeem``.
+         */
+        AuthorizeRedeemResponse: {
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /**
+             * Expires At
+             * @description When the authorization lapses unredeemed (UTC).
+             */
+            expires_at: string;
         };
         /**
          * AutoCreateBaselinesRequest
@@ -29648,6 +30122,85 @@ export interface components {
             written_mode: "in_session_with_spawn_fallback" | "spawn_always" | "notify_only";
         };
         /**
+         * CoordPushRequest
+         * @description Body coord sends to ``POST /internal/coord-push``.
+         *
+         *     Deliberately carries NO ``category`` / ``channel_id`` (plan D7): a push
+         *     naming an Android channel the device has not created is not displayed
+         *     while Expo still returns an ``ok`` ticket, which would turn ``accepted``
+         *     into an invisible failure.
+         */
+        CoordPushRequest: {
+            /**
+             * Body
+             * @description Notification body, at most 1000 UTF-8 bytes. Coord sends at most 180 characters.
+             */
+            body: string;
+            /**
+             * Collapse Id
+             * @description Newer pushes with the same id replace older ones on the device.
+             */
+            collapse_id?: string | null;
+            /**
+             * Data
+             * @description Opaque payload delivered to the app (e.g. the deep link). At most 1024 bytes as serialized JSON.
+             */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "high" | "default";
+            /**
+             * Title
+             * @description At most 200 characters and 600 UTF-8 bytes.
+             */
+            title: string;
+            /**
+             * User Ids
+             * @description Web user ids (auth.users.id) to push to. 1-50.
+             */
+            user_ids: string[];
+        };
+        /**
+         * CoordPushResponse
+         * @description Per-request counts coord records as the item's push state.
+         */
+        CoordPushResponse: {
+            /**
+             * Accepted
+             * @description Tickets Expo answered with status ok.
+             */
+            accepted: number;
+            /**
+             * Deactivated
+             * @description Tokens deactivated because their ticket said DeviceNotRegistered.
+             */
+            deactivated: number;
+            /**
+             * Devices
+             * @description Active push devices the batch was sent to.
+             */
+            devices: number;
+            /**
+             * Errors
+             * @description At most 3 error messages, first seen first.
+             */
+            errors: string[];
+            /**
+             * Failed
+             * @description Messages without an ok ticket.
+             */
+            failed: number;
+            /**
+             * Users
+             * @description Distinct requested users with >= 1 active device.
+             */
+            users: number;
+        };
+        /**
          * CoordSignal
          * @description A coord-owned signal, or an explicit statement that it is UNKNOWN.
          *
@@ -31469,6 +32022,52 @@ export interface components {
             user_id: string;
         };
         /**
+         * DeviceCredentialOverviewResponse
+         * @description Response body for ``GET /api/v1/devices/credential-overview``.
+         */
+        DeviceCredentialOverviewResponse: {
+            /** Devices */
+            devices: components["schemas"]["DeviceCredentialOverviewRow"][];
+        };
+        /**
+         * DeviceCredentialOverviewRow
+         * @description One device in ``GET /api/v1/devices/credential-overview``.
+         *
+         *     Credential POSTURE (live/expiring/expired/…) is deliberately NOT here — it
+         *     is coord's ``GET /coord/status`` report, joined on ``device_id`` by the
+         *     frontend, so a missing report renders UNKNOWN rather than a web default.
+         */
+        DeviceCredentialOverviewRow: {
+            /**
+             * Credential Revoked At
+             * @description Device-scoped credential deny (UTC), or null when not revoked.
+             */
+            credential_revoked_at?: string | null;
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Hostname */
+            hostname?: string | null;
+            machine_key: components["schemas"]["DeviceMachineKeyPosture"];
+            /** @description The operator authorization awaiting the runner, or null. */
+            pending_redeem?: components["schemas"]["PendingRedeemPosture"] | null;
+        };
+        /**
+         * DeviceCredentialRevokeResponse
+         * @description Response body for ``POST /api/v1/devices/{id}/machine-credential/revoke``.
+         */
+        DeviceCredentialRevokeResponse: {
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Revoked At */
+            revoked_at: string;
+        };
+        /**
          * DeviceIdentityResponse
          * @description Response shape for ``GET /api/v1/devices/me``.
          *
@@ -31532,6 +32131,29 @@ export interface components {
              * @description Non-secret display prefix (first 14 chars).
              */
             prefix: string;
+        };
+        /**
+         * DeviceMachineKeyPosture
+         * @description web's own ``device_machine_credentials`` row for a device, reduced to
+         *     what an operator needs: whether a key exists, when it lapses, and whether
+         *     it was revoked. Never any key material.
+         */
+        DeviceMachineKeyPosture: {
+            /**
+             * Expires At
+             * @description When the key lapses (UTC), or null.
+             */
+            expires_at?: string | null;
+            /**
+             * Present
+             * @description True when the device has a machine-key row at all.
+             */
+            present: boolean;
+            /**
+             * Revoked At
+             * @description When the key was revoked (UTC), or null.
+             */
+            revoked_at?: string | null;
         };
         /**
          * DeviceResolveRequest
@@ -36067,6 +36689,342 @@ export interface components {
              */
             success: boolean;
         };
+        /**
+         * FollowupAnchor
+         * @description One stored anchor.
+         */
+        FollowupAnchor: {
+            /** Line End */
+            line_end?: number | null;
+            /** Line Start */
+            line_start?: number | null;
+            /** Path */
+            path: string;
+            /** Repo */
+            repo: string;
+            /** Symbol */
+            symbol?: string | null;
+        };
+        /**
+         * FollowupAnchorIn
+         * @description One file a follow-up is about, as a writer declares it.
+         *
+         *     ``repo`` + ``path`` are the match key (exact; ``repo`` is lower-cased).
+         *     ``line_start`` / ``line_end`` / ``symbol`` are hints for whoever folds the
+         *     fix in — lines drift, so they never take part in a match.
+         */
+        FollowupAnchorIn: {
+            /** Line End */
+            line_end?: number | null;
+            /** Line Start */
+            line_start?: number | null;
+            /**
+             * Path
+             * @description Repo-relative file path, forward slashes, no leading `/`, no `.`/`..` segment.
+             */
+            path: string;
+            /**
+             * Repo
+             * @description `owner/name` of the repository.
+             */
+            repo: string;
+            /** Symbol */
+            symbol?: string | null;
+        };
+        /**
+         * FollowupAnchorsReplace
+         * @description ``PUT /plan-library/edges/{edge_id}/anchors``.
+         *
+         *     ``anchors`` and ``unanchored_reason`` REPLACE what is stored: an empty
+         *     ``anchors`` must say why (``unanchored_reason``), and a non-empty one
+         *     carries no reason (it is cleared). ``size_class`` / ``size_class_source``
+         *     are optional and travel together: supplied, they set the class; omitted,
+         *     the stored class is kept — a caller correcting an anchor must not erase a
+         *     classification it never read.
+         */
+        FollowupAnchorsReplace: {
+            /** Anchors */
+            anchors: components["schemas"]["FollowupAnchorIn"][];
+            /** Size Class */
+            size_class?: ("trivial" | "small" | "plan_sized") | null;
+            /** Size Class Source */
+            size_class_source?: ("declared" | "sweep") | null;
+            /** Unanchored Reason */
+            unanchored_reason?: string | null;
+        };
+        /**
+         * FollowupFacts
+         * @description A follow-up's closure state and matching facts.
+         *
+         *     ``state`` is the one field to branch on. The ``resolution_*`` fields
+         *     describe the CURRENT state only (all null while ``open``); what happened
+         *     before is ``resolution_history``, oldest first.
+         */
+        FollowupFacts: {
+            /** Anchors */
+            anchors?: components["schemas"]["FollowupAnchor"][];
+            /** Resolution */
+            resolution?: ("fixing" | "fixed" | "already_fixed" | "dismissed") | null;
+            /** Resolution Commit */
+            resolution_commit?: string | null;
+            /** Resolution History */
+            resolution_history?: components["schemas"]["FollowupHistoryEntry"][];
+            /** Resolution Note */
+            resolution_note?: string | null;
+            /** Resolution Pr */
+            resolution_pr?: string | null;
+            /** Resolved At */
+            resolved_at?: string | null;
+            /** Resolved By */
+            resolved_by?: string | null;
+            /** Size Class */
+            size_class?: ("trivial" | "small" | "plan_sized") | null;
+            /** Size Class Source */
+            size_class_source?: ("declared" | "sweep") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed";
+            /** Unanchored Reason */
+            unanchored_reason?: string | null;
+        };
+        /**
+         * FollowupFilters
+         * @description The filters a ``/followups`` page was read under, echoed so a consumer
+         *     can assert the read it asked for is the read it got.
+         */
+        FollowupFilters: {
+            /** Anchored */
+            anchored?: boolean | null;
+            /** Repo */
+            repo?: string | null;
+            /** Size Class */
+            size_class?: ("trivial" | "small" | "plan_sized" | "unclassified") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "resolved";
+        };
+        /**
+         * FollowupHistoryEntry
+         * @description One transition, as ``resolution_history`` records it.
+         *
+         *     ``from`` / ``to`` are states (:data:`FollowupState`'s unowned members);
+         *     typed as plain strings so a history written by a later vocabulary still
+         *     reads.
+         */
+        FollowupHistoryEntry: {
+            /** At */
+            at: string;
+            /** By */
+            by?: string | null;
+            /** Commit */
+            commit?: string | null;
+            /** From */
+            from: string;
+            /** Note */
+            note?: string | null;
+            /** Pr */
+            pr?: string | null;
+            /** To */
+            to: string;
+        };
+        /**
+         * FollowupMatch
+         * @description A follow-up anchored on at least one of the requested files.
+         */
+        FollowupMatch: {
+            /** Age Days */
+            age_days: number;
+            /** Anchors */
+            anchors?: components["schemas"]["FollowupAnchor"][];
+            /** Created At */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+            /**
+             * Edge Id
+             * Format: uuid
+             */
+            edge_id: string;
+            /**
+             * From Id
+             * Format: uuid
+             */
+            from_id: string;
+            /** From Kind */
+            from_kind: string;
+            /** From Slug */
+            from_slug: string;
+            /** From Title */
+            from_title: string;
+            /** Matched Anchors */
+            matched_anchors: components["schemas"]["FollowupAnchor"][];
+            /** Note */
+            note: string;
+            /** Resolution */
+            resolution?: ("fixing" | "fixed" | "already_fixed" | "dismissed") | null;
+            /** Resolution Commit */
+            resolution_commit?: string | null;
+            /** Resolution History */
+            resolution_history?: components["schemas"]["FollowupHistoryEntry"][];
+            /** Resolution Note */
+            resolution_note?: string | null;
+            /** Resolution Pr */
+            resolution_pr?: string | null;
+            /** Resolved At */
+            resolved_at?: string | null;
+            /** Resolved By */
+            resolved_by?: string | null;
+            /** Size Class */
+            size_class?: ("trivial" | "small" | "plan_sized") | null;
+            /** Size Class Source */
+            size_class_source?: ("declared" | "sweep") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed";
+            /** Unanchored Reason */
+            unanchored_reason?: string | null;
+        };
+        /**
+         * FollowupMatchRequest
+         * @description ``POST /plan-library/followups/match``: the files a diff touches.
+         *
+         *     A ``POST`` for its body only — up to 500 paths do not fit a query string;
+         *     it reads and changes nothing.
+         */
+        FollowupMatchRequest: {
+            /**
+             * Paths
+             * @description Repo-relative file paths (the diff's touched set).
+             */
+            paths: string[];
+            /**
+             * Repo
+             * @description `owner/name` the paths belong to.
+             */
+            repo: string;
+        };
+        /**
+         * FollowupMatchResponse
+         * @description ``POST /plan-library/followups/match`` — the follow-ups on a diff's files.
+         *
+         *     ``items`` holds ``open`` and ``fixing`` follow-ups (a ``fixing`` one is held
+         *     by another PR and must not be folded twice), oldest first. A zero match is
+         *     SELF-DESCRIBING: ``repo_anchored_open_total`` says how many open
+         *     follow-ups are anchored in this repo at all, and ``unanchored_open_total``
+         *     how many open ones can never match any diff because they name no file.
+         */
+        FollowupMatchResponse: {
+            /** Items */
+            items: components["schemas"]["FollowupMatch"][];
+            /** Matched Total */
+            matched_total: number;
+            /** Paths Requested */
+            paths_requested: number;
+            /** Repo */
+            repo: string;
+            /** Repo Anchored Open Total */
+            repo_anchored_open_total: number;
+            /** Truncated */
+            truncated: boolean;
+            /** Unanchored Open Total */
+            unanchored_open_total: number;
+        };
+        /**
+         * FollowupReconcileResponse
+         * @description What one reconcile pass over ``fixing`` follow-ups did (D5).
+         *
+         *     Each ``fixing`` row's PR is read from coord's land record
+         *     (``GET /coord/pr/{repo}/{n}/landed``): ``landed`` → ``fixed`` (with the
+         *     land commit when coord holds one), ``closed_unlanded`` → back to ``open``,
+         *     ``pending`` → unchanged, ``unknown`` → unchanged and counted here.
+         *
+         *     ``coord_available: false`` means coord could not be read for (some of)
+         *     the pass: every row it could not read stays ``fixing`` and is counted in
+         *     ``unknown`` — UNKNOWN, never "nothing to move".
+         */
+        FollowupReconcileResponse: {
+            /** Coord Available */
+            coord_available: boolean;
+            /** Coord Unavailable Reason */
+            coord_unavailable_reason: string | null;
+            /** Distinct Prs */
+            distinct_prs: number;
+            /** Examined */
+            examined: number;
+            /** Fixed */
+            fixed: number;
+            /** Pending */
+            pending: number;
+            /** Raced */
+            raced: number;
+            /** Reopened */
+            reopened: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Unknown */
+            unknown: number;
+            /** Unknown Reasons */
+            unknown_reasons: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * FollowupResolutionRequest
+         * @description ``POST /plan-library/edges/{edge_id}/resolution``.
+         *
+         *     Each target accepts exactly its own fields — anything else is a 422 naming
+         *     it, because a field the transition would silently drop is a write the
+         *     caller believes happened:
+         *
+         *     * ``fixing`` — ``resolution_pr`` (required: the open PR that fixes it);
+         *     * ``fixed`` — ``resolution_commit`` (required here: a hand assertion names
+         *       its commit; the reconcile, which acts on coord's land verdict, is the
+         *       usual writer) and optionally ``resolution_pr``, which must be the PR the
+         *       row is ``fixing`` under;
+         *     * ``already_fixed`` — ``resolution_commit`` (required), ``resolution_pr``
+         *       optional (the PR that landed it, when known);
+         *     * ``dismissed`` — ``resolution_note`` (required, non-blank: the reason);
+         *     * ``open`` — ``resolution_note``, required when reopening a resting state
+         *       (``fixed`` / ``already_fixed`` / ``dismissed``: it says why the closure
+         *       was wrong) and optional from ``fixing``.
+         *
+         *     ``resolution_note`` is accepted on every target and lands in the history
+         *     entry (and, on ``dismissed``, as the stored reason).
+         */
+        FollowupResolutionRequest: {
+            /**
+             * Resolution
+             * @enum {string}
+             */
+            resolution: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed";
+            /** Resolution Commit */
+            resolution_commit?: string | null;
+            /** Resolution Note */
+            resolution_note?: string | null;
+            /** Resolution Pr */
+            resolution_pr?: string | null;
+        };
+        /**
+         * FollowupWriteResponse
+         * @description The follow-up after a write through one of its doors.
+         *
+         *     ``changed`` is false when the request restated what was already stored (an
+         *     idempotent replay) — nothing was written and no history entry appended.
+         */
+        FollowupWriteResponse: {
+            /** Changed */
+            changed: boolean;
+            followup: components["schemas"]["OpenFollowup"];
+        };
         /** ForecastUnavailable */
         ForecastUnavailable: {
             /** Detail */
@@ -40171,9 +41129,11 @@ export interface components {
         };
         /**
          * OpenFollowup
-         * @description Work a plan SURFACED and deliberately did not do, with no owner yet.
+         * @description A follow-up a plan SURFACED and deliberately did not do.
          *
-         *     The row is a ``spawned_followup`` edge whose ``to_id`` is still NULL. The
+         *     The row is a ``spawned_followup`` edge with no owning artifact
+         *     (``to_id`` NULL). ``GET /plan-library/followups`` serves ``state: open``
+         *     rows by default; ``?state=`` reads the ``fixing`` and resolved ones. The
          *     originating artifact is denormalized in so the queue renders without an
          *     N+1 fetch, and ``note`` carries the finding itself — with no far end there
          *     is nowhere else for it to live, which is why the schema requires it.
@@ -40181,6 +41141,8 @@ export interface components {
         OpenFollowup: {
             /** Age Days */
             age_days: number;
+            /** Anchors */
+            anchors?: components["schemas"]["FollowupAnchor"][];
             /** Created At */
             created_at: string;
             /** Created By */
@@ -40203,12 +41165,38 @@ export interface components {
             from_title: string;
             /** Note */
             note: string;
+            /** Resolution */
+            resolution?: ("fixing" | "fixed" | "already_fixed" | "dismissed") | null;
+            /** Resolution Commit */
+            resolution_commit?: string | null;
+            /** Resolution History */
+            resolution_history?: components["schemas"]["FollowupHistoryEntry"][];
+            /** Resolution Note */
+            resolution_note?: string | null;
+            /** Resolution Pr */
+            resolution_pr?: string | null;
+            /** Resolved At */
+            resolved_at?: string | null;
+            /** Resolved By */
+            resolved_by?: string | null;
+            /** Size Class */
+            size_class?: ("trivial" | "small" | "plan_sized") | null;
+            /** Size Class Source */
+            size_class_source?: ("declared" | "sweep") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "claimed";
+            /** Unanchored Reason */
+            unanchored_reason?: string | null;
         };
         /**
          * OpenFollowupResponse
-         * @description A page of open (unclaimed) follow-ups — a keyset walk over the edge's
-         *     immutable ``(created_at, id)``, oldest first. The bounded-read keys
-         *     describe ``items``; ``next_cursor`` is passed back as ``cursor``.
+         * @description A page of follow-ups in one state (``open`` by default) — a keyset walk
+         *     over the edge's immutable ``(created_at, id)``, oldest first. The
+         *     bounded-read keys describe ``items``; ``next_cursor`` is passed back as
+         *     ``cursor`` and is bound to ``filters``.
          */
         OpenFollowupResponse: {
             /**
@@ -40235,6 +41223,7 @@ export interface components {
             enumerate_via: string | null;
             /** @description A FILTER the surface narrowed before the read ran, or `null`. */
             filter_narrowed: components["schemas"]["FilterNarrowing"] | null;
+            filters: components["schemas"]["FollowupFilters"];
             /** Items */
             items: components["schemas"]["OpenFollowup"][];
             /**
@@ -41369,6 +42358,32 @@ export interface components {
         PendingCountResponse: {
             /** Pending Count */
             pending_count: number;
+        };
+        /**
+         * PendingRedeemPosture
+         * @description An operator authorization the runner has not redeemed yet.
+         */
+        PendingRedeemPosture: {
+            /**
+             * Delivered At
+             * @description When a device collected the code via /pending-redeem (UTC), or null while uncollected. Collected-but-unredeemed for long means the collector never finished pairing — after a theft-driven revoke, re-pair interactively instead.
+             */
+            delivered_at?: string | null;
+            /**
+             * Expires At
+             * @description When the bound pair code lapses (UTC).
+             */
+            expires_at: string;
+        };
+        /**
+         * PendingRedeemResponse
+         * @description Response body (200) for ``GET /api/v1/devices/{id}/pending-redeem``.
+         */
+        PendingRedeemResponse: {
+            /** Code */
+            code: string;
+            /** Expires At */
+            expires_at: string;
         };
         /** PhaseForecast */
         PhaseForecast: {
@@ -52352,8 +53367,18 @@ export interface components {
          *     ``{"relation": "spawned_followup", "note": "<text>", "to_id": null}``, and
          *     ``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal
          *     and records a follow-up that already has an owner.
+         *
+         *     A ``spawned_followup`` may also carry what makes it MATCHABLE (plan
+         *     ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
+         *     D2/D3): ``anchors`` (the files it is about), ``size_class`` and — when it
+         *     names no file — ``unanchored_reason``. All three are OPTIONAL on this
+         *     door for now: every writer still sends the note-only shape, and refusing
+         *     it before they send the new one would stop the queue filling (D3's refusal
+         *     is sequenced after the writers). They apply to ``spawned_followup`` only.
          */
         WorkArtifactEdgeCreate: {
+            /** Anchors */
+            anchors?: components["schemas"]["FollowupAnchorIn"][] | null;
             /** From Id */
             from_id?: string | null;
             /** Note */
@@ -52363,8 +53388,12 @@ export interface components {
              * @enum {string}
              */
             relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes";
+            /** Size Class */
+            size_class?: ("trivial" | "small" | "plan_sized") | null;
             /** To Id */
             to_id?: string | null;
+            /** Unanchored Reason */
+            unanchored_reason?: string | null;
         };
         /**
          * WorkArtifactEdgeRead
@@ -52380,6 +53409,7 @@ export interface components {
              * @enum {string}
              */
             direction: "outgoing" | "incoming";
+            followup?: components["schemas"]["FollowupFacts"] | null;
             /**
              * From Id
              * Format: uuid
@@ -61827,6 +62857,26 @@ export interface operations {
             };
         };
     };
+    api_v1_devices_credential_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCredentialOverviewResponse"];
+                };
+            };
+        };
+    };
     api_v1_devices_me_get: {
         parameters: {
             query?: never;
@@ -62200,6 +63250,37 @@ export interface operations {
             };
         };
     };
+    api_v1_devices_device_id_authorize_redeem_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizeRedeemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_devices_device_id_dispatch_post: {
         parameters: {
             query?: never;
@@ -62299,6 +63380,37 @@ export interface operations {
             };
         };
     };
+    api_v1_devices_device_id_machine_credential_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCredentialRevokeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_devices_device_id_machine_credential_self_mint_post: {
         parameters: {
             query?: never;
@@ -62318,6 +63430,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DeviceMachineCredentialMintResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_devices_device_id_pending_redeem_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingRedeemResponse"];
+                };
+            };
+            /** @description Nothing is pending for this device. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -65919,6 +67069,41 @@ export interface operations {
             };
         };
     };
+    api_v1_internal_coord_push_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Coord-Service-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoordPushRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoordPushResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_issues_get: {
         parameters: {
             query?: {
@@ -68084,6 +69269,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_action_items_get: {
+        parameters: {
+            query?: {
+                /** @description `open` (coord's default) | `done` | `dismissed` | `all`. Forwarded verbatim — coord owns the vocabulary and answers 400 otherwise. */
+                status?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description Opaque keyset cursor from a prior response's ``next_cursor``. */
+                cursor?: string | null;
+                /** @description Return at most this one item (any status). */
+                item_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_action_items_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionItemResolveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -77784,6 +79040,76 @@ export interface operations {
             };
         };
     };
+    api_v1_plan_library_edges_edge_id_anchors_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowupAnchorsReplace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupWriteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_edges_edge_id_resolution_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                edge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowupResolutionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupWriteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_plan_library_export_get: {
         parameters: {
             query?: {
@@ -77830,6 +79156,14 @@ export interface operations {
                 /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
                 cursor?: string | null;
                 limit?: number;
+                /** @description `open` (default: nobody owns it and nothing closed it), `fixing` (a PR that fixes it is open), `fixed`, `already_fixed`, `dismissed`, or `resolved` (any of the last three). */
+                state?: "open" | "fixing" | "fixed" | "already_fixed" | "dismissed" | "resolved";
+                /** @description `owner/name`: only follow-ups with an anchor in this repo. */
+                repo?: string | null;
+                /** @description `trivial` | `small` | `plan_sized`, or `unclassified` for follow-ups nobody has sized. */
+                size_class?: ("trivial" | "small" | "plan_sized" | "unclassified") | null;
+                /** @description `true`: only follow-ups with at least one anchor; `false`: only those with none. */
+                anchored?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -77853,6 +79187,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_followups_match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowupMatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupMatchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_followups_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowupReconcileResponse"];
                 };
             };
         };

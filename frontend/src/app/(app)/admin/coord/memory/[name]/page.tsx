@@ -94,32 +94,16 @@ import {
   MEMORY_STATUS_PALETTE,
   deriveMemoryStatus,
 } from "@/components/admin/coord/memoryStatus";
-import { httpClient } from "@/services/service-factory";
+import {
+  deleteMemory,
+  fetchMemoryEntry,
+  upsertMemory,
+  type CoordMemoryDetail,
+} from "@/lib/api/operations/coordMemory";
 import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
-
-const API = "/api/v1/operations";
-
-interface MemoryVersionEntry {
-  version: number;
-  written_at?: string | null;
-  written_by_agent?: string | null;
-}
-
-interface CoordMemoryDetail {
-  name: string;
-  content: string;
-  description?: string | null;
-  type?: string | null;
-  version?: number | null;
-  written_at?: string | null;
-  written_by_agent?: string | null;
-  written_by_device?: string | null;
-  history?: MemoryVersionEntry[];
-  tombstoned?: boolean;
-}
 
 export default function CoordMemoryDetailPage() {
   const params = useParams<{ name: string }>();
@@ -149,9 +133,7 @@ export default function CoordMemoryDetailPage() {
   const fetchMemory = useCallback(async () => {
     if (!name) return;
     try {
-      const body = await httpClient.get<CoordMemoryDetail>(
-        `${API}/memory/${encodeURIComponent(name)}`
-      );
+      const body = await fetchMemoryEntry(name);
       setMemory(body);
       setDraft(body.content ?? "");
       setError(null);
@@ -181,7 +163,7 @@ export default function CoordMemoryDetailPage() {
     if (!name) return;
     setSaving(true);
     try {
-      await httpClient.post(`${API}/memory/upsert`, {
+      await upsertMemory({
         name,
         content: draft,
         description: memory?.description ?? undefined,
@@ -201,7 +183,7 @@ export default function CoordMemoryDetailPage() {
     if (!name) return;
     setDeleting(true);
     try {
-      await httpClient.delete(`${API}/memory/${encodeURIComponent(name)}`);
+      await deleteMemory(name);
       toast.success("Memory tombstoned (recoverable via restore)");
       router.push("/admin/coord/memory");
     } catch (e) {
