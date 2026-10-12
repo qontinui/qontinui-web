@@ -175,26 +175,44 @@ def test_no_statement_coords_migration_classifier_rejects(
                 )
 
 
-_CONNECTION_CALLS = {"execute", "exec_driver_sql", "scalar", "scalars", "executemany"}
+# coord's `FOREIGN_EXECUTE` list (pr_merge/migration_classifier.rs), verbatim.
+_FOREIGN_EXECUTE = {
+    "execute",
+    "exec_driver_sql",
+    "executemany",
+    "executescript",
+    "scalar",
+    "scalars",
+    "stream",
+    "stream_scalars",
+    "create",
+    "drop",
+    "create_all",
+    "drop_all",
+    "_exec",
+    "run_callable",
+    "impl",
+}
 
 
 @pytest.mark.parametrize(("revision_id", "filename"), _REVISIONS)
 def test_no_sql_runs_outside_op_execute(revision_id: str, filename: str) -> None:
-    """Mirror the classifier's ``forbid_unclassifiable_code``: anywhere in the
-    file (helpers and downgrade included), a connection call whose receiver is
-    not ``op`` — ``op.get_bind().execute(...)`` above all — is SQL the
-    classifier cannot inspect, and it escalates the PR to an operator."""
+    """Mirror the classifier's ``forbid_unclassifiable_code`` attribute rule:
+    anywhere in the file (helpers and downgrade included), an attribute in its
+    ``FOREIGN_EXECUTE`` list, called or not, is SQL the classifier cannot
+    inspect unless it is exactly ``op.execute``, and it escalates the PR to an
+    operator. ``op.get_bind().execute(...)`` is the case that bit this chain."""
     tree = ast.parse(_source(filename), filename=filename)
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in _CONNECTION_CALLS
-        ):
-            receiver = node.func.value
-            assert isinstance(receiver, ast.Name) and receiver.id == "op", (
+        if isinstance(node, ast.Attribute) and node.attr in _FOREIGN_EXECUTE:
+            receiver = node.value
+            assert (
+                node.attr == "execute"
+                and isinstance(receiver, ast.Name)
+                and receiver.id == "op"
+            ), (
                 f"{revision_id}:{node.lineno}: SQL executed outside op.execute "
-                f"(`{ast.unparse(node.func)}`)"
+                f"(`{ast.unparse(node)}`)"
             )
 
 
