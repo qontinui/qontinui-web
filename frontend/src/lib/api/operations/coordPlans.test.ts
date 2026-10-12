@@ -72,13 +72,15 @@ describe("coordPlans", () => {
     );
   });
 
-  it("fetchPlansOverview is an idempotent GET", async () => {
+  it("fetchPlansOverview is an idempotent GET carrying the caller's options", async () => {
     fetchMock.mockResolvedValueOnce(json({ row_count: 7 }));
-    await expect(fetchPlansOverview()).resolves.toEqual({ row_count: 7 });
+    await expect(fetchPlansOverview({ maxRetries: 0 })).resolves.toEqual({
+      row_count: 7,
+    });
     expect(fetchMock.mock.calls).toEqual([
       [
         "/api/v1/operations/plans/overview",
-        { method: "GET", idempotent: true },
+        { maxRetries: 0, method: "GET", idempotent: true },
       ],
     ]);
   });
@@ -103,13 +105,13 @@ describe("coordPlans", () => {
     fetchMock.mockResolvedValueOnce(
       new Response('{"error":"work_unit_not_found"}', { status: 404 })
     );
-    await expect(fetchPlan("a b/c")).rejects.toThrow(
+    await expect(fetchPlan("a b/c", { maxRetries: 0 })).rejects.toThrow(
       'GET /api/v1/operations/plans/a%20b%2Fc failed: 404 - {"error":"work_unit_not_found"}'
     );
     expect(fetchMock.mock.calls).toEqual([
       [
         "/api/v1/operations/plans/a%20b%2Fc",
-        { method: "GET", idempotent: true },
+        { maxRetries: 0, method: "GET", idempotent: true },
       ],
     ]);
   });
@@ -122,16 +124,18 @@ describe("coordPlans", () => {
       ],
     };
     fetchMock.mockResolvedValueOnce(json(body));
-    await expect(fetchPlanHistory("a b")).resolves.toEqual(body);
+    await expect(fetchPlanHistory("a b", { maxRetries: 0 })).resolves.toEqual(
+      body
+    );
     expect(fetchMock.mock.calls).toEqual([
       [
         "/api/v1/operations/plans/a%20b/history",
-        { method: "GET", idempotent: true },
+        { maxRetries: 0, method: "GET", idempotent: true },
       ],
     ]);
   });
 
-  it("transitionPlan POSTs the body once, never declared idempotent", async () => {
+  it("transitionPlan is a non-idempotent POST of the request body (no 5xx replay)", async () => {
     fetchMock.mockResolvedValueOnce(json({ ok: true }));
     await expect(
       transitionPlan("a b", { status: "vetted", note: undefined })
@@ -151,6 +155,7 @@ describe("coordPlans", () => {
     ).rejects.toThrow(
       "POST /api/v1/operations/plans/p/transition failed: 504 - lost"
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]).toEqual([
       "/api/v1/operations/plans/p/transition",
       {
