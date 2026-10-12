@@ -22,11 +22,11 @@
  * could ever run. A render test cannot catch that — the dead copy renders
  * nothing — so this asserts the property at the source level.
  *
- * SCOPE, deliberately narrow. "One fetch site in the repo" is NOT true of
- * `/merge/queue` or `/pr-merge/prs`: `StuckPrRecoveryPanel`,
- * `usePrCheckDetails` and `utils` read them for their
- * own surfaces, and that is legitimate — they are separate views with separate
- * lifecycles, not duplicate copies of the hero. What must stay single is (a)
+ * SCOPE, deliberately narrow. "One fetch site in the repo" is NOT required of
+ * `/merge/queue` or `/pr-merge/prs`: another surface may read them for its own
+ * view (today `StuckPrRecoveryPanel` reads the PR list), and that is
+ * legitimate — a separate view with its own lifecycle, not a duplicate copy of
+ * the hero. What must stay single is (a)
  * the two side-channels nothing else consumes, and (b) the hero's own module
  * set, which must take its data from the hook rather than fetch again.
  */
@@ -83,20 +83,44 @@ const CLIENT_FUNCTIONS: Record<string, string[]> = {
   "/pr-merge/blast-radius-blocks": ["fetchBlastRadiusBlocks"],
 };
 
+/** A line that is only a comment (`//`, `/*`, or a block comment body). */
+function isCommentLine(line: string): boolean {
+  return /^\s*(\*|\/\/|\/\*)/.test(line);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
- * Files whose source CALLS the endpoint, not merely names it. Comments and
- * wire-type docs reference these paths freely and must keep being allowed to;
- * only a call of the endpoint's client function (`fetchMergeQueue(`) counts.
+ * Whether `source` REQUESTS `endpoint`, not merely names it. Comments and
+ * wire-type docs reference these paths freely and must keep being allowed to,
+ * so only non-comment lines count, in any of the request forms:
+ *
+ * - a call of the endpoint's client function (`fetchMergeQueue(`);
+ * - an inlined URL over a base constant (`${OPERATIONS_BASE}/merge/queue`,
+ *   or the retired `${OPERATIONS_API}/merge/queue`);
+ * - the literal path (`"/api/v1/operations/merge/queue"`).
+ *
+ * The path forms match the endpoint itself (a query string may follow), not a
+ * sub-route under it: `/pr-merge/prs/{repo}/{n}/checks` is another endpoint.
  */
+function requestsEndpoint(source: string, endpoint: string): boolean {
+  const path = escapeRegExp(endpoint) + "(?![\\w/-])";
+  const forms = [
+    ...CLIENT_FUNCTIONS[endpoint].map((fn) => new RegExp(`\\b${fn}\\(`)),
+    new RegExp(`OPERATIONS_(?:BASE|API)\\}${path}`),
+    new RegExp(`/api/v1/operations${path}`),
+  ];
+  return source
+    .split(/\r?\n/)
+    .some((line) => !isCommentLine(line) && forms.some((f) => f.test(line)));
+}
+
+/** Files whose source requests the endpoint — see {@link requestsEndpoint}. */
 function fetchSites(endpoint: string, root = OPERATIONS_DIR): string[] {
-  const calls = CLIENT_FUNCTIONS[endpoint].map(
-    (fn) => new RegExp(`\\b${fn}\\(`)
-  );
   return moduleFiles(root)
-    .filter((f) => {
-      const source = readFileSync(f, "utf8");
-      return calls.some((call) => call.test(source));
-    })
+    .filter((f) => requestsEndpoint(readFileSync(f, "utf8"), endpoint))
     .map((f) => relative(f, root))
     .sort();
 }
@@ -121,6 +145,27 @@ describe("merge-pipeline single data owner", () => {
       expect(sites.filter((f) => HERO_MODULES.includes(f))).toEqual([]);
     }
   );
+
+  // The guard's own mutant proof: each request form an inlined fetch could
+  // take is seen, while a comment naming the same path is not.
+  it.each([
+    "await fetchMergeQueue();",
+    "httpClient.fetch(`${OPERATIONS_BASE}/merge/queue`);",
+    "httpClient.fetch(`${OPERATIONS_API}/merge/queue`);",
+    'httpClient.fetch("/api/v1/operations/merge/queue?x=1");',
+  ])("an inlined fetch is seen: %s", (line) => {
+    const source = ["const a = 1;", `  ${line}`].join("\n");
+    expect(requestsEndpoint(source, "/merge/queue")).toBe(true);
+  });
+
+  it("a comment or a sub-route is not a fetch of the endpoint", () => {
+    const source = [
+      "// reads `/api/v1/operations/pr-merge/prs` through the hook",
+      " * `${OPERATIONS_BASE}/pr-merge/prs` is the listing",
+      "httpClient.fetch(`${OPERATIONS_BASE}/pr-merge/prs/${repo}/1/checks`);",
+    ].join("\n");
+    expect(requestsEndpoint(source, "/pr-merge/prs")).toBe(false);
+  });
 });
 
 describe("MergeTrain.tsx is presentation-only", () => {
@@ -134,6 +179,13 @@ describe("MergeTrain.tsx is presentation-only", () => {
     expect(source).not.toContain("new WebSocket(");
     expect(source).not.toContain("${OPERATIONS_API}");
     expect(source).not.toContain("@/lib/api/operations/");
+    // ...nor a URL inlined over the typed client's base or spelled literally.
+    for (const endpoint of Object.keys(CLIENT_FUNCTIONS)) {
+      expect(requestsEndpoint(source, endpoint)).toBe(false);
+    }
+    expect(source).not.toContain("OPERATIONS_BASE");
+    const code = source.split(/\r?\n/).filter((l) => !isCommentLine(l));
+    expect(code.filter((l) => l.includes("/api/v1/operations"))).toEqual([]);
   });
 
   it("holds no data state or effects", () => {

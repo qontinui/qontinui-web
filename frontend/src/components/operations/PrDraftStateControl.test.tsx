@@ -193,6 +193,22 @@ describe("PrDraftStateControl", () => {
   // Defect 1: the pre-extraction control toasted only `HTTP <status>`, which
   // makes the two 404s indistinguishable and drops the 429's retry hint.
   describe("error honesty", () => {
+    it("words a refusal whose body cannot be read as HTTP <status> — Unknown error", async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: async () => {
+          throw new Error("stream broke");
+        },
+      } as unknown as Response);
+      renderControl({ prState: "open" });
+      fireEvent.click(screen.getByTestId("pr-convert-to-draft"));
+      await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+      expect(toastError.mock.calls[0][0]).toBe("Couldn't convert #900 to draft");
+      const failed = toastError.mock.calls[0][1] as { description: string };
+      expect(failed.description).toBe("HTTP 503 — Unknown error");
+    });
+
     it("distinguishes the two 404s", async () => {
       fetchMock.mockResolvedValue(
         errorResponse(404, {
