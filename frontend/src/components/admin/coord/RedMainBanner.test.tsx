@@ -5,8 +5,14 @@ const getMock = vi.fn();
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    fetch: (...args: unknown[]) => fetchMock(...args),
+    // The banner reads through `lib/api/operations/alerts.ts`, which calls
+    // `httpClient.fetch` with `GET`: that read is served by `getMock` (its
+    // parsed body as a 200 Response; a rejection passes through). Any OTHER
+    // method lands on `fetchMock`, so "never POSTs" still means exactly that.
+    fetch: async (url: string, init: { method?: string } = {}) =>
+      init.method === "GET"
+        ? new Response(JSON.stringify((await getMock(url, init)) ?? null))
+        : fetchMock(url, init),
   },
 }));
 

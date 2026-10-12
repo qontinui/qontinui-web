@@ -25,7 +25,13 @@ import userEvent from "@testing-library/user-event";
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  // The page reads through `lib/api/operations/coordFindings.ts`, which calls
+  // `httpClient.fetch`; route it through the same per-URL stub. A rejection
+  // passes through exactly as `get`'s did.
+  httpClient: {
+    fetch: async (url: string) =>
+      new Response(JSON.stringify((await httpGet(url)) ?? null)),
+  },
 }));
 
 import CoordFindingsPage from "./page";
@@ -81,7 +87,7 @@ function page(
   };
 }
 
-/** Every URL `httpClient.get` was called with, in order. */
+/** Every URL the page read, in order. */
 function urls(): string[] {
   return httpGet.mock.calls.map((c) => String(c[0]));
 }
