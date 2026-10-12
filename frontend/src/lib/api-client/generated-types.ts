@@ -6079,14 +6079,15 @@ export interface paths {
         /**
          * Get Twin Subspaces
          * @description Live numerator for the completeness matrix: a per-sub-space probe of
-         *     every fleet-wide snapshot twin observer.
+         *     every sub-space coord's served catalog declares probeable.
          *
          *     Per-tenant: the tenant is resolved best-effort (and the caller's Cognito
          *     bearer **plus their tenant-switcher selection** captured for forwarding).
          *     The matrix reflects what coord can observe for *their* tenant — flag-gated
-         *     / tenant-scoped observers legitimately read ``blind`` for some tenants. If
-         *     coord/the tenant is unavailable we DEGRADE to an all-error matrix (HTTP
-         *     200), never 5xx.
+         *     / tenant-scoped observers legitimately read ``blind`` for some tenants, and
+         *     a Qontinui-internal sub-space reads ``restricted`` for another tenant. If
+         *     coord, the tenant or the catalog is unavailable we DEGRADE (HTTP 200, see
+         *     ``_degraded_matrix``), never 5xx.
          *
          *     Tenant selection (plan
          *     ``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``
