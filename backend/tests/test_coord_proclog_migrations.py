@@ -6,9 +6,14 @@ revisions. What this pins is the CONTRACT coord's projector and workers
 (Phases 2-9) depend on:
 
 1. **Source shapes coord's migration_classifier admits** — every upgrade
-   ``op.execute`` is one static literal; the table revisions build no index
-   CONCURRENTLY, and every CONCURRENTLY build in ``coord_proclog_05`` sits inside
-   an ``autocommit_block`` and is ``IF NOT EXISTS``.
+   ``op.execute`` is one static literal; no statement is a ``DROP``, no
+   ``ALTER TABLE`` carries ``DROP`` and no ``ADD CONSTRAINT`` lacks ``NOT
+   VALID`` (each of those escalates the PR to an operator); the table
+   revisions build no index CONCURRENTLY, and every CONCURRENTLY build in
+   ``coord_proclog_05`` sits inside an ``autocommit_block`` and is ``IF NOT
+   EXISTS``. Every index's key columns, uniqueness, ``NULLS NOT DISTINCT`` and
+   partial predicate are read back from ``pg_get_indexdef`` and compared with
+   the statement that created it.
 2. **The chain is linear and pinned** — each revision's one-line
    ``down_revision`` is the one before it, and the first sits on the head it
    was authored against.
@@ -123,17 +128,80 @@ def test_upgrade_statements_are_static_and_concurrently_is_in_autocommit(
         assert not concurrent, f"{revision_id} builds indexes on NEW tables only"
 
 
-def test_no_index_names_gates_evaluated_at() -> None:
-    for _, filename in _REVISIONS:
+def _upgrade_sql(filename: str) -> list[str]:
+    """Every upgrade ``op.execute`` literal, whitespace-collapsed."""
+    return [
+        " ".join((call.sql or "").split())
         for call in upgrade_execute_calls(
             backend_root() / "alembic" / "versions" / filename
-        ):
-            sql = " ".join((call.sql or "").split())
-            if "ON coord.gates " in sql:
+        )
+    ]
+
+
+_ON_GATES = re.compile(r"\bON\s+(?:ONLY\s+)?coord\.gates\b", re.IGNORECASE)
+
+
+def test_no_index_names_gates_evaluated_at() -> None:
+    for _, filename in _REVISIONS:
+        for sql in _upgrade_sql(filename):
+            if _ON_GATES.search(sql):
                 assert "evaluated_at" not in sql, (
                     "an index naming coord.gates.evaluated_at makes every 10 s "
                     f"sweep write non-HOT: {sql}"
                 )
+
+
+@pytest.mark.parametrize(("revision_id", "filename"), _REVISIONS)
+def test_no_statement_coords_migration_classifier_rejects(
+    revision_id: str, filename: str
+) -> None:
+    """Mirror the two ALTER TABLE rules of coord's
+    ``pr_merge/migration_classifier.rs``: one rejected statement escalates the
+    whole PR to an operator instead of letting coord land it."""
+    for sql in _upgrade_sql(filename):
+        # The classifier pads parens so `c int,DROP COLUMN x` cannot hide.
+        padded = " " + re.sub(r"([(),])", r" \1 ", sql.upper()) + " "
+        assert not padded.lstrip().startswith("DROP "), (
+            f"{revision_id}: destructive DROP statement: {sql}"
+        )
+        if padded.lstrip().startswith("ALTER TABLE"):
+            assert " DROP " not in padded, (
+                f"{revision_id}: destructive DROP inside ALTER TABLE: {sql}"
+            )
+            if " ADD CONSTRAINT " in padded:
+                assert padded.rstrip().endswith("NOT VALID"), (
+                    f"{revision_id}: ADD CONSTRAINT without NOT VALID: {sql}"
+                )
+
+
+_CREATE_INDEX = re.compile(
+    r"^CREATE (?P<unique>UNIQUE )?INDEX (?:CONCURRENTLY )?IF NOT EXISTS "
+    r"(?P<name>\w+) ON coord\.(?P<table>\w+) \( ?(?P<cols>[^)]*?) ?\)"
+    r"(?P<nnd> NULLS NOT DISTINCT)?(?: WHERE (?P<pred>.+))?$"
+)
+
+
+def _expected_indexes() -> dict[str, re.Match[str]]:
+    """Every index the chain's upgrade() literals create, keyed by name."""
+    expected: dict[str, re.Match[str]] = {}
+    for _, filename in _REVISIONS:
+        for sql in _upgrade_sql(filename):
+            if " INDEX " in f" {sql} ":
+                match = _CREATE_INDEX.match(sql)
+                assert match is not None, f"unparsed index statement: {sql}"
+                expected[match["name"]] = match
+    return expected
+
+
+def test_the_source_declares_every_expected_index() -> None:
+    expected = _expected_indexes()
+    stamp = [n for n in expected if n.startswith("ix_proclog_")]
+    assert len(stamp) == _STAMP_INDEX_COUNT + 1, sorted(stamp)
+    for name in stamp:
+        match = expected[name]
+        if name != "ix_proclog_gates_terminal_unarchived":
+            stamp_col = match["cols"].split(",")[0].strip()
+            assert match["pred"] == f"{stamp_col} IS NOT NULL", name
 
 
 def _tables(engine: Engine) -> set[str]:
@@ -142,47 +210,59 @@ def _tables(engine: Engine) -> set[str]:
             text(
                 """
                 SELECT table_name FROM information_schema.tables
-                 WHERE table_schema = 'coord' AND table_name LIKE 'process%'
+                 WHERE table_schema = 'coord' AND table_name = ANY(:tables)
                 """
-            )
+            ),
+            {"tables": sorted(_TABLES)},
         ).all()
     return {r[0] for r in rows}
 
 
-def _proclog_indexes(engine: Engine) -> dict[str, bool]:
-    """``{index name: indisvalid}`` for every index on a process_* table or
-    named ``ix_proclog_*``."""
+def _proclog_indexes(engine: Engine) -> dict[str, tuple[bool, str]]:
+    """``{name: (indisvalid, pg_get_indexdef)}`` for every index the chain
+    declares, plus any other index on one of its seven tables."""
     with engine.connect() as conn:
         rows = conn.execute(
             text(
                 """
-                SELECT c.relname, i.indisvalid
+                SELECT c.relname, i.indisvalid, pg_get_indexdef(i.indexrelid)
                   FROM pg_index i
                   JOIN pg_class c ON c.oid = i.indexrelid
                   JOIN pg_class t ON t.oid = i.indrelid
                   JOIN pg_namespace n ON n.oid = c.relnamespace
                  WHERE n.nspname = 'coord'
-                   AND (c.relname LIKE 'ix_proclog_%'
-                        OR t.relname LIKE 'process_%')
+                   AND (c.relname = ANY(:names) OR t.relname = ANY(:tables))
                 """
-            )
+            ),
+            {"names": sorted(_expected_indexes()), "tables": sorted(_TABLES)},
         ).all()
-    return {r[0]: bool(r[1]) for r in rows}
+    return {r[0]: (bool(r[1]), str(r[2])) for r in rows}
 
 
-def _assert_present(engine: Engine) -> dict[str, bool]:
+def _assert_present(engine: Engine) -> dict[str, tuple[bool, str]]:
     assert _tables(engine) == _TABLES
     indexes = _proclog_indexes(engine)
-    invalid = sorted(name for name, valid in indexes.items() if not valid)
+    invalid = sorted(name for name, (valid, _) in indexes.items() if not valid)
     assert not invalid, f"INVALID indexes (a failed CONCURRENTLY build): {invalid}"
-    stamp = [n for n in indexes if n.startswith("ix_proclog_")]
-    assert len(stamp) == _STAMP_INDEX_COUNT + 1, sorted(stamp)
+    for name, match in _expected_indexes().items():
+        assert name in indexes, f"upgrade must create coord.{name}"
+        indexdef = indexes[name][1]
+        assert indexdef.startswith(
+            "CREATE UNIQUE INDEX" if match["unique"] else "CREATE INDEX "
+        ), indexdef
+        assert f" ON coord.{match['table']} USING btree ({match['cols']})" in (
+            indexdef
+        ), f"{name}: key columns or their order drifted: {indexdef}"
+        assert ("NULLS NOT DISTINCT" in indexdef) == bool(match["nnd"]), indexdef
+        assert (" WHERE " in indexdef) == bool(match["pred"]), (
+            f"{name}: partial predicate drifted: {indexdef}"
+        )
     return indexes
 
 
 def _assert_absent(engine: Engine) -> None:
     assert _tables(engine) == set()
-    assert not [n for n in _proclog_indexes(engine) if n.startswith("ix_proclog_")]
+    assert not _proclog_indexes(engine)
 
 
 _INSERT_EVENT = text(

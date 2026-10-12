@@ -46,21 +46,10 @@ def upgrade() -> None:
             computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
             window_days  INTEGER NOT NULL,
             body         JSONB NOT NULL,
-            PRIMARY KEY (tenant_id, computed_at)
+            PRIMARY KEY (tenant_id, computed_at),
+            CONSTRAINT ck_process_flow_snapshots_window_days
+                CHECK (window_days > 0)
         )
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_flow_snapshots
-            DROP CONSTRAINT IF EXISTS ck_process_flow_snapshots_window_days
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_flow_snapshots
-            ADD CONSTRAINT ck_process_flow_snapshots_window_days
-            CHECK (window_days > 0)
         """
     )
     # The worker's age-based prune.

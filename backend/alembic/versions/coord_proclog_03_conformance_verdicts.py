@@ -54,21 +54,10 @@ def upgrade() -> None:
             evaluated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             window_closes_at  TIMESTAMPTZ NULL,
             evidence          JSONB NOT NULL DEFAULT '{}'::jsonb,
-            PRIMARY KEY (tenant_id, constraint_id, case_type, case_id)
+            PRIMARY KEY (tenant_id, constraint_id, case_type, case_id),
+            CONSTRAINT ck_process_conformance_verdicts_verdict
+                CHECK (verdict IN ('held', 'violated', 'unknown'))
         )
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_conformance_verdicts
-            DROP CONSTRAINT IF EXISTS ck_process_conformance_verdicts_verdict
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_conformance_verdicts
-            ADD CONSTRAINT ck_process_conformance_verdicts_verdict
-            CHECK (verdict IN ('held', 'violated', 'unknown'))
         """
     )
 

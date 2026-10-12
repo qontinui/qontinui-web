@@ -59,6 +59,13 @@ Tables
     lifecycle stamps and no single monotone "changed at"). ``completed_at`` is
     set by a one-shot source such as Phase 4's JetStream replay.
 
+Every CHECK is declared inside its ``CREATE TABLE`` body, never as a
+``ALTER TABLE … DROP CONSTRAINT`` / ``ADD CONSTRAINT`` pair: coord's
+``pr_merge/migration_classifier.rs`` rejects any ``ALTER TABLE`` carrying
+``DROP`` and any ``ADD CONSTRAINT`` without ``NOT VALID``, and one rejected
+statement escalates the whole PR to an operator. The same applies to every
+revision in this chain.
+
 No FK to tenants, and no trigger: this is an observation log, and a
 best-effort insert must never fail for referential bookkeeping (the
 ``coordtouch_01_operator_touches`` rationale); triggers on source tables were
@@ -96,36 +103,13 @@ def upgrade() -> None:
             actor          TEXT NULL,
             evidence_tier  TEXT NOT NULL,
             time_basis     TEXT NOT NULL,
-            attrs          JSONB NOT NULL DEFAULT '{}'::jsonb
+            attrs          JSONB NOT NULL DEFAULT '{}'::jsonb,
+            CONSTRAINT ck_process_events_evidence_tier
+                CHECK (evidence_tier IN ('coord_observed', 'derived',
+                                         'agent_reported', 'operator')),
+            CONSTRAINT ck_process_events_time_basis
+                CHECK (time_basis IN ('event', 'insert', 'observed', 'declared'))
         )
-        """
-    )
-    # Dropped-then-added so a re-run converges on the current CHECK body.
-    op.execute(
-        """
-        ALTER TABLE coord.process_events
-            DROP CONSTRAINT IF EXISTS ck_process_events_evidence_tier
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_events
-            ADD CONSTRAINT ck_process_events_evidence_tier
-            CHECK (evidence_tier IN ('coord_observed', 'derived',
-                                     'agent_reported', 'operator'))
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_events
-            DROP CONSTRAINT IF EXISTS ck_process_events_time_basis
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_events
-            ADD CONSTRAINT ck_process_events_time_basis
-            CHECK (time_basis IN ('event', 'insert', 'observed', 'declared'))
         """
     )
     # The idempotency key and every projector write's ON CONFLICT target.
@@ -193,21 +177,10 @@ def upgrade() -> None:
             resolution         TEXT NOT NULL,
             source             TEXT NOT NULL,
             first_observed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-            last_observed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+            last_observed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT ck_process_object_links_resolution
+                CHECK (resolution IN ('resolved', 'ambiguous'))
         )
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_object_links
-            DROP CONSTRAINT IF EXISTS ck_process_object_links_resolution
-        """
-    )
-    op.execute(
-        """
-        ALTER TABLE coord.process_object_links
-            ADD CONSTRAINT ck_process_object_links_resolution
-            CHECK (resolution IN ('resolved', 'ambiguous'))
         """
     )
     # The upsert key: a re-observation of the same link from the same source
