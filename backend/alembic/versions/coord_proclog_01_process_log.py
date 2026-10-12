@@ -20,14 +20,18 @@ Order inside ``upgrade()``: the seven new tables and their indexes run in the
 migration's transaction; the 37 indexes on EXISTING coord tables then run
 ``CONCURRENTLY`` inside ``op.get_context().autocommit_block()``, which commits
 the table DDL first. A failure in the concurrent half therefore leaves the
-tables in place with the version still at the parent, and a re-run converges
-(every statement is ``IF NOT EXISTS``).
+tables (and every index built before the failure) committed while the version
+stays at the parent, so a later ``downgrade`` from the parent does not remove
+them. A re-run converges, because every statement is ``IF NOT EXISTS`` — with
+one exception: a killed concurrent build leaves an INVALID index that ``IF NOT
+EXISTS`` then skips forever. Drop any INVALID ``ix_proclog_*`` index first; see
+"If a concurrent build fails" below.
 
 The event log (events, E2O, O2O, watermarks)
 ============================================
 
 The gap
-=======
+-------
 
 coord holds ~40 process-relevant stores (work units, gates, sessions, merge
 proposals, PR events, scheduler ticks, claims audit, operator touches, …),
@@ -39,7 +43,7 @@ OCEL 2.0 relational shape (plan D3): one row per event, one row per
 event–object relation (E2O), one row per object–object relation (O2O).
 
 Tables
-======
+------
 
 ``coord.process_events`` — one row per lifecycle-significant event.
     ``tenant_id`` is NULL only for a fleet-scope event (the tick-scope
@@ -87,7 +91,7 @@ coord.process_flow_snapshots
 ============================
 
 Why a snapshot table
-====================
+--------------------
 
 Flow metrics (per-state dwell, WIP ageing, flow efficiency, Little's law, the
 DORA five, development speed) are too heavy to compute at request time:
@@ -105,7 +109,7 @@ coord.process_conformance_verdicts
 ==================================
 
 What a row is
-=============
+-------------
 
 The plan encodes the declared process (``finished-criteria``,
 ``session-protocol``, ``plan-discipline``, ``planning-and-scope``) as Declare
@@ -128,7 +132,7 @@ coord.process_forecasts
 =======================
 
 What a row is
-=============
+-------------
 
 One forecast per question per object, issued when the object enters the state
 the question is about — ``land_within_t`` for a queued merge proposal,
@@ -152,7 +156,7 @@ Source-stamp indexes on existing coord tables
 =============================================
 
 How the list was derived (the Phase 0 index census)
-===================================================
+---------------------------------------------------
 
 For every ``(source, stamp)`` the projector will page on, the canonical schema
 dump (qontinui-runner ``src-tauri/schema.pg.sql.generated`` at ``fc3a9155b``)
@@ -165,7 +169,7 @@ NOT indexed here: ``pr_events.created_at``, ``commit_lineage.recorded_at``,
 ``session_events`` page on their serial ``bigint`` primary key instead.
 
 Shape of each index
-===================
+-------------------
 
 * **Partial, ``WHERE <stamp> IS NOT NULL``**: on a NULLABLE lifecycle stamp
   (``cleared_at``, ``retracted_at``, ``acked_at`` …) a row that never reaches
@@ -184,7 +188,7 @@ Shape of each index
   autocommit block.
 
 ``coord.gates.evaluated_at`` is deliberately NOT indexed
-========================================================
+--------------------------------------------------------
 
 The 10 s gate sweep rewrites ``evaluated_at`` (``SET evaluated_at = now(),
 verdict_reason = ...``) on every open gate. PostgreSQL keeps an UPDATE
@@ -203,7 +207,7 @@ reason: the sweep does not change those stamps' values on a tick that is not a
 transition, and HOT compares values, not the SET list.
 
 ``updated_at`` indexes DO cost HOT, and that was weighed
-=========================================================
+--------------------------------------------------------
 
 Three sources have no lifecycle stamp but ``updated_at``: ``merge_proposals``
 (plan D1: a proposal re-enters ``queued`` with no stamp, so ``updated_at`` is
@@ -225,7 +229,7 @@ here. The ``archived_at`` reader must therefore also project the terminal
 verdict of an archived gate whose terminal event was never projected.
 
 If a concurrent build fails, and why this revision cannot check
-==============================================================
+---------------------------------------------------------------
 
 A cancelled, deadlocked or timed-out ``CREATE INDEX CONCURRENTLY`` leaves an
 INVALID index behind, and ``IF NOT EXISTS`` then skips it on every re-run
