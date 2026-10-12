@@ -378,6 +378,17 @@ def test_revet_rows_would_pass_an_ast_comparison() -> None:
         assert _ast_shape(row.base) == _ast_shape(row.head), row.name
 
 
+def test_the_qualifier_source_is_ascii() -> None:
+    """An invisible character in the proof module -- a zero-width or exotic
+    space inside SOURCE_READERS, the whitespace set or a literal -- would change
+    the proof without showing in a review diff. Non-ASCII is written as an
+    escape there."""
+    source = SCRIPT.read_bytes()
+    assert source.isascii(), [
+        n for n, line in enumerate(source.split(b"\n"), 1) if not line.isascii()
+    ]
+
+
 def test_source_readers_is_coords_list() -> None:
     """coord's `SOURCE_READERS` at blob 32bca598b3 holds 100 names (a quoted
     string inside one of its comments is not a name). The copy must stay
