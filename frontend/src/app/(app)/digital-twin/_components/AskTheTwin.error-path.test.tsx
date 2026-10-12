@@ -4,11 +4,10 @@
  * (`backend_relay.rs`) or the backend (`runner_chat_ws.py`).
  *
  * Which runner frames reach the page is the backend relay's decision, not the
- * hook's. Its device socket forwards only the runner's `chat_response` frames
- * to chat sockets (`devices_ws.py` `_route_device_message`), so the runner's
- * `chat_created` / `chat_session_state` replies used below reach the page
- * only once that relay forwards them. The backend's own `error` frame does
- * reach it.
+ * hook's. Its device socket forwards the runner's chat frames to the device's
+ * chat sockets (`devices_ws.py` `_route_device_message`): the `chat_created`
+ * and `chat_session_state` replies used below, and its `chat_response`
+ * output. The backend's own `error` frame reaches the page directly.
  *
  * Before this file, these failures were dropped on the page:
  *  - a refused spawn is `{ type: "chat_created", error }` with no id and no
@@ -315,9 +314,11 @@ describe("AskTheTwin error paths", () => {
 });
 
 /**
- * The busy line says only what the page knows. The backend relay forwards the
- * runner's output (`chat_response`) but not its session state, so streamed
- * text is all the page sees of a running answer — never that it finished.
+ * The busy line says only what the page knows. The runner reports a session's
+ * state only in reply to a request (a load, an interrupt, a close), which Ask
+ * the Twin never makes, and its `session-state` broadcast has no producer — so
+ * streamed text is all the page sees of a running answer, never that it
+ * finished.
  */
 describe("AskTheTwin busy line", () => {
   it("streamed text with no reported state is 'receiving', not 'working'", async () => {
