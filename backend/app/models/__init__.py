@@ -238,6 +238,7 @@ from app.models.visual_comparison_result import (
 from app.models.work_artifact import (
     WorkArtifact,
     WorkArtifactEdge,
+    WorkArtifactEdgeAnchor,
     WorkArtifactVersion,
 )
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
@@ -533,6 +534,7 @@ __all__ = [
     "WorkArtifact",
     "WorkArtifactVersion",
     "WorkArtifactEdge",
+    "WorkArtifactEdgeAnchor",
     # Per-device plan-scan-source readings (agent.plan_scan_root_observations)
     "PlanScanRootObservation",
     # Per-device refused scan-source reports (agent.plan_scan_root_refusals)

@@ -36,12 +36,65 @@
  */
 
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { ApiConfig } from "@/services/api-config";
 import {
+  BackendError,
+  type BackendErrorReading,
+  isBackendErrorReading,
   MAX_SENTENCE_LENGTH,
   messageFromErrorBody,
+  readErrorBody,
 } from "@/lib/errors/backend-error-message";
 
 export const OPERATIONS_BASE = "/api/v1/operations";
+
+/**
+ * The WebSocket URL of an `/operations` push channel: `path` (which starts
+ * with `/`, and carries its own query string) under the operations base,
+ * with the scheme translated for a WS upgrade.
+ *
+ * Unlike every REST read here this is ABSOLUTE — `ApiConfig.API_BASE_URL`
+ * plus {@link OPERATIONS_BASE} — because a WebSocket upgrade cannot ride the
+ * Next.js `/api/:path*` rewrite the relative REST form goes through. It keeps
+ * the three arms the retired `operationsWsBase()` of
+ * `components/operations/utils.ts` had (deleted in Phase 7 batch 7, when its
+ * last channel moved to `./coordEvents.ts`): `https://` → `wss://`,
+ * `http://` → `ws://`, and a base with no scheme (an unset
+ * `NEXT_PUBLIC_API_URL`) prefixed with `ws://`. Auth is not
+ * this helper's business: each channel's builder puts its own `token` (and
+ * {@link activeTenantWsParam}) into `path`, since a browser WebSocket cannot
+ * set headers on the upgrade.
+ */
+export function wsUrl(path: string): string {
+  const base = `${ApiConfig.API_BASE_URL}${OPERATIONS_BASE}`;
+  if (base.startsWith("https://")) {
+    return "wss://" + base.slice("https://".length) + path;
+  }
+  if (base.startsWith("http://")) {
+    return "ws://" + base.slice("http://".length) + path;
+  }
+  return "ws://" + base + path;
+}
+
+/**
+ * The dashboard tenant-switcher selection as a WS query param
+ * (`&active_tenant=<id>`), or `""` when none is selected or storage is
+ * unreadable. A browser WebSocket cannot send the `X-Qontinui-Active-Tenant`
+ * header the REST calls carry (HttpClient attaches it from the same
+ * localStorage key), so the WS bridges read `active_tenant` from the query
+ * string instead; the backend membership-validates it. The one copy since
+ * Phase 7 batch 7 deleted the private duplicate in
+ * `components/operations/utils.ts`.
+ */
+export function activeTenantWsParam(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const active = window.localStorage.getItem("qontinui.active_tenant_id");
+    return active ? `&active_tenant=${encodeURIComponent(active)}` : "";
+  } catch {
+    return "";
+  }
+}
 
 /** How {@link readJson} treats a 2xx whose body does not parse as JSON. */
 export interface ReadJsonOptions {
@@ -112,4 +165,47 @@ export function operationsErrorMessage(
     return messageFromErrorBody(httpBodyOf(err) ?? "", status, limit);
   }
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * {@link operationsErrorMessage} as a classified reading: the same sentence,
+ * plus the refusal envelope when the rejected body carried one (plan
+ * `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists`
+ * D3). A surface that keeps this in state hands it to `BackendErrorMessage`,
+ * which renders the typed next action and stamps `data-refusal`. Anything that
+ * is not a {@link readJson} status rejection reads `unstructured`, its own
+ * `message` unchanged.
+ */
+export function operationsErrorReading(
+  err: unknown,
+  limit: number = MAX_SENTENCE_LENGTH
+): BackendErrorReading {
+  if (isBackendErrorReading(err)) return err;
+  if (err instanceof BackendError) return err.reading;
+  const status = httpStatusOf(err);
+  if (status !== null) {
+    return readErrorBody(httpBodyOf(err) ?? "", status, limit);
+  }
+  return {
+    kind: "unstructured",
+    sentence: err instanceof Error ? err.message : String(err),
+  };
+}
+
+/**
+ * The terse `HTTP <status>` wording the dashboard's polling streams have
+ * always shown for a non-2xx (`useCiStatusStream`, `useSymbolClaimsStream`,
+ * `useDevActionsStream`, `useMigrationQueueStream`, the dev-action detail and
+ * `notify-when-green` writes), applied to a client-function rejection.
+ *
+ * Those call sites threw `new Error(\`HTTP ${resp.status}\`)` themselves before
+ * the reads moved onto {@link readJson}; this keeps the text they render
+ * unchanged. A {@link readJson} status rejection becomes `HTTP <status>`;
+ * any other `Error` (network `TypeError`, a malformed body) is its own
+ * `message`; a non-`Error` throw is `fallback`.
+ */
+export function statusOnlyErrorText(err: unknown, fallback: string): string {
+  const status = httpStatusOf(err);
+  if (status !== null) return `HTTP ${status}`;
+  return err instanceof Error ? err.message : fallback;
 }
