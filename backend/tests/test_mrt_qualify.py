@@ -410,6 +410,17 @@ def test_source_readers_is_coords_list() -> None:
         "__init_subclass__",
     ):
         assert name in mq.SOURCE_READERS, name
+    # The spot check above cannot see a typo in any of the other names
+    # (`getsource` -> `getsourc` keeps the count at 100 and drops a reader,
+    # making the port looser than coord). So the WHOLE set is pinned: the
+    # sha256 of coord's names, sorted and newline-joined, computed from the
+    # Rust array at blob 32bca598b3 (string literals outside `//` comments).
+    digest = hashlib.sha256(
+        "\n".join(sorted(mq.SOURCE_READERS)).encode("utf-8")
+    ).hexdigest()
+    assert (
+        digest == "b2dad91244a9afe4f63d2318cb4499562a3b78ba8d0d1d09a99013f828c4ae8c"
+    ), digest
 
 
 # ---------------------------------------------------------------------------
