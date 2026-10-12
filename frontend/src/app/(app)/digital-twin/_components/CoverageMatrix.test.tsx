@@ -111,3 +111,54 @@ describe("CoverageMatrix gauges", () => {
     );
   });
 });
+
+describe("CoverageMatrix restriction", () => {
+  // coord 403s a SystemTenant-scoped cell for a non-system tenant while the
+  // tenant's other cells answer (qontinui-coord#3128). The backend raises the
+  // grid-level `restricted` flag only when EVERY probed cell is restricted, so
+  // one restricted cell must render as that cell — not hide the whole grid.
+  it("renders the grid with one restricted cell and no access notice when only one cell is restricted", () => {
+    const restrictedId = SNAPSHOT_IDS[0];
+    const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
+      id,
+      status: id === restrictedId ? "restricted" : "implemented",
+    }));
+    state.probe = {
+      data: { subspaces, probed: subspaces.length, restricted: false },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<CoverageMatrix />);
+
+    expect(screen.queryByText("Access restricted")).not.toBeInTheDocument();
+    for (const id of SNAPSHOT_IDS) {
+      expect(screen.getByTestId(`digital-twin-cell-${id}`)).toBeInTheDocument();
+    }
+    expect(
+      screen.getByTestId(`digital-twin-cell-${restrictedId}`)
+    ).toHaveTextContent("Restricted");
+    expect(
+      screen.getByTestId(`digital-twin-cell-${SNAPSHOT_IDS[1]}`)
+    ).not.toHaveTextContent("Restricted");
+  });
+
+  it("shows the access notice instead of the grid when every cell is restricted", () => {
+    const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
+      id,
+      status: "restricted",
+    }));
+    state.probe = {
+      data: { subspaces, probed: subspaces.length, restricted: true },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<CoverageMatrix />);
+
+    expect(screen.getByText("Access restricted")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`digital-twin-cell-${SNAPSHOT_IDS[0]}`)
+    ).not.toBeInTheDocument();
+  });
+});
