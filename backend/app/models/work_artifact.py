@@ -291,7 +291,7 @@ FOLLOWUP_ANCHOR_CHECKS: tuple[tuple[str, str], ...] = (
         f"path <> '' AND length(path) <= {FOLLOWUP_ANCHOR_PATH_MAX} "
         "AND left(path, 1) NOT IN ('/', ' ') AND right(path, 1) NOT IN ('/', ' ') "
         "AND strpos(path, chr(92)) = 0 AND strpos(path, '//') = 0 "
-        "AND path !~ '(^|/)[.][.]?(/|$)' AND path !~ ('[' || chr(1) || '-' || chr(31) || chr(127) || ']')",
+        "AND path !~ '(^|/)[.][.]?(/|$)' AND path !~ ('[' || chr(1) || '-' || chr(31) || chr(127) || '-' || chr(159) || ']')",
     ),
     (
         "ck_work_artifact_edge_anchors_lines",
