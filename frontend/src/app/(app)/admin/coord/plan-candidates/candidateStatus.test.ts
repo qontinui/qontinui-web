@@ -51,9 +51,11 @@ function response(
     items: [candidate()],
     count: 1,
     total: 606,
-    offset: 0,
+    truncated: true,
+    next_cursor: "opaque",
+    bound_kind: "exact",
     limit: 25,
-    ordering: "oldest_vetted_first",
+    ordering: "oldest_captured_first",
     coord_available: true,
     work_unit_population_state: "included",
     work_unit_population_reason: null,
@@ -433,17 +435,34 @@ describe("the population flag is read before the total means anything", () => {
 });
 
 describe("the window reports the declared ordering and nothing else", () => {
-  it("carries ordering, offset, limit and a paging predicate", () => {
+  it("carries ordering, the walked start, limit and the cursor", () => {
     const w = describeCandidateWindow(response());
-    expect(w.ordering).toBe("oldest_vetted_first");
+    expect(w.ordering).toBe("oldest_captured_first");
     expect(w.shown).toBe(1);
     expect(w.hasMore).toBe(true);
+    expect(w.nextCursor).toBe("opaque");
+    expect(describeCandidateWindow(response({ total: 6 }), 25).total).toBe(31);
   });
 
-  it("infers 'more' from a full page when no total was served", () => {
-    const w = describeCandidateWindow(response({ total: undefined, limit: 1 }));
+  it("never infers 'more' from a full page — only truncated + a cursor", () => {
+    const w = describeCandidateWindow(
+      response({ total: null, truncated: null, next_cursor: null, limit: 1 })
+    );
     expect(w.total).toBeNull();
-    expect(w.hasMore).toBe(true);
+    expect(w.hasMore).toBe(false);
+  });
+
+  it("says a capped coord walk left the population a lower bound", () => {
+    const line = describePopulation(
+      response({
+        work_unit_population_state: "truncated",
+        work_unit_population_reason: "coord's list did not end",
+        total: null,
+        bound_kind: "at_least",
+      })
+    );
+    expect(line.level).toBe("caveat");
+    expect(line.text).toMatch(/LOWER BOUND/);
   });
 });
 

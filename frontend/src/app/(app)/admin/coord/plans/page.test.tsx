@@ -94,9 +94,11 @@ function healthy(
   return {
     items: [row()],
     total: 1991,
-    offset: 0,
+    truncated: true,
+    next_cursor: "opaque-next",
+    bound_kind: "exact",
     limit: 25,
-    ordering: "slug_asc",
+    ordering: "stem_date_asc",
     document_axis_source: "artifact_store",
     document_axis_complete: false,
     document_present_count: 1887,
@@ -152,7 +154,7 @@ function degraded(
 
 function contractRefusal(violations: string[]): Error {
   return new Error(
-    "GET /api/v1/plan-library/reconciliation?offset=0&limit=25 failed: 500 - " +
+    "GET /api/v1/plan-library/reconciliation?limit=25 failed: 500 - " +
       JSON.stringify({
         detail: { error: "reconciliation_contract_violated", violations },
       })
@@ -171,7 +173,8 @@ describe("/admin/coord/plans reads the reconciliation route", () => {
     await waitFor(() => expect(get).toHaveBeenCalled());
     const url = String(get.mock.calls[0]?.[0]);
     expect(url).toContain("/api/v1/plan-library/reconciliation");
-    expect(url).toContain("offset=0");
+    expect(url).not.toContain("offset=");
+    expect(url).not.toContain("cursor=");
     expect(url).toContain("limit=25");
     expect(url).not.toContain("/operations/plans");
   });
@@ -315,14 +318,13 @@ describe("/admin/coord/plans reads the reconciliation route", () => {
 });
 
 describe("/admin/coord/plans says what the window is", () => {
-  it("states total, offset, page size, ordering and both boundary stems", async () => {
+  it("states the population, the rows shown, page size, ordering and both boundary stems", async () => {
     get.mockResolvedValue(
       healthy({
         items: [
           row({ slug: "2026-01-01-first" }),
           row({ slug: "2026-09-05-last" }),
         ],
-        offset: 50,
       })
     );
     render(<CoordPlansListPage />);
@@ -331,14 +333,16 @@ describe("/admin/coord/plans says what the window is", () => {
     expect(window).toHaveTextContent("Showing 2 of 1991 plan stems");
     expect(window).toHaveTextContent("2026-01-01-first");
     expect(window).toHaveTextContent("2026-09-05-last");
-    expect(window).toHaveTextContent("offset 50");
+    expect(window).toHaveTextContent("rows 1–2");
     expect(
       within(window).getByTestId("coord-plans-window-ordering")
-    ).toHaveTextContent("slug_asc");
+    ).toHaveTextContent("stem_date_asc");
   });
 
   it("says the total is UNKNOWN rather than substituting the page size", async () => {
-    get.mockResolvedValue(healthy({ total: undefined }));
+    get.mockResolvedValue(
+      healthy({ facets: { ...healthy().facets, denominator: undefined } })
+    );
     render(<CoordPlansListPage />);
 
     expect(
@@ -346,7 +350,7 @@ describe("/admin/coord/plans says what the window is", () => {
     ).toHaveTextContent("unknown total");
   });
 
-  it("pages by offset, and the route's ceiling bounds the page size", async () => {
+  it("pages by the route's cursor, and the route's ceiling bounds the page size", async () => {
     const user = userEvent.setup();
     get.mockResolvedValue(healthy());
     render(<CoordPlansListPage />);
@@ -357,9 +361,10 @@ describe("/admin/coord/plans says what the window is", () => {
     await user.click(screen.getByTestId("coord-plans-page-next"));
     await waitFor(() =>
       expect(
-        get.mock.calls.some((c) => String(c[0]).includes("offset=25"))
+        get.mock.calls.some((c) => String(c[0]).includes("cursor=opaque-next"))
       ).toBe(true)
     );
+    expect(screen.getByTestId("coord-plans-page-prev")).not.toBeDisabled();
 
     await user.click(screen.getByTestId("coord-plans-page-size-select"));
     await user.click(
@@ -370,13 +375,12 @@ describe("/admin/coord/plans says what the window is", () => {
         get.mock.calls.some((c) => String(c[0]).includes("limit=100"))
       ).toBe(true)
     );
-    // Changing the page size returns to the first page — an offset computed
-    // against the old size addresses a different window under the new one.
+    // Changing the page size returns to the first page — the walk restarts.
     expect(
       get.mock.calls.some(
         (c) =>
           String(c[0]).includes("limit=100") &&
-          String(c[0]).includes("offset=0")
+          !String(c[0]).includes("cursor=")
       )
     ).toBe(true);
   });

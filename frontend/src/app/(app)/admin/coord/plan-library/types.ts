@@ -25,6 +25,8 @@
  *   row" (`none`) from "off because someone turned it off".
  */
 
+import type { BoundedReadMeta } from "@/components/admin/coord/cursorPager";
+
 // ───────────────────────────── artifacts ─────────────────────────────
 
 export const WORK_ARTIFACT_KINDS = [
@@ -195,14 +197,15 @@ export interface CorpusHealth {
   scan_roots: ScanRootListResponse;
 }
 
-/** `GET /api/v1/plan-library` — the all-kinds artifact list. */
-export interface WorkArtifactListResponse {
+/**
+ * `GET /api/v1/plan-library` — the all-kinds artifact list. A keyset walk,
+ * newest captured first: the shared bounded-read keys describe `items`, and
+ * `total` counts from THIS page's start (the whole filtered corpus on the
+ * first page). Pass `next_cursor` back as `cursor` for the next page.
+ */
+export interface WorkArtifactListResponse extends BoundedReadMeta {
   items: WorkArtifactSummary[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
+  ordering: "newest_captured_first";
   corpus_health: CorpusHealth;
 }
 
@@ -252,9 +255,11 @@ export type DocumentState = "present" | "unsynced" | "absent";
  * `unavailable` means `total` counts the document layer only — UNKNOWN,
  * never "coord has no work units". Distinct from `coord_available`, which
  * reports the page-wide circuit: a 4xx on the population door is coord
- * ANSWERING and leaves that flag true.
+ * ANSWERING and leaves that flag true. `truncated` means the arm was read
+ * but coord's list did not end within web's page cap: the work-unit half is
+ * a LOWER BOUND and the page's bound is never `exact`.
  */
-export type WorkUnitPopulationState = "included" | "unavailable";
+export type WorkUnitPopulationState = "included" | "truncated" | "unavailable";
 
 export interface CandidateLinkedPr {
   repo: string | null;
@@ -317,14 +322,14 @@ export interface PlanCandidate {
   status_currency: StatusCurrency | null;
 }
 
-export interface PlanCandidateResponse {
+/**
+ * `GET /plan-library/candidates` — a keyset walk, oldest captured first. The
+ * shared bounded-read keys describe `items`; pass `next_cursor` back as
+ * `cursor`.
+ */
+export interface PlanCandidateResponse extends BoundedReadMeta {
   items: PlanCandidate[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  ordering: "oldest_vetted_first";
+  ordering: "oldest_captured_first";
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;

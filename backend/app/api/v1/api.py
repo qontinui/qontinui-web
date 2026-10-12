@@ -1,7 +1,7 @@
 """API v1 router configuration.
 
 This file mounts every router that ships with the OSS qontinui-web. The
-qontinui.cloud deployment additionally attaches its proprietary cloud-only
+qontinui.cloud deployment additionally attaches its cloud-only
 routers (billing, cloud-admin, organizations multi-tenant, fleet-health,
 beta-signup, cross-tenant audit-logs) by registering them with the
 extension hook ``register_cloud_extensions(api_router)`` called at the
@@ -13,7 +13,7 @@ mid-3b), some cloud-only routers are still imported directly here as well
 qontinui-cloud-control and they go away from this file. The hook call at
 the bottom is already in place so the move is a delete-only diff in OSS.
 
-See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
+See: D:/qontinui-root/qontinui-cloud-control/  (separate repo)
      D:/qontinui-root/tmp_cloud_control_carve_out.md  §3 (register-hook
      surface) and §2 (file-by-file split).
 """

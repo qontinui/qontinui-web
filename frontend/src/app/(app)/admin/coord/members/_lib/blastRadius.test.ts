@@ -10,11 +10,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  blastRadiusReadCause,
-  parseBlastRadiusVerdict,
-  type BlastRadiusVerdict,
-} from "./blastRadius";
+import type { BlastRadiusVerdict } from "@/lib/api/operations/cognitoGroups";
+import { blastRadiusReadCause, parseBlastRadiusVerdict } from "./blastRadius";
 
 const FULL_VERDICT: BlastRadiusVerdict = {
   group_name: "qontinui-admins",
@@ -26,13 +23,6 @@ const FULL_VERDICT: BlastRadiusVerdict = {
   strands_own_tenant: ["acme"],
   strands_other_tenant_count: 1,
 };
-
-function jsonResponse(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 describe("parseBlastRadiusVerdict", () => {
   it("parses a full verdict into exactly its eight fields", () => {
@@ -62,33 +52,27 @@ describe("parseBlastRadiusVerdict", () => {
 });
 
 describe("blastRadiusReadCause", () => {
-  it("maps mapping_check_unavailable to the code and coord's status", async () => {
-    const res = jsonResponse(
-      {
-        detail: {
-          error: "mapping_check_unavailable",
-          coord_status: 404,
-          message: "Nothing was deleted.",
-        },
+  it("maps mapping_check_unavailable to the code and coord's status", () => {
+    const body = JSON.stringify({
+      detail: {
+        error: "mapping_check_unavailable",
+        coord_status: 404,
+        message: "Nothing was deleted.",
       },
-      502
-    );
-    await expect(blastRadiusReadCause(res)).resolves.toBe(
+    });
+    expect(blastRadiusReadCause(body, 502)).toBe(
       "mapping_check_unavailable, coord answered 404"
     );
   });
 
-  it("maps mapping_check_unreadable to the code and its reason", async () => {
+  it("maps mapping_check_unreadable to the code and its reason", () => {
     // The production envelope: the dict detail spliced to the top level.
-    const res = jsonResponse(
-      {
-        error: "mapping_check_unreadable",
-        reason: "verdict names another group",
-        message: "Nothing was deleted.",
-      },
-      502
-    );
-    await expect(blastRadiusReadCause(res)).resolves.toBe(
+    const body = JSON.stringify({
+      error: "mapping_check_unreadable",
+      reason: "verdict names another group",
+      message: "Nothing was deleted.",
+    });
+    expect(blastRadiusReadCause(body, 502)).toBe(
       "mapping_check_unreadable: verdict names another group"
     );
   });

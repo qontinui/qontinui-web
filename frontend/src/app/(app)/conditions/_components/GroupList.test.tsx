@@ -11,10 +11,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
+const fetchMock = vi.fn();
 const post = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
+    fetch: (...args: unknown[]) => fetchMock(...args),
     post: (...args: unknown[]) => post(...args),
     patch: vi.fn(),
     put: vi.fn(),
@@ -60,18 +62,26 @@ function route(answers: { groups: Answer; health: Answer; drain?: Answer }) {
   get.mockImplementation(async (url: string) => {
     const pick = url.endsWith("/conditions/groups")
       ? answers.groups
-      : url.endsWith("/fleet/health")
-        ? answers.health
-        : url.endsWith("/fleet/drain")
-          ? (answers.drain ?? { drains: {} })
-          : new Error(`unexpected GET ${url}`);
+      : url.endsWith("/fleet/drain")
+        ? (answers.drain ?? { drains: {} })
+        : new Error(`unexpected GET ${url}`);
     if (pick instanceof Error) throw pick;
     return pick;
+  });
+  // `/fleet/health` is read through `httpClient.fetch` (the typed client's
+  // `fetchFleetHealth`), so its answer arrives as a Response.
+  fetchMock.mockImplementation(async (url: string) => {
+    const pick = url.endsWith("/fleet/health")
+      ? answers.health
+      : new Error(`unexpected fetch ${url}`);
+    if (pick instanceof Error) throw pick;
+    return new Response(JSON.stringify(pick), { status: 200 });
   });
 }
 
 beforeEach(() => {
   get.mockReset();
+  fetchMock.mockReset();
   post.mockReset();
   toastError.mockReset();
 });
@@ -139,8 +149,9 @@ describe("GroupList runner hint", () => {
         ),
       });
       const healthCalls = () =>
-        get.mock.calls.filter((c) => String(c[0]).endsWith("/fleet/health"))
-          .length;
+        fetchMock.mock.calls.filter((c) =>
+          String(c[0]).endsWith("/fleet/health")
+        ).length;
       const before = healthCalls();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(RUNNER_HINT_POLL_MS);
