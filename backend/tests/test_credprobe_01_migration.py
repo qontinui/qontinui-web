@@ -203,6 +203,7 @@ def test_credential_probe_specs_schema_roundtrip() -> None:
             {"token": "cred:aws-ssm:eu-central-1:extra"},  # 4 segments
             {"token": "CRED:aws-ssm:eu-central-1"},  # upper case
             {"token": "cred:aws-ssm:123456789012"},  # account id
+            {"token": "cred:aws-ssm:1234-5678-9012"},  # dashed account id
             {"token": "cred:arn:aws"},  # arn:
             {"token": "cred:aws/ssm"},  # path
             {"token": "cred:a@b"},  # email
