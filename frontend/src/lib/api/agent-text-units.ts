@@ -165,15 +165,16 @@ export interface AgentTextUnitUpdate {
  * `qontinui-schemas/ts/src/generated/AgentTextUnitDefault.d.ts`, and it is a
  * mirror rather than an import for one measured reason:** this app cannot
  * resolve that binding today. `@qontinui/shared-types` resolves to the
- * npm-published `0.5.0` (see `package-lock.json`), which predates the whole
- * `AgentTextUnit*` family — zero hits in its `dist/` — and the `@qontinui/schemas`
+ * npm-published `2.0.0` (see `package-lock.json`), which generates the
+ * `AgentTextUnit*` family but exports it from no entry point — zero hits in
+ * its `dist/` — and the `@qontinui/schemas`
  * webpack alias in `next.config.mjs` points at a directory that does not exist
  * and is not in `tsconfig` `paths`, so `tsc` would never see it either. Every
  * other type in this file is a local mirror for the same reason. What keeps
  * this one honest is mechanical, not prose: `AGENT_TEXT_UNIT_DEFAULT_KEYS`
  * below is the runtime key set, and `agent-text-units.binding.test.ts` reads
  * the generated `.d.ts` from the sibling checkout and asserts the two agree.
- * When the published package catches up, replace this with
+ * When the published package exports it, replace this with
  * `import type { AgentTextUnitDefault } from "@qontinui/shared-types"` and
  * delete the gate.
  *

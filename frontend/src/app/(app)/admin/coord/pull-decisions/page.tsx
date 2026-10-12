@@ -41,7 +41,7 @@
  * surface.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -58,15 +58,14 @@ import {
   derivePullDecisionStatus,
   type PullDecisionRow as PullDecisionRowData,
 } from "@/components/admin/coord/pullDecisionStatus";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchPullDecisions,
+  type PullDecisionsResponse,
+} from "@/lib/api/operations/coordDelivery";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
-
-interface PullDecisionsResponse {
-  resolutions?: PullDecisionRowData[];
-  count?: number;
-}
 
 /**
  * The page's health, derived from the rows already on it (R1) — never a second
@@ -162,34 +161,32 @@ export default function CoordPullDecisionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const qs = new URLSearchParams();
-      if (deviceId) qs.set("device_id", deviceId);
-      if (repo) qs.set("repo", repo);
-      const suffix = qs.toString() ? `?${qs.toString()}` : "";
-      // Tolerate both the `{resolutions: [...]}` envelope and a bare array.
-      const body = await httpClient.get<unknown>(
-        `${API}/coord/pull-decisions${suffix}`
-      );
-      const normalized: PullDecisionsResponse = Array.isArray(body)
-        ? { resolutions: body as PullDecisionRowData[] }
-        : (body as PullDecisionsResponse);
-      setData(normalized);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [deviceId, repo]);
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
+      setLoading(true);
+      try {
+        // The client tolerates both the `{resolutions: [...]}` envelope and a
+        // bare array, and answers the envelope.
+        const body = await fetchPullDecisions(
+          { deviceId, repo },
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        setData(body);
+        setError(null);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [deviceId, repo]
+  );
 
-  useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  const { refresh } = useSingleFlightPoll(poll, POLL_INTERVAL_MS, {
+    supersedeOnChange: true,
+  });
 
   const rows = useMemo(() => data?.resolutions ?? [], [data]);
   const loaded = data !== null;
@@ -226,7 +223,7 @@ export default function CoordPullDecisionsPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="coord-pull-decisions-refresh"
           aria-label="Refresh pull decisions"
         >
@@ -242,40 +239,41 @@ export default function CoordPullDecisionsPage() {
           gone (R9) and this list region is its equivalent — the thing on the
           page that IS "the pull decisions" (D4a). */}
       <div data-testid="coord-pull-decisions">
-      <RecordList
-        items={rows}
-        itemKey={(r) => r.resolution_id}
-        loaded={!(loading && !data)}
-        skeletonRows={6}
-        renderRow={(r, ctx) => (
-          <PullDecisionRow
-            row={r}
-            expanded={ctx.expanded}
-            onToggle={ctx.onToggle}
-          />
-        )}
-        empty={
-          // Gated on `error` below: a failed fetch leaves the feed empty, and
-          // asserting "nothing recorded" about a request that never answered is
-          // the `silent-empty-is-unknown` mistake.
-          error ? null : (
-          <p
-            className="text-sm text-muted-foreground italic"
-            data-testid="coord-pull-decisions-empty"
-          >
-            No pull decisions recorded yet — a resolution row is written only
-            when a runner/agent requests the <code>repo_pull</code> verdict
-            (<code>POST /coord/trees/pull-decision</code>, the executor path,
-            off by default via <code>COORD_PULL_EXECUTOR_ENABLED</code>) or via
-            a manual <code>coord_request_policy</code> call. The pull-decision{" "}
-            <em>watcher</em> emits <code>repo_pull_hold</code> alerts (agents&apos;
-            work, counted in the Dev Ops overview&apos;s Conditions panel), not
-            resolution rows — so an empty feed with active hold alerts is
-            expected until the executor runs.
-          </p>
-          )
-        }
-      />
+        <RecordList
+          items={rows}
+          itemKey={(r) => r.resolution_id}
+          loaded={!(loading && !data)}
+          skeletonRows={6}
+          renderRow={(r, ctx) => (
+            <PullDecisionRow
+              row={r}
+              expanded={ctx.expanded}
+              onToggle={ctx.onToggle}
+            />
+          )}
+          empty={
+            // Gated on `error` below: a failed fetch leaves the feed empty, and
+            // asserting "nothing recorded" about a request that never answered is
+            // the `silent-empty-is-unknown` mistake.
+            error ? null : (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-pull-decisions-empty"
+              >
+                No pull decisions recorded yet — a resolution row is written
+                only when a runner/agent requests the <code>repo_pull</code>{" "}
+                verdict (<code>POST /coord/trees/pull-decision</code>, the
+                executor path, off by default via{" "}
+                <code>COORD_PULL_EXECUTOR_ENABLED</code>) or via a manual{" "}
+                <code>coord_request_policy</code> call. The pull-decision{" "}
+                <em>watcher</em> emits <code>repo_pull_hold</code> alerts
+                (agents&apos; work, counted in the Dev Ops overview&apos;s
+                Conditions panel), not resolution rows — so an empty feed with
+                active hold alerts is expected until the executor runs.
+              </p>
+            )
+          }
+        />
       </div>
     </div>
   );

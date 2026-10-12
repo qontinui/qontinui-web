@@ -24,8 +24,8 @@ entirely data:
    writer dated, so nulling them would destroy real dates.
 
 Plus two no-database checks: the pinned parent matches ``down_revision`` (read
-with the CI head gate's own single-line pattern, so a formatter-wrapped
-assignment the gate cannot parse fails here too), and the executed SQL is
+through the CI head gate's own parser, so this test and the gate cannot
+disagree about the parent), and the executed SQL is
 byte-identical to ``coord_wu_authored_at_01``'s — the two revisions must agree
 on which slugs carry a date and what instant it denotes, and that parity is
 what the ``_01`` test's predicate cases already pin.
@@ -33,7 +33,6 @@ what the ``_01`` test's predicate cases already pin.
 
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -46,6 +45,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     load_revision_module,
     run_alembic,
@@ -82,22 +82,14 @@ def _versions_path(filename: str) -> Path:
 def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
     """`_PARENT_REVISION_ID` is the revision's real parent — no database needed.
 
-    The pattern deliberately admits no opening parenthesis: it is the shape the
-    CI head gate (`scripts/ci/_alembic_graph.py`) can read. A wrapped
-    assignment would parse here and still count as a second head there.
+    Read through the CI head gate's own parser (`scripts/ci/_alembic_graph.py`,
+    via `declared_parent_revision_id`), so this test and the gate cannot
+    disagree about what the parent is.
     """
     source = _versions_path(_REVISION_FILENAME).read_text(encoding="utf-8")
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
-        source,
-        re.MULTILINE,
-    )
-    assert match is not None, (
-        f"no single-line down_revision found in {_REVISION_FILENAME} — the CI "
-        "head gate cannot read a wrapped assignment"
-    )
-    assert match.group("parent") == _PARENT_REVISION_ID, (
-        f"{_REVISION_FILENAME} declares down_revision={match.group('parent')!r} "
+    declared = declared_parent_revision_id(source, _REVISION_FILENAME)
+    assert declared == _PARENT_REVISION_ID, (
+        f"{_REVISION_FILENAME} declares down_revision={declared!r} "
         f"but this test pins _PARENT_REVISION_ID={_PARENT_REVISION_ID!r}."
     )
 

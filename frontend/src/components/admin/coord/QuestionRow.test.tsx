@@ -123,3 +123,87 @@ describe("QuestionRow — the two shapes withdrawal must not disturb", () => {
     expect(screen.queryByTestId("coord-question-withdrawal")).toBeNull();
   });
 });
+
+/**
+ * Decision effects — plan
+ * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+ * Phases 2–3. A mirror row wears a chip naming the decision it mirrors, and
+ * its expanded detail links the effect's own page; a row with no effect is
+ * untouched.
+ */
+describe("QuestionRow — decision effects", () => {
+  function chips(): HTMLElement[] {
+    return screen.queryAllByTestId("coord-question-effect-chip");
+  }
+
+  it("renders a gate chip with its work unit and phase, and links the gate", () => {
+    renderRow({
+      options: ["met", "not_met"],
+      effect_kind: "gate",
+      effect_ref: {
+        id: "gate-7",
+        gate_id: "gate-7",
+        work_unit_id: "wu-42",
+        phase_name: "Phase 2",
+      },
+    });
+    expect(chips()).toHaveLength(1);
+    expect(chips()[0].getAttribute("data-effect-kind")).toBe("gate");
+    expect(screen.getByTestId("coord-question-effect-detail").textContent).toBe(
+      "wu-42 · Phase 2"
+    );
+    // The chip in the collapsed row is NOT a link — the row is one button.
+    expect(chips()[0].closest("a")).toBeNull();
+    expect(
+      screen.getByTestId("coord-question-effect-link").getAttribute("href")
+    ).toBe("/admin/coord/gates?gate=gate-7");
+    expect(
+      screen.getByText(/decide it \(met \/ not_met\) on the detail page/)
+    ).toBeTruthy();
+  });
+
+  it("renders a proposal chip linking the proposal drill-down", () => {
+    renderRow({
+      effect_kind: "proposal",
+      effect_ref: { id: "p-1", proposal_id: "p-1" },
+    });
+    expect(chips()[0].getAttribute("data-effect-kind")).toBe("proposal");
+    expect(
+      screen.getByTestId("coord-question-effect-link").getAttribute("href")
+    ).toBe("/admin/coord/prompt-document-proposals?proposal=p-1");
+  });
+
+  it("renders a clause chip plainly, with no link and the ordinary hint", () => {
+    renderRow({
+      effect_kind: "clause",
+      effect_ref: { id: "c-1", kind: "policy", name: "testing", clause_id: "c-1" },
+    });
+    expect(chips()[0].getAttribute("data-effect-kind")).toBe("clause");
+    expect(screen.queryByTestId("coord-question-effect-link")).toBeNull();
+    expect(
+      screen.getByText(/the response composer lives on the detail page/)
+    ).toBeTruthy();
+  });
+
+  it("does not promise one-click decisions when the row's options disagree", () => {
+    renderRow({
+      options: ["met", "not_met", "defer"],
+      effect_kind: "gate",
+      effect_ref: { id: "gate-7" },
+    });
+    expect(chips()).toHaveLength(1);
+    expect(
+      screen.getByText(/the response composer lives on the detail page/)
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ["absent", {}],
+    ["'none'", { effect_kind: "none", effect_ref: null }],
+  ])("renders no chip and no link when effect_kind is %s", (_l, extra) => {
+    renderRow(extra);
+    expect(chips()).toHaveLength(0);
+    expect(screen.queryByTestId("coord-question-effect-link")).toBeNull();
+    expect(statusKinds()).toEqual(["pending"]);
+  });
+});

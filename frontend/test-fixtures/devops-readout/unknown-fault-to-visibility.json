@@ -1,0 +1,19 @@
+{
+  "window": "30d",
+  "computed_at": "2026-09-30T10:00:00Z",
+  "kinds": [
+    {
+      "kind": "runner_wedged",
+      "episodes_n": 9,
+      "onset_known_n": 0,
+      "p50_secs": null,
+      "p90_secs": null
+    }
+  ],
+  "totals": {
+    "episodes_n": 9,
+    "onset_known_n": 0,
+    "p50_secs": null,
+    "p90_secs": null
+  }
+}

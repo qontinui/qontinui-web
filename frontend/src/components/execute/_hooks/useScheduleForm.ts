@@ -16,6 +16,8 @@ import {
   toDateTimeLocal,
   buildSchedule,
   buildConditions,
+  buildWorkflowTask,
+  sameConditions,
 } from "../_types/schedule-editor";
 
 export function useScheduleForm(
@@ -48,8 +50,13 @@ export function useScheduleForm(
 
   const { data: workflows, isLoading: workflowsLoading } =
     useUnifiedWorkflows();
-  const { mutate: createTask, refusal: createRefusal } =
-    useCreateScheduledTask();
+  // This form only creates Workflow tasks, which drive the GUI of the machine
+  // they fire on: machine-bound, like running the Execute queue.
+  const {
+    mutate: createTask,
+    refusal: createRefusal,
+    target: createTarget,
+  } = useCreateScheduledTask({ workClass: "machine_bound" });
   // Only CREATING places new work; updating an existing task is not refused.
   const saveRefusal = isEditing ? null : (createRefusal?.message ?? null);
 
@@ -60,8 +67,8 @@ export function useScheduleForm(
       setName(editingTask.name);
       setDescription(editingTask.description || "");
       setScheduleType(getScheduleType(editingTask.schedule));
-      setAutoFixOnFailure(editingTask.auto_fix_on_failure);
-      setSkipIfCompleted(editingTask.skip_if_completed);
+      setAutoFixOnFailure(editingTask.autoFixOnFailure);
+      setSkipIfCompleted(editingTask.skipIfCompleted);
 
       if (editingTask.schedule.type === "Once") {
         setOnceDateTime(toDateTimeLocal(editingTask.schedule.value));
@@ -79,12 +86,12 @@ export function useScheduleForm(
 
       if (editingTask.conditions) {
         const hasConditions =
-          editingTask.conditions.require_idle?.enabled ||
-          (editingTask.conditions.timeout_minutes &&
-            editingTask.conditions.timeout_minutes > 0);
+          editingTask.conditions.requireIdle?.enabled ||
+          (editingTask.conditions.timeoutMinutes &&
+            editingTask.conditions.timeoutMinutes > 0);
         setShowConditions(!!hasConditions);
-        setRequireIdle(editingTask.conditions.require_idle?.enabled || false);
-        setTimeoutMinutes(editingTask.conditions.timeout_minutes || 0);
+        setRequireIdle(editingTask.conditions.requireIdle?.enabled || false);
+        setTimeoutMinutes(editingTask.conditions.timeoutMinutes || 0);
       } else {
         setShowConditions(false);
         setRequireIdle(false);
@@ -145,7 +152,8 @@ export function useScheduleForm(
       const conditions = buildConditions(
         showConditions,
         requireIdle,
-        timeoutMinutes
+        timeoutMinutes,
+        editingTask?.conditions
       );
 
       if (isEditing && editingTask) {
@@ -153,10 +161,15 @@ export function useScheduleForm(
           name: name.trim(),
           description: description.trim() || null,
           schedule,
-          task: { task_type: "Workflow", workflow_name: workflowName },
-          skip_if_completed: skipIfCompleted,
-          auto_fix_on_failure: autoFixOnFailure,
-          conditions: conditions || null,
+          task: buildWorkflowTask(workflowName, editingTask.task),
+          skipIfCompleted,
+          autoFixOnFailure,
+          // Sent only when changed: the runner resets a waiting task's
+          // condition clock on any update that carries conditions. It reads
+          // `conditions: null` as "leave unchanged", so a clear sends `{}`.
+          conditions: sameConditions(conditions, editingTask.conditions)
+            ? undefined
+            : (conditions ?? {}),
         });
         toast.success("Schedule updated");
       } else {
@@ -165,11 +178,26 @@ export function useScheduleForm(
           description: description.trim() || undefined,
           schedule,
           task: { task_type: "Workflow", workflow_name: workflowName },
-          skip_if_completed: skipIfCompleted,
-          auto_fix_on_failure: autoFixOnFailure,
+          skipIfCompleted,
+          autoFixOnFailure,
           conditions,
         });
-        toast.success("Schedule created");
+        // The list shows the read target's tasks; a create placed on another
+        // runner would otherwise vanish right after this toast.
+        const elsewhere =
+          createTarget.kind === "runner" &&
+          (target.kind !== "runner" ||
+            target.runner.id !== createTarget.runner.id);
+        toast.success(
+          "Schedule created",
+          elsewhere
+            ? {
+                description: `On runner ${
+                  createTarget.runner.name ?? createTarget.runner.id
+                }, not the one this list shows.`,
+              }
+            : undefined
+        );
       }
       onSaved();
     } catch (err) {

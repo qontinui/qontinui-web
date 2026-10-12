@@ -10,6 +10,8 @@ export interface NavItem {
   children?: NavItem[];
   badge?: "beta" | "experimental";
   adminOnly?: boolean;
+  /** Shown to a coord tenant admin (or superuser) only — see `navEntryVisibleTo`. */
+  coordAdminOnly?: boolean;
   hiddenInProd?: boolean;
   /** Product mode visibility - "ai", "visual", or "both" (default: shown in all modes) */
   productMode?: "ai" | "visual" | "both";

@@ -60,6 +60,19 @@ Invariants
    row reads ``state: "unknown"`` with a ``reading_superseded:`` detail until a
    newer report applies. Precedence: ``observation_stale`` >
    ``reading_superseded`` > ``ref_stale``.
+3d. **A refused report is recorded, not lost** (Phase 1 of
+   ``2026-09-11-scan-root-readings-hide-refused-contact-and-never-prune``).
+   The write route validates the body IN THE HANDLER, so a 422 still knows
+   which device sent it: it upserts ``agent.plan_scan_root_refusals`` in the
+   device's organization, COMMITS, and only then raises the 422 — whose body
+   is byte-identical to FastAPI's own (every ``loc`` prefixed ``body``), so the
+   runner's WARN key (``details[0].field == "body.observed_at"``) does not
+   move. A device refused within the freshness window reads ``refused:``
+   rather than silent, and outranks ``observation_stale``.
+3e. **A device silent for 30 days is retired, not deleted** (Phase 2). The
+   read leaves it out and counts it (``retired_count``);
+   ``?include_retired=true`` on ``GET /scan-roots`` serves it marked
+   ``retired: true``.
 4. **Report-only.** Nothing here gates a corpus read or a write; it is a
    diagnostic beside the corpus, not a condition on it.
 
@@ -74,10 +87,17 @@ answered 422. ``app/api/v1/api.py`` therefore includes THIS router before
 through the real ``api_router``.
 """
 
+import json
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
+from fastapi.dependencies.utils import get_body_field, get_dependant, get_flat_dependant
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -109,22 +129,86 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(route_class=StrictQueryRoute)
 
 
-@router.post(
-    "/scan-roots",
-    response_model=ScanRootReportResponse,
-    summary="A device reports its latest plan-scan-source reading (upsert)",
-    responses={
-        status.HTTP_201_CREATED: {
-            "model": ScanRootReportResponse,
-            "description": "The device's first reading for this organization.",
-        },
-        status.HTTP_403_FORBIDDEN: {
-            "description": "The caller is an operator session, not a device.",
-        },
-    },
-)
+def _documents_scan_root_report(payload: ScanRootReport = Body(...)) -> None:
+    """Signature-only: what the POST DOCUMENTS as its body. Never called."""
+
+
+class _BodyValidatedInHandlerRoute(StrictQueryRoute):
+    """The POST's route: the body is validated in the HANDLER, documented as usual.
+
+    FastAPI validates a declared body before the handler runs, so a refused
+    report never reached any code of ours and nothing could record it. The
+    handler therefore declares NO body parameter and reads the raw request
+    itself; at runtime this class is exactly :class:`StrictQueryRoute`.
+
+    What it adds is documentation only: after the route is built (and its
+    runtime handler with it), ``body_field`` is set from a signature that
+    declares ``ScanRootReport`` as the body. ``body_field`` is read by the
+    OpenAPI generator and by nothing else once the handler exists, so the
+    published schema keeps ``requestBody -> ScanRootReport`` (and the
+    components it references, and the 422 response) exactly as before, while
+    the request is not validated twice.
+    """
+
+    def __init__(self, path: str, endpoint: Callable[..., Any], **kwargs: Any) -> None:
+        super().__init__(path, endpoint, **kwargs)
+        documented = get_flat_dependant(
+            get_dependant(path=self.path_format, call=_documents_scan_root_report)
+        )
+        self.body_field = get_body_field(
+            flat_dependant=documented, name=self.unique_id, embed_body_fields=False
+        )
+
+
+def _body_errors(raw: bytes) -> tuple[ScanRootReport | None, list[dict[str, Any]]]:
+    """Parse and validate the raw body, exactly as FastAPI would have.
+
+    Returns the report, or the errors FastAPI's own body validation raises for
+    the same input: ``missing`` at ``("body",)`` for an empty body or a JSON
+    ``null`` (FastAPI treats a required body that decodes to ``None`` as
+    absent),
+    ``json_invalid`` at ``("body", <pos>)`` for a body that is not JSON, and
+    the model's errors with every ``loc`` prefixed ``"body"``. That prefix is
+    load-bearing: the web's 422 envelope spells ``details[].field`` as
+    ``".".join(loc)``, and the runner keys its WARN on
+    ``details[0].field == "body.observed_at"``.
+    """
+    missing: list[dict[str, Any]] = [
+        {
+            "type": "missing",
+            "loc": ("body",),
+            "msg": "Field required",
+            "input": None,
+        }
+    ]
+    if not raw:
+        return None, missing
+    try:
+        body = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        pos = exc.pos if isinstance(exc, json.JSONDecodeError) else exc.start
+        return None, [
+            {
+                "type": "json_invalid",
+                "loc": ("body", pos),
+                "msg": "JSON decode error",
+                "input": {},
+                "ctx": {"error": str(exc)},
+            }
+        ]
+    if body is None:
+        return None, missing
+    try:
+        return ScanRootReport.model_validate(body), []
+    except ValidationError as exc:
+        return None, [
+            {**error, "loc": ("body", *error["loc"])}
+            for error in exc.errors(include_url=False)
+        ]
+
+
 async def report_scan_root(
-    payload: ScanRootReport,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
     device: DeviceTokenContext = Depends(get_reporting_device),
@@ -142,8 +226,35 @@ async def report_scan_root(
     ``received_at``, because the device demonstrably reported, and marks the
     row ``reading_superseded`` until a newer report applies. A report whose
     ``observed_at`` is more than 300 s ahead of this server's clock is a 422.
+
+    A REFUSED report (any 422 on the body) is recorded before it is answered:
+    the device's refusal row in ``agent.plan_scan_root_refusals`` is upserted
+    and committed — its stored reading, if any, is not touched — and the 422
+    body is the same as FastAPI's own validation would produce. An operator
+    session is still a 403 first, from the dependency.
     """
     org_id = await _resolve_org_id(db, device.user)
+    payload, errors = _body_errors(await request.body())
+    if payload is None:
+        reason = crud.refusal_reason(errors)
+        try:
+            await crud.record_refusal(
+                db, org_id=org_id, device_id=device.device_id, reason=reason
+            )
+        except SQLAlchemyError:
+            # Recording is a diagnostic; the device is owed its 422 either way.
+            await db.rollback()
+            logger.warning(
+                "plan_library.scan_root_refusal_record_failed",
+                device_id=str(device.device_id),
+                exc_info=True,
+            )
+        logger.info(
+            "plan_library.scan_root_refused",
+            device_id=str(device.device_id),
+            reason=reason,
+        )
+        raise RequestValidationError(errors)
     row, created, applied = await crud.upsert_observation(
         db,
         org_id=org_id,
@@ -163,11 +274,31 @@ async def report_scan_root(
         ref_age_secs=row.ref_age_secs,
         counts_are_floors=row.counts_are_floors,
     )
+    refusal = await crud.get_refusal(db, org_id=org_id, device_id=device.device_id)
     return ScanRootReportResponse(
         created=created,
         applied=applied,
-        row=render_row(row, now=datetime.now(UTC)),
+        row=render_row(row, now=datetime.now(UTC), refusal=refusal),
     )
+
+
+router.add_api_route(
+    "/scan-roots",
+    report_scan_root,
+    methods=["POST"],
+    route_class_override=_BodyValidatedInHandlerRoute,
+    response_model=ScanRootReportResponse,
+    summary="A device reports its latest plan-scan-source reading (upsert)",
+    responses={
+        status.HTTP_201_CREATED: {
+            "model": ScanRootReportResponse,
+            "description": "The device's first reading for this organization.",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "The caller is an operator session, not a device.",
+        },
+    },
+)
 
 
 @router.get(
@@ -184,6 +315,16 @@ async def list_scan_roots(
             "needs the per-device readings and roll-up."
         ),
     ),
+    include_retired: bool = Query(
+        False,
+        description=(
+            "Also serve RETIRED devices' rows (silent — no reading and no "
+            "refused report — for more than retire_after_secs), each marked "
+            "retired: true. They still feed neither by_source_repo nor "
+            "coverage. Default false: they are left out and counted in "
+            "retired_count."
+        ),
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> ScanRootListResponse:
@@ -196,9 +337,16 @@ async def list_scan_roots(
     observed before the stored reading (``reading_superseded:``), or when its
     reading is 0 behind a stale ref (``ref_stale:``) — in that order of
     precedence: ``observation_stale`` > ``reading_superseded`` >
-    ``ref_stale``. The device's own values stay in ``reported_state`` /
-    ``reported_detail``. An organization with no rows answers
-    ``state: "unknown"``, never an empty "all current".
+    ``ref_stale``; a device whose latest contact within the window was a
+    REFUSED report reads ``refused:`` first of all. The device's own values
+    stay in ``reported_state`` / ``reported_detail``. An organization with no
+    rows answers ``state: "unknown"``, never an empty "all current".
+
+    A device silent — no reading and no refused report — for more than
+    ``retire_after_secs`` (30 days) is RETIRED: left out of ``rows``,
+    ``by_source_repo`` and ``coverage``, and counted in ``retired_count``.
+    ``include_retired=true`` serves those rows too, marked ``retired: true``.
+    Nothing is deleted; a retired device's next report brings it back.
 
     ``by_source_repo`` folds the rows per scan source over its comparison set —
     readings that are fresh, applied and carry a count, including a
@@ -246,6 +394,8 @@ async def list_scan_roots(
     without a way for either to opt out of the other's cost.
     """
     org_id = await _resolve_org_id(db, current_user)
+    now = datetime.now(UTC)
+    refusals = await crud.list_refusals(db, org_id=org_id)
     if coverage:
         # The censuses are DEFERRED on ``list_observations`` — this is the one
         # branch that needs the stems, so it takes the loading read; see D2
@@ -254,14 +404,20 @@ async def list_scan_roots(
         captured = await artifact_crud.captured_plan_corpus(
             db,
             org_id=org_id,
-            source_repos=coverage_source_repos(observations),
+            # Retired devices filtered by the renderer's own rule, so a
+            # retired device's census never decides which keys are read.
+            source_repos=coverage_source_repos(
+                observations, refusals=refusals, now=now
+            ),
         )
     else:
         observations = await crud.list_observations(db, org_id=org_id)
         captured = None
     return scan_roots_health(
         observations,
-        now=datetime.now(UTC),
+        now=now,
+        refusals=refusals,
         captured=captured,
         coverage_requested=coverage,
+        include_retired=include_retired,
     )

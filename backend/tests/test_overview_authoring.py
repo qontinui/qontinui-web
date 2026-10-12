@@ -294,10 +294,21 @@ class TestRegistry:
 
     async def test_every_routed_resource_offers_its_write_models(self) -> None:
         from app.overview.registry import REGISTRY
+        from app.overview.router import router
 
+        posts = {
+            route.path
+            for route in router.routes
+            if "POST" in getattr(route, "methods", set())
+        }
         for spec in REGISTRY.values():
             if "create" in spec.operations:
-                assert spec.create_model is not None, spec.name
+                # A create is either the generic JSON one (a create model) or
+                # a hand-written route on the same path (the multipart upload)
+                # — never an advertised verb with nothing behind it.
+                assert spec.create_model is not None or f"/{spec.path}" in posts, (
+                    spec.name
+                )
             if "update" in spec.operations:
                 assert spec.update_model is not None, spec.name
             fields = spec.read_model.model_fields
@@ -394,7 +405,7 @@ class TestNumericBounds:
             await admin.post(
                 f"{API}/estimates", json={"name": "Big", "purpose": "forecast"}
             )
-        ).json()
+        ).json()["item"]
 
         def content(days: str) -> dict[str, Any]:
             return {
@@ -416,20 +427,28 @@ class TestNumericBounds:
                 ],
             }
 
-        url = f"{API}/estimates/{estimate['id']}/content"
-        too_big = await admin.put(url, json=content("10000000000"))
+        url = f"{API}/estimates/{estimate['id']}"
+        if_match = {"If-Match": f'"{estimate["version"]}"'}
+        too_big = await admin.patch(
+            url, json={"content": content("10000000000")}, headers=if_match
+        )
         assert too_big.status_code == 422, too_big.text
         assert "planned_person_days" in too_big.text
 
         # Rounding can carry a value over the limit; that is refused too.
-        carried = await admin.put(url, json=content("99999999.995"))
+        carried = await admin.patch(
+            url, json={"content": content("99999999.995")}, headers=if_match
+        )
         assert carried.status_code == 422, carried.text
 
         # Extra places round, as NUMERIC does — an import that stored 1.33
         # yesterday still stores 1.33.
-        ok = await admin.put(url, json=content("1.335"))
+        ok = await admin.patch(
+            url, json={"content": content("1.335")}, headers=if_match
+        )
         assert ok.status_code == 200, ok.text
-        effort = ok.json()["phases"][0]["tasks"][0]["efforts"][0]
+        phases = ok.json()["item"]["content"]["phases"]
+        effort = phases[0]["tasks"][0]["efforts"][0]
         assert Decimal(effort["planned_person_days"]) == Decimal("1.34")
 
     async def test_a_positive_value_that_rounds_to_zero_is_a_422(
@@ -847,17 +866,22 @@ class TestEstimateWritesAreLogged:
             await admin.post(
                 f"{API}/estimates", json={"name": "Logged", "purpose": "budget"}
             )
-        ).json()
-        await admin.put(
-            f"{API}/estimates/{created['id']}/content",
-            json={"roles": [{"code": "BE", "name": "Backend"}]},
+        ).json()["item"]
+        saved = await admin.patch(
+            f"{API}/estimates/{created['id']}",
+            json={"content": {"roles": [{"code": "BE", "name": "Backend"}]}},
+            headers={"If-Match": f'"{created["version"]}"'},
         )
-        await admin.delete(f"{API}/estimates/{created['id']}")
+        assert saved.status_code == 200, saved.text
+        await admin.delete(
+            f"{API}/estimates/{created['id']}",
+            headers={"If-Match": f'"{saved.json()["item"]["version"]}"'},
+        )
         rows = await _log_rows(async_db_session, "estimates")
         assert [r.action for r in rows] == ["create", "update", "delete"]
-        assert rows[1].after["roles"][0]["code"] == "BE"
+        assert rows[1].after["content"]["roles"][0]["code"] == "BE"
         # A deleted estimate is still answerable: the row keeps what it said.
-        assert rows[2].before["estimate"]["name"] == "Logged"
+        assert rows[2].before["name"] == "Logged"
         assert rows[2].after is None
 
 
@@ -944,7 +968,7 @@ class TestReviewRegressions:
         a version from before the lock, and lets a stale write through."""
         from sqlalchemy import text
 
-        from app.crud import overview_estimate as crud
+        from app.crud import overview_settings as crud
         from app.models.overview import OverviewSettings
 
         common = {

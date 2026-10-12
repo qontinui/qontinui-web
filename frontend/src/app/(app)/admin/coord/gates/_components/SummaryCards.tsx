@@ -68,7 +68,7 @@ export function SummaryCards({ overview }: { overview: DevOverview }) {
       value: c.stale,
       tone: c.stale > 0 ? "attention" : "muted",
       title:
-        "Open gates coord's sweep has not re-evaluated recently. Nothing clears these but a human looking — see gateStatus.ts.",
+        "Open gates coord's sweep has not re-evaluated recently. Nothing clears these but a human looking — see gateStatus.ts. coord's count also includes muted and snoozed gates, which the sweep skips on purpose, so it can exceed the rows marked \"not re-evaluated\".",
       "data-testid": "summary-stale-value",
     },
     {

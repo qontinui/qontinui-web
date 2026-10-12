@@ -10,7 +10,7 @@
  * Design decision D6 on the route: *"There is no criticality score. A
  * hardcoded score would be a guess frozen into SQL; the read exposes the
  * evidence and the agent ranks."* So nothing here weights, sums or orders by
- * anything but the route's own declared `oldest_vetted_first`. The readiness
+ * anything but the route's own declared `oldest_captured_first`. The readiness
  * kind below is a statement about **dependencies**, which the payload
  * contains, not a priority.
  *
@@ -55,6 +55,17 @@ import {
 } from "@/components/console";
 import type { CaptureHealthResponse } from "@/components/admin/coord/captureHealthStatus";
 import type { DisclosureLine } from "@/components/admin/coord/disclosureLines";
+import { resolveStatusCurrency } from "../plan-library/statusCurrency";
+import {
+  STATUS_CURRENCY_LABELS,
+  STATUS_CURRENCY_STATES,
+  type StatusCurrency,
+  type StatusCurrencyState,
+} from "../plan-library/types";
+import {
+  describeBoundedWindow,
+  type BoundedReadMeta,
+} from "@/components/admin/coord/cursorPager";
 
 // ---------------------------------------------------------------------------
 // The wire shape. Mirrors `backend/app/schemas/plan_library.py`
@@ -64,7 +75,7 @@ import type { DisclosureLine } from "@/components/admin/coord/disclosureLines";
 export type DocumentState = "present" | "unsynced" | "absent";
 export type CoordLinkState = "linked" | "dangling" | "unavailable" | "unlinked";
 export type CoordPrState = "available" | "unavailable" | "unlinked";
-export type WorkUnitPopulationState = "included" | "unavailable";
+export type WorkUnitPopulationState = "included" | "truncated" | "unavailable";
 
 export interface CandidateLinkedPr {
   repo?: string | null;
@@ -121,6 +132,17 @@ export interface PlanCandidate {
   coord?: CandidateCoordLink;
   document_state?: DocumentState;
   difficulty?: string | null;
+  /**
+   * `sha256(body)`; `null` on a work-unit-only row. Optional here only by this
+   * mirror's tolerant-read convention — the backend always sends the key.
+   */
+  content_sha256?: string | null;
+  /**
+   * How far `status` can be trusted now — the SAME type the plan-library
+   * console renders (imported, not redefined, so the two cannot drift).
+   * `null` on a work-unit-only row; `document_state` says why.
+   */
+  status_currency?: StatusCurrency | null;
 }
 
 export interface OpenFollowup {
@@ -152,12 +174,17 @@ export interface CorpusHealth {
   scan_roots?: ScanRootSummary;
 }
 
-export interface PlanCandidateResponse {
+/**
+ * A keyset walk: the shared bounded-read keys (`BoundedReadMeta`) describe
+ * `items`. `total` counts from THIS page's start — the page adds the rows
+ * already walked (`start`) to state the population — and `next_cursor` is
+ * passed back as `cursor`. There is no `offset`.
+ */
+export interface PlanCandidateResponse extends Partial<
+  Omit<BoundedReadMeta, "total">
+> {
   items?: PlanCandidate[];
-  count?: number;
-  total?: number;
-  offset?: number;
-  limit?: number;
+  total?: number | null;
   ordering?: string;
   coord_available?: boolean;
   work_unit_population_state?: WorkUnitPopulationState;
@@ -555,6 +582,20 @@ export function describePopulation(res: PlanCandidateResponse): DisclosureLine {
         "corpus layers and the total below counts it.",
     };
   }
+  if (state === "truncated") {
+    return {
+      key: "population",
+      level: "caveat",
+      text:
+        "coord's work-unit arm ran, but coord's list did not end within the " +
+        "page cap, so the work-unit half is a LOWER BOUND. The route states " +
+        "no exact total on such a read (its bound is at_least / unknown), " +
+        "and an absent row is not evidence that the plan does not exist.",
+      items: res.work_unit_population_reason
+        ? [res.work_unit_population_reason]
+        : undefined,
+    };
+  }
   return {
     key: "population",
     level: "critical",
@@ -575,6 +616,93 @@ export function describePopulation(res: PlanCandidateResponse): DisclosureLine {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Status currency — whether a row's `status` can vouch for itself
+// ---------------------------------------------------------------------------
+
+/** What a null `status_currency` beside `doc: present` resolves to. */
+const NULL_ON_PRESENT_ROW: StatusCurrency = {
+  state: "unknown",
+  as_of: null,
+  ref_sha: null,
+  ref_age_secs: null,
+  detail:
+    "status_currency is null on a row with document_state 'present' — the backend broke its own contract",
+};
+
+/**
+ * The currency a candidate row renders, or `null` for a row that owes none.
+ *
+ * `null` is served on a work-unit-only row — there is no stored body to be
+ * stale, and `document_state` says why — so that row owes no currency. An
+ * ABSENT key (a backend predating the field) resolves to `undefined`, which
+ * {@link resolveStatusCurrency} reads as UNKNOWN; a null beside
+ * `doc: present`, which the contract rules out, resolves to UNKNOWN naming
+ * the broken contract. Neither renders as nothing.
+ */
+export function candidateCurrency(
+  candidate: PlanCandidate
+): StatusCurrency | undefined | null {
+  if (candidate.status_currency !== null) return candidate.status_currency;
+  return candidate.document_state === "present" ? NULL_ON_PRESENT_ROW : null;
+}
+
+/**
+ * The page's currency tally — how many rows on THIS page can vouch for their
+ * own `status`.
+ *
+ * This is a selection surface, and a row's `status` is what selects it; a
+ * badge per row answers "this one?", this line answers "how much of what I am
+ * looking at?". Page-local by construction (the route serves no corpus-wide
+ * tally), and it says so. Signals, never a verdict: nothing here hides or
+ * reorders a row — the route's D5 keeps the refusal in the selecting skills.
+ * `null` when no row on the page owes a currency.
+ */
+export function describeStatusCurrency(
+  res: PlanCandidateResponse
+): DisclosureLine | null {
+  const counts = Object.fromEntries(
+    STATUS_CURRENCY_STATES.map((s) => [s, 0])
+  ) as Record<StatusCurrencyState, number>;
+  let owed = 0;
+  for (const c of res.items ?? []) {
+    const currency = candidateCurrency(c);
+    if (currency === null) continue;
+    owed += 1;
+    counts[resolveStatusCurrency(currency).state] += 1;
+  }
+  if (owed === 0) return null;
+  const inStep = counts.fed_in_step;
+  // "Owe a currency", not "carry a stored body": on a backend that serves
+  // neither the key nor `document_state`, which layer a row came from is
+  // itself unstated, and such a row is counted here as UNKNOWN.
+  const rows = (n: number) =>
+    n === 1
+      ? "row on this page that owes a status currency"
+      : "rows on this page that owe a status currency";
+  if (inStep === owed) {
+    return {
+      key: "status-currency",
+      level: "note",
+      text:
+        (owed === 1 ? `The ${rows(1)} was` : `All ${owed} ${rows(owed)} were`) +
+        " read by a feeder in step with its ref, so their status is as " +
+        "current as the last scan.",
+    };
+  }
+  return {
+    key: "status-currency",
+    level: "caveat",
+    text:
+      `${owed - inStep} of the ${owed} ${rows(owed)} cannot vouch for their status ` +
+      "(breakdown below). Confirm such a row's body against origin/main " +
+      "before dispatching on its status. Counts cover this page only.",
+    items: STATUS_CURRENCY_STATES.filter(
+      (s) => s !== "fed_in_step" && counts[s] > 0
+    ).map((s) => `${STATUS_CURRENCY_LABELS[s]}: ${counts[s]}`),
+  };
+}
+
 export function deriveCandidateDisclosure(
   res: PlanCandidateResponse
 ): DisclosureLine[] {
@@ -589,6 +717,8 @@ export function deriveCandidateDisclosure(
     });
   }
   lines.push(describeCorpusHealth(res));
+  const currency = describeStatusCurrency(res);
+  if (currency !== null) lines.push(currency);
   return lines;
 }
 
@@ -597,33 +727,37 @@ export function deriveCandidateDisclosure(
 // ---------------------------------------------------------------------------
 
 export interface CandidateWindow {
+  /** The population: rows already walked plus the route's `total` from this
+   *  page's start. `null` when the route stated no exact count. */
   total: number | null;
-  offset: number;
+  /** Rows served before this page (from the cursor walk, not an `offset`). */
+  start: number;
   limit: number | null;
   shown: number;
   ordering: string | null;
+  /** `truncated: true` beside a cursor — never inferred from a full page. */
   hasMore: boolean;
-  /** `total` is a corpus figure only when the population arm ran. */
+  nextCursor: string | null;
+  /** `total` is a corpus figure only when the population arm ran in full. */
   totalAdmissible: boolean;
 }
 
 export function describeCandidateWindow(
-  res: PlanCandidateResponse
+  res: PlanCandidateResponse,
+  start = 0
 ): CandidateWindow {
-  const items = res.items ?? [];
-  const total = typeof res.total === "number" ? res.total : null;
-  const offset = typeof res.offset === "number" ? res.offset : 0;
-  const limit = typeof res.limit === "number" ? res.limit : null;
+  const window = describeBoundedWindow(
+    { ...res, total: typeof res.total === "number" ? res.total : null },
+    start
+  );
   return {
-    total,
-    offset,
-    limit,
-    shown: items.length,
+    total: window.populationTotal,
+    start,
+    limit: typeof res.limit === "number" ? res.limit : null,
+    shown: window.shown,
     ordering: typeof res.ordering === "string" ? res.ordering : null,
-    hasMore:
-      total !== null
-        ? offset + items.length < total
-        : limit !== null && items.length >= limit,
+    hasMore: window.hasMore,
+    nextCursor: window.nextCursor,
     totalAdmissible: res.work_unit_population_state === "included",
   };
 }
@@ -651,7 +785,8 @@ const DASH = "–";
 export function deriveCandidateHealth(
   res: PlanCandidateResponse | null,
   loaded: boolean,
-  readFailed: boolean
+  readFailed: boolean,
+  start = 0
 ): CandidateHealth {
   const dashes = [
     { key: "candidates", label: `candidates ${DASH}`, tone: "muted" as const },
@@ -670,7 +805,9 @@ export function deriveCandidateHealth(
     };
   }
   const admissible = res.work_unit_population_state === "included";
-  const total = res.total;
+  // The route's `total` counts from this page's start; the population is the
+  // rows already walked plus it.
+  const total = typeof res.total === "number" ? start + res.total : null;
   const followups = res.open_followup_total;
   return {
     // `readFailed` is in the level, not only in the detail. A green strip
@@ -684,7 +821,9 @@ export function deriveCandidateHealth(
           ? "Nothing unshipped in either corpus layer"
           : `${total} unshipped plans, ranked by nothing — the inputs are yours`
         : "Candidates read; the route served no total"
-      : "coord's work-unit arm did not run — this is the document layer alone",
+      : res.work_unit_population_state === "truncated"
+        ? "coord's work-unit list was cut at its page cap — the population is a lower bound"
+        : "coord's work-unit arm did not run — this is the document layer alone",
     detail: admissible
       ? readFailed
         ? "Last refresh failed — these counts are stale."

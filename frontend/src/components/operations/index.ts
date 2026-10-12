@@ -120,15 +120,8 @@ export {
   DeviceCrossLinks,
   deviceStateBadgeVariant,
 } from "./FleetHealthSummary";
-export { FLEET_HEALTH_API, useFleetHealth } from "./useFleetHealth";
-export type {
-  FleetConditionsDomain,
-  FleetHealthConditions,
-  FleetHealthDevice,
-  FleetHealthPayload,
-  FleetHealthSettingInEffect,
-  UseFleetHealthResult,
-} from "./useFleetHealth";
+export { useFleetHealth } from "./useFleetHealth";
+export type { UseFleetHealthResult } from "./useFleetHealth";
 export { summarizeFleetLiveness } from "./fleetLiveness";
 export type { FleetLivenessLevel, FleetLivenessSummary } from "./fleetLiveness";
 export { summarizeFleetConditions } from "./fleetConditions";
@@ -144,6 +137,7 @@ export {
   buildWorktreeSlotRows,
   FleetWorktreeSlotsSection,
 } from "./FleetWorktreeSlotsSection";
+export { FleetRolesSection } from "./FleetRolesSection";
 export {
   FLEET_WORKTREE_SLOTS_API,
   useFleetWorktreeSlots,

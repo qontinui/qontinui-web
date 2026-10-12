@@ -3,8 +3,8 @@
  *
  * `lib/api/agent-text-units.ts` declares `AgentTextUnitDefault` by hand because
  * this app cannot resolve the generated binding (the published
- * `@qontinui/shared-types` predates the type; see the interface's own doc
- * comment). A hand copy is precisely the "third hand-written copy" plan
+ * `@qontinui/shared-types` does not export the type; see the interface's own
+ * doc comment). A hand copy is precisely the "third hand-written copy" plan
  * `2026-08-31-runner-publishes-embedded-command-defaults` Design decision 8
  * warns about, so it does not get to be prose-only: this test reads the
  * generated `.d.ts` from the sibling `qontinui-schemas` checkout and asserts

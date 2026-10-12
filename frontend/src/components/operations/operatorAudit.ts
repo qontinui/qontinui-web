@@ -92,6 +92,9 @@ export interface AuditFilter {
  */
 export const ESCALATE_OVERRIDE_ACTION = "pr_merge.escalate_override";
 
+/** Every `PUT /coord/fleet-policy` write, for any domain. */
+export const FLEET_POLICY_UPSERT_ACTION = "fleet_policy.upsert";
+
 export const AUDIT_FILTERS: readonly AuditFilter[] = [
   {
     id: "fleet",
@@ -118,6 +121,12 @@ export const AUDIT_FILTERS: readonly AuditFilter[] = [
     action: ESCALATE_OVERRIDE_ACTION,
     via: "agent_evidence",
     hint: "Escalate-path blocks an agent cleared on evidence (via: agent_evidence) — the feed the notify-not-ask rule depends on. Nothing here waited for approval.",
+  },
+  {
+    id: "policy",
+    label: "Policy changes",
+    action: "fleet_policy.*",
+    hint: "Fleet-policy writes — GitHub-hosted CI, plan capture and every other dial — with the domain, scope and level each one set.",
   },
   {
     id: "all",
@@ -177,6 +186,12 @@ const BLAST_RADIUS_KEYS: readonly {
   key: string;
   label: string;
   format: (v: unknown) => string | null;
+  /**
+   * Promote only on these actions. For generic key names (`domain`,
+   * `level`) that other writers may stamp with an unrelated meaning — there
+   * the value stays in the raw metadata rather than gaining a wrong label.
+   */
+  onlyFor?: string;
 }[] = [
   {
     key: "affected_tenant_ids",
@@ -221,6 +236,29 @@ const BLAST_RADIUS_KEYS: readonly {
     label: "Cleared via",
     format: (v) => (v === "agent_evidence" || v === "service" ? v : null),
   },
+  // A `fleet_policy.upsert` row (plan
+  // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` D6) carries
+  // `{domain, scope_band, scope_key, level, master_enabled, version}`. The
+  // setting, the repo it was scoped to (absent for a tenant-band write) and
+  // the level are what an operator scans for.
+  {
+    key: "domain",
+    label: "Policy",
+    format: (v) => String(v),
+    onlyFor: FLEET_POLICY_UPSERT_ACTION,
+  },
+  {
+    key: "scope_key",
+    label: "Applies to",
+    format: (v) => String(v),
+    onlyFor: FLEET_POLICY_UPSERT_ACTION,
+  },
+  {
+    key: "level",
+    label: "Level",
+    format: (v) => String(v),
+    onlyFor: FLEET_POLICY_UPSERT_ACTION,
+  },
   { key: "version", label: "Policy version", format: (v) => String(v) },
 ];
 
@@ -236,6 +274,7 @@ export function blastRadiusOf(row: AuditRow): BlastRadius {
   if (!meta) return { items: [], unstated: true };
   const items: BlastRadiusItem[] = [];
   for (const spec of BLAST_RADIUS_KEYS) {
+    if (spec.onlyFor !== undefined && row.action !== spec.onlyFor) continue;
     if (!(spec.key in meta)) continue;
     const value = meta[spec.key];
     if (value === null || value === undefined) continue;
@@ -343,6 +382,10 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   "pr_merge.escalate_override": "Cleared an escalate-path block",
   "operator.disable": "Disabled an operator",
   "operator.enable": "Re-enabled an operator",
+  // Every `PUT /coord/fleet-policy`, for any domain (plan
+  // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` D6).
+  // `metadata.domain` / `scope_key` / `level` say which setting and how.
+  "fleet_policy.upsert": "Changed a fleet policy",
 };
 
 export function describeAuditAction(action: string): AuditActionLabel {

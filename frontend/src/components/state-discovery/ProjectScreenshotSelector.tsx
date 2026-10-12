@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { ApiConfig } from "@/services/api-config";
 import {
   Dialog,
   DialogContent,
@@ -72,7 +73,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
 
       // Call actual API
       const response = await fetch(
-        `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`
+        `${ApiConfig.API_BASE_URL}/api/state-discovery/project/${projectId}/screenshots`
       );
 
       if (!response.ok) {
@@ -225,7 +226,7 @@ const ProjectScreenshotSelector: React.FC<ProjectScreenshotSelectorProps> = ({
                             {screenshot.thumbnailUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
-                                src={`http://localhost:8000${screenshot.thumbnailUrl}`}
+                                src={`${ApiConfig.API_BASE_URL}${screenshot.thumbnailUrl}`}
                                 alt={screenshot.name}
                                 className="w-full h-full object-cover rounded"
                               />

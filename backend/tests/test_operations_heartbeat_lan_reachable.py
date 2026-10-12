@@ -24,12 +24,14 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from tests._ops_patch import patch_ops
 
 API_PREFIX = "/api/v1/operations"
 
@@ -180,8 +182,8 @@ def _patch_owned_spaceship():
     """Caller owns a device on the ``spaceship`` host (different port), so the
     ``spaceship:9876`` beacon passes the cross-tenant scoping guard and is
     surfaced in ``GET /fleet``."""
-    return patch(
-        "app.api.v1.endpoints.operations.runner_crud.list_runners",
+    return patch_ops(
+        "runner_crud.list_runners",
         new=AsyncMock(return_value=[_owned_device(hostname="spaceship", port=1)]),
     )
 

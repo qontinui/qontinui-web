@@ -21,6 +21,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { ENDPOINT_UNRESOLVED_CODE } from "@/lib/errors/endpoint-unresolved";
 
 import {
   __resetAuthCache,
@@ -30,6 +31,7 @@ import {
   originForbiddenResponse,
   unauthenticatedResponse,
   upstreamErrorResponse,
+  misconfiguredResponse,
 } from "./_auth";
 
 function makeRequest(init?: {
@@ -641,5 +643,38 @@ describe("upstreamErrorResponse", () => {
     expect(upstreamErrorResponse({ status: 700, retryAfter: null }).status).toBe(
       502,
     );
+  });
+});
+
+describe("no backend base configured", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves to `misconfigured` without fetching, and answers a 503 naming the variable", async () => {
+    __resetAuthCache();
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("BACKEND_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await authenticateBridgeRequest(
+      makeRequest({ headers: { authorization: "Bearer some-token" } }),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (result.ok || result.reason !== "misconfigured") {
+      throw new Error(`expected misconfigured, got ${JSON.stringify(result)}`);
+    }
+    const res = misconfiguredResponse(result.error);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe(ENDPOINT_UNRESOLVED_CODE);
+    expect(body.endpoint).toBe("backend");
+    expect(body.env_var).toBe("BACKEND_URL");
+    expect(body.message).toBe(body.error);
+    expect(body.next_action).toContain("Set BACKEND_URL");
   });
 });

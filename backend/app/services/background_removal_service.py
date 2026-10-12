@@ -33,10 +33,8 @@ from qontinui_schemas.commands.discovery import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
+    dispatch_or_http_error,
+    resolve_runner_for_request,
 )
 
 logger = structlog.get_logger(__name__)
@@ -81,13 +79,13 @@ class BackgroundRemovalService:
 
         Args:
             user_id: Owning user UUID (passed to
-                :func:`pick_active_runner_for_user` for runner selection
-                when ``runner_id`` is not provided).
+                :func:`resolve_runner_for_request` for runner selection and
+                the ownership check on an explicit ``runner_id``).
             db: Async DB session — used to fetch the user's runners.
             manager: Runner WebSocket manager instance (provides
                 ``.registry`` + ``.relay``).
-            runner_id: Optional explicit runner UUID. When supplied, the
-                caller is responsible for verifying ownership.
+            runner_id: Optional explicit runner UUID. When supplied it must
+                be owned by ``user_id`` (else 404) and registered (else 503).
         """
         self._user_id = user_id
         self._db = db
@@ -147,9 +145,13 @@ class BackgroundRemovalService:
                 },
             )
 
-        runner = await self._resolve_runner()
-        if runner is None:
-            raise runner_bridge_503_no_runner(_BACKGROUND_REMOVAL_ENDPOINT)
+        runner = await resolve_runner_for_request(
+            self._runner_id,
+            self._user_id,
+            self._db,
+            self._manager,
+            _BACKGROUND_REMOVAL_ENDPOINT,
+        )
 
         request_id = uuid4()
         cmd = BackgroundRemovalRequest(
@@ -168,35 +170,17 @@ class BackgroundRemovalService:
             debug=debug,
         )
 
-        try:
-            raw_response = await self._manager.relay.dispatch_and_wait(
-                str(runner.id),
-                cmd,
-                request_id=str(request_id),
-                timeout_s=_BACKGROUND_REMOVAL_TIMEOUT_S,
-            )
-        except RunnerNotConnectedError:
-            logger.warning(
-                "background_removal_runner_disconnected_mid_dispatch",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise runner_bridge_503_no_runner(_BACKGROUND_REMOVAL_ENDPOINT)
-        except RunnerCommandTimeoutError:
-            logger.error(
-                "background_removal_timeout",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-                timeout_s=_BACKGROUND_REMOVAL_TIMEOUT_S,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail={
-                    "error": "runner_timeout",
-                    "endpoint": _BACKGROUND_REMOVAL_ENDPOINT,
-                    "request_id": str(request_id),
-                },
-            )
+        raw_response = await dispatch_or_http_error(
+            self._manager,
+            runner,
+            cmd,
+            request_id,
+            _BACKGROUND_REMOVAL_ENDPOINT,
+            _BACKGROUND_REMOVAL_TIMEOUT_S,
+            "background_removal",
+            log=logger,
+            timeout_log_fields={"timeout_s": _BACKGROUND_REMOVAL_TIMEOUT_S},
+        )
 
         if raw_response.get("error"):
             logger.error(
@@ -218,34 +202,6 @@ class BackgroundRemovalService:
 
         response = BackgroundRemovalResponse.model_validate(raw_response)
         return list(response.masked_screenshots_b64), dict(response.statistics)
-
-    async def _resolve_runner(self) -> Any:
-        """Resolve the runner to dispatch this request to.
-
-        Honours ``self._runner_id`` if provided; otherwise picks the
-        user's most-recently-heartbeat-active connected runner.
-        """
-        if self._runner_id is not None:
-            from app.crud import runner_crud
-
-            owned_runner = await runner_crud.get_runner(
-                self._db, runner_id=self._runner_id
-            )
-            if owned_runner is None or owned_runner.user_id != self._user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail={
-                        "error": "runner_not_found",
-                        "runner_id": str(self._runner_id),
-                    },
-                )
-            if not self._manager.registry.is_runner_connected(str(owned_runner.id)):
-                return None
-            return owned_runner
-
-        return await pick_active_runner_for_user(
-            self._user_id, self._db, self._manager.registry
-        )
 
 
 __all__ = ["BackgroundRemovalService"]

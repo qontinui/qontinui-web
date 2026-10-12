@@ -65,8 +65,11 @@ describe("/admin/coord/spawn excludes shepherd rows", () => {
     render(<CoordSpawnPage />);
 
     await waitFor(() => expect(get).toHaveBeenCalled());
+    // The second argument is the dashboard poll's no-retry option
+    // (`COORD_DASHBOARD_POLL_OPTIONS`), which this page now passes.
     expect(get).toHaveBeenCalledWith(
-      expect.stringContaining("exclude_slug_prefix=shepherd-")
+      expect.stringContaining("exclude_slug_prefix=shepherd-"),
+      expect.objectContaining({ maxRetries: 0 })
     );
   });
 });

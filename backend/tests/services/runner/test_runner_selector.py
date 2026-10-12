@@ -1,4 +1,4 @@
-"""Unit tests for ``pick_active_runner_for_user`` and the 503 envelope helper.
+"""Unit tests for ``pick_active_device_for_user`` and the 503 envelope helper.
 
 The selector function fans out into a SQL query + an in-memory registry
 check. To stay deterministic + dependency-free, these tests mock the
@@ -16,8 +16,8 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.services.runner.device_selector import (
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
+    device_bridge_503_no_device,
+    pick_active_device_for_user,
 )
 
 
@@ -72,7 +72,7 @@ async def test_pick_active_runner_no_runners() -> None:
     db = _make_db_with_runners([])
     registry = _make_registry(set())
 
-    picked = await pick_active_runner_for_user(user_id, db, registry)
+    picked = await pick_active_device_for_user(user_id, db, registry)
 
     assert picked is None
     # Verify the SQL was actually run (selector didn't short-circuit).
@@ -88,7 +88,7 @@ async def test_pick_active_runner_single_connected() -> None:
     db = _make_db_with_runners([runner])
     registry = _make_registry({str(rid)})
 
-    picked = await pick_active_runner_for_user(user_id, db, registry)
+    picked = await pick_active_device_for_user(user_id, db, registry)
 
     assert picked is runner
 
@@ -102,7 +102,7 @@ async def test_pick_active_runner_single_disconnected() -> None:
     # Registry sees nothing connected.
     registry = _make_registry(set())
 
-    picked = await pick_active_runner_for_user(user_id, db, registry)
+    picked = await pick_active_device_for_user(user_id, db, registry)
 
     assert picked is None
 
@@ -123,7 +123,7 @@ async def test_pick_active_runner_prefers_connected_over_freshest_offline() -> N
     db = _make_db_with_runners([fresher_offline, older_connected])
     registry = _make_registry({str(older_connected.id)})
 
-    picked = await pick_active_runner_for_user(user_id, db, registry)
+    picked = await pick_active_device_for_user(user_id, db, registry)
 
     assert picked is older_connected
 
@@ -145,7 +145,7 @@ async def test_pick_active_runner_walks_past_a_stale_registration() -> None:
     # The premise: the stale one still LOOKS connected to the registration check.
     assert registry.is_runner_connected(str(fresher_stale.id)) is True
 
-    picked = await pick_active_runner_for_user(user_id, db, registry)
+    picked = await pick_active_device_for_user(user_id, db, registry)
 
     assert picked is older_live
 
@@ -160,7 +160,7 @@ async def test_pick_active_runner_picks_first_connected_when_multiple() -> None:
     db = _make_db_with_runners([fresh, stale])
     registry = _make_registry({str(fresh.id), str(stale.id)})
 
-    picked = await pick_active_runner_for_user(user_id, db, registry)
+    picked = await pick_active_device_for_user(user_id, db, registry)
 
     assert picked is fresh
 
@@ -178,7 +178,7 @@ async def test_pick_active_runner_query_filters_by_user() -> None:
     db = _make_db_with_runners([])
     registry = _make_registry(set())
 
-    await pick_active_runner_for_user(user_id, db, registry)
+    await pick_active_device_for_user(user_id, db, registry)
 
     db.execute.assert_awaited_once()
     stmt = db.execute.await_args.args[0]
@@ -187,9 +187,9 @@ async def test_pick_active_runner_query_filters_by_user() -> None:
     assert user_id in compiled.params.values()
 
 
-def test_runner_bridge_503_no_runner_envelope_shape() -> None:
+def test_device_bridge_503_no_device_envelope_shape() -> None:
     """The 503 envelope contains the documented fields."""
-    exc = runner_bridge_503_no_runner(
+    exc = device_bridge_503_no_device(
         "/api/v1/state-discovery/ui-bridge/discover-states"
     )
 

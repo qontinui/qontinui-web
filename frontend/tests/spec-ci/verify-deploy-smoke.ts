@@ -1,20 +1,20 @@
 /**
  * Post-deploy public-route behavioral smoke for the production frontend.
  *
- * Invoked by `.github/workflows/verify-frontend-deploy.yml` after a successful
+ * Invoked by `.github/workflows/verify-frontend-run.yml` after a successful
  * Vercel Production deploy. It REUSES the Spec CI gate contract — the same
  * console classifier (`classifyConsole`) and same-origin 5xx scope
  * (`isSameOriginServerError`) — over the app's PUBLIC routes on the public
  * production surface (`SMOKE_BASE_URL`, e.g. https://qontinui.io). Lives in
  * tests/spec-ci/ so the relative imports resolve identically to run-spec-ci.ts.
  *
- * NB: the smoke targets the PUBLIC PRODUCTION DOMAIN, not the raw
- * deployment_status `environment_url` (a `*.vercel.app` deployment URL). Those
- * deployment URLs sit behind Vercel Deployment Protection (HTTP 401 + a FedCM
- * "Vercel authentication" wall), so crawling them yields the protection page's
- * console noise — never the real app — failing every deploy. By the time the
- * production deployment_status fires, Vercel has already re-pointed the prod
- * alias to the new deployment, so the public domain serves the new code.
+ * NB: the smoke targets the PUBLIC PRODUCTION DOMAIN, not the resolved
+ * deployment's own `*.vercel.app` URL. Those deployment URLs sit behind Vercel
+ * Deployment Protection (HTTP 401 + a FedCM "Vercel authentication" wall), so
+ * crawling them yields the protection page's console noise — never the real
+ * app — failing every deploy. The workflow's `validate` job waits until the
+ * deployment is READY and PROMOTED (resolve-prod-deployment.ts), i.e. Vercel
+ * has re-pointed the prod alias to it, so the public domain serves the new code.
  *
  * Why public-routes only (not run-spec-ci.ts --base-url against prod): the
  * structural spec lane needs the build-time `window.__qontinuiSpecCi__` surface

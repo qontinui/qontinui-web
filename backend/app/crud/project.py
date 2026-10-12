@@ -16,6 +16,19 @@ async def get_project(db: AsyncSession, project_id: UUID) -> Project | None:
     return result.scalar_one_or_none()
 
 
+async def get_owned_project(
+    db: AsyncSession, project_id: UUID, owner_id: UUID
+) -> Project | None:
+    """Get a project by ID only if ``owner_id`` owns it."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == owner_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_projects_by_owner(
     db: AsyncSession, owner_id: UUID, skip: int = 0, limit: int = 100
 ) -> list[Project]:

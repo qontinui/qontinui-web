@@ -76,7 +76,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         csp_report_uri = f"{settings.BACKEND_URL}/api/v1/security/csp-report"
         csp_directives.append(f"report-uri {csp_report_uri}")
 
-        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+        # A route that sets its own, stricter policy keeps it: the overview file
+        # download serves uploaded bytes under a sandboxing `default-src 'none'`
+        # that this app-wide policy would otherwise replace.
+        if "Content-Security-Policy" not in response.headers:
+            response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
 
         # Referrer Policy
         # Controls how much referrer information is sent

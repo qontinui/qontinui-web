@@ -6,12 +6,17 @@ Post-Phase-7 of the migration consolidation the ``public`` schema holds only
 ``alembic_version`` — alembic's own bookkeeping, filtered out of the match
 lines rather than by pathspec because it can legitimately appear anywhere —
 while every domain table lives in project / coord / agent / auth / cloud /
-strategy / web. TWO lanes invoke it, one fewer than its three siblings:
+strategy / web. THREE lanes invoke it, one fewer than most of its siblings:
 
 * ``.github/workflows/forbid-public-schema.yml``, step "Scan for forbidden
   public.* references" — the PR gate, and a required merge gate, which is why
   it also runs on the ``merge-candidate/**`` refs coord's merge scheduler
   pushes.
+* ``.github/workflows/web-guards.yml``, step "forbid-public-schema: Scan for forbidden public.* references" — the
+  consolidated one-job guard lane (plan
+  ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``),
+  running the same command beside the per-guard workflow until a later
+  phase of that plan deletes the per-guard file.
 * ``.qontinui/ci.toml``, step ``forbid-public-schema`` — the runner-as-CI-node
   lane. It is argv-only and deliberately shell-free, which is *why* Phase 5 of
   plan ``2026-08-08-ci-tool-registry-and-canonical-configuration-parity``
@@ -26,8 +31,8 @@ lane silently dropping out would leave the tree unscanned while looking green.
 
 Why this is asserted at all: ``a208240e2`` added a fourth invocation of the
 sibling ruff gate while three separate places in the tree went on saying there
-were three, and nothing failed for 90 commits. A two-lane roster is the case
-where a third lane appearing is easiest to add without telling anyone.
+were three, and nothing failed for 90 commits. A roster with no pre-commit
+lane is the case where one appearing is easiest to add without telling anyone.
 
 Position, not comment-ness
 --------------------------
@@ -62,6 +67,7 @@ _SCRIPT_REF = "scripts/ci/check_forbidden_public_schema.py"
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/forbid-public-schema.yml",
+        ".github/workflows/web-guards.yml",
         ".qontinui/ci.toml",
     }
 )
@@ -89,8 +95,8 @@ def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
 def test_the_scripts_docstring_names_every_lane() -> None:
     """The roster in prose must be the roster in the tree.
 
-    The gate opens by naming its two lanes, and the workflow header repeats
-    them. That prose is what a reader trusts instead of grepping, so a third
+    The gate opens by naming its three lanes, and the workflow header repeats
+    them. That prose is what a reader trusts instead of grepping, so a fourth
     lane added without touching it leaves the script — and the workflow —
     describing a shape the repo no longer has.
     """

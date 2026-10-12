@@ -11,7 +11,7 @@ import { CanvasPropertiesPanel } from "./CanvasPropertiesPanel";
 import { MultiSelectProperties } from "./MultiSelectProperties";
 import { WorkflowProperties } from "./WorkflowProperties";
 import { ConnectionProperties } from "./ConnectionProperties";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
@@ -19,7 +19,7 @@ import type { Workflow } from "@/lib/action-schema/action-types";
 // (useCanvasStore(state => state.selectedNodes)) throughout the codebase,
 // so the mock must apply the selector to a backing state object — otherwise
 // the component receives the whole mock return value in place of each field.
-vi.mock("@/stores/canvas-store");
+vi.mock("@/stores/canvas");
 vi.mock("@/stores/properties-panel-store");
 
 // DestructiveButton blocks synthetic clicks (event.isTrusted=false) by

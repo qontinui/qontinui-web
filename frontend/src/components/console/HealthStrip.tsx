@@ -50,13 +50,16 @@ const BORDER_CLASS: Record<HealthStripLevel, string> = {
  * Badge tone. Note this is NOT the R3 attention palette: a count badge is a
  * measurement of the whole surface, not a row whose owner we are naming.
  * `attention` is the one tone that borrows red, and only for the count of rows
- * that genuinely need a human.
+ * that genuinely need a human. `waiting` borrows amber for a count that is a
+ * signal but not content red — e.g. an infrastructure refusal the strip must
+ * name without implying a code failure.
  */
-export type HealthBadgeTone = "default" | "muted" | "attention";
+export type HealthBadgeTone = "default" | "muted" | "waiting" | "attention";
 
 const BADGE_TONE_CLASS: Record<HealthBadgeTone, string> = {
   default: "",
   muted: "text-muted-foreground",
+  waiting: "text-amber-200 border-amber-500/35",
   attention: "text-red-200 border-red-500/35",
 };
 

@@ -255,6 +255,50 @@ describe("describeAuditAction — R8", () => {
     expect(describeAuditAction("fleet.drain.clear").mapped).toBe(true);
   });
 
+  it("labels a fleet-policy write, and offers a filter that reaches it", () => {
+    // `fleet_policy.upsert` is NOT under `fleet.*` (the prefix is
+    // `fleet_policy.`), so without its own filter the default feed would
+    // never show who turned a policy off.
+    expect(describeAuditAction("fleet_policy.upsert")).toEqual({
+      label: "Changed a fleet policy",
+      mapped: true,
+    });
+    expect(AUDIT_FILTERS.find((f) => f.id === "policy")?.action).toBe(
+      "fleet_policy.*"
+    );
+  });
+
+  it("promotes a fleet-policy row's domain, repo and level", () => {
+    const radius = blastRadiusOf({
+      ...row(),
+      action: "fleet_policy.upsert",
+      metadata: {
+        domain: "github_hosted_ci",
+        scope_band: "repo",
+        scope_key: "qontinui/qontinui-web",
+        level: "inherit",
+        master_enabled: true,
+        version: 4,
+      },
+    });
+    expect(radius.items.map((i) => [i.label, i.value])).toEqual([
+      ["Policy", "github_hosted_ci"],
+      ["Applies to", "qontinui/qontinui-web"],
+      ["Level", "inherit"],
+      ["Policy version", "4"],
+    ]);
+  });
+
+  it("does not promote domain/scope_key/level on any other action", () => {
+    const radius = blastRadiusOf({
+      ...row(),
+      action: "agent_registry.set",
+      metadata: { domain: "x", scope_key: "y", level: "z" },
+    });
+    expect(radius.items).toEqual([]);
+    expect(radius.unstated).toBe(true);
+  });
+
   it("falls back to the raw id, never to a friendly placeholder", () => {
     // The id is a real fact and a working filter term; "Unknown action" is
     // neither, and would hide the one string an operator could act on.

@@ -4,7 +4,8 @@ The read/write shapes behind the fleet UI:
 
 * app config editor (update strategy + build/start commands),
 * per-(device, app) freshness badges,
-* designate-test-host + auto_fresh toggle (``coord.test_targets`` writes).
+* designate-test-host + auto_fresh toggle (``coord.test_targets``, written
+  by coord through its binding-checked upsert).
 """
 
 from enum import StrEnum

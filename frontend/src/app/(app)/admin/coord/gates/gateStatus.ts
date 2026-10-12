@@ -136,6 +136,53 @@ export interface GateStatusInput {
   verdict: string;
   verdict_reason?: string | null;
   stale: boolean;
+  /** Optional so a caller with no mute/snooze state reads as unmuted. */
+  muted?: boolean;
+  snoozed_until?: string | null;
+}
+
+/**
+ * Is coord's sweep OVERDUE on this gate — i.e. does coord's `stale` flag mean
+ * what the page says it means?
+ *
+ * coord computes a row's `stale` as "open and not evaluated in the last hour"
+ * (`dev_overview.rs`), but `run_gate_sweep` (`gates.rs`) deliberately skips
+ * gates that are muted or snoozed into the future
+ * (`NOT muted AND (snoozed_until IS NULL OR snoozed_until < now())`). Such a
+ * gate goes stale BECAUSE an operator paused it, so nobody owes it an
+ * evaluation and painting it red would contradict the mute. Every staleness
+ * reading on the page goes through this one predicate. (An archived open gate
+ * IS still swept — the sweep has no archive term — so archiving does not
+ * excuse staleness.)
+ */
+export function isSweepOverdue(
+  g: GateStatusInput,
+  now: number = Date.now()
+): boolean {
+  if (!g.stale || g.muted) return false;
+  return snoozeState(g.snoozed_until, now) !== "active";
+}
+
+/** Where a gate's snooze stands — see `snoozeState`. */
+export type SnoozeState = "none" | "active" | "ended" | "unreadable";
+
+/**
+ * Where a gate's snooze stands against the sweep's own clause
+ * (`snoozed_until IS NULL OR snoozed_until < now()`): `none` when unset,
+ * `active` while the sweep still skips it (up to and including the instant
+ * itself), `ended` once it is swept again, and `unreadable` when the timestamp
+ * cannot be parsed — which proves nothing about a pause, so it never excuses
+ * staleness. `isSweepOverdue` and the row's snooze badge both read this, so
+ * the badge cannot say "snoozed" beside a "not re-evaluated" verdict.
+ */
+export function snoozeState(
+  snoozedUntil: string | null | undefined,
+  now: number = Date.now()
+): SnoozeState {
+  if (!snoozedUntil) return "none";
+  const until = Date.parse(snoozedUntil);
+  if (!Number.isFinite(until)) return "unreadable";
+  return until >= now ? "active" : "ended";
 }
 
 /**
@@ -151,13 +198,16 @@ export interface GateStatusInput {
  * `stale` and `unknown`, where the derived word carries information the raw
  * string does not.
  */
-export function deriveGateStatus(g: GateStatusInput): RowStatus<GateKind> {
+export function deriveGateStatus(
+  g: GateStatusInput,
+  now: number = Date.now()
+): RowStatus<GateKind> {
   const v = (g.verdict ?? "").toLowerCase();
   let kind: GateKind;
   if (CLEARED_WORDS.has(v)) kind = "cleared";
   else if (FAILED_WORDS.has(v)) kind = "failed";
   else if (WITHDRAWN_WORDS.has(v)) kind = "withdrawn";
-  else if (g.stale) kind = "stale";
+  else if (isSweepOverdue(g, now)) kind = "stale";
   else if (EVALUATING_WORDS.has(v)) kind = "evaluating";
   else if (PENDING_WORDS.has(v)) kind = "pending";
   else kind = "unknown";

@@ -6,7 +6,6 @@ This guide covers recommended patterns, design strategies, and common pitfalls t
 
 - [Workflow Design](#workflow-design)
 - [Organization](#organization)
-- [Version Control](#version-control)
 - [Testing](#testing)
 - [Performance](#performance)
 - [Components](#components)
@@ -142,65 +141,6 @@ const massiveWorkflow = {
 'Auth/Logout'
 'Cart/Add Item'
 'Cart/Checkout'
-```
-
-## Version Control
-
-### Commit Often
-
-```typescript
-// ✅ Good: Small, frequent commits
-saveVersion(workflowId, branchId, workflow, 'Add login form validation');
-// ... make more changes ...
-saveVersion(workflowId, branchId, workflow, 'Add error message display');
-// ... make more changes ...
-saveVersion(workflowId, branchId, workflow, 'Update button styling');
-
-// ❌ Bad: Infrequent, large commits
-// ... make many changes over days ...
-saveVersion(workflowId, branchId, workflow, 'Many changes');
-```
-
-### Write Good Commit Messages
-
-```typescript
-// ✅ Good: Clear, specific messages
-'Add two-factor authentication support'
-'Fix timeout issue in login validation'
-'Update error messages for consistency'
-'Remove deprecated password reset flow'
-
-// ❌ Bad: Vague messages
-'Update'
-'Fix'
-'Changes'
-'WIP'
-```
-
-### Use Branches
-
-```typescript
-// ✅ Good: Feature branches
-main                    // Production
-develop                 // Integration
-feature/oauth-login     // New feature
-fix/timeout-bug         // Bug fix
-hotfix/security-patch   // Critical fix
-
-// ❌ Bad: Everything in main
-// Making all changes directly in main branch
-```
-
-### Tag Releases
-
-```typescript
-// ✅ Good: Tag important versions
-createTag(workflowId, versionId, 'v1.0.0', 'Initial release');
-createTag(workflowId, versionId, 'v1.1.0', 'Added OAuth support');
-createTag(workflowId, versionId, 'v2.0.0', 'Major update');
-
-// ❌ Bad: No tags
-// Never tagging releases
 ```
 
 ## Testing
@@ -562,10 +502,8 @@ Before deploying a workflow:
 - [ ] Loops have iteration limits
 - [ ] Error handling in place
 - [ ] No circular dependencies
-- [ ] Performance score > 70
 - [ ] Tests passing
 - [ ] Documentation updated
-- [ ] Version tagged
 
 ## Security Best Practices
 
@@ -605,7 +543,6 @@ Before deploying a workflow:
 ## See Also
 
 - [Organization Guide](./organization.md) - Organize workflows
-- [Version Control](./version-control.md) - Version control strategies
 - [Testing Guide](./testing.md) - Testing best practices
-- [Analytics](./analytics.md) - Performance optimization
+- [Analytics](./analytics.md) - Execution metrics and complexity analysis
 - [Troubleshooting](./troubleshooting.md) - Common issues

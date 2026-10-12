@@ -11,10 +11,12 @@
  *   the reader can choose to open instead.
  */
 
-import React from "react";
+import React, { useMemo } from "react";
+import Link from "next/link";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+import { remarkWikiLinks, type WikiLinkOptions } from "./wiki-links";
 
 type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 
@@ -26,6 +28,26 @@ export function isLocalImageSrc(src: string | undefined): boolean {
 }
 
 const components: Components = {
+  // An in-app link (a wiki link, or one a writer typed as `/overview/...`)
+  // navigates within the app instead of reloading it.
+  a: ({ href, children, node: _node, ...rest }) => {
+    if (
+      typeof href === "string" &&
+      href.startsWith("/") &&
+      !href.startsWith("//")
+    ) {
+      return (
+        <Link href={href} {...rest}>
+          {children}
+        </Link>
+      );
+    }
+    return (
+      <a href={href} {...rest}>
+        {children}
+      </a>
+    );
+  },
   img: ({ src, alt }) => {
     const href = typeof src === "string" ? src : undefined;
     // react-markdown's URL filter has already emptied unsafe sources
@@ -71,9 +93,16 @@ export function MarkdownView({
   children,
   className,
   headingOffset = 0,
+  wikiLinks,
 }: {
   children: string;
   className?: string;
+  /**
+   * Render `[[Page Title]]` as links to wiki pages: to the page when it
+   * exists, and otherwise to write it (or as plain text for a reader who
+   * cannot). Omitted, `[[…]]` is shown as written.
+   */
+  wikiLinks?: WikiLinkOptions;
   /**
    * Push the document's own heading levels down by this much, so an embedded
    * document's `##` sits under the page's heading for it instead of
@@ -84,6 +113,10 @@ export function MarkdownView({
 }) {
   const shifted =
     headingOffset > 0 ? shiftedHeadings(headingOffset) : undefined;
+  const remarkPlugins = useMemo(
+    () => (wikiLinks ? [remarkGfm, remarkWikiLinks(wikiLinks)] : [remarkGfm]),
+    [wikiLinks]
+  );
   return (
     <div
       className={cn(
@@ -94,13 +127,16 @@ export function MarkdownView({
         "prose-h4:mt-6 prose-h4:mb-1.5 prose-h5:mt-5 prose-h5:mb-1 prose-h6:mt-4 prose-h6:mb-1",
         "prose-h5:text-foreground prose-h6:text-foreground",
         "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
+        // A wiki link to a page nobody has written: dashed, so it reads as
+        // "not there yet" by shape as well as colour.
+        "[&_[data-wiki-link=missing]]:underline [&_[data-wiki-link=missing]]:decoration-dashed [&_[data-wiki-link=missing]]:underline-offset-4",
         "prose-table:text-sm prose-th:text-left prose-th:font-medium",
         "prose-strong:text-foreground prose-code:before:content-none prose-code:after:content-none",
         className
       )}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={remarkPlugins}
         components={{ ...components, ...shifted }}
       >
         {children}

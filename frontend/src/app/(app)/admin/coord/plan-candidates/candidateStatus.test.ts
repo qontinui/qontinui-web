@@ -22,6 +22,8 @@ import {
   describeCandidateWindow,
   describeCoordLink,
   describeCorpusHealth,
+  describeStatusCurrency,
+  candidateCurrency,
   describePopulation,
   describePrState,
   describeReadiness,
@@ -49,9 +51,11 @@ function response(
     items: [candidate()],
     count: 1,
     total: 606,
-    offset: 0,
+    truncated: true,
+    next_cursor: "opaque",
+    bound_kind: "exact",
     limit: 25,
-    ordering: "oldest_vetted_first",
+    ordering: "oldest_captured_first",
     coord_available: true,
     work_unit_population_state: "included",
     work_unit_population_reason: null,
@@ -289,6 +293,115 @@ describe("the population flag is read before the total means anything", () => {
     expect(lines.map((l) => l.key)).toContain("corpus-health");
   });
 
+  describe("status currency tally", () => {
+    const fed = {
+      state: "fed_in_step" as const,
+      as_of: "2026-10-04T00:00:00Z",
+      ref_sha: "abc",
+      ref_age_secs: 5,
+      detail: null,
+    };
+
+    it("counts only rows that owe a currency, and resolves the unserved arms to UNKNOWN", () => {
+      const line = describeStatusCurrency(
+        response({
+          items: [
+            candidate({ slug: "a", status_currency: fed }),
+            candidate({
+              slug: "b",
+              status_currency: { ...fed, state: "unfed_key" },
+            }),
+            // Absent key — a backend predating the field.
+            candidate({ slug: "c" }),
+            // Null beside `doc: present` — the contract broken.
+            candidate({ slug: "d", status_currency: null }),
+            // Work-unit-only row — owes none.
+            candidate({
+              slug: "e",
+              id: null,
+              document_state: "absent",
+              status_currency: null,
+            }),
+          ],
+        })
+      );
+      expect(line?.level).toBe("caveat");
+      expect(line?.text).toMatch(
+        /^3 of the 4 rows on this page that owe a status currency cannot vouch/
+      );
+      expect(line?.text).toMatch(/this page only/);
+      expect(line?.items).toEqual(["Unfed key: 1", "Currency unknown: 2"]);
+    });
+
+    it("reads all-in-step as a note, never a caveat", () => {
+      const line = describeStatusCurrency(
+        response({ items: [candidate({ status_currency: fed })] })
+      );
+      expect(line?.level).toBe("note");
+      expect(line?.text).toMatch(
+        /^The row on this page that owes a status currency was read/
+      );
+      expect(line?.items).toBeUndefined();
+      const two = describeStatusCurrency(
+        response({
+          items: [
+            candidate({ slug: "a", status_currency: fed }),
+            candidate({ slug: "b", status_currency: fed }),
+          ],
+        })
+      );
+      expect(two?.text).toMatch(
+        /^All 2 rows on this page that owe a status currency were read/
+      );
+    });
+
+    it("counts a row as UNKNOWN when a backend serves neither the key nor document_state", () => {
+      const line = describeStatusCurrency(
+        response({ items: [candidate({ document_state: undefined })] })
+      );
+      expect(line?.items).toEqual(["Currency unknown: 1"]);
+    });
+
+    it("emits no line when no row on the page owes a currency", () => {
+      expect(
+        describeStatusCurrency(
+          response({
+            items: [
+              candidate({
+                id: null,
+                document_state: "unsynced",
+                status_currency: null,
+              }),
+            ],
+          })
+        )
+      ).toBeNull();
+      expect(describeStatusCurrency(response({ items: [] }))).toBeNull();
+    });
+
+    it("rides the disclosure after the corpus-health line", () => {
+      const keys = deriveCandidateDisclosure(
+        response({ items: [candidate({ status_currency: fed })] })
+      ).map((l) => l.key);
+      expect(keys).toContain("status-currency");
+      expect(keys.indexOf("status-currency")).toBeGreaterThan(
+        keys.indexOf("corpus-health")
+      );
+    });
+
+    it("gives a null-on-present row an UNKNOWN currency naming the broken contract", () => {
+      const c = candidateCurrency(candidate({ status_currency: null }));
+      expect(c?.state).toBe("unknown");
+      expect(c?.detail).toMatch(/broke its own contract/);
+      expect(
+        candidateCurrency(
+          candidate({ document_state: "absent", status_currency: null })
+        )
+      ).toBeNull();
+      expect(candidateCurrency(candidate())).toBeUndefined();
+    });
+  });
+
   it("marks the window's total inadmissible on the degraded arm", () => {
     expect(
       describeCandidateWindow(
@@ -322,17 +435,34 @@ describe("the population flag is read before the total means anything", () => {
 });
 
 describe("the window reports the declared ordering and nothing else", () => {
-  it("carries ordering, offset, limit and a paging predicate", () => {
+  it("carries ordering, the walked start, limit and the cursor", () => {
     const w = describeCandidateWindow(response());
-    expect(w.ordering).toBe("oldest_vetted_first");
+    expect(w.ordering).toBe("oldest_captured_first");
     expect(w.shown).toBe(1);
     expect(w.hasMore).toBe(true);
+    expect(w.nextCursor).toBe("opaque");
+    expect(describeCandidateWindow(response({ total: 6 }), 25).total).toBe(31);
   });
 
-  it("infers 'more' from a full page when no total was served", () => {
-    const w = describeCandidateWindow(response({ total: undefined, limit: 1 }));
+  it("never infers 'more' from a full page — only truncated + a cursor", () => {
+    const w = describeCandidateWindow(
+      response({ total: null, truncated: null, next_cursor: null, limit: 1 })
+    );
     expect(w.total).toBeNull();
-    expect(w.hasMore).toBe(true);
+    expect(w.hasMore).toBe(false);
+  });
+
+  it("says a capped coord walk left the population a lower bound", () => {
+    const line = describePopulation(
+      response({
+        work_unit_population_state: "truncated",
+        work_unit_population_reason: "coord's list did not end",
+        total: null,
+        bound_kind: "at_least",
+      })
+    );
+    expect(line.level).toBe("caveat");
+    expect(line.text).toMatch(/LOWER BOUND/);
   });
 });
 

@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """The local ruff and CI's ruff must be the SAME ruff.
 
-THE single home of this gate's logic. Three lanes invoke this one script:
+THE single home of this gate's logic. Four lanes invoke this one script:
 
   * ``.github/workflows/ruff-version-parity.yml``, step
     "Compare the pre-commit ruff pin against the lockfiles"
+  * ``.github/workflows/web-guards.yml``, step
+    "ruff-version-parity: Compare the pre-commit ruff pin against the lockfiles"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``ruff-version-parity``
   * ``.pre-commit-config.yaml``, hook ``ruff-version-parity`` — catches it
     before the push, since editing either side is what creates the drift.
 
-THREE, and ``backend/tests/test_ruff_version_parity_gate.py`` asserts it. A
-fourth lane landed once — ``a208240e2``, a step in ``backend-ci.yml`` — while
-this list and the two other enumerations (``.pre-commit-config.yaml``'s hook
-comment, ``ruff-version-parity.yml``'s header) went on saying three, and
+FOUR, and ``backend/tests/test_ruff_version_parity_gate.py`` asserts it. An
+undeclared lane landed once — ``a208240e2``, a step in ``backend-ci.yml`` —
+while this list and the two other enumerations (``.pre-commit-config.yaml``'s
+hook comment, ``ruff-version-parity.yml``'s header) went on saying three, and
 nothing failed. Add a lane here and in those, or the test does fail: a roster
-nobody checks rots exactly the way the ruff pin below does.
+nobody checks rots exactly the way the ruff pin below does. (The fourth lane,
+``web-guards.yml``, was added DELIBERATELY and in all three enumerations at
+once; it is the consolidated guard job, not a ``backend-ci.yml`` step.)
 
 WHY THIS GATE EXISTS. ``505f5738`` added the ``ruff-format`` pre-commit hook so
 that formatting is enforced locally and not only by ``backend-ci.yml``'s

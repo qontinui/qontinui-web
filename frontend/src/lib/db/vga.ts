@@ -8,7 +8,11 @@
  *
  * Connection strategy mirrors the FastAPI backend's `app/db/runner_db.py`:
  *   - DSN resolved from `RUNNER_DATABASE_URL`, falling back to
- *     `DATABASE_URL`, then to the dev default.
+ *     `DATABASE_URL`, through `resolveEndpoint("runner_db", …)`: the local
+ *     dev-stack DSN is used only under NODE_ENV=development, and an unset DSN
+ *     anywhere else is an EndpointUnresolvedError naming the variable — never
+ *     a connection attempt to this server's own loopback with the dev
+ *     password.
  *   - Every acquired client sets `search_path TO runner, public` before
  *     the caller sees it, matching the dual-schema setup described in
  *     memory note `proj_pg_dual_schema_runner_public.md`.
@@ -18,14 +22,20 @@
 
 import { Pool, type PoolClient, type PoolConfig } from "pg";
 
-const DEFAULT_DSN =
-  "postgresql://qontinui_user:qontinui_dev_password@localhost:5433/qontinui_db";
+import { resolveEndpoint } from "@/lib/errors/endpoint-unresolved";
 
 let pool: Pool | null = null;
 
-function resolveDsn(): string {
-  const url =
-    process.env.RUNNER_DATABASE_URL ?? process.env.DATABASE_URL ?? DEFAULT_DSN;
+/**
+ * The runner-DB DSN, or an EndpointUnresolvedError when it is unset outside
+ * development. Exported so a best-effort writer can check it BEFORE doing
+ * side-effecting work it would otherwise throw away.
+ */
+export function resolveRunnerDbDsn(): string {
+  const url = resolveEndpoint(
+    "runner_db",
+    process.env.RUNNER_DATABASE_URL || process.env.DATABASE_URL
+  );
   // asyncpg-style driver prefix from SQLAlchemy configs isn't valid for node-postgres.
   return url.replace(/^postgresql\+asyncpg:\/\//, "postgresql://");
 }
@@ -33,7 +43,7 @@ function resolveDsn(): string {
 function getPool(): Pool {
   if (pool === null) {
     const config: PoolConfig = {
-      connectionString: resolveDsn(),
+      connectionString: resolveRunnerDbDsn(),
       max: Number.parseInt(process.env.RUNNER_DB_POOL_SIZE ?? "5", 10),
       idleTimeoutMillis: 30_000,
     };

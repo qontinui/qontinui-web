@@ -29,6 +29,8 @@ Endpoints (mounted under ``/api/v1/memory``):
   expansion of the fuse's head, reported in ``link_arm``.
 * ``POST /graph``                        — bounded outbound traversal of
   ``coord.memory_links`` from a root record → ``{nodes, edges}``.
+* ``GET /records/{id}``                  — one record by id in ANY state
+  (live / expired / superseded / tombstoned) — the write-receipt read-back.
 * ``POST /records/{id}/supersede``       — insert replacement, end the
   old row's validity.
 * ``PUT /records/{id}/hold``             — hold the record out of every
@@ -105,12 +107,14 @@ from app.api.deps import (
     get_async_db,
 )
 from app.api.strict_query import StrictQueryRoute
+from app.core import bounded_read
 from app.core.config import settings
 from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
     MAX_ANCHORS_PER_RECORD,
     MAX_LIST_LIMIT,
+    MEMORY_ENUMERATION_DOOR,
     ClaimJobsRequest,
     ClaimJobsResponse,
     EmbeddingResultPayload,
@@ -132,7 +136,9 @@ from app.schemas.memory import (
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
+    MemoryRecordByIdResponse,
     MemoryRecordOut,
+    MemoryRecordState,
     MemoryStatsResponse,
     SupersedeRequest,
     SupersedeResponse,
@@ -845,6 +851,7 @@ async def query_records(
     fused_2 = rrf_fuse({"vector": vector_ids, "fts": fts_ids})
 
     link_arm: Literal["expanded", "skipped_disabled", "skipped_no_seeds"]
+    link_ids: list[UUID] = []
     seed_ids = [h.id for h in fused_2[:LINK_SEED_COUNT]]
     if not payload.link_expansion:
         link_arm = "skipped_disabled"
@@ -862,6 +869,24 @@ async def query_records(
             {"vector": vector_ids, "fts": fts_ids, "link": link_ids},
             weights=ARM_WEIGHTS,
         )
+
+    # Bound disclosure (plan 2026-09-05-every-bounded-read-is-a-page-that-
+    # reads-as-a-corpus, Phase 3), measured BEFORE the cut below. An arm
+    # that returned a full ARM_LIMIT was capped in SQL, so the fused pool
+    # may be missing matches no arm returned; only when no arm was capped
+    # is the pool the whole match set.
+    #
+    # The link arm is treated as capped WHENEVER it ran. Its per-seed
+    # LATERAL ``LIMIT :arm_limit`` (``memory_store.link_expansion``) cuts
+    # each seed's neighbours BEFORE the record filters are applied, so a
+    # seed whose fan-out was cut can return far fewer than ARM_LIMIT ids
+    # after filtering — a saturated seed is undetectable from the final
+    # list. Assuming capped is the safe direction: it can only turn an
+    # ``exact`` into ``at_least`` / ``unknown``, never claim a completeness
+    # nothing measured.
+    pool_capped = link_arm == "expanded" or any(
+        len(arm) >= store.ARM_LIMIT for arm in (vector_ids, fts_ids)
+    )
 
     # Sliced only AFTER the re-fuse, so a link-only hit can displace a
     # weaker lexical one instead of being cut before it competes.
@@ -953,7 +978,16 @@ async def query_records(
     # ``store.live_row_count``.
     live_rows = await store.live_row_count(db, principal.tenant_id)
 
+    # The meta describes ``hits`` only; ``anchored_hits`` is its own list.
+    meta = bounded_read.from_ranked_pool(
+        shown=len(hits),
+        limit=payload.limit,
+        pool_size=len(fused),
+        pool_capped=pool_capped,
+        enumerate_via=MEMORY_ENUMERATION_DOOR,
+    )
     return MemoryQueryResponse(
+        **meta.model_dump(),
         hits=hits,
         vector_arm=vector_arm,
         link_arm=link_arm,
@@ -1058,6 +1092,67 @@ async def list_records(
     )
     return ListRecordsResponse(
         records=records, count=len(records), next_cursor=next_cursor
+    )
+
+
+@router.get("/records/{memory_id}", response_model=MemoryRecordByIdResponse)
+async def get_record_by_id(
+    memory_id: UUID,
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+) -> MemoryRecordByIdResponse:
+    """One record by id, tenant-scoped, in WHATEVER state it is in.
+
+    The read-back half of a write receipt: a caller holding a ``memory_id``
+    from ``POST /records`` (or coord's ``coord_memory_record``) resolves it
+    here deterministically, without FTS and without the list surface's
+    live-only, time-windowed filter. Superseded and tombstoned rows are
+    returned, with ``state`` derived from the row's own columns — see
+    :class:`MemoryRecordByIdResponse` for the precedence. A tombstoned
+    row's ``title`` and ``content`` are withheld (``null``).
+
+    404 when the id does not exist OR belongs to another tenant — the two
+    are deliberately indistinguishable. Read-only: does not bump
+    ``access_count``.
+    """
+    row = await store.get_record_by_id(db, principal.tenant_id, memory_id)
+    if row is None:
+        # This detail string is a WIRE CONTRACT: qontinui-coord's
+        # `coord_memory_get` (MEMORY_GET_NOT_FOUND_DETAIL in mcp/tools.rs)
+        # matches it byte for byte to tell "not in this tenant" from any other
+        # 404 (a misrouted base, a gateway). Rewording it here silently moves
+        # every real 404 into coord's errors / tool-error path.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="memory record not found in your tenant",
+        )
+    state: MemoryRecordState
+    if row["is_tombstone"]:
+        state = "tombstoned"
+    elif row["superseded_by"] is not None:
+        state = "superseded"
+    elif row["is_expired"]:
+        state = "expired"
+    else:
+        state = "live"
+    # A tombstone is a deletion: the id, state and validity boundary are
+    # the receipt's answer, the body is not echoed back.
+    withheld = state == "tombstoned"
+    return MemoryRecordByIdResponse(
+        memory_id=row["memory_id"],
+        tenant_id=row["tenant_id"],
+        title=None if withheld else row["title"],
+        content=None if withheld else row["content"],
+        kind=row["kind"],
+        scope=row["scope"],
+        scope_ref=row["scope_ref"],
+        importance=(
+            float(row["importance"]) if row["importance"] is not None else None
+        ),
+        created_at=row["created_at"],
+        state=state,
+        superseded_by=row["superseded_by"],
+        valid_until=row["valid_until"],
     )
 
 

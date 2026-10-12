@@ -63,6 +63,8 @@ from app.api.v1.endpoints import devices_ws
 from app.services.coord_jwks import CoordTokenExpiredError, CoordTokenInvalidError
 from app.services.runner import remote_terminal_relay as rtr
 from app.services.runner.connection_registry import WebSocketConnectionRegistry
+from app.services.runner.remote_relay import end as relay_end
+from app.services.runner.remote_relay import target_frames as relay_target_frames
 from app.services.runner.remote_terminal_relay import RemoteTerminalRelay
 from app.services.runner.terminal_relay import TerminalRelayService
 
@@ -74,6 +76,14 @@ TARGET_DEVICE = str(uuid4())
 # because the source turns it straight into `POST /coord/sessions/{id}/attach-grants`.
 SESSION_OF_NEW_TERMINAL = str(uuid4())
 TARGET_SESSION = str(uuid4())
+
+# The module each relay tunable is read from at call time. Plan
+# ``2026-10-04-web-remote-terminal-relay-is-one-class-of-four-protocols`` moves
+# each tunable with its reader; that phase repoints ONE line here, and the seam
+# tests (``test_*_seam_reaches_*``) prove the patch still reaches the code: a
+# patch on a dead name falls back to the real 3 s / 75 s and trips ``wait_for``.
+_ATTACH_DELAY_MODULE = relay_target_frames
+_END_TTL_MODULE = relay_end
 
 
 # ---------------------------------------------------------------------------
@@ -1208,7 +1218,7 @@ async def test_attach_grant_unknown_is_represented_once_with_the_same_jti(
     # The delay is bounded from above by the SOURCE's 20 s ATTACH_TIMEOUT: a
     # re-present that outruns it buys nothing, so pin that it is well under.
     assert 0 < rtr.ATTACH_REPRESENT_DELAY_SECONDS <= 5.0
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
 
     ws = _FakeWS()
     manager = _manager()
@@ -1298,7 +1308,7 @@ async def test_settled_attach_refusal_is_never_represented(
     monkeypatch: pytest.MonkeyPatch,
     code: str,
 ) -> None:
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1339,7 +1349,7 @@ async def test_represent_preserves_cols_rows_and_have_offset(
     ``have_offset`` makes the target ship the whole ring tail, which the source
     renders as a DATA-LOSS marker in a pane that lost nothing.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1389,7 +1399,7 @@ async def test_first_attach_without_have_offset_does_not_gain_one_on_represent(
     relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A FIRST attach takes the tail arm deliberately, on the re-present too."""
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1418,7 +1428,7 @@ async def test_represented_attach_can_still_be_answered_and_binds(
     relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole point: the second presentation lands and the pane attaches."""
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1499,7 +1509,7 @@ async def test_represent_skipped_when_source_released_during_delay(
     relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A source that went away in the gap is not re-offered on its behalf."""
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1521,7 +1531,7 @@ async def test_represent_evicts_when_grant_expired_during_delay(
     the settled answer — under its original attach ``request_id``, so its
     waiter settles instead of timing out.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1555,7 +1565,7 @@ async def test_represent_to_a_gone_target_evicts_as_not_connected(
     evicted and the source gets ``target_not_connected`` under its own attach
     ``request_id``.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1598,7 +1608,7 @@ async def test_refused_create_is_never_represented(
     correlates to, and the absence of a cached attach frame); this pins the
     outcome they jointly promise rather than any one of them.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _create_claims()
@@ -1641,7 +1651,7 @@ async def test_uncorrelated_grant_unknown_naming_a_pending_attach_is_not_represe
     that it did not correlate off ``pending_attach``, and this is the one case
     where that guard is the only one.
     """
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -2236,6 +2246,277 @@ async def test_listener_stopped_from_inside_itself_closes_once(
 
 
 # ---------------------------------------------------------------------------
+# Listener lifecycle — characterization (relay-split plan Phase 0)
+# ---------------------------------------------------------------------------
+# Plan ``2026-10-04-web-remote-terminal-relay-is-one-class-of-four-protocols``
+# moves the listener group into its own collaborator. These pin the branches
+# the suite above left uncovered, so the move is checked against behaviour and
+# not only against the happy path.
+
+OTHER_TARGET = str(uuid4())
+
+# The stream terminator ``_RawPubSub.listen()`` returns on: the shape of a
+# pubsub whose connection closed cleanly rather than raising.
+_END_OF_STREAM = object()
+
+
+class _RawPubSub(_FakePubSub):
+    """``listen()`` yields the RAW messages pushed, not wrapped frames.
+
+    So a test can deliver what a real pubsub also delivers (a ``subscribe``
+    confirmation, a ``str`` payload, a non-object or unparseable body) and
+    end the stream cleanly with ``_END_OF_STREAM``.
+    """
+
+    async def listen(self) -> AsyncIterator[dict[str, Any]]:
+        while True:
+            item = await self.queue.get()
+            if item is _END_OF_STREAM:
+                return
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+
+class _RawRedis(_FakeRedis):
+    def pubsub(self) -> _FakePubSub:
+        ps = _RawPubSub()
+        self.pubsubs.append(ps)
+        return ps
+
+
+async def _attached_to(
+    relay: RemoteTerminalRelay,
+    ws: _FakeWS,
+    manager: Any,
+    target_device_id: str,
+    *,
+    terminal_id: str,
+    request_id: str,
+) -> dict[str, Any]:
+    """``_attached`` against an explicit target device."""
+    claims = _claims(
+        attach={
+            "target_device_id": target_device_id,
+            "target_session_id": str(uuid4()),
+            "terminal_id": None,
+        }
+    )
+    await _attach(relay, ws, manager, claims, request_id=request_id)
+    assert ws.of_type("error") == [], ws.sent
+    minted = _forwarded_attach(manager)["request_id"]
+    routed = await relay.route_target_frame(
+        relay._sessions[id(ws)],
+        target_device_id,
+        {"type": "terminal_attached", "request_id": minted, "terminal_id": terminal_id},
+    )
+    assert routed is True
+    return claims
+
+
+async def test_listener_skips_unroutable_messages_and_keeps_routing() -> None:
+    """A non-message, a non-object body or an unparseable one ends nothing."""
+    redis = _RawRedis()
+    relay = RemoteTerminalRelay(redis_client=redis)
+    ws = _FakeWS()
+    manager = _manager()
+    await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    pubsub = redis.pubsubs[0]
+    (_, task) = session.listeners[TARGET_DEVICE]
+
+    pubsub.push({"type": "subscribe", "channel": "x", "data": 1})
+    pubsub.push({"type": "message", "data": "not json"})
+    pubsub.push({"type": "message", "data": json.dumps([1, 2])})
+    # A ``str`` body (a pubsub with ``decode_responses``), not ``bytes``.
+    pubsub.push(
+        {
+            "type": "message",
+            "data": json.dumps(
+                {"type": "terminal_output", "terminal_id": "t1", "data": "aGk="}
+            ),
+        }
+    )
+    await _settle(lambda: bool(ws.of_type("remote_terminal_output")))
+
+    (out,) = ws.of_type("remote_terminal_output")
+    assert out["data"] == "aGk="
+    assert ws.of_type("remote_terminal_error") == []
+    assert not task.done()
+    assert session.listeners[TARGET_DEVICE][1] is task
+    await relay.release_source(ws)
+    assert pubsub.close_count == 1
+
+
+async def test_listener_whose_stream_ends_cleanly_is_lost_like_a_dead_one() -> None:
+    """``listen()`` returning (no exception) still tears its route down."""
+    redis = _RawRedis()
+    relay = RemoteTerminalRelay(redis_client=redis)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    pubsub = redis.pubsubs[0]
+    (_, task) = session.listeners[TARGET_DEVICE]
+
+    pubsub.push(_END_OF_STREAM)
+    await _settle(task.done)
+
+    assert task.done() and task.exception() is None
+    assert session.listeners == {}
+    assert pubsub.closed is True
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "listener_lost"
+    assert err["grant_jti"] == claims["jti"]
+    assert session.grants == {}
+    assert redis.empty()
+    await relay.release_source(ws)
+
+
+async def test_failed_pubsub_subscribe_closes_it_and_is_a_typed_refusal(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pubsub = _FakePubSub()
+    monkeypatch.setattr(
+        pubsub, "subscribe", AsyncMock(side_effect=ConnectionError("redis down"))
+    )
+    monkeypatch.setattr(redis, "pubsub", lambda: pubsub)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+
+    await _attach(relay, ws, manager, claims)
+
+    assert ws.of_type("error") == [
+        {
+            "type": "error",
+            "code": "attach_registry_unavailable",
+            "message": "attachment registry temporarily unavailable",
+            "request_id": "req-attach-1",
+            "grant_jti": claims["jti"],
+        }
+    ]
+    assert pubsub.closed is True
+    session = relay._sessions[id(ws)]
+    assert session.listeners == {}
+    assert session.subscribed == set()
+    assert session.grants == {}
+    assert redis.empty()
+    manager.send_terminal.assert_not_called()
+    manager.relay.send_command_to_runner.assert_not_called()
+
+
+async def test_failed_terminal_subscribe_leaves_the_attach_standing_unsubscribed(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The runner-side subscribe is best effort; a failed one is never matched."""
+    ws = _FakeWS()
+    manager = _manager()
+    manager.relay.send_command_to_runner = AsyncMock(
+        side_effect=ConnectionError("runner channel down")
+    )
+    claims = _claims()
+
+    await _attach(relay, ws, manager, claims)
+
+    assert ws.of_type("error") == []
+    assert _forwarded_attach(manager)["remote"]["grant_jti"] == claims["jti"]
+    session = relay._sessions[id(ws)]
+    assert TARGET_DEVICE in session.listeners
+    assert session.subscribed == set()
+    await relay.release_source(ws)
+    # Only the failed subscribe: no unsubscribe for a count never raised.
+    manager.relay.send_command_to_runner.assert_awaited_once()
+    assert (
+        manager.relay.send_command_to_runner.await_args.args[1]["type"]
+        == "terminal_subscribe"
+    )
+
+
+async def test_pubsub_teardown_failures_are_swallowed(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pubsub = _FakePubSub()
+    unsubscribe = AsyncMock(side_effect=ConnectionError("gone"))
+    close = AsyncMock(side_effect=ConnectionError("gone"))
+    monkeypatch.setattr(pubsub, "unsubscribe", unsubscribe)
+    monkeypatch.setattr(pubsub, "close", close)
+    monkeypatch.setattr(redis, "pubsub", lambda: pubsub)
+    ws = _FakeWS()
+    manager = _manager()
+    await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    (_, task) = session.listeners[TARGET_DEVICE]
+
+    await relay.release_source(ws)
+
+    assert task.cancelled()
+    assert session.listeners == {}
+    unsubscribe.assert_awaited_once()
+    close.assert_awaited_once()
+    # The runner-side unsubscribe still went out after the failed close.
+    assert (
+        manager.relay.send_command_to_runner.await_args.args[1]["type"]
+        == "terminal_unsubscribe"
+    )
+    assert redis.empty()
+
+
+async def test_failed_terminal_unsubscribe_is_swallowed(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    sent: list[str] = []
+
+    async def _publish(target: str, cmd: dict[str, Any], **_: Any) -> bool:
+        sent.append(cmd["type"])
+        if cmd["type"] == "terminal_unsubscribe":
+            raise ConnectionError("runner channel down")
+        return True
+
+    manager.relay.send_command_to_runner = AsyncMock(side_effect=_publish)
+    await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    await relay.release_source(ws)
+
+    assert sent == ["terminal_subscribe", "terminal_unsubscribe"]
+    assert session.subscribed == set()
+    assert session.listeners == {}
+    assert redis.empty()
+
+
+async def test_listener_lost_evicts_only_that_targets_attachments(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    lost = await _attached_to(
+        relay, ws, manager, TARGET_DEVICE, terminal_id="t1", request_id="r1"
+    )
+    kept = await _attached_to(
+        relay, ws, manager, OTHER_TARGET, terminal_id="t2", request_id="r2"
+    )
+    session = relay._sessions[id(ws)]
+    (_, task) = session.listeners[TARGET_DEVICE]
+    (_, other_task) = session.listeners[OTHER_TARGET]
+
+    redis.pubsubs[0].push(ConnectionError("pubsub connection lost"))
+    await _settle(task.done)
+
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "listener_lost"
+    assert err["grant_jti"] == lost["jti"]
+    assert list(session.grants) == [kept["jti"]]
+    assert list(session.listeners) == [OTHER_TARGET]
+    assert not other_task.done()
+    assert rtr.terminal_key(OTHER_TARGET, "t2") in redis.hashes
+    assert rtr.terminal_key(TARGET_DEVICE, "t1") not in redis.hashes
+    await relay.release_source(ws)
+
+
+# ---------------------------------------------------------------------------
 # A registration that outlived its socket — the forward must not claim success
 # ---------------------------------------------------------------------------
 #
@@ -2551,7 +2832,7 @@ async def test_subscribe_landing_after_its_listener_is_gone_is_matched_at_once(
         if cmd["type"] == "terminal_subscribe":
             # Tear the listener down while the subscribe is in flight.
             session = relay._sessions[id(ws)]
-            await relay._stop_listener(session, target)
+            await relay.listeners._stop_listener(session, target)
         return True
 
     manager.relay.send_command_to_runner = AsyncMock(side_effect=_publish)
@@ -2608,7 +2889,7 @@ async def test_every_target_frame_leaves_a_positive_routing_receipt(
             if c.args and c.args[0] == "remote_terminal_target_frame_routed"
         ]
 
-    with patch.object(rtr, "logger", MagicMock()) as log:
+    with patch.object(relay_target_frames, "logger", MagicMock()) as log:
         ours = await relay.route_target_frame(
             session,
             TARGET_DEVICE,
@@ -3956,31 +4237,25 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
     frame, so a target could emit the RELAY's own verdicts — ``listener_lost``
     most plainly, a claim only the relay is in a position to make.
 
-    ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
-    and stay pass-through on purpose, so the codes pinned here are the
-    relay-ONLY ones. The trade that carve-out makes is stated at
-    ``TARGET_ERROR_CODES``: a target can close the source's pane repeatably by
-    claiming the grant is gone, which is a pane-level DoS by the party you
-    chose to attach to and not a privilege gain. An earlier draft of this
+    ``attach_grant_expired`` is in BOTH vocabularies and stays pass-through on
+    purpose, so the codes pinned here are every relay code but that one. The
+    trade that carve-out makes is stated at ``TARGET_ERROR_CODES``: a target
+    can close the source's pane repeatably by claiming the grant is gone, which
+    is a pane-level DoS by the party you chose to attach to and not a privilege
+    gain. An earlier draft of this
     docstring called it "discard live grants and re-mint in a loop"; there is
     no auto-remint path, and that claim was simply wrong (review round 4,
     item 4).
     """
-    relay_only = [
-        rtr.CODE_GRANT_INVALID,
-        rtr.CODE_GRANT_WRONG_SOURCE,
-        rtr.CODE_GRANT_CONSUMED,
-        rtr.CODE_NOT_REGISTERED,
-        rtr.CODE_VERIFIER_UNAVAILABLE,
-        rtr.CODE_REGISTRY_UNAVAILABLE,
-        rtr.CODE_TERMINAL_BUSY,
-        rtr.CODE_TARGET_NOT_CONNECTED,
-        rtr.CODE_CREATE_GRANT_INVALID,
-        rtr.CODE_CREATE_GRANT_EXPIRED,
-        rtr.CODE_CREATE_GRANT_WRONG_SOURCE,
-        rtr.CODE_GRANT_WRONG_KIND,
-        rtr.CODE_LISTENER_LOST,
-    ]
+    # Derived, not hand-listed: a hand list missed ``end_reply_timeout`` and
+    # ``end_already_pending`` when #1593 added them, and still missed
+    # ``create_grant_consumed``, ``buffer_backlog`` and the inline
+    # ``attach_terminal_missing`` after that was fixed.
+    # ``RELAY_ERROR_CODES`` sweeps every ``CODE_*`` constant, so a relay code
+    # added later is pinned here without anyone remembering to.
+    shared = {rtr.CODE_GRANT_EXPIRED}
+    assert rtr.RELAY_ERROR_CODES & rtr.TARGET_ERROR_CODES == shared
+    relay_only = sorted(rtr.RELAY_ERROR_CODES - shared)
     for code in relay_only:
         assert code not in rtr.TARGET_ERROR_CODES, code
         namespaced = rtr.namespace_target_code(code)
@@ -4020,9 +4295,9 @@ async def test_the_namespacing_branch_never_produces_a_relay_code() -> None:
     "by construction" was false.
 
     The property, stated exactly: the NAMESPACING branch never yields a relay
-    code. The pass-through branch may — ``attach_grant_unknown`` /
-    ``attach_grant_expired`` are in both vocabularies on purpose — so the
-    documented intersection is the only permitted overlap.
+    code. The pass-through branch may — ``attach_grant_expired`` is in both
+    vocabularies on purpose — so the documented intersection is the only
+    permitted overlap.
     """
     # The collision itself, in every spelling that reduces to the same slug.
     for forgery in [
@@ -4136,7 +4411,7 @@ async def test_every_target_refusal_type_and_code_reaches_the_source(
     # than immediately (see
     # `test_attach_grant_unknown_is_represented_once_with_the_same_jti`), so
     # the sweep drives it through that re-present with no delay.
-    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
 
     for frame_type in sorted(rtr.TARGET_REFUSAL_FRAME_TYPES):
         for code in sorted(rtr.TARGET_ERROR_CODES):
@@ -4826,32 +5101,74 @@ async def test_relay_error_codes_is_derived_and_covers_every_inline_literal() ->
     re-check, re-introducing exactly the collision round 2 closed.
 
     Two halves, checked against their two real sources: the constants are swept
-    out of the module namespace, and every ``"code": "<literal>"`` in the
-    module's own source must appear in the set.
+    out of ``remote_relay.protocol``'s namespace, and every
+    ``"code": "<literal>"`` in the relay's own source must appear in the set.
     """
     import ast
+    import importlib
     import inspect
+    import pkgutil
 
-    # Half one: the sweep agrees with the module's actual CODE_* constants.
+    from app.services.runner import remote_relay
+    from app.services.runner.remote_relay import protocol as relay_protocol
+
+    # Half one: the sweep agrees with the actual CODE_* constants. They are
+    # read from ``protocol``, the module that defines them and that
+    # ``RELAY_ERROR_CODES`` sweeps — not from the facade, which re-exports only
+    # the codes something reads through it.
     constants = {
         value
-        for name, value in vars(rtr).items()
+        for name, value in vars(relay_protocol).items()
         if name.startswith("CODE_") and isinstance(value, str)
     }
     assert constants, "no CODE_* constants found — the sweep is broken, not the set"
     assert constants <= rtr.RELAY_ERROR_CODES
     assert rtr.RELAY_ERROR_CODES == constants | rtr._INLINE_RELAY_ERROR_CODES
 
+    # Since the split the sweep runs over ``protocol``'s namespace only, so a
+    # ``CODE_*`` constant defined in any other module of the package would
+    # escape it, and so would a reference to it in a payload (half two sees only
+    # literals). Pin the invariant the sweep relies on: ``protocol`` is the one
+    # module that defines ``CODE_*`` constants.
+    for mod_info in pkgutil.iter_modules(remote_relay.__path__):
+        if mod_info.name == "protocol":
+            continue
+        mod = importlib.import_module(f"{remote_relay.__name__}.{mod_info.name}")
+        stray = sorted(
+            name
+            for name, value in vars(mod).items()
+            if name.startswith("CODE_")
+            and isinstance(value, str)
+            and getattr(remote_relay.protocol, name, None) is not value
+        )
+        assert not stray, (
+            f"remote_relay.{mod_info.name} defines {stray}; CODE_* constants "
+            "belong in remote_relay.protocol, where RELAY_ERROR_CODES sweeps them"
+        )
+
     # Half two: no inline literal escapes the set. This is the mechanical
     # tripwire — mint a code as a bare string in a payload anywhere in the
-    # module without declaring it and this fails.
+    # relay without declaring it and this fails. "The relay" is the facade
+    # module plus every module of the ``remote_relay`` package it was split
+    # into: an inline code moves with the method that mints it.
     #
     # Walked as an AST, not grepped. A regex over the source also matches the
     # module's own PROSE about this pattern — a first cut did exactly that and
     # failed on a docstring, which is a test failing for a reason unrelated to
     # what it claims. The AST sees dict literals and not comments.
+    from pathlib import Path
+
+    relay_module = Path(inspect.getfile(rtr))
+    sources = [
+        relay_module,
+        *sorted((relay_module.parent / "remote_relay").glob("*.py")),
+    ]
     literals: set[str] = set()
-    for node in ast.walk(ast.parse(inspect.getsource(rtr))):
+    for node in (
+        found
+        for source in sources
+        for found in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
+    ):
         if not isinstance(node, ast.Dict):
             continue
         for key, value in zip(node.keys, node.values, strict=False):
@@ -4932,3 +5249,1992 @@ async def test_pending_buffer_is_capped_and_expires(
     # The parallel deadline map never outlives its entries.
     assert set(session.pending_buffer_deadline) == set(session.pending_buffer)
     await relay.release_source(ws)
+
+
+# ---------------------------------------------------------------------------
+# Input acknowledgement (plan
+# `2026-09-20-remote-session-interactivity-is-a-query-and-both-halves-hold`,
+# Phase A1): the forward copies the whole source frame, and the target's
+# `terminal_input_ack` is published, retyped and routed back by grant.
+# ---------------------------------------------------------------------------
+
+
+def _ack(claims: dict[str, Any], **overrides: Any) -> dict[str, Any]:
+    """A target ``terminal_input_ack`` as the runner emits it (wire contract A1)."""
+    frame: dict[str, Any] = {
+        "type": "terminal_input_ack",
+        "remote": {"source_device_id": SOURCE_DEVICE, "grant_jti": claims["jti"]},
+        "terminal_id": "t1",
+        "seq": 7,
+        "bytes": 2,
+        "accepted": True,
+        "via": "traffic",
+        "accepted_at": "2026-09-27T12:00:00Z",
+    }
+    frame.update(overrides)
+    return frame
+
+
+async def test_forwarded_input_carries_seq_probe_and_unknown_fields(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The forward copies the WHOLE source frame minus the relay-owned keys.
+
+    Fails on the unfixed relay, which rebuilt ``terminal_input`` from
+    ``{"data": ...}`` alone: ``seq`` would never reach the target (so no ack
+    could be matched to its keystroke) and ``probe`` would be dropped, turning
+    every liveness probe into a real zero-byte input.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    for frame in (
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "request_id": "src-req",
+            "data": "bHM=",
+            "seq": 41,
+            "future_field": {"nested": [1, 2]},
+        },
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "data": "",
+            "seq": 42,
+            "probe": True,
+            # A source may not name its own authority block to the target.
+            "remote": {"source_device_id": "forged", "grant_jti": "forged"},
+        },
+    ):
+        await _send(relay, ws, manager, frame)
+
+    assert ws.of_type("error") == []
+    assert manager.send_terminal.await_count == 2
+    remote = {"source_device_id": SOURCE_DEVICE, "grant_jti": claims["jti"]}
+    traffic, probe = (c.args[1] for c in manager.send_terminal.await_args_list)
+
+    assert traffic["type"] == "terminal_input"
+    assert traffic["terminal_id"] == "t1"
+    assert traffic["data"] == "bHM="
+    assert traffic["seq"] == 41
+    assert traffic["future_field"] == {"nested": [1, 2]}
+    assert traffic["remote"] == remote
+    assert "probe" not in traffic
+    # Relay-owned: never forwarded. A forwarded request_id would route the
+    # target's refusal of this keystroke onto the mobile path.
+    assert "request_id" not in traffic
+    assert "grant_jti" not in traffic
+
+    assert probe["type"] == "terminal_input"
+    assert probe["data"] == ""
+    assert probe["seq"] == 42
+    assert probe["probe"] is True
+    assert probe["remote"] == remote
+    await relay.release_source(ws)
+
+
+async def test_input_ack_reaches_the_source_retyped_with_unknown_fields_intact(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    before = len(ws.sent)
+
+    accepted = _ack(claims, from_the_future={"k": "v"})
+    refused = _ack(
+        claims,
+        seq=8,
+        bytes=0,
+        accepted=False,
+        error="input_write_failed: broken pipe",
+        via="probe",
+    )
+    assert await relay.route_target_frame(session, TARGET_DEVICE, accepted) is True
+    assert await relay.route_target_frame(session, TARGET_DEVICE, refused) is True
+
+    assert ws.sent[before:] == [
+        {
+            "type": "remote_terminal_input_ack",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "seq": 7,
+            "bytes": 2,
+            "accepted": True,
+            "via": "traffic",
+            "accepted_at": "2026-09-27T12:00:00Z",
+            "from_the_future": {"k": "v"},
+        },
+        {
+            "type": "remote_terminal_input_ack",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "seq": 8,
+            "bytes": 0,
+            "accepted": False,
+            "error": "input_write_failed: broken pipe",
+            "via": "probe",
+            "accepted_at": "2026-09-27T12:00:00Z",
+        },
+    ]
+    await relay.release_source(ws)
+
+
+async def test_input_ack_with_null_seq_from_an_old_source_still_routes(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    assert (
+        await relay.route_target_frame(session, TARGET_DEVICE, _ack(claims, seq=None))
+        is True
+    )
+    delivered = ws.of_type("remote_terminal_input_ack")
+    assert len(delivered) == 1
+    assert "seq" in delivered[0] and delivered[0]["seq"] is None
+    await relay.release_source(ws)
+
+
+async def test_input_ack_for_an_unknown_or_unbound_grant_is_dropped(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Dropped (``False``, nothing sent) exactly as sibling return frames are.
+
+    Never a refusal: the source asked nothing the relay could answer, and
+    every source listening on the target's channel sees every ack.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    # A second grant on the same socket, registered but NOT yet bound.
+    unbound = _claims()
+    await _attach(relay, ws, manager, unbound, request_id="req-attach-2")
+    session = relay._sessions[id(ws)]
+    before = len(ws.sent)
+
+    for frame in (
+        # A grant this socket does not hold (another source's ack).
+        _ack(claims, remote={"grant_jti": "not-ours"}),
+        _ack(claims, remote=None, grant_jti="not-ours-either"),
+        # Our grant, but the target has not bound it yet.
+        _ack(unbound, terminal_id=None),
+        _ack(unbound),
+        # Our grant naming a terminal it does not hold: a target defect.
+        _ack(claims, terminal_id="t-other"),
+        # Unmarked: the target acks only frames that carried a `remote` block.
+        {k: v for k, v in _ack(claims).items() if k != "remote"},
+    ):
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is False
+
+    # And our grant's ack on ANOTHER target's channel is not ours either.
+    assert await relay.route_target_frame(session, str(uuid4()), _ack(claims)) is False
+    assert ws.sent[before:] == []
+    await relay.release_source(ws)
+
+
+async def test_input_ack_under_an_expired_grant_is_reaped_not_delivered(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Expiry is the dispatch's reap, not the ack arm's: the grant is evicted
+    (the source hears the expiry) and the ack finds nothing to route to."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    assert await relay.route_target_frame(session, TARGET_DEVICE, _ack(claims)) is False
+    assert ws.of_type("remote_terminal_input_ack") == []
+    assert claims["jti"] not in session.grants
+    await relay.release_source(ws)
+
+
+async def test_input_ack_routes_by_the_remote_block_over_a_foreign_top_level_jti(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``remote.grant_jti`` is the routing mark; a top-level ``grant_jti``
+    naming another source's grant neither misroutes nor leaks through."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    frame = _ack(claims, grant_jti="another-sources-grant")
+    assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is True
+    (delivered,) = ws.of_type("remote_terminal_input_ack")
+    assert delivered["grant_jti"] == claims["jti"]
+    await relay.release_source(ws)
+
+
+async def test_input_ack_cannot_speak_in_the_relays_voice(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``code`` / ``request_id`` are stripped and ``error`` is capped."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    long_error = "input_write_failed: " + "x" * 5000
+    frames = (
+        _ack(
+            claims,
+            accepted=False,
+            error=long_error,
+            code="listener_lost",
+            request_id="history:1",
+        ),
+        _ack(claims, seq=8, accepted=False, error={"not": "a string"}),
+    )
+    for frame in frames:
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is True
+
+    capped, non_string = ws.of_type("remote_terminal_input_ack")
+    assert "code" not in capped and "request_id" not in capped
+    assert capped["error"] == long_error[: rtr.TARGET_MESSAGE_MAX]
+    assert capped["error"].startswith("input_write_failed: ")
+    assert "error" not in non_string and non_string["accepted"] is False
+    await relay.release_source(ws)
+
+
+async def test_input_ack_terminal_mismatch_warns_once_per_grant(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    with (
+        patch.object(relay_target_frames.logger, "warning") as warning,
+        patch.object(relay_target_frames.logger, "debug") as debug,
+    ):
+        for _ in range(3):
+            assert (
+                await relay.route_target_frame(
+                    session, TARGET_DEVICE, _ack(claims, terminal_id="t-other")
+                )
+                is False
+            )
+    mismatch = "remote_terminal_input_ack_terminal_mismatch"
+    assert [c.args[0] for c in warning.call_args_list].count(mismatch) == 1
+    assert [c.args[0] for c in debug.call_args_list].count(mismatch) == 2
+    await relay.release_source(ws)
+
+
+async def test_forward_keeps_relay_owned_keys_whatever_extra_carries(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Relay-owned keys win in ``_forward`` even if ``extra`` names them."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    att = session.grants[claims["jti"]]
+    manager.send_terminal.reset_mock()
+
+    sent = await relay._forward(
+        session,
+        {},
+        att,
+        "terminal_input",
+        {
+            "type": "terminal_create",
+            "terminal_id": "t-forged",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "remote": {"grant_jti": "forged"},
+            "data": "eA==",
+        },
+    )
+    assert sent is True
+    frame = manager.send_terminal.await_args.args[1]
+    assert frame["type"] == "terminal_input"
+    assert frame["terminal_id"] == "t1"
+    assert frame["remote"] == att.remote_block()
+    assert frame["timestamp"] != "1970-01-01T00:00:00Z"
+    assert frame["data"] == "eA=="
+    await relay.release_source(ws)
+
+
+async def test_source_input_cannot_override_type_or_timestamp(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Through the source path the relay's ``type`` and ``timestamp`` win.
+
+    ``terminal_id`` cannot be exercised here: a source naming a terminal other
+    than the bound one is refused by ``_authorize`` before any forward, which
+    the second half pins. The ``_forward`` ordering for ``terminal_id`` is
+    covered directly by
+    ``test_forward_keeps_relay_owned_keys_whatever_extra_carries``.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "timestamp": "1970-01-01T00:00:00Z",
+            "data": "eA==",
+            "seq": 1,
+        },
+    )
+    frame = manager.send_terminal.await_args.args[1]
+    assert frame["type"] == "terminal_input"
+    assert frame["timestamp"] != "1970-01-01T00:00:00Z"
+
+    manager.send_terminal.reset_mock()
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t-other",
+            "data": "eA==",
+            "seq": 2,
+        },
+    )
+    manager.send_terminal.assert_not_called()
+    assert ws.of_type("error")[-1]["code"] == "attach_not_registered"
+    await relay.release_source(ws)
+
+
+async def test_remote_only_predicate_admits_terminal_input_ack() -> None:
+    assert rtr.is_remote_only_target_frame({"type": "terminal_input_ack"}) is True
+    assert (
+        rtr.is_remote_only_target_frame(
+            {"type": "terminal_input_ack", "remote": {"grant_jti": "j"}}
+        )
+        is True
+    )
+
+
+async def test_router_publishes_terminal_input_ack_on_the_remote_only_channel() -> None:
+    manager = _manager()
+    msg = {
+        "type": "terminal_input_ack",
+        "remote": {"grant_jti": "j", "source_device_id": SOURCE_DEVICE},
+        "terminal_id": "t1",
+        "seq": 1,
+        "bytes": 1,
+        "accepted": True,
+        "via": "traffic",
+        "accepted_at": "2026-09-27T12:00:00Z",
+    }
+    with patch.object(
+        devices_ws.remote_terminal_relay, "publish_target_frame", AsyncMock()
+    ) as p:
+        await devices_ws._route_device_message(msg, "dev-1", "user-1", manager)
+    p.assert_awaited_once_with("dev-1", msg)
+    manager.send_terminal_response_to_mobiles.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Remote END (plan ``2026-09-30-close-remote-sessions-from-the-local-runner``,
+# Phase 2)
+# ---------------------------------------------------------------------------
+# ``remote_terminal_end`` travels two SEPARATE paths: an open tab's bound grant
+# (authorized like input, attachment left alone) and a fresh grant for a
+# session this socket never attached to (verified, claimed, listened for, and
+# ALWAYS released once the round trip settles). What is pinned: both forward
+# ``terminal_end`` with the attach-shaped ``remote`` block under a minted id;
+# ``force`` survives; the target's ``terminal_ended`` comes back rebuilt as
+# ``remote_terminal_ended``; a target refusal reaches the source correlated by
+# the source's request id; and an unanswered end is a TYPED timeout, not
+# silence.
+
+
+def _forwarded_ends(manager: Any) -> list[dict[str, Any]]:
+    return [
+        c.args[1]
+        for c in manager.send_terminal.await_args_list
+        if c.args[1].get("type") == "terminal_end"
+    ]
+
+
+async def _fresh_end(
+    relay: RemoteTerminalRelay,
+    ws: _FakeWS,
+    manager: Any,
+    claims: Any,
+    *,
+    request_id: str = "req-end-1",
+    **extra: Any,
+) -> None:
+    with _verify(claims):
+        await relay.handle_source_frame(
+            {
+                "type": "remote_terminal_end",
+                "request_id": request_id,
+                "grant": "opaque.jwt.here",
+                **extra,
+            },
+            SOURCE_DEVICE,
+            manager,
+            ws,
+        )
+
+
+async def test_remote_terminal_end_is_a_source_frame() -> None:
+    assert rtr.is_source_frame("remote_terminal_end") is True
+    assert rtr.is_remote_only_target_frame({"type": "terminal_ended"}) is True
+
+
+async def test_end_ladder_sits_between_target_and_source_deadlines() -> None:
+    # target graceful-exit deadline 60 s < relay 75 s < source 90 s, and NOT
+    # the buffer TTL, which equals the target's deadline.
+    assert relay_end.PENDING_END_TTL_SECONDS == 75.0
+    assert 60.0 < relay_end.PENDING_END_TTL_SECONDS < 90.0
+    assert relay_end.PENDING_END_TTL_SECONDS != rtr.PENDING_BUFFER_TTL_SECONDS
+
+
+async def test_open_tab_end_forwards_terminal_end_with_the_remote_block(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    attach_remote = _forwarded_attach(manager)["remote"]
+    session = relay._sessions[id(ws)]
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_end",
+            "request_id": "req-end-1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "force": True,
+        },
+    )
+
+    assert ws.of_type("error") == [], ws.sent
+    (frame,) = _forwarded_ends(manager)
+    assert frame["terminal_id"] == "t1"
+    assert frame["force"] is True
+    # The SAME remote block terminal_attach carried — session_id included.
+    assert frame["remote"] == attach_remote
+    assert frame["remote"]["session_id"] == TARGET_SESSION
+    assert frame["remote"]["grant_jti"] == claims["jti"]
+    assert frame["remote"]["source_device_id"] == SOURCE_DEVICE
+    # The wire id is the relay's, never the source's own.
+    assert frame["request_id"] != "req-end-1"
+    assert session.pending_end == {
+        frame["request_id"]: rtr._PendingEnd(
+            source_request_id="req-end-1",
+            grant_jti=claims["jti"],
+            target_device_id=TARGET_DEVICE,
+            target_session_id=TARGET_SESSION,
+            terminal_id="t1",
+            end_only=False,
+        )
+    }
+    await relay.release_source(ws)
+
+
+async def test_open_tab_end_without_terminal_id_means_the_bound_terminal(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": claims["jti"]},
+    )
+
+    (frame,) = _forwarded_ends(manager)
+    assert frame["terminal_id"] == "t1"
+    # Absent / non-boolean force fails toward the GRACEFUL end.
+    assert frame["force"] is False
+    await relay.release_source(ws)
+
+
+async def test_open_tab_end_naming_another_terminal_is_refused(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_end",
+            "request_id": "r",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t-other",
+        },
+    )
+
+    assert _forwarded_ends(manager) == []
+    assert ws.of_type("error")[-1]["code"] == "attach_not_registered"
+    await relay.release_source(ws)
+
+
+async def test_end_for_an_unregistered_grant_jti_is_refused(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": "nope"},
+    )
+    manager.send_terminal.assert_not_called()
+    assert ws.of_type("error") == [
+        {
+            "type": "error",
+            "code": "attach_not_registered",
+            "message": "no attachment registered for this grant on this socket",
+            "request_id": "r",
+            "grant_jti": "nope",
+        }
+    ]
+
+
+async def test_open_tab_ended_reply_routes_to_source_and_keeps_the_attachment(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_end",
+            "request_id": "req-end-1",
+            "grant_jti": claims["jti"],
+        },
+    )
+    minted = _forwarded_ends(manager)[0]["request_id"]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": minted,
+            "session_id": TARGET_SESSION,
+            "terminal_id": "t1",
+            "outcome": "refused",
+            "reason": "Refused: unsent draft in the prompt",
+            "remote_echo": {"grant_jti": claims["jti"]},
+        },
+    )
+
+    assert routed is True
+    assert ws.of_type("remote_terminal_ended") == [
+        {
+            "type": "remote_terminal_ended",
+            "request_id": "req-end-1",
+            "grant_jti": claims["jti"],
+            "session_id": TARGET_SESSION,
+            "terminal_id": "t1",
+            "outcome": "refused",
+            "reason": "Refused: unsent draft in the prompt",
+        }
+    ]
+    # An open tab survives its own end round trip: a refused end leaves the
+    # pane live, and an ended one is retired by terminal_exit, not here.
+    assert claims["jti"] in session.grants
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert not redis.empty()
+
+    # ...and terminal_exit then retires it through the existing arm.
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_exit", "terminal_id": "t1", "exit_code": 0},
+    )
+    assert ws.of_type("remote_terminal_exit")
+    assert session.grants == {}
+    assert redis.empty()
+
+
+async def test_second_end_while_one_is_pending_is_refused(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    frame = {"type": "remote_terminal_end", "grant_jti": claims["jti"]}
+    await _send(relay, ws, manager, {**frame, "request_id": "a"})
+    await _send(relay, ws, manager, {**frame, "request_id": "b"})
+
+    assert len(_forwarded_ends(manager)) == 1
+    assert ws.of_type("error")[-1]["code"] == rtr.CODE_END_PENDING
+    assert ws.of_type("error")[-1]["request_id"] == "b"
+    await relay.release_source(ws)
+
+
+async def test_fresh_grant_end_claims_listens_and_forwards(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims, force=True, terminal_id="t9")
+
+    assert ws.of_type("error") == [], ws.sent
+    (frame,) = _forwarded_ends(manager)
+    assert frame["force"] is True
+    assert frame["terminal_id"] == "t9"
+    assert frame["remote"] == {
+        "source_device_id": SOURCE_DEVICE,
+        "grant_jti": claims["jti"],
+        "session_id": TARGET_SESSION,
+    }
+    session = relay._sessions[id(ws)]
+    att = session.grants[claims["jti"]]
+    assert att.end_only is True
+    assert att.attached is False
+    # Claimed, and a return route exists for the reply.
+    assert rtr.claim_key(claims["jti"]) in redis.strings
+    assert TARGET_DEVICE in session.listeners
+    # Never asked the target to BIND anything.
+    assert _forwarded_attaches(manager) == []
+    await relay.release_source(ws)
+
+
+async def test_fresh_grant_admits_no_post_attach_frame(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "grant_jti": claims["jti"],
+            "terminal_id": None,
+            "data": "eA==",
+        },
+    )
+    manager.send_terminal.assert_not_called()
+    # The reason (an end is in flight), not the symptom (nothing bound).
+    assert ws.of_type("error")[-1]["code"] == "end_already_pending"
+    assert claims["jti"] in relay._sessions[id(ws)].grants
+    await relay.release_source(ws)
+
+
+@pytest.mark.parametrize("outcome", ["ended", "refused"])
+async def test_fresh_grant_claim_dropped_after_the_reply(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, outcome: str
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": minted,
+            "session_id": TARGET_SESSION,
+            "terminal_id": "t7",
+            "outcome": outcome,
+            "via": "no_live_claude" if outcome == "ended" else None,
+        },
+    )
+
+    assert routed is True
+    (reply,) = ws.of_type("remote_terminal_ended")
+    assert reply["request_id"] == "req-end-1"
+    assert reply["outcome"] == outcome
+    assert reply["session_id"] == TARGET_SESSION
+    assert reply["terminal_id"] == "t7"
+    if outcome == "ended":
+        assert reply["via"] == "no_live_claude"
+    else:
+        assert "via" not in reply
+    # Released whatever the outcome: claim, record, listener, timer.
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+    assert session.listeners == {}
+
+
+async def test_fresh_grant_claim_dropped_after_a_target_error(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+        },
+    )
+
+    assert routed is True
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+            "request_id": "req-end-1",
+        }
+    ]
+    assert session.grants == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+    # An end is never re-presented: that remedy belongs to a pending ATTACH.
+    assert len(_forwarded_ends(manager)) == 1
+
+
+async def test_remote_marked_uncorrelated_refusal_settles_a_fresh_end(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "code": "remote_block_required",
+            "message": "refused",
+            "remote": {"grant_jti": claims["jti"]},
+        },
+    )
+
+    assert routed is True
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["request_id"] == "req-end-1"
+    # A target refusal from the runner's own vocabulary passes through.
+    assert err["code"] == "remote_block_required"
+    assert session.grants == {}
+    assert redis.empty()
+
+
+async def test_open_tab_target_error_routes_via_pending_end_and_keeps_the_tab(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_end",
+            "request_id": "req-end-1",
+            "grant_jti": claims["jti"],
+        },
+    )
+    minted = _forwarded_ends(manager)[0]["request_id"]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "code": "remote_type_not_admitted",
+            "message": "terminal_end not admitted",
+        },
+    )
+
+    assert routed is True
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["request_id"] == "req-end-1"
+    assert err["code"] == "remote_type_not_admitted"
+    assert err["terminal_id"] == "t1"
+    assert claims["jti"] in session.grants
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    await relay.release_source(ws)
+
+
+async def test_ended_outcome_outside_the_closed_set_reads_unknown(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, _claims())
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_ended", "request_id": minted, "outcome": "totally_ended"},
+    )
+
+    (reply,) = ws.of_type("remote_terminal_ended")
+    assert reply["outcome"] == "unknown"
+    assert reply["terminal_id"] is None
+
+
+async def test_ended_reply_on_another_targets_channel_is_not_ours(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, _claims())
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        str(uuid4()),
+        {"type": "terminal_ended", "request_id": minted, "outcome": "ended"},
+    )
+
+    assert routed is False
+    assert ws.of_type("remote_terminal_ended") == []
+    assert minted in session.pending_end
+    await relay.release_source(ws)
+
+
+@pytest.mark.parametrize(
+    ("make_verifier_result", "expected_code"),
+    [
+        (lambda: CoordTokenInvalidError("bad signature"), "attach_grant_invalid"),
+        (lambda: CoordTokenExpiredError("token expired"), "attach_grant_expired"),
+        (lambda: _claims(device_id=str(uuid4())), "attach_grant_wrong_source"),
+        (lambda: _claims(sub_type="create_grant"), "attach_grant_invalid"),
+        (
+            lambda: _claims(attach={"target_device_id": "not-a-uuid"}),
+            "attach_grant_invalid",
+        ),
+    ],
+)
+async def test_fresh_grant_end_refused_with_typed_code_and_nothing_forwarded(
+    relay: RemoteTerminalRelay,
+    redis: _FakeRedis,
+    make_verifier_result: Any,
+    expected_code: str,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, make_verifier_result())
+
+    manager.send_terminal.assert_not_called()
+    (err,) = ws.of_type("error")
+    assert err["code"] == expected_code
+    assert err["request_id"] == "req-end-1"
+    assert redis.empty()
+
+
+async def test_fresh_grant_already_claimed_elsewhere_is_consumed(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    claims = _claims()
+    other_ws = _FakeWS()
+    await _attach(relay, other_ws, _manager(), claims)
+
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, claims)
+
+    assert _forwarded_ends(manager) == []
+    assert ws.of_type("error")[-1]["code"] == "attach_grant_consumed"
+    await relay.release_source(other_ws)
+
+
+async def test_fresh_grant_end_to_a_disconnected_target_is_refused_and_released(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager(target_connected=False)
+    await _fresh_end(relay, ws, manager, _claims())
+
+    assert ws.of_type("error")[-1]["code"] == "target_not_connected"
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+
+
+async def test_unanswered_fresh_end_expires_with_a_typed_error(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", 0.0):
+        await _fresh_end(relay, ws, manager, claims)
+        await _drain_background(relay)
+
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "end_reply_timeout",
+            "message": "target did not answer the end request in time; "
+            "its outcome is unknown",
+            "request_id": "req-end-1",
+        }
+    ]
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+    assert ws.of_type("remote_terminal_ended") == []
+
+
+async def test_unanswered_open_tab_end_expires_typed_and_keeps_the_tab(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", 0.0):
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_end",
+                "request_id": "r",
+                "grant_jti": claims["jti"],
+            },
+        )
+        await _drain_background(relay)
+
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "end_reply_timeout"
+    assert err["request_id"] == "r"
+    assert err["terminal_id"] == "t1"
+    session = relay._sessions[id(ws)]
+    assert claims["jti"] in session.grants
+    assert session.pending_end == {}
+    await relay.release_source(ws)
+
+
+async def test_a_settled_end_disarms_its_timer(relay: RemoteTerminalRelay) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, _claims())
+    session = relay._sessions[id(ws)]
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    timer = session.pending_end_timers[minted]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_ended", "request_id": minted, "outcome": "ended"},
+    )
+    await asyncio.sleep(0)
+
+    assert timer.cancelled()
+    assert ws.of_type("remote_terminal_error") == []
+
+
+async def test_release_source_disarms_pending_end_timers(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, _claims())
+    session = relay._sessions[id(ws)]
+    (timer,) = session.pending_end_timers.values()
+
+    await relay.release_source(ws)
+    await asyncio.sleep(0)
+
+    assert timer.cancelled()
+    assert redis.empty()
+
+
+async def test_router_publishes_terminal_ended_on_the_remote_only_channel() -> None:
+    manager = _manager()
+    msg = {
+        "type": "terminal_ended",
+        "request_id": "r",
+        "session_id": TARGET_SESSION,
+        "terminal_id": "t1",
+        "outcome": "ended",
+    }
+    with patch.object(
+        devices_ws.remote_terminal_relay, "publish_target_frame", AsyncMock()
+    ) as p:
+        await devices_ws._route_device_message(msg, "dev-1", "user-1", manager)
+    p.assert_awaited_once_with("dev-1", msg)
+    manager.send_terminal_response_to_mobiles.assert_not_called()
+
+
+async def test_router_hands_remote_terminal_end_to_the_relay() -> None:
+    manager = _manager()
+    ws = _FakeWS()
+    msg = {"type": "remote_terminal_end", "grant_jti": "j", "request_id": "r"}
+    with patch.object(
+        devices_ws.remote_terminal_relay, "handle_source_frame", AsyncMock()
+    ) as h:
+        await devices_ws._route_device_message(msg, "dev-1", "user-1", manager, 7, ws)
+    h.assert_awaited_once_with(msg, "dev-1", manager, ws)
+    manager.send_terminal_response_to_mobiles.assert_not_called()
+
+
+async def test_open_tab_end_reply_after_terminal_exit_still_reaches_the_source(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The COMMON order: the PTY closes (``terminal_exit``) before the reply.
+
+    ``terminal_exit`` retires the tab and drops its attachment; the in-flight
+    end must survive that and still be answered under the source's request id.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_end",
+            "request_id": "req-end-1",
+            "grant_jti": claims["jti"],
+            "force": True,
+        },
+    )
+    minted = _forwarded_ends(manager)[0]["request_id"]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_exit", "terminal_id": "t1", "exit_code": 0},
+    )
+    assert session.grants == {}
+    assert minted in session.pending_end
+    # The return route stays up for the reply the end still owes.
+    assert TARGET_DEVICE in session.listeners
+    manager.relay.send_command_to_runner.reset_mock()
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": minted,
+            "terminal_id": "t1",
+            "outcome": "ended",
+        },
+    )
+
+    assert routed is True
+    assert ws.of_type("remote_terminal_ended") == [
+        {
+            "type": "remote_terminal_ended",
+            "request_id": "req-end-1",
+            "grant_jti": claims["jti"],
+            "session_id": TARGET_SESSION,
+            "terminal_id": "t1",
+            "outcome": "ended",
+        }
+    ]
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+    # Settled: now nothing needs the route, so it goes, unsubscribe matched.
+    await _settle(lambda: TARGET_DEVICE not in session.listeners)
+    assert session.listeners == {}
+    manager.relay.send_command_to_runner.assert_awaited_with(
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
+    )
+
+
+async def test_end_reply_after_terminal_exit_arrives_through_the_listener(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The same order, end to end through the pubsub listener itself."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": claims["jti"]},
+    )
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    (pubsub,) = redis.pubsubs
+
+    pubsub.push({"type": "terminal_exit", "terminal_id": "t1", "exit_code": 0})
+    pubsub.push({"type": "terminal_ended", "request_id": minted, "outcome": "ended"})
+    await _settle(lambda: bool(ws.of_type("remote_terminal_ended")))
+
+    (reply,) = ws.of_type("remote_terminal_ended")
+    assert reply["request_id"] == "r"
+    assert reply["outcome"] == "ended"
+    assert reply["terminal_id"] == "t1"
+    session = relay._sessions[id(ws)]
+    await _settle(lambda: pubsub.closed)
+    assert session.listeners == {}
+    assert pubsub.closed
+
+
+async def test_open_tab_end_ttl_after_exit_stops_the_listener(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", 0.05):
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_end",
+                "request_id": "r",
+                "grant_jti": claims["jti"],
+            },
+        )
+        await relay.route_target_frame(
+            session,
+            TARGET_DEVICE,
+            {"type": "terminal_exit", "terminal_id": "t1", "exit_code": 0},
+        )
+        assert TARGET_DEVICE in session.listeners
+        await _drain_background(relay)
+
+    assert ws.of_type("remote_terminal_error")[-1]["code"] == "end_reply_timeout"
+    assert session.listeners == {}
+
+
+async def test_open_tab_end_refusal_after_eviction_still_reaches_the_source(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": claims["jti"]},
+    )
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    await relay._evict(
+        session, session.grants[claims["jti"]], code="listener_lost", message="x"
+    )
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "error", "request_id": minted, "code": "session_not_local"},
+    )
+
+    errors = [e for e in ws.of_type("remote_terminal_error") if e.get("request_id")]
+    assert errors[-1]["request_id"] == "r"
+    assert errors[-1]["code"] == "session_not_local"
+    assert session.pending_end == {}
+    await relay.release_source(ws)
+
+
+async def test_open_tab_end_is_settled_at_once_by_runner_disconnected(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """No reply can come from a dead socket: typed now, not after 75 s."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": claims["jti"]},
+    )
+    (timer,) = session.pending_end_timers.values()
+
+    routed = await relay.route_target_frame(
+        session, TARGET_DEVICE, {"type": "runner_disconnected"}
+    )
+    await _drain_background(relay)
+
+    assert routed is True
+    ends = [e for e in ws.of_type("remote_terminal_error") if e.get("request_id")]
+    assert ends == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "target_not_connected",
+            "message": "target device's relay socket disconnected; "
+            "the end's outcome is unknown",
+            "request_id": "r",
+            "terminal_id": "t1",
+        }
+    ]
+    assert timer.cancelled()
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert session.grants == {}
+    assert session.listeners == {}
+    assert not [
+        e
+        for e in ws.of_type("remote_terminal_error")
+        if e["code"] == "end_reply_timeout"
+    ]
+
+
+async def test_runner_disconnected_settles_an_end_that_outlived_its_tab(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The tab is already retired, so only the pending end is ours to settle."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": claims["jti"]},
+    )
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_exit", "terminal_id": "t1", "exit_code": 0},
+    )
+    assert session.grants == {}
+    assert session.pending_end
+
+    routed = await relay.route_target_frame(
+        session, TARGET_DEVICE, {"type": "runner_disconnected"}
+    )
+    await _drain_background(relay)
+
+    assert routed is True
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "target_not_connected"
+    assert err["request_id"] == "r"
+    assert session.pending_end == {}
+    assert session.listeners == {}
+
+
+async def test_open_tab_end_is_settled_at_once_when_the_listener_dies(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": claims["jti"]},
+    )
+    (_, task) = session.listeners[TARGET_DEVICE]
+
+    redis.pubsubs[0].push(ConnectionError("pubsub connection lost"))
+    await _settle(task.done)
+    await _drain_background(relay)
+
+    ends = [e for e in ws.of_type("remote_terminal_error") if e.get("request_id")]
+    assert len(ends) == 1
+    assert ends[0]["code"] == "listener_lost"
+    assert ends[0]["request_id"] == "r"
+    assert ends[0]["terminal_id"] == "t1"
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert session.grants == {}
+    assert redis.empty()
+
+
+async def test_fresh_end_disconnect_settles_once_and_releases(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    manager.send_terminal.reset_mock()
+
+    await relay.route_target_frame(
+        session, TARGET_DEVICE, {"type": "runner_disconnected"}
+    )
+    await _drain_background(relay)
+
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "target_not_connected"
+    assert err["request_id"] == "req-end-1"
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+    # An end-only grant bound nothing, so no terminal_detach is sent for it.
+    assert [c.args[1]["type"] for c in manager.send_terminal.await_args_list] == []
+
+
+async def test_release_source_sends_no_detach_for_a_fresh_end(
+    relay: RemoteTerminalRelay,
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    await _fresh_end(relay, ws, manager, _claims())
+    manager.send_terminal.reset_mock()
+    await relay.release_source(ws)
+    manager.send_terminal.assert_not_called()
+
+
+async def test_reply_racing_the_forward_arms_no_timer(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The target answers while ``send_terminal`` is still awaiting."""
+    ws = _FakeWS()
+    manager = _manager()
+
+    async def send_and_answer(target: str, frame: dict[str, Any]) -> bool:
+        if frame.get("type") == "terminal_end":
+            session = relay._sessions[id(ws)]
+            await relay.route_target_frame(
+                session,
+                target,
+                {
+                    "type": "terminal_ended",
+                    "request_id": frame["request_id"],
+                    "outcome": "ended",
+                },
+            )
+        return True
+
+    manager.send_terminal = AsyncMock(side_effect=send_and_answer)
+    await _fresh_end(relay, ws, manager, _claims())
+
+    session = relay._sessions[id(ws)]
+    assert ws.of_type("remote_terminal_ended")[0]["outcome"] == "ended"
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert session.grants == {}
+    assert redis.empty()
+    assert ws.of_type("error") == []
+
+
+async def test_fresh_end_registry_failure_is_typed_and_leaves_nothing(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    with patch.object(
+        relay.registry,
+        "_write_grant_record",
+        AsyncMock(side_effect=RuntimeError("redis down")),
+    ):
+        await _fresh_end(relay, ws, manager, _claims())
+
+    assert ws.of_type("error")[-1]["code"] == "attach_registry_unavailable"
+    assert _forwarded_ends(manager) == []
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert redis.empty()
+
+
+@pytest.mark.parametrize("by", ["token", "grant_jti"])
+async def test_repeat_end_of_a_pending_fresh_end_is_end_already_pending(
+    relay: RemoteTerminalRelay, by: str
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    if by == "token":
+        await _fresh_end(relay, ws, manager, claims, request_id="req-end-2")
+    else:
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_end",
+                "request_id": "req-end-2",
+                "grant_jti": claims["jti"],
+            },
+        )
+
+    assert len(_forwarded_ends(manager)) == 1
+    err = ws.of_type("error")[-1]
+    assert err["code"] == "end_already_pending"
+    assert err["request_id"] == "req-end-2"
+    await relay.release_source(ws)
+
+
+class _RaisingWS(_FakeWS):
+    """A source socket whose send fails with a NON-benign exception.
+
+    ``ValueError`` (an unserializable payload, say), because ``RuntimeError``
+    is in ``BENIGN_SEND_EXCEPTIONS`` and ``_send_to_source`` swallows it.
+    """
+
+    def __init__(self, fail_on: set[str]) -> None:
+        super().__init__()
+        self.fail_on = fail_on
+
+    async def send_json(self, payload: dict[str, Any]) -> None:
+        if payload.get("type") in self.fail_on:
+            raise ValueError("send blew up")
+        await super().send_json(payload)
+
+
+@pytest.mark.parametrize("settled_by", ["timeout", "reply", "refusal"])
+async def test_a_failing_source_send_still_releases_a_fresh_end(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, settled_by: str
+) -> None:
+    ws = _RaisingWS({"remote_terminal_error", "remote_terminal_ended"})
+    manager = _manager()
+    claims = _claims()
+    ttl = 0.0 if settled_by == "timeout" else 60.0
+    with patch.object(relay_end, "PENDING_END_TTL_SECONDS", ttl):
+        await _fresh_end(relay, ws, manager, claims)
+        session = relay._sessions[id(ws)]
+        minted = _forwarded_ends(manager)[0]["request_id"]
+        if settled_by == "timeout":
+            await _drain_background(relay)
+        else:
+            frame = (
+                {"type": "terminal_ended", "request_id": minted, "outcome": "ended"}
+                if settled_by == "reply"
+                else {"type": "error", "request_id": minted, "code": "not_found"}
+            )
+            with pytest.raises(ValueError):
+                await relay.route_target_frame(session, TARGET_DEVICE, frame)
+            await _drain_background(relay)
+
+    # The send failed, but the attachment and its claim did not leak...
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert session.listeners == {}
+    assert redis.empty()
+    # ...so a later end of the same grant is not refused end_already_pending.
+    await _fresh_end(relay, _FakeWS(), manager, claims, request_id="req-end-2")
+    assert len(_forwarded_ends(manager)) == 2
+    await relay.release_source(ws)
+
+
+async def test_grant_expiring_mid_end_does_not_drop_the_real_reply(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    # Both sweeps run: the source-frame path's (this frame names another
+    # grant) and the target-frame path's (the reply itself).
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_input", "grant_jti": "someone-else", "data": ""},
+    )
+    assert claims["jti"] in session.grants
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_ended", "request_id": minted, "outcome": "ended"},
+    )
+
+    (ended,) = ws.of_type("remote_terminal_ended")
+    assert ended["request_id"] == "req-end-1"
+    assert ended["outcome"] == "ended"
+    assert ws.of_type("remote_terminal_error") == []
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert redis.empty()
+
+
+async def test_detach_of_a_pending_fresh_end_is_refused_and_keeps_the_end(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    minted = _forwarded_ends(manager)[0]["request_id"]
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_detach",
+            "request_id": "req-detach",
+            "grant_jti": claims["jti"],
+        },
+    )
+
+    err = ws.of_type("error")[-1]
+    assert err["code"] == "end_already_pending"
+    assert err["request_id"] == "req-detach"
+    assert claims["jti"] in session.grants
+    assert minted in session.pending_end
+    manager.send_terminal.assert_not_called()
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_ended", "request_id": minted, "outcome": "ended"},
+    )
+    assert ws.of_type("remote_terminal_ended")[0]["request_id"] == "req-end-1"
+    assert session.grants == {}
+    assert redis.empty()
+
+
+async def test_failed_fresh_forward_never_drops_a_claim_it_no_longer_owns(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """Evicted during the forward's await, then re-claimed elsewhere."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    foreign = "another-socket"
+
+    async def disconnect_mid_send(target: str, frame: dict[str, Any]) -> bool:
+        if frame.get("type") == "terminal_end":
+            session = relay._sessions[id(ws)]
+            await relay.route_target_frame(
+                session, target, {"type": "runner_disconnected"}
+            )
+            # The jti is free again, and another socket claims it.
+            redis.strings[rtr.claim_key(claims["jti"])] = foreign
+            return False
+        return True
+
+    manager.send_terminal = AsyncMock(side_effect=disconnect_mid_send)
+    await _fresh_end(relay, ws, manager, claims)
+    await _drain_background(relay)
+
+    assert redis.strings.get(rtr.claim_key(claims["jti"])) == foreign
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    # The disconnect already answered the end; the failed send must not add a
+    # second answer under the same request id.
+    answers = [f for f in ws.sent if f.get("request_id") == "req-end-1"]
+    assert len(answers) == 1, answers
+
+
+# ---------------------------------------------------------------------------
+# End protocol — characterization (relay-split plan Phase 0)
+# ---------------------------------------------------------------------------
+# Plan ``2026-10-04-web-remote-terminal-relay-is-one-class-of-four-protocols``
+# moves the end protocol and its TTL into their own collaborator. These pin
+# the timer-plus-shared-state interleavings the suite above left uncovered,
+# and they must pass UNMODIFIED across that move.
+#
+# Branches deliberately left uncovered, as unreachable through any public
+# path (each is a defensive guard; reaching it needs a private call):
+# ``_cancel_end_timer`` with a non-``str`` id (every caller passes a ``str``
+# key or checks first); ``_expire_pending_end`` waking to an already-popped
+# entry (every path that pops an end also cancels its timer); and
+# ``_release_end_only`` for an ``end_only`` entry whose attachment is gone or
+# no longer ``end_only`` (dropping an ``end_only`` attachment sweeps its
+# ``pending_end`` entries first).
+
+
+async def test_fresh_end_listener_lost_answers_once_and_frees_the_claim(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    assert rtr.claim_key(claims["jti"]) in redis.strings
+    assert len(session.pending_end) == 1
+    (_, task) = session.listeners[TARGET_DEVICE]
+
+    redis.pubsubs[0].push(ConnectionError("pubsub connection lost"))
+    await _settle(task.done)
+    await _drain_background(relay)
+
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "listener_lost",
+            "message": "return route to the target was lost; "
+            "the end's outcome is unknown",
+            "request_id": "req-end-1",
+        }
+    ]
+    assert ws.of_type("error") == []
+    assert rtr.claim_key(claims["jti"]) not in redis.strings
+    assert redis.empty()
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert session.listeners == {}
+
+
+async def test_release_source_during_an_armed_end_timer_cancels_it_and_sends_nothing(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An open tab's end outlives the tab, but not the socket.
+
+    The TTL is short and REAL time passes after the release, so a timer the
+    release failed to disarm would have fired inside this test.
+    """
+    monkeypatch.setattr(_END_TTL_MODULE, "PENDING_END_TTL_SECONDS", 0.05)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_end", "request_id": "r", "grant_jti": claims["jti"]},
+    )
+    (timer,) = session.pending_end_timers.values()
+    assert not timer.done()
+    sent_before_release = list(ws.sent)
+
+    await relay.release_source(ws)
+    await asyncio.sleep(0.15)
+    await _drain_background(relay)
+
+    assert timer.cancelled()
+    assert ws.sent == sent_before_release
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+
+
+async def test_runner_disconnected_settles_only_that_targets_pending_ends(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    gone = await _attached_to(
+        relay, ws, manager, TARGET_DEVICE, terminal_id="t1", request_id="ra"
+    )
+    alive = await _attached_to(
+        relay, ws, manager, OTHER_TARGET, terminal_id="t2", request_id="rb"
+    )
+    session = relay._sessions[id(ws)]
+    for claims, rid in ((gone, "end-a"), (alive, "end-b")):
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_end",
+                "request_id": rid,
+                "grant_jti": claims["jti"],
+            },
+        )
+    timers = dict(session.pending_end_timers)
+    (minted_a, minted_b) = [e["request_id"] for e in _forwarded_ends(manager)]
+
+    routed = await relay.route_target_frame(
+        session, TARGET_DEVICE, {"type": "runner_disconnected"}
+    )
+    await asyncio.sleep(0)
+
+    assert routed is True
+    answered = [f for f in ws.sent if f.get("request_id") in ("end-a", "end-b")]
+    assert answered == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": gone["jti"],
+            "code": "target_not_connected",
+            "message": "target device's relay socket disconnected; "
+            "the end's outcome is unknown",
+            "request_id": "end-a",
+            "terminal_id": "t1",
+        }
+    ]
+    assert timers[minted_a].cancelled()
+    assert not timers[minted_b].done()
+    assert list(session.pending_end) == [minted_b]
+    assert list(session.pending_end_timers) == [minted_b]
+    assert list(session.grants) == [alive["jti"]]
+    assert list(session.listeners) == [OTHER_TARGET]
+
+    # The surviving end still settles by its own reply.
+    await relay.route_target_frame(
+        session,
+        OTHER_TARGET,
+        {"type": "terminal_ended", "request_id": minted_b, "outcome": "ended"},
+    )
+    (ended,) = ws.of_type("remote_terminal_ended")
+    assert ended["request_id"] == "end-b"
+    await relay.release_source(ws)
+
+
+async def test_fresh_token_of_a_held_grant_takes_the_open_tab_path(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The token of a grant already bound here is not a second claim."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    await _fresh_end(relay, ws, manager, claims, request_id="r-tok")
+
+    assert ws.of_type("error") == []
+    (end,) = _forwarded_ends(manager)
+    assert end["terminal_id"] == "t1"
+    assert end["remote"]["grant_jti"] == claims["jti"]
+    (entry,) = session.pending_end.values()
+    assert entry.end_only is False
+    assert entry.source_request_id == "r-tok"
+    att = session.grants[claims["jti"]]
+    assert att.end_only is False and att.attached is True
+    await relay.release_source(ws)
+
+
+async def test_fresh_end_claim_failure_is_typed_and_drops_nothing() -> None:
+    """The claim itself raised: nothing was claimed, so nothing is released."""
+    redis = _BrokenRedis(fail="set")
+    relay = RemoteTerminalRelay(redis_client=redis)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+
+    await _fresh_end(relay, ws, manager, claims)
+
+    assert ws.of_type("error") == [
+        {
+            "type": "error",
+            "code": "attach_registry_unavailable",
+            "message": "attachment registry temporarily unavailable",
+            "request_id": "req-end-1",
+            "grant_jti": claims["jti"],
+        }
+    ]
+    assert _forwarded_ends(manager) == []
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert session.listeners == {}
+    # No compare-and-delete was attempted for a claim that never landed.
+    assert not [c for c in redis.commands if c[0] == "delete"]
+    assert redis.empty()
+
+
+async def test_fresh_end_send_raising_is_target_not_connected(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    ws = _FakeWS()
+    manager = _manager()
+    manager.send_terminal = AsyncMock(side_effect=ConnectionError("target gone"))
+    claims = _claims()
+
+    await _fresh_end(relay, ws, manager, claims)
+
+    (err,) = ws.of_type("error")
+    assert err["code"] == "target_not_connected"
+    assert err["request_id"] == "req-end-1"
+    assert err["grant_jti"] == claims["jti"]
+    session = relay._sessions[id(ws)]
+    assert session.grants == {}
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    assert redis.empty()
+
+
+async def test_end_timeout_without_a_source_request_id_omits_it(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_END_TTL_MODULE, "PENDING_END_TTL_SECONDS", 0.0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+
+    await _fresh_end(relay, ws, manager, claims, request_id=None)  # type: ignore[arg-type]
+    await asyncio.wait_for(_drain_background(relay), timeout=1.0)
+
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "end_reply_timeout",
+            "message": "target did not answer the end request in time; "
+            "its outcome is unknown",
+        }
+    ]
+    assert redis.empty()
+
+
+class _GatedWS(_FakeWS):
+    """Holds the FIRST ``remote_terminal_error`` send until ``release`` is set."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.waiting = False
+        self.release = asyncio.Event()
+
+    async def send_json(self, payload: dict[str, Any]) -> None:
+        if payload.get("type") == "remote_terminal_error" and not self.release.is_set():
+            self.waiting = True
+            await self.release.wait()
+        await super().send_json(payload)
+
+
+async def test_reply_landing_mid_settle_is_answered_once_by_the_reply(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """A ``runner_disconnected`` settling ends must skip one a reply took.
+
+    The settle sweep awaits each answer's send. A ``terminal_ended`` for the
+    NEXT end arriving during that await pops it first, so the sweep finds it
+    gone: the end is answered once, by the real reply, never twice.
+    """
+    ws = _GatedWS()
+    manager = _manager()
+    first = await _attached(relay, ws, manager, terminal_id="t1")
+    second = await _attached(relay, ws, manager, terminal_id="t2", request_id="r2")
+    session = relay._sessions[id(ws)]
+    for claims, rid in ((first, "end-1"), (second, "end-2")):
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_end",
+                "request_id": rid,
+                "grant_jti": claims["jti"],
+            },
+        )
+    (_, minted_2) = [e["request_id"] for e in _forwarded_ends(manager)]
+
+    disconnect = asyncio.create_task(
+        relay.route_target_frame(
+            session, TARGET_DEVICE, {"type": "runner_disconnected"}
+        )
+    )
+    await _settle(lambda: ws.waiting)
+    assert ws.waiting
+    reply = asyncio.create_task(
+        relay.route_target_frame(
+            session,
+            TARGET_DEVICE,
+            {"type": "terminal_ended", "request_id": minted_2, "outcome": "ended"},
+        )
+    )
+    await _settle(lambda: minted_2 not in session.pending_end)
+    assert minted_2 not in session.pending_end
+    ws.release.set()
+    await asyncio.wait_for(asyncio.gather(disconnect, reply), timeout=5.0)
+    await _drain_background(relay)
+
+    assert [f["type"] for f in ws.sent if f.get("request_id") == "end-2"] == [
+        "remote_terminal_ended"
+    ]
+    (err_1,) = [f for f in ws.sent if f.get("request_id") == "end-1"]
+    assert err_1["code"] == "target_not_connected"
+    assert session.pending_end == {}
+    assert session.pending_end_timers == {}
+    await relay.release_source(ws)
+
+
+# ---------------------------------------------------------------------------
+# Tunable seams — a patch must REACH the code (vet item 10)
+# ---------------------------------------------------------------------------
+# There is no per-test timeout in this suite, so a test patching a tunable on a
+# module the code no longer reads it from would still pass: slowly, against the
+# real value. These bound the wait far below the real defaults (3 s and 75 s),
+# so a dead patch fails with ``TimeoutError`` instead.
+
+
+async def test_attach_represent_delay_seam_reaches_the_represent_timer(
+    relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert rtr.ATTACH_REPRESENT_DELAY_SECONDS >= 2.0
+    monkeypatch.setattr(_ATTACH_DELAY_MODULE, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _arm_represent(relay, ws, manager, claims)
+
+    await asyncio.wait_for(_drain_background(relay), timeout=1.0)
+
+    first, second = _forwarded_attaches(manager)
+    assert second["remote"]["grant_jti"] == first["remote"]["grant_jti"]
+    assert second["request_id"] != first["request_id"]
+    await relay.release_source(ws)
+
+
+async def test_pending_end_ttl_seam_reaches_the_end_timer(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert relay_end.PENDING_END_TTL_SECONDS >= 2.0
+    monkeypatch.setattr(_END_TTL_MODULE, "PENDING_END_TTL_SECONDS", 0.0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _fresh_end(relay, ws, manager, claims)
+
+    await asyncio.wait_for(_drain_background(relay), timeout=1.0)
+
+    (err,) = ws.of_type("remote_terminal_error")
+    assert err["code"] == "end_reply_timeout"
+    assert err["request_id"] == "req-end-1"
+    assert redis.empty()

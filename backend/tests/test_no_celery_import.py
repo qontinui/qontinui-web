@@ -86,6 +86,7 @@ def test_scheduler_registers_the_former_celery_beat_tasks() -> None:
         "clipboard_cleanup",
         "file_cleanup",
         "render_log_retention",
+        "journey_edge_retention",
     }
     missing = expected - registered
     assert not missing, f"scheduler lost tasks: {sorted(missing)}"

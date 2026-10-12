@@ -7,9 +7,10 @@
  * Phase 2a.2 of plan
  * `D:/qontinui-root/plans/2026-05-22-mtc-iter3-remediation-web-dashboard.md`.
  *
- * Sits above `RunnerTokenList` on the Auth Tokens tab. Pair codes are
- * the recommended path for new operators; long-lived runner tokens
- * (the existing UI) remain available as the advanced/CI fallback.
+ * Sits on the Auth Tokens tab. The long-lived runner-token card that
+ * used to sit below it was deleted: it called `/devices/tokens`, which
+ * never existed, after `/runners/tokens` was retired with no replacement
+ * (coord-issued device JWTs replaced it).
  *
  * Flow:
  * 1. Operator clicks "Generate one-time pair code".
@@ -158,7 +159,9 @@ export function PairCodeMintCard() {
               <div className="flex items-center gap-2 text-xs text-text-muted">
                 <Timer className="w-3.5 h-3.5" />
                 {state.status === "expired" ? (
-                  <span>Expired — click <em>Generate new code</em>.</span>
+                  <span>
+                    Expired — click <em>Generate new code</em>.
+                  </span>
                 ) : (
                   <span>
                     Expires in{" "}
@@ -173,9 +176,9 @@ export function PairCodeMintCard() {
               </div>
               {state.status === "active" && (
                 <p className="text-xs text-text-muted text-center max-w-md">
-                  Type this code into your runner&apos;s Settings →
-                  Connection pair-code field. The code is single-use and
-                  expires in 5 minutes.
+                  Type this code into your runner&apos;s Settings → Connection
+                  pair-code field. The code is single-use and expires in 5
+                  minutes.
                 </p>
               )}
             </div>

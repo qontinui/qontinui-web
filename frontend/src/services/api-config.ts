@@ -1,3 +1,5 @@
+import { resolveEndpoint } from "@/lib/errors/endpoint-unresolved";
+
 export class ApiConfig {
   // Main API (authentication, users, projects)
   // Use environment variable to call backend directly (required for cookie-based auth)
@@ -45,6 +47,53 @@ export class ApiConfig {
    */
   static getBaseUrl(): string {
     return ApiConfig.API_BASE_URL;
+  }
+
+  /**
+   * The ABSOLUTE backend base URL, for a consumer outside this page that cannot
+   * use a same-origin relative path — e.g. the `backend_url` handed to the
+   * runner so it can post extraction results back.
+   *
+   * - `NEXT_PUBLIC_API_URL` set: that.
+   * - Unset (the supported same-origin configuration) IN THE BROWSER: this
+   *   page's own origin. `next.config.mjs`'s `fallback` rewrite
+   *   `/api/:path*` → `${BACKEND_URL}/api/:path*` proxies every `/api/v1/*`
+   *   path that has no route handler — which covers the runner's
+   *   `/api/v1/extractions/*` writes — and forwards the `Authorization`
+   *   header the runner sends, so the origin IS a working backend base.
+   * - Unset on the server (no origin to derive): `resolveEndpoint`'s rule —
+   *   the dev default in development, otherwise `EndpointUnresolvedError`
+   *   naming the variable to set. Never a dev-stack address in production.
+   */
+  static resolveAbsoluteBaseUrl(): string {
+    const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+    if (
+      !configured &&
+      typeof window !== "undefined" &&
+      window.location?.origin &&
+      window.location.origin !== "null"
+    ) {
+      return window.location.origin;
+    }
+    return resolveEndpoint("api", configured);
+  }
+
+  /**
+   * The WebSocket base for backend streams: `NEXT_PUBLIC_WS_URL` when set,
+   * otherwise derived from {@link resolveAbsoluteBaseUrl} (http→ws,
+   * https→wss) — the same same-origin derivation `useChatWebSocket` uses.
+   * Throws `EndpointUnresolvedError` where that does.
+   *
+   * The same-origin arm (API base unset, so this page's origin) only works
+   * when the host in front of this app proxies WebSocket UPGRADES to the
+   * backend. Next.js rewrites do not reliably carry an upgrade, so a
+   * deployment serving backend streams same-origin needs such a proxy — or
+   * sets `NEXT_PUBLIC_WS_URL` / `NEXT_PUBLIC_API_URL` to the backend directly.
+   */
+  static resolveWebSocketBaseUrl(): string {
+    const configured = process.env.NEXT_PUBLIC_WS_URL?.trim();
+    const base = configured || ApiConfig.resolveAbsoluteBaseUrl();
+    return base.replace(/\/+$/, "").replace(/^http(s?):\/\//, "ws$1://");
   }
 
   /**

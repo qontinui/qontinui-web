@@ -29,7 +29,11 @@ from app.middleware.rate_limit import user_limiter
 from app.models.device import Device
 from app.models.phase_result import PhaseResult
 from app.models.user import User
-from app.models.workflow_event import WorkflowEvent, WorkflowEventType
+from app.models.workflow_event import (
+    TELEMETRY_EVENT_TYPES,
+    WorkflowEvent,
+    WorkflowEventType,
+)
 from app.schemas.phase_result import PhaseResultIngestRequest, PhaseResultResponse
 from app.schemas.workflow_event import WorkflowEventCreate, WorkflowEventResponse
 from app.services.coord_jwks import token_rejection_examples
@@ -361,9 +365,13 @@ async def list_workflow_events(
     List workflow events for the authenticated user.
 
     Returns events in reverse chronological order. Supports filtering by
-    event type, device, and run ID.
+    event type, device, and run ID. Telemetry event types (funnel events)
+    are never returned.
     """
-    query = select(WorkflowEvent).where(WorkflowEvent.user_id == current_user.id)
+    query = select(WorkflowEvent).where(
+        WorkflowEvent.user_id == current_user.id,
+        WorkflowEvent.event_type.notin_(TELEMETRY_EVENT_TYPES),
+    )
 
     if event_type:
         query = query.where(WorkflowEvent.event_type == event_type)
@@ -413,12 +421,15 @@ async def list_unseen_events(
     List unseen workflow events for the authenticated user.
 
     Used by mobile as a polling fallback when push notifications are unavailable.
+    Telemetry event types (funnel events) are never returned, so they never
+    move the unread badge.
     """
     query = (
         select(WorkflowEvent)
         .where(
             WorkflowEvent.user_id == current_user.id,
             WorkflowEvent.seen == False,  # noqa: E712
+            WorkflowEvent.event_type.notin_(TELEMETRY_EVENT_TYPES),
         )
         .order_by(WorkflowEvent.timestamp.desc())
         .limit(limit)

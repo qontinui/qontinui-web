@@ -56,6 +56,8 @@ import {
 import { GapRow } from "@/components/admin/coord/GapRow";
 import { isGapQuestion } from "@/components/admin/coord/policy-gap";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlight } from "@/components/operations/useSingleFlightPoll";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
@@ -129,11 +131,15 @@ export default function CoordQuestionsPage() {
   const answeredSeq = useRef(0);
   const gapsSeq = useRef(0);
 
-  const fetchPending = useCallback(async () => {
+  // `polled` is true for reads the timer issues: exactly one request each
+  // (`COORD_DASHBOARD_POLL_OPTIONS`). A read an operator's click issues keeps
+  // the client's default retries.
+  const fetchPending = useCallback(async (polled = false) => {
     const seq = ++pendingSeq.current;
     try {
       const body = await httpClient.get<unknown>(
-        `${API}/agent-questions/pending`
+        `${API}/agent-questions/pending`,
+        polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       if (seq !== pendingSeq.current) return;
       setPending(extractQuestions(body));
@@ -145,14 +151,15 @@ export default function CoordQuestionsPage() {
     }
   }, []);
 
-  const fetchAnswered = useCallback(async () => {
+  const fetchAnswered = useCallback(async (polled = false) => {
     const seq = ++answeredSeq.current;
     try {
       // The answered endpoint may not be wired yet on every coord build;
       // any failure (incl. 404/501) is tolerated by the catch below, which
       // leaves the answered list empty so the pending tab still works.
       const body = await httpClient.get<unknown>(
-        `${API}/agent-questions/answered?limit=${ANSWERED_LIMIT}`
+        `${API}/agent-questions/answered?limit=${ANSWERED_LIMIT}`,
+        polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       if (seq !== answeredSeq.current) return;
       setAnswered(extractQuestions(body));
@@ -173,13 +180,18 @@ export default function CoordQuestionsPage() {
   // gaps are pre-answered. We pass `gap=true` as a coord-side hint AND
   // defensively client-filter on the POLICY_GAP marker, so the tab is correct
   // even during the window where coord's `gap` SQL filter isn't yet deployed.
-  const fetchGaps = useCallback(async () => {
+  const fetchGaps = useCallback(async (polled = false) => {
     const seq = ++gapsSeq.current;
+    const options = polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined;
     try {
       const [pendingBody, answeredBody] = await Promise.all([
-        httpClient.get<unknown>(`${API}/agent-questions/pending?gap=true`),
         httpClient.get<unknown>(
-          `${API}/agent-questions/answered?gap=true&limit=${GAPS_LIMIT}`
+          `${API}/agent-questions/pending?gap=true`,
+          options
+        ),
+        httpClient.get<unknown>(
+          `${API}/agent-questions/answered?gap=true&limit=${GAPS_LIMIT}`,
+          options
         ),
       ]);
       const merged = [
@@ -187,9 +199,7 @@ export default function CoordQuestionsPage() {
         ...extractQuestions(answeredBody),
       ]
         .filter(isGapQuestion)
-        .sort((a, b) =>
-          (b.created_at ?? "").localeCompare(a.created_at ?? "")
-        );
+        .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
       if (seq !== gapsSeq.current) return;
       setGaps(merged);
       setGapsError(false);
@@ -219,12 +229,19 @@ export default function CoordQuestionsPage() {
    */
   const allSeq = useRef(0);
 
-  const fetchAll = useCallback(async () => {
-    const seq = ++allSeq.current;
-    await Promise.all([fetchPending(), fetchAnswered(), fetchGaps()]);
-    if (seq !== allSeq.current) return;
-    setLoading(false);
-  }, [fetchPending, fetchAnswered, fetchGaps]);
+  const fetchAll = useCallback(
+    async (polled = false) => {
+      const seq = ++allSeq.current;
+      await Promise.all([
+        fetchPending(polled),
+        fetchAnswered(polled),
+        fetchGaps(polled),
+      ]);
+      if (seq !== allSeq.current) return;
+      setLoading(false);
+    },
+    [fetchPending, fetchAnswered, fetchGaps]
+  );
 
   // Gaps handled this session are hidden immediately; a refetch reconciles.
   const visibleGaps = useMemo(
@@ -248,40 +265,40 @@ export default function CoordQuestionsPage() {
   // volume forever with no path back to the cheap poll. Its badge stays
   // dashed, which is the honest rendering, and a refresh re-reads it.
   const degraded = useRef(false);
-  const pollInFlight = useRef(false);
   useEffect(() => {
     // Written in an effect, not the render body: a concurrent render that
     // React throws away must not leave its value behind in a ref.
     degraded.current = error !== null || gapsError;
   }, [error, gapsError]);
 
-  useEffect(() => {
-    setLoading(true);
-    // The FIRST load holds the poll lock too. Without this a tick 10s in
-    // supersedes the initial reads, whose resolutions are then dropped by the
-    // seq guards while `fetchAll` clears `loading` anyway — the fourth state
-    // above, arrived at on an ordinary slow first load rather than a race.
-    pollInFlight.current = true;
-    void fetchAll().finally(() => {
-      pollInFlight.current = false;
-    });
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // degraded tick is 4 logical reads, so a tick that finds the previous one
+  // outstanding is skipped — which is exactly what keeps the generation races
+  // above from turning routine — and none of the reads is retried by
+  // `httpClient`'s 5xx backoff chain; the next tick is the retry. The FIRST
+  // load holds the latch too: a tick 10s in must not supersede the initial
+  // reads, whose resolutions the seq guards would then drop while `fetchAll`
+  // clears `loading` anyway (the fourth state above).
+  const firstReadRef = useRef(true);
+  const poll = useCallback(async () => {
+    const first = firstReadRef.current;
+    firstReadRef.current = false;
     // Poll the pending list; the answered list is operator-driven and doesn't
     // need 10s churn — EXCEPT while a verdict-bearing read is unread, when the
     // whole point of the poll is to find out that it no longer is.
-    const id = setInterval(() => {
-      // A degraded tick is 4 logical reads, and `httpClient` retries a 5xx
-      // three times with 1/2/4s backoff — comfortably longer than the 10s
-      // interval. Without this guard the ticks overlap, which is exactly what
-      // turns the generation races above from theoretical into routine.
-      if (pollInFlight.current) return;
-      pollInFlight.current = true;
-      const run = degraded.current ? fetchAll() : fetchPending();
-      void run.finally(() => {
-        pollInFlight.current = false;
-      });
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    if (first || degraded.current) await fetchAll(true);
+    else await fetchPending(true);
   }, [fetchAll, fetchPending]);
+  const { refresh: pollNow, tick: pollTick } = useSingleFlight(poll);
+
+  useEffect(() => {
+    setLoading(true);
+    firstReadRef.current = true;
+    void pollNow();
+    const id = setInterval(pollTick, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [poll, pollNow, pollTick]);
 
   const blockingGaps = visibleGaps.filter((g) => !g.responded_at).length;
   // UNKNOWN is "coord has never answered this read", and it is keyed on the
@@ -319,7 +336,8 @@ export default function CoordQuestionsPage() {
   // the resolution), not coord's.
   const neverAnswered = (loadedFlag: boolean) => !loading && !loadedFlag;
   const pendingUnknown =
-    readIsUnknown(pendingLoaded, error !== null) || neverAnswered(pendingLoaded);
+    readIsUnknown(pendingLoaded, error !== null) ||
+    neverAnswered(pendingLoaded);
   const answeredUnknown =
     readIsUnknown(answeredLoaded, answeredError) ||
     neverAnswered(answeredLoaded);
@@ -558,7 +576,7 @@ export default function CoordQuestionsPage() {
           variant="outline"
           size="sm"
           className="ml-auto"
-          onClick={fetchAll}
+          onClick={() => void fetchAll()}
           data-testid="coord-questions-refresh"
         >
           <RefreshCw className="h-3 w-3" />
@@ -598,8 +616,8 @@ export default function CoordQuestionsPage() {
                   className="text-sm text-muted-foreground italic"
                   data-testid="coord-questions-pending-stale"
                 >
-                  No pending questions as of the last good read — this inbox
-                  has not refreshed since, so a newer one would not show here.
+                  No pending questions as of the last good read — this inbox has
+                  not refreshed since, so a newer one would not show here.
                 </p>
               ) : (
                 <p
@@ -643,8 +661,8 @@ export default function CoordQuestionsPage() {
                   className="text-sm text-muted-foreground italic"
                   data-testid="coord-questions-answered-stale"
                 >
-                  No recently-answered questions as of the last good read —
-                  this list has not refreshed since.
+                  No recently-answered questions as of the last good read — this
+                  list has not refreshed since.
                 </p>
               ) : (
                 <p

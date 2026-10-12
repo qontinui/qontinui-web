@@ -2,6 +2,9 @@
  * What the estimate editor is currently saying about the last save, and the
  * one rule that decides when it stops saying it.
  *
+ * A conflict is not a status: it is the kit's conflict dialog, which keeps the
+ * writer's working copy and shows the server's beside it.
+ *
  * Pure and out of the component because the rule is the whole substance:
  * two reviews found it wrong in both directions, and neither time was there
  * anything to run against it.
@@ -12,7 +15,9 @@ export type Status =
   | { kind: "saving" }
   /** Carries the version that landed, so the message can name it. */
   | { kind: "saved"; version: number }
-  | { kind: "conflict"; currentVersion: number | null }
+  /** The document being recorded as the source is no longer a document of
+   *  this project. The save is one write, so NOTHING was saved. */
+  | { kind: "source_refused" }
   | { kind: "failed"; message: string };
 
 /**

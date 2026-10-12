@@ -31,8 +31,6 @@ at a live instance with ``QONTINUI_TEST_PG=host:port``.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -41,6 +39,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     index_exists,
     run_alembic,
@@ -67,11 +66,7 @@ def _down_revision_of(filename: str) -> str:
     source = (backend_root() / "alembic" / "versions" / filename).read_text(
         encoding="utf-8"
     )
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']', source, re.MULTILINE
-    )
-    assert match is not None, f"no down_revision found in {filename}"
-    return match.group("parent")
+    return declared_parent_revision_id(source, filename)
 
 
 def test_the_pinned_parents_match_the_revisions() -> None:

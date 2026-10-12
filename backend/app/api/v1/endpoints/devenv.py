@@ -1229,7 +1229,9 @@ async def set_ci_node_config(
     coord_body: dict[str, object] = {
         "target_device_id": str(machine.coord_device_id),
         "machine_id": str(machine.id),
-        "ci_node": payload.model_dump(mode="json"),
+        # NOT ``model_dump``: an unset capacity is omitted rather than sent as
+        # ``null``, which a coord predating the Option-typed relay would refuse.
+        "ci_node": payload.coord_payload(),
     }
     try:
         resp = await post_to_coord(

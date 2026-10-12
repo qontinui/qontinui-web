@@ -5,9 +5,9 @@
  *
  * Plan `2026-05-24-federation-verify-and-gitop.md` Phase 7.
  *
- * Reads:
- *   GET /api/v1/operations/git-ops/list      (proxies coord /coord/git-ops/list)
- *   GET /api/v1/operations/git-ops/branches  (proxies coord /coord/git-ops/branches)
+ * Reads (via `lib/api/operations/coordDelivery.ts`):
+ *   GET /operations/git-ops/list      (proxies coord /coord/git-ops/list)
+ *   GET /operations/git-ops/branches  (proxies coord /coord/git-ops/branches)
  *
  * Shows a fleet-wide activity feed of git operations (commit / checkout /
  * branch_create / merge / rebase / push / …) observed by each runner's
@@ -52,7 +52,14 @@ import {
   GitCommitVertical,
   RefreshCw,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchGitOpsBranches,
+  fetchGitOpsList,
+  type DeviceBranchSummary,
+  type GitOpRecord,
+} from "@/lib/api/operations/coordDelivery";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
   CollapsiblePanel,
   RecordDetail,
@@ -62,50 +69,7 @@ import {
 } from "@/components/console";
 import { deriveGitOpStatus, GIT_OP_STATUS_PALETTE } from "./gitOpStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
-
-// ---- Types ----------------------------------------------------------------
-//
-// These local interfaces mirror coord's git-ops wire shape. The generated
-// `@qontinui/shared-types` git-ops exports (GitOpRecord, DeviceBranchSummary)
-// are not yet published — they regenerate via CI on merge of the schemas
-// package. Swap these for the generated exports once that republishes;
-// the field shapes are intentionally identical.
-
-interface GitOpRecord {
-  op_id: string;
-  tenant_id: string;
-  device_id: string;
-  session_id: string;
-  repo: string;
-  branch: string;
-  op_kind: string;
-  sha: string;
-  message: string;
-  recorded_at: string;
-  metadata?: Record<string, unknown>;
-}
-
-interface DeviceBranchSummary {
-  device_id: string;
-  repo: string;
-  branch: string;
-  sha: string;
-  recorded_at: string;
-}
-
-interface GitOpsListResponse {
-  ops?: GitOpRecord[];
-  items?: GitOpRecord[];
-  count?: number;
-}
-
-interface GitOpsBranchesResponse {
-  branches?: DeviceBranchSummary[];
-  items?: DeviceBranchSummary[];
-  count?: number;
-}
 
 type TimeRange = "1h" | "24h" | "7d" | "all";
 
@@ -221,7 +185,9 @@ function BranchesPanel({
       storageKey="coord-git-ops-branches"
       summary={
         <Badge variant="outline" className="font-mono text-[11px]">
-          <span className="font-normal text-muted-foreground">devices&nbsp;</span>
+          <span className="font-normal text-muted-foreground">
+            devices&nbsp;
+          </span>
           {branches.length}
         </Badge>
       }
@@ -342,36 +308,42 @@ export default function CoordGitOpsPage() {
   const [deviceFilter, setDeviceFilter] = useState("");
   const [sessionFilter, setSessionFilter] = useState("");
 
-  const fetchData = useCallback(async () => {
-    try {
-      const since = sinceParam(timeRange);
-      const qs = new URLSearchParams();
-      if (since) qs.set("since", since);
-      if (repoFilter.trim()) qs.set("repo", repoFilter.trim());
-      qs.set("limit", "200");
-
-      const [listBody, branchesBody] = await Promise.all([
-        httpClient.get<GitOpsListResponse>(
-          `${API}/git-ops/list?${qs.toString()}`
-        ),
-        httpClient.get<GitOpsBranchesResponse>(`${API}/git-ops/branches`),
-      ]);
-      setOps(listBody.ops ?? listBody.items ?? []);
-      setBranches(branchesBody.branches ?? branchesBody.items ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [timeRange, repoFilter]);
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): both
+  // reads ride ONE flight, each is asked once per tick, and a failed tick is
+  // retried by the next tick, never by `httpClient`'s 5xx backoff chain.
+  const fetchData = useCallback(
+    async (isCurrent: () => boolean) => {
+      try {
+        const since = sinceParam(timeRange);
+        const [listBody, branchesBody] = await Promise.all([
+          fetchGitOpsList(
+            { since, repo: repoFilter.trim() || undefined, limit: 200 },
+            COORD_DASHBOARD_POLL_OPTIONS
+          ),
+          fetchGitOpsBranches(COORD_DASHBOARD_POLL_OPTIONS),
+        ]);
+        if (!isCurrent()) return;
+        setOps(listBody.ops ?? listBody.items ?? []);
+        setBranches(branchesBody.branches ?? branchesBody.items ?? []);
+        setError(null);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [timeRange, repoFilter]
+  );
 
   useEffect(() => {
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
   }, [fetchData]);
+
+  const { refresh } = useSingleFlightPoll(fetchData, POLL_INTERVAL_MS, {
+    supersedeOnChange: true,
+  });
 
   // Distinct op_kinds present in the current feed drive the select options.
   const opKinds = useMemo(() => {
@@ -420,7 +392,7 @@ export default function CoordGitOpsPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="git-ops-refresh"
         >
           <RefreshCw className="h-3 w-3" />

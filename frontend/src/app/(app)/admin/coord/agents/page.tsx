@@ -55,6 +55,8 @@ import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
@@ -157,13 +159,15 @@ export default function CoordAgentsRecentPage() {
   );
   const [eventFilter, setEventFilter] = useState("");
 
-  const fetchData = useCallback(async () => {
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
       const qs = new URLSearchParams();
       qs.set("limit", String(RECENT_LIMIT));
       const body = await httpClient.get<unknown>(
-        `${API}/agent-logs/recent?${qs.toString()}`
+        `${API}/agent-logs/recent?${qs.toString()}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
+      if (!isCurrent()) return;
       // Tolerate bare list shape too.
       const normalized: RecentResponse = Array.isArray(body)
         ? { logs: body }
@@ -171,18 +175,18 @@ export default function CoordAgentsRecentPage() {
       setData(normalized);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  }, [poll]);
+
+  const { refresh } = useSingleFlightPoll(poll, POLL_INTERVAL_MS);
 
   const toggleLevel = useCallback((lvl: LevelKey) => {
     setSelectedLevels((prev) => {
@@ -287,7 +291,7 @@ export default function CoordAgentsRecentPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="coord-agents-refresh"
           aria-label="Refresh agent activity"
         >

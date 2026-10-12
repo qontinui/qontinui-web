@@ -2,8 +2,10 @@
  * useTrainHealth — load discipline.
  *
  * These exist because the hook's cost is not its own: every request through
- * the operations proxy pins a backend DB connection for the whole outbound
- * coord round-trip, which is what took the API down on 2026-07-21. The three
+ * the operations proxy is a coord health read whose cost scales with the
+ * ready-unmerged backlog (on 2026-07-21, before `d77d79072`, each
+ * operations-proxy request also held a backend DB connection, which is what
+ * took the API down). The three
  * rules (only while enabled, never while hidden, throttled on reveal) are
  * therefore load-bearing, and each was one line away from silently reverting.
  */

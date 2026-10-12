@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ganttToPhases, parseMermaidGantt } from "./gantt";
+import { extractGanttChart, ganttToPhases, parseMermaidGantt } from "./gantt";
 
 /**
  * The reference example's SHAPE: six coded sections, dated bars, `crit`
@@ -679,5 +679,77 @@ gantt
 
   it("is deterministic — the same source parses to the same result", () => {
     expect(parseMermaidGantt(REFERENCE)).toEqual(parseMermaidGantt(REFERENCE));
+  });
+});
+
+describe("extractGanttChart", () => {
+  it("finds the gantt chart among a document's prose and other diagrams", () => {
+    const doc = [
+      "# Delivery plan",
+      "",
+      "```mermaid",
+      "flowchart LR",
+      "  a --> b",
+      "```",
+      "",
+      "The schedule:",
+      "",
+      "```mermaid",
+      "%% agreed 2026-09",
+      "gantt",
+      "    dateFormat YYYY-MM-DD",
+      "    section A0 Mobilisation",
+      "    Kick-off :a0t1, 2026-01-05, 5d",
+      "```",
+    ].join("\n");
+    const chart = extractGanttChart(doc);
+    expect(chart).not.toBeNull();
+    expect(chart).toContain("section A0 Mobilisation");
+    expect(chart).not.toContain("flowchart");
+    // What it returns is what the import reads.
+    expect(parseMermaidGantt(chart ?? "").taskCount).toBe(1);
+  });
+
+  it("reads the fence shapes a document may use", () => {
+    const task =
+      "  dateFormat YYYY-MM-DD\n  section A0 X\n  T :a, 2026-01-05, 5d";
+    const cases: [string, boolean][] = [
+      [`~~~mermaid\ngantt\n${task}\n~~~`, true],
+      [`\`\`\`\`mermaid\ngantt\n${task}\n\`\`\`\``, true],
+      [`\`\`\`mermaid\ngantt\n${task}`, true], // unclosed: to the end
+      [
+        `\`\`\`mermaid\r\ngantt\r\n${task.replace(/\n/g, "\r\n")}\r\n\`\`\``,
+        true,
+      ],
+      [`\`\`\`mermaid\n---\ntitle: Plan\n---\ngantt\n${task}\n\`\`\``, true],
+      // Four spaces of indent is an indented code block, not a fence.
+      [`    \`\`\`mermaid\n    gantt\n    \`\`\``, false],
+    ];
+    for (const [doc, found] of cases) {
+      const chart = extractGanttChart(doc);
+      expect(chart !== null, doc).toBe(found);
+      if (found) {
+        const parsed = parseMermaidGantt(chart ?? "");
+        // Exactly the one phase and task, read cleanly: nothing around the
+        // chart (front matter above all) may be read as part of it.
+        expect(parsed.taskCount, doc).toBe(1);
+        expect(
+          parsed.phases.map((p) => p.code),
+          doc
+        ).toEqual(["A0"]);
+        expect(parsed.issues, doc).toEqual([]);
+      }
+    }
+  });
+
+  it("does not end a fence at a line that opens another", () => {
+    const doc =
+      "```mermaid\ngantt\n```js\n  section A0 X\n  T :a, 2026-01-05, 5d\n```";
+    expect(extractGanttChart(doc)).toContain("section A0 X");
+  });
+
+  it("answers null for a document with no gantt chart", () => {
+    expect(extractGanttChart("# Plan\n\nNo chart here.")).toBeNull();
+    expect(extractGanttChart("```mermaid\nsequenceDiagram\n```")).toBeNull();
   });
 });

@@ -1756,6 +1756,42 @@ async def get_record(
     return dict(row) if row is not None else None
 
 
+async def get_record_by_id(
+    session: AsyncSession, tenant_id: UUID, memory_id: UUID
+) -> dict[str, Any] | None:
+    """One row by id for the by-id READ, in any state (None cross-tenant).
+
+    Distinct from :func:`get_record` (the supersede path's read) because it
+    also answers "is this row's validity over?" — ``is_expired`` — using
+    the SAME clock-skew-safe effective now as retrieval
+    (:data:`_EFFECTIVE_NOW_ROW_SQL`), so a row the by-id read calls live is
+    exactly a row ``/memory/query`` and ``GET /memory/records`` can return
+    on the validity axis. Read-only: ``access_count`` is not touched.
+    """
+    row = (
+        (
+            await session.execute(
+                text(
+                    f"""
+                SELECT r.memory_id, r.tenant_id, r.scope, r.scope_ref, r.kind,
+                       r.title, r.content, r.importance, r.is_tombstone,
+                       r.superseded_by, r.valid_until, r.created_at,
+                       (r.valid_until IS NOT NULL
+                        AND r.valid_until <= {_EFFECTIVE_NOW_ROW_SQL})
+                           AS is_expired
+                FROM coord.memory_records r
+                WHERE r.tenant_id = :tenant_id AND r.memory_id = :memory_id
+                """
+                ),
+                {"tenant_id": tenant_id, "memory_id": memory_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return dict(row) if row is not None else None
+
+
 async def mark_superseded(
     session: AsyncSession,
     *,
@@ -2158,6 +2194,14 @@ async def link_expansion(
     ``arm_limit`` — join and sort work that scaled with the hub's degree
     rather than with the arm's size. Measured on the same fixture, the
     validity join dropped from 217 probes to 66.
+
+    Consequence for bound disclosure: because the cut runs BEFORE the
+    validity filter, a seed whose fan-out was capped can yield far fewer
+    than ``arm_limit`` ids here, so saturation is NOT observable from the
+    returned list. ``POST /memory/query`` therefore treats an expanded
+    link arm as capped unconditionally (``at_least`` / ``unknown``, never
+    ``exact``) — plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``.
 
     A neighbour reachable from several seeds or relations is emitted
     ONCE, under its BEST (lowest fan-out rank, then lowest seed_rank,

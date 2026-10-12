@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """No two tracked paths — or TS/JS module stems — may differ only in case.
 
-THE single home of this gate's logic. Three lanes invoke this one script:
+THE single home of this gate's logic. Four lanes invoke this one script:
 
   * ``.github/workflows/path-case-collisions.yml``, step
     "Scan the index for case-colliding paths"
+  * ``.github/workflows/web-guards.yml``, step
+    "path-case-collisions: Scan the index for case-colliding paths"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``path-case-collisions``
   * ``.pre-commit-config.yaml``, hook ``path-case-collisions`` — catches it
     before the push, since a commit is what creates this state.

@@ -88,10 +88,10 @@ on:
 #     but the LAST push of a burst gets skipped, so a burst's final state can stay
 #     unmapped indefinitely -- whereas queueing always leaves a pending run.
 #
-# Note `frontend-coverage-producer.yml` keeps `cancel-in-progress: true` on
-# purpose: at ~14 min it is far under the push interval and measured 18/20
-# `success`. The defect was never the flag -- it is the ratio of runtime to push
-# cadence. If this suite is ever sharded down near that ratio, revisit.
+# `frontend-coverage-producer.yml` used to keep `cancel-in-progress: true`, on
+# the reasoning that at ~14 min it ran far under the push interval. By
+# 2026-09-26 it measured median 16.3 min with 3 of the last 40 push-on-main runs
+# `cancelled`, so it now uses `false` too, for the reasons above.
 #
 # Plan: 2026-09-20-backend-coverage-producer-cancels-itself-into-producing-nothing
 concurrency:
@@ -99,7 +99,24 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Benign supersession, DECLARED (coord reads this; plan
+  # 2026-10-01-coord-train-waits-on-redundant-post-land-verification
+  # Decision 4): this workflow is a non-gating coverage producer, so a newer
+  # main run superseding an older one loses no verification. Coord's no-reap
+  # gate does not wait on it, its main-green read does not count it, and its
+  # main-red fingerprint ignores it (a non-passing run here held web's train at
+  # main-red on 2026-09-30). Remove this line and coord treats the workflow as
+  # verification again.
+  COORD_SUPERSESSION: benign
   PYTHON_VERSION: '3.12'
+
+# Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
+# repo; `actions: read` is for the job-timeout explainer's
+# `gh api .../actions/runs/$GITHUB_RUN_ID` read. A job that needs more
+# declares its own `permissions:`.
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   produce:
@@ -207,13 +224,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
       # are large enough to overflow the runner's default disk. Remove
       # preinstalled SDKs/runtimes that this workflow doesn't use.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -234,8 +253,15 @@ jobs:
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
+      # The pinned fleet-noun vocabulary (fleet-nouns.pin.toml) for
+      # backend/tests/test_fleet_nouns_ratchet.py and the frontend rule's
+      # vocabulary test; sets QONTINUI_FLEET_NOUNS_FILE. Plan
+      # 2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists A5.
+      - name: Fleet-noun vocabulary (pinned)
+        uses: ./.github/actions/fleet-nouns-vocab
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -299,7 +325,7 @@ jobs:
       # schemas exist. Models reference `project`, `auth`, and `cloud`
       # schemas (the last via the qontinui-cloud-control sibling repo
       # whose models are side-effect-imported in conftest.py); the
-      # postgres service container doesn't run our init-scripts/, so
+      # postgres service container starts with none of them, so
       # create them explicitly here. We also `CREATE EXTENSION vector`
       # — alembic does this in 05a366f58455 but conftest skips alembic,
       # so create_all hits `UndefinedObjectError: type "vector" does
@@ -320,7 +346,6 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
-            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 

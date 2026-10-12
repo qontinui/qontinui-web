@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,7 @@ import { formatWhen, plural } from "../_lib/format";
 import { isUnavailableSevere } from "../types";
 import type { PromptDocumentProposal, UnavailableKind } from "../types";
 import { LandedWriteFeed } from "./LandedWriteFeed";
-import { ProposalCard } from "./ProposalCard";
+import { PolicyProposalCard } from "./PolicyProposalCard";
 
 /**
  * The two halves of the operator review surface, over one shared data layer:
@@ -40,8 +40,8 @@ import { ProposalCard } from "./ProposalCard";
  *
  * Beside it sits RECENTLY PROPOSED & APPROVED, on the same three-state
  * contract and for a sharper reason: it is the only read on this page that can
- * serve a DECIDED row, and therefore the only place `<ProposalCard>`'s
- * self-decided provenance line can appear. See `DecidedProposals`.
+ * serve a DECIDED row, and therefore the only place `<PolicyProposalCard>`'s
+ * self-decided provenance line can appear. See `DecidedPolicyProposals`.
  */
 export function ReviewFeed() {
   /**
@@ -85,6 +85,57 @@ export function ReviewFeed() {
     revertWrite,
     withdrawWrite,
   } = usePromptDocumentProposals();
+
+  /*
+   * Deep link: `?proposal=<id>` opens that proposal and scrolls to it.
+   *
+   * The questions inbox (plan
+   * `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+   * Phase 3) links a proposal-mirror question here as its drill-down, so this
+   * page is where the diff is read rather than a second list to triage. Read
+   * once on mount from `window.location`, as `GatesTable`'s `?gate=` link
+   * does, rather than `useSearchParams` (which would force a Suspense boundary
+   * for a one-shot read). Both open keys are seeded: ids are unique across the
+   * queue and the decided section, so only the list holding it opens a row.
+   */
+  const [deepLinked, setDeepLinked] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("proposal");
+    if (!id) return;
+    setDeepLinked(id);
+    setOpenProposal(id);
+    setOpenDecided(id);
+  }, []);
+  // A linked proposal may already have been retired as stale or approved —
+  // the question that linked here can outlive the queue row. Those two
+  // sections are collapsed by default and UNMOUNT their rows while closed, so
+  // the section holding the id is forced open for as long as the link is
+  // being resolved (it then stays open: `CollapsiblePanel` latches it).
+  const deepLinkedStale =
+    deepLinked !== null && staleProposals.some((p) => p.id === deepLinked);
+  const deepLinkedDecided =
+    deepLinked !== null && decidedProposals.some((p) => p.id === deepLinked);
+  // Scroll once the row exists — the lists arrive asynchronously, so the
+  // browser's own fragment scroll would fire before there is anything to reach.
+  // The link is resolved ONCE: cleared as soon as the row is reached, or after
+  // the first complete load (`loading` starts true, so `!loading` is that
+  // load's end) whether or not any list held the id — an unknown id must not
+  // leave a pending scroll that a later refresh fires out of nowhere.
+  useEffect(() => {
+    if (!deepLinked || typeof document === "undefined") return;
+    const wanted = new Set([
+      `proposal-${deepLinked}`,
+      `retired-proposal-${deepLinked}`,
+    ]);
+    const row = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid^="proposal-"], [data-testid^="retired-proposal-"]'
+      )
+    ).find((el) => wanted.has(el.getAttribute("data-testid") ?? ""));
+    row?.scrollIntoView?.({ block: "center" });
+    if (row || !loading) setDeepLinked(null);
+  }, [deepLinked, loading, proposals, staleProposals, decidedProposals]);
 
   // A pre-deploy 404 is expected and benign. An UNLABELLED unavailable is also
   // treated as benign here (fallback `false`): the frontend and backend deploy
@@ -203,7 +254,7 @@ export function ReviewFeed() {
             onExpandedKeyChange={setOpenProposal}
             empty={null}
             renderRow={(proposal, ctx) => (
-              <ProposalCard
+              <PolicyProposalCard
                 proposal={proposal}
                 liveVersion={liveVersionFor(
                   proposal.doc_kind,
@@ -220,14 +271,15 @@ export function ReviewFeed() {
         )}
       </section>
 
-      <RetiredProposals
+      <RetiredPolicyProposals
         retired={staleProposals}
         unavailable={staleUnavailable}
         unavailableKind={staleUnavailableKind}
         read={staleRead}
+        forceOpen={deepLinkedStale}
       />
 
-      <DecidedProposals
+      <DecidedPolicyProposals
         decided={decidedProposals}
         unavailable={decidedUnavailable}
         unavailableKind={decidedUnavailableKind}
@@ -238,6 +290,7 @@ export function ReviewFeed() {
         onOpenKeyChange={setOpenDecided}
         liveVersionFor={liveVersionFor}
         onDecide={decide}
+        forceOpen={deepLinkedDecided}
       />
 
       <LandedWriteFeed
@@ -340,7 +393,7 @@ function SectionUnknown({
   );
 }
 
-interface RetiredProposalsProps {
+interface RetiredPolicyProposalsProps {
   /** The rows coord served for `?status=stale`. Empty is only "none" when `read`. */
   retired: PromptDocumentProposal[];
   /** Why the read failed, or `null` when it succeeded. Non-null ⇒ UNKNOWN. */
@@ -349,6 +402,8 @@ interface RetiredProposalsProps {
   unavailableKind: UnavailableKind | null;
   /** Has the read completed at all? Before it has, the section knows nothing. */
   read: boolean;
+  /** Open the panel — a `?proposal=` deep link names a row in this section. */
+  forceOpen?: boolean;
 }
 
 /**
@@ -385,12 +440,13 @@ interface RetiredProposalsProps {
  * unreadable arm is a routine deploy window — both are stated in muted chrome,
  * in words.
  */
-function RetiredProposals({
+function RetiredPolicyProposals({
   retired,
   unavailable,
   unavailableKind,
   read,
-}: RetiredProposalsProps) {
+  forceOpen = false,
+}: RetiredPolicyProposalsProps) {
   const summary = unavailable
     ? "could not be read"
     : !read
@@ -411,6 +467,7 @@ function RetiredProposals({
         </span>
       }
       defaultOpen={false}
+      forceOpen={forceOpen}
       storageKey="coord.proposals.retired-stale"
       data-testid="retired-proposals"
     >
@@ -508,7 +565,7 @@ function RetiredProposals({
   );
 }
 
-interface DecidedProposalsProps {
+interface DecidedPolicyProposalsProps {
   /** The rows coord served for `?status=approved`. Empty is only "none" when `read`. */
   decided: PromptDocumentProposal[];
   /** Why the read failed, or `null` when it succeeded. Non-null ⇒ UNKNOWN. */
@@ -527,11 +584,13 @@ interface DecidedProposalsProps {
     action: "approve" | "reject",
     decisionNote: string
   ) => Promise<boolean>;
+  /** Open the panel — a `?proposal=` deep link names a row in this section. */
+  forceOpen?: boolean;
 }
 
 /**
  * "Recently proposed & approved" — the decided proposals, rendered through the
- * SAME `<ProposalCard>` the queue uses.
+ * SAME `<PolicyProposalCard>` the queue uses.
  *
  * ## Why the heading is not "Recently approved"
  *
@@ -573,7 +632,7 @@ interface DecidedProposalsProps {
  * A DECISION is the opposite: who decided, against which version, on what
  * rationale, with what note. Re-rendering a second, thinner version of that
  * would put the provenance line back out of reach in a new way, so these rows
- * go through `<ProposalCard>` and inherit every block it already renders —
+ * go through `<PolicyProposalCard>` and inherit every block it already renders —
  * including the composer's replacement, since a decided row is not decidable.
  *
  * ## Collapsed, three states, same rules as the retired section
@@ -590,7 +649,7 @@ interface DecidedProposalsProps {
  * all — a stronger claim than "none lately", and the one that is actually
  * supported.
  */
-function DecidedProposals({
+function DecidedPolicyProposals({
   decided,
   unavailable,
   unavailableKind,
@@ -601,7 +660,8 @@ function DecidedProposals({
   onOpenKeyChange,
   liveVersionFor,
   onDecide,
-}: DecidedProposalsProps) {
+  forceOpen = false,
+}: DecidedPolicyProposalsProps) {
   const summary = unavailable
     ? "could not be read"
     : !read
@@ -622,6 +682,7 @@ function DecidedProposals({
         </span>
       }
       defaultOpen={false}
+      forceOpen={forceOpen}
       storageKey="coord.proposals.recently-approved"
       data-testid="decided-proposals"
     >
@@ -677,7 +738,7 @@ function DecidedProposals({
           onExpandedKeyChange={onOpenKeyChange}
           empty={null}
           renderRow={(proposal, ctx) => (
-            <ProposalCard
+            <PolicyProposalCard
               proposal={proposal}
               liveVersion={liveVersionFor(proposal.doc_kind, proposal.doc_name)}
               loading={loading}

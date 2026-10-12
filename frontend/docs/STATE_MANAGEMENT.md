@@ -106,7 +106,7 @@ function ProjectList() {
 
 **Owns:**
 
-- Canvas state (`canvas-store.ts`)
+- Canvas state (`stores/canvas/`)
   - Viewport (zoom, pan position)
   - Selected nodes/edges (ONLY IDs, not full data)
   - Clipboard (copied nodes)
@@ -122,10 +122,6 @@ function ProjectList() {
 - Properties panel (`properties-panel-store.ts`)
   - Selected action ID
   - Panel visibility
-
-- MCP state (`mcp-store.ts`)
-  - MCP client status
-  - Available tools
 
 - Onboarding state (`onboarding-store.ts`)
   - Tutorial progress

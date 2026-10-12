@@ -9,6 +9,9 @@
  * - **Take theirs** discards your text.
  * - **Merge** returns you to the editor with your text, and theirs shown
  *   beside it, so you can bring over what you want before saving.
+ *
+ * When keeping mine cannot be done safely as it stands (`keepMineBlocked`),
+ * that choice is absent and the dialog says why: the writer combines.
  */
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +34,7 @@ export function ConflictDialog({
   onKeepMine,
   onTakeTheirs,
   onMerge,
+  keepMineBlocked = [],
   uiBridgeId,
 }: {
   open: boolean;
@@ -41,6 +45,8 @@ export function ConflictDialog({
   onKeepMine: () => void;
   onTakeTheirs: () => void;
   onMerge: () => void;
+  /** Why "keep mine" would lose or break something; non-empty hides it. */
+  keepMineBlocked?: string[];
   uiBridgeId: string;
 }) {
   const who = theirsBy ?? "Somebody";
@@ -86,6 +92,22 @@ export function ConflictDialog({
             </pre>
           </section>
         </div>
+        {keepMineBlocked.length > 0 && (
+          <div
+            role="note"
+            className="rounded-md border border-destructive/40 p-3 text-sm"
+            data-ui-bridge-id={`${uiBridgeId}.blocked`}
+          >
+            <p className="font-medium text-foreground">
+              Yours can&rsquo;t simply be saved over theirs, so combine them:
+            </p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+              {keepMineBlocked.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <DialogFooter className="gap-2 sm:justify-between">
           <Button
             variant="ghost"
@@ -102,12 +124,14 @@ export function ConflictDialog({
             >
               Combine them myself
             </Button>
-            <Button
-              onClick={onKeepMine}
-              data-ui-bridge-id={`${uiBridgeId}.keep-mine`}
-            >
-              Save mine over theirs
-            </Button>
+            {keepMineBlocked.length === 0 && (
+              <Button
+                onClick={onKeepMine}
+                data-ui-bridge-id={`${uiBridgeId}.keep-mine`}
+              >
+                Save mine over theirs
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

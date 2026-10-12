@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
+import { ApiConfig } from "@/services/api-config";
+import { tryResolveEndpoint } from "@/lib/errors/endpoint-unresolved";
 import { authService, extractionService } from "@/services/service-factory";
 import { useExtractions, useCreateExtraction } from "@/hooks/use-extractions";
 import { useRunnerClient } from "@/lib/runner-client";
@@ -406,7 +408,7 @@ export function useWebExtraction({
       annotationStore.setElements(elements);
 
       if (firstAnnotation?.screenshot_id) {
-        const screenshotUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/extractions/${extractionId}/screenshots/${firstAnnotation.screenshot_id}`;
+        const screenshotUrl = `${ApiConfig.getBaseUrl()}/api/v1/extractions/${extractionId}/screenshots/${firstAnnotation.screenshot_id}`;
         annotationStore.setScreenshot(
           screenshotUrl,
           firstAnnotation.viewport_width || 1920,
@@ -541,6 +543,17 @@ export function useWebExtraction({
       return;
     }
 
+    // Resolve the base the runner reports back to FIRST — before the
+    // availability probe and before a session exists — so a misconfigured
+    // deployment refuses with the variable to set and leaves nothing behind.
+    const backend = tryResolveEndpoint(() =>
+      ApiConfig.resolveAbsoluteBaseUrl()
+    );
+    if (!backend.ok) {
+      toast.error(backend.error.message);
+      return;
+    }
+
     const runner = await runnerClient.getAvailability();
     if (!runner.available) {
       toast.error(
@@ -599,7 +612,7 @@ export function useWebExtraction({
       max_depth: webConfig.maxDepth,
       max_pages: webConfig.maxPages,
       session_id: sessionResult.id,
-      backend_url: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+      backend_url: backend.url,
       auth_token: authToken || undefined,
     });
 

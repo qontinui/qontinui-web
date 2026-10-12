@@ -19,9 +19,10 @@ import {
 } from "@/types/unified-workflow";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { RunOnPicker } from "@/components/runner/RunOnPicker";
-import { Play, Plus, GripVertical } from "lucide-react";
+import { Play, Plus, GripVertical, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { WorkflowLibraryPanel } from "@/components/execute/WorkflowLibraryPanel";
+import { ScheduledTasksPanel } from "@/components/execute/ScheduledTasksPanel";
 import {
   SequenceBuilderPanel,
   type QueueItem,
@@ -344,9 +345,18 @@ export default function ExecutePage() {
     isOffline: workflowsOffline,
   } = useUnifiedWorkflows();
 
+  const [activeTab, setActiveTab] = useState<"queue" | "scheduled">("queue");
+
   if (workflowsOffline) {
     return <RunnerOfflineState />;
   }
+
+  const tabClass = (tab: "queue" | "scheduled") =>
+    `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+      activeTab === tab
+        ? "bg-brand-primary/20 text-brand-primary"
+        : "text-text-muted hover:text-text-secondary hover:bg-surface-hover"
+    }`;
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden text-white">
@@ -354,15 +364,53 @@ export default function ExecutePage() {
         <div className="flex items-center gap-3">
           <Play className="size-5 text-primary" />
           <h1 className="text-lg font-semibold text-foreground">Execute</h1>
+          <nav
+            className="flex items-center gap-1 ml-4"
+            aria-label="Execute view"
+          >
+            <button
+              type="button"
+              data-testid="execute-tab-queue"
+              aria-pressed={activeTab === "queue"}
+              onClick={() => setActiveTab("queue")}
+              className={tabClass("queue")}
+            >
+              <Play className="size-4 inline mr-1.5" />
+              Queue
+            </button>
+            <button
+              type="button"
+              data-testid="execute-tab-scheduled"
+              aria-pressed={activeTab === "scheduled"}
+              onClick={() => setActiveTab("scheduled")}
+              className={tabClass("scheduled")}
+            >
+              <Calendar className="size-4 inline mr-1.5" />
+              Scheduled
+            </button>
+          </nav>
         </div>
         <RunOnPicker workClass="machine_bound" className="items-end" />
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 mx-auto flex flex-col lg:flex-row gap-6 max-w-[1400px] w-full">
-        <QueueTabContent
-          workflows={workflows}
-          workflowsLoading={workflowsLoading}
-        />
+        {/* Both views stay mounted: the queue (and a run in flight) must
+            survive a look at the schedules. */}
+        <div
+          className={activeTab === "queue" ? "contents" : "hidden"}
+          data-testid="execute-view-queue"
+        >
+          <QueueTabContent
+            workflows={workflows}
+            workflowsLoading={workflowsLoading}
+          />
+        </div>
+        <div
+          className={activeTab === "scheduled" ? "contents" : "hidden"}
+          data-testid="execute-view-scheduled"
+        >
+          <ScheduledTasksPanel />
+        </div>
       </main>
     </div>
   );

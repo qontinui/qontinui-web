@@ -19,7 +19,7 @@
  * - `ClearanceRuleList` is **not** a table. It renders `<div>` rows
  *   (`clearance-rule-row`) at `px-3 py-3` with a name line, a
  *   priority/rationale line and an inert-explanation line — a Family-B fat
- *   row wearing no `<Card>`, the same shape as `ProposalCard` and the same
+ *   row wearing no `<Card>`, the same shape as `PolicyProposalCard` and the same
  *   reason a `<Card>`-keyed audit missed it. It got R2/R5 instead.
  *
  * ## The R3 reading, kind by kind

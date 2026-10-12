@@ -244,3 +244,102 @@ class TestFleetWorktreeSlotsProxy:
         body = resp.json()
         assert body["truncated"] is True
         assert body["device_count"] == 100
+
+
+# ---- Coord's error bodies reach the browser intact --------------------------
+#
+# Plan ``2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland``
+# Phase 4. The dashboard renders two coord answers specifically: a
+# ``503 {"error":"deadline","budget_ms":N}`` as UNKNOWN naming the budget (D2),
+# and a ``404 {"error":"route_disabled"}`` as "disabled by operator" (D4). Both
+# fleet dashboard routes must hand those to the browser with the status AND
+# the JSON body unchanged — the generic ``_proxy_coord_get`` re-raised them as
+# an ``HTTPException`` whose detail string the error middleware folded into
+# its own ``{"error": <generic code>, "message": "<coord body as text>"}``
+# envelope, overwriting the very ``error`` field the frontend branches on.
+
+FLEET_DASHBOARD_ROUTES = [
+    (f"{API_PREFIX}/fleet/worktree-slots", "/coord/fleet/worktree-slots"),
+    (f"{API_PREFIX}/fleet/volumes", "/coord/fleet/volumes"),
+]
+
+
+@pytest.mark.parametrize("route,coord_path", FLEET_DASHBOARD_ROUTES)
+class TestFleetDashboardErrorBodiesPassThrough:
+    def _get(self, auth_client: TestClient, route: str, status: int, body):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(return_value=_mock_response(status, body))
+            _configure_mock_client(MockClient, mock_instance)
+            resp = auth_client.get(route)
+        return resp, mock_instance
+
+    def test_deadline_503_body_is_verbatim(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        body = {"error": "deadline", "budget_ms": 4000}
+        resp, mock_instance = self._get(auth_client, route, 503, body)
+        assert resp.status_code == 503
+        assert resp.json() == body
+        assert mock_instance.get.call_args[0][0].endswith(coord_path)
+
+    def test_route_disabled_404_body_is_verbatim(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        body = {"error": "route_disabled"}
+        resp, _ = self._get(auth_client, route, 404, body)
+        assert resp.status_code == 404
+        assert resp.json() == body
+
+    def test_success_body_is_verbatim(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        resp, mock_instance = self._get(auth_client, route, 200, COORD_PAYLOAD)
+        assert resp.status_code == 200
+        assert resp.json() == COORD_PAYLOAD
+        headers = mock_instance.get.call_args.kwargs["headers"]
+        assert headers["Authorization"] == f"Bearer {TEST_BEARER}"
+
+    def test_coord_timeout_is_still_a_504(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(side_effect=httpx.ReadTimeout("slow"))
+            _configure_mock_client(MockClient, mock_instance)
+            resp = auth_client.get(route)
+        assert resp.status_code == 504
+
+
+def _non_json_response(status_code: int, text: str) -> MagicMock:
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status_code
+    resp.json.side_effect = ValueError("not json")
+    resp.text = text
+    return resp
+
+
+@pytest.mark.parametrize("route,coord_path", FLEET_DASHBOARD_ROUTES)
+class TestFleetDashboardNonJsonBodies:
+    """A coord 2xx whose body is not JSON is a broken answer: 502, never a
+    ``200 {"error": ...}`` that a dashboard poll would parse as a payload."""
+
+    def _get(self, auth_client: TestClient, route: str, resp: MagicMock):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(return_value=resp)
+            _configure_mock_client(MockClient, mock_instance)
+            return auth_client.get(route)
+
+    def test_2xx_non_json_is_a_502(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        resp = self._get(auth_client, route, _non_json_response(200, "<html>"))
+        assert resp.status_code == 502
+
+    def test_error_non_json_keeps_coords_status(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        resp = self._get(auth_client, route, _non_json_response(503, "upstream page"))
+        assert resp.status_code == 503
+        assert resp.json() == {"error": "upstream page"}

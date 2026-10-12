@@ -23,14 +23,16 @@ Coord is mocked throughout — no live coord, no DB.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-PROXY_GET = "app.api.v1.endpoints.operations._proxy_coord_get"
-PROXY_POST = "app.api.v1.endpoints.operations._proxy_coord_post"
+from tests._ops_patch import patch_ops
+
+PROXY_GET = "_proxy_coord_get"
+PROXY_POST = "_proxy_coord_post"
 
 TENANT = UUID("11111111-2222-3333-4444-555555555555")
 
@@ -61,7 +63,7 @@ def _build_app() -> FastAPI:
 class TestListProxy:
     def test_forwards_every_paging_param_verbatim(self):
         app = _build_app()
-        with patch(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
+        with patch_ops(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
             TestClient(app).get(
                 "/api/v1/operations/notifications"
                 "?limit=1&cursor=opaque&kind=policy_change&unread_only=true"
@@ -81,7 +83,7 @@ class TestListProxy:
         # 4.3: agent clearances are filterable by via. Coord owns the
         # vocabulary, so the value is forwarded untouched.
         app = _build_app()
-        with patch(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
+        with patch_ops(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
             TestClient(app).get("/api/v1/operations/notifications?via=agent_evidence")
         assert mock_get.call_args[1]["params"] == {"via": "agent_evidence"}
 
@@ -89,13 +91,13 @@ class TestListProxy:
         # Bounds live in coord — one clamp, one place. A second clamp here
         # would be invisible to the operator and impossible to reason about.
         app = _build_app()
-        with patch(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
+        with patch_ops(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
             TestClient(app).get("/api/v1/operations/notifications?limit=100000")
         assert mock_get.call_args[1]["params"]["limit"] == 100000
 
     def test_sends_no_params_when_the_caller_set_none(self):
         app = _build_app()
-        with patch(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
+        with patch_ops(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
             TestClient(app).get("/api/v1/operations/notifications")
         assert mock_get.call_args[1]["params"] is None
 
@@ -107,7 +109,7 @@ class TestListProxy:
             "unread_count": 137,
         }
         app = _build_app()
-        with patch(PROXY_GET, new=AsyncMock(return_value=envelope)):
+        with patch_ops(PROXY_GET, new=AsyncMock(return_value=envelope)):
             resp = TestClient(app).get("/api/v1/operations/notifications")
         assert resp.status_code == 200
         # `total` / `unread_count` are the scalars every consumer must read
@@ -119,7 +121,7 @@ class TestMarkReadProxy:
     def test_marks_specific_rows(self):
         nid = uuid4()
         app = _build_app()
-        with patch(
+        with patch_ops(
             PROXY_POST, new=AsyncMock(return_value={"marked": 1, "unread_count": 0})
         ) as mock_post:
             resp = TestClient(app).post(
@@ -135,7 +137,7 @@ class TestMarkReadProxy:
 
     def test_empty_id_list_is_a_no_op_not_a_mark_all(self):
         app = _build_app()
-        with patch(
+        with patch_ops(
             PROXY_POST, new=AsyncMock(return_value={"marked": 0, "unread_count": 5})
         ) as mock_post:
             resp = TestClient(app).post(
@@ -147,7 +149,7 @@ class TestMarkReadProxy:
 
     def test_marks_everything_only_on_an_explicit_all_true(self):
         app = _build_app()
-        with patch(
+        with patch_ops(
             PROXY_POST, new=AsyncMock(return_value={"marked": 9, "unread_count": 0})
         ) as mock_post:
             resp = TestClient(app).post(
@@ -170,7 +172,7 @@ class TestMarkReadProxy:
             {"all": False},  # `all` present but not true
             {"notification_ids": [str(uuid4())], "all": True},  # both arms
         ]
-        with patch(PROXY_POST, new=AsyncMock()) as mock_post:
+        with patch_ops(PROXY_POST, new=AsyncMock()) as mock_post:
             for body in cases:
                 resp = client.post(
                     "/api/v1/operations/notifications/mark-read", json=body
@@ -189,7 +191,7 @@ class TestMarkReadProxy:
         # turns it into a loud reject instead of a silently-ignored key that
         # leaves the body looking like the dangerous empty one.
         app = _build_app()
-        with patch(PROXY_POST, new=AsyncMock()) as mock_post:
+        with patch_ops(PROXY_POST, new=AsyncMock()) as mock_post:
             resp = TestClient(app).post(
                 "/api/v1/operations/notifications/mark-read",
                 json={"notificationIds": [str(uuid4())]},
@@ -199,7 +201,7 @@ class TestMarkReadProxy:
 
     def test_rejects_a_non_uuid_id(self):
         app = _build_app()
-        with patch(PROXY_POST, new=AsyncMock()) as mock_post:
+        with patch_ops(PROXY_POST, new=AsyncMock()) as mock_post:
             resp = TestClient(app).post(
                 "/api/v1/operations/notifications/mark-read",
                 json={"notification_ids": ["not-a-uuid"]},
@@ -211,7 +213,7 @@ class TestMarkReadProxy:
         # Coord derives `actor_key` solely from the forwarded bearer, so read
         # state can never be steered by a body field.
         app = _build_app()
-        with patch(PROXY_POST, new=AsyncMock(return_value={})) as mock_post:
+        with patch_ops(PROXY_POST, new=AsyncMock(return_value={})) as mock_post:
             TestClient(app).post(
                 "/api/v1/operations/notifications/mark-read", json={"all": True}
             )

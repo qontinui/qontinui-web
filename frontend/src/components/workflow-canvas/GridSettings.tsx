@@ -12,7 +12,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 
 // ============================================================================
 // Types

@@ -41,6 +41,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.middleware.rate_limit import rate_limit_exceeded_handler, user_limiter
 from app.services import cognito_admin
+from tests._ops_patch import patch_ops
 
 API_PREFIX = "/api/v1/operations"
 _GROUPS_URL = f"{API_PREFIX}/coord/cognito/groups"
@@ -155,8 +156,8 @@ def _radius(
 
 @pytest.fixture(autouse=True)
 def _no_coord_mappings():
-    with patch(
-        "app.api.v1.endpoints.operations._coord_group_blast_radius",
+    with patch_ops(
+        "_coord_group_blast_radius",
         AsyncMock(return_value=_radius()),
     ):
         yield
@@ -304,8 +305,8 @@ class TestNothingIsAuditedThatDidNotHappen:
         would be worse than none."""
         client = TestClient(_build_app(session, actor_id))
         with (
-            patch(
-                "app.api.v1.endpoints.operations._coord_group_blast_radius",
+            patch_ops(
+                "_coord_group_blast_radius",
                 AsyncMock(return_value=_radius(own=("acme",))),
             ),
             patch.object(cognito_admin, "delete_group", lambda name: None),
@@ -388,7 +389,7 @@ class TestAnUnwritableAuditDoesNotUndoTheDelete:
         client = TestClient(_build_app(session, actor_id))
         with (
             patch.object(cognito_admin, "delete_group", lambda name: None),
-            patch("app.api.v1.endpoints.operations.logger") as mock_logger,
+            patch_ops("logger") as mock_logger,
         ):
             client.delete(f"{_GROUPS_URL}/acme-devs", headers=_AUTH)
 

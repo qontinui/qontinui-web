@@ -22,6 +22,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlight } from "@/components/operations/useSingleFlightPoll";
 import {
   indexDifficulty,
   type DifficultyIndex,
@@ -39,21 +41,28 @@ export function usePlanDifficulty(): {
   refresh: () => Promise<void>;
 } {
   const [index, setIndex] = useState<DifficultyIndex>({ state: "pending" });
-  /** The newest read wins; an overtaken one may not land. */
-  const reqGen = useRef(0);
   /** The pending backlog re-read, so a newer read or unmount can cancel it. */
   const backlogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** `refresh` itself, for the backlog timer it schedules. Set in the effect,
-   *  never during render. */
+  /** `refresh` itself, for the backlog timer the read schedules. Set in the
+   *  effect, never during render. */
   const refreshRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
-  const refresh = useCallback(async () => {
-    const req = ++reqGen.current;
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): one
+  // request per tick, never overlapping itself, and a failed read is retried by
+  // the next tick rather than by `httpClient`'s 5xx backoff chain. The route is
+  // served by the web backend itself, but a retried 5xx multiplies load there
+  // just the same. `isCurrent()` turns false on unmount, which is what stops a
+  // late answer landing.
+  const read = useCallback(async (isCurrent: () => boolean) => {
     if (backlogTimer.current) clearTimeout(backlogTimer.current);
     backlogTimer.current = null;
     try {
-      const body = await httpClient.get<PlanDifficultyResponse>(ENDPOINT);
-      if (req !== reqGen.current) return;
+      const body = await httpClient.get<PlanDifficultyResponse>(
+        ENDPOINT,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
+      if (!isCurrent()) return;
       setIndex(indexDifficulty(body));
       if ((body.rerate_pending ?? 0) > 0) {
         backlogTimer.current = setTimeout(
@@ -62,7 +71,7 @@ export function usePlanDifficulty(): {
         );
       }
     } catch (e) {
-      if (req !== reqGen.current) return;
+      if (!isCurrent()) return;
       const reason = e instanceof Error ? e.message : String(e);
       setIndex((prev) =>
         prev.state === "loaded" ? prev : { state: "failed", reason }
@@ -70,18 +79,22 @@ export function usePlanDifficulty(): {
     }
   }, []);
 
+  // Not `useSingleFlightPoll`: the backlog re-read is a second, faster timer
+  // that goes through the same latch. Called before the effects below so its
+  // `activeRef` is set first.
+  const { refresh, tick } = useSingleFlight(read);
+
   useEffect(() => {
     refreshRef.current = refresh;
     void refresh();
-    const id = setInterval(() => void refresh(), DIFFICULTY_POLL_MS);
+    const id = setInterval(tick, DIFFICULTY_POLL_MS);
     return () => {
       clearInterval(id);
-      // Invalidate any read still out, and drop a scheduled backlog re-read.
-      reqGen.current += 1;
+      // Drop a scheduled backlog re-read.
       if (backlogTimer.current) clearTimeout(backlogTimer.current);
       backlogTimer.current = null;
     };
-  }, [refresh]);
+  }, [refresh, tick]);
 
   return { index, refresh };
 }

@@ -8,7 +8,7 @@ describe("statusAfterEdit", () => {
     expect(statusAfterEdit({ kind: "saved", version: 4 })).toEqual({
       kind: "idle",
     });
-    expect(statusAfterEdit({ kind: "conflict", currentVersion: 9 })).toEqual({
+    expect(statusAfterEdit({ kind: "source_refused" })).toEqual({
       kind: "idle",
     });
     expect(statusAfterEdit({ kind: "failed", message: "boom" })).toEqual({

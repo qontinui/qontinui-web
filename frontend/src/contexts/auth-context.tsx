@@ -13,6 +13,7 @@ import { isPublic } from "@/lib/public-routes";
 import { authService } from "@/services/service-factory";
 import { consumeDevLocalAuthToken } from "@/services/auth/dev-local-auth";
 import { User } from "@/types/auth-types";
+import { isCoordAdminUser } from "@/lib/coord-admin";
 import { pageStateDB } from "@/stores/page-state";
 import { clearExtractionConfig } from "@/hooks/use-extraction-config";
 
@@ -473,8 +474,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         // Coord admins manage coordination; qontinui superusers (staff) are a
         // superset and keep the full access they had before the per-page gating.
-        isCoordAdmin:
-          user?.coord_is_admin === true || user?.is_superuser === true,
+        isCoordAdmin: isCoordAdminUser(user),
         accountType: user?.account_type ?? null,
         logout,
         updateUser,

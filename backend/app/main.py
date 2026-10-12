@@ -39,6 +39,7 @@ from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.db.session import AsyncSessionLocal
+from app.middleware.body_limit import BodyLimit, BodyLimitMiddleware
 from app.middleware.database_timing import (
     DatabaseTimingMiddleware,
     init_database_timing,
@@ -57,6 +58,7 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.overview import files as overview_files
 from app.overview.router import (
     CONTRACT_RESPONSE_HEADERS as OVERVIEW_CONTRACT_HEADERS,
 )
@@ -208,6 +210,24 @@ logger.info("security_headers_middleware_enabled", environment=settings.ENVIRONM
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 logger.info("gzip_middleware_enabled", minimum_size=1024, compresslevel=6)
 
+# Upload body caps, before anything parses the body (the multipart parser
+# would otherwise spool an unbounded body to disk ahead of authentication).
+# Inside CORSMiddleware, so a 413 still carries the CORS headers a browser
+# needs to read it.
+app.add_middleware(
+    BodyLimitMiddleware,
+    limits={
+        ("POST", f"{settings.API_V1_STR}/overview/files"): BodyLimit(
+            max_bytes=overview_files.MAX_UPLOAD_REQUEST_BYTES,
+            error="file_too_large",
+            message=(
+                "Files can be at most "
+                f"{overview_files.MAX_FILE_BYTES // (1024 * 1024)} MB."
+            ),
+        ),
+    },
+)
+
 # Response headers a browser client is allowed to READ.
 #
 # Exactly seven response headers are CORS-safelisted — Cache-Control,
@@ -249,7 +269,7 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # The plan-library exports' provenance sets. `X-Content-Sha256` overlaps
             # the tuple above by name; the other three say WHICH artifact and WHICH
             # VERSION that digest is over, and without them a reader gets a digest it
-            # cannot attribute. `CORPUS_EXPORT_HEADERS` carries `X-Export-Truncated`,
+            # cannot attribute. `CORPUS_EXPORT_HEADERS` carries `X-Bounded-Read`,
             # which is emitted on both branches precisely so its absence means
             # nothing — a rule CORS silently breaks when the header is unpublished.
             *ARTIFACT_EXPORT_HEADERS,

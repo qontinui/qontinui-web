@@ -4,7 +4,26 @@
  * Shared utility functions used across multiple slices
  */
 
-import type { Action, Connections, Connection } from "./types";
+import type { Action, Connections } from "./types";
+
+/**
+ * The connection-type keys a workflow's connection map may carry.
+ *
+ * Every slice that walks `workflow.connections[sourceId]` by key goes through
+ * `isValidConnectionType` first, exactly as the pre-split monolith
+ * (`stores/canvas-store.ts`) did: a key outside this set is left untouched,
+ * and a value that is not an array is never mapped over.
+ */
+export type ConnectionType = "main" | "error" | "success" | "parallel";
+
+export function isValidConnectionType(type: string): type is ConnectionType {
+  return (
+    type === "main" ||
+    type === "error" ||
+    type === "success" ||
+    type === "parallel"
+  );
+}
 
 /**
  * Generate a unique ID for actions
@@ -54,14 +73,15 @@ export function updateConnectionsForClonedActions(
     newConnections[newSourceId] = {};
 
     for (const [type, outputs] of Object.entries(connectionTypes)) {
-      (newConnections[newSourceId][
-        type as keyof typeof connectionTypes
-      ] as Connection[][]) = outputs.map((outputConnections) =>
-        outputConnections.map((conn) => ({
-          ...conn,
-          action: oldToNewIdMap.get(conn.action) || conn.action,
-        }))
-      );
+      if (outputs && Array.isArray(outputs) && isValidConnectionType(type)) {
+        (newConnections[newSourceId] as Record<string, unknown>)[type] =
+          outputs.map((outputConnections) =>
+            outputConnections.map((conn) => ({
+              ...conn,
+              action: oldToNewIdMap.get(conn.action) || conn.action,
+            }))
+          );
+      }
     }
   }
 

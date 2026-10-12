@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -23,7 +23,6 @@ import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
 import { httpClient } from "@/services/service-factory";
 import {
-  FLEET_VOLUMES_API,
   formatBytes,
   OPERATIONS_API,
   POLL_INTERVAL_MS,
@@ -32,16 +31,16 @@ import {
 } from "./utils";
 import { CollapsiblePanel } from "@/components/console";
 import {
-  indexDeviceVolumes,
-  parseFleetVolumes,
   resolveMachineVolumes,
   tightestVolume,
   volumesReliabilityWarning,
-  VOLUMES_NOT_YET_READ,
   type VolumesFetch,
 } from "./fleetVolumes";
+import { useFleetVolumes } from "./useFleetVolumes";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { isCiRunnerDevice } from "./useFleetHealth";
-import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
+import type { UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
 import { resolveDeviceDrain, resolveDrainTarget } from "./fleetDrain";
 import type { UseFleetDrainResult } from "./useFleetDrain";
@@ -107,7 +106,13 @@ function buildMachineGroups(
    * requires both), so `fleet.ci_runners` alone is empty for exactly the hosts
    * an operator came here to look at. See `ciRunnerMirror.ts`.
    */
-  ciRunners: CiRunnersByHost
+  ciRunners: CiRunnersByHost,
+  /**
+   * The fleet-health body's `runner_reports_scrape_up`, stamped onto every
+   * matched row so a `null` runner report can be told apart from coord's own
+   * read failing. `undefined` = a coord predating the flag.
+   */
+  runnerReportsScrapeUp: boolean | undefined
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
   const displayNames: Record<string, string> =
@@ -278,6 +283,15 @@ function buildMachineGroups(
       // normalised to `{dark: false}`, which would be this join inventing a
       // measurement coord never made.
       credential_dark: device.credential_dark,
+      // The runner's own reports (plan
+      // `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+      // Phase 5), carried through verbatim for the same reason as
+      // `credential_dark`: `undefined`/`null` is UNKNOWN, and normalising it
+      // to `[]` here would be this join inventing a measurement.
+      wedge_incidents: device.wedge_incidents,
+      capability: device.capability,
+      runner_reports: device.runner_reports,
+      runner_reports_scrape_up: runnerReportsScrapeUp,
       ciRunner: isCiRunnerDevice(device),
     };
     if (group) {
@@ -448,21 +462,28 @@ export function FleetOverview({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [volumes, setVolumes] = useState<VolumesFetch>(VOLUMES_NOT_YET_READ);
+  // Disk telemetry is its own 30 s, single-flight, no-retry poll now — see
+  // `useFleetVolumes` for why it left this component's 5 s loop.
+  const volumes = useFleetVolumes();
 
-  const fetchData = useCallback(async () => {
+  // `/fleet` and `/fleet/tasks` are web-local reads (the runner registry and
+  // the in-process beacon), not coord proxies, so they keep `httpClient`'s
+  // default retries. The loop is still single-flight: a tick that finds the
+  // previous refresh outstanding is skipped rather than stacked on top of it.
+  const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const [fleetRes, tasksRes, volumesRes] = await Promise.allSettled([
+      const [fleetRes, tasksRes] = await Promise.allSettled([
         httpClient.fetch(`${OPERATIONS_API}/fleet`),
         httpClient.fetch(`${OPERATIONS_API}/fleet/tasks`),
-        httpClient.fetch(FLEET_VOLUMES_API),
       ]);
 
       if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
         const data: FleetStatus = await fleetRes.value.json();
+        if (!isCurrent()) return;
         setFleet(data);
         setError(null);
       } else {
+        if (!isCurrent()) return;
         const reason =
           fleetRes.status === "rejected"
             ? (fleetRes.reason as Error).message
@@ -472,94 +493,37 @@ export function FleetOverview({
 
       if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
         const data: AggregatedTaskRuns = await tasksRes.value.json();
+        if (!isCurrent()) return;
         setTasks(data);
       } else {
+        if (!isCurrent()) return;
         // Tasks endpoint failing is non-critical
         setTasks({ task_runs: [], total: 0 });
       }
 
-      // Disk telemetry. Every failure path lands on `unavailable` WITH the
-      // reason — a failed read must never degrade into "this device has never
-      // reported", which is a claim about the device rather than about the
-      // read (plan D10 / `silent-empty-is-unknown`).
-      if (volumesRes.status === "rejected") {
-        setVolumes({
-          state: "unavailable",
-          reason: `Request to ${FLEET_VOLUMES_API} failed: ${
-            (volumesRes.reason as Error)?.message ?? "unknown error"
-          }`,
-        });
-      } else if (!volumesRes.value.ok) {
-        setVolumes({
-          state: "unavailable",
-          reason:
-            `The fleet-volumes read returned HTTP ${volumesRes.value.status}. ` +
-            `Coord may be unreachable (502/504) or the volumes route may not ` +
-            `be deployed yet.`,
-        });
-      } else {
-        let payload: unknown;
-        try {
-          payload = await volumesRes.value.json();
-        } catch (err) {
-          payload = undefined;
-          setVolumes({
-            state: "unavailable",
-            reason: `The fleet-volumes response was not valid JSON: ${
-              err instanceof Error ? err.message : "parse error"
-            }`,
-          });
-        }
-        if (payload !== undefined) {
-          const parsed = parseFleetVolumes(payload);
-          if (parsed.state === "unparseable") {
-            setVolumes({
-              state: "unavailable",
-              reason:
-                "The fleet-volumes response could not be parsed: it either " +
-                "matched no known shape (expected `{devices: [...]}` or " +
-                "`{volumes: [...]}`) or carried rows that named no device, so " +
-                "no device could be matched to a reading. This says nothing " +
-                "about any machine's disk -- an EMPTY response parses fine " +
-                "and reports itself as such.",
-            });
-          } else {
-            // A PARTLY readable response keeps its readable half (the parse's
-            // `skippedRows` rides along), and the render withdraws the
-            // never-reported claims instead of throwing the data away.
-            setVolumes(indexDeviceVolumes(parsed.devices, parsed.skippedRows));
-          }
-        }
-      }
-
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       const message =
         err instanceof Error ? err.message : "Failed to reach operations API";
       setError(message);
-      // The disk section must not keep presenting the previous readings as if
-      // this refresh had confirmed them.
-      setVolumes({
-        state: "unavailable",
-        reason: `The fleet refresh failed before disk telemetry could be read: ${message}`,
-      });
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
   // Initial fetch + polling
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  const { refresh: refreshFleet } = useSingleFlightPoll(
+    fetchData,
+    POLL_INTERVAL_MS
+  );
 
   const symbolClaims = useSymbolClaimsStream();
 
   // Stable identity: `?? []` would allocate a fresh array every render and
   // defeat the memo below.
   const coordDevices = health.data?.devices ?? EMPTY_DEVICES;
+  const runnerReportsScrapeUp = health.data?.runner_reports_scrape_up;
 
   // The mirror WINS for status and labels where both carry a host: it is the
   // copy derived from GitHub's own listing, and the routing verdict has to be
@@ -580,7 +544,8 @@ export function FleetOverview({
             symbolClaims.byMachine,
             volumes,
             coordDevices,
-            mergedCiRunners
+            mergedCiRunners,
+            runnerReportsScrapeUp
           )
         : // The runner-inventory read failed or has not landed, but coord's
           // device list may have. Those machines still exist — render them
@@ -592,7 +557,8 @@ export function FleetOverview({
             symbolClaims.byMachine,
             volumes,
             coordDevices,
-            mergedCiRunners
+            mergedCiRunners,
+            runnerReportsScrapeUp
           ),
     [
       fleet,
@@ -601,6 +567,7 @@ export function FleetOverview({
       volumes,
       coordDevices,
       mergedCiRunners,
+      runnerReportsScrapeUp,
     ]
   );
 
@@ -808,7 +775,7 @@ export function FleetOverview({
                     key={group.hostname}
                     machine={group}
                     nowMs={nowMs}
-                    onRenamed={fetchData}
+                    onRenamed={refreshFleet}
                     // The drain join, resolved here from the page's ONE read.
                     // Two values rather than one because they answer different
                     // questions and fail independently: `drainTarget` is

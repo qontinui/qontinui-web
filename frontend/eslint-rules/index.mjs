@@ -16,12 +16,14 @@
 import noUnwrappedDestructiveHandler from "./no-unwrapped-destructive-handler.mjs";
 import noUnredactedSensitiveInput from "./no-unredacted-sensitive-input.mjs";
 import noFatRecordCard from "./no-fat-record-card.mjs";
+import noDevStackFallback from "./no-dev-stack-fallback.mjs";
 
 const qontinuiWebPlugin = {
   rules: {
     "no-unwrapped-destructive-handler": noUnwrappedDestructiveHandler,
     "no-unredacted-sensitive-input": noUnredactedSensitiveInput,
     "no-fat-record-card": noFatRecordCard,
+    "no-dev-stack-fallback": noDevStackFallback,
   },
 };
 

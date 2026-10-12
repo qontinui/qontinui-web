@@ -425,6 +425,8 @@ class CiNodeConfig(BaseSchema):
     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
     on purpose: a machine that has never been configured here must round-trip
     as the posture the runner actually ships with, never as a friendlier one.
+    Since qontinui-runner#1684 that posture's capacity is ``None`` — derived
+    from the host — not a fixed number.
     """
 
     # Master opt-in. FALSE by default. Enabling this lets coord dispatch
@@ -432,7 +434,19 @@ class CiNodeConfig(BaseSchema):
     # has no "default on" story anywhere in the stack.
     enabled: bool = False
     # Concurrent CI builds the device admits (and advertises as its budget).
-    max_concurrent_builds: int = Field(default=1, ge=1, le=64)
+    #
+    # ``None`` (the default) means "use the host's suggested capacity": the
+    # runner derives the number from the machine's own cores and memory
+    # (qontinui-runner#1684 made its ``max_concurrent_builds`` an
+    # ``Option<u32>`` for exactly this). The web does not know the host's
+    # hardware, so it must not invent a number — the old default of ``1``
+    # pinned every remotely configured node to one build however large the
+    # machine. A number is an explicit owner override and stays one.
+    #
+    # When forwarding to coord, ``None`` is OMITTED rather than sent as JSON
+    # ``null`` (see ``coord_payload``): a coord that predates the
+    # Option-typed relay deserializes this as ``u32`` and would refuse a null.
+    max_concurrent_builds: int | None = Field(default=None, ge=1, le=64)
     # Repos this device may build. EMPTY by default and empty means nothing is
     # runnable even when ``enabled`` — allowlisting is a deliberate act, and
     # there is deliberately no wildcard entry (see the validator).
@@ -480,6 +494,27 @@ class CiNodeConfig(BaseSchema):
             seen.add(entry)
             cleaned.append(entry)
         return cleaned
+
+    def coord_payload(self) -> dict[str, object]:
+        """The ``ci_node`` object forwarded to coord's CI-node dispatch.
+
+        Identical to ``model_dump(mode="json")`` except that an unset
+        ``max_concurrent_builds`` is OMITTED instead of sent as ``null``. That
+        is a deploy-order guard: a coord predating the Option-typed relay
+        reads the field as ``u32`` with a serde default, so an absent key
+        falls back to that default while a ``null`` fails the whole
+        deserialize and every CI-node save is refused. A coord that does
+        accept ``Option<u32>`` reads an absent key as ``None`` — "use the
+        host's suggested capacity" — so omitting is correct on both.
+
+        Scoped to that one field on purpose: no other field here is nullable,
+        and a blanket ``exclude_none`` would silently start dropping any
+        nullable field a later edit adds.
+        """
+        body = self.model_dump(mode="json")
+        if body.get("max_concurrent_builds") is None:
+            body.pop("max_concurrent_builds", None)
+        return body
 
 
 class CiNodeConfigResponse(BaseSchema):

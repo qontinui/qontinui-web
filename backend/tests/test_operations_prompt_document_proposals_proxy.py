@@ -45,6 +45,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 TEST_TENANT_ID = uuid4()
 TEST_USER_ID = uuid4()
 TEST_USER_EMAIL = "operator@example.com"
@@ -450,8 +452,8 @@ class TestListWrites:
         )
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations._WRITE_FEED_DOCUMENT_CEILING",
+            patch_ops(
+                "_WRITE_FEED_DOCUMENT_CEILING",
                 1,
             ),
             _patch_httpx() as MockClient,
@@ -573,8 +575,8 @@ class TestListWrites:
             return _mock_response(json_data={})
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations._WRITE_FEED_DEADLINE_SECONDS",
+            patch_ops(
+                "_WRITE_FEED_DEADLINE_SECONDS",
                 0.2,
             ),
             _patch_httpx() as MockClient,

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback } from "react";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import { Separator } from "@/components/ui/separator";
 import { useWorkflowTags } from "./_hooks/use-workflow-tags";
 import { useWorkflowVariables } from "./_hooks/use-workflow-variables";

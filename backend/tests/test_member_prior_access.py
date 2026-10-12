@@ -49,6 +49,7 @@ from fastapi.testclient import TestClient
 from slowapi.errors import RateLimitExceeded
 
 from app.middleware.rate_limit import rate_limit_exceeded_handler, user_limiter
+from tests._ops_patch import patch_ops
 
 API_PREFIX = "/api/v1/operations"
 
@@ -79,7 +80,7 @@ async def _ask(payload=None, *, raises: BaseException | None = None):
     from app.api.v1.endpoints.operations import _member_had_prior_access
 
     proxy = AsyncMock(side_effect=raises) if raises else AsyncMock(return_value=payload)
-    with patch("app.api.v1.endpoints.operations._proxy_coord_get", proxy):
+    with patch_ops("_proxy_coord_get", proxy):
         answer = await _member_had_prior_access(tenant_id=uuid4(), sso_subject=_SUB)
     return answer, proxy
 
@@ -213,14 +214,12 @@ class TestTheRouteSurvivesAnUnreadableCheck:
                     )
                 ),
             ),
-            patch(
-                "app.api.v1.endpoints.operations._proxy_coord_get",
+            patch_ops(
+                "_proxy_coord_get",
                 AsyncMock(side_effect=httpx.ConnectError("refused")),
             ),
             patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient,
-            patch(
-                "app.api.v1.endpoints.operations._member_added_notice_composer"
-            ) as composer_factory,
+            patch_ops("_member_added_notice_composer") as composer_factory,
         ):
             instance = AsyncMock()
             instance.post.side_effect = [
@@ -268,12 +267,12 @@ class TestTheRouteSurvivesAnUnreadableCheck:
                     )
                 ),
             ),
-            patch(
-                "app.api.v1.endpoints.operations._proxy_coord_get",
+            patch_ops(
+                "_proxy_coord_get",
                 AsyncMock(side_effect=_prior_access),
             ),
             patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient,
-            patch("app.api.v1.endpoints.operations._member_added_notice_composer"),
+            patch_ops("_member_added_notice_composer"),
         ):
             instance = AsyncMock()
             responses = [
@@ -329,11 +328,9 @@ class TestThePendingArmSkipsTheCheck:
                     )
                 ),
             ),
-            patch("app.api.v1.endpoints.operations._proxy_coord_get", prior_access),
+            patch_ops("_proxy_coord_get", prior_access),
             patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient,
-            patch(
-                "app.api.v1.endpoints.operations._member_added_notice_composer"
-            ) as composer_factory,
+            patch_ops("_member_added_notice_composer") as composer_factory,
         ):
             instance = AsyncMock()
             instance.post.side_effect = [
@@ -368,10 +365,10 @@ class TestTheComposerCacheKeepsOnlyAHealthyTransport:
             return t
 
         with (
-            patch.object(operations, "_member_added_composer_cache", None),
-            patch.object(operations.settings, "USE_SES_API", True),
-            patch.object(operations, "EmailTransportService", _transport),
-            patch.object(operations, "EmailTemplateService", MagicMock()),
+            patch_ops("_member_added_composer_cache", None),
+            patch_ops("settings.USE_SES_API", True),
+            patch_ops("EmailTransportService", _transport),
+            patch_ops("EmailTemplateService", MagicMock()),
         ):
             first = operations._member_added_notice_composer()
             second = operations._member_added_notice_composer()

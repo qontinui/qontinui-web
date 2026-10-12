@@ -8,7 +8,8 @@
  *    "AI-Dev Coordination" entry, and the shared Runners/Sessions items that
  *    web-local ones replace — so no route is listed twice
  *  - Organizations and Billing (cloud items) belong to the visual menu
- *  - operator-only console pages stay hidden from a plain member
+ *  - operator-only console pages stay hidden from a plain member, and
+ *    coord-admin-only ones (Computers) show for a coord tenant admin too
  *  - console pages keep their section highlighted on detail routes
  */
 
@@ -24,11 +25,19 @@ vi.mock("next/navigation", () => ({
 }));
 
 let isSuperuser = false;
+let coordIsAdmin = false;
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({
-    user: { id: "u1", is_superuser: isSuperuser },
+    user: { id: "u1", is_superuser: isSuperuser, coord_is_admin: coordIsAdmin },
     loading: false,
   }),
+}));
+
+type TenantRow = { id: string; slug: string; name: string; roles?: string[] };
+let tenants: TenantRow[] = [];
+let activeTenantId: string | null = null;
+vi.mock("@/contexts/tenant-context", () => ({
+  useTenant: () => ({ tenants, activeTenantId }),
 }));
 
 vi.mock("@/contexts/product-mode-context", () => ({
@@ -76,6 +85,9 @@ describe("useSidebarNavigation — AI Dev menu", () => {
   beforeEach(() => {
     pathname = "/admin/coord/pipeline";
     isSuperuser = false;
+    coordIsAdmin = false;
+    tenants = [];
+    activeTenantId = null;
     showAdvanced = false;
   });
 
@@ -182,14 +194,45 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     expect(routes).not.toContain("/billing");
   });
 
-  it("shows a member only Overview under Dev Ops, and an operator all of it", () => {
+  it("shows a member only Overview and CI under Dev Ops, and an operator all of it", () => {
     const devops = () =>
       menu().visibleNavItems.find((i) => i.id === "coord-group-devops");
-    expect(devops()?.children?.map((c) => c.label)).toEqual(["Overview"]);
+    expect(devops()?.children?.map((c) => c.label)).toEqual(["Overview", "CI"]);
 
     isSuperuser = true;
     expect(devops()?.children?.map((c) => c.label)).toContain("Runner Drain");
-    expect(devops()?.children).toHaveLength(13);
+    expect(devops()?.children?.map((c) => c.label)).toContain("Computers");
+    expect(devops()?.children).toHaveLength(15);
+  });
+
+  it("shows Computers to an admin of the ACTIVE tenant who is not staff, and nothing operator-only", () => {
+    coordIsAdmin = true;
+    tenants = [{ id: "t-a", slug: "a", name: "A", roles: ["admin"] }];
+    activeTenantId = "t-a";
+    const devops = menu().visibleNavItems.find(
+      (i) => i.id === "coord-group-devops"
+    );
+    expect(devops?.children?.map((c) => c.label)).toEqual([
+      "Overview",
+      "CI",
+      "Computers",
+    ]);
+  });
+
+  it("hides Computers from an admin of tenant A while tenant B is active", () => {
+    // `coord_is_admin` is the union across tenants, so it is true here — and
+    // the proxies' `require_coord_tenant_admin` still refuses, because it
+    // checks B's roles. The menu must follow the gate, not the union.
+    coordIsAdmin = true;
+    tenants = [
+      { id: "t-a", slug: "a", name: "A", roles: ["admin"] },
+      { id: "t-b", slug: "b", name: "B", roles: ["developer"] },
+    ];
+    activeTenantId = "t-b";
+    const devops = menu().visibleNavItems.find(
+      (i) => i.id === "coord-group-devops"
+    );
+    expect(devops?.children?.map((c) => c.label)).toEqual(["Overview", "CI"]);
   });
 
   it("keeps a console section active on its detail routes", () => {

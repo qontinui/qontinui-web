@@ -82,6 +82,7 @@ function coordLeafItem(leaf: NavLeaf, group?: string): NavItem {
     // one another, so this cannot double-highlight.
     matchPrefix: true,
     adminOnly: leaf.operatorOnly,
+    coordAdminOnly: leaf.coordAdminOnly,
     group,
   };
 }

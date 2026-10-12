@@ -25,6 +25,8 @@
  *   row" (`none`) from "off because someone turned it off".
  */
 
+import type { BoundedReadMeta } from "@/components/admin/coord/cursorPager";
+
 // ───────────────────────────── artifacts ─────────────────────────────
 
 export const WORK_ARTIFACT_KINDS = [
@@ -57,15 +59,6 @@ export function kindLabel(kind: string): string {
   return KIND_LABELS[kind as WorkArtifactKind] ?? kind;
 }
 
-export const CAPTURE_DOORS = ["runner_scan", "agent", "operator"] as const;
-export type CaptureDoor = (typeof CAPTURE_DOORS)[number];
-
-export const CAPTURE_DOOR_LABELS: Record<CaptureDoor, string> = {
-  runner_scan: "Runner scan",
-  agent: "Agent write door",
-  operator: "Operator",
-};
-
 export type WorkArtifactRelation =
   | "produced_report"
   | "feeds"
@@ -76,6 +69,43 @@ export type WorkArtifactRelation =
   | "spawned_followup"
   /** A measurement that FALSIFIES the target claim. Two-ended. */
   | "refutes";
+
+/**
+ * How current a row's `status` can be taken to be — the closed vocabulary of
+ * `StatusCurrency.state` in `backend/app/schemas/plan_library.py` (plan
+ * `2026-09-20-the-plan-library-serves-a-status-with-no-way-to-tell-whether-it-is-current`).
+ *
+ * Keyed on the FEEDER'S REF, never on `behind`: a feeder parked 1991 commits
+ * behind on a ref it fetched seconds ago is `fed_in_step`. `unknown` is a
+ * member and is never rendered as healthy. Pinned against the OpenAPI
+ * snapshots by `types.wire.test.ts`.
+ */
+export const STATUS_CURRENCY_STATES = [
+  "fed_in_step",
+  "fed_stale_ref",
+  "unfed_key",
+  "asserted_once",
+  "unknown",
+] as const;
+
+export type StatusCurrencyState = (typeof STATUS_CURRENCY_STATES)[number];
+
+export const STATUS_CURRENCY_LABELS: Record<StatusCurrencyState, string> = {
+  fed_in_step: "Fed, in step",
+  fed_stale_ref: "Fed, stale ref",
+  unfed_key: "Unfed key",
+  asserted_once: "Asserted once",
+  unknown: "Currency unknown",
+};
+
+export interface StatusCurrency {
+  state: StatusCurrencyState;
+  /** Newest reading behind the verdict (`updated_at` for `asserted_once`). */
+  as_of: string | null;
+  ref_sha: string | null;
+  ref_age_secs: number | null;
+  detail: string | null;
+}
 
 export interface WorkArtifactSummary {
   id: string;
@@ -104,6 +134,8 @@ export interface WorkArtifactSummary {
   current_version: number;
   created_at: string;
   updated_at: string;
+  /** How far `status` can be trusted NOW. Always present on an artifact row. */
+  status_currency: StatusCurrency;
 }
 
 export interface WorkArtifactVersion {
@@ -165,61 +197,16 @@ export interface CorpusHealth {
   scan_roots: ScanRootListResponse;
 }
 
-export interface WorkArtifactListResponse {
-  items: WorkArtifactSummary[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  corpus_health: CorpusHealth;
-}
-
-// ───────────────────────────── divergence ─────────────────────────────
-
-export interface DivergentVariant {
-  id: string;
-  kind: string;
-  kind_locked: boolean;
-  content_sha256: string;
-  source_repo: string | null;
-  source_path: string | null;
-  title: string;
-  status: string;
-  current_version: number;
-  updated_at: string;
-}
-
-/** Same `(kind, slug)`, different content digest. */
-export interface DivergentGroup {
-  kind: string;
-  slug: string;
-  variant_count: number;
-  variants: DivergentVariant[];
-}
-
 /**
- * Same `(slug, source_repo)`, DIFFERENT kind — a fork whose whole
- * distinguishing feature is the kind, which grouping by `(kind, slug)`
- * structurally cannot see.
- *
- * `resolvable: false` means no single corrected (`kind_locked`) row exists to
- * prefer, so the scanner refuses to pick and an operator must correct one.
+ * `GET /api/v1/plan-library` — the all-kinds artifact list. A keyset walk,
+ * newest captured first: the shared bounded-read keys describe `items`, and
+ * `total` counts from THIS page's start (the whole filtered corpus on the
+ * first page). Pass `next_cursor` back as `cursor` for the next page.
  */
-export interface KindForkGroup {
-  slug: string;
-  source_repo: string | null;
-  kinds: string[];
-  variant_count: number;
-  resolvable: boolean;
-  variants: DivergentVariant[];
-}
-
-export interface DivergentResponse {
-  groups: DivergentGroup[];
-  total: number;
-  kind_forks: KindForkGroup[];
-  kind_fork_total: number;
+export interface WorkArtifactListResponse extends BoundedReadMeta {
+  items: WorkArtifactSummary[];
+  ordering: "newest_captured_first";
+  corpus_health: CorpusHealth;
 }
 
 // ─────────────────────────── capture health ───────────────────────────
@@ -268,9 +255,11 @@ export type DocumentState = "present" | "unsynced" | "absent";
  * `unavailable` means `total` counts the document layer only — UNKNOWN,
  * never "coord has no work units". Distinct from `coord_available`, which
  * reports the page-wide circuit: a 4xx on the population door is coord
- * ANSWERING and leaves that flag true.
+ * ANSWERING and leaves that flag true. `truncated` means the arm was read
+ * but coord's list did not end within web's page cap: the work-unit half is
+ * a LOWER BOUND and the page's bound is never `exact`.
  */
-export type WorkUnitPopulationState = "included" | "unavailable";
+export type WorkUnitPopulationState = "included" | "truncated" | "unavailable";
 
 export interface CandidateLinkedPr {
   repo: string | null;
@@ -327,16 +316,20 @@ export interface PlanCandidate {
   }>;
   coord: CandidateCoordLink;
   document_state: DocumentState;
+  /** `sha256(body)`; `null` on a work-unit-only row (there is no body). */
+  content_sha256: string | null;
+  /** `null` on a work-unit-only row — `document_state` says why. */
+  status_currency: StatusCurrency | null;
 }
 
-export interface PlanCandidateResponse {
+/**
+ * `GET /plan-library/candidates` — a keyset walk, oldest captured first. The
+ * shared bounded-read keys describe `items`; pass `next_cursor` back as
+ * `cursor`.
+ */
+export interface PlanCandidateResponse extends BoundedReadMeta {
   items: PlanCandidate[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  ordering: "oldest_vetted_first";
+  ordering: "oldest_captured_first";
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;
@@ -435,9 +428,14 @@ export function scanRootStateLabel(state: string): string {
  * `reported_state`. `state` is the backend's VERDICT, and it is the field that
  * decides WHAT MAY BE CLAIMED: it is `"unknown"` whenever the reading cannot
  * support a claim about NOW, even though the device reported `"measured"`.
- * Three rules produce that, in precedence order, each naming itself in
+ * Four rules produce that, in precedence order, each naming itself in
  * `detail`:
  *
+ * * `refused:` — the device's latest contact inside `fresh_within_secs` was a
+ *   REFUSED report (a 422 that stored nothing) and no fresh reading stands.
+ *   The device is alive and being refused — not what a silent one looks
+ *   like. Outranks every other verdict. A device refused on its FIRST report
+ *   has no reading at all: every reading field below is then `null`.
  * * `observation_stale:` — nothing received from the device inside
  *   `fresh_within_secs`. A device that went quiet has established nothing.
  * * `reading_superseded:` — its latest report was observed BEFORE the stored
@@ -464,8 +462,11 @@ export interface ScanRootRow {
   /** The VERDICT. Key on this, never on `reported_state`. */
   state: ScanRootState;
   detail: string | null;
-  /** What the device sent, verbatim. Never a verdict. */
-  reported_state: ScanRootState;
+  /**
+   * What the device sent, verbatim. Never a verdict. `null` on a
+   * refusal-only row — no reading was ever stored.
+   */
+  reported_state: ScanRootState | null;
   reported_detail: string | null;
   plans_dir: string | null;
   repo_root: string | null;
@@ -477,15 +478,31 @@ export interface ScanRootRow {
   behind: number | null;
   ahead: number | null;
   ref_age_secs: number | null;
-  /** `true` = the counts are LOWER BOUNDS ("at least N"), not exact. */
-  counts_are_floors: boolean;
-  observed_at: string;
-  received_at: string;
-  last_report_applied: boolean;
-  last_report_observed_at: string;
-  observed_skew_secs: number;
-  observation_age_secs: number;
+  /**
+   * `true` = the counts are LOWER BOUNDS ("at least N"), not exact. `null` on
+   * a refusal-only row, like every reading field below it.
+   */
+  counts_are_floors: boolean | null;
+  observed_at: string | null;
+  received_at: string | null;
+  last_report_applied: boolean | null;
+  last_report_observed_at: string | null;
+  observed_skew_secs: number | null;
+  observation_age_secs: number | null;
+  /** `false` on a refusal-only row: there is no reading to be fresh. */
   observation_fresh: boolean;
+  /** The device's latest REFUSED report (server clock); `null` = never refused. */
+  last_refused_at: string | null;
+  /** `"<field>: <type>"` of that refusal, `(+N more)`. Never an input value. */
+  last_refused_reason: string | null;
+  /** Refused reports since the first. `null` = never refused — NOT 0. */
+  refused_count: number | null;
+  refused_age_secs: number | null;
+  /**
+   * Silent — no reading, no refused report — for more than
+   * `retire_after_secs`. Only served under `?include_retired=true`.
+   */
+  retired: boolean;
 }
 
 /**
@@ -501,11 +518,28 @@ export interface ScanRootListResponse {
   state: ScanRootListState;
   detail: string | null;
   fresh_within_secs: number;
+  /**
+   * The retirement window (30 days). A device neither whose reading nor whose
+   * refused report arrived within it is left out of `rows`, `by_source_repo`
+   * and `coverage` — and counted in `retired_count`, so the exclusion is
+   * never silent. Nothing is deleted.
+   */
+  retire_after_secs: number;
+  retired_count: number;
   count: number;
-  /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
+  /**
+   * `count > 0` with `fresh_count === 0` means no feeder has a fresh reading —
+   * every feeder has gone quiet, unless a row was refused within
+   * `fresh_within_secs` (`refused_age_secs`), which is alive and being refused.
+   */
   fresh_count: number;
   rows: ScanRootRow[];
-  /** One roll-up per distinct `source_repo`; empty exactly when `rows` is. */
+  /**
+   * One roll-up per distinct `source_repo`, over the live rows that carry a
+   * READING. A refusal-only row (no reading ever stored) and a retired row
+   * feed none, so this can be empty while `rows` is not — never read that as
+   * "no drift".
+   */
   by_source_repo: ScanRootSourceRollup[];
   /**
    * What the corpus holds against what exists, per scan source — a SET
@@ -734,7 +768,7 @@ export const SCAN_ROOT_ROW_NULLABLE: WireNullability<ScanRootRow> = {
   device_id: false,
   state: false,
   detail: true,
-  reported_state: false,
+  reported_state: true,
   reported_detail: true,
   plans_dir: true,
   repo_root: true,
@@ -745,14 +779,28 @@ export const SCAN_ROOT_ROW_NULLABLE: WireNullability<ScanRootRow> = {
   behind: true,
   ahead: true,
   ref_age_secs: true,
-  counts_are_floors: false,
-  observed_at: false,
-  received_at: false,
-  last_report_applied: false,
-  last_report_observed_at: false,
-  observed_skew_secs: false,
-  observation_age_secs: false,
+  counts_are_floors: true,
+  observed_at: true,
+  received_at: true,
+  last_report_applied: true,
+  last_report_observed_at: true,
+  observed_skew_secs: true,
+  observation_age_secs: true,
   observation_fresh: false,
+  last_refused_at: true,
+  last_refused_reason: true,
+  refused_count: true,
+  refused_age_secs: true,
+  retired: false,
+};
+
+/** `StatusCurrency`'s nullability, as a value. See [`WireNullability`]. */
+export const STATUS_CURRENCY_NULLABLE: WireNullability<StatusCurrency> = {
+  state: false,
+  as_of: true,
+  ref_sha: true,
+  ref_age_secs: true,
+  detail: true,
 };
 
 /** `ScanRootListResponse`'s nullability, as a value. See [`WireNullability`]. */
@@ -760,6 +808,8 @@ export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
   state: false,
   detail: true,
   fresh_within_secs: false,
+  retire_after_secs: false,
+  retired_count: false,
   count: false,
   fresh_count: false,
   rows: false,
@@ -847,7 +897,7 @@ type Expect<T extends true> = T;
  */
 export type ScanRootVocabulariesPinned = [
   Expect<Equal<ScanRootRow["state"], ScanRootState>>,
-  Expect<Equal<ScanRootRow["reported_state"], ScanRootState>>,
+  Expect<Equal<ScanRootRow["reported_state"], ScanRootState | null>>,
   Expect<Equal<ScanRootListResponse["state"], ScanRootListState>>,
   Expect<Equal<ScanRootSourceRollup["state"], ScanRootRollupState>>,
   Expect<Equal<PlanCoverage["state"], PlanCoverageState>>,

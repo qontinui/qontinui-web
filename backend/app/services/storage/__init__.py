@@ -98,6 +98,10 @@ class ObjectStorageService:
         """Download file from storage."""
         return self.backend.download_file(key)
 
+    def open_stream(self, key: str) -> BinaryIO:
+        """Open a stored file for chunked reading; the caller closes it."""
+        return self.backend.open_stream(key)
+
     def delete_file(self, key: str) -> bool:
         """Delete file from storage."""
         return self.backend.delete_file(key)

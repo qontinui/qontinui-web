@@ -34,6 +34,11 @@
  * itself. That is a statement about what the scanner will do, not about which
  * copy is right.
  *
+ * The second is the ORPHAN marker on a variant: a copy with no `source_repo`
+ * beside a copy the scanner captured is one the scanner will never update.
+ * Same footing — a provenance fact the scanner proves, rendered in the calm
+ * family, with no winner implied and no control beside it.
+ *
  * ## Computed live, so an empty answer is a measurement
  *
  * The route recomputes on every read — there is no stored list — which is why
@@ -68,6 +73,8 @@ import {
 import { httpClient } from "@/services/service-factory";
 import {
   FORK_PALETTE,
+  ORPHAN_MARKER,
+  ORPHAN_MARKER_DETAIL,
   VARIANT_ORDER_CAVEAT,
   VARIANT_STATUS_CLASS,
   deriveForkCensus,
@@ -75,6 +82,7 @@ import {
   describeContentFork,
   describeKindFork,
   orderVariants,
+  orphanVariantIds,
   shortDigest,
   variantOrigin,
   type DivergentGroup,
@@ -87,6 +95,7 @@ const ENDPOINT = "/api/v1/plan-library/divergent";
 const POLL_INTERVAL_MS = 60_000;
 
 function VariantTable({ variants }: { variants: DivergentVariant[] }) {
+  const orphans = orphanVariantIds(variants);
   return (
     <div className="overflow-x-auto">
       <table
@@ -110,9 +119,21 @@ function VariantTable({ variants }: { variants: DivergentVariant[] }) {
               className="border-t border-border/60"
               data-testid="coord-fork-variant"
               data-kind-locked={variant.kind_locked ? "true" : "false"}
+              data-captured-by={variant.captured_by ?? "unknown"}
             >
               <td className="py-1 pr-3 font-mono text-[11px]">
                 {variantOrigin(variant)}
+                {orphans.has(variant.id) && (
+                  // A provenance FACT in the calm family (R3): nobody's move
+                  // is implied, and no copy is promoted by it.
+                  <span
+                    className={`mt-0.5 flex w-fit rounded border px-1.5 py-0.5 font-sans text-[10px] ${VARIANT_STATUS_CLASS}`}
+                    title={ORPHAN_MARKER_DETAIL}
+                    data-testid="coord-fork-variant-orphan"
+                  >
+                    {ORPHAN_MARKER}
+                  </span>
+                )}
               </td>
               <td className="py-1 pr-3 font-mono text-[11px]">
                 {variant.kind}

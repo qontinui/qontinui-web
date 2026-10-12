@@ -13,6 +13,12 @@
  * runner's local callback handler captures the token, persists it, and
  * opens a persistent WebSocket to /api/v1/devices/ws to register with web.
  *
+ * Collect mode (multi-tenant pairing): when pair-confirm answers
+ * `collect: true`, the redirect is
+ * `<callback>?state=<state>&token_id=<device_id>&collect=1` with NO token —
+ * the runner fetches every tenant's token itself from coord's pair-collect
+ * with its verifier, so no tenant credential ever rides a URL.
+ *
  * Security:
  *   - Token creation requires an explicit button click; no GET-triggered
  *     side effects.
@@ -25,6 +31,11 @@
  */
 
 import { useMemo, useState } from "react";
+import {
+  buildCallbackRedirect,
+  pairConfirmErrorMessage,
+  type PairConfirmResult,
+} from "./callback-redirect";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle2, Loader2, Server } from "lucide-react";
@@ -113,22 +124,18 @@ export default function ConnectRunnerPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ state, device_id: deviceId, device_name: deviceName }),
+        body: JSON.stringify({
+          state,
+          device_id: deviceId,
+          device_name: deviceName,
+        }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(
-          (body as { detail?: string }).detail ||
-            (body as { message?: string }).message ||
-            `Pair-confirm failed (HTTP ${response.status})`,
-        );
+        throw new Error(pairConfirmErrorMessage(body, response.status));
       }
-      const result: { device_id: string; token: string; state: string } =
-        await response.json();
-      const redirectUrl = new URL(callback);
-      redirectUrl.searchParams.set("state", state);
-      redirectUrl.searchParams.set("token", result.token);
-      redirectUrl.searchParams.set("token_id", result.device_id);
+      const result: PairConfirmResult = await response.json();
+      const redirectUrl = buildCallbackRedirect(callback, state, result);
       setRedirecting(true);
       // Full navigation (not router.push) — the target is a localhost HTTP
       // server, not part of the Next.js app.

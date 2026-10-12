@@ -12,6 +12,8 @@
  */
 
 import { projectLogger } from "@/lib/project-logger";
+import { isEndpointUnresolved } from "@/lib/errors/endpoint-unresolved";
+import { ApiConfig } from "@/services/api-config";
 
 /**
  * WebSocket event types from server
@@ -72,8 +74,12 @@ export type ConnectionStateHandler = (state: ConnectionState) => void;
  * WebSocket client configuration
  */
 export interface SyncWebSocketConfig {
-  /** Base URL for WebSocket connection */
-  baseUrl: string;
+  /**
+   * Base URL for WebSocket connection. Omitted ⇒ resolved at connect time by
+   * `ApiConfig.resolveWebSocketBaseUrl()` (never a dev-stack default in a
+   * published build).
+   */
+  baseUrl?: string;
   /** Initial reconnect delay (ms) */
   reconnectDelay: number;
   /** Maximum reconnect delay (ms) */
@@ -92,7 +98,6 @@ export interface SyncWebSocketConfig {
  * Default configuration
  */
 const DEFAULT_CONFIG: SyncWebSocketConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000",
   reconnectDelay: 1000,
   maxReconnectDelay: 30000,
   reconnectBackoff: 1.5,
@@ -206,7 +211,19 @@ class SyncWebSocketClientImpl {
 
     this.setConnectionState("connecting");
 
-    const url = this.buildWebSocketUrl();
+    let url: string;
+    try {
+      url = this.buildWebSocketUrl();
+    } catch (error) {
+      // A misconfigured deployment: retrying cannot fix it, so report the
+      // refusal (it names the variable to set) and stop.
+      if (!isEndpointUnresolved(error)) throw error;
+      projectLogger.error("SyncWebSocket", error.message, {
+        next_action: error.nextAction,
+      });
+      this.setConnectionState("error");
+      return;
+    }
     projectLogger.debug("SyncWebSocket", "Connecting", { url });
 
     try {
@@ -223,7 +240,7 @@ class SyncWebSocketClientImpl {
 
   private buildWebSocketUrl(): string {
     // Convert http(s) to ws(s) if needed
-    let baseUrl = this.config.baseUrl;
+    let baseUrl = this.config.baseUrl ?? ApiConfig.resolveWebSocketBaseUrl();
     if (baseUrl.startsWith("http://")) {
       baseUrl = baseUrl.replace("http://", "ws://");
     } else if (baseUrl.startsWith("https://")) {

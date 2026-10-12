@@ -21,11 +21,12 @@ rows). There is no server-side embed fallback.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal, get_args
+from typing import Annotated, Any, Final, Literal, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.bounded_read import BoundedReadMeta
 from app.services.memory_vectors import ACCEPTED_EMBEDDING_MODEL_TAGS, EMBEDDING_DIM
 
 # Mirror the migration's CHECK constraints.
@@ -558,8 +559,51 @@ class MemoryQueryEcho(BaseModel):
     anchored_to_count: int
 
 
-class MemoryQueryResponse(BaseModel):
+#: The door that ENUMERATES the corpus, named on every ``/query`` answer.
+MEMORY_ENUMERATION_DOOR: Final = "GET /api/v1/memory/records"
+
+
+class MemoryQueryResponse(BoundedReadMeta):
     """``POST /memory/query`` result.
+
+    **Bound disclosure** (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``,
+    Phase 3). The class inherits the GENERATED shared envelope
+    (:class:`BoundedReadMeta`, ``qontinui_schemas``; never redeclared here),
+    so ``count`` / ``limit`` / ``shown`` / ``total`` / ``truncated`` /
+    ``bound_kind`` / ``next_cursor`` / ``available`` / ``filter_narrowed``
+    are always serialized, ``null`` included. They describe ``hits`` ONLY;
+    ``anchored_hits`` is a separate ranked list with its own arm and is not
+    covered by them.
+
+    * ``truncated`` — the fused candidate pool held more ids than ``limit``
+      (judged against the cut, not against ``shown``: a pooled id whose row
+      was not fetched is not "more beyond this page").
+    * ``bound_kind`` — ``exact`` (``total`` = the fused pool size, deduplicated
+      across arms) when no retrieval arm was capped, so the pool is the whole
+      match set; ``at_least`` (``total: null``) when an arm was capped, so
+      matches may exist that no arm returned; ``unknown`` when an arm was
+      capped but the page shows the whole pool, so whether more exist did not
+      resolve. The vector and FTS arms count as capped when they returned
+      ``memory_store.ARM_LIMIT`` ids; the link arm counts as capped whenever
+      it ran (``link_arm == "expanded"``), see below.
+    * ``next_cursor`` — ALWAYS ``null``. The order is a computed relevance
+      score that moves with every write, so a ranking is not pageable.
+    * ``enumerate_via`` — ALWAYS :data:`MEMORY_ENUMERATION_DOOR`
+      (``GET /api/v1/memory/records``, keyset over the immutable
+      ``(created_at, seq)``): the walk a caller takes to see the corpus.
+    * ``available`` — always ``true``: this route has no unprovisioned-store
+      arm (a missing substrate is an error, not an empty answer).
+
+    ``total`` counts CANDIDATES, not relevance: the vector arm has no
+    similarity floor, so on a hybrid query every embedded live row that
+    passes the filters is a candidate, and a tenant with ``ARM_LIMIT`` or
+    more of them always reads ``at_least``. Saturation of the vector and
+    FTS arms is judged on each arm's returned list. The link arm's per-seed
+    fan-out cap is applied BEFORE the record filters, so a cut seed cannot be
+    seen in the filtered list; an expanded query is therefore always treated
+    as capped (``at_least`` / ``unknown``, never ``exact``) — the safe
+    direction.
 
     ``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only
     results must never be indistinguishable from hybrid ones. Its three
@@ -657,6 +701,10 @@ class MemoryQueryResponse(BaseModel):
     # actually consumed, resolved server-side. See
     # :class:`MemoryQueryEcho`.
     query_echo: MemoryQueryEcho
+    # Every key is serialized on every answer (``null`` included), so the
+    # OUTPUT schema marks defaulted fields required too — otherwise a
+    # client generated from the snapshot would type them as optional.
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
 
 class SupersedeRequest(BaseModel):
@@ -1012,6 +1060,54 @@ class ListRecordsResponse(BaseModel):
     count: int
     # Opaque keyset cursor for the next (older) page; None on the last page.
     next_cursor: str | None
+
+
+MemoryRecordState = Literal["live", "superseded", "tombstoned", "expired"]
+
+
+class MemoryRecordByIdResponse(BaseModel):
+    """``GET /memory/records/{id}`` — one row, in WHATEVER state it is in.
+
+    The read-back half of a write receipt (plan
+    ``2026-09-21-a-memory-write-receipt-cannot-be-read-back-by-any-door-a-degraded-session-holds``
+    Phase 1). Unlike the list and query surfaces it does NOT filter to live
+    rows: a receipt for a row a peer superseded a minute later must read as
+    ``superseded``, not as a lost write.
+
+    ``state`` is derived from the row's own columns, in precedence order:
+
+    1. ``is_tombstone`` → ``tombstoned`` (deleted). ``title`` and
+       ``content`` are withheld as ``null``; id, state and ``valid_until``
+       are still returned.
+    2. a non-null ``superseded_by`` → ``superseded``.
+    3. ``valid_until`` at or before the effective now → ``expired`` — the
+       validity was ended without a tombstone or a successor (decay
+       invalidate, closed-session expiry, an anchor-gone sweep). "Now" is
+       the SAME clock-skew-safe effective now retrieval uses
+       (``memory_store._EFFECTIVE_NOW_ROW_SQL``).
+    4. otherwise → ``live``: retrievable now on the validity axis. A
+       session-scoped row whose ``valid_until`` is still in the future is
+       ``live`` until that instant passes.
+
+    ``tenant_id`` echoes the tenant that SERVED the read, so a 404 on a
+    multi-bound device can be read as "the wrong tenant was minted" rather
+    than "the write was lost".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: UUID
+    tenant_id: UUID
+    title: str | None
+    content: str | None
+    kind: str
+    scope: str
+    scope_ref: str | None
+    importance: float | None
+    created_at: datetime
+    state: MemoryRecordState
+    superseded_by: UUID | None
+    valid_until: datetime | None
 
 
 # --------------------------------------------------------------------------

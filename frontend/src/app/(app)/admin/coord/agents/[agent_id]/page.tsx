@@ -78,6 +78,8 @@ import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
@@ -138,39 +140,46 @@ export default function CoordAgentLogPage() {
   const listEndRef = useRef<HTMLDivElement | null>(null);
   const lastSeenCount = useRef(0);
 
-  const fetchData = useCallback(async () => {
-    if (!agentId) return;
-    try {
-      const qs = new URLSearchParams();
-      qs.set("limit", String(FETCH_LIMIT));
-      const sinceOpt = SINCE_OPTIONS.find((o) => o.value === sinceKey);
-      if (sinceOpt?.minutes != null) {
-        const sinceIso = new Date(
-          Date.now() - sinceOpt.minutes * 60_000
-        ).toISOString();
-        qs.set("since", sinceIso);
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
+      if (!agentId) return;
+      try {
+        const qs = new URLSearchParams();
+        qs.set("limit", String(FETCH_LIMIT));
+        const sinceOpt = SINCE_OPTIONS.find((o) => o.value === sinceKey);
+        if (sinceOpt?.minutes != null) {
+          const sinceIso = new Date(
+            Date.now() - sinceOpt.minutes * 60_000
+          ).toISOString();
+          qs.set("since", sinceIso);
+        }
+        const body = await httpClient.get<unknown>(
+          `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}?${qs.toString()}`,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        const normalized: ByAgentResponse = Array.isArray(body)
+          ? { logs: body }
+          : (body as ByAgentResponse);
+        setData(normalized);
+        setError(null);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setLoading(false);
       }
-      const body = await httpClient.get<unknown>(
-        `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}?${qs.toString()}`
-      );
-      const normalized: ByAgentResponse = Array.isArray(body)
-        ? { logs: body }
-        : (body as ByAgentResponse);
-      setData(normalized);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId, sinceKey]);
+    },
+    [agentId, sinceKey]
+  );
 
   useEffect(() => {
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  }, [poll]);
+
+  const { refresh } = useSingleFlightPoll(poll, POLL_INTERVAL_MS, {
+    supersedeOnChange: true,
+  });
 
   const toggleLevel = useCallback((lvl: LevelKey) => {
     setSelectedLevels((prev) => {
@@ -277,9 +286,7 @@ export default function CoordAgentLogPage() {
             size="sm"
             data-testid="coord-agent-log-session-link"
           >
-            <Link
-              href={`/sessions/${encodeURIComponent(sessionId)}`}
-            >
+            <Link href={`/sessions/${encodeURIComponent(sessionId)}`}>
               <Users className="h-3 w-3 mr-1" />
               Session
             </Link>
@@ -354,7 +361,7 @@ export default function CoordAgentLogPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="coord-agent-log-refresh"
         >
           <RefreshCw className="h-3 w-3" />

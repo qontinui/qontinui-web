@@ -10,8 +10,8 @@
  * the two clients agree on prompt envelope and parsing.
  */
 
-const LLAMA_SWAP_BASE =
-  process.env.QONTINUI_LLAMA_SWAP_URL ?? "http://localhost:8100";
+import { resolveEndpoint } from "@/lib/errors/endpoint-unresolved";
+
 const DEFAULT_MODEL = "qontinui-grounding-v5";
 
 /** Extracted point + raw response for caller logging/debugging. */
@@ -74,7 +74,13 @@ export async function groundOnce(args: {
   imageHeight?: number;
 }): Promise<GroundResult> {
   const model = args.model ?? DEFAULT_MODEL;
-  const url = `${LLAMA_SWAP_BASE}/v1/chat/completions`;
+  // Throws EndpointUnresolvedError (naming QONTINUI_LLAMA_SWAP_URL) when unset
+  // outside development — the routes answer it as a structured 503.
+  const base = resolveEndpoint(
+    "llama_swap",
+    process.env.QONTINUI_LLAMA_SWAP_URL
+  );
+  const url = `${base}/v1/chat/completions`;
 
   // Ensure the base64 payload is a full data URL — vLLM's OpenAI-compat
   // server accepts either a bare b64 string or a data URI. We pick the
@@ -106,7 +112,7 @@ export async function groundOnce(args: {
     });
   } catch (err) {
     throw new GroundingUnavailableError(
-      `llama-swap unreachable at ${LLAMA_SWAP_BASE}`,
+      `llama-swap unreachable at ${base}`,
       err
     );
   }

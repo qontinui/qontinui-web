@@ -46,31 +46,19 @@ import {
   RecordRow,
 } from "@/components/console";
 import { TreeRow } from "@/components/admin/coord/TreeRow";
+import { deriveTreesHealth } from "@/components/admin/coord/treeStatus";
 import {
-  deriveTreesHealth,
-  type PrimaryTreeRow,
-} from "@/components/admin/coord/treeStatus";
-import { httpClient } from "@/services/service-factory";
+  fetchTreesByDevice,
+  fetchTreesContention,
+  type ContentionResponse,
+  type TreesByDeviceResponse,
+} from "@/lib/api/operations/coordDelivery";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 type TreesView = "by-device" | "contention";
-
-interface ContentionRow {
-  repo: string;
-  primary_paths?: string[];
-  devices?: { device_id: string; hostname?: string; primary_path: string }[];
-}
-
-interface TreesByDeviceResponse {
-  device_id?: string;
-  trees?: PrimaryTreeRow[];
-}
-
-interface ContentionResponse {
-  overlaps?: ContentionRow[];
-}
 
 function TreesByDevicePanel({
   initialDeviceId,
@@ -84,32 +72,40 @@ function TreesByDevicePanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    if (!deviceId) {
-      setData(null);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const body = await httpClient.get<TreesByDeviceResponse>(
-        `${API}/trees/by-device/${encodeURIComponent(deviceId)}`
-      );
-      setData(body);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [deviceId]);
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // failed tick is retried by the next one, never by `httpClient`'s 5xx backoff
+  // chain, and never overlaps itself. With no device selected the poll makes no
+  // request at all (it only clears the data), so the timer costs nothing.
+  const fetchData = useCallback(
+    async (isCurrent: () => boolean) => {
+      if (!deviceId) {
+        setData(null);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const body = await fetchTreesByDevice(
+          deviceId,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        setData(body);
+        setError(null);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [deviceId]
+  );
 
-  useEffect(() => {
-    fetchData();
-    if (!deviceId) return;
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData, deviceId]);
+  const { refresh } = useSingleFlightPoll(fetchData, POLL_INTERVAL_MS, {
+    supersedeOnChange: true,
+  });
 
   const trees = data?.trees ?? [];
   const loaded = data !== null;
@@ -161,7 +157,8 @@ function TreesByDevicePanel({
             key: "held",
             label: <>held {loaded ? health.held : "–"}</>,
             tone: loaded && health.held > 0 ? "attention" : "muted",
-            title: "coord will not pull these without a human: hold or diverged",
+            title:
+              "coord will not pull these without a human: hold or diverged",
           },
         ]}
         data-testid="coord-trees-health"
@@ -178,7 +175,7 @@ function TreesByDevicePanel({
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="coord-trees-refresh"
         >
           <RefreshCw className="h-3 w-3" />
@@ -219,25 +216,22 @@ function ContentionPanel({ onCount }: { onCount: (n: number | null) => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  // Single-flight, no retries — see `TreesByDevicePanel`.
+  const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<ContentionResponse>(
-        `${API}/trees/contention`
-      );
+      const body = await fetchTreesContention(COORD_DASHBOARD_POLL_OPTIONS);
+      if (!isCurrent()) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  useSingleFlightPoll(fetchData, POLL_INTERVAL_MS);
 
   const overlaps = data?.overlaps ?? [];
   const loaded = data !== null;

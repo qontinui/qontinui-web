@@ -50,6 +50,7 @@ class FleetRegistry:
                 running_task_ids=heartbeat.running_task_ids,
                 lan_reachable=heartbeat.lan_reachable,
                 relay=heartbeat.relay,
+                ui_thread=heartbeat.ui_thread,
                 last_heartbeat=datetime.now(UTC),
                 is_healthy=True,
             )

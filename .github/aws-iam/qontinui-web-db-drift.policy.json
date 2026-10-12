@@ -1,0 +1,34 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ListSecrets",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:ListSecrets"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ReadStagingDatabaseUrlSecrets",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetSecretValue"
+            ],
+            "Resource": "arn:aws:secretsmanager:us-east-1:047719635665:secret:qontinui/staging/*/database_url-??????"
+        },
+        {
+            "Sid": "DecryptSecretsViaSecretsManager",
+            "Effect": "Allow",
+            "Action": [
+                "kms:Decrypt"
+            ],
+            "Resource": "arn:aws:kms:us-east-1:047719635665:key/a2320d8b-f9c0-4aec-9998-d05a2d0ba247",
+            "Condition": {
+                "StringEquals": {
+                    "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com"
+                }
+            }
+        }
+    ]
+}

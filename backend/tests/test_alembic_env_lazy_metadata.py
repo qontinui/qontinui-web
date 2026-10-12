@@ -41,7 +41,7 @@ def _load_guard() -> dict:
     """
     src = ENV_PY.read_text()
     start = src.index("_METADATA_FREE_COMMANDS")
-    end = src.index("# Atlas-owned tables")
+    end = src.index("# Atlas-owned schemas")
     namespace: dict = {"Base": types.SimpleNamespace(metadata="<METADATA>")}
     exec(compile(src[start:end], str(ENV_PY), "exec"), namespace)  # noqa: S102
     return namespace

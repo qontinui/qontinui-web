@@ -26,11 +26,13 @@
  * decided it. Building a third join would have been the exact defect the
  * parent plan documents.
  *
- * **`ordering: slug_asc` is the real fix, not the limit.** Plan stems are
- * date-prefixed, so slug order is chronological order — and stable across
- * requests in a way a mutable timestamp is not. New plans carry today's date
- * and therefore APPEND, which is what makes offset paging over this route
- * sound.
+ * **`ordering: stem_date_asc` is the real fix, not the limit.** Each stem's
+ * position is a pure function of the stem (its date prefix, then a uuid5
+ * tiebreak), so it is chronological by authoring day and IMMUTABLE. The route
+ * pages by an opaque keyset cursor over it (plan
+ * `2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus` Phase 4):
+ * a stem added or removed between two reads can no longer shift the window,
+ * which `offset` paging — now deleted — could.
  *
  * ## Five read states, not four
  *
@@ -45,7 +47,7 @@
  *
  * ## The status filter is CLIENT-side here, and says so
  *
- * `/reconciliation` takes `offset`, `limit` and `include_coord` — there is no
+ * `/reconciliation` takes `cursor`, `limit` and `include_coord` — there is no
  * `status` parameter. So unlike the old page's server-side filter, this one
  * narrows the ROWS ON THIS PAGE and nothing else. A control that silently
  * turned into a page-scoped filter would be the same class of mislabel this
@@ -66,6 +68,32 @@
  * arm and quotes `work_unit_population_reason` and
  * `facets.corpus_incomplete_reasons` verbatim instead.
  *
+ * ## The Plan Browser (plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next`)
+ *
+ * Phases 1-6 made this the ONE plan page. `/admin/coord/plan-library`
+ * redirects here; its two policy dials live at
+ * `/admin/coord/plan-library/settings`; its scan-source and coverage panels
+ * are collapsed into the corpus-health strip (`CorpusHealthPanel`); its
+ * divergence panel is gone in favour of `/admin/coord/plan-forks`. Added on
+ * top of the reconciliation:
+ *
+ * - **Search** (`q`) — the only SERVER-side filter. The route filters the
+ *   population before paging, so `total` is the match count, and it echoes
+ *   `q`; a backend that does not echo it is said to have ignored it.
+ * - **Status class, "needs a /vet-imp", document-only, difficulty** —
+ *   CLIENT-side over this page, composed in `rowFilters.ts` and labelled
+ *   "filters this page only" wherever they can empty the list.
+ * - **Live custody** (`include_custody=true`) — `custody.ts`, never a guessed
+ *   name. Asked for only on the reads an operator causes (first read of a
+ *   window, refresh, paging, search), and on the 30 s poll only until one
+ *   custody read has succeeded for the current window/search, because coord
+ *   resolves it for the whole tenant. A poll answer re-applies the last
+ *   reading with its age stated (`custodyHold.ts`).
+ * - **Other artifact kinds** — this page reads `kind='plan'` only; every kind
+ *   is listed at `/admin/coord/plan-library/artifacts`.
+ * - **Throughput** — coord's server-side day buckets, never a client reduce.
+ * - **The document** — `ArtifactDetailPanel`, opened in place in a row.
+ *
  * ## Console style
  *
  * R9 (no page-level card — the coord layout owns the `<h1>`), R1 (a
@@ -75,7 +103,8 @@
  * reading is derived in `planReconciliationStatus.ts`, nothing inline here).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Select,
   SelectContent,
@@ -98,7 +127,6 @@ import {
   DEFAULT_PAGE_SIZE,
   PAGE_SIZES,
   STATUS_FILTERS,
-  matchesStatus,
 } from "@/components/admin/coord/planReconciliationFilters";
 import {
   describeWindow,
@@ -112,6 +140,37 @@ import {
   type ReadGuard,
 } from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
+import { usePlanDifficulty } from "../work-units/usePlanDifficulty";
+import { CorpusHealthPanel } from "./CorpusHealthPanel";
+import { PlanPageFilters, PAGE_ONLY_NOTE } from "./PlanPageFilters";
+import { PlanRowBadges } from "./PlanRowBadges";
+import { PlanDocumentPanel, PlanTriageDetail } from "./PlanRowDetail";
+import { PlanSearchBox, SearchEcho } from "./PlanSearchBox";
+import { ThroughputPanel } from "./ThroughputPanel";
+import { pageForkCount } from "./corpusHealth";
+import {
+  applyHeldCustody,
+  captureCustody,
+  describeCustodyAge,
+  holdCarriesCustody,
+  type CustodyHold,
+  type CustodySource,
+} from "./custodyHold";
+import { describeDeriveMode } from "./deriveMode";
+import {
+  NO_PAGE_FILTERS,
+  activeFilterNames,
+  axisAFilterActive,
+  matchesPageFilters,
+  pageChipCounts,
+  pageFiltersActive,
+  type PageFilters,
+} from "./rowFilters";
+import { useCursorPager } from "@/components/admin/coord/cursorPager";
+import { DEFAULT_THROUGHPUT_DAYS } from "./throughput";
+import { useArtifactDocument } from "./useArtifactDocument";
+import { useDeriveMode } from "./useDeriveMode";
+import { useThroughput } from "./useThroughput";
 
 const ENDPOINT = "/api/v1/plan-library/reconciliation";
 /**
@@ -144,8 +203,12 @@ const RECONCILIATION_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
 };
 
 export default function CoordPlansListPage() {
-  const [status, setStatus] = useState("any");
-  const [offset, setOffset] = useState(0);
+  const [filters, setFilters] = useState<PageFilters>(NO_PAGE_FILTERS);
+  /** The search in force — sent to the route, so it is part of the QUESTION. */
+  const [q, setQ] = useState("");
+  const [throughputDays, setThroughputDays] = useState(DEFAULT_THROUGHPUT_DAYS);
+  const pager = useCursorPager();
+  const { cursor, start, reset: resetPager } = pager;
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<ReconciliationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -157,11 +220,31 @@ export default function CoordPlansListPage() {
    * itself as an anonymous one.
    */
   const [violations, setViolations] = useState<string[] | null>(null);
+  /**
+   * The last live-custody reading, held across polls (`custodyHold.ts`). The
+   * ref is what the read consults — putting the state in `fetchData`'s deps
+   * would change the QUESTION every time custody was read. The state copy is
+   * what renders the "custody as of" line.
+   */
+  const custodyHoldRef = useRef<CustodyHold | null>(null);
+  const [custodyHold, setCustodyHold] = useState<CustodyHold | null>(null);
+  /**
+   * Where the custody on screen came from: this read (`fresh`), a held
+   * earlier reading actually applied to a row (`held`), or nowhere (`none` —
+   * no age line is shown, so a reading no row carries is never dated).
+   */
+  const [custodySource, setCustodySource] = useState<CustodySource>("none");
+  /**
+   * Has a custody read succeeded for the CURRENT question (window + search)?
+   * Until one has, a poll asks for custody too — otherwise one failed
+   * operator-caused read would leave custody dark until a manual refresh.
+   */
+  const custodyReadForQuestion = useRef(false);
 
   /**
    * Phase 4a — the capture census, on its own read state.
    *
-   * It is NOT re-read when the window changes: offset and limit are questions
+   * It is NOT re-read when the window changes: cursor and limit are questions
    * about the reconciliation page, and this census is about the whole artifact
    * store. `captureFailed` is kept beside the body rather than replacing it,
    * so a failed refresh leaves the previous census on screen and labelled,
@@ -184,14 +267,40 @@ export default function CoordPlansListPage() {
     async (guard: ReadGuard) => {
       try {
         const qs = new URLSearchParams();
-        qs.set("offset", String(offset));
+        // Keyset paging: the previous page's `next_cursor`, verbatim. A cursor
+        // is bound to `q`, so a new search always restarts at page one.
+        if (cursor !== null) qs.set("cursor", cursor);
         qs.set("limit", String(limit));
+        if (q !== "") qs.set("q", q);
+        // Phase 6 — custody makes coord resolve live sessions for the whole
+        // tenant, so it is asked for on reads an operator caused (a new window
+        // or search, a refresh), and on a background poll ONLY until one
+        // custody read has succeeded for this window/search. After that a poll
+        // answer re-applies the held reading, and the page says how old it is.
+        const withCustody =
+          guard.trigger !== "poll" || !custodyReadForQuestion.current;
+        if (withCustody) qs.set("include_custody", "true");
         const body = await httpClient.get<ReconciliationResponse>(
           `${ENDPOINT}?${qs.toString()}`,
           RECONCILIATION_REQUEST_OPTIONS
         );
         if (!guard.isNewest()) return;
-        setData(body);
+        if (withCustody) {
+          const hold = captureCustody(body, Date.now());
+          custodyHoldRef.current = hold;
+          custodyReadForQuestion.current = true;
+          setCustodyHold(hold);
+          // A custody read whose rows carry no custody (all unreadable, an
+          // empty page, a backend that ignored include_custody) is not a
+          // reading anything on screen shows — so no age line dates it.
+          setCustodySource(holdCarriesCustody(hold) ? "fresh" : "none");
+          setData(body);
+        } else {
+          const merged = applyHeldCustody(body, custodyHoldRef.current);
+          // Only claim a held reading when one was actually applied to a row.
+          setCustodySource(merged.applied ? "held" : "none");
+          setData(merged.body);
+        }
         setError(null);
         setViolations(null);
       } catch (e) {
@@ -210,7 +319,7 @@ export default function CoordPlansListPage() {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [offset, limit]
+    [cursor, limit, q]
   );
 
   // The WINDOW is the question. Changing it makes the rows in `data` answers
@@ -220,6 +329,12 @@ export default function CoordPlansListPage() {
     setData(null);
     setError(null);
     setViolations(null);
+    // A held custody reading answers the OLD window; never re-apply it, or
+    // date it, against a new one.
+    custodyReadForQuestion.current = false;
+    custodyHoldRef.current = null;
+    setCustodyHold(null);
+    setCustodySource("none");
   }, []);
 
   const { refresh: refreshReconciliation } = useGuardedPoll({
@@ -247,19 +362,67 @@ export default function CoordPlansListPage() {
     void fetchCapture();
   }, [fetchCapture]);
 
-  // Both reads, because the control says "refresh" and a stale census beside
+  // The plan-browser reads (2026-09-19 plan): each is its own question, so
+  // none rides the reconciliation's 30 s poll — see each hook's docstring.
+  const { index: difficulty, refresh: refreshDifficulty } = usePlanDifficulty();
+  const { state: deriveModeState, refresh: refreshDeriveMode } =
+    useDeriveMode();
+  const deriveMode = useMemo(
+    () => describeDeriveMode(deriveModeState),
+    [deriveModeState]
+  );
+  const {
+    reading: throughput,
+    refreshFailure: throughputRefreshFailure,
+    refresh: refreshThroughput,
+  } = useThroughput(throughputDays);
+  const refreshAfterKindCorrection = useCallback(
+    () => refreshReconciliation(),
+    [refreshReconciliation]
+  );
+  const documentActions = useArtifactDocument(refreshAfterKindCorrection);
+
+  // Every read, because the control says "refresh" and a stale census beside
   // a fresh reconciliation is the misreading this page exists to stop.
   const refresh = useCallback(
-    () => refreshReconciliation(fetchCapture),
-    [refreshReconciliation, fetchCapture]
+    () =>
+      refreshReconciliation(() =>
+        Promise.all([
+          fetchCapture(),
+          refreshDifficulty(),
+          refreshDeriveMode(),
+          refreshThroughput(),
+        ])
+      ),
+    [
+      refreshReconciliation,
+      fetchCapture,
+      refreshDifficulty,
+      refreshDeriveMode,
+      refreshThroughput,
+    ]
+  );
+
+  // A new search is a new population: page 1 of it, not page N of the old.
+  const onSearch = useCallback(
+    (next: string) => {
+      resetPager();
+      setQ(next);
+    },
+    [resetPager]
   );
 
   const rows = useMemo(() => data?.items ?? [], [data]);
   const shown = useMemo(
-    () => rows.filter((row) => matchesStatus(row, status)),
-    [rows, status]
+    () => rows.filter((row) => matchesPageFilters(row, filters, difficulty)),
+    [rows, filters, difficulty]
   );
-  const statusFiltered = status !== "any";
+  const statusFiltered = pageFiltersActive(filters, difficulty);
+  const filterNames = useMemo(
+    () => activeFilterNames(filters, difficulty),
+    [filters, difficulty]
+  );
+  const chipCounts = useMemo(() => pageChipCounts(rows), [rows]);
   /**
    * Nothing on this page has a READABLE coord status.
    *
@@ -269,10 +432,16 @@ export default function CoordPlansListPage() {
    * empty slot says that instead of "none of them has status X".
    */
   const statusAxisAllUnreadable = useMemo(
-    () => rows.length > 0 && rows.every((row) => !row.axis_a.readable),
-    [rows]
+    () =>
+      axisAFilterActive(filters) &&
+      rows.length > 0 &&
+      rows.every((row) => !row.axis_a.readable),
+    [rows, filters]
   );
-  const window = useMemo(() => (data ? describeWindow(data) : null), [data]);
+  const window = useMemo(
+    () => (data ? describeWindow(data, start) : null),
+    [data, start]
+  );
   const disclosure = useMemo(
     () => (data ? deriveDisclosure(data) : null),
     [data]
@@ -302,7 +471,12 @@ export default function CoordPlansListPage() {
   const documentAxisSuppressed =
     disclosure !== null && !disclosure.documentAxisAdmissible;
 
-  const canPageBack = offset > 0;
+  // Computed every render, not memoised: every poll re-renders, so the age
+  // wording (which switches to a dated form past six hours) is evaluated
+  // against the current time rather than frozen at the first render.
+  const custodyAge = describeCustodyAge(custodyHold, custodySource, Date.now());
+
+  const canPageBack = pager.canPrev;
   const canPageForward = window?.hasMore ?? false;
 
   return (
@@ -315,16 +489,35 @@ export default function CoordPlansListPage() {
         data-testid="coord-plans-health"
       />
 
+      {/* Design decision 4b — the trust signals about whether this list can
+          be believed, collapsed to one line each, at the top. */}
+      <CorpusHealthPanel
+        pageForks={data ? pageForkCount(rows) : null}
+        pageRowCount={data ? rows.length : null}
+      />
+      <ThroughputPanel
+        reading={throughput}
+        days={throughputDays}
+        onDaysChange={setThroughputDays}
+        refreshFailure={throughputRefreshFailure}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
+        <PlanSearchBox applied={q} onSearch={onSearch} />
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select value={status} onValueChange={setStatus}>
+        <Select
+          value={filters.status}
+          onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+        >
           <SelectTrigger
             className="w-[200px]"
             data-testid="coord-plans-status-select"
             title={
               "Filters the rows ON THIS PAGE by coord's stored status " +
-              "(axis A). The reconciliation route takes no status parameter, " +
-              "so this is a client-side filter over the current window — not " +
+              "(axis A) — " +
+              PAGE_ONLY_NOTE +
+              ". The reconciliation route takes no status parameter, so " +
+              "this is a client-side filter over the current window — not " +
               "a corpus-wide question."
             }
           >
@@ -342,7 +535,7 @@ export default function CoordPlansListPage() {
         <Select
           value={String(limit)}
           onValueChange={(v) => {
-            setOffset(0);
+            resetPager();
             setLimit(Number(v));
           }}
         >
@@ -362,13 +555,31 @@ export default function CoordPlansListPage() {
           </SelectContent>
         </Select>
         <RefreshButton
-          key={`${offset}:${limit}`}
+          key={`${cursor ?? ""}:${limit}:${q}`}
           onRefresh={refresh}
           label="Refresh reconciliation"
           title={`Re-reads the reconciliation now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-plans-refresh"
         />
+        <Link
+          href="/admin/coord/plan-library/artifacts"
+          className="ml-auto text-xs text-muted-foreground underline hover:text-foreground"
+          data-testid="coord-plans-all-kinds-link"
+          title="This page lists plans only (kind = plan). Every captured artifact kind is listed on the artifact library page."
+        >
+          All artifact kinds
+        </Link>
       </div>
+
+      {data && <SearchEcho sent={q} echoed={data.q} />}
+
+      <PlanPageFilters
+        filters={filters}
+        onChange={setFilters}
+        counts={chipCounts}
+        difficulty={difficulty}
+        deriveMode={deriveMode}
+      />
 
       {/* The population state, and every flag derived from it — in that order,
           and never collapsed behind a click.
@@ -412,8 +623,13 @@ export default function CoordPlansListPage() {
               <span className="font-mono">{window.lastStem}</span>
             </>
           )}
-          , offset {window.offset}, page size {window.limit ?? "unstated"},
-          ordered{" "}
+          {window.shown > 0 && (
+            <>
+              {" "}
+              (rows {window.start + 1}–{window.start + window.shown})
+            </>
+          )}
+          , page size {window.limit ?? "unstated"}, ordered{" "}
           <span
             className="font-mono"
             data-testid="coord-plans-window-ordering"
@@ -422,6 +638,16 @@ export default function CoordPlansListPage() {
             {window.ordering ?? "unstated"}
           </span>
           .
+        </p>
+      )}
+
+      {data && custodyAge && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-custody-as-of"
+          data-held={custodySource === "held" ? "true" : "false"}
+        >
+          Live {custodyAge}.
         </p>
       )}
 
@@ -441,9 +667,10 @@ export default function CoordPlansListPage() {
           className="text-xs text-muted-foreground"
           data-testid="coord-plans-status-filter-scope"
         >
-          The status filter narrows the {rows.length} rows on this page only —
-          the route takes no status parameter, so a plan with this status on
-          another page is not shown and is not absent.
+          {filterNames.join(", ")} — {PAGE_ONLY_NOTE}: these narrow the{" "}
+          {rows.length} rows on this page, showing {shown.length}. The route
+          takes none of these parameters, so a matching plan on another page is
+          not shown and is not absent.
         </p>
       )}
 
@@ -520,16 +747,17 @@ export default function CoordPlansListPage() {
               data-testid="coord-plans-status-unreadable-empty"
             >
               coord&rsquo;s stored status is unreadable for every stem on this
-              page, so whether any has status {status} is unknown — not none.
+              page, so whether any matches {filterNames.join(", ")} is unknown —
+              not none.
             </p>
           ) : statusFiltered && rows.length > 0 ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-status-filtered-empty"
             >
-              None of the {rows.length} stems on this page has coord status{" "}
-              {status}. The filter is page-scoped, so the corpus may hold
-              plenty.
+              None of the {rows.length} stems on this page matches{" "}
+              {filterNames.join(", ")}. The filters are page-scoped, so the
+              corpus may hold plenty.
             </p>
           ) : plansUnknown ? (
             <p
@@ -547,6 +775,13 @@ export default function CoordPlansListPage() {
               This window held no plan stem at the last good read — it has not
               refreshed since.
             </p>
+          ) : q !== "" && data?.q === q ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-search-empty"
+            >
+              No plan stem matches &ldquo;{q}&rdquo; in this window.
+            </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
@@ -561,6 +796,9 @@ export default function CoordPlansListPage() {
             row={row}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
+            badges={<PlanRowBadges row={row} difficulty={difficulty} />}
+            detailExtra={<PlanTriageDetail row={row} />}
+            actions={<PlanDocumentPanel row={row} actions={documentActions} />}
           />
         )}
       />
@@ -570,7 +808,7 @@ export default function CoordPlansListPage() {
           variant="outline"
           size="sm"
           disabled={!canPageBack}
-          onClick={() => setOffset((o) => Math.max(0, o - limit))}
+          onClick={pager.prev}
           data-testid="coord-plans-page-prev"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -580,13 +818,10 @@ export default function CoordPlansListPage() {
           variant="outline"
           size="sm"
           disabled={!canPageForward}
-          onClick={() => setOffset((o) => o + limit)}
+          onClick={() => {
+            if (window?.nextCursor) pager.next(window.nextCursor, window.shown);
+          }}
           data-testid="coord-plans-page-next"
-          title={
-            window?.total === null
-              ? "The route served no total, so 'more' is inferred from a full page."
-              : undefined
-          }
         >
           Next
           <ChevronRight className="h-4 w-4" aria-hidden="true" />

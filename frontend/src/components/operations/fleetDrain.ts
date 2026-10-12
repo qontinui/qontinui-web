@@ -51,9 +51,9 @@
  *
  * ## Why the target is labelled, always
  *
- * `spaceship` (a workstation that hosts agent sessions) and
- * `gh-runner-spaceship-wsl` (the GitHub self-hosted CI runner registered under
- * a synthetic `gh-runner-{name}` identity) are SEPARATE coord device
+ * A workstation (`<host>`, which hosts agent sessions) and the CI runner
+ * registered under it (`gh-runner-<host>-wsl`, the GitHub self-hosted runner's
+ * synthetic `gh-runner-{name}` identity) are SEPARATE coord device
  * registrations. Draining one does nothing to the other, and coord returns no
  * error for it — the drain simply lands on a machine the operator did not
  * mean. So the control names the device id and coord's own hostname it will

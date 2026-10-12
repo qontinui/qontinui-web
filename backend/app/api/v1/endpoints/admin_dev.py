@@ -77,6 +77,7 @@ from pydantic import BaseModel
 from app.api.admin_deps import require_admin
 from app.api.coord_proxy import (
     _COORD_MERGED_READ_TIMEOUT,
+    _COORD_PR_LIST_TIMEOUT,
     ACTIVE_TENANT_HEADER,
     _caller_active_tenant,
     _caller_bearer,
@@ -464,11 +465,16 @@ async def get_prs(
             "/pr-merge/prs",
             params=params or None,
             forward_bearer=True,
-            # Only the merged ROWS are slow — see `_COORD_MERGED_READ_TIMEOUT`.
-            # At the 5s default this route's coord-down handler below turned
-            # the resulting 504 into an EMPTY envelope (only `coord_error` says
-            # why), so the page showed no merged PRs and no failure.
-            timeout=_COORD_MERGED_READ_TIMEOUT if include_merged > 0 else None,
+            # Neither read fits the 5s default: see `_COORD_MERGED_READ_TIMEOUT`
+            # and `_COORD_PR_LIST_TIMEOUT`. At 5s this route's coord-down
+            # handler below turned the resulting 504 into an EMPTY envelope
+            # (only `coord_error` says why), so the page showed no PRs and no
+            # failure.
+            timeout=(
+                _COORD_MERGED_READ_TIMEOUT
+                if include_merged > 0
+                else _COORD_PR_LIST_TIMEOUT
+            ),
         )
     except HTTPException as exc:
         if exc.status_code in _COORD_DOWN_STATUSES:

@@ -13,7 +13,9 @@
  *  - Per-device/per-app freshness badges (fresh | building | failed | unknown),
  *    joined server-side from project.app_deploy_state.
  *  - Designate-test-host + auto_fresh toggle (PUT/DELETE
- *    /api/v1/fleet/test-targets/{device_id}/{app_id}, writing coord.test_targets).
+ *    /api/v1/fleet/test-targets/{device_id}/{app_id}; the backend forwards
+ *    them to coord's binding-checked coord.test_targets writer in the
+ *    selected project, and a refusal is toasted with its own message).
  *  - "Run on fresh host" affordance (POST /api/v1/dispatch/fresh-host).
  */
 
@@ -21,6 +23,9 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Rocket, Server, Trash2, Save, RefreshCw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
+import { designationErrorText } from "./fleetTestTargets";
 import { CollapsiblePanel } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -194,7 +199,10 @@ function AppCard({
         );
         onChanged();
       } catch (e) {
-        toast.error(`Designation failed: ${errMsg(e)}`);
+        // A refusal (e.g. the selected project is not one the device is bound
+        // to) carries its own operator-facing message; show that, not the URL
+        // and raw JSON.
+        toast.error(`Designation failed: ${designationErrorText(e)}`);
       }
     },
     [app.app_id, onChanged]
@@ -208,7 +216,7 @@ function AppCard({
         );
         onChanged();
       } catch (e) {
-        toast.error(`Remove failed: ${errMsg(e)}`);
+        toast.error(`Remove failed: ${designationErrorText(e)}`);
       }
     },
     [app.app_id, onChanged]
@@ -436,29 +444,36 @@ export function FleetTestTargetsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  // Single-flight (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // tick while the previous batch is outstanding is skipped. Only `/devices`
+  // reads coord (`coord_device.list_devices_for_user`), so only it drops
+  // `httpClient`'s retries; `/fleet/apps` and `/fleet/test-targets` are
+  // web-local reads and keep the default.
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
       const [appList, targetList, deviceList] = await Promise.all([
         httpClient.get<AppConfig[]>(`${API}/fleet/apps`),
         httpClient.get<TestTargetRow[]>(`${API}/fleet/test-targets`),
-        httpClient.get<DeviceWire[]>(`${API}/devices`),
+        httpClient.get<DeviceWire[]>(
+          `${API}/devices`,
+          COORD_DASHBOARD_POLL_OPTIONS
+        ),
       ]);
+      if (!isCurrent()) return;
       setApps(appList);
       setTargets(targetList);
       setDevices(deviceList);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(errMsg(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  const { refresh: fetchData } = useSingleFlightPoll(poll, POLL_INTERVAL_MS);
 
   const targetsByApp = (appId: string) =>
     targets.filter((t) => t.app_id === appId);

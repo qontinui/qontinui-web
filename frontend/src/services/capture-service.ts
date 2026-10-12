@@ -260,23 +260,4 @@ export class CaptureService {
       throw new Error(error.detail || "Failed to delete capture session");
     }
   }
-
-  /**
-   * Update session notes
-   */
-  async updateSessionNotes(sessionId: string, notes: string): Promise<void> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/capture/sessions/${sessionId}/notes`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || "Failed to update session notes");
-    }
-  }
 }

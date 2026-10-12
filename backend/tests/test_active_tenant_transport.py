@@ -27,6 +27,8 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 
+from tests._ops_patch import patch_ops
+
 ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
 _TENANT_A = UUID("11111111-1111-1111-1111-111111111111")
 _TENANT_B = UUID("22222222-2222-2222-2222-222222222222")
@@ -142,9 +144,7 @@ def _user(is_superuser: bool = False) -> MagicMock:
 async def test_admin_granted_on_home_tenant_when_no_selection():
     from app.api.v1.endpoints import operations
 
-    with patch.object(
-        operations, "get_coord_identity", new=AsyncMock(return_value=_identity())
-    ):
+    with patch_ops("get_coord_identity", new=AsyncMock(return_value=_identity())):
         result = await operations.require_coord_tenant_admin(_request(None), _user())
     assert result == _TENANT_A
 
@@ -153,9 +153,7 @@ async def test_admin_granted_on_home_tenant_when_no_selection():
 async def test_admin_granted_on_selected_tenant_where_admin():
     from app.api.v1.endpoints import operations
 
-    with patch.object(
-        operations, "get_coord_identity", new=AsyncMock(return_value=_identity())
-    ):
+    with patch_ops("get_coord_identity", new=AsyncMock(return_value=_identity())):
         result = await operations.require_coord_tenant_admin(
             _request(str(_TENANT_A)), _user()
         )
@@ -167,9 +165,7 @@ async def test_admin_denied_on_selected_tenant_where_not_admin():
     """The crux: admin of A, developer of B → switching to B denies admin."""
     from app.api.v1.endpoints import operations
 
-    with patch.object(
-        operations, "get_coord_identity", new=AsyncMock(return_value=_identity())
-    ):
+    with patch_ops("get_coord_identity", new=AsyncMock(return_value=_identity())):
         with pytest.raises(HTTPException) as exc:
             await operations.require_coord_tenant_admin(
                 _request(str(_TENANT_B)), _user()
@@ -182,9 +178,7 @@ async def test_admin_denied_on_selected_tenant_where_not_admin():
 async def test_superuser_bypasses_per_tenant_admin_check():
     from app.api.v1.endpoints import operations
 
-    with patch.object(
-        operations, "get_coord_identity", new=AsyncMock(return_value=_identity())
-    ):
+    with patch_ops("get_coord_identity", new=AsyncMock(return_value=_identity())):
         result = await operations.require_coord_tenant_admin(
             _request(str(_TENANT_B)), _user(is_superuser=True)
         )
@@ -196,9 +190,7 @@ async def test_non_member_selection_falls_back_to_home_tenant():
     """A selection the operator does not belong to degrades to home (admin)."""
     from app.api.v1.endpoints import operations
 
-    with patch.object(
-        operations, "get_coord_identity", new=AsyncMock(return_value=_identity())
-    ):
+    with patch_ops("get_coord_identity", new=AsyncMock(return_value=_identity())):
         result = await operations.require_coord_tenant_admin(
             _request(str(_TENANT_C)), _user()
         )

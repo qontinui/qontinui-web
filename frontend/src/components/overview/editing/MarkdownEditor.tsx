@@ -12,6 +12,7 @@
 import { useId, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownView } from "@/components/overview/MarkdownView";
+import type { WikiLinkOptions } from "@/components/overview/wiki-links";
 import { cn } from "@/lib/utils";
 
 export function MarkdownEditor({
@@ -23,6 +24,7 @@ export function MarkdownEditor({
   describedBy,
   headingOffset = 2,
   autoFocus,
+  wikiLinks,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -34,6 +36,8 @@ export function MarkdownEditor({
   /** Passed to the preview so its headings sit under the page's. */
   headingOffset?: number;
   autoFocus?: boolean;
+  /** Render `[[links]]` in the preview as the page will. */
+  wikiLinks?: WikiLinkOptions;
 }) {
   const [mode, setMode] = useState<"write" | "preview">("write");
   const id = useId();
@@ -86,7 +90,9 @@ export function MarkdownEditor({
           data-ui-bridge-id={`${uiBridgeId}.rendered`}
         >
           {value.trim() ? (
-            <MarkdownView headingOffset={headingOffset}>{value}</MarkdownView>
+            <MarkdownView headingOffset={headingOffset} wikiLinks={wikiLinks}>
+              {value}
+            </MarkdownView>
           ) : (
             <p className="text-sm text-muted-foreground">
               Nothing written yet.

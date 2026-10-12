@@ -17,7 +17,7 @@ Mirrors ``test_operations_pr_list_proxy.py`` for the app scaffold.
 """
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -25,6 +25,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import operations as operations_mod
+from tests._ops_patch import patch_ops
 
 
 def _build_test_app() -> FastAPI:
@@ -83,7 +84,7 @@ _COORD_ROWS: list[dict[str, Any]] = [
 
 
 def _patch_proxy() -> Any:
-    return patch.object(operations_mod, "_proxy_coord_get", new_callable=AsyncMock)
+    return patch_ops("_proxy_coord_get", new_callable=AsyncMock)
 
 
 class TestMergeEconomicsProxyPath:

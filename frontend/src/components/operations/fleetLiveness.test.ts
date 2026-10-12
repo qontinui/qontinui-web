@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import { summarizeFleetLiveness } from "./fleetLiveness";
-import type { FleetHealthDevice } from "./useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 const device = (id: string, state?: string): FleetHealthDevice => ({
   device_id: id,

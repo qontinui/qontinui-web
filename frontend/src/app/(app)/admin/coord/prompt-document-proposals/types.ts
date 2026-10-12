@@ -36,7 +36,7 @@
  */
 
 /** The two verdicts that produce a proposal (coord-side Rust vocabulary). */
-export type ProposalDirection = "loosening" | "unclassifiable";
+export type PolicyProposalDirection = "loosening" | "unclassifiable";
 
 /**
  * Lifecycle of a proposal (`coord.prompt_document_proposals.status`).
@@ -49,7 +49,7 @@ export type ProposalDirection = "loosening" | "unclassifiable";
  * `decided_by='system:proposal-staleness'`, and a `decision_note` saying which
  * version it moved to. Nothing can approve it afterwards.
  *
- * Distinguish it from the CLIENT-side `stale` kind in `./proposalStatus.ts`,
+ * Distinguish it from the CLIENT-side `stale` kind in `./policyProposalStatus.ts`,
  * which covers the race window — a pending row this page has not re-read since
  * the document moved. Same word, two layers: that one is a warning on a live
  * row, this one is a closed record.
@@ -58,14 +58,14 @@ export type ProposalDirection = "loosening" | "unclassifiable";
  * with `400 invalid status` — which the hook treats as "section unavailable",
  * never as an error or as an empty section.
  */
-export type ProposalStatus = "pending" | "approved" | "rejected" | "stale";
+export type PolicyProposalStatus = "pending" | "approved" | "rejected" | "stale";
 
 /**
  * Autonomy tier, strictest → loosest. Mirrors `ClauseTier` in the sibling
  * prompt-documents page; re-declared rather than imported so this route stays
  * independent of that one's module graph.
  */
-export type ProposalTier =
+export type PolicyProposalTier =
   | "never"
   | "ask-first"
   | "proceed+notify"
@@ -73,7 +73,7 @@ export type ProposalTier =
   | "proceed";
 
 /** Plain-language gloss per tier, shown beside the from → to arrow. */
-export const TIER_DESCRIPTIONS: Record<ProposalTier, string> = {
+export const TIER_DESCRIPTIONS: Record<PolicyProposalTier, string> = {
   never: "Agents never do this — it's left entirely to you.",
   "ask-first": "Agents check with you first, and act only once you approve.",
   "proceed+notify": "Agents act on their own, then tell you.",
@@ -83,7 +83,7 @@ export const TIER_DESCRIPTIONS: Record<ProposalTier, string> = {
 
 /** What each direction means, in the operator's words. */
 export const DIRECTION_META: Record<
-  ProposalDirection,
+  PolicyProposalDirection,
   { label: string; variant: "warning" | "destructive"; explanation: string }
 > = {
   loosening: {
@@ -109,9 +109,9 @@ export interface PromptDocumentProposal {
   /** The clause being altered; `null` when the edit targets the whole document. */
   clause_id: string | null;
   proposed_content: string;
-  direction: ProposalDirection;
-  from_tier: ProposalTier | null;
-  to_tier: ProposalTier | null;
+  direction: PolicyProposalDirection;
+  from_tier: PolicyProposalTier | null;
+  to_tier: PolicyProposalTier | null;
   /** The change note the authoring agent supplied. */
   rationale: string;
   /** Authenticated author identity — stamped by coord, never client-supplied. */
@@ -123,7 +123,7 @@ export interface PromptDocumentProposal {
    * than letting a stale edit be approved unknowingly.
    */
   base_version: number;
-  status: ProposalStatus;
+  status: PolicyProposalStatus;
   created_at: string;
   /**
    * **OPTIONAL — absent means "this coord build does not report it", never
@@ -176,7 +176,7 @@ export interface PromptDocumentProposal {
  * 404s. Present ⇒ the empty list means "cannot see", NOT "no proposals", and the
  * page says exactly that instead of rendering a reassuring empty queue.
  */
-export interface ListProposalsResponse {
+export interface ListPolicyProposalsResponse {
   proposals: PromptDocumentProposal[];
   total: number;
   unavailable?: string;

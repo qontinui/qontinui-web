@@ -21,8 +21,11 @@ Inbound messages handled (unchanged from the legacy endpoint):
                        ``ui_error`` / ``recent_crash`` updates.
   - ``ping``         — replies with ``pong``.
   - ``phase_completed`` / ``ui_error`` / ``recent_crash`` /
-    ``dispatch_ack`` / ``command_response`` / ``chat_response`` /
-    ``terminal_response`` — relayed to subscribed frontends/mobiles.
+    ``dispatch_ack`` / ``command_response`` / ``terminal_response`` —
+    relayed to subscribed frontends/mobiles.
+  - ``chat_*`` replies and broadcasts (``_CHAT_FRAME_TYPES``), and an
+    ``error`` the runner attributed to a chat run — relayed to this device's
+    chat sockets.
   - ``remote_terminal_*`` — the device is the SOURCE of a remote-terminal
                        attach (D6) or create; brokered by
                        ``services.runner.remote_terminal_relay``.
@@ -78,6 +81,37 @@ logger = structlog.get_logger(__name__)
 # binary dumped to a tty) are truncated with a marker so a single frame can't
 # blow the per-mobile memory budget. See plan Risks / feedback_memory_pressure.
 _TERMINAL_FRAME_LIMIT = 65536
+
+# Every frame type qontinui-runner writes for the device's CHAT sockets
+# (``runner_chat_ws.py``): the ``mcp/backend_relay.rs`` ``handle_chat_*``
+# replies, plus ``chat_response`` rewrapped from its ``ai-output`` broadcast.
+# The web chat client consumes each one
+# (``frontend/src/hooks/useChatWebSocket.ts``). The chat arm of
+# :func:`_route_device_message` says why relaying them is safe.
+#
+# ``chat_session_state`` arrives here only as a REPLY: to a
+# ``chat_session_state`` request, a ``chat_interrupt`` or a ``chat_close``.
+# The runner's ``handle_outbound`` would also rewrap a ``session-state``
+# broadcast into one, but nothing produces that broadcast (qontinui-runner
+# c40d7ebd1, 2026-10-11: ``emit_session_state`` emits only the Tauri event
+# ``claude-session-state``). So no frame tells a chat page that its session
+# went idle after an answer; this relay cannot forward a frame that is never
+# sent.
+#
+# ``chat_workflow_generating`` is absent on purpose: the client sets that state
+# itself when it asks for a workflow, and nothing on the runner sends it.
+_CHAT_FRAME_TYPES: frozenset[str] = frozenset(
+    {
+        "chat_response",
+        "chat_created",
+        "chat_session_state",
+        "chat_message_ack",
+        "chat_running_tasks",
+        "chat_output",
+        "chat_renamed",
+        "chat_workflow_generated",
+    }
+)
 
 router = APIRouter()
 
@@ -1116,6 +1150,26 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         )
 
 
+def _is_chat_run_error(msg: dict[str, Any]) -> bool:
+    """True for an ``error`` frame the runner attributed to a chat run.
+
+    The runner's chat handlers stamp the run a failure is about as
+    ``task_run_id`` (``handle_chat_interrupt``'s "No active session for
+    task_run_id", ``handle_chat_rename``'s "Failed to rename session") and
+    never send a ``request_id``; no other runner path puts a ``task_run_id`` on
+    an ``error``. One carrying a ``request_id`` is a correlated terminal-RPC
+    failure and belongs to the terminal arm; one carrying neither names
+    nothing a chat socket owns.
+    """
+    task_run_id = msg.get("task_run_id")
+    return (
+        msg.get("type") == "error"
+        and msg.get("request_id") is None
+        and isinstance(task_run_id, str)
+        and bool(task_run_id)
+    )
+
+
 async def _route_device_message(
     msg: dict[str, Any],
     device_id: Any,
@@ -1211,7 +1265,10 @@ async def _route_device_message(
         return
 
     # This device is a TARGET answering a remote attach: ``terminal_attached``
-    # (new with D6), refusals correlated by ``remote`` / ``grant_jti`` rather
+    # (new with D6), ``terminal_input_ack`` (the per-keystroke receipt of the
+    # remote-interactivity plan's Phase A1 — without this arm it would die at
+    # ``devices_ws_unhandled_message`` and every keystroke would read as
+    # unacknowledged), refusals correlated by ``remote`` / ``grant_jti`` rather
     # than ``request_id``, and refusals the target typed
     # ``remote_terminal_error``. Only the remote path consumes these, so they
     # ride a remote-only channel and the mobile watchers below see exactly the
@@ -1258,7 +1315,50 @@ async def _route_device_message(
         await manager.send_response_to_frontends(device_id, msg)
         return
 
-    if msg_type == "chat_response":
+    # The device's chat sockets (``runner_chat_ws.py``): every chat reply and
+    # chat broadcast the runner sends (``_CHAT_FRAME_TYPES``), and an ``error``
+    # it attributed to a chat run.
+    #
+    # This arm used to relay ``chat_response`` alone. The rewrite that created
+    # this router listed that one chat type where the legacy automation-WS
+    # router it replaced relayed ``chat_created`` / ``chat_session_state`` /
+    # ``chat_message_ack`` / ``chat_running_tasks`` too. Its terminal omissions
+    # were found and restored twice since (``terminal_output`` /
+    # ``terminal_exit``, then the terminal-RPC replies below); this is the chat
+    # half. Without it a chat page never learned the run it had created, never
+    # saw a refused spawn (``chat_created`` with ``error``), never got the
+    # ``chat_session_state`` reply to a load, an interrupt or a close, and
+    # never got a loaded conversation (``chat_output``) or a generated workflow
+    # (``chat_workflow_generated``). It is still not told when a session goes
+    # idle after an answer: that would be the runner's ``session-state``
+    # broadcast, which nothing produces (see ``_CHAT_FRAME_TYPES``).
+    #
+    # Why relaying them is safe, and keeps them attributable:
+    #   * Scope: the frame is published on THIS device's chat channel only
+    #     (``runner:chat_response:{device_id}``), whose subscribers are the
+    #     chat sockets ``runner_chat_ws.py`` admitted after checking that the
+    #     caller owns this device. That is the audience ``chat_response``,
+    #     which carries every AI session's output, has always had.
+    #   * Source: a secondary that does not own the relay pointer was dropped
+    #     at the top of this function, so only the device's relay socket gets
+    #     here.
+    #   * Identity: frames are relayed verbatim, so the run each one names
+    #     (``task_run_id``, ``chat_created``'s ``id``, a broadcast's
+    #     ``data.taskRunId``) reaches the client intact. The runner's chat
+    #     replies carry no request id, so this relay cannot pick out the one
+    #     socket that asked: every chat socket of the device receives them. A
+    #     client must keep to its own conversation by that identity, and take
+    #     a ``chat_created`` (which no client can recognise as its own) only
+    #     while it has a create outstanding — ``useChatWebSocket`` does both.
+    #     A relay chat session's own output names no run (the runner spawns
+    #     it without a session context, ``handle_chat_create``), so two chats
+    #     on one device cannot tell each other's ``chat_response`` apart.
+    #   * Closed set: a ``chat_*`` type is chat's by name, so it is relayed
+    #     even when it names no run. ``error`` is shared with the terminal and
+    #     remote paths, so only one the runner attributed to a chat run is
+    #     chat's (:func:`_is_chat_run_error`); an uncorrelated ``error`` names
+    #     nothing a chat socket owns and stays on the fall-through.
+    if msg_type in _CHAT_FRAME_TYPES or _is_chat_run_error(msg):
         await manager.send_chat_response_to_mobiles(device_id, msg)
         return
 

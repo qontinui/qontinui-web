@@ -15,7 +15,17 @@ import type { RegisteredDevice } from "@/types/runner";
 
 const getRunnersMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  runnerService: { getRunners: (...args: unknown[]) => getRunnersMock(...args) },
+  runnerService: {
+    getRunners: (...args: unknown[]) => getRunnersMock(...args),
+  },
+}));
+vi.mock("@/components/operations/useDeviceStatusStream", () => ({
+  useDeviceStatusStream: () => ({ byHostname: new Map() }),
+}));
+vi.mock("@/lib/api/device_credentials", () => ({
+  getDeviceCredentialOverview: async () => ({ devices: [] }),
+  authorizeDeviceRedeem: vi.fn(),
+  revokeDeviceMachineCredential: vi.fn(),
 }));
 vi.mock("@/hooks/useRealtimeConnections", () => ({
   useRealtimeConnections: () => ({ runners: [] }),
@@ -51,11 +61,8 @@ function device(
     lastHeartbeat: null,
     wsConnected: false,
     createdAt: "2026-09-01T00:00:00Z",
-    // What the backend now sends (qontinui-schemas#180 Runner.instances). The
-    // published @qontinui/shared-types 0.5.0 this app resolves does not declare
-    // it yet, and test files are outside `npm run type-check`, so nothing here
-    // type-checks it today; it becomes required when the dependency is bumped
-    // to a release carrying #180.
+    // Required by `Runner` (qontinui-schemas#180 Runner.instances). Test files
+    // are outside `npm run type-check`, so nothing enforces it here.
     instances: [],
     tenant_bindings,
   };
@@ -121,7 +128,9 @@ describe("RegisteredDevicesList tenant bindings", () => {
       "title",
       `Tenant ${TENANT_B} · last active never`
     );
-    expect(within(boundRow).queryByTestId("tenant-bindings-unknown")).toBeNull();
+    expect(
+      within(boundRow).queryByTestId("tenant-bindings-unknown")
+    ).toBeNull();
     expect(within(boundRow).queryByTestId("tenant-bindings-none")).toBeNull();
   });
 

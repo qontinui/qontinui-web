@@ -14,6 +14,7 @@ import {
   XCircle,
   Loader2,
   AlertCircle,
+  History,
 } from "lucide-react";
 import type { ScheduledTask } from "@/lib/runner/types/scheduler";
 import { describeSchedule } from "@qontinui/workflow-utils";
@@ -28,6 +29,7 @@ interface ScheduleListItemProps {
   onDelete: (task: ScheduledTask) => void;
   onRunNow: (task: ScheduledTask) => void;
   onToggleEnabled: (task: ScheduledTask, enabled: boolean) => void;
+  onShowHistory: (task: ScheduledTask) => void;
 }
 
 function relativeTime(iso: string): string {
@@ -49,13 +51,13 @@ function relativeTime(iso: string): string {
 }
 
 function getLastRunBadge(task: ScheduledTask) {
-  if (!task.last_run) return null;
+  if (!task.lastRun) return null;
 
-  const record = task.last_run;
-  const time = record.ended_at || record.started_at;
+  const record = task.lastRun;
+  const time = record.endedAt || record.startedAt;
 
   switch (record.status) {
-    case "Running":
+    case "running":
       return (
         <Badge
           variant="outline"
@@ -65,7 +67,7 @@ function getLastRunBadge(task: ScheduledTask) {
           Running
         </Badge>
       );
-    case "Completed":
+    case "completed":
       return (
         <Badge
           variant="outline"
@@ -75,7 +77,7 @@ function getLastRunBadge(task: ScheduledTask) {
           Passed {relativeTime(time)}
         </Badge>
       );
-    case "Failed":
+    case "failed":
       return (
         <Badge
           variant="outline"
@@ -85,7 +87,17 @@ function getLastRunBadge(task: ScheduledTask) {
           Failed {relativeTime(time)}
         </Badge>
       );
-    case "Skipped":
+    case "launch_failed":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]"
+        >
+          <XCircle className="size-2.5 mr-1" />
+          Launch failed {relativeTime(time)}
+        </Badge>
+      );
+    case "skipped":
       return (
         <Badge
           variant="outline"
@@ -113,9 +125,10 @@ export function ScheduleListItem({
   onDelete,
   onRunNow,
   onToggleEnabled,
+  onShowHistory,
 }: ScheduleListItemProps) {
   const isWaitingOnConditions =
-    task.condition_status && !task.condition_status.timed_out;
+    task.conditionStatus && !task.conditionStatus.timedOut;
 
   return (
     <Card
@@ -156,9 +169,9 @@ export function ScheduleListItem({
                 <Clock className="size-3" />
                 {describeSchedule(task.schedule)}
               </span>
-              {task.enabled && task.next_run && (
+              {task.enabled && task.nextRun && (
                 <span className="text-text-muted/70">
-                  Next: {relativeTime(task.next_run)}
+                  Next: {relativeTime(task.nextRun)}
                 </span>
               )}
             </div>
@@ -179,6 +192,15 @@ export function ScheduleListItem({
               title="Run now"
             >
               <Play className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-text-muted hover:text-text-secondary"
+              onClick={() => onShowHistory(task)}
+              title="Run history"
+            >
+              <History className="size-3.5" />
             </Button>
             <Button
               variant="ghost"

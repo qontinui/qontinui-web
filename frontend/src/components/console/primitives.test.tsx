@@ -901,6 +901,27 @@ describe("HealthStrip (R1)", () => {
       "cursor-pointer"
     );
   });
+
+  it("paints the waiting tone amber, never red", () => {
+    render(
+      <HealthStrip
+        level="green"
+        headline="CI healthy"
+        badges={[
+          {
+            key: "w",
+            label: "hosted refused ≥3",
+            tone: "waiting",
+            "data-testid": "hs-waiting",
+          },
+        ]}
+      />
+    );
+    const cls = screen.getByTestId("hs-waiting").className;
+    expect(cls).toContain("text-amber-200");
+    expect(cls).toContain("border-amber-500/35");
+    expect(cls).not.toContain("text-red-");
+  });
 });
 
 describe("StatCluster (R1)", () => {

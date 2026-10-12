@@ -34,6 +34,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 API_PREFIX = "/api/v1/operations"
 
 #: What coord returns for a domain that HAS a tenant-band row, including the
@@ -102,12 +104,12 @@ def _patch_identity(is_admin: bool = True, effective_roles=("admin",)):
     identity = MagicMock()
     identity.is_admin = is_admin
     with (
-        patch(
-            "app.api.v1.endpoints.operations.get_coord_identity",
+        patch_ops(
+            "get_coord_identity",
             AsyncMock(return_value=identity),
         ),
-        patch(
-            "app.api.v1.endpoints.operations._effective_tenant_roles",
+        patch_ops(
+            "_effective_tenant_roles",
             MagicMock(return_value=tuple(effective_roles)),
         ),
     ):
@@ -535,6 +537,34 @@ class TestPutFleetPolicy:
 
         assert resp.status_code == 403
         assert "admin_required" in resp.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "code", ["repo_not_in_tenant", "unknown_level", "repo_key_not_owner_name"]
+    )
+    def test_coord_400_refusals_pass_through_with_their_code(
+        self, client: TestClient, code: str
+    ):
+        """The Dev Ops panel names these refusals; it can only if the code
+        survives the proxy (plan 2026-10-04-github-hosted-ci-... Phase 3)."""
+        instance = MagicMock()
+        instance.put = AsyncMock(return_value=_mock_response(400, {"error": code}))
+        patcher = _patch_httpx(instance)
+        try:
+            resp = client.put(
+                f"{API_PREFIX}/fleet-policy",
+                json={
+                    "domain": "github_hosted_ci",
+                    "scope_band": "repo",
+                    "scope_key": "other/repo",
+                    "level": "off",
+                    "master_enabled": True,
+                },
+            )
+        finally:
+            patcher.stop()
+
+        assert resp.status_code == 400
+        assert code in resp.json()["detail"]
 
     def test_a_repo_band_write_reads_back_with_the_repo_scope(self, client: TestClient):
         """The read-back must ask coord the SAME question the write answered.

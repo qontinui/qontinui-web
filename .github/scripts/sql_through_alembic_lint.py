@@ -28,7 +28,6 @@ EXEMPT_PATTERNS = [
     r"queries/.*\.sql$",
     r"tests/.*\.sql$",
     r"docs/.*\.sql$",
-    r"init-scripts/.*\.sql$",
 ]
 
 # DDL keywords that trigger this lint

@@ -21,7 +21,8 @@ function capitalise(s: string): string {
  * One tenant-band fleet-policy dial — read the RESOLVED value, write a new
  * level, then read it back. Shared by every tenant-band dial in the console
  * (`plan_capture` and `citation_scope_backfill_write` on the plan library;
- * `policy_write` and `policy_upstream` on prompt documents). Each domain's
+ * `policy_write` and `policy_upstream` on prompt documents;
+ * `command_safety_rewrite` and `account_selection_mode` on tenant policy). Each domain's
  * hook binds `domain` + `label` and layers its own level vocabulary on top
  * (a no-row default, a fail-closed parse), so the honesty properties below are
  * stated and tested once rather than drifting between copies — the four used
@@ -48,7 +49,10 @@ function capitalise(s: string): string {
  *    baked into a runner's briefing once per session at spawn (a session is
  *    not repo-scoped), the citation backfill agent door operates on the
  *    caller's whole tenant, and `policy_write` / `policy_upstream` govern the
- *    tenant's prompt documents, which belong to no repo. A `repo` band would
+ *    tenant's prompt documents, which belong to no repo, and the runner picks
+ *    a session's `command_safety_rewrite` carrier at spawn, before the session
+ *    is scoped to any repo, and `account_selection_mode` is a machine-global
+ *    mode on a machine that is not repo-scoped. A `repo` band would
  *    have no resolvable `scope_key` at the moment any of those decisions is
  *    made, so the hook offers no per-repo write. It still SHOWS the resolved band, because the band that won tells
  *    the operator whether this tenant's row is the one in force.

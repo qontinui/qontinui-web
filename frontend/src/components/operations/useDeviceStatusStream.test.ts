@@ -246,8 +246,8 @@ describe("useDeviceStatusStream", () => {
       expect(hook.result.current.everSeeded).toBe(true);
       expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
       expect(hook.result.current.error).toBeNull();
-      // One read in flight at a time from polling: a 6s read spans a 5s tick,
-      // so ticks are skipped rather than stacking reads (13 without the skip).
+      // One read in flight at a time: a 6s read spans a 5s tick, so ticks are
+      // skipped rather than stacking reads (13 without the skip).
       expect(calls).toBeLessThanOrEqual(7);
       hook.unmount();
     });
@@ -264,7 +264,10 @@ describe("useDeviceStatusStream", () => {
       hook.unmount();
     });
 
-    it("(G1) a slow poll overtaken by a failing Refresh is discarded, and the next poll recovers", async () => {
+    it("(G1) a Refresh during a slow poll sends nothing beside it, then runs once and its answer wins", async () => {
+      // Plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
+      // D5: one fleet read on the wire at a time. Before it, the Refresh ran
+      // beside the slow poll and the landing order decided which answer won.
       getWebSocketToken.mockResolvedValue(null);
       const slowPoll = deferred<Resp>();
       queue = [
@@ -276,16 +279,24 @@ describe("useDeviceStatusStream", () => {
       const hook = await mount();
 
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS); // poll starts, pending
+      expect(calls).toBe(2);
+      let refreshing!: Promise<void>;
       await act(async () => {
-        await hook.result.current.refetch();
+        refreshing = hook.result.current.refetch();
       });
       await flush();
+      expect(calls).toBe(2); // trailing, not beside
+
       await act(async () => {
         slowPoll.resolve(ok([deviceRow("d-2", "poll")]));
       });
       await flush();
+      await act(async () => {
+        await refreshing;
+      });
+      expect(calls).toBe(3);
+      // The Refresh ran AFTER the poll, so its failure is the newest answer.
       expect(hook.result.current.error).toBe("HTTP 500");
-      expect(hook.result.current.byHostname.has("poll")).toBe(false);
 
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS);
       expect(hook.result.current.error).toBeNull();
@@ -293,7 +304,7 @@ describe("useDeviceStatusStream", () => {
       hook.unmount();
     });
 
-    it("(G2) a slow retry overtaken by a failing Refresh is discarded, and the re-armed retry recovers", async () => {
+    it("(G2) a Refresh during a slow retry trails it, and the re-armed retry recovers", async () => {
       const slowRetry = deferred<Resp>();
       queue = [
         ok(),
@@ -305,22 +316,29 @@ describe("useDeviceStatusStream", () => {
       const hook = await mount();
       await openLatestSocket();
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS); // retry fires, pending
+      expect(calls).toBe(3);
 
+      let refreshing!: Promise<void>;
       await act(async () => {
-        await hook.result.current.refetch();
+        refreshing = hook.result.current.refetch();
       });
       await flush();
+      expect(calls).toBe(3); // trailing, not beside
+
       await act(async () => {
         slowRetry.resolve(ok([deviceRow("d-2", "retry")]));
       });
       await flush();
+      await act(async () => {
+        await refreshing;
+      });
+      expect(calls).toBe(4);
       expect(hook.result.current.error).toBe("HTTP 500");
       expect(vi.getTimerCount()).toBe(1);
 
       await advance(2 * DEVICE_STATUS_POLL_FALLBACK_MS);
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.byHostname.has("recovered")).toBe(true);
-      expect(hook.result.current.byHostname.has("retry")).toBe(false);
       expect(vi.getTimerCount()).toBe(0);
       hook.unmount();
     });
@@ -392,21 +410,21 @@ describe("useDeviceStatusStream", () => {
       hook.unmount();
     });
 
-    it("(B) a slow failing mount seed that lands after a successful on-open seed is discarded", async () => {
+    it("(B) the on-open read waits for a slow mount seed, then its answer wins", async () => {
+      // D5: the socket's on-open read no longer runs beside an outstanding
+      // mount seed; it trails it, so the newest answer is the on-open one.
       const slowMount = deferred<Resp>();
       queue = [slowMount.promise, ok([deviceRow("d-1", "msi")])];
       const hook = await mount();
       await openLatestSocket();
-      expect(hook.result.current.error).toBeNull();
-      expect(hook.result.current.everSeeded).toBe(true);
+      expect(calls).toBe(1); // the on-open read is queued, not sent
 
       await act(async () => {
         slowMount.resolve(fail(504));
       });
       await flush();
 
-      // A newer read already landed: the older one sets no error and arms no
-      // retry.
+      expect(calls).toBe(2);
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.everSeeded).toBe(true);
       expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
@@ -417,7 +435,7 @@ describe("useDeviceStatusStream", () => {
       hook.unmount();
     });
 
-    it("(C) a stale in-flight retry failing after a reconnect leaves one retry timer, and none survives close or unmount", async () => {
+    it("(C) a retry still in flight across a reconnect: the new socket's read trails it, one retry timer, none after close or unmount", async () => {
       const staleRetry = deferred<Resp>();
       // mount ok · ws1 on-open fails · its retry's read hangs
       queue = [ok(), fail(503), staleRetry.promise];
@@ -440,15 +458,16 @@ describe("useDeviceStatusStream", () => {
 
       queue = [fail(503)]; // ws2's on-open read fails fast
       await openLatestSocket();
-      expect(hook.result.current.error).toBe("HTTP 503");
-      // Polling stopped on open; exactly the one retry is armed.
-      expect(vi.getTimerCount()).toBe(1);
+      // The on-open read is queued behind the hanging retry, not sent beside it.
+      expect(calls).toBe(3);
 
-      // The retry read from ws1's chain finally fails — a newer read landed.
       await act(async () => {
         staleRetry.resolve(fail(503));
       });
       await flush();
+      expect(calls).toBe(4);
+      expect(hook.result.current.error).toBe("HTTP 503");
+      // Polling stopped on open; exactly the one retry is armed.
       expect(vi.getTimerCount()).toBe(1);
 
       // ws2 drops: its retry goes with it; only poll + reconnect remain.

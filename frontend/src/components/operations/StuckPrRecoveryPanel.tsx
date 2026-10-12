@@ -22,9 +22,11 @@
  * this page grows a section exactly when there is something to do.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, LifeBuoy, Lock, Terminal } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import type { PrListResponse, PrRow } from "./mergeTypes";
 import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import {
@@ -575,62 +577,79 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
     ReadonlyMap<number, ProposalView | null>
   >(() => new Map());
 
-  const refresh = useCallback(async () => {
-    if (!activeRepo) return;
-    const parts = splitRepo(activeRepo);
-    try {
-      const [nudgeRes, prRes] = await Promise.all([
-        httpClient.fetch(stuckNudgesUrl(activeRepo)),
-        httpClient.fetch(`${OPERATIONS_API}/pr-merge/prs`),
-      ]);
-      const nudgeBody: unknown = nudgeRes.ok ? await nudgeRes.json() : null;
-      const prBody: unknown = prRes.ok ? await prRes.json() : null;
-      const nudges = parseStuckNudges(nudgeBody);
-      const prs = ((prBody as PrListResponse | null)?.prs ?? []) as PrRow[];
-      const fused = fuseStuckCandidates(
-        activeRepo,
-        nudges?.prs ?? [],
-        nudges?.maxNudges ?? null,
-        prs
-      );
-      setCandidates(fused);
-      setNudgesEnabled(nudges?.enabled ?? true);
-      setStaleRead(!nudgeRes.ok && !prRes.ok);
-
-      // Verdicts for the candidates that can plausibly be rendered — bounded,
-      // with headroom above STUCK_PR_MAX_CARDS so a retraction that promotes
-      // the next candidate promotes one that already has its verdict.
-      if (parts) {
-        const wanted = fused.slice(0, STUCK_PR_MAX_VERDICT_READS);
-        const read = await Promise.all(
-          wanted.map(async (c) => {
-            try {
-              const res = await httpClient.fetch(
-                prMergeVerdictUrl(parts.owner, parts.name, c.prNumber)
-              );
-              // A verdict coord will not serve is not a failure of the panel —
-              // the diagnosis proceeds without proposal evidence and says so.
-              if (!res.ok) return [c.prNumber, null] as const;
-              return [c.prNumber, parseProposalView(await res.json())] as const;
-            } catch {
-              return [c.prNumber, null] as const;
-            }
-          })
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+  // one poll's whole fan-out (nudges + PR list + up to
+  // STUCK_PR_MAX_VERDICT_READS verdicts) is one flight, a tick while it is out
+  // is skipped, and a card's post-action refresh runs once after it.
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
+      if (!activeRepo) return;
+      const parts = splitRepo(activeRepo);
+      try {
+        const [nudgeRes, prRes] = await Promise.all([
+          httpClient.fetch(
+            stuckNudgesUrl(activeRepo),
+            COORD_DASHBOARD_POLL_OPTIONS
+          ),
+          httpClient.fetch(
+            `${OPERATIONS_API}/pr-merge/prs`,
+            COORD_DASHBOARD_POLL_OPTIONS
+          ),
+        ]);
+        const nudgeBody: unknown = nudgeRes.ok ? await nudgeRes.json() : null;
+        const prBody: unknown = prRes.ok ? await prRes.json() : null;
+        const nudges = parseStuckNudges(nudgeBody);
+        const prs = ((prBody as PrListResponse | null)?.prs ?? []) as PrRow[];
+        const fused = fuseStuckCandidates(
+          activeRepo,
+          nudges?.prs ?? [],
+          nudges?.maxNudges ?? null,
+          prs
         );
-        setVerdicts(new Map(read));
-      }
-    } catch {
-      // Keep the last known list: a flaky poll must not make a live wedge
-      // vanish from the page. The banner below says the view may be stale.
-      setStaleRead(true);
-    }
-  }, [activeRepo]);
+        if (!isCurrent()) return;
+        setCandidates(fused);
+        setNudgesEnabled(nudges?.enabled ?? true);
+        setStaleRead(!nudgeRes.ok && !prRes.ok);
 
-  useEffect(() => {
-    void refresh();
-    const id = setInterval(() => void refresh(), STUCK_PR_POLL_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
+        // Verdicts for the candidates that can plausibly be rendered — bounded,
+        // with headroom above STUCK_PR_MAX_CARDS so a retraction that promotes
+        // the next candidate promotes one that already has its verdict.
+        if (parts) {
+          const wanted = fused.slice(0, STUCK_PR_MAX_VERDICT_READS);
+          const read = await Promise.all(
+            wanted.map(async (c) => {
+              try {
+                const res = await httpClient.fetch(
+                  prMergeVerdictUrl(parts.owner, parts.name, c.prNumber),
+                  COORD_DASHBOARD_POLL_OPTIONS
+                );
+                // A verdict coord will not serve is not a failure of the panel —
+                // the diagnosis proceeds without proposal evidence and says so.
+                if (!res.ok) return [c.prNumber, null] as const;
+                return [
+                  c.prNumber,
+                  parseProposalView(await res.json()),
+                ] as const;
+              } catch {
+                return [c.prNumber, null] as const;
+              }
+            })
+          );
+          if (!isCurrent()) return;
+          setVerdicts(new Map(read));
+        }
+      } catch {
+        if (!isCurrent()) return;
+        // Keep the last known list: a flaky poll must not make a live wedge
+        // vanish from the page. The banner below says the view may be stale.
+        setStaleRead(true);
+      }
+    },
+    [activeRepo]
+  );
+
+  const { refresh } = useSingleFlightPoll(poll, STUCK_PR_POLL_MS);
 
   // Drop the PRs the settled verdict cleared — from the headline count as well
   // as the card list, since "1 pull request is stuck" above zero cards would be

@@ -59,10 +59,7 @@ from app.models.user import User
 from app.services.recording_pipeline_subscriber import (
     spawn_recording_pipeline_subscriber,
 )
-from app.services.runner import (
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
-)
+from app.services.runner import resolve_runner_for_request
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
@@ -170,9 +167,9 @@ async def _resolve_runner(
     """Pick the user's connected runner or raise 503."""
     redis = await get_redis()
     manager = await get_runner_websocket_manager(redis)
-    runner = await pick_active_runner_for_user(current_user.id, db, manager.registry)
-    if runner is None:
-        raise runner_bridge_503_no_runner(endpoint)
+    runner = await resolve_runner_for_request(
+        None, current_user.id, db, manager, endpoint
+    )
     return runner, manager
 
 
@@ -636,13 +633,10 @@ async def _persist_result_to_pg(
     and :class:`UIBridgeTransition` rows. The caller is responsible for
     committing (to allow batching with :func:`_save_experience_from_payload`).
     """
-    from app.models.ui_bridge_state import UIBridgeState as UIBridgeStateModel
-    from app.models.ui_bridge_state import UIBridgeStateConfig
-    from app.models.ui_bridge_transition import (
-        UIBridgeTransition as UIBridgeTransitionModel,
-    )
+    from app.crud import ui_bridge_state_graph as graph_crud
 
-    state_config = UIBridgeStateConfig(
+    state_config = await graph_crud.add_config(
+        db,
         project_id=project_id,
         name=config_name,
         description=(
@@ -659,13 +653,12 @@ async def _persist_result_to_pg(
             "global_state_count": result_payload.get("global_state_count", 0),
             "modal_state_count": result_payload.get("modal_state_count", 0),
         },
-    )
-    db.add(state_config)
-    await db.flush()  # Get the generated UUID
+    )  # flushed: state_config.id is populated
 
     for s in result_payload.get("states", []):
         s_meta = s.get("metadata", {}) or {}
-        state_row = UIBridgeStateModel(
+        graph_crud.add_state(
+            db,
             config_id=state_config.id,
             state_id=s["id"],
             name=s.get("name", s["id"]),
@@ -678,11 +671,11 @@ async def _persist_result_to_pg(
                 "source": "recording",
             },
         )
-        db.add(state_row)
 
     for t in result_payload.get("transitions", []):
         t_meta = t.get("metadata", {}) or {}
-        transition_row = UIBridgeTransitionModel(
+        graph_crud.add_transition(
+            db,
             config_id=state_config.id,
             transition_id=t["id"],
             name=t.get("name", t["id"]),
@@ -699,7 +692,6 @@ async def _persist_result_to_pg(
                 "source": "recording",
             },
         )
-        db.add(transition_row)
 
     await db.flush()
     logger.info(

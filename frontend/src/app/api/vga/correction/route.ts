@@ -20,6 +20,8 @@ import path from "node:path";
 
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isEndpointUnresolved } from "@/lib/errors/endpoint-unresolved";
+
 import { vgaQuery } from "@/lib/db/vga";
 import {
   correctionsDir,
@@ -72,6 +74,10 @@ export async function POST(request: NextRequest) {
     }
     smInfo = rows[0] as SmLookupRow;
   } catch (err) {
+    // An unset runner-DB DSN outside development is a named 503, not a 500.
+    if (isEndpointUnresolved(err)) {
+      return NextResponse.json(err.toBody(), { status: 503 });
+    }
     return NextResponse.json(
       { error: "Database lookup failed", detail: (err as Error).message },
       { status: 500 }

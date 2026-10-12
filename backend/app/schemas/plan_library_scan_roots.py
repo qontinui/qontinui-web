@@ -469,8 +469,14 @@ class ScanRootRow(BaseModel):
     ``state`` / ``detail`` are the verdict a reader should key on, not the
     stored values. ``state`` is ``unknown`` with:
 
+    * a ``refused:`` detail when the device's latest contact within
+      ``fresh_within_secs`` was a REFUSED report (a 422) and no fresh reading
+      stands — including a device refused on its first-ever report, which has
+      no reading at all. The device is alive and being refused, which is not
+      what a silent one looks like;
     * an ``observation_stale:`` detail once the device has not reported within
-      ``fresh_within_secs`` (by ``received_at``);
+      ``fresh_within_secs`` (by ``received_at``), naming its last refusal when
+      it has one;
     * a ``reading_superseded:`` detail when the device's latest report was
       observed before the stored reading (a clock step-back or a
       late-delivered report), so the stored reading may not be what it reports
@@ -478,11 +484,21 @@ class ScanRootRow(BaseModel):
     * a ``ref_stale:`` detail for a ``measured`` floor reading that is 0
       behind.
 
-    Precedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.
+    Precedence: ``refused`` > ``observation_stale`` > ``reading_superseded``
+    > ``ref_stale``. A FRESH reading keeps its own verdict even when a refusal
+    followed it; the refusal fields are served beside it either way.
     What the device actually sent is in ``reported_state`` /
     ``reported_detail``. The counts and ``ref_age_secs`` are served as reported
     whatever the verdict — a reader keying on ``state`` does not trust them
     when it is ``unknown``.
+
+    **A refusal-only row** (a device whose every report was refused, so no
+    reading was ever stored) carries ``null`` in every READING field —
+    ``reported_state``, ``counts_are_floors``, ``observed_at``,
+    ``received_at``, ``last_report_applied``, ``last_report_observed_at``,
+    ``observed_skew_secs``, ``observation_age_secs`` and the reported values —
+    and ``observation_fresh: false``. ``null`` there is "no reading exists",
+    never a default.
     """
 
     #: The verified device token's ``device_id`` claim — never a body field.
@@ -492,12 +508,12 @@ class ScanRootRow(BaseModel):
     #: ``"unknown"``.
     state: ScanRootState
     #: Why ``state`` is what it is: ``reported_detail`` when the verdict is the
-    #: reported state, otherwise an ``observation_stale: ...``,
+    #: reported state, otherwise a ``refused: ...``, ``observation_stale: ...``,
     #: ``reading_superseded: ...`` or ``ref_stale: ...`` line (in that order of
     #: precedence).
     detail: str | None
-    #: The state the device reported, verbatim.
-    reported_state: ScanRootState
+    #: The state the device reported, verbatim. ``null`` on a refusal-only row.
+    reported_state: ScanRootState | None
     #: The detail the device reported, verbatim.
     reported_detail: str | None
     plans_dir: str | None
@@ -509,32 +525,55 @@ class ScanRootRow(BaseModel):
     behind: int | None
     ahead: int | None
     ref_age_secs: int | None
-    counts_are_floors: bool
+    #: ``null`` on a refusal-only row.
+    counts_are_floors: bool | None
     #: The runner's clock, when it took the stored reading. Orders readings;
-    #: never used to judge liveness.
-    observed_at: IsoDatetime
-    #: This server's clock, at the device's latest report — including a report
-    #: that was declined as out of order, since the device demonstrably
-    #: reported. The ONLY stamp liveness is judged from.
-    received_at: IsoDatetime
+    #: never used to judge liveness. ``null`` on a refusal-only row.
+    observed_at: IsoDatetime | None
+    #: This server's clock, at the device's latest ACCEPTED report — including
+    #: a report that was declined as out of order, since the device
+    #: demonstrably reported. A refused report does not move it; that contact
+    #: is ``last_refused_at``. ``null`` on a refusal-only row.
+    received_at: IsoDatetime | None
     #: Whether the device's latest report was applied. ``False``: its latest
     #: report was observed before the stored reading, so the stored reading may
     #: not be what it says now and ``state`` is ``unknown`` /
-    #: ``reading_superseded``.
-    last_report_applied: bool
+    #: ``reading_superseded``. ``null`` on a refusal-only row.
+    last_report_applied: bool | None
     #: The ``observed_at`` of the device's latest report, applied or not.
-    last_report_observed_at: IsoDatetime
+    #: ``null`` on a refusal-only row.
+    last_report_observed_at: IsoDatetime | None
     #: ``received_at - observed_at`` in seconds. Near zero for a healthy
     #: runner. Large and positive: the runner's clock is behind this server's,
     #: or the stored reading is older than the device's last contact (a newer
     #: report was delivered before an older one). Negative: the runner's clock
-    #: is ahead (bounded by the write-side limit of 300 s).
-    observed_skew_secs: int
-    #: Seconds since this server last heard from the device
-    #: (``now - received_at``), never negative.
-    observation_age_secs: int
-    #: ``observation_age_secs <= fresh_within_secs``.
+    #: is ahead (bounded by the write-side limit of 300 s). ``null`` on a
+    #: refusal-only row.
+    observed_skew_secs: int | None
+    #: Seconds since this server last stored a reading from the device
+    #: (``now - received_at``), never negative. ``null`` on a refusal-only row.
+    observation_age_secs: int | None
+    #: ``observation_age_secs <= fresh_within_secs``; ``false`` on a
+    #: refusal-only row, which has no reading to be fresh.
     observation_fresh: bool
+    #: This server's clock at the device's latest REFUSED report (a 422 that
+    #: stored no reading). ``null`` when the device was never refused.
+    last_refused_at: IsoDatetime | None
+    #: ``"<loc>: <type>"`` of that refusal's first validation error, plus
+    #: ``(+N more)`` — the same ``loc`` spelling as the 422 body's
+    #: ``details[].field``. Never an input value. ``null`` when never refused.
+    last_refused_reason: str | None
+    #: Refused reports since the device's first refusal. ``null`` when never
+    #: refused — not 0: a device with no refusal row was never counted.
+    refused_count: int | None
+    #: ``now - last_refused_at`` in seconds, never negative. ``null`` when never
+    #: refused.
+    refused_age_secs: int | None
+    #: ``True`` when this server has heard nothing from the device — neither a
+    #: reading nor a refused report, ``max(received_at, last_refused_at)`` —
+    #: for more than ``retire_after_secs``. Retired rows are served only under
+    #: ``?include_retired=true``; everywhere else this is ``false``.
+    retired: bool
 
 
 #: A roll-up's verdict: ``measured`` when at least one of its devices has a
@@ -849,22 +888,39 @@ class ScanRootListResponse(BaseModel):
     of an error.
     """
 
-    #: ``"reported"`` when at least one device has a row; ``"unknown"`` when
-    #: none has — an empty list is NOT "every feeder is current".
+    #: ``"reported"`` when at least one row is served; ``"unknown"`` when none
+    #: is — an empty list is NOT "every feeder is current". When every device
+    #: is RETIRED (and the read did not ask for retired rows) the detail says
+    #: so and names how many, rather than claiming nobody ever reported.
     state: Literal["reported", "unknown"]
     #: Why the state is ``unknown``; null when ``reported``.
     detail: str | None
     #: The freshness window, in seconds (three 15-min runner heartbeats).
     fresh_within_secs: int
-    #: ``len(rows)``.
+    #: The retirement window, in seconds (30 days). A device neither whose
+    #: reading nor whose refused report arrived within it is RETIRED: left out
+    #: of ``rows`` (unless ``?include_retired=true`` on
+    #: ``GET /plan-library/scan-roots``), ``by_source_repo`` and ``coverage``.
+    #: Nothing is deleted; the device's next report brings it back.
+    retire_after_secs: int
+    #: How many devices are retired — counted whether or not they are served,
+    #: so an exclusion is never silent. ``count`` excludes them unless they
+    #: were asked for.
+    retired_count: int
+    #: ``len(rows)`` — retired devices included only when they were asked for.
     count: int
     #: How many rows are within the freshness window. ``count > 0`` with
     #: ``fresh_count == 0`` means every feeder has gone quiet.
     fresh_count: int
     rows: list[ScanRootRow]
-    #: One roll-up per distinct ``source_repo`` over ``rows`` — named sources
-    #: in order, then the ``null`` group. Empty exactly when ``rows`` is, and
-    #: then ``state`` is ``unknown``: an empty roll-up is not "no drift".
+    #: One roll-up per distinct ``source_repo`` over the live rows that carry
+    #: a READING — named sources in order, then the ``null`` group. A
+    #: refusal-only row (no reading ever stored) and a retired row feed no
+    #: roll-up. Empty when no live row carries a reading — which is never
+    #: "no drift": then ``state`` is ``unknown``, or every row served is a
+    #: refusal-only row (its detail names its last refusal — ``refused:``
+    #: inside the freshness window, ``observation_stale:`` past it) or is
+    #: marked ``retired``.
     by_source_repo: list[ScanRootSourceRollup]
     #: What the corpus holds against what exists, per scan source — a SET
     #: DIFFERENCE, never a ratio (:class:`PlanCoverage`).

@@ -25,8 +25,11 @@ import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import { formatRelativeTime } from "@/lib/time-utils";
 import { ConflictDialog } from "./ConflictDialog";
+import type { WikiLinkOptions } from "@/components/overview/wiki-links";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { clearDraft, draftKey, readDraft, writeDraft } from "./drafts";
+import { useFocusAfterRender } from "./focus";
+import { useLeaveGuard } from "./leave-guard";
 import type { SaveResult } from "./useResource";
 
 /** The slice of a record this component edits and reports on. */
@@ -43,43 +46,13 @@ type Mode =
       kind: "edit";
       text: string;
       baseVersion: number;
+      /** The record's text at `baseVersion`, when the editor opened on the
+       *  record itself; null for a restored draft, whose base is older. */
+      baseText: string | null;
       restoredFrom: string | null;
       /** Their text, shown beside the editor after "Combine them myself". */
       theirs: EditableText | null;
     };
-
-/**
- * Warn before the page is left with unsaved text: the browser's own prompt on
- * close/reload, and a confirm on an in-app link, which the browser does not
- * catch because the App Router never unloads the page.
- */
-function useLeaveGuard(active: boolean) {
-  useEffect(() => {
-    if (!active) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    const onClick = (event: MouseEvent) => {
-      const anchor = (event.target as Element | null)?.closest?.("a[href]");
-      if (!anchor || (anchor as HTMLAnchorElement).target === "_blank") return;
-      if (
-        !window.confirm(
-          "You have unsaved changes. Leave this page and lose them? (A draft is kept on this device.)"
-        )
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    document.addEventListener("click", onClick, true);
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      document.removeEventListener("click", onClick, true);
-    };
-  }, [active]);
-}
 
 export function EditableSection({
   projectId,
@@ -96,6 +69,7 @@ export function EditableSection({
   onOpen,
   onDone,
   startEditing = false,
+  wikiLinks,
   uiBridgeId,
   children,
 }: {
@@ -122,6 +96,8 @@ export function EditableSection({
   /** Called when the editor closes, saved or not. */
   onDone?: () => void;
   startEditing?: boolean;
+  /** Render `[[links]]` in the editor's preview (see `MarkdownView`). */
+  wikiLinks?: WikiLinkOptions;
   uiBridgeId: string;
   /** The read-only rendering. */
   children: React.ReactNode;
@@ -137,10 +113,14 @@ export function EditableSection({
   const [askingToLeave, setAskingToLeave] = useState(false);
   const errorId = useId();
   const editButton = useRef<HTMLButtonElement>(null);
+  const focusAfterRender = useFocusAfterRender();
 
   const initial = startText ?? record.text;
   const dirty = mode.kind === "edit" && mode.text !== initial;
-  useLeaveGuard(dirty);
+  useLeaveGuard(
+    dirty,
+    "You have unsaved changes. Leave this page and lose them? (A draft is kept on this device.)"
+  );
 
   const open = () => {
     const draft = readDraft(key);
@@ -154,10 +134,46 @@ export function EditableSection({
       // A restored draft keeps the version it was written against, so saving
       // it over a newer document is a conflict, not an overwrite.
       baseVersion: useDraft ? draft.baseVersion : record.version,
+      baseText: useDraft ? null : record.text,
       restoredFrom: useDraft ? draft.savedAt || null : null,
       theirs: null,
     });
   };
+
+  // A write that moved the record's version but not its text — the page's
+  // own rename, a details save, a restore of identical text — is not a
+  // conflict with what is being typed: follow it, so the save names the
+  // version the server now holds instead of refusing the writer's own move.
+  // A functional update: a keystroke that lands between the record's
+  // commit and this effect must not be overwritten by a stale copy.
+  useEffect(() => {
+    setMode((m) =>
+      m.kind === "edit" &&
+      m.baseText !== null &&
+      record.version > m.baseVersion &&
+      record.text === m.baseText
+        ? { ...m, baseVersion: record.version }
+        : m
+    );
+  }, [record.version, record.text]);
+
+  // Keep the draft on the version it will now be saved against.
+  const editBase = mode.kind === "edit" ? mode.baseVersion : null;
+  const previousBase = useRef<number | null>(null);
+  useEffect(() => {
+    const moved =
+      previousBase.current !== null &&
+      editBase !== null &&
+      editBase !== previousBase.current;
+    previousBase.current = editBase;
+    // Only when the base MOVES while editing, not when the editor opens: a
+    // rewrite on open would restamp a restored draft as saved just now.
+    // Typing writes the draft itself (`change`).
+    if (moved && mode.kind === "edit" && mode.text !== initial) {
+      writeDraft(key, mode.text, mode.baseVersion);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editBase]);
 
   // Opening on mount (a "Write it" affordance hands over straight to the
   // editor) happens once, after the first render.
@@ -177,7 +193,7 @@ export function EditableSection({
     setError(null);
     onDone?.();
     // Return focus to where the writer started.
-    requestAnimationFrame(() => editButton.current?.focus());
+    focusAfterRender(editButton);
   };
 
   const change = (text: string) => {
@@ -236,6 +252,7 @@ export function EditableSection({
       invalid={error !== null}
       describedBy={error ? errorId : undefined}
       autoFocus
+      wikiLinks={wikiLinks}
     />
   );
 
@@ -359,7 +376,12 @@ export function EditableSection({
         onMerge={() => {
           if (!conflict) return;
           writeDraft(key, mode.text, conflict.version);
-          setMode({ ...mode, baseVersion: conflict.version, theirs: conflict });
+          setMode({
+            ...mode,
+            baseVersion: conflict.version,
+            baseText: conflict.text,
+            theirs: conflict,
+          });
           setConflict(null);
         }}
       />

@@ -16,6 +16,8 @@
 
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { createLogger } from "@/lib/logger";
+import { isEndpointUnresolved } from "@/lib/errors/endpoint-unresolved";
+import { ApiConfig } from "@/services/api-config";
 
 const log = createLogger("BackendAPI");
 
@@ -275,8 +277,12 @@ export interface BackendAPIConfig {
   /** Base URL for HTTP API */
   baseUrl: string;
 
-  /** WebSocket base URL */
-  wsUrl: string;
+  /**
+   * WebSocket base URL. Omitted ⇒ resolved per stream by
+   * `ApiConfig.resolveWebSocketBaseUrl()` (never a dev-stack default in a
+   * published build).
+   */
+  wsUrl?: string;
 
   /** Request timeout (ms) */
   timeout?: number;
@@ -296,7 +302,6 @@ export interface BackendAPIConfig {
  */
 const DEFAULT_CONFIG: BackendAPIConfig = {
   baseUrl: process.env.NEXT_PUBLIC_API_URL || "",
-  wsUrl: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000",
   timeout: 30000,
   retries: 3,
   retryDelay: 1000,
@@ -586,8 +591,18 @@ export class BackendAPI {
       existingWs.close();
     }
 
-    // Create WebSocket URL
-    const wsUrl = `${this.config.wsUrl}/api/execution/${executionId}/stream`;
+    // Create WebSocket URL. An unconfigured deployment is reported through
+    // `onError` (its message names the variable to set) instead of opening a
+    // socket to a dev-stack address.
+    let wsBase: string;
+    try {
+      wsBase = this.config.wsUrl ?? ApiConfig.resolveWebSocketBaseUrl();
+    } catch (error) {
+      if (!isEndpointUnresolved(error)) throw error;
+      onError?.(error);
+      return () => {};
+    }
+    const wsUrl = `${wsBase}/api/execution/${executionId}/stream`;
 
     // Create WebSocket connection
     const ws = new WebSocket(wsUrl);

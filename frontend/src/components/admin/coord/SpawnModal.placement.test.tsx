@@ -13,6 +13,28 @@ vi.mock("sonner", () => ({
   },
 }));
 
+/**
+ * The modal reaches the network only through `httpClient` (the typed
+ * `/operations` client), so that is what is mocked, by specifier. Every case
+ * below installs one `route(url, init)` answering with a response-shaped
+ * object; `get` mirrors `HttpClient.get` over it (the body on a 2xx, the
+ * client's own `GET <url> failed: <status> - <body>` rejection otherwise), and
+ * `fetch` — the spawn POST — hands the response back as is.
+ */
+type Route = (url: string, init?: { body?: string }) => Promise<unknown>;
+const net = vi.hoisted(() => ({
+  route: ((_url: string) =>
+    Promise.reject(new Error("net.route not wired"))) as (
+    url: string,
+    init?: { body?: string }
+  ) => Promise<unknown>,
+}));
+vi.mock("@/services/service-factory", () => ({
+  httpClient: {
+    fetch: (url: string, init?: { body?: string }) => net.route(url, init),
+  },
+}));
+
 import { SpawnModal } from "./SpawnModal";
 
 /**
@@ -47,7 +69,7 @@ beforeEach(() => {
   toastSuccess.mockReset();
   toastError.mockReset();
   toastWarning.mockReset();
-  vi.stubGlobal("fetch", (url: unknown, init?: { body?: string }) => {
+  net.route = ((url, init) => {
     const u = String(url);
     if (u.includes("/claude-accounts")) {
       return Promise.resolve(
@@ -63,12 +85,11 @@ beforeEach(() => {
       return Promise.resolve(respond(next.status, next.body));
     }
     return Promise.reject(new Error(`unexpected fetch ${u}`));
-  });
+  }) satisfies Route;
 });
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
 });
 
 async function openReady(user: ReturnType<typeof userEvent.setup>) {
@@ -306,7 +327,7 @@ describe("SpawnModal placement — a refusal describes the form that was sent", 
     const held = new Promise((r) => {
       release = r;
     });
-    vi.stubGlobal("fetch", (url: unknown, init?: { body?: string }) => {
+    net.route = ((url, init) => {
       const u = String(url);
       if (u.includes("/agents/spawn")) {
         spawnBodies.push(JSON.parse(String(init?.body)));
@@ -315,7 +336,7 @@ describe("SpawnModal placement — a refusal describes the form that was sent", 
         );
       }
       return Promise.resolve(respond(200, { devices: [], accounts: [] }));
-    });
+    }) satisfies Route;
 
     await submit(user);
     // A late refusal can never describe a form the operator has since
@@ -380,11 +401,12 @@ describe("SpawnModal placement — no readable answer", () => {
   it("a transport failure on send says the spawn may have landed, never 'did not complete'", async () => {
     const user = userEvent.setup();
     await openReady(user);
-    vi.stubGlobal("fetch", (url: unknown) =>
+    net.route = ((url) =>
       String(url).includes("/agents/spawn")
         ? Promise.reject(new TypeError("Failed to fetch"))
-        : Promise.resolve(respond(200, { devices: [], accounts: [] }))
-    );
+        : Promise.resolve(
+            respond(200, { devices: [], accounts: [] })
+          )) satisfies Route;
     await submit(user);
     const panel = await screen.findByTestId("coord-spawn-refusal");
     expect(panel.getAttribute("data-refusal")).toBe("outcome_unknown");

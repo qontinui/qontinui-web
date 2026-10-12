@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
+import { ApiConfig } from "@/services/api-config";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("useScreenshotUploader");
@@ -45,7 +46,7 @@ export function useScreenshotUploader(
     queryFn: async ({ signal }) => {
       const projectId = "default";
       const response = await fetch(
-        `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
+        `${ApiConfig.API_BASE_URL}/api/state-discovery/project/${projectId}/screenshots`,
         { signal }
       );
       if (!response.ok) {
@@ -165,7 +166,7 @@ export function useScreenshotUploader(
 
       // Call actual API to save screenshots
       const response = await fetch(
-        `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots`,
+        `${ApiConfig.API_BASE_URL}/api/state-discovery/project/${projectId}/screenshots`,
         {
           method: "POST",
           body: formData,
@@ -220,7 +221,7 @@ export function useScreenshotUploader(
       for (const screenshot of selected) {
         // Fetch the full screenshot data
         const response = await fetch(
-          `http://localhost:8000/api/state-discovery/project/${projectId}/screenshots/${screenshot.id}`
+          `${ApiConfig.API_BASE_URL}/api/state-discovery/project/${projectId}/screenshots/${screenshot.id}`
         );
 
         if (!response.ok) {

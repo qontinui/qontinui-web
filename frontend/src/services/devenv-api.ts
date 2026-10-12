@@ -203,8 +203,15 @@ export interface MachineUpdate {
 export interface CiNodeConfig {
   /** Master opt-in. Enabling lets coord run repo-declared commands here. */
   enabled: boolean;
-  /** Concurrent CI builds this device admits (and advertises as its budget). */
-  max_concurrent_builds: number;
+  /**
+   * Concurrent CI builds this device admits (and advertises as its budget).
+   *
+   * `null` means "use the host's suggested capacity": the runner derives the
+   * number from the machine's own cores and memory (qontinui-runner#1684).
+   * qontinui.io does not know the host's hardware, so it never invents a
+   * number; a number here is an explicit owner override.
+   */
+  max_concurrent_builds: number | null;
   /**
    * Repos this device may build. Empty means NOTHING is runnable even when
    * `enabled` — allowlisting is a deliberate act. There is deliberately no
@@ -264,11 +271,12 @@ export interface CiNodeConfigState {
 /**
  * The runner's OWN defaults, copied from its `Default for CiNodeSettings`.
  * A machine nobody has configured must render as the posture the runner
- * actually ships with — off, with an empty allowlist — never a friendlier one.
+ * actually ships with — off, with an empty allowlist, capacity derived from
+ * the host — never a friendlier one, and never a number qontinui.io invented.
  */
 export const CI_NODE_DEFAULTS: CiNodeConfig = {
   enabled: false,
-  max_concurrent_builds: 1,
+  max_concurrent_builds: null,
   repo_allowlist: [],
   min_free_disk_gb: 20,
 };

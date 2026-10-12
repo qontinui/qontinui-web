@@ -510,6 +510,18 @@ class Settings(BaseSettings):
         description="Maximum number of render snapshots to keep",
     )
 
+    # Journey edge ledger (project.journey_edge_observations) retention.
+    # 90 days is plan 2026-09-20-ui-bridge-represents-the-users-path-and-the-
+    # passage-of-time's Phase 0 decision, sized from the one measured box's
+    # snapshot volume with generous headroom.
+    JOURNEY_EDGE_RETENTION_DAYS: int = Field(
+        default=90,
+        # ge=1 for the same reason as RENDER_LOG_RETENTION_DAYS: 0 or less is
+        # "delete the whole ledger every hour", not a retention period.
+        ge=1,
+        description="Auto-delete journey edge observations older than this many days",
+    )
+
     # Allowed hosts for TrustedHostMiddleware
     ALLOWED_HOSTS: list[str] = Field(
         default=[],

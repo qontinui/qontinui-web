@@ -756,7 +756,7 @@ export function parseMermaidGantt(source: string): GanttParseResult {
 }
 
 /**
- * The parse result as the estimate content endpoint takes it.
+ * The parse result as an estimate content write takes it.
  *
  * Deliberately separate from the parser: the parser answers "what does this
  * chart say", this answers "what would saving it do". Task numbers are
@@ -791,4 +791,52 @@ export function ganttToPhases(result: GanttParseResult): {
       status: task.status,
     })),
   }));
+}
+
+/**
+ * The first mermaid `gantt` chart in a markdown document, fence and all, or
+ * null when it has none. A delivery-plan document usually carries its
+ * schedule this way; "Use as the project estimate" hands it to the import.
+ *
+ * A fence counts when it is opened with ```mermaid (or ~~~mermaid) and its
+ * first line that is neither blank nor a `%%` comment is `gantt`. Other
+ * mermaid diagrams in the same document are skipped.
+ */
+export function extractGanttChart(markdown: string): string | null {
+  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    // CommonMark: up to three spaces of indent (four is an indented code
+    // block, not a fence).
+    const open = /^ {0,3}(`{3,}|~{3,})\s*mermaid\b/i.exec(lines[i] ?? "");
+    if (!open) continue;
+    const fence = open[1] ?? "```";
+    const char = fence[0] ?? "`";
+    // Closed only by a bare fence of the same character, at least as long.
+    const closes = (line: string) => {
+      const m = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
+      return !!m && m[1]!.startsWith(char) && m[1]!.length >= fence.length;
+    };
+    const body: string[] = [];
+    let j = i + 1;
+    for (; j < lines.length && !closes(lines[j] ?? ""); j += 1) {
+      body.push(lines[j] ?? "");
+    }
+    // Mermaid front matter (`---` … `---`) may precede the diagram type.
+    let k = 0;
+    while (k < body.length && body[k]!.trim() === "") k += 1;
+    if (body[k]?.trim() === "---") {
+      const end = body.findIndex((l, n) => n > k && l.trim() === "---");
+      if (end > k) k = end + 1;
+    }
+    const first = body
+      .slice(k)
+      .find((l) => l.trim() !== "" && !l.trim().startsWith("%%"));
+    if (first?.trim().toLowerCase() === "gantt") {
+      // Without the front matter: the import reads every line of what it is
+      // given as the chart, so `---` / `title:` would become a phase.
+      return ["```mermaid", ...body.slice(k), "```"].join("\n");
+    }
+    i = j;
+  }
+  return null;
 }

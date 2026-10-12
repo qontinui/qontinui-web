@@ -6,11 +6,12 @@
  */
 
 import { NextResponse } from "next/server";
-
-const RUNNER_BASE = process.env.QONTINUI_RUNNER_URL ?? "http://localhost:9876";
+import { runnerBaseOrResponse } from "@/lib/errors/endpoint-response";
 
 export async function GET() {
-  const url = `${RUNNER_BASE}/vga/monitors`;
+  const base = runnerBaseOrResponse();
+  if (base instanceof NextResponse) return base;
+  const url = `${base}/vga/monitors`;
 
   let upstream: Response;
   try {

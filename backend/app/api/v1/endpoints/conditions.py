@@ -16,9 +16,8 @@ it to coord (which authorizes on the bearer's operator identity and scopes
 its SQL to the bearer's tenant).
 
 The proxy helpers (``_proxy_coord_get`` / ``_post`` / ``_patch`` /
-``_delete``) are imported from ``operations`` — their canonical home — so the
-existing test suite's ``operations.httpx.AsyncClient`` patch target keeps
-working and there is no third private copy of the coord plumbing.
+``_delete``) are imported from ``operations`` — their canonical home — so
+there is no third private copy of the coord plumbing.
 """
 
 from typing import Any

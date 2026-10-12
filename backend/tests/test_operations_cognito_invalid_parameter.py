@@ -48,6 +48,8 @@ from botocore.exceptions import ClientError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 API_PREFIX = "/api/v1/operations"
 
 # A name with a space: the exact input from the production report, and the one
@@ -165,8 +167,8 @@ def no_mappings() -> Any:
         strands_own_tenant=(),
         strands_other_tenant_count=0,
     )
-    with patch(
-        "app.api.v1.endpoints.operations._coord_group_blast_radius",
+    with patch_ops(
+        "_coord_group_blast_radius",
         new=AsyncMock(return_value=all_zero),
     ) as stub:
         yield stub

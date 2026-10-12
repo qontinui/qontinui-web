@@ -23,9 +23,10 @@ What these tests pin:
 6. A comparison that could not run exits 2, never 0. A gate that passes because
    it found nothing to check is the failure class ``_gate_lib`` exists to
    prevent.
-7. The LANE ROSTER — exactly three files invoke this script, the three the
-   tree documents. ``a208240e2`` added a fourth (a step in ``backend-ci.yml``)
-   and nothing noticed: all three enumerations went on saying "three lanes",
+7. The LANE ROSTER — exactly the files the tree documents invoke this script
+   (four since the consolidated ``web-guards.yml`` job was added, deliberately
+   and in every enumeration at once). ``a208240e2`` added an undeclared fourth
+   (a step in ``backend-ci.yml``) and nothing noticed: all three enumerations went on saying "three lanes",
    and the new one sat behind a ``paths:`` filter naming neither file that can
    create the drift, so it could not fire on the change it was added for.
 8. The script's own docstring names every lane. It is the roster a reader
@@ -198,10 +199,14 @@ def test_a_failed_lockfile_read_is_vacuous_not_clean(
 # Repo-relative, exactly as the invoking lines spell it.
 _SCRIPT_REF = "scripts/ci/check_ruff_version_parity.py"
 
-# The three lanes, and the reason each one exists rather than the other two:
+# The four lanes, and the reason each one exists rather than the others:
 #   * the workflow — the GitHub Actions lane. Deliberately UNFILTERED (its own
 #     header says why), so it reports on every candidate instead of hanging in
 #     awaiting-ci on the ones that touch neither file;
+#   * web-guards.yml — the consolidated one-job guard lane (plan
+#     2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work),
+#     equally unfiltered, running beside the per-guard workflow until a later
+#     phase of that plan deletes the per-guard file;
 #   * .qontinui/ci.toml — the runner-as-CI-node lane, which is why the script
 #     is stdlib-only;
 #   * the pre-commit hook — catches the drift before the push, since editing
@@ -209,6 +214,7 @@ _SCRIPT_REF = "scripts/ci/check_ruff_version_parity.py"
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/ruff-version-parity.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }
@@ -261,19 +267,19 @@ def _invoking_files() -> set[str]:
     return found
 
 
-def test_the_lane_roster_is_exactly_the_three_declared_lanes() -> None:
+def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
     found = _invoking_files()
 
     extra = found - _DECLARED_LANES
     assert not extra, (
-        f"{sorted(extra)} invoke {_SCRIPT_REF}, but the tree documents three "
-        "lanes. Either drop the invocation, or add the lane HERE and to all "
-        "three enumerations of the roster: the docstring of "
-        f"{_SCRIPT_REF}, the `ruff-version-parity` hook comment in "
+        f"{sorted(extra)} invoke {_SCRIPT_REF}, but the tree documents "
+        f"{len(_DECLARED_LANES)} lanes. Either drop the invocation, or add the "
+        "lane HERE and to all three enumerations of the roster: the docstring "
+        f"of {_SCRIPT_REF}, the `ruff-version-parity` hook comment in "
         ".pre-commit-config.yaml, and the header of "
         ".github/workflows/ruff-version-parity.yml -- which says the gate is "
-        "NOT a step in backend-ci.yml, and is exactly the sentence a fourth "
-        "lane falsified once already, in `a208240e2`."
+        "NOT a step in backend-ci.yml, and is exactly the sentence an "
+        "undeclared lane falsified once already, in `a208240e2`."
     )
 
     missing = _DECLARED_LANES - found

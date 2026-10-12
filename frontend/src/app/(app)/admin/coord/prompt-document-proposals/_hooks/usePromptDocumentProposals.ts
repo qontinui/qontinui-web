@@ -2,21 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  decidePromptDocumentProposal,
+  fetchPromptDocumentVersion,
+  listPendingPromptDocumentProposals,
+  listPromptDocumentProposals,
+  listPromptDocuments,
+  listPromptDocumentVersions,
+  listPromptDocumentWrites,
+  updatePromptDocument,
+  withdrawPromptDocument,
+} from "@/lib/api/operations/coordPromptDocuments";
 import { canWithdraw, writeKey } from "../_lib/writes";
 import { isUnavailableSevere } from "../types";
 import type {
-  ListProposalsResponse,
-  ListWritesResponse,
   PromptDocumentProposal,
   PromptDocumentWrite,
   UnavailableKind,
 } from "../types";
-
-const API = "/api/v1/operations";
-const PROPOSALS = `${API}/coord/prompt-document-proposals`;
-const WRITES = `${API}/coord/prompt-document-writes`;
-const DOCUMENTS = `${API}/coord/prompt-documents`;
 
 /**
  * How many retired proposals the collapsed section asks for. Small on purpose:
@@ -42,16 +45,11 @@ const STALE_LIMIT = 20;
  * the newest AUTHORING dates — not the 20 most recently decided. A proposal
  * written long ago and approved a minute ago ranks by the old date and can sit
  * outside the page. Honouring the bound therefore narrowed a window that is
- * already ordered by the wrong column, which is why `<DecidedProposals>` states
+ * already ordered by the wrong column, which is why `<DecidedPolicyProposals>` states
  * the ordering in its heading and intro rather than implying a recency it
  * cannot deliver.
  */
 const DECIDED_LIMIT = 20;
-
-/** `/coord/prompt-documents/:kind/:name`, each segment encoded. */
-function docPath(kind: string, name: string): string {
-  return `${DOCUMENTS}/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
-}
 
 /** Key for the live-version map — the `(kind, name)` document address. */
 function docKey(kind: string, name: string): string {
@@ -108,15 +106,13 @@ interface SectionOutcome {
  * dropped rather than left under an UNKNOWN heading: a list we can no longer
  * confirm is not a list we should keep asserting.
  */
-async function readProposalSection(
+async function readPolicyProposalSection(
   status: string,
   limit: number,
   fallbackNote: string
 ): Promise<SectionOutcome> {
   try {
-    const data = await httpClient.get<ListProposalsResponse>(
-      `${PROPOSALS}?status=${encodeURIComponent(status)}&limit=${limit}`
-    );
+    const data = await listPromptDocumentProposals(status, limit);
     return {
       proposals: data.proposals ?? [],
       // `unavailable` is coord's own "I could not answer" note — an empty list
@@ -131,18 +127,6 @@ async function readProposalSection(
       unavailableKind: isQueryRefusal(err) ? "not_deployed" : null,
     };
   }
-}
-
-/** Shape of the document-list rows this hook needs (bodies omitted upstream). */
-interface DocumentVersionRow {
-  kind: string;
-  name: string;
-  current_version: number;
-}
-
-/** One immutable version snapshot — the body an undo PATCHes back in. */
-interface VersionSnapshot {
-  body: string;
 }
 
 /**
@@ -183,7 +167,7 @@ export type WriteDiffState =
  * The retired read asks for a status coord may not have shipped yet, so its
  * failure is routine and local; folding it into `error` would let a section
  * that does not exist yet report the working queue above it as broken. See
- * `readProposalSection`.
+ * `readPolicyProposalSection`.
  *
  * The `*UnavailableKind` half is what keeps the UNKNOWN boxes honest about
  * CAUSE. `null` there means the cause was not diagnosed, and the section then
@@ -289,11 +273,9 @@ export function usePromptDocumentProposals() {
    */
   const requestedDiffs = useRef<Set<string>>(new Set());
 
-  const loadProposals = useCallback(async () => {
+  const loadPolicyProposals = useCallback(async () => {
     try {
-      const data = await httpClient.get<ListProposalsResponse>(
-        `${PROPOSALS}?status=pending`
-      );
+      const data = await listPendingPromptDocumentProposals();
       setProposals(data.proposals ?? []);
       setUnavailable(data.unavailable ?? null);
       setUnavailableKind(data.unavailable_kind ?? null);
@@ -335,13 +317,13 @@ export function usePromptDocumentProposals() {
    * all: against an older coord the section reads "cannot be read"; against a
    * newer one it fills.
    *
-   * The tolerance itself now lives in `readProposalSection`, shared with the
+   * The tolerance itself now lives in `readPolicyProposalSection`, shared with the
    * decided read — this function distributes the outcome and nothing else.
    */
-  const loadStaleProposals = useCallback(async () => {
-    // `readProposalSection` absorbs every failure — including the pre-deploy
+  const loadStalePolicyProposals = useCallback(async () => {
+    // `readPolicyProposalSection` absorbs every failure — including the pre-deploy
     // `400 invalid status` — and hands back the cause, so this only distributes.
-    const out = await readProposalSection(
+    const out = await readPolicyProposalSection(
       "stale",
       STALE_LIMIT,
       "Retired proposals could not be read from coord"
@@ -355,7 +337,7 @@ export function usePromptDocumentProposals() {
   /**
    * The recently DECIDED queue — `?status=approved`.
    *
-   * Same shape and same tolerance as `loadStaleProposals`, for the same reason
+   * Same shape and same tolerance as `loadStalePolicyProposals`, for the same reason
    * stated there, with one addition worth naming: `approved` is in coord's
    * ORIGINAL status vocabulary, so unlike `stale` this read is not expected to
    * fail against an older coord at all. Its failures are therefore more likely
@@ -363,8 +345,8 @@ export function usePromptDocumentProposals() {
    * is carried through instead of every failure inheriting the retired
    * section's pre-deploy explanation.
    */
-  const loadDecidedProposals = useCallback(async () => {
-    const out = await readProposalSection(
+  const loadDecidedPolicyProposals = useCallback(async () => {
+    const out = await readPolicyProposalSection(
       "approved",
       DECIDED_LIMIT,
       "Recently approved proposals could not be read from coord"
@@ -377,9 +359,7 @@ export function usePromptDocumentProposals() {
 
   const loadWrites = useCallback(async () => {
     try {
-      const data = await httpClient.get<ListWritesResponse>(
-        `${WRITES}?limit=40`
-      );
+      const data = await listPromptDocumentWrites(40);
       setWrites(data.writes ?? []);
       // All five caveats are independent and can co-occur — showing only the
       // first would swallow the others.
@@ -421,9 +401,7 @@ export function usePromptDocumentProposals() {
    */
   const loadLiveVersions = useCallback(async () => {
     try {
-      const data = await httpClient.get<{ documents?: DocumentVersionRow[] }>(
-        DOCUMENTS
-      );
+      const data = await listPromptDocuments();
       setLiveVersions(
         new Map(
           (data.documents ?? []).map((d) => [
@@ -451,9 +429,9 @@ export function usePromptDocumentProposals() {
       // review feed…" forever. The loaders report their own faults; this layer
       // only guarantees the spinner ends.
       await Promise.allSettled([
-        loadProposals(),
-        loadStaleProposals(),
-        loadDecidedProposals(),
+        loadPolicyProposals(),
+        loadStalePolicyProposals(),
+        loadDecidedPolicyProposals(),
         loadWrites(),
         loadLiveVersions(),
       ]);
@@ -461,9 +439,9 @@ export function usePromptDocumentProposals() {
       setLoading(false);
     }
   }, [
-    loadProposals,
-    loadStaleProposals,
-    loadDecidedProposals,
+    loadPolicyProposals,
+    loadStalePolicyProposals,
+    loadDecidedPolicyProposals,
     loadWrites,
     loadLiveVersions,
   ]);
@@ -505,13 +483,16 @@ export function usePromptDocumentProposals() {
       requestedDiffs.current.add(key);
       setWriteDiffs((prev) => new Map(prev).set(key, { status: "loading" }));
 
-      const path = docPath(write.kind, write.name);
       const previousVersion = write.version_number - 1;
       try {
         const [current, previous] = await Promise.all([
-          httpClient.get<VersionSnapshot>(`${path}/versions/${write.version_number}`),
+          fetchPromptDocumentVersion(
+            write.kind,
+            write.name,
+            write.version_number
+          ),
           previousVersion >= 1
-            ? httpClient.get<VersionSnapshot>(`${path}/versions/${previousVersion}`)
+            ? fetchPromptDocumentVersion(write.kind, write.name, previousVersion)
             : Promise.resolve({ body: "" }),
         ]);
         setWriteDiffs((prev) => {
@@ -554,10 +535,7 @@ export function usePromptDocumentProposals() {
       try {
         setActing(true);
         const note = decisionNote.trim();
-        await httpClient.post(
-          `${PROPOSALS}/${encodeURIComponent(proposal.id)}/${action}`,
-          note ? { decision_note: note } : {}
-        );
+        await decidePromptDocumentProposal(proposal.id, action, note);
         toast.success(
           action === "approve"
             ? `Approved — the edit to ${proposal.doc_name} has been applied.`
@@ -615,9 +593,7 @@ export function usePromptDocumentProposals() {
       try {
         setActing(true);
         // Live re-read: has the document moved under us since page load?
-        const live = await httpClient.get<{ current_version?: number }>(
-          `${docPath(write.kind, write.name)}/versions`
-        );
+        const live = await listPromptDocumentVersions(write.kind, write.name);
         if (live.current_version !== write.version_number) {
           // A missing `current_version` fails closed here (strict !==), so
           // describe it as unknown rather than printing "now vundefined".
@@ -631,10 +607,12 @@ export function usePromptDocumentProposals() {
           await reload();
           return false;
         }
-        const snapshot = await httpClient.get<VersionSnapshot>(
-          `${docPath(write.kind, write.name)}/versions/${target}`
+        const snapshot = await fetchPromptDocumentVersion(
+          write.kind,
+          write.name,
+          target
         );
-        await httpClient.patch(docPath(write.kind, write.name), {
+        await updatePromptDocument(write.kind, write.name, {
           body: snapshot.body,
           change_description: `Undid v${write.version_number} — restored the wording from v${target} via the review feed`,
         });
@@ -689,10 +667,7 @@ export function usePromptDocumentProposals() {
       }
       try {
         setActing(true);
-        const path = docPath(write.kind, write.name);
-        const live = await httpClient.get<{ current_version?: number }>(
-          `${path}/versions`
-        );
+        const live = await listPromptDocumentVersions(write.kind, write.name);
         if (live.current_version !== write.version_number) {
           const now =
             typeof live.current_version === "number"
@@ -704,7 +679,7 @@ export function usePromptDocumentProposals() {
           await reload();
           return false;
         }
-        await httpClient.post(`${path}/withdraw`, { reason: trimmed });
+        await withdrawPromptDocument(write.kind, write.name, trimmed);
         toast.success(
           `Withdrew ${write.label}. It no longer counts as a decision; Undo on the new version reinstates it.`
         );

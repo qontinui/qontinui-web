@@ -65,26 +65,31 @@ import typing
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from sqlalchemy import (
     ColumnElement,
+    DateTime,
     Select,
     Text,
+    Uuid,
     cast,
     false,
     func,
+    literal,
     or_,
     select,
     text,
     true,
+    tuple_,
     update,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import InstrumentedAttribute, load_only
 
+from app.core.bounded_read import KeysetPosition, SortKey
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
     NOTE_TRIM_CHARS,
@@ -126,6 +131,83 @@ PROMPT_CHAIN_RELATIONS: tuple[str, ...] = (
 _PROMPT_CHAIN_MAX_DEPTH = 10
 
 _NON_ALNUM = re.compile(r"[^A-Z0-9]+")
+
+# ── keyset sort keys (plan ``2026-09-05-every-bounded-read-…`` Phase 4) ──
+#
+# Every one walks an IMMUTABLE ``created_at`` with the row's unique id as the
+# tiebreak (D8): ``agent.work_artifacts.created_at`` and
+# ``agent.work_artifact_edges.created_at`` have no UPDATE site anywhere, which
+# ``tests/test_plan_library_keyset.py`` pins by grepping the backend for one.
+# ``authored_at`` is NOT eligible even though D8 names it: the upsert rewrites
+# it from whatever the scanner re-derives (:func:`_assign_head_metadata`).
+
+#: ``GET /plan-library`` — newest captured first.
+ARTIFACT_LIST_SORT_KEY = SortKey("agent.work_artifacts:created_at,id")
+
+#: ``GET /plan-library/candidates`` — oldest first over BOTH arms of the
+#: union: an artifact's ``(created_at, id)`` and a coord work unit's own
+#: immutable ``(created_at, id)``, compared as one total order.
+CANDIDATE_SORT_KEY = SortKey("plan-candidates:created_at,id asc")
+
+#: ``GET /plan-library/followups`` (and ``/candidates``' ``open_followups``)
+#: — oldest first.
+FOLLOWUP_SORT_KEY = SortKey("agent.work_artifact_edges:created_at,id asc")
+
+#: ``GET /plan-library/reconciliation`` — its rows are STEMS, a union of two
+#: stores with no row of their own, so the position is derived from the stem
+#: alone (:func:`stem_position`): immutable by construction, because a stem
+#: is an identity and never changes.
+RECONCILIATION_SORT_KEY = SortKey("plan-stems:stem-date,stem-uuid5 asc")
+
+#: The namespace of :func:`stem_position`'s uuid5 tiebreak.
+_STEM_NAMESPACE = UUID("8a3d1f0e-5c2b-5e7a-9b4d-6f1e2c3a4b5d")
+
+_STEM_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+_UNDATED_STEM = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _keyset_cut(
+    at_column: InstrumentedAttribute[datetime],
+    id_column: InstrumentedAttribute[UUID],
+    after: KeysetPosition,
+    *,
+    descending: bool,
+) -> ColumnElement[bool]:
+    """The row comparison that resumes a keyset walk strictly after ``after``.
+
+    ``(at, id) < (k, i)`` for a ``DESC`` walk, ``>`` for ``ASC`` — the SAME
+    columns, in the same order, as the statement's ``ORDER BY`` (SortKey
+    clause 3), so the cut and the sort can never disagree.
+    """
+    columns = tuple_(at_column, id_column)
+    position = tuple_(
+        literal(after.at, DateTime(timezone=True)),
+        literal(after.id, Uuid()),
+    )
+    return columns < position if descending else columns > position
+
+
+def stem_position(stem: str) -> KeysetPosition:
+    """A plan stem's :data:`RECONCILIATION_SORT_KEY` position.
+
+    ``at`` is the stem's own ``YYYY-MM-DD`` prefix (midnight UTC) — plan stems
+    are date-prefixed, so the walk is chronological by authoring day; a stem
+    with no valid date prefix sorts first, at the Unix epoch. ``id`` is a
+    uuid5 of the stem, the unique tiebreak (distinct stems never share one).
+    Both are pure functions of the stem, so no write anywhere can move a
+    stem's position (D8) — the property ``slug_asc`` paging under ``OFFSET``
+    never had, because every stem added ahead of the window shifted it.
+    """
+    at = _UNDATED_STEM
+    match = _STEM_DATE.match(stem)
+    if match is not None:
+        try:
+            year, month, day = (int(part) for part in match.groups())
+            at = datetime(year, month, day, tzinfo=UTC)
+        except ValueError:
+            at = _UNDATED_STEM
+    return KeysetPosition(at=at, id=uuid5(_STEM_NAMESPACE, stem))
 
 
 class AmbiguousArtifactKind(Exception):
@@ -451,10 +533,25 @@ async def list_artifacts(
     work_unit_slug: str | None = None,
     intent_ref: str | None = None,
     slug: str | None = None,
-    offset: int = 0,
+    after: KeysetPosition | None = None,
     limit: int = 50,
 ) -> tuple[list[WorkArtifact], int]:
-    """A filtered page of artifacts plus the unpaged total."""
+    """A filtered page of artifacts, newest-CAPTURED first, plus the exact
+    count of matching rows from the page's start position onward.
+
+    A keyset walk over :data:`ARTIFACT_LIST_SORT_KEY` — ``(created_at, id)
+    DESC`` — resumed strictly after ``after`` (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+    Phase 4, which deleted the ``OFFSET`` this used to page with: an offset
+    over a live corpus skips a row for every row deleted ahead of it). The
+    order used to be ``updated_at DESC``, which a keyset cannot walk — every
+    upsert moves the key (D8) — so the walk is on the immutable capture time
+    and "recently updated" is a client-side sort over what it read.
+
+    The count carries the same keyset predicate, so it is the bounded-read
+    ``total`` (``truncated`` ⇔ ``total > len(rows)``); on the first page it is
+    the whole filtered corpus.
+    """
     base = _apply_filters(
         select(WorkArtifact),
         org_id=org_id,
@@ -480,14 +577,22 @@ async def list_artifacts(
         intent_ref=intent_ref,
         slug=slug,
     )
+    if after is not None:
+        # The row comparison IS the sort: ``(created_at, id) < (k, i)`` under
+        # ``ORDER BY created_at DESC, id DESC`` (SortKey clause 3).
+        before = _keyset_cut(
+            WorkArtifact.created_at, WorkArtifact.id, after, descending=True
+        )
+        base = base.where(before)
+        count_stmt = count_stmt.where(before)
     total = int((await db.execute(count_stmt)).scalar_one())
 
     rows = (
         (
             await db.execute(
-                base.order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id.desc())
-                .offset(offset)
-                .limit(limit)
+                base.order_by(
+                    WorkArtifact.created_at.desc(), WorkArtifact.id.desc()
+                ).limit(limit)
             )
         )
         .scalars()
@@ -1462,7 +1567,7 @@ async def list_open_followups(
     db: AsyncSession,
     *,
     org_id: UUID | None,
-    offset: int = 0,
+    after: KeysetPosition | None = None,
     limit: int = 50,
 ) -> tuple[list[tuple[WorkArtifactEdge, WorkArtifact]], int]:
     """Unclaimed ``spawned_followup`` edges + their originating artifact.
@@ -1472,39 +1577,47 @@ async def list_open_followups(
     provenance edge and drops out of this read while staying visible on the
     originating artifact's edge list — nothing is deleted by claiming.
 
-    Ordered OLDEST FIRST (``created_at ASC``, ``id`` breaking ties for stable
-    paging). That is the useful default rather than an arbitrary one: an old
-    unowned follow-up is work the fleet has known about and repeatedly not
-    picked up, which is the interesting row. Returns the page plus the unpaged
-    total, so a bounded page can never read as the whole queue.
+    Ordered OLDEST FIRST — a keyset walk over :data:`FOLLOWUP_SORT_KEY`,
+    ``(created_at, id) ASC``, resumed strictly after ``after``. That is the
+    useful default rather than an arbitrary one: an old unowned follow-up is
+    work the fleet has known about and repeatedly not picked up, which is the
+    interesting row. Returns the page plus the exact count of open follow-ups
+    from the page's start position onward (the whole queue on the first page),
+    so a bounded page can never read as the whole queue.
     """
+    filters: list[ColumnElement[bool]] = [
+        _org_scope(org_id),
+        WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
+        WorkArtifactEdge.to_id.is_(None),
+    ]
+    if after is not None:
+        filters.append(
+            _keyset_cut(
+                WorkArtifactEdge.created_at,
+                WorkArtifactEdge.id,
+                after,
+                descending=False,
+            )
+        )
     base = (
         select(WorkArtifactEdge, WorkArtifact)
         .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
-        .where(
-            _org_scope(org_id),
-            WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
-            WorkArtifactEdge.to_id.is_(None),
-        )
+        .where(*filters)
     )
 
     count_stmt = (
         select(func.count())
         .select_from(WorkArtifactEdge)
         .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
-        .where(
-            _org_scope(org_id),
-            WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
-            WorkArtifactEdge.to_id.is_(None),
-        )
+        .where(*filters)
     )
     total = int((await db.execute(count_stmt)).scalar_one())
 
     rows = (
         await db.execute(
-            base.order_by(WorkArtifactEdge.created_at.asc(), WorkArtifactEdge.id.asc())
-            .offset(offset)
-            .limit(limit)
+            base.order_by(
+                WorkArtifactEdge.created_at.asc(), WorkArtifactEdge.id.asc()
+            ).limit(limit)
         )
     ).all()
     return [(row[0], row[1]) for row in rows], total
@@ -1948,6 +2061,11 @@ class CandidateWorkUnit:
     the artifact half uses, so an unrecognised word counts as NOT-yet-terminal.
     """
 
+    #: coord's ``work_units.id`` — the unit's unique, immutable identity and
+    #: the keyset tiebreak of :data:`CANDIDATE_SORT_KEY`. The candidate
+    #: projection REJECTS a row without one (it could not be placed in the
+    #: walk); the reconciliation projection keys on the stem and keeps it.
+    id: UUID | None
     slug: str
     status: str
     title: str | None
@@ -1962,11 +2080,13 @@ class CandidateWorkUnit:
     repos: tuple[str, ...]
     created_at: datetime
     updated_at: datetime
-    #: ``coalesce(first_in_progress_at, created_at)`` — this arm's half of the
-    #: stable ordering. ``first_in_progress_at`` is coord's own derivation from
-    #: its status history and is ABSENT rather than zero when no transition was
-    #: recorded, which is why the fallback is explicit here rather than left to
-    #: the sort.
+    #: ``coalesce(first_in_progress_at, created_at)`` — the anchor the row's
+    #: ``age_days`` is measured from. DISPLAY ONLY: ``first_in_progress_at``
+    #: moves when coord records a transition, so it can never be a keyset sort
+    #: key (D8); the walk is on ``(created_at, id)``. ``first_in_progress_at``
+    #: is coord's own derivation from its status history and is ABSENT rather
+    #: than zero when no transition was recorded, which is why the fallback is
+    #: explicit here.
     order_key: datetime
 
 
@@ -2009,11 +2129,6 @@ def _plan_candidate_filters(org_id: UUID | None) -> tuple[ColumnElement[bool], .
         WorkArtifact.kind == "plan",
         _terminal_token_sql().not_in(tuple(sorted(TERMINAL_STATUSES))),
     )
-
-
-def _artifact_order_key() -> ColumnElement[datetime]:
-    """``coalesce(authored_at, created_at)`` — the artifact arm's sort key."""
-    return func.coalesce(WorkArtifact.authored_at, WorkArtifact.created_at)
 
 
 def _aware(moment: datetime) -> datetime:
@@ -2071,12 +2186,12 @@ def _unclaimed_work_units(
 ) -> list[CandidateWorkUnit]:
     """The work-unit arm: plan-shaped, non-terminal, and NOT already a row.
 
-    Sorted by this arm's half of the stable default — ``coalesce(
-    first_in_progress_at, created_at) ASC``, slug breaking ties so paging is
-    deterministic. No re-weighting and no cap: open question 2 of the plan
-    settles that a ``vetted``-first ordering would be exactly the "guess frozen
-    into SQL" design decision D6 forbids, and 411 of the 635 units carried an
-    empty status, which would make it a guess over the least-known rows.
+    Sorted on this arm's half of :data:`CANDIDATE_SORT_KEY` — the unit's own
+    immutable ``(created_at, id)`` ASC. No re-weighting and no cap: open
+    question 2 of the plan settles that a ``vetted``-first ordering would be
+    exactly the "guess frozen into SQL" design decision D6 forbids, and 411 of
+    the 635 units carried an empty status, which would make it a guess over the
+    least-known rows.
     """
     return sorted(
         (
@@ -2086,45 +2201,33 @@ def _unclaimed_work_units(
             and is_plan_shaped_slug(unit.slug)
             and not is_terminal_status(unit.status)
         ),
-        key=lambda unit: (_aware(unit.order_key), unit.slug),
+        key=_unit_key,
     )
 
 
-def _merge_arms(
-    artifact_keys: Sequence[tuple[datetime, UUID]],
-    work_units: Sequence[CandidateWorkUnit],
-) -> list[UUID | CandidateWorkUnit]:
-    """Interleave the two already-sorted arms into one ordered population.
+def _unit_key(unit: CandidateWorkUnit) -> tuple[datetime, UUID]:
+    """A work unit's :data:`CANDIDATE_SORT_KEY` position."""
+    if unit.id is None:  # pragma: no cover — the candidate projection refuses it
+        raise ValueError(f"work unit {unit.slug!r} has no id to place in the walk")
+    return _aware(unit.created_at), unit.id
 
-    A hand-written merge rather than a ``sorted()`` over the concatenation,
-    for one reason: each arm carries its OWN tie-breaker (``id`` for the
-    artifacts, ``slug`` for the work units) and those are not comparable with
-    each other. Merging preserves each arm's internal order verbatim while
-    ordering ACROSS the arms on the timestamp alone, so the artifact half of
-    any page is exactly the sequence the pre-union SQL produced.
 
-    Ties between the arms go to the artifact (``<=``), so a page containing no
-    work-unit rows is bit-for-bit the old page.
-    """
-    merged: list[UUID | CandidateWorkUnit] = []
-    i = j = 0
-    while i < len(artifact_keys) and j < len(work_units):
-        if artifact_keys[i][0] <= _aware(work_units[j].order_key):
-            merged.append(artifact_keys[i][1])
-            i += 1
-        else:
-            merged.append(work_units[j])
-            j += 1
-    merged.extend(key for _, key in artifact_keys[i:])
-    merged.extend(work_units[j:])
-    return merged
+def candidate_position(row: PlanCandidateRow) -> KeysetPosition:
+    """The :data:`CANDIDATE_SORT_KEY` position of one candidate row, whichever
+    arm produced it — what the route mints ``next_cursor`` from."""
+    if row.artifact is not None:
+        return KeysetPosition(at=_aware(row.artifact.created_at), id=row.artifact.id)
+    if row.work_unit is None:  # pragma: no cover — PlanCandidateRow sets one
+        raise ValueError("a PlanCandidateRow carries neither arm")
+    at, unit_id = _unit_key(row.work_unit)
+    return KeysetPosition(at=at, id=unit_id)
 
 
 async def list_plan_candidates(
     db: AsyncSession,
     *,
     org_id: UUID | None,
-    offset: int = 0,
+    after: KeysetPosition | None = None,
     limit: int = 25,
     work_units: Sequence[CandidateWorkUnit] | None = None,
 ) -> tuple[list[PlanCandidateRow], int]:
@@ -2139,78 +2242,80 @@ async def list_plan_candidates(
     ``work_units`` is coord's half, already fetched by the endpoint layer in
     ONE list read (web never reads coord's Postgres). Pass ``None`` — which is
     what a coord outage, and ``include_coord=false``, both produce — and this
-    degrades to the document-layer-only population it returned before the
-    union, byte for byte: the same single query, the same count, the same
-    ordering. **The union can only ever ADD rows**, so this read never returns
-    fewer than it used to, which is what keeps the route's own invariant 5
-    ("an unavailable coord is UNKNOWN, never empty") true of the population as
-    well as of the per-row fields.
+    degrades to the document-layer-only population. **The union can only ever
+    ADD rows**, which is what keeps the route's own invariant 5 ("an
+    unavailable coord is UNKNOWN, never empty") true of the population as well
+    as of the per-row fields.
 
     Terminal classification is the SAME on both arms — :func:`terminal_token`
     against :data:`app.models.work_artifact.TERMINAL_STATUSES`, in SQL for the
     artifacts and in Python for the work units — so an unrecognised status
-    counts as not-yet-terminal on either side. That matters more for coord's
-    half than for the library's: it carried 59 distinct status strings on
-    2026-09-03, 492 of them the empty string.
+    counts as not-yet-terminal on either side.
 
-    Ordering is a STABLE DEFAULT and nothing more. The artifact arm keeps
-    ``coalesce(authored_at, created_at) ASC, id ASC`` exactly; the work-unit
-    arm sorts on ``coalesce(first_in_progress_at, created_at) ASC, slug ASC``;
-    and where the two arms tie on the timestamp the artifact wins, so a page
-    that contains no work-unit rows is identical to the pre-union page. There
-    is no scoring pass on either side.
+    **Ordering is a keyset walk, and nothing more** (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+    Phase 4). Both arms sort on their row's IMMUTABLE ``(created_at, id)``,
+    compared as ONE total order — an artifact's id and a work unit's id are
+    both uuids, ordered as PostgreSQL orders them (big-endian bytes, which is
+    Python's ``UUID`` ordering too) — and the page resumes strictly after
+    ``after``. The order used to be ``coalesce(authored_at, created_at)`` /
+    ``coalesce(first_in_progress_at, created_at)`` under ``OFFSET``; both
+    keys move (the upsert rewrites ``authored_at``, a status transition sets
+    ``first_in_progress_at``), and a keyset over a moving key drops rows
+    silently (D8). There is no scoring pass on either side.
 
-    ``total`` and paging are computed over the whole union. The merge is done
-    here rather than in SQL because coord's half arrives over HTTP: only the
-    first ``offset + limit`` rows of either arm can appear in the requested
-    window, so the artifact arm is read as ``(id, order_key)`` pairs to that
-    bound — no bodies — and only the ids that survive the merge are hydrated.
+    Returns ``(page, total)``: ``total`` is the exact count of candidates from
+    the page's start position onward across both arms, so ``total > len(page)``
+    is exactly "more exist". Only the first ``limit`` rows of EITHER arm past
+    ``after`` can land on the page, so the artifact arm is read as
+    ``(id, created_at)`` pairs to that bound — no bodies — and only the ids
+    that survive the merge are hydrated.
     """
-    filters = _plan_candidate_filters(org_id)
-    order_key = _artifact_order_key()
-    base = select(WorkArtifact).where(*filters)
+    filters = list(_plan_candidate_filters(org_id))
+    if after is not None:
+        filters.append(
+            _keyset_cut(
+                WorkArtifact.created_at, WorkArtifact.id, after, descending=False
+            )
+        )
+    order = (WorkArtifact.created_at.asc(), WorkArtifact.id.asc())
+
+    count_stmt = select(func.count()).select_from(WorkArtifact).where(*filters)
+    artifact_total = int((await db.execute(count_stmt)).scalar_one())
 
     if work_units is None:
-        count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
-        total = int((await db.execute(count_stmt)).scalar_one())
         rows = (
             (
                 await db.execute(
-                    base.order_by(order_key.asc(), WorkArtifact.id.asc())
-                    .offset(offset)
-                    .limit(limit)
+                    select(WorkArtifact).where(*filters).order_by(*order).limit(limit)
                 )
             )
             .scalars()
             .all()
         )
-        return [PlanCandidateRow(artifact=row) for row in rows], total
+        return [PlanCandidateRow(artifact=row) for row in rows], artifact_total
 
     claimed = await _slugs_claimed_by_plan_artifacts(
         db, org_id=org_id, slugs=[unit.slug for unit in work_units]
     )
     extra = _unclaimed_work_units(work_units, claimed)
-
-    count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
-    artifact_total = int((await db.execute(count_stmt)).scalar_one())
+    if after is not None:
+        extra = [unit for unit in extra if _unit_key(unit) > (after.at, after.id)]
     total = artifact_total + len(extra)
 
-    # Only the first ``offset + limit`` rows of EITHER arm can land in the
-    # requested window, so neither arm is read past that bound. The artifact
-    # arm is read as ``(id, sort key)`` pairs — the full ORM row carries
-    # ``body``, and hydrating a whole arm to throw most of it away is how a
-    # widened population turns into a memory problem.
-    window = offset + limit
     key_stmt = (
-        select(WorkArtifact.id, order_key.label("order_key"))
+        select(WorkArtifact.id, WorkArtifact.created_at)
         .where(*filters)
-        .order_by(order_key.asc(), WorkArtifact.id.asc())
-        .limit(window)
+        .order_by(*order)
+        .limit(limit)
     )
-    artifact_keys = [
-        (_aware(row.order_key), row.id) for row in (await db.execute(key_stmt))
+    entries: list[tuple[tuple[datetime, UUID], UUID | CandidateWorkUnit]] = [
+        ((_aware(row.created_at), row.id), row.id)
+        for row in (await db.execute(key_stmt))
     ]
-    merged = _merge_arms(artifact_keys, extra[:window])[offset : offset + limit]
+    entries.extend((_unit_key(unit), unit) for unit in extra[:limit])
+    entries.sort(key=lambda entry: entry[0])
+    merged = [entry for _, entry in entries[:limit]]
 
     page_ids = [entry for entry in merged if isinstance(entry, UUID)]
     hydrated: dict[UUID, WorkArtifact] = {}
@@ -2430,3 +2535,34 @@ async def load_artifact_bodies(
         WorkArtifact.id.in_(list(ids))
     )
     return {row.id: row.body for row in (await db.execute(stmt)).all()}
+
+
+def stem_matches_q(q: str, stem: str) -> bool:
+    """Does ``q``'s SLUG arm match this plan stem?
+
+    The in-memory twin of :func:`_search_predicate`'s ``slug ILIKE`` arm, for a
+    population that is not one table — reconciliation's stems are coord units
+    ∪ artifacts, and a coord-only stem has no row for the SQL arm to read. It
+    uses the SAME :func:`_slug_needle` gate (so a short or punctuation-only
+    ``q`` matches nothing here, exactly as there) and the same semantics: a
+    case-insensitive, LITERAL substring — ``%`` and ``_`` are ordinary
+    characters, never wildcards.
+    """
+    needle = _slug_needle(q)
+    return bool(needle) and needle.lower() in stem.lower()
+
+
+async def plan_artifact_ids_matching_q(
+    db: AsyncSession, *, org_id: UUID | None, q: str
+) -> set[UUID]:
+    """The ids of every ``kind='plan'`` artifact in scope that ``q`` matches.
+
+    Through :func:`_search_predicate` — the list route's own ``q`` — so the
+    reconciliation filter inherits its hyphen normalization and its slug arm
+    rather than growing a second, drifting definition of "matches". Ids only:
+    the caller already holds the projected rows.
+    """
+    stmt = select(WorkArtifact.id).where(
+        _org_scope(org_id), WorkArtifact.kind == "plan", _search_predicate(q)
+    )
+    return set((await db.execute(stmt)).scalars().all())

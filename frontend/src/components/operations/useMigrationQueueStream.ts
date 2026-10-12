@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { MIGRATIONS_QUEUE_POLL_MS, migrationsQueueUrl } from "./utils";
-import type { MigrationQueueResponse, MigrationReservation } from "./types";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { fetchMigrationQueue } from "@/lib/api/operations/migrations";
+import { useSingleFlight } from "./useSingleFlightPoll";
+import { MIGRATIONS_QUEUE_POLL_MS } from "./utils";
+import type { MigrationReservation } from "./types";
 
 const log = createLogger("MigrationQueueStream");
 
@@ -62,11 +64,7 @@ export function useMigrationQueueStream(
       return;
     }
     try {
-      const resp = await httpClient.fetch(migrationsQueueUrl(requested));
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as MigrationQueueResponse;
+      const data = await fetchMigrationQueue(requested);
       // Drop the response if the operator switched repos mid-flight.
       if (cleanedUpRef.current || repoRef.current !== requested) return;
       setLive(data.live ?? []);
@@ -74,7 +72,7 @@ export function useMigrationQueueStream(
       setSeeded(true);
     } catch (err) {
       if (cleanedUpRef.current || repoRef.current !== requested) return;
-      const msg = err instanceof Error ? err.message : "fetch failed";
+      const msg = statusOnlyErrorText(err, "fetch failed");
       log.warn(`GET /migrations/queue?repo=${requested} failed:`, msg);
       setError(msg);
       // An error is still an answer — the tile shows its error state, not an
@@ -82,6 +80,12 @@ export function useMigrationQueueStream(
       setSeeded(true);
     }
   }, []);
+
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+  // every call of `fetchOnce` goes through this latch, so a tick that finds
+  // a read outstanding is skipped and a refetch during one runs once after it.
+  const { refresh: refreshOnce, tick: tickOnce } = useSingleFlight(fetchOnce);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -93,9 +97,9 @@ export function useMigrationQueueStream(
   const startPolling = useCallback(() => {
     stopPolling();
     pollTimerRef.current = setInterval(() => {
-      if (!document.hidden) void fetchOnce();
+      if (!document.hidden) tickOnce();
     }, MIGRATIONS_QUEUE_POLL_MS);
-  }, [fetchOnce, stopPolling]);
+  }, [tickOnce, stopPolling]);
 
   // Mount + repo change: re-seed and (re)start polling. Resetting `seeded`
   // makes the tile show its loading state while the new repo's first fetch
@@ -103,13 +107,13 @@ export function useMigrationQueueStream(
   useEffect(() => {
     cleanedUpRef.current = false;
     setSeeded(false);
-    void fetchOnce();
+    void refreshOnce();
     startPolling();
     return () => {
       cleanedUpRef.current = true;
       stopPolling();
     };
-  }, [repo, fetchOnce, startPolling, stopPolling]);
+  }, [repo, refreshOnce, startPolling, stopPolling]);
 
   // Tab-visibility — pause polling while hidden, resume on return.
   useEffect(() => {
@@ -117,13 +121,13 @@ export function useMigrationQueueStream(
       if (document.hidden) {
         stopPolling();
       } else {
-        void fetchOnce();
+        void refreshOnce();
         startPolling();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [fetchOnce, startPolling, stopPolling]);
+  }, [refreshOnce, startPolling, stopPolling]);
 
-  return { live, seeded, error, refetch: fetchOnce };
+  return { live, seeded, error, refetch: refreshOnce };
 }

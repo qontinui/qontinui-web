@@ -34,7 +34,10 @@ from __future__ import annotations
 import ast
 import importlib.util
 import io
+import json
+import math
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -351,6 +354,21 @@ _EVERY_EXIT = [
         1,
         "bad_args",
         {"reason": "min_nodeids_not_positive"},
+    ),
+    (
+        _REAL_SHAPE,
+        [
+            "--count-only",
+            "--min-files",
+            "3",
+            "--min-nodeids",
+            "5",
+            "--durations",
+            "{tmp}/d.json",
+        ],
+        1,
+        "bad_args",
+        {"reason": "durations_with_count_only"},
     ),
     (_REAL_SHAPE, [], 1, "bad_args", {"reason": "shard_args_missing"}),
     (
@@ -1184,4 +1202,866 @@ def test_the_shard_job_names_itself_per_shard():
     name = _shard_job().get("name", "")
     assert "${{ matrix.shard }}" in name, (
         f"the sharded job's name must include its matrix value, got {name!r}"
+    )
+
+
+# --- dealing by measured seconds (`--durations`) ----------------------------
+#
+# Plan 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-
+# carries-the-migration-tests-back-to-the-budget, Phase 1. The weights move;
+# the partition guarantees above must not.
+
+DURATIONS_REF = "tests/shard-durations.json"
+DURATIONS_PATH = REPO_ROOT / "backend" / DURATIONS_REF
+REFRESH_REF = "scripts/ci/refresh_shard_durations.py"
+REFRESH_PATH = REPO_ROOT / REFRESH_REF
+PROPOSAL_JOB = "shard-durations-proposal"
+
+
+def _load_refresh():
+    spec = importlib.util.spec_from_file_location(
+        "refresh_shard_durations", REFRESH_PATH
+    )
+    assert spec and spec.loader, f"cannot load {REFRESH_PATH}"
+    module = importlib.util.module_from_spec(spec)
+    # Registered before exec: a dataclass resolves its string annotations
+    # through sys.modules[cls.__module__].
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+refresh = _load_refresh()
+
+
+def _ordinary(_path: str) -> str:
+    return splitter.ORDINARY_CLASS
+
+
+def _durations_corpus() -> tuple[dict[str, int], dict[str, float]]:
+    """37 files by count, 30 of them listed with seconds far from their count."""
+    counts = _corpus()
+    durations = {
+        path: float((i * 13) % 97 + (300 if i % 5 == 0 else 0))
+        for i, path in enumerate(sorted(counts))
+        if i < 30
+    }
+    return counts, durations
+
+
+@pytest.mark.parametrize("shards", [1, 2, 3, 4, 6, 8])
+def test_seconds_assignment_is_complete_and_disjoint(shards):
+    counts, durations = _durations_corpus()
+    weights, mode, unlisted = splitter.seconds_weights(counts, durations, _ordinary)
+    assert (mode, unlisted) == ("mixed", 7)
+    bins = splitter.assign(weights, shards)
+    flat = [path for b in bins for path in b]
+    assert sorted(flat) == sorted(counts), "every collected file must be assigned"
+    assert len(flat) == len(set(flat)), "no file may appear in two shards"
+
+
+def test_seconds_assignment_is_independent_of_input_order():
+    counts, durations = _durations_corpus()
+    forward = splitter.seconds_weights(counts, durations, _ordinary)[0]
+    backward = splitter.seconds_weights(
+        dict(reversed(list(counts.items()))),
+        dict(reversed(list(durations.items()))),
+        _ordinary,
+    )[0]
+    assert splitter.assign(forward, 6) == splitter.assign(backward, 6)
+
+
+def test_listed_files_weigh_their_seconds_and_unlisted_their_class_median():
+    counts = {
+        "tests/test_mig_a.py": 2,  # listed: 30 s -> 15 s/test
+        "tests/test_mig_b.py": 4,  # listed: 40 s -> 10 s/test
+        "tests/test_mig_new.py": 3,  # unlisted, migration class
+        "tests/test_fast.py": 10,  # listed: 1 s -> 0.1 s/test
+        "tests/test_fast_new.py": 20,  # unlisted, ordinary class
+    }
+    durations = {
+        "tests/test_mig_a.py": 30.0,
+        "tests/test_mig_b.py": 40.0,
+        "tests/test_fast.py": 1.0,
+        "tests/test_deleted.py": 999.0,  # not collected: must be ignored
+    }
+
+    def classify(path: str) -> str:
+        return splitter.MIGRATION_CLASS if "mig" in path else splitter.ORDINARY_CLASS
+
+    weights, mode, unlisted = splitter.seconds_weights(counts, durations, classify)
+    assert (mode, unlisted) == ("mixed", 2)
+    assert weights["tests/test_mig_a.py"] == 30.0
+    assert weights["tests/test_fast.py"] == 1.0
+    # median(15, 10) = 12.5 s/test x 3 tests
+    assert weights["tests/test_mig_new.py"] == pytest.approx(37.5)
+    # median(0.1) x 20 tests
+    assert weights["tests/test_fast_new.py"] == pytest.approx(2.0)
+    assert "tests/test_deleted.py" not in weights
+
+
+def test_a_class_with_no_listed_member_falls_back_to_the_overall_median():
+    counts = {"tests/test_a.py": 2, "tests/test_b.py": 2, "tests/test_mig.py": 5}
+    durations = {"tests/test_a.py": 2.0, "tests/test_b.py": 6.0}
+
+    def classify(path: str) -> str:
+        return splitter.MIGRATION_CLASS if "mig" in path else splitter.ORDINARY_CLASS
+
+    weights, _, _ = splitter.seconds_weights(counts, durations, classify)
+    # overall median of (1.0, 3.0) s/test = 2.0, x 5 tests
+    assert weights["tests/test_mig.py"] == pytest.approx(10.0)
+
+
+def test_every_file_listed_is_seconds_mode():
+    counts = {"tests/test_a.py": 1, "tests/test_b.py": 9}
+    weights, mode, unlisted = splitter.seconds_weights(
+        counts, {"tests/test_a.py": 50.0, "tests/test_b.py": 1.0}, _ordinary
+    )
+    assert (mode, unlisted) == ("seconds", 0)
+    assert weights == {"tests/test_a.py": 50.0, "tests/test_b.py": 1.0}
+
+
+@pytest.mark.parametrize(
+    "durations", [None, {}, {"tests/test_not_collected.py": 5.0}], ids=repr
+)
+def test_no_usable_durations_is_exactly_the_count_split(durations):
+    counts = _corpus()
+    weights, mode, unlisted = splitter.seconds_weights(counts, durations, _ordinary)
+    assert (mode, unlisted) == ("count", len(counts))
+    assert splitter.assign(weights, 6) == splitter.assign(counts, 6)
+
+
+def test_zero_second_files_are_spread_not_piled_into_one_shard():
+    """0.0 s entries (a 0.1 s rounding artefact) must not all land together.
+
+    A zero weight never changes a bin's load, so without a floor the
+    lowest-index tie-break sent every one of them to the same shard.
+    """
+    counts = {f"tests/test_zero_{i:03d}.py": 3 for i in range(40)}
+    counts.update({f"tests/test_heavy_{i}.py": 10 for i in range(6)})
+    durations = dict.fromkeys(counts, 0.0)
+    durations.update({f"tests/test_heavy_{i}.py": 100.0 for i in range(6)})
+    weights, mode, _ = splitter.seconds_weights(counts, durations, _ordinary)
+    assert mode == "seconds"
+    assert min(weights.values()) == splitter.MIN_FILE_SECONDS
+    bins = splitter.assign(weights, 6)
+    zeros = [sum(1 for p in b if "_zero_" in p) for b in bins]
+    assert sum(zeros) == 40
+    assert max(zeros) <= math.ceil(40 / 6) + 1, zeros
+
+
+def test_the_floor_also_applies_to_the_class_median_fallback():
+    counts = {"tests/test_a.py": 4, "tests/test_new.py": 4}
+    weights, mode, _ = splitter.seconds_weights(
+        counts, {"tests/test_a.py": 0.0}, _ordinary
+    )
+    assert mode == "mixed"
+    assert weights["tests/test_new.py"] == splitter.MIN_FILE_SECONDS
+
+
+def test_the_class_is_a_text_scan_for_the_alembic_harness():
+    assert (
+        splitter.classify_source("from tests._alembic_harness import run_alembic\n")
+        == splitter.MIGRATION_CLASS
+    )
+    assert splitter.classify_source("import pytest\n") == splitter.ORDINARY_CLASS
+
+
+def test_read_class_reads_the_file_and_treats_unreadable_as_ordinary(tmp_path):
+    mig = tmp_path / "test_m.py"
+    mig.write_text("from tests import _alembic_harness\n", encoding="utf-8")
+    plain = tmp_path / "test_p.py"
+    plain.write_text("def test_x():\n    pass\n", encoding="utf-8")
+    assert splitter.read_class(str(mig)) == splitter.MIGRATION_CLASS
+    assert splitter.read_class(str(plain)) == splitter.ORDINARY_CLASS
+    assert splitter.read_class(str(tmp_path / "absent.py")) == splitter.ORDINARY_CLASS
+
+
+@pytest.mark.parametrize(
+    ("text", "state"),
+    [
+        ('{"tests/test_a.py": 1.5, "tests/test_b.py": 0}', "loaded"),
+        ("{not json", "unparseable"),
+        ('["tests/test_a.py"]', "unparseable"),
+        ('{"tests/test_a.py": "1.5"}', "unparseable"),
+        ('{"tests/test_a.py": true}', "unparseable"),
+        ('{"tests/test_a.py": -1}', "unparseable"),
+        ('{"tests/test_a.py": NaN}', "unparseable"),
+        ('{"tests/test_a.py": Infinity}', "unparseable"),
+        ('{"tests/not_python": 1}', "unparseable"),
+        # float(10**400) raises OverflowError rather than returning inf.
+        ('{"tests/test_a.py": 1' + "0" * 400 + "}", "unparseable"),
+        ('{"tests/test_a.py": 86400}', "loaded"),
+        ('{"tests/test_a.py": 86400.1}', "unparseable"),
+        ('{"tests/test_a.py": 1e300}', "unparseable"),
+    ],
+)
+def test_load_durations_accepts_only_a_map_of_non_negative_seconds(
+    tmp_path, text, state
+):
+    path = tmp_path / "d.json"
+    path.write_text(text, encoding="utf-8")
+    loaded, got = splitter.load_durations(str(path))
+    assert got == state
+    assert (loaded is not None) == (state == "loaded")
+
+
+def test_load_durations_reports_non_utf8_bytes_as_unparseable(tmp_path):
+    """The file exists and was read; its bytes are broken. That is not missing."""
+    path = tmp_path / "d.json"
+    path.write_bytes(b'{"tests/test_a.py": 1.0, "\xff\xfe": 2}')
+    assert splitter.load_durations(str(path)) == (None, "unparseable")
+
+
+def test_load_durations_reports_a_missing_file(tmp_path):
+    assert splitter.load_durations(str(tmp_path / "absent.json")) == (None, "missing")
+
+
+def _nodeid_text(counts: dict[str, int]) -> str:
+    return "".join(
+        f"{path}::test_{i}\n" for path, n in sorted(counts.items()) for i in range(n)
+    )
+
+
+def _run_all_shards(
+    tmp_path: Path, capsys, counts: dict[str, int], extra: list[str], shards: int = 6
+) -> tuple[list[list[str]], list[dict[str, str]]]:
+    nodeids = tmp_path / "nodeids.txt"
+    nodeids.write_text(_nodeid_text(counts), encoding="utf-8")
+    capsys.readouterr()
+    selections, verdicts = [], []
+    for shard in range(1, shards + 1):
+        out = tmp_path / f"shard{shard}.txt"
+        rc = splitter.main(
+            [
+                "--nodeids",
+                str(nodeids),
+                "--shards",
+                str(shards),
+                "--shard",
+                str(shard),
+                "--out",
+                str(out),
+                *extra,
+            ]
+        )
+        fields = splitter.parse_verdict(capsys.readouterr().err)
+        assert rc == 0, fields
+        assert fields is not None
+        verdicts.append(fields)
+        selections.append(out.read_text(encoding="utf-8").split())
+    return selections, verdicts
+
+
+def test_cli_durations_partition_is_complete_disjoint_and_names_its_weights(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    counts, durations = _durations_corpus()
+    (tmp_path / "d.json").write_text(json.dumps(durations), encoding="utf-8")
+    selections, verdicts = _run_all_shards(
+        tmp_path, capsys, counts, ["--durations", "d.json"]
+    )
+    flat = [p for s in selections for p in s]
+    assert sorted(flat) == sorted(counts)
+    assert len(flat) == len(set(flat))
+    for fields in verdicts:
+        assert (fields["weights"], fields["unlisted"], fields["durations"]) == (
+            "mixed",
+            "7",
+            "loaded",
+        )
+    # Same inputs, same answer on every shard: rerunning reproduces it.
+    again, _ = _run_all_shards(tmp_path, capsys, counts, ["--durations", "d.json"])
+    assert again == selections
+
+
+def test_cli_an_unlisted_file_lands_in_exactly_one_shard(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    counts, durations = _durations_corpus()
+    counts["tests/test_brand_new.py"] = 12
+    assert "tests/test_brand_new.py" not in durations
+    (tmp_path / "d.json").write_text(json.dumps(durations), encoding="utf-8")
+    selections, _ = _run_all_shards(tmp_path, capsys, counts, ["--durations", "d.json"])
+    holders = [i for i, s in enumerate(selections) if "tests/test_brand_new.py" in s]
+    assert len(holders) == 1, f"the new file is in shards {holders}"
+
+
+@pytest.mark.parametrize(
+    ("content", "state"), [("{corrupt", "unparseable"), (None, "missing")]
+)
+def test_cli_a_broken_durations_file_degrades_to_count_weights(
+    tmp_path, capsys, monkeypatch, content, state
+):
+    monkeypatch.chdir(tmp_path)
+    counts = _corpus()
+    if content is not None:
+        (tmp_path / "d.json").write_text(content, encoding="utf-8")
+    degraded, verdicts = _run_all_shards(
+        tmp_path, capsys, counts, ["--durations", "d.json"]
+    )
+    baseline, base_verdicts = _run_all_shards(tmp_path, capsys, counts, [])
+    assert degraded == baseline, "a broken map must deal exactly the count split"
+    for fields in verdicts:
+        assert fields["verdict"] == "ok", fields
+        assert (fields["weights"], fields["durations"]) == ("count", state)
+        assert fields["unlisted"] == str(len(counts))
+    for fields in base_verdicts:
+        assert (fields["weights"], fields["durations"]) == ("count", "none")
+
+
+def _skew_fixture() -> tuple[dict[str, int], dict[str, float]]:
+    """10 files x 40 fast tests (0.3 s each) + 6 files x 5 slow tests (15 s each).
+
+    The shape of the real defect: the slow files are few and short by count,
+    so count weights pile them together.
+    """
+    counts: dict[str, int] = {}
+    durations: dict[str, float] = {}
+    for i in range(10):
+        counts[f"tests/test_fast_{i:02d}.py"] = 40
+        durations[f"tests/test_fast_{i:02d}.py"] = 40 * 0.3
+    for i in range(6):
+        counts[f"tests/test_slow_{i:02d}_migration.py"] = 5
+        durations[f"tests/test_slow_{i:02d}_migration.py"] = 5 * 15.0
+    return counts, durations
+
+
+def _shard_seconds(bins: list[list[str]], durations: dict[str, float]) -> list[float]:
+    return [sum(durations[p] for p in b) for b in bins]
+
+
+def test_skew_pin_seconds_balance_what_counts_cannot(tmp_path, capsys, monkeypatch):
+    """max/min shard seconds <= 1.3 with durations, and > 2 without.
+
+    The second half is what proves the first can fail: on the same fixture the
+    count deal is badly skewed, so a regression that quietly stopped reading the
+    durations would trip this pin rather than pass it.
+    """
+    monkeypatch.chdir(tmp_path)
+    counts, durations = _skew_fixture()
+    (tmp_path / "d.json").write_text(json.dumps(durations), encoding="utf-8")
+
+    with_durations, verdicts = _run_all_shards(
+        tmp_path, capsys, counts, ["--durations", "d.json"]
+    )
+    assert {f["weights"] for f in verdicts} == {"seconds"}
+    loads = _shard_seconds(with_durations, durations)
+    assert max(loads) / min(loads) <= 1.3, loads
+
+    by_count, _ = _run_all_shards(tmp_path, capsys, counts, [])
+    loads = _shard_seconds(by_count, durations)
+    assert max(loads) / min(loads) > 2, loads
+
+
+def test_count_only_refuses_durations(tmp_path, capsys):
+    rc = splitter.main(
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--count-only",
+            "--min-files",
+            "3",
+            "--min-nodeids",
+            "5",
+            "--durations",
+            str(tmp_path / "d.json"),
+        ]
+    )
+    assert rc == 1
+    _verdict(capsys, 1, "bad_args", reason="durations_with_count_only")
+
+
+def test_the_selection_step_deals_by_the_committed_durations():
+    """A dropped flag would silently restore count weights with every test green."""
+    job = _shard_job()
+    select = _step(job, SELECT_STEP_NAME)["run"]
+    assert re.search(r"--durations\s+tests/shard-durations\.json", select), (
+        f"the {SELECT_STEP_NAME!r} step must pass --durations {DURATIONS_REF} "
+        "(its cwd is ./backend)"
+    )
+    collect = _step(job, COLLECT_STEP_NAME)["run"]
+    assert "--durations" not in collect, (
+        "the collect step is a pure collection check; --durations belongs to "
+        "the selection only (the splitter refuses it with --count-only)"
+    )
+
+
+def test_the_shards_upload_their_junit_results():
+    job = _shard_job()
+    uploads = [
+        step
+        for step in job.get("steps") or []
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+        and "junit-results" in str((step.get("with") or {}).get("path", ""))
+    ]
+    assert len(uploads) == 1, "exactly one step must upload the junit results"
+    step = uploads[0]
+    assert step.get("if") == "always()", "a shard with a failing test still timed it"
+    assert step["with"]["name"] == "junit-results-shard-${{ matrix.shard }}"
+    assert step["with"]["path"] == "./backend/junit-results.xml"
+    run = _step(job, "Run tests with coverage")["run"]
+    assert "--junitxml=junit-results.xml" in run
+
+
+def test_the_durations_proposal_never_gates():
+    jobs = _workflow()["jobs"]
+    job = jobs.get(PROPOSAL_JOB)
+    assert isinstance(job, dict), f"backend-ci.yml has no {PROPOSAL_JOB!r} job"
+    needs = job.get("needs")
+    needs = [needs] if isinstance(needs, str) else list(needs or [])
+    assert needs == ["test"]
+    condition = str(job.get("if", ""))
+    assert "always()" in condition
+    assert "github.event_name == 'schedule'" in condition
+    assert "github.event_name == 'pull_request'" not in condition
+    assert "github.event_name == 'push'" not in condition
+    steps = job.get("steps") or []
+    download = [s for s in steps if "download-artifact" in str(s.get("uses", ""))]
+    assert download and download[0]["with"]["pattern"] == "junit-results-shard-*"
+    assert any(REFRESH_REF in str(s.get("run", "")) for s in steps)
+    upload = [s for s in steps if "upload-artifact" in str(s.get("uses", ""))]
+    assert upload and upload[0]["with"]["name"] == "shard-durations-proposed"
+    assert upload[0]["with"]["path"] == "shard-durations-proposed.json"
+    for jid, other in jobs.items():
+        other_needs = other.get("needs") if isinstance(other, dict) else None
+        other_needs = (
+            [other_needs] if isinstance(other_needs, str) else list(other_needs or [])
+        )
+        assert PROPOSAL_JOB not in other_needs, (
+            f"job {jid!r} needs the durations proposal; a tuning-file proposal "
+            "must never be able to hold or red a gate"
+        )
+
+
+def _proposal_step(name: str) -> dict:
+    return _step(_workflow()["jobs"][PROPOSAL_JOB], name)
+
+
+def _proposal_env() -> dict[str, str]:
+    """The proposal job's own `env:`, which its steps' scripts read."""
+    env = _workflow()["jobs"][PROPOSAL_JOB].get("env") or {}
+    return {str(k): str(v) for k, v in env.items()}
+
+
+_EVENT = re.compile(r"github\.event_name == '([a-z_]+)'")
+
+
+def test_the_proposal_runs_wherever_the_headroom_alarm_does():
+    """A `skewed` headroom verdict names THIS run's proposal artifact as its fix.
+
+    So every event that runs the alarm must also produce the artifact; a
+    `workflow_dispatch` alarm pointing at an artifact its run never uploaded
+    sends the reader nowhere.
+    """
+    jobs = _workflow()["jobs"]
+    proposal = set(_EVENT.findall(str(jobs[PROPOSAL_JOB].get("if", ""))))
+    headroom = set(_EVENT.findall(str(jobs["shard-headroom"].get("if", ""))))
+    assert headroom, "shard-headroom's `if:` names no event"
+    assert headroom <= proposal, (
+        f"shard-headroom runs on {sorted(headroom)} but the proposal only on "
+        f"{sorted(proposal)}"
+    )
+
+
+def test_the_proposal_expects_one_junit_file_per_matrix_shard():
+    matrix = _shard_job()["strategy"]["matrix"]["shard"]
+    assert _proposal_env().get("EXPECTED_SHARDS") == str(len(matrix))
+    run = _proposal_step("Build shard-durations-proposed.json")["run"]
+    assert '"${EXPECTED_SHARDS}"' in run
+    assert '!= "6"' not in run, "the count is the env pin, not a literal"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="runs the step under bash")
+@pytest.mark.parametrize("make_dir", [False, True], ids=["no-dir", "empty-dir"])
+def test_the_proposal_skips_cleanly_when_no_shard_uploaded_junit(tmp_path, make_dir):
+    """All shards cancelled -> no junit -> a ::notice and a skip, never a red job.
+
+    Runs the build step's REAL script from the workflow, in a directory with
+    no junit files, and checks the exit code and the output that gates the
+    upload step.
+    """
+    if make_dir:
+        (tmp_path / "junit").mkdir()
+    step = _proposal_step("Build shard-durations-proposed.json")
+    output = tmp_path / "github_output"
+    output.write_text("", encoding="utf-8")
+    proc = subprocess.run(
+        [shutil.which("bash") or "bash", "-e", "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={**_proposal_env(), "PATH": "/usr/bin:/bin", "GITHUB_OUTPUT": str(output)},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "::notice" in proc.stdout
+    assert "proposed=false" in output.read_text(encoding="utf-8")
+    assert not (tmp_path / "shard-durations-proposed.json").exists()
+
+
+def test_the_proposal_warns_on_a_partial_set_and_gates_its_upload():
+    build = _proposal_step("Build shard-durations-proposed.json")
+    assert build.get("id") == "build"
+    assert "::warning title=Shard durations proposal is partial" in build["run"]
+    assert "proposed=true" in build["run"]
+    download = _proposal_step("Download the shards' junit results")
+    assert download.get("continue-on-error") is True, (
+        "a nightly with every shard cancelled has no artifact to download"
+    )
+    upload = _proposal_step("Upload shard-durations-proposed.json")
+    assert upload.get("if") == "steps.build.outputs.proposed == 'true'"
+
+
+# --- the refresh script -----------------------------------------------------
+
+REFRESH_LANES = frozenset({".github/workflows/backend-ci.yml"})
+
+
+def test_refresh_lane_roster_matches_the_tree():
+    assert_lane_roster(REFRESH_REF, REFRESH_LANES)
+
+
+def test_refresh_docstring_names_every_lane():
+    assert_docstring_names_every_lane(refresh.__doc__, REFRESH_REF, REFRESH_LANES)
+
+
+_LOG = """\
+2026-09-29T07:42:39.6431322Z plugins: asyncio-1.4.0, cov-6.3.0
+2026-09-29T07:42:58.0000000Z collecting ... collected 5 items
+2026-09-29T07:42:58.1000000Z
+2026-09-29T07:43:16.0000000Z tests/test_a.py::test_one PASSED [  20%]
+2026-09-29T07:43:16.5000000Z tests/test_a.py::test_two[with space] PASSED [  40%]
+2026-09-29T07:43:46.5000000Z tests/test_mig_migration.py::test_up SKIPPEDgres; skipping
+2026-09-29T07:43:50.0000000Z   captured output that is not a result line
+2026-09-29T07:44:06.5000000Z tests/test_mig_migration.py::TestX::test_down FAILED [  80%]
+2026-09-29T07:44:07.0000000Z tests/sub/test_b.py::test_three ERROR [100%]
+2026-09-29T07:44:08.0000000Z FAILED tests/test_mig_migration.py::TestX::test_down - boom
+2026-09-29T07:44:09.0000000Z ===== 3 passed, 1 failed, 1 skipped in 70.00s =====
+"""
+
+
+def test_log_durations_attributes_each_gap_to_the_test_that_ended_it():
+    got = refresh.log_durations(_LOG.splitlines())
+    # The first result's gap (session setup) is dropped, not charged to test_a.
+    assert got["tests/test_a.py"] == pytest.approx(0.5)
+    assert got["tests/test_mig_migration.py"] == pytest.approx(30.0 + 20.0)
+    assert got["tests/sub/test_b.py"] == pytest.approx(0.5)
+    assert set(got) == {
+        "tests/test_a.py",
+        "tests/test_mig_migration.py",
+        "tests/sub/test_b.py",
+    }
+
+
+def test_log_durations_keeps_interleaved_jobs_apart_and_resets_per_run():
+    lines = [
+        "shard 1\tRun tests\t2026-09-29T07:00:00.0Z collected 2 items",
+        "shard 2\tRun tests\t2026-09-29T07:00:00.0Z collected 2 items",
+        "shard 1\tRun tests\t2026-09-29T07:00:10.0Z tests/test_a.py::t1 PASSED",
+        "shard 2\tRun tests\t2026-09-29T07:00:11.0Z tests/test_b.py::t1 PASSED",
+        "shard 1\tRun tests\t2026-09-29T07:00:13.0Z tests/test_a.py::t2 PASSED",
+        "shard 2\tRun tests\t2026-09-29T07:00:18.0Z tests/test_b.py::t2 PASSED",
+        # A second pytest run in shard 1: its first gap is setup again.
+        "shard 1\tRun tests\t2026-09-29T07:05:00.0Z collected 1 item",
+        "shard 1\tRun tests\t2026-09-29T07:06:00.0Z tests/test_c.py::t1 PASSED",
+    ]
+    got = refresh.log_durations(lines)
+    assert got == pytest.approx({"tests/test_a.py": 3.0, "tests/test_b.py": 7.0})
+
+
+def test_junit_durations_maps_classnames_onto_files(tmp_path):
+    (tmp_path / "tests" / "api").mkdir(parents=True)
+    (tmp_path / "tests" / "api" / "test_x.py").write_text("", encoding="utf-8")
+    (tmp_path / "tests" / "test_y.py").write_text("", encoding="utf-8")
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<testsuites><testsuite name="pytest" tests="5">
+<testcase classname="tests.api.test_x.TestGroup" name="test_a" time="1.25" />
+<testcase classname="tests.api.test_x" name="test_b" time="0.75" />
+<testcase classname="tests.test_y.TestOuter.TestInner" name="test_c" time="2.0">
+  <skipped message="x" />
+</testcase>
+<testcase classname="tests.test_z" name="test_d" time="4.0" file="tests/test_z.py" />
+<testcase classname="tests.test_y" name="test_e" time="garbage" />
+</testsuite></testsuites>"""
+    with_root = refresh.junit_durations(xml, tmp_path)
+    assert with_root == pytest.approx(
+        {"tests/api/test_x.py": 2.0, "tests/test_y.py": 2.0, "tests/test_z.py": 4.0}
+    )
+    # Without a root, trailing Test* class parts are dropped heuristically.
+    assert refresh.junit_durations(xml) == pytest.approx(with_root)
+
+
+def _junit(*cases: tuple[str, str, float]) -> str:
+    body = "".join(
+        f'<testcase classname="{cls}" name="{name}" time="{t}" />\n'
+        for cls, name, t in cases
+    )
+    return f"<testsuites><testsuite>\n{body}</testsuite></testsuites>"
+
+
+def test_junit_keeps_a_heavy_last_testcase_after_static_siblings():
+    """Junit times are used as reported, edges included.
+
+    The real shape: a migration file's near-zero static checks followed by the
+    one heavy DB test, last in the document (shard 6 ended with
+    test_worker_hb_body_started_01_migration.py: 0.01, 0.01, 66.5). Any
+    per-edge trim cut that file to ~0 and re-created the skew.
+    """
+    xml = _junit(
+        ("tests.test_a", "t1", 0.2),
+        ("tests.test_worker_hb_body_started_01_migration", "t1", 0.01),
+        ("tests.test_worker_hb_body_started_01_migration", "t2", 0.01),
+        ("tests.test_worker_hb_body_started_01_migration", "t3", 66.5),
+    )
+    got = refresh.junit_durations(xml)
+    assert got["tests/test_worker_hb_body_started_01_migration.py"] == pytest.approx(
+        66.52
+    )
+    assert got["tests/test_a.py"] == pytest.approx(0.2)
+
+
+def test_render_is_sorted_and_rounded_to_a_tenth():
+    text = refresh.render({"tests/test_b.py": 1.26, "tests/test_a.py": 10.04})
+    assert text == '{\n  "tests/test_a.py": 10.0,\n  "tests/test_b.py": 1.3\n}\n'
+    # Round-trips through the splitter's own loader.
+    assert json.loads(text) == {"tests/test_a.py": 10.0, "tests/test_b.py": 1.3}
+
+
+def test_refresh_main_merges_inputs_and_refuses_an_empty_result(tmp_path):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "one.log").write_text(_LOG, encoding="utf-8")
+    (logs / "two.log").write_text(
+        "2026-09-29T07:00:00.0Z collected 2 items\n"
+        "2026-09-29T07:00:01.0Z tests/test_q.py::t1 PASSED\n"
+        "2026-09-29T07:00:03.0Z tests/test_a.py::t9 PASSED\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    assert refresh.main(["--from-logs", str(logs), "--out", str(out)]) == 0
+    got = json.loads(out.read_text(encoding="utf-8"))
+    assert got["tests/test_a.py"] == 2.5  # 0.5 from one.log + 2.0 from two.log
+    assert list(got) == sorted(got)
+
+    empty = tmp_path / "empty.log"
+    empty.write_text("nothing here\n", encoding="utf-8")
+    assert (
+        refresh.main(["--from-logs", str(empty), "--out", str(tmp_path / "no.json")])
+        == 1
+    )
+    assert not (tmp_path / "no.json").exists()
+
+
+def test_compare_counts_new_dropped_and_moved_files():
+    committed = {"tests/a.py": 10.0, "tests/b.py": 1.0, "tests/gone.py": 5.0}
+    proposed = {"tests/a.py": 29.0, "tests/b.py": 3.1, "tests/new.py": 2.0}
+    diff = refresh.compare(committed, proposed)
+    assert diff.new == ["tests/new.py"]
+    assert diff.dropped == ["tests/gone.py"]
+    # a moved 2.9x (inside MOVED_FACTOR), b moved 3.1x (outside it).
+    assert diff.moved == ["tests/b.py"]
+    assert (diff.committed_s, diff.proposed_s) == (16.0, 34.1)
+
+
+def test_compare_does_not_flag_sub_tenth_noise_as_moved():
+    """0.0 -> 0.2 is rounding noise on a fast file, not a 'moved' measurement."""
+    diff = refresh.compare({"tests/a.py": 0.0}, {"tests/a.py": 0.2})
+    assert diff.moved == []
+
+
+def _compare_line(err: str) -> str:
+    lines = [ln for ln in err.splitlines() if ln.startswith(refresh.COMPARE_PREFIX)]
+    assert len(lines) == 1, err
+    assert err.rstrip().splitlines()[-1] == lines[0], "the compare line prints last"
+    return lines[0]
+
+
+def test_refresh_main_compares_the_proposal_with_the_committed_map(tmp_path, capsys):
+    xml = tmp_path / "shard.xml"
+    xml.write_text(
+        _junit(("tests.test_a", "t1", 1.04), ("tests.test_new", "t1", 2.0)),
+        encoding="utf-8",
+    )
+    committed = tmp_path / "committed.json"
+    committed.write_text(
+        refresh.render({"tests/test_a.py": 1.0, "tests/test_gone.py": 9.0}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.json"
+    rc = refresh.main([str(xml), "--out", str(out), "--compare", str(committed)])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert _compare_line(err) == (
+        f"{refresh.COMPARE_PREFIX} committed=2 proposed=2 new=1 dropped=1 "
+        "committed_s=10.0 proposed_s=3.0 moved=0"
+    )
+    assert "tests/test_new.py" in err and "tests/test_gone.py" in err
+
+
+@pytest.mark.parametrize("content", [None, "not json", '["a list"]', '{"a.py": "x"}'])
+def test_an_unreadable_committed_map_is_reported_never_fatal(tmp_path, capsys, content):
+    xml = tmp_path / "shard.xml"
+    xml.write_text(_junit(("tests.test_a", "t1", 1.0)), encoding="utf-8")
+    committed = tmp_path / "committed.json"
+    if content is not None:
+        committed.write_text(content, encoding="utf-8")
+    out = tmp_path / "out.json"
+    rc = refresh.main([str(xml), "--out", str(out), "--compare", str(committed)])
+    assert rc == 0, "the proposal is the product; a bad comparison must not lose it"
+    assert out.is_file()
+    assert _compare_line(capsys.readouterr().err) == (
+        f"{refresh.COMPARE_PREFIX} committed=unreadable proposed=1"
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="runs the step under bash")
+def test_the_proposal_build_reports_drift_on_the_summary_page(tmp_path):
+    """Runs the build step's REAL script against one shard's junit file."""
+    (tmp_path / "scripts" / "ci").mkdir(parents=True)
+    shutil.copy(REFRESH_PATH, tmp_path / "scripts" / "ci")
+    (tmp_path / "backend" / "tests").mkdir(parents=True)
+    (tmp_path / "backend" / "tests" / "test_a.py").write_text("", encoding="utf-8")
+    (tmp_path / "backend" / DURATIONS_REF).write_text(
+        refresh.render({"tests/test_a.py": 1.0}), encoding="utf-8"
+    )
+    (tmp_path / "junit").mkdir()
+    (tmp_path / "junit" / "junit-results.xml").write_text(
+        _junit(("tests.test_a", "t1", 5.0)), encoding="utf-8"
+    )
+    output = tmp_path / "github_output"
+    summary = tmp_path / "step_summary"
+    output.write_text("", encoding="utf-8")
+    step = _proposal_step("Build shard-durations-proposed.json")
+    python_dir = str(Path(sys.executable).parent)
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    # The step calls `python`; point it at this interpreter whatever it is named.
+    (shim / "python").write_text(
+        f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" "$@"\n', encoding="utf-8"
+    )
+    (shim / "python").chmod(0o755)
+    proc = subprocess.run(
+        [shutil.which("bash") or "bash", "-e", "-c", step["run"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={
+            **_proposal_env(),
+            "PATH": f"{shim.as_posix()}:/usr/bin:/bin:{python_dir}",
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Found 1 junit files, not 6," in proc.stdout, "one shard of six is partial"
+    assert "proposed=true" in output.read_text(encoding="utf-8")
+    assert (tmp_path / "shard-durations-proposed.json").is_file()
+    assert (
+        f"{refresh.COMPARE_PREFIX} committed=1 proposed=1 new=0 dropped=0 "
+        "committed_s=1.0 proposed_s=5.0 moved=1"
+    ) in summary.read_text(encoding="utf-8")
+
+
+# --- the committed durations file (Phase 2: keep it from rotting) ------------
+
+
+def test_the_committed_durations_file_loads_and_is_in_canonical_form():
+    """Corrupt would silently deal by count; hand-edited churns every refresh."""
+    loaded, state = splitter.load_durations(str(DURATIONS_PATH))
+    assert state == "loaded", f"{DURATIONS_REF} is {state}"
+    assert loaded
+    assert DURATIONS_PATH.read_text(encoding="utf-8") == refresh.render(loaded), (
+        f"{DURATIONS_REF} is not in the form {REFRESH_REF} writes (sorted keys, "
+        "0.1 s rounding); regenerate it with that script rather than hand-editing"
+    )
+
+
+def _conftest_ignores(tests_dir: Path) -> tuple[set[Path], list[tuple[Path, str]]]:
+    """Paths and globs every conftest.py under `tests_dir` tells pytest to skip.
+
+    Read with `ast`, never by importing the conftest: importing it builds the
+    database engine. A `collect_ignore` that is not a literal list of strings
+    cannot be honoured statically, so it fails the test rather than being
+    guessed at.
+    """
+    ignored: set[Path] = set()
+    globs: list[tuple[Path, str]] = []
+    for conftest in sorted(tests_dir.rglob("conftest.py")):
+        tree = ast.parse(conftest.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if not isinstance(target, ast.Name) or target.id not in {
+                    "collect_ignore",
+                    "collect_ignore_glob",
+                }:
+                    continue
+                value = ast.literal_eval(node.value)
+                assert isinstance(value, list) and all(
+                    isinstance(v, str) for v in value
+                ), f"{conftest}: {target.id} is not a literal list of strings"
+                for entry in value:
+                    if target.id == "collect_ignore":
+                        ignored.add((conftest.parent / entry).resolve())
+                    else:
+                        globs.append((conftest.parent, entry))
+    return ignored, globs
+
+
+def _collectable_test_files() -> list[str]:
+    """Every `test_*.py` pytest would collect, as `tests/...` node-id paths.
+
+    WHY NOT run `pytest --collect-only` here, as the workflow does: collection
+    imports every test module and the app with them (~20 s on CI, and several
+    modules build engines at import), which is heavy for a unit test and would
+    make this check depend on the service environment the collect step sets up.
+    The workflow's own truncation floor already trusts the on-disk
+    `find tests -name 'test_*.py'` enumeration; this is that enumeration minus
+    what conftest `collect_ignore` / `collect_ignore_glob` exclude, read
+    statically. The one divergence -- a file that exists but collects zero
+    tests -- is a dead module, which the collect step's floors already flag.
+    """
+    backend = REPO_ROOT / "backend"
+    tests_dir = backend / "tests"
+    ignored, globs = _conftest_ignores(tests_dir)
+    out = []
+    for path in sorted(tests_dir.rglob("test_*.py")):
+        resolved = path.resolve()
+        if any(resolved == i or i in resolved.parents for i in ignored):
+            continue
+        if any(resolved.match(str((base / g).resolve())) for base, g in globs):
+            continue
+        out.append(path.relative_to(backend).as_posix())
+    return out
+
+
+#: The share of collectable test files that may be absent from the map before
+#: the split stops being a seconds split in any meaningful sense.
+MAX_UNLISTED_SHARE = 0.10
+
+
+def test_the_durations_file_covers_the_collected_suite():
+    """Fails once more than 10% of collectable test files are unlisted.
+
+    New files default safely (count x class median), but a map that lists
+    little of the suite is the count split again under another name. The fix
+    is a refresh: download the nightly's `shard-durations-proposed` artifact
+    and commit it as backend/tests/shard-durations.json.
+    """
+    loaded, state = splitter.load_durations(str(DURATIONS_PATH))
+    assert loaded is not None, f"{DURATIONS_REF} is {state}"
+    collectable = _collectable_test_files()
+    assert len(collectable) >= 100, (
+        f"only {len(collectable)} collectable test files found; the enumeration "
+        "is broken, and a coverage ratio over it would mean nothing"
+    )
+    unlisted = [path for path in collectable if path not in loaded]
+    share = len(unlisted) / len(collectable)
+    assert share <= MAX_UNLISTED_SHARE, (
+        f"{len(unlisted)} of {len(collectable)} collectable test files "
+        f"({share:.0%}) are absent from {DURATIONS_REF}, over the "
+        f"{MAX_UNLISTED_SHARE:.0%} limit. Refresh it from the nightly "
+        f"`shard-durations-proposed` artifact ({REFRESH_REF}). First few: "
+        f"{unlisted[:10]}"
     )

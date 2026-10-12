@@ -53,6 +53,8 @@ import { MemoryRow } from "@/components/admin/coord/MemoryRow";
 import { deriveMemoryStatus } from "@/components/admin/coord/memoryStatus";
 import type { CoordMemoryRow } from "@/components/admin/coord/memoryStatus";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
@@ -143,7 +145,8 @@ function deriveMemoryHealth(
         key: "untyped",
         label: <>untyped {untyped}</>,
         tone: "muted",
-        title: "coord recorded no type for these — kind is optional on a memory",
+        title:
+          "coord recorded no type for these — kind is optional on a memory",
       },
       {
         key: "unrecognised",
@@ -164,26 +167,28 @@ export default function CoordMemoryListPage() {
   const [namePrefix, setNamePrefix] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
 
-  const fetchData = useCallback(async () => {
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
       const body = await httpClient.get<MemoryListResponse>(
-        `${API}/memory/list`
+        `${API}/memory/list`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
+      if (!isCurrent()) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  }, [poll]);
+
+  const { refresh } = useSingleFlightPoll(poll, POLL_INTERVAL_MS);
 
   const allRows = useMemo<CoordMemoryRow[]>(() => {
     if (!data) return [];
@@ -252,7 +257,7 @@ export default function CoordMemoryListPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="coord-memory-refresh"
           aria-label="Refresh memory list"
         >

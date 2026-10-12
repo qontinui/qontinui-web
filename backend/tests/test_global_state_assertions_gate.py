@@ -33,7 +33,7 @@ What these tests pin:
    stop a stale row from becoming a hole the count climbs back into.
 5. VACUITY. An empty scan root, an unreadable allowlist and a file that will
    not parse each exit 2, never 0: ``_gate_lib``'s "silence is never success".
-6. THE LANE ROSTER — exactly three files invoke this script, the three the tree
+6. THE LANE ROSTER — exactly four files invoke this script, the four the tree
    documents, and the script's own docstring names every one.
 
 Why the fixtures can live here
@@ -73,6 +73,7 @@ GATE_SCRIPT = REPO_ROOT / _SCRIPT_REF
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/global-state-assertions.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }
@@ -655,7 +656,7 @@ def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
 def test_the_scripts_docstring_names_every_lane() -> None:
     """The roster in prose must be the roster in the tree.
 
-    The gate opens by naming its three lanes. That list is what a reader trusts
+    The gate opens by naming its four lanes. That list is what a reader trusts
     instead of grepping, so a lane added without touching it leaves the script
     confidently describing a shape the repo no longer has — the state
     ``a208240e2`` left the tree in for 90 commits.

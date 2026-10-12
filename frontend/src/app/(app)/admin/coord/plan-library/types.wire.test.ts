@@ -26,10 +26,12 @@
  * expected values below: they are read from the snapshot, not written here.
  */
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {
+  loadSnapshot,
+  type SnapshotDocument,
+  type SnapshotFile,
+} from "@/lib/api/route-walker";
 import {
   PLAN_CENSUS_SIDE_NULLABLE,
   PLAN_CENSUS_SOURCES,
@@ -41,21 +43,22 @@ import {
   SCAN_ROOT_ROLLUP_STATES,
   SCAN_ROOT_ROW_NULLABLE,
   SCAN_ROOT_STATES,
+  STATUS_CURRENCY_NULLABLE,
+  STATUS_CURRENCY_STATES,
 } from "./types";
 
-const API_CLIENT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../../../lib/api-client"
-);
-
 /** Both snapshots backend CI regenerates: the composed one and the OSS base. */
-const SNAPSHOTS = ["openapi-schema.json", "openapi-schema.base.json"] as const;
+const SNAPSHOTS: readonly SnapshotFile[] = [
+  "openapi-schema.json",
+  "openapi-schema.base.json",
+];
 
 interface SchemaProperty {
   type?: string;
   enum?: string[];
-  anyOf?: { type?: string }[];
+  anyOf?: { type?: string; enum?: string[] }[];
   items?: { $ref?: string };
+  $ref?: string;
 }
 
 interface ObjectSchema {
@@ -64,10 +67,7 @@ interface ObjectSchema {
 }
 
 /** Each snapshot is ~3.4 MB; parse it once, not once per component. */
-const documents = new Map<
-  string,
-  { components?: { schemas?: Record<string, unknown> } }
->();
+const documents = new Map<SnapshotFile, SnapshotDocument>();
 
 /**
  * One component schema, or a thrown error naming it.
@@ -76,13 +76,15 @@ const documents = new Map<
  * backend rename into "no fields, no states" and then fail — or, for a check
  * written the other way round, pass — for a reason nobody can read.
  */
-function component(file: string, name: string): ObjectSchema {
+function component(file: SnapshotFile, name: string): ObjectSchema {
   let doc = documents.get(file);
   if (doc === undefined) {
-    doc = JSON.parse(readFileSync(path.join(API_CLIENT, file), "utf8"));
+    doc = loadSnapshot(file);
     documents.set(file, doc);
   }
-  const found = doc?.components?.schemas?.[name];
+  const found = doc.components?.schemas?.[name] as
+    | Partial<ObjectSchema>
+    | undefined;
   if (!found?.properties) {
     throw new Error(`${name} is not in ${file} — renamed on the backend?`);
   }
@@ -97,8 +99,14 @@ function admitsNull(prop: SchemaProperty): boolean {
   );
 }
 
+/**
+ * A field's closed vocabulary — on the field itself, or on the one non-null
+ * arm of a nullable field (`reported_state` is `null` on a refusal-only row).
+ */
 function enumOf(schema: ObjectSchema, field: string): string[] {
-  const values = schema.properties[field]?.enum;
+  const prop = schema.properties[field];
+  const values =
+    prop?.enum ?? (prop?.anyOf ?? []).find((arm) => arm.enum)?.enum;
   if (!values?.length) {
     throw new Error(
       `${field} carries no enum — no longer a closed vocabulary?`
@@ -116,6 +124,28 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
   const corpus = component(file, "CorpusHealth");
   const coverage = component(file, "PlanCoverage");
   const side = component(file, "PlanCensusSide");
+  const currency = component(file, "StatusCurrency");
+  const summary = component(file, "WorkArtifactSummary");
+  const candidate = component(file, "PlanCandidate");
+
+  it("a row's status currency admits exactly STATUS_CURRENCY_STATES", () => {
+    expect(enumOf(currency, "state")).toEqual(sorted(STATUS_CURRENCY_STATES));
+  });
+
+  it("every artifact row REQUIRES its status currency — no default", () => {
+    expect(summary.required ?? []).toContain("status_currency");
+    expect(summary.properties.status_currency?.$ref).toBe(
+      "#/components/schemas/StatusCurrency"
+    );
+    expect(admitsNull(summary.properties.status_currency ?? {})).toBe(false);
+  });
+
+  it("a candidate carries it too — null only on a work-unit-only row", () => {
+    expect(candidate.required ?? []).toEqual(
+      expect.arrayContaining(["status_currency", "content_sha256"])
+    );
+    expect(admitsNull(candidate.properties.status_currency ?? {})).toBe(true);
+  });
 
   it("the row's verdict admits exactly SCAN_ROOT_STATES", () => {
     expect(enumOf(row, "state")).toEqual(sorted(SCAN_ROOT_STATES));
@@ -185,6 +215,7 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
     ["ScanRootSourceRollup", rollup, SCAN_ROOT_ROLLUP_NULLABLE],
     ["PlanCoverage", coverage, PLAN_COVERAGE_NULLABLE],
     ["PlanCensusSide", side, PLAN_CENSUS_SIDE_NULLABLE],
+    ["StatusCurrency", currency, STATUS_CURRENCY_NULLABLE],
   ] as const)("%s", (_name, schema, witness) => {
     it("names exactly the fields the backend serves", () => {
       expect(sorted(Object.keys(witness))).toEqual(

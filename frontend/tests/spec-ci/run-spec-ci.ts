@@ -989,6 +989,18 @@ function routeForSpec(
     // consumer) so the cross-repo badge + verified LandRow render
     // deterministically (prod's real list is empty).
     "coord-lands": "/admin/coord/lands",
+    // The operations-ratchet readout (plan
+    // `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+    // Phase 8): one spec per fixture payload, because a spec carries ONE set
+    // of `metadata.routeStubs`. Three verdicts of the Overview's domain cost
+    // ledger, and the Dev Ops strip + machine row with known and unknown
+    // readouts. The fixtures live in `frontend/test-fixtures/`, and the vitest
+    // suites pin each stub body to its fixture file.
+    "overview-domain-cost-compounded": "/overview",
+    "overview-domain-cost-did-not-compound": "/overview",
+    "overview-domain-cost-unfalsifiable": "/overview",
+    "coord-devops-readout-known": "/admin/coord/devops",
+    "coord-devops-readout-unknown": "/admin/coord/devops",
     // Dynamic detail routes — sentinel ids for stubbed fetch resolution.
     "ai-tasks-detail": "/ai-tasks/spec-ci-sentinel-task",
     "captures-detail": "/captures/spec-ci-sentinel-session",

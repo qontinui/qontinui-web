@@ -22,7 +22,7 @@ BACKEND_URL="https://api.qontinui.io"
 # INLINED by Vercel at its build step, so it MUST exist as a Production
 # Environment Variable on the Vercel project — there is no in-repo Dockerfile or
 # GitHub Actions `next build` for the frontend (it auto-deploys via Vercel's Git
-# integration; see vercel.json + .github/workflows/verify-frontend-deploy.yml).
+# integration; see vercel.json + .github/workflows/verify-frontend-run.yml).
 # Without this, prod ships with remote-commands OFF and the relay returns
 # NO_BROWSER_CONNECTED for a consented prod tab.
 UI_BRIDGE_REMOTE_COMMANDS="1"

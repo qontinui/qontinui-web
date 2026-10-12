@@ -71,6 +71,14 @@ export interface DivergentVariant {
   status: string;
   current_version: number;
   updated_at: string;
+  /**
+   * Which capture door wrote this copy — `runner_scan` / `agent` /
+   * `operator` on the artifact row. Optional on the wire: a backend that does
+   * not serve it on `/divergent` variants omits it, and an absent value is
+   * UNKNOWN. It is never defaulted, and above all never inferred to be
+   * `runner_scan` (see `orphanVariantIds`).
+   */
+  captured_by?: string | null;
 }
 
 /** Same `(kind, slug)`, different `content_sha256`. */
@@ -215,6 +223,57 @@ export function variantOrigin(variant: DivergentVariant): string {
   if (repo === null && path === null) return "no source recorded";
   if (repo === null) return `${path} (no source repo recorded)`;
   return path ? `${repo}/${path}` : repo;
+}
+
+// ---------------------------------------------------------------------------
+// The orphan marker (plan
+// `2026-09-19-plan-library-cannot-answer-what-to-work-on-next` Phase 8)
+// ---------------------------------------------------------------------------
+
+/** The marker's exact words — the page and its tests share one spelling. */
+export const ORPHAN_MARKER =
+  "orphan — no scan source; the scanner will never update this copy";
+
+/** The hover explanation behind the marker. Says what it is NOT, too. */
+export const ORPHAN_MARKER_DETAIL =
+  "This copy records no source_repo, and the scanner addresses a row by " +
+  "(kind, slug, source_repo) — so a re-scan lands on the scanner's own copy " +
+  "beside it, never on this one. That is a fact about provenance, not a " +
+  "verdict on which copy is the plan: this copy may still hold the content " +
+  "you want, and which one is the plan stays your call.";
+
+/**
+ * The ids of variants that are scan ORPHANS within one fork group.
+ *
+ * A variant is marked only when every input is SERVED, never when one is
+ * absent:
+ *
+ * - its own `source_repo` is an explicit `null` — an omitted field is
+ *   unstated, not null;
+ * - its own `captured_by` is a served value other than `runner_scan` — a
+ *   scanner-written row with no repo is still addressed by the scanner's own
+ *   identity, so "will never update this copy" would be false for it, and an
+ *   absent `captured_by` leaves that UNKNOWN;
+ * - ANOTHER variant in the same group states `captured_by: "runner_scan"` —
+ *   the proof that the scanner is writing this slug somewhere else. An absent
+ *   `captured_by` on a sibling is never read as `runner_scan`.
+ *
+ * Any missing input marks nothing: the absence of a marker is "not shown to
+ * be an orphan", never "shown not to be one". And the marker picks no winner
+ * — the scanner's copy is not thereby the plan.
+ */
+export function orphanVariantIds(
+  variants: readonly DivergentVariant[]
+): ReadonlySet<string> {
+  const scanned = variants.filter((v) => v.captured_by === "runner_scan");
+  const orphans = new Set<string>();
+  for (const v of variants) {
+    if (v.source_repo !== null) continue;
+    if (typeof v.captured_by !== "string") continue;
+    if (v.captured_by === "runner_scan") continue;
+    if (scanned.some((s) => s.id !== v.id)) orphans.add(v.id);
+  }
+  return orphans;
 }
 
 /**

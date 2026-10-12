@@ -19,9 +19,11 @@
  * rather than the previous machine's answer.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
   describeControlError,
   parseFleetSessions,
@@ -87,25 +89,28 @@ function useDevicePoll<T>(
   const issued = useRef(0);
   const applied = useRef(0);
 
-  const refresh = useCallback(async () => {
-    if (deviceId === "") return;
-    const seq = ++issued.current;
-    const previous =
-      latest.current && latest.current.deviceId === deviceId
-        ? latest.current.value
-        : null;
-    const next = await load(deviceId, previous);
-    if (current.current !== deviceId || seq <= applied.current) return;
-    applied.current = seq;
-    setCell({ deviceId, value: next });
-  }, [deviceId, load]);
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
+      if (deviceId === "") return;
+      const seq = ++issued.current;
+      const previous =
+        latest.current && latest.current.deviceId === deviceId
+          ? latest.current.value
+          : null;
+      const next = await load(deviceId, previous);
+      if (!isCurrent()) return;
+      if (current.current !== deviceId || seq <= applied.current) return;
+      applied.current = seq;
+      setCell({ deviceId, value: next });
+    },
+    [deviceId, load]
+  );
 
-  useEffect(() => {
-    if (deviceId === "") return;
-    void refresh();
-    const id = setInterval(() => void refresh(), RUNNER_POLL_MS);
-    return () => clearInterval(id);
-  }, [deviceId, refresh]);
+  // Single-flight (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // tick while a read is outstanding is skipped; a `refresh()` after a control
+  // write runs once, right after it.
+  const { refresh } = useSingleFlightPoll(poll, RUNNER_POLL_MS);
 
   const value = cell && cell.deviceId === deviceId ? cell.value : loading;
   return { value, refresh };
@@ -116,7 +121,10 @@ const SESSIONS_LOADING: FleetSessionsRead = { kind: "loading" };
 
 async function loadReadiness(deviceId: string): Promise<ReadinessRead> {
   try {
-    const res = await httpClient.fetch(deviceReadinessUrl(deviceId));
+    const res = await httpClient.fetch(
+      deviceReadinessUrl(deviceId),
+      COORD_DASHBOARD_POLL_OPTIONS
+    );
     if (!res.ok) {
       return {
         kind: "read_failed",
@@ -143,7 +151,10 @@ async function loadFleetSessions(
       ? { ...previous, refreshError: reason }
       : { kind: "failed", reason };
   try {
-    const res = await httpClient.fetch(deviceFleetSessionsUrl(deviceId));
+    const res = await httpClient.fetch(
+      deviceFleetSessionsUrl(deviceId),
+      COORD_DASHBOARD_POLL_OPTIONS
+    );
     if (res.status === 404) {
       return fail(
         "coord serves no per-device session census on this deployment " +

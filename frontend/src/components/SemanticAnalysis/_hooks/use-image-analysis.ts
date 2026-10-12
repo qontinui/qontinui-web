@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { ApiConfig } from "@/services/api-config";
 import { toast } from "sonner";
 import type {
   SemanticObject,
@@ -72,7 +73,7 @@ export function useImageAnalysis(
       }
 
       const response = await fetch(
-        "http://localhost:8000/api/semantic/process",
+        `${ApiConfig.API_BASE_URL}/api/semantic/process`,
         {
           method: "POST",
           headers: {

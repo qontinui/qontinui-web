@@ -11,7 +11,7 @@
 "use client";
 
 import React from "react";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DestructiveButton } from "@/components/ui/destructive-button";

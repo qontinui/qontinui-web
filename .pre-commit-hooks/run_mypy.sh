@@ -60,7 +60,7 @@ if ! poetry run python -c "import mypy, qontinui_schemas.generated" >/dev/null 2
   # and a default-3.13 venv fails to build pyarrow 17 (no cp313 wheel).
   # Best-effort — if 3.12 isn't installed, fall through and let poetry pick.
   poetry env use 3.12 1>&2 || \
-    echo "[mypy-hook] WARNING: python 3.12 not found; using poetry default (CI uses 3.12)" >&2
+    echo "[mypy-hook] WARNING: python 3.12 not found; using poetry default (CI uses 3.12) -- install it with qontinui-claude-config/scripts/install-python-toolchain.sh" >&2
   rc=0
   bounded poetry install --no-interaction --no-ansi 1>&2 || rc=$?
   if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then

@@ -409,6 +409,41 @@ class TestUpdatePromptDocument:
         assert "description" not in sent
         assert "body" not in sent
 
+    def test_publish_mode_passes_through_untouched(self, auth_client: TestClient):
+        """``publish_mode`` needs no proxy code — the forward is wholesale — so
+        what is pinned here is that nothing SHADOWS it.
+
+        Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D2. The field is
+        the per-document distribution judgement: whether a document publishes
+        itself to every tenant with no human in the loop. A future allowlist on
+        this proxy would drop it silently, and the console would report a
+        successful save for a setting coord never received — the operator would
+        believe they had set ``never`` on a document that kept auto-publishing.
+        The version-creating side is coord's rule, not a second copy here.
+        """
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.patch.return_value = _mock_response(
+                json_data=_doc(current_version=4)
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.patch(
+                f"{API_PREFIX}/coord/prompt-documents/policy/engineering-priorities",
+                json={
+                    "publish_mode": "never",
+                    "change_description": "Publish mode set to `never` by an operator",
+                },
+            )
+
+        assert resp.status_code == 200
+        sent = instance.patch.call_args.kwargs["json"]
+        assert sent["publish_mode"] == "never"
+        assert sent["updated_by"] == TEST_USER_EMAIL
+        # A mode-only PATCH means exactly that: no body is invented, so coord's
+        # version snapshot carries the unchanged body beside the new mode.
+        assert "body" not in sent
+
     def test_coord_400_passed_through(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
@@ -933,3 +968,275 @@ class TestUpstreamDecisionsAuthSplit:
 
         assert resp.status_code == 200
         assert instance.get.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Publish-all + the auto-publish status read
+# ---------------------------------------------------------------------------
+#
+# Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D1/D4, Phase 5. What
+# has to hold at this layer, and how each would fail silently:
+#
+# * **The literal paths are not swallowed by the ``{kind}/{name}`` routes.**
+#   ``publish-all`` is one segment and ``auto-publish/status`` is two, so the
+#   parameterised siblings would match both first if they were registered
+#   earlier. The failure is a coord 400/404 — indistinguishable, from the
+#   browser, from "this deployment does not carry the route", which the console
+#   latches by HIDING the publish controls for the rest of the visit.
+# * **The body is allowlisted two levels deep.** ``published_by`` is coord's to
+#   stamp from its own OperatorContext; an item-level smuggle would ride
+#   through a wholesale ``{**body}`` forward unseen.
+# * **``expected_version`` reaches coord verbatim, per item.** It is the whole
+#   optimistic-lock guarantee: a document edited between the dry run and the
+#   click must fail ``version_conflict`` rather than publish an unseen body.
+# * **``dry_run`` is coord's default, not a second copy of it here.** Omitted
+#   means omitted; a local ``dry_run = True`` fallback would be a second place
+#   for the safe default to drift out of step.
+
+
+class TestPublishAllPromptDocuments:
+    def test_dry_run_body_is_optional_and_reaches_the_literal_path(
+        self, auth_client: TestClient
+    ):
+        """No body at all is the dry run — coord defaults it, so the proxy
+        forwards nothing rather than asserting a default of its own."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={
+                    "dry_run": True,
+                    "candidates": [
+                        {
+                            "kind": "policy",
+                            "name": "plan-discipline",
+                            "current_version": 7,
+                            "next_publication_version": 1,
+                            "lint": [],
+                            "direction": "loosening",
+                            "publish_mode": "manual",
+                            "edited_by": "agent:runner",
+                            "change_notes": ["retired the same-actor rule"],
+                        }
+                    ],
+                }
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(f"{API_PREFIX}/coord/prompt-documents/publish-all")
+
+        assert resp.status_code == 200
+        assert resp.json()["candidates"][0]["name"] == "plan-discipline"
+        # The literal path, NOT `/coord/prompt-documents/{kind}` reached as a
+        # document creation under kind="publish-all".
+        assert instance.post.call_args.args[0].endswith(
+            "/coord/prompt-documents/publish-all"
+        )
+        assert instance.post.call_args.kwargs["json"] == {}
+
+    def test_armed_run_forwards_each_items_expected_version(
+        self, auth_client: TestClient
+    ):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={
+                    "dry_run": False,
+                    "results": [
+                        {
+                            "kind": "policy",
+                            "name": "plan-discipline",
+                            "outcome": "published",
+                            "publication_version": 1,
+                        },
+                        {
+                            "kind": "policy",
+                            "name": "ux-priorities",
+                            "outcome": "version_conflict",
+                            "expected": 4,
+                            "actual": 5,
+                        },
+                    ],
+                }
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/publish-all",
+                json={
+                    "dry_run": False,
+                    "release_note": "the September corpus",
+                    "items": [
+                        {
+                            "kind": "policy",
+                            "name": "plan-discipline",
+                            "expected_version": 7,
+                        },
+                        {
+                            "kind": "policy",
+                            "name": "ux-priorities",
+                            "expected_version": 4,
+                        },
+                    ],
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["results"][1]["outcome"] == "version_conflict"
+        sent = instance.post.call_args.kwargs["json"]
+        assert sent["dry_run"] is False
+        assert sent["release_note"] == "the September corpus"
+        assert sent["items"] == [
+            {"kind": "policy", "name": "plan-discipline", "expected_version": 7},
+            {"kind": "policy", "name": "ux-priorities", "expected_version": 4},
+        ]
+
+    def test_explicit_dry_run_false_is_forwarded_not_dropped(
+        self, auth_client: TestClient
+    ):
+        """``dry_run: false`` is the whole armed run, and it is FALSY.
+
+        On publish-all ``dry_run`` defaults to **true** server-side — the
+        opposite of the single-document ``/publish``, whose default is false.
+        So a proxy that filtered its allowlist on truthiness rather than on
+        ``is not None`` would drop the one field that turns a preview into a
+        publication, and coord would answer a cheerful dry-run envelope for a
+        click that published nothing. That is a silent no-op on the button
+        whose entire job is to ship the corpus in one go, and nothing
+        downstream would report it.
+        """
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={"dry_run": False, "published": 0, "results": []}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/publish-all",
+                json={"dry_run": False, "items": []},
+            )
+
+        sent = instance.post.call_args.kwargs["json"]
+        assert "dry_run" in sent, "an explicit dry_run=False must survive the allowlist"
+        assert sent["dry_run"] is False
+
+    def test_publisher_identity_is_never_taken_from_the_browser(
+        self, auth_client: TestClient
+    ):
+        """Coord stamps ``published_by`` from its own OperatorContext. A claim
+        at either level of the body is dropped, not forwarded — the item level
+        matters most, because a wholesale forward would carry it through under
+        a key nothing here inspects."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={"dry_run": False, "results": []}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/publish-all",
+                json={
+                    "dry_run": False,
+                    "published_by": "somebody-else@evil.example",
+                    "tenant_id": "00000000-0000-0000-0000-000000000000",
+                    "items": [
+                        {
+                            "kind": "policy",
+                            "name": "plan-discipline",
+                            "expected_version": 7,
+                            "published_by": "somebody-else@evil.example",
+                            "body": "a body coord never asked for",
+                        }
+                    ],
+                },
+            )
+
+        sent = instance.post.call_args.kwargs["json"]
+        assert "published_by" not in sent
+        assert "tenant_id" not in sent
+        assert sent["items"] == [
+            {"kind": "policy", "name": "plan-discipline", "expected_version": 7}
+        ]
+
+    def test_not_system_tenant_refusal_passes_through(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=403, text='{"error":"not_system_tenant"}'
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/publish-all",
+                json={"dry_run": True},
+            )
+
+        assert resp.status_code == 403
+        assert "not_system_tenant" in resp.json()["detail"]
+
+
+class TestPromptDocumentAutoPublishStatus:
+    def test_status_read_reaches_the_literal_path(self, auth_client: TestClient):
+        """Two segments, so ``GET /coord/prompt-documents/{kind}/{name}`` would
+        match it as ``kind="auto-publish"``/``name="status"`` if registration
+        order were wrong."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={
+                    "candidates": [
+                        {
+                            "kind": "policy",
+                            "name": "plan-discipline",
+                            "publish_mode": "auto",
+                            "direction": "loosening",
+                            "settles_at": "2026-09-21T09:00:00Z",
+                            "held": False,
+                            "held_tokens": [],
+                            "versions": [6, 7],
+                        },
+                        {
+                            "kind": "policy",
+                            "name": "git-operations",
+                            "publish_mode": "auto",
+                            "direction": "other",
+                            "settles_at": "2026-09-20T15:00:00Z",
+                            "held": True,
+                            "held_tokens": [
+                                {"category": "repo_name", "token": "qontinui-coord"}
+                            ],
+                            "versions": [3],
+                        },
+                    ]
+                }
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(
+                f"{API_PREFIX}/coord/prompt-documents/auto-publish/status"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["candidates"][1]["held"] is True
+        assert instance.get.call_args.args[0].endswith(
+            "/coord/prompt-documents/auto-publish/status"
+        )
+
+    def test_store_unprovisioned_passes_through(self, auth_client: TestClient):
+        """The deploy window where coord is live ahead of ``pdpub_03``: honest
+        degradation, not an empty candidate list the console would render as
+        'nothing is pending'."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                status_code=503,
+                json_data={"error": "not provisioned", "degraded": "absent"},
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(
+                f"{API_PREFIX}/coord/prompt-documents/auto-publish/status"
+            )
+
+        assert resp.status_code == 503

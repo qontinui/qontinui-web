@@ -14,6 +14,7 @@ import {
   RedMainBanner,
   compactPrincipal,
   parseAlertClaim,
+  parseBaselineFreshness,
   parseFixSession,
   parseRedMainAlerts,
   redMainHeadline,
@@ -45,6 +46,7 @@ describe("parseRedMainAlerts", () => {
       repo: "jspinak/qontinui-runner",
       workflows: ["CI", "release"],
       blocked_pr_count: 8,
+      queued_proposal_count: 3,
       fix_session: "none",
     },
   };
@@ -57,10 +59,13 @@ describe("parseRedMainAlerts", () => {
         repo: "jspinak/qontinui-runner",
         workflows: ["CI", "release"],
         blockedPrCount: 8,
+        queuedProposalCount: 3,
         since: "2026-07-06T01:00:00Z",
         fixSession: { kind: "none" },
         // No `claimed` / `claim` on the row: an older coord.
         claim: { kind: "unknown", cause: "not-reported" },
+        baselineFreshness: "unread",
+        staleWorkflows: [],
       },
     ]);
   });
@@ -106,11 +111,28 @@ describe("parseRedMainAlerts", () => {
     for (const a of got) {
       expect(a.workflows).toEqual([]);
       expect(a.blockedPrCount).toBe(0);
+      // An absent queue depth is UNREAD, never 0.
+      expect(a.queuedProposalCount).toBeNull();
       // Missing / malformed remediation state degrades to "none", and a row
       // with no claim fields has an UNKNOWN claim.
       expect(a.fixSession).toEqual({ kind: "none" });
       expect(a.claim).toEqual({ kind: "unknown", cause: "not-reported" });
     }
+  });
+
+  it("reads coord's explicit null, and any malformed count, as UNREAD — never 0", () => {
+    // coord (qontinui-coord#2545) writes JSON null when it could not count.
+    for (const raw of [null, "3", -1, 2.5, Number.NaN]) {
+      const [a] = parseRedMainAlerts([
+        { ...redRow, detail: { ...redRow.detail, queued_proposal_count: raw } },
+      ]);
+      expect(a.queuedProposalCount).toBeNull();
+    }
+    const [zero] = parseRedMainAlerts([
+      { ...redRow, detail: { ...redRow.detail, queued_proposal_count: 0 } },
+    ]);
+    // A measured zero stays zero.
+    expect(zero.queuedProposalCount).toBe(0);
   });
 
   it("sorts per-repo so the banner stack is stable across polls", () => {
@@ -266,23 +288,29 @@ describe("sinceLabel", () => {
 describe("redMainHeadline", () => {
   const now = Date.parse("2026-07-06T12:00:00Z");
 
-  it("carries the D2 wording: repo, since, blast radius, no-merges warning", () => {
+  it("carries repo, since, main-red count and queue depth — never a no-merges claim", () => {
     const headline = redMainHeadline(
       {
         alertKey: "red_main:jspinak/qontinui-runner",
         repo: "jspinak/qontinui-runner",
         workflows: ["CI"],
         blockedPrCount: 8,
+        queuedProposalCount: 3,
         since: "2026-07-06T09:00:00Z",
         fixSession: { kind: "none" },
         claim: { kind: "unknown", cause: "not-reported" },
+        baselineFreshness: "unread",
+        staleWorkflows: [],
       },
       now
     );
     expect(headline).toBe(
       "🔴 jspinak/qontinui-runner main is RED since 3h 0m ago — " +
-        "8 PRs blocked, no merges will land until fixed"
+        "8 PRs read main-red, 3 proposals queued; " +
+        "a candidate lands only if its own rebased CI is green"
     );
+    // The falsified claim (coord FALSIFIED_RED_MAIN_PHRASES) must never return.
+    expect(headline.toLowerCase()).not.toContain("no merges will land");
   });
 
   it("uses singular PR for a blast radius of one", () => {
@@ -292,16 +320,258 @@ describe("redMainHeadline", () => {
         repo: "a/b",
         workflows: [],
         blockedPrCount: 1,
+        queuedProposalCount: 1,
         since: undefined,
         fixSession: { kind: "none" },
         claim: { kind: "unknown", cause: "not-reported" },
+        baselineFreshness: "unread",
+        staleWorkflows: [],
       },
       now
     );
-    expect(headline).toContain("1 PR blocked");
+    expect(headline).toContain("1 PR read main-red");
+    expect(headline).toContain("1 proposal queued");
     // No first_seen_at → no dangling "since … ago" clause.
     expect(headline).not.toContain("since");
     expect(headline).toContain("a/b main is RED — ");
+  });
+});
+
+describe("redMainHeadline — unread queue depth", () => {
+  it("says the depth is unknown instead of rendering 0", () => {
+    const headline = redMainHeadline(
+      {
+        alertKey: "red_main:a/b",
+        repo: "a/b",
+        workflows: [],
+        blockedPrCount: 2,
+        queuedProposalCount: null,
+        since: undefined,
+        fixSession: { kind: "none" },
+        claim: { kind: "unknown", cause: "not-reported" },
+        baselineFreshness: "unread",
+        staleWorkflows: [],
+      },
+      Date.parse("2026-07-06T12:00:00Z")
+    );
+    expect(headline).toContain("merge-queue depth unknown");
+    expect(headline).not.toMatch(/\b0 proposals?\b/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 2026-10-03-coord-red-main-watcher-error-leaves-a-stale-red-baseline-
+// blocking-the-repo Phase 3b — coord's `detail.baseline_freshness` evidence.
+// ---------------------------------------------------------------------------
+
+/** One `detail.baseline_freshness.workflows[]` row, as coord serializes it. */
+function wfRow(workflow: string, verdict: string) {
+  const newer = verdict === "unobserved" ? null : 9;
+  return {
+    workflow,
+    baseline_run_id: 5,
+    verdict,
+    newer_run_id: newer,
+    newer_event: newer === null ? null : "schedule",
+    newer_conclusion:
+      newer === null
+        ? null
+        : verdict === "contradicted"
+          ? "success"
+          : "failure",
+  };
+}
+
+describe("parseBaselineFreshness", () => {
+  it("reads every workflow contradicted as all_contradicted", () => {
+    expect(
+      parseBaselineFreshness({
+        read: "ok",
+        all_contradicted: true,
+        workflows: [
+          wfRow("CI", "contradicted"),
+          wfRow("release", "contradicted"),
+        ],
+      })
+    ).toEqual({
+      baselineFreshness: "all_contradicted",
+      staleWorkflows: ["CI", "release"],
+    });
+  });
+
+  it("reads some contradicted as partial, naming only the stale ones", () => {
+    expect(
+      parseBaselineFreshness({
+        read: "ok",
+        all_contradicted: false,
+        workflows: [
+          wfRow("CI", "contradicted"),
+          wfRow("release", "corroborated"),
+        ],
+      })
+    ).toEqual({ baselineFreshness: "partial", staleWorkflows: ["CI"] });
+    // An unobserved row is not a pass: the repo stays partial, not all-contradicted.
+    expect(
+      parseBaselineFreshness({
+        read: "ok",
+        all_contradicted: false,
+        workflows: [wfRow("CI", "contradicted"), wfRow("lint", "unobserved")],
+      }).baselineFreshness
+    ).toBe("partial");
+  });
+
+  it("reads evidence that contradicts nothing as not_contradicted", () => {
+    expect(
+      parseBaselineFreshness({
+        read: "ok",
+        all_contradicted: false,
+        workflows: [wfRow("CI", "corroborated"), wfRow("lint", "unobserved")],
+      })
+    ).toEqual({ baselineFreshness: "not_contradicted", staleWorkflows: [] });
+  });
+
+  it("reads coord's unread marker and an absent field as unread", () => {
+    expect(parseBaselineFreshness({ read: "unread" }).baselineFreshness).toBe(
+      "unread"
+    );
+    expect(parseBaselineFreshness(undefined).baselineFreshness).toBe("unread");
+    expect(parseBaselineFreshness(null).baselineFreshness).toBe("unread");
+  });
+
+  it("reads malformed evidence as unread — never as contradicted", () => {
+    const malformed: unknown[] = [
+      "contradicted",
+      { read: "ok", all_contradicted: true }, // no workflows
+      { read: "ok", all_contradicted: true, workflows: [] }, // nothing to contradict
+      { all_contradicted: true, workflows: [wfRow("CI", "contradicted")] }, // no read
+      {
+        read: "ok",
+        all_contradicted: true,
+        workflows: [wfRow("CI", "contradicted"), null],
+      },
+      {
+        read: "ok",
+        all_contradicted: true,
+        workflows: [{ verdict: "contradicted" }],
+      },
+      { read: "ok", all_contradicted: true, workflows: [wfRow("CI", "stale")] },
+      // The flag and the rows disagree, in either direction.
+      {
+        read: "ok",
+        all_contradicted: true,
+        workflows: [wfRow("CI", "corroborated")],
+      },
+      {
+        read: "ok",
+        all_contradicted: false,
+        workflows: [wfRow("CI", "contradicted")],
+      },
+      { read: "ok", workflows: [wfRow("CI", "contradicted")] },
+    ];
+    for (const raw of malformed) {
+      expect(parseBaselineFreshness(raw)).toEqual({
+        baselineFreshness: "unread",
+        staleWorkflows: [],
+      });
+    }
+  });
+
+  it("is carried onto the parsed alert", () => {
+    const [got] = parseRedMainAlerts([
+      {
+        alert_key: "red_main:a/b",
+        detail: {
+          repo: "a/b",
+          workflows: ["CI"],
+          baseline_freshness: {
+            read: "ok",
+            all_contradicted: true,
+            workflows: [wfRow("CI", "contradicted")],
+          },
+        },
+      },
+    ]);
+    expect(got.baselineFreshness).toBe("all_contradicted");
+    expect(got.staleWorkflows).toEqual(["CI"]);
+  });
+});
+
+describe("redMainHeadline — baseline freshness", () => {
+  const now = Date.parse("2026-07-06T12:00:00Z");
+  const base: RedMainAlert = {
+    alertKey: "red_main:a/b",
+    repo: "a/b",
+    workflows: ["CI", "release"],
+    blockedPrCount: 4,
+    queuedProposalCount: 2,
+    since: "2026-07-06T09:00:00Z",
+    fixSession: { kind: "none" },
+    claim: { kind: "unknown", cause: "not-reported" },
+    baselineFreshness: "unread",
+    staleWorkflows: [],
+  };
+  const unread = redMainHeadline(base, now);
+
+  it("renders UNKNOWN, never RED or green, when every red is contradicted", () => {
+    const headline = redMainHeadline(
+      {
+        ...base,
+        baselineFreshness: "all_contradicted",
+        staleWorkflows: ["CI", "release"],
+      },
+      now
+    );
+    expect(headline).toBe(
+      "⚠️ a/b main status UNKNOWN — red push baseline contradicted by newer " +
+        "passing runs, awaiting a push run — 4 PRs read main-red, 2 proposals " +
+        "queued; a candidate lands only if its own rebased CI is green " +
+        "(alert open since 3h 0m ago)"
+    );
+    expect(headline).not.toMatch(/main is red/i);
+    expect(headline).not.toMatch(/main is green/i);
+  });
+
+  it("keeps RED on partial evidence and names the stale workflows", () => {
+    const headline = redMainHeadline(
+      { ...base, baselineFreshness: "partial", staleWorkflows: ["CI"] },
+      now
+    );
+    expect(headline).toBe(
+      `${unread} (stale push baseline, contradicted by newer passing runs: CI)`
+    );
+    expect(headline).toContain("a/b main is RED since 3h 0m ago — ");
+  });
+
+  it("renders unread and not-contradicted evidence as today's text exactly", () => {
+    expect(unread).toBe(
+      "🔴 a/b main is RED since 3h 0m ago — 4 PRs read main-red, 2 proposals " +
+        "queued; a candidate lands only if its own rebased CI is green"
+    );
+    expect(
+      redMainHeadline({ ...base, baselineFreshness: "not_contradicted" }, now)
+    ).toBe(unread);
+  });
+
+  it("renders a malformed payload as unread, not contradicted", () => {
+    const [parsed] = parseRedMainAlerts([
+      {
+        alert_key: "red_main:a/b",
+        first_seen_at: "2026-07-06T09:00:00Z",
+        detail: {
+          repo: "a/b",
+          workflows: ["CI", "release"],
+          blocked_pr_count: 4,
+          queued_proposal_count: 2,
+          baseline_freshness: {
+            read: "ok",
+            all_contradicted: true,
+            workflows: "CI",
+          },
+        },
+      },
+    ]);
+    expect(parsed.baselineFreshness).toBe("unread");
+    expect(redMainHeadline(parsed, now)).toBe(unread);
   });
 });
 
@@ -412,7 +682,89 @@ describe("<RedMainBanner> claim and remediation", () => {
     expect(chip).toHaveAttribute("data-claim-unknown-cause", "not-reported");
     expect(chip.textContent).toBe("claim unknown");
     expect(chip.textContent).not.toContain("no agent");
-    expect(chip.getAttribute("title")).toContain("does not report alert claims");
+    expect(chip.getAttribute("title")).toContain(
+      "does not report alert claims"
+    );
+  });
+
+  it("renders a contradicted red baseline as UNKNOWN in the mounted banner", async () => {
+    getMock.mockResolvedValue([
+      alertRow(
+        {},
+        {
+          baseline_freshness: {
+            read: "ok",
+            all_contradicted: true,
+            workflows: [
+              {
+                workflow: "CI",
+                baseline_run_id: 1,
+                verdict: "contradicted",
+                newer_run_id: 2,
+                newer_event: "schedule",
+                newer_conclusion: "success",
+              },
+            ],
+          },
+        }
+      ),
+    ]);
+    render(<RedMainBanner />);
+
+    const banner = await screen.findByTestId("red-main-banner");
+    expect(banner.textContent).toContain("main status UNKNOWN");
+    expect(banner.textContent).not.toMatch(/main is red/i);
+    expect(banner.textContent).not.toMatch(/main is green/i);
+    expect(
+      banner.querySelector('[data-baseline-freshness="all_contradicted"]')
+    ).not.toBeNull();
+    const workflows = screen.getByTestId("red-main-workflows");
+    expect(workflows.textContent).toBe("red push baseline: CI");
+    expect(banner.textContent).not.toContain("failing:");
+  });
+
+  it("keeps RED and the failing label on partial evidence in the mounted banner", async () => {
+    getMock.mockResolvedValue([
+      alertRow(
+        {},
+        {
+          workflows: ["CI", "release"],
+          baseline_freshness: {
+            read: "ok",
+            all_contradicted: false,
+            workflows: [
+              {
+                workflow: "CI",
+                baseline_run_id: 1,
+                verdict: "contradicted",
+                newer_run_id: 2,
+                newer_event: "schedule",
+                newer_conclusion: "success",
+              },
+              {
+                workflow: "release",
+                baseline_run_id: 3,
+                verdict: "corroborated",
+                newer_run_id: 4,
+                newer_event: "schedule",
+                newer_conclusion: "failure",
+              },
+            ],
+          },
+        }
+      ),
+    ]);
+    render(<RedMainBanner />);
+
+    const banner = await screen.findByTestId("red-main-banner");
+    expect(banner.textContent).toMatch(/main is RED/);
+    expect(banner.textContent).not.toContain("main status UNKNOWN");
+    expect(screen.getByTestId("red-main-workflows").textContent).toBe(
+      "failing: CI, release"
+    );
+    expect(
+      banner.querySelector('[data-baseline-freshness="partial"]')
+    ).not.toBeNull();
   });
 
   it("shows coord's own active remediation, read only", async () => {
@@ -497,7 +849,7 @@ describe("<RedMainBanner> reachability", () => {
     expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
 
     // Polls 2 and 3 come back empty. Under the old code the first of these
-    // blanked a tenant-wide merge-outage banner.
+    // blanked a live red-main banner.
     for (let i = 0; i < 2; i++) {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10_000);

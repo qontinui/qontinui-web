@@ -59,13 +59,13 @@ from tests._alembic_harness import (
 #      alone did NOT close.
 #   2. ``DOWN_RE`` is anchored at column 0, so a trailing ``# ...`` comment
 #      line cannot supply a parent either.
-#   3. ``PARENT_REF_RE`` returns EVERY literal in the right-hand side, which
+#   3. ``parent_refs`` returns EVERY literal in the right-hand side, which
 #      is what lets :func:`_parent_revision_id` refuse a merge tuple instead
 #      of silently taking its first element.
 _SCRIPTS_CI = backend_root().parent / "scripts" / "ci"
 sys.path.insert(0, str(_SCRIPTS_CI))
 
-from _alembic_graph import PARENT_REF_RE, parse_source  # noqa: E402
+from _alembic_graph import parent_refs, parse_source  # noqa: E402
 
 _REVISION_ID = "plan_library_06_scan_root_slug_census"
 _REVISION_FILENAME = "plan_library_06_scan_root_slug_census.py"
@@ -112,13 +112,12 @@ def _parent_revision_id() -> str:
     """The single revision this one revises, read from its source at runtime."""
     parsed = parse_source(_revision_source())
     assert parsed is not None, f"{_REVISION_FILENAME} declares no parseable revision id"
-    # Drop a trailing comment before counting literals. ``DOWN_RE``'s
-    # single-line fallback captures to end of line, so a perfectly ordinary
+    # ``parent_refs`` skips a trailing comment. ``DOWN_RE``'s single-line
+    # fallback captures to end of line, so a perfectly ordinary
     # `down_revision = "x"  # was "y"` would otherwise read as TWO parents and
     # trip the exactly-one rule below — at import time, taking every test in
     # this file down as a collection error rather than a named failure.
-    # ``_alembic_graph.repoint_sites`` guards the same way.
-    parents = PARENT_REF_RE.findall(parsed[1].partition("#")[0])
+    parents = parent_refs(parsed[1])
     assert len(parents) == 1, (
         f"{_REVISION_FILENAME} must declare exactly ONE parent so the "
         f"downgrade arm below has one place to stop; parsed {parents!r} from "

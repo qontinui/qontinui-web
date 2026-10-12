@@ -1,0 +1,41 @@
+# zizmor configuration (run by .github/workflows/workflow-lint.yml, pinned to
+# zizmor 1.30.1 there and in .pre-commit-config.yaml; bump all three together
+# in one PR that re-baselines, plan 2026-10-04-adopt-self-hosted-ci-scout-
+# improvements D2).
+#
+# Rule: suppress only a specific finding in a specific file, each with the
+# reason it is accepted. No audit is disabled wholesale.
+rules:
+  # Pin-by-SHA is this repo's decision for EVERY `uses:` (a tag is mutable, so
+  # a tag pin does not pin; design-tradeoff-ranking#3). Stated explicitly so a
+  # future zizmor default cannot silently relax it. Each pin carries a
+  # `# vX.Y.Z` comment naming the release it resolves to.
+  unpinned-uses:
+    config:
+      policies:
+        "*": hash-pin
+
+  # self-repository asks for GitHub's `$/...` same-repository syntax instead of
+  # `./...`. Accepted as-is in these files: `./` resolves to the same commit
+  # the workflow runs at (the checked-out workspace for a local action; the
+  # workflow's own commit for a local reusable workflow), so there is no
+  # supply-chain gap to close, and `$/` is not yet accepted by the pinned
+  # actionlint 1.7.12 nor verified on this repo's self-hosted runner version.
+  # Revisit when both accept it.
+  self-repository:
+    ignore:
+      - backend-ci.yml # ./.github/actions/fleet-nouns-vocab
+      - backend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab
+      - frontend-ci.yml # ./.github/actions/fleet-nouns-vocab (x2)
+      - frontend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab
+      - e2e-tests.yml # ./.github/workflows/e2e-playwright-stack.yml (x2)
+
+  # github-env flags any write to $GITHUB_ENV. The one site is the composite
+  # action .github/actions/fleet-nouns-vocab/action.yml, which writes
+  # QONTINUI_FLEET_NOUNS_FILE="$GITHUB_WORKSPACE/.sibling/...": a path built
+  # from a runner-provided constant after a sha256 check of the file, with no
+  # PR- or input-controlled part. (Ignore entries match the file name, and this
+  # repo has exactly one action.yml.)
+  github-env:
+    ignore:
+      - action.yml

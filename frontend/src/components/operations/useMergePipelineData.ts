@@ -25,11 +25,17 @@
 // SURFACES too (StuckPrRecoveryPanel, usePrCheckDetails)
 // — what may not happen again is the hero fetching them a second time.
 //
-// Load discipline (2026-07-21 prod incident): every request in a batch pins
-// a backend DB connection for its WHOLE lifetime — the operations proxy
-// holds its pooled session across the outbound coord round-trip. So the
-// dashboard's request volume is directly a backend connection-pool cost,
-// and an unbounded one takes the API down. Three rules keep it bounded:
+// Load discipline (2026-07-21 prod incident). Then, every request in a batch
+// pinned a backend DB connection for its whole lifetime: `get_tenant_id`
+// depended on the active-user session, which the operations proxy held across
+// the outbound coord round-trip, so unbounded polling exhausted the backend
+// pool and 504'd sign-in. That dependency was dropped on 2026-07-26
+// (`d77d79072`), so these GETs no longer hold a backend DB connection. The
+// rules below still stand, for the cost that remains: every request is a coord
+// query plus an identity call to coord's `/admin/coord/me`, and the PR listing
+// is not cheap (2.3-12.3s since qontinui-coord#2414; before it, the listing hit
+// coord's 60s statement timeout). Overlapping batches multiply that coord load
+// instead of the pool:
 //
 //   1. Single-flight — a batch already in flight absorbs new triggers
 //      instead of stacking. Previously a fixed 2s `setInterval` fired
@@ -40,17 +46,35 @@
 //      stretches the poll gap rather than piling on.
 //   3. Hidden tabs don't poll — a backgrounded dashboard left open for
 //      hours is pure load with nobody reading it.
+//   4. No client retries — every read in the hot batch passes
+//      `COORD_DASHBOARD_POLL_OPTIONS` (plan
+//      `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5),
+//      so a 504 costs one request and the next batch is the retry. Rule 1 is
+//      this hook's own single-flight, which predates `useSingleFlight`.
+//
+// Two reads sit OUTSIDE rule 1's batch latch, deliberately:
+//
+//   - `fetchMergedPrs` runs on its own slower chain under its OWN latch
+//     (`mergedReadRef`, see `readMergedIfStale`), with no client retry, so it
+//     is single-flight too — just not behind the hot batch, which a 20 s
+//     merged read would otherwise starve.
+//   - `onSuggestionAction`'s `fetchSuggestions` re-read runs once per
+//     operator click, right after that click's POST, so the acted-on row
+//     leaves the list at once. It is operator-triggered and bounded by the
+//     clicks (the action button is busy while it runs), and it passes
+//     `COORD_DASHBOARD_POLL_OPTIONS` like the batch read of the same route.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { isMergedPr } from "./prPipeline";
+import { normalizeMergeEconomics } from "./mergeEconomics";
 import type {
   BlastRadiusBlock,
   BlastRadiusBlocksResponse,
   MergeEconomics,
-  MergeEconomicsResponse,
   PrListResponse,
   PrRow,
   ProposalDetail,
@@ -172,6 +196,19 @@ export interface MergePipelineData {
    */
   mergedError: string | null;
   /**
+   * Error from the last open-PR listing read (the hot poll's
+   * `/pr-merge/prs`), or `null` when it succeeded. A failed read KEEPS the
+   * last good rows, so without this a slow or failing coord renders as a
+   * current pipeline. Read it with {@link MergePipelineData.prsLoaded}:
+   *
+   * - `prsLoaded` false: no read has ever succeeded. `prs` is `[]` so the
+   *   page can render, but that is UNKNOWN, not an empty pipeline.
+   * - `prsLoaded` true: the rows are the last good read, and STALE.
+   */
+  prsError: string | null;
+  /** Whether any open-PR listing read has succeeded since mount. */
+  prsLoaded: boolean;
+  /**
    * How many PRs landed in the {@link MERGED_LOOKBACK_HOURS} window, per
    * coord's cheap count — available WITHOUT the expensive merged-rows read, so
    * the Merged tab can be labelled before anyone opens it. `null` = unknown
@@ -226,6 +263,8 @@ export function useMergePipelineData(
   const [prs, setPrs] = useState<PrRow[] | null>(null);
   const [mergedPrs, setMergedPrs] = useState<PrRow[] | null>(null);
   const [mergedError, setMergedError] = useState<string | null>(null);
+  const [prsError, setPrsError] = useState<string | null>(null);
+  const [prsLoaded, setPrsLoaded] = useState(false);
   const [mergedCount, setMergedCount] = useState<number | null>(null);
   const [economicsByRepo, setEconomicsByRepo] = useState<
     Record<string, MergeEconomics>
@@ -265,13 +304,16 @@ export function useMergePipelineData(
    * evaporate for any batch slower than the floor (elapsed already exceeds
    * it the moment the batch ends), which is precisely the degraded regime it
    * has to hold in. Anchoring to completion guarantees a real idle gap in
-   * which the backend's pooled connections are actually released.
+   * which no request of ours is outstanding against coord.
    */
   const lastBatchEndedAtRef = useRef(0);
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/merge/queue`);
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/merge/queue`,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as QueueResponse | ProposalDetail[];
       const list = Array.isArray(body) ? body : (body.proposals ?? []);
@@ -303,11 +345,16 @@ export function useMergePipelineData(
   const fetchPrs = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`
+        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
-          if (!cleanedUpRef.current) setPrs([]);
+          if (!cleanedUpRef.current) {
+            setPrs([]);
+            setPrsError(null);
+            setPrsLoaded(true);
+          }
           return;
         }
         throw new Error(`HTTP ${res.status}`);
@@ -325,6 +372,8 @@ export function useMergePipelineData(
       if (!cleanedUpRef.current) {
         setPrs(list);
         setMergedCount(typeof count === "number" ? count : null);
+        setPrsError(null);
+        setPrsLoaded(true);
       }
     } catch (err) {
       // Keep the last known-good list. This endpoint is slow enough on a
@@ -333,7 +382,13 @@ export function useMergePipelineData(
       // which reads as "nothing to do" rather than "the read failed". 404 is
       // handled above and IS authoritative emptiness.
       log.warn("fetchPrs failed — keeping last known rows", err);
-      if (!cleanedUpRef.current) setPrs((prev) => prev ?? []);
+      // ...and SAY so: kept rows are stale, and a never-loaded list is
+      // unknown. `prsError` is what lets the page tell either apart from a
+      // current, genuinely short pipeline.
+      if (!cleanedUpRef.current) {
+        setPrs((prev) => prev ?? []);
+        setPrsError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, []);
 
@@ -346,10 +401,10 @@ export function useMergePipelineData(
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`,
         // No client retry. The client retries every 5xx up to 3 times, and each
-        // attempt is a full coord query that holds a backend DB connection for
-        // its whole (14-21s) life: a coord that is already struggling would be
-        // asked the same expensive question four times per poll. The next poll
-        // IS the retry, on the cold cadence this read is meant to have.
+        // attempt is a full coord query (14-21s for a 48h window): a coord that
+        // is already struggling would be asked the same expensive question four
+        // times per poll. The next poll IS the retry, on the cold cadence this
+        // read is meant to have.
         { maxRetries: 0 }
       );
       if (!res.ok) {
@@ -408,7 +463,8 @@ export function useMergePipelineData(
   const fetchEconomics = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/merge-economics`
+        `${OPERATIONS_API}/pr-merge/merge-economics`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -417,27 +473,10 @@ export function useMergePipelineData(
         }
         throw new Error(`HTTP ${res.status}`);
       }
-      const body = (await res.json()) as
-        | MergeEconomicsResponse
-        | Record<string, MergeEconomics>
-        | Array<MergeEconomics & { repo?: string }>;
-      let map: Record<string, MergeEconomics> = {};
-      if (Array.isArray(body)) {
-        for (const e of body) {
-          if (e && typeof e.repo === "string") map[e.repo] = e;
-        }
-      } else if (
-        body &&
-        typeof body === "object" &&
-        "repos" in body &&
-        body.repos &&
-        typeof body.repos === "object"
-      ) {
-        map = body.repos as Record<string, MergeEconomics>;
-      } else if (body && typeof body === "object") {
-        // Already keyed by repo.
-        map = body as Record<string, MergeEconomics>;
-      }
+      // One shared normalizer (`mergeEconomics.ts`): coord's no-repo answer
+      // is `{as_of, repos: [ {repo, ...} ]}`, which the inline version here
+      // used to key by array INDEX.
+      const map = normalizeMergeEconomics(await res.json()).byRepo;
       if (!cleanedUpRef.current) setEconomicsByRepo(map);
     } catch (err) {
       log.warn("fetchEconomics failed", err);
@@ -448,7 +487,8 @@ export function useMergePipelineData(
   const fetchSuggestions = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/suggestions`
+        `${OPERATIONS_API}/pr-merge/suggestions`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -471,7 +511,8 @@ export function useMergePipelineData(
   const fetchGateBlocks = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`
+        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -763,8 +804,8 @@ export function useMergePipelineData(
 
     // Hidden-gated like every other path into `fetchAll`: session-restore or
     // ctrl-clicking several dashboard tabs into the background would
-    // otherwise each fire 5 concurrent requests before anything is on screen
-    // — four such tabs is the entire 20-connection pool. `onVisibility`
+    // otherwise each fire 5 concurrent coord-backed requests before anything
+    // is on screen, for tabs nobody is reading. `onVisibility`
     // fetches on first reveal, so nothing is lost.
     if (!document.hidden) void fetchAllRef.current();
     pollTimerRef.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
@@ -806,15 +847,15 @@ export function useMergePipelineData(
   //
   // The same three load rules as the main batch (see the header): single-flight,
   // a gap measured from COMPLETION, and no polling from a hidden tab. This read
-  // holds a backend DB connection for 14-21s, so it is the one that most needs
-  // them — it used to run on a bare `setInterval`, which stacks requests when
+  // keeps coord busy for 14-21s, so it is the one that most needs them — it
+  // used to run on a bare `setInterval`, which stacks requests when
   // coord slows down, and polled from tabs nobody was looking at.
   // The in-flight read and the time of the last completed one are owned by the
   // HOOK, not by any one effect run. Owning them per effect run is what let
   // single-flight break: the effect re-runs when `includeMerged` flips (a tab
   // click away from All PRs and back) and under StrictMode, and each run's own
   // "I am not in flight" state started a second 14-21s read while the first was
-  // still pinning its DB connection. A new run now ADOPTS the read that is
+  // still running. A new run now ADOPTS the read that is
   // already out.
   //
   // The minimum age is the rate floor. Single-flight caps concurrency, not
@@ -898,6 +939,8 @@ export function useMergePipelineData(
     prs,
     mergedPrs,
     mergedError,
+    prsError,
+    prsLoaded,
     mergedCount,
     economicsByRepo,
     suggestions,

@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Monitor, History, KeyRound } from "lucide-react";
 import { RegisteredDevicesList } from "@/components/runners/RegisteredDevicesList";
 import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
-import { RunnerTokenList } from "@/components/server-runners/RunnerTokenList";
 import { PairCodeMintCard } from "@/components/server-runners/PairCodeMintCard";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 
@@ -71,8 +70,8 @@ export default function RunnersPage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Manage Runners</h2>
           <p className="text-text-muted">
-            All paired devices, session history, and the auth tokens runners
-            use to register themselves.
+            All paired devices, session history, and one-time pair codes for
+            pairing a new runner.
           </p>
         </div>
 
@@ -150,15 +149,11 @@ export default function RunnersPage() {
               <div>
                 <h3 className="text-xl font-semibold">Runner Auth Tokens</h3>
                 <p className="text-sm text-text-muted">
-                  Pair a new runner with a one-time code (recommended), or
-                  create a long-lived bearer token for CI / advanced use.
+                  Pair a new runner with a one-time code.
                 </p>
               </div>
             </div>
-            {/* Pair codes are the recommended path; render above the
-                long-lived-token card. */}
             <PairCodeMintCard />
-            <RunnerTokenList />
           </TabsContent>
         </Tabs>
       </main>

@@ -4,8 +4,21 @@
  * Poll `fn` on `intervalMs`, SKIPPING ticks while the tab is hidden and
  * catching up the moment it becomes visible again.
  *
- * The initial fetch is the CALLER's job and always runs, so a tab that mounts
- * hidden still has data when it is revealed. This hook owns only the repeat.
+ * The initial fetch is the CALLER's job by default, so a tab that mounts
+ * hidden still has data when it is revealed. Pass `{ runOnMount: true }` to
+ * have this hook make it instead, under the same in-flight guard as every
+ * later call (the fleet alarm badge does).
+ *
+ * ## Single-flight
+ *
+ * When `fn` returns a promise, nothing else is started until it settles: a
+ * tick or a reveal that lands while a read is outstanding is SKIPPED, not
+ * queued (plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
+ * D5). Without it a read slower than the interval stacked a second read on
+ * top of the first on every tick, against a coord that was already slow. A
+ * caller that wants the guard must RETURN its promise — `() => void p()`
+ * opts out. A reveal skipped this way is not lost: the outstanding read is
+ * already answering the same question.
  *
  * ## Why this is a module rather than a local helper
  *
@@ -27,9 +40,17 @@
  * mean pushing its specifics in here, which is the wrong direction.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
-export function useVisiblePoll(fn: () => void, intervalMs: number) {
+export function useVisiblePoll(
+  fn: () => void | Promise<unknown>,
+  intervalMs: number,
+  options: { runOnMount?: boolean } = {}
+) {
+  const runOnMount = options.runOnMount ?? false;
+  // Per hook instance, and deliberately NOT reset when the effect re-runs: a
+  // read started under the previous `fn` is still on the wire.
+  const inFlight = useRef(false);
   useEffect(() => {
     // An effect never runs during SSR, so `document` is in practice always
     // here; the guard is for a non-DOM test environment, and it defaults to
@@ -37,17 +58,35 @@ export function useVisiblePoll(fn: () => void, intervalMs: number) {
     // hook exists to do.
     const visible = () =>
       typeof document === "undefined" || document.visibilityState !== "hidden";
+    const run = () => {
+      if (inFlight.current) return;
+      let result: void | Promise<unknown>;
+      try {
+        result = fn();
+      } catch (err) {
+        console.error("[useVisiblePoll] poll threw", err);
+        return;
+      }
+      if (result && typeof (result as Promise<unknown>).then === "function") {
+        inFlight.current = true;
+        const release = () => {
+          inFlight.current = false;
+        };
+        (result as Promise<unknown>).then(release, release);
+      }
+    };
     const tick = () => {
-      if (visible()) fn();
+      if (visible()) run();
     };
     const onVisibilityChange = () => {
-      if (visible()) fn();
+      if (visible()) run();
     };
+    if (runOnMount) run();
     const id = setInterval(tick, intervalMs);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [fn, intervalMs]);
+  }, [fn, intervalMs, runOnMount]);
 }

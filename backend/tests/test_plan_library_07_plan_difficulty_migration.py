@@ -41,7 +41,7 @@ from tests._alembic_harness import (
 _SCRIPTS_CI = backend_root().parent / "scripts" / "ci"
 sys.path.insert(0, str(_SCRIPTS_CI))
 
-from _alembic_graph import PARENT_REF_RE, parse_source  # noqa: E402
+from _alembic_graph import parent_refs, parse_source  # noqa: E402
 
 _REVISION_ID = "plan_library_07_plan_difficulty"
 _REVISION_FILENAME = "plan_library_07_plan_difficulty.py"
@@ -75,7 +75,7 @@ def _parent_revision_id() -> str:
     never pinned, because ``alembic-heads-pr`` re-points open revisions."""
     parsed = parse_source(_revision_source())
     assert parsed is not None, f"{_REVISION_FILENAME} declares no parseable revision"
-    parents = PARENT_REF_RE.findall(parsed[1].partition("#")[0])
+    parents = parent_refs(parsed[1])
     assert len(parents) == 1, f"expected ONE parent, parsed {parents!r}"
     return parents[0]
 

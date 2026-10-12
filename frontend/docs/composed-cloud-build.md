@@ -515,7 +515,7 @@ deployments, and it fails in a disguised way: a protected `*.vercel.app` URL
 redirects to `vercel.com/sso-api` and — following that redirect — answers
 **HTTP 200** with a complete Next.js app that is Vercel's own login page. A
 naive marker or chunk grep against it reports "not composed" for a build it
-never looked at. The production alias is not protected (`verify-frontend-deploy.yml`
+never looked at. The production alias is not protected (`verify-frontend-run.yml`
 crawls `https://qontinui.io` unauthenticated for exactly this reason), so
 production is where this probe is run. Parse the response as JSON and treat a
 parse failure as *unknown*, never as *OSS*.

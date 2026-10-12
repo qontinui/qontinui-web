@@ -36,8 +36,18 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDownUp, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import {
+  ArrowDownUp,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+} from "lucide-react";
+import {
+  fetchFederationReports,
+  type FederationReport,
+} from "@/lib/api/operations/coordDelivery";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
   RecordDetail,
   StatCluster,
@@ -50,29 +60,7 @@ import {
   FEDERATION_STATUS_PALETTE,
 } from "./federationStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
-
-// ---- Types ----------------------------------------------------------------
-
-interface FederationReport {
-  id: string;
-  device_id: string;
-  session_id?: string;
-  account?: string;
-  pushed: number;
-  pulled: number;
-  failed: number;
-  failed_names?: string[];
-  created_at: string;
-  metadata?: Record<string, unknown>;
-}
-
-interface FederationReportsResponse {
-  reports?: FederationReport[];
-  items?: FederationReport[];
-  count?: number;
-}
 
 type TimeRange = "1h" | "24h" | "7d" | "all";
 
@@ -163,9 +151,7 @@ function SummaryTiles({ reports }: SummaryProps) {
     },
   ];
 
-  return (
-    <StatCluster stats={stats} data-testid="federation-summary" />
-  );
+  return <StatCluster stats={stats} data-testid="federation-summary" />;
 }
 
 // ---- Expanded row detail --------------------------------------------------
@@ -234,39 +220,41 @@ export default function CoordFederationPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const fetchData = useCallback(async () => {
-    try {
-      const since = sinceParam(timeRange);
-      const qs = new URLSearchParams();
-      if (since) qs.set("since", since);
-      qs.set("limit", "200");
-      const body = await httpClient.get<FederationReportsResponse>(
-        `${API}/federation/reports?${qs.toString()}`
-      );
-      setReports(body.reports ?? body.items ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [timeRange]);
+  const poll = useCallback(
+    async (isCurrent: () => boolean) => {
+      try {
+        const since = sinceParam(timeRange);
+        const body = await fetchFederationReports(
+          { since, limit: 200 },
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (!isCurrent()) return;
+        setReports(body.reports ?? body.items ?? []);
+        setError(null);
+      } catch (e) {
+        if (!isCurrent()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [timeRange]
+  );
 
   useEffect(() => {
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  }, [poll]);
+
+  const { refresh } = useSingleFlightPoll(poll, POLL_INTERVAL_MS, {
+    supersedeOnChange: true,
+  });
 
   const sorted = useMemo(() => {
     const copy = [...reports];
     copy.sort((a, b) => {
       const at = a.created_at ?? "";
       const bt = b.created_at ?? "";
-      return sortDir === "desc"
-        ? bt.localeCompare(at)
-        : at.localeCompare(bt);
+      return sortDir === "desc" ? bt.localeCompare(at) : at.localeCompare(bt);
     });
     return copy;
   }, [reports, sortDir]);
@@ -280,10 +268,7 @@ export default function CoordFederationPage() {
   }, []);
 
   return (
-    <div
-      className="p-3 sm:p-6 space-y-4"
-      data-testid="coord-federation-page"
-    >
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-federation-page">
       {/* Time-range selector */}
       <div className="flex items-center gap-2 flex-wrap">
         {TIME_RANGES.map((tr) => (
@@ -300,13 +285,15 @@ export default function CoordFederationPage() {
         {/* The record count the retired CardTitle carried, kept on the one
             chrome line R9 allows rather than in a 72px header of its own. */}
         <Badge variant="outline" className="ml-auto font-mono text-[11px]">
-          <span className="font-normal text-muted-foreground">reports&nbsp;</span>
+          <span className="font-normal text-muted-foreground">
+            reports&nbsp;
+          </span>
           {reports.length}
         </Badge>
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchData}
+          onClick={() => void refresh()}
           data-testid="federation-refresh"
         >
           <RefreshCw className="h-3 w-3" />
