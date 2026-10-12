@@ -11325,7 +11325,7 @@
         "description": "Body coord sends to ``POST /internal/coord-push``.\n\nDeliberately carries NO ``category`` / ``channel_id`` (plan D7): a push\nnaming an Android channel the device has not created is not displayed\nwhile Expo still returns an ``ok`` ticket, which would turn ``accepted``\ninto an invisible failure.",
         "properties": {
           "body": {
-            "description": "Notification body. Coord sends at most 180 characters.",
+            "description": "Notification body, at most 1000 UTF-8 bytes. Coord sends at most 180 characters.",
             "maxLength": 1000,
             "title": "Body",
             "type": "string"
@@ -11358,6 +11358,7 @@
             "type": "string"
           },
           "title": {
+            "description": "At most 200 characters and 600 UTF-8 bytes.",
             "maxLength": 200,
             "minLength": 1,
             "title": "Title",

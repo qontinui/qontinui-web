@@ -40,6 +40,7 @@ import {
 import { ActionItemRow } from "@/components/admin/coord/ActionItemRow";
 import {
   ACTION_ITEM_RESOLVE_OPTIONS,
+  ALREADY_RESOLVED_SENTENCE,
   deriveActionItemsHealth,
   isAlreadyResolved,
   isMigrationPending,
@@ -131,13 +132,17 @@ export default function CoordActionItemsPage() {
         );
         await refresh();
       } catch (e) {
+        // 409 `already_resolved`: someone (the phone, an agent) resolved it
+        // first. Say that in words rather than the bare code, and re-read so
+        // the row shows the item's real state.
+        const already = isAlreadyResolved(e);
         setResolveErrors((prev) => ({
           ...prev,
-          [id]: operationsErrorReading(e),
+          [id]: already
+            ? new Error(ALREADY_RESOLVED_SENTENCE)
+            : operationsErrorReading(e),
         }));
-        // 409 `already_resolved`: someone (the phone, an agent) resolved it
-        // first. The refusal says so; the re-read shows the item's real state.
-        if (isAlreadyResolved(e)) await refresh();
+        if (already) await refresh();
       } finally {
         setResolvingIds((prev) => {
           const next = new Set(prev);

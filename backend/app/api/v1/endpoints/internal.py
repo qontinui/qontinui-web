@@ -19,11 +19,16 @@ global middleware guards ``/api/v1/internal/*`` (``main.py`` registers none),
 so :func:`_require_coord_secret` is the only gate on this module; every route
 added here must carry it.
 
-**Payload bounds.** Expo refuses a push larger than 4 KB, so the body is
-bounded to :data:`MAX_PUSH_BODY_CHARS` characters (tighter than the plan's
-original 4000 — coord sends at most 180) and ``data`` to
-:data:`MAX_PUSH_DATA_BYTES` bytes of serialized JSON; either above its bound is
-a 422 here rather than an Expo failure counted as ``failed``.
+**Payload bounds.** Expo refuses a notification payload over 4096 bytes, so
+every user-supplied field is bounded in UTF-8 BYTES (a character count
+under-measures non-ASCII text up to four times): ``title`` to
+:data:`MAX_PUSH_TITLE_BYTES` (and 200 characters), ``body`` to
+:data:`MAX_PUSH_BODY_BYTES` (tighter than the plan's original 4000 characters —
+coord sends at most 180 characters, which is at most 720 bytes), and ``data`` to
+:data:`MAX_PUSH_DATA_BYTES` bytes of compact UTF-8 JSON. Together that is at
+most 2624 bytes, leaving over 1400 bytes of the 4096 for Expo's own fields
+(``to``, ``sound``, ``priority``, the collapse id). A field over its bound is a
+422 here rather than an Expo failure counted as ``failed``.
 
 Who may make web send a push is a new authorization decision (plan D2,
 security content trigger 5): only a holder of the coord service secret, and
@@ -57,13 +62,19 @@ router = APIRouter()
 
 SECRET_HEADER = "X-Coord-Service-Secret"
 
-# Expo rejects a push whose payload exceeds 4 KB. The plan's contract allowed
-# a 4000-character body, which together with title and data could pass that
-# ceiling and fail at Expo instead of here. Coord sends at most the first 180
-# characters of an item's body, so these bounds cost coord nothing and keep
-# every accepted request well under Expo's limit.
-MAX_PUSH_BODY_CHARS = 1000
+# Expo rejects a notification payload over 4096 bytes. The plan's contract
+# allowed a 4000-character body, which with title and data could pass that
+# ceiling and fail at Expo instead of here. All three bounds are UTF-8 BYTES
+# (see the module docstring for the sum); coord sends at most 180 characters of
+# body (<= 720 bytes), so they cost coord nothing.
+MAX_PUSH_TITLE_CHARS = 200
+MAX_PUSH_TITLE_BYTES = 600
+MAX_PUSH_BODY_BYTES = 1000
 MAX_PUSH_DATA_BYTES = 1024
+
+
+def _utf8_len(value: str) -> int:
+    return len(value.encode("utf-8"))
 
 
 def _require_coord_secret(
@@ -102,10 +113,19 @@ class CoordPushRequest(BaseModel):
         max_length=50,
         description="Web user ids (auth.users.id) to push to. 1-50.",
     )
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(
+        min_length=1,
+        max_length=MAX_PUSH_TITLE_CHARS,
+        description=f"At most {MAX_PUSH_TITLE_CHARS} characters and "
+        f"{MAX_PUSH_TITLE_BYTES} UTF-8 bytes.",
+    )
     body: str = Field(
-        max_length=MAX_PUSH_BODY_CHARS,
-        description="Notification body. Coord sends at most 180 characters.",
+        # A UTF-8 string of N bytes has at most N characters, so this character
+        # bound is implied by the byte bound below; it is here so the schema
+        # states a length at all. The byte bound is the one that binds.
+        max_length=MAX_PUSH_BODY_BYTES,
+        description=f"Notification body, at most {MAX_PUSH_BODY_BYTES} UTF-8 "
+        "bytes. Coord sends at most 180 characters.",
     )
     data: dict[str, Any] = Field(
         description="Opaque payload delivered to the app (e.g. the deep link). "
@@ -118,10 +138,30 @@ class CoordPushRequest(BaseModel):
         description="Newer pushes with the same id replace older ones on the device.",
     )
 
+    @field_validator("title")
+    @classmethod
+    def _title_fits_expo(cls, value: str) -> str:
+        size = _utf8_len(value)
+        if size > MAX_PUSH_TITLE_BYTES:
+            raise ValueError(
+                f"title is {size} UTF-8 bytes; at most {MAX_PUSH_TITLE_BYTES}"
+            )
+        return value
+
+    @field_validator("body")
+    @classmethod
+    def _body_fits_expo(cls, value: str) -> str:
+        size = _utf8_len(value)
+        if size > MAX_PUSH_BODY_BYTES:
+            raise ValueError(
+                f"body is {size} UTF-8 bytes; at most {MAX_PUSH_BODY_BYTES}"
+            )
+        return value
+
     @field_validator("data")
     @classmethod
     def _data_fits_expo(cls, value: dict[str, Any]) -> dict[str, Any]:
-        size = len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+        size = _utf8_len(json.dumps(value, separators=(",", ":"), ensure_ascii=False))
         if size > MAX_PUSH_DATA_BYTES:
             raise ValueError(
                 f"data is {size} bytes as JSON; at most {MAX_PUSH_DATA_BYTES} "

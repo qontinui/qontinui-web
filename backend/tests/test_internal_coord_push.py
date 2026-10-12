@@ -7,7 +7,8 @@ must hold, each with the mutation that turns it red:
   header -> 401, right -> 200 (dropping the empty-secret check, or comparing
   with ``==`` on an empty configured value, fails);
 * the body is ``extra="forbid"`` and bounded (1-50 users, title <= 200,
-  body <= 1000, data <= 1024 bytes of JSON, priority high|default), and carries no ``category`` /
+  title <= 200 chars / 600 bytes, body <= 1000 bytes, data <= 1024 bytes of
+  UTF-8 JSON, priority high|default), and carries no ``category`` /
   ``channel_id`` (plan D7);
 * no active tokens -> ``devices: 0`` and Expo is never called;
 * a ticket mix is counted positionally: ``ok`` -> accepted, errors -> failed,
@@ -178,6 +179,10 @@ class TestBodyValidation:
             {"title": "x" * 201},
             {"body": "x" * 1001},
             {"data": {"blob": "x" * 1100}},
+            # Byte bounds, not character bounds: 4-byte characters.
+            {"title": "\U0001f600" * 151},
+            {"body": "\U0001f600" * 251},
+            {"data": {"blob": "\U0001f600" * 256}},
             {"priority": "urgent"},
             {"data": "not-an-object"},
             {"category": "operator_action"},
@@ -207,6 +212,22 @@ class TestBodyValidation:
             headers={"X-Coord-Service-Secret": SECRET},
         )
         assert resp.status_code == 200
+
+
+class TestByteBounds:
+    def test_non_ascii_is_measured_in_utf8_not_escaped_json(self, configured):
+        # 300 two-byte characters: 600 UTF-8 bytes of JSON, but 1800+ bytes
+        # if measured as \\uXXXX escapes. It must be accepted.
+        resp = TestClient(_app(FakeSession([]))).post(
+            URL,
+            json=_body(
+                title="\u00e9" * 200,
+                body="\u00e9" * 500,
+                data={"t": "\u00e9" * 300},
+            ),
+            headers={"X-Coord-Service-Secret": SECRET},
+        )
+        assert resp.status_code == 200, resp.text
 
 
 class TestDelivery:

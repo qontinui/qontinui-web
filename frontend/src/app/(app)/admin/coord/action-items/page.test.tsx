@@ -316,11 +316,22 @@ describe("CoordActionItemsPage", () => {
     expect(screen.getByTestId("action-item-title")).toBeInTheDocument();
   });
 
-  it("a 409 already_resolved shows the refusal and re-reads", async () => {
+  it("a 409 already_resolved says so in words and re-reads", async () => {
     httpGet.mockResolvedValue(envelope([actionItem()]));
+    // The REAL wire shape: web's error handler puts coord's code at the top
+    // level, renders `message` as a Python repr of coord's dict (not JSON),
+    // and splices coord's other keys (`item`) into the envelope.
+    const resolved = actionItem({ status: "dismissed" });
+    const wire = {
+      error: "already_resolved",
+      message: `{'error': 'already_resolved', 'item': {'item_id': '${ID_A}'}}`,
+      timestamp: 1760000000.5,
+      path: "http://testserver/api/v1/operations/action-items/resolve",
+      item: resolved,
+    };
     httpPost.mockRejectedValue(
       new Error(
-        'POST /api/v1/operations/action-items/resolve failed: 409 - {"error":"already_resolved"}'
+        `POST /api/v1/operations/action-items/resolve failed: 409 - ${JSON.stringify(wire)}`
       )
     );
     const user = userEvent.setup();
@@ -330,9 +341,67 @@ describe("CoordActionItemsPage", () => {
     await user.click(screen.getByTestId(`action-item-done-${ID_A}`));
     expect(
       await screen.findByTestId("action-item-resolve-error")
-    ).toBeInTheDocument();
+    ).toHaveTextContent("Already resolved elsewhere — refreshed");
+    expect(
+      screen.getByTestId("action-item-resolve-error")
+    ).not.toHaveTextContent("already_resolved");
     await waitFor(() =>
       expect(httpGet.mock.calls.length).toBeGreaterThan(before)
+    );
+  });
+
+  it("a 409 with another code is an ordinary refusal and does not re-read", async () => {
+    httpGet.mockResolvedValue(envelope([actionItem()]));
+    httpPost.mockRejectedValue(
+      new Error(
+        'POST /api/v1/operations/action-items/resolve failed: 409 - {"error":"conflict","message":"something else"}'
+      )
+    );
+    const user = userEvent.setup();
+    render(<CoordActionItemsPage />);
+    await user.click(await screen.findByTestId("action-item-title"));
+    const before = httpGet.mock.calls.length;
+    await user.click(screen.getByTestId(`action-item-done-${ID_A}`));
+    const shown = await screen.findByTestId("action-item-resolve-error");
+    expect(shown).not.toHaveTextContent("Already resolved");
+    expect(httpGet.mock.calls.length).toBe(before);
+  });
+
+  it("two concurrent resolves each keep their own buttons disabled", async () => {
+    httpGet.mockResolvedValue(
+      envelope([
+        actionItem(),
+        actionItem({ item_id: ID_B, title: "Second owed item" }),
+      ])
+    );
+    const pending: Record<string, (v: unknown) => void> = {};
+    httpPost.mockImplementation(
+      (_url: string, body: { item_id: string }) =>
+        new Promise((resolve) => {
+          pending[body.item_id] = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    render(<CoordActionItemsPage />);
+    const titles = await screen.findAllByTestId("action-item-title");
+
+    await user.click(titles[0]);
+    await user.click(screen.getByTestId(`action-item-done-${ID_A}`));
+    expect(screen.getByTestId(`action-item-done-${ID_A}`)).toBeDisabled();
+
+    await user.click(screen.getAllByTestId("action-item-title")[1]);
+    await user.click(screen.getByTestId(`action-item-done-${ID_B}`));
+    expect(screen.getByTestId(`action-item-done-${ID_B}`)).toBeDisabled();
+
+    // A finishes first. B's request is still out, so B must stay disabled —
+    // a single "resolving id" slot would have been cleared here.
+    pending[ID_A]({ item: actionItem({ status: "done" }) });
+    await waitFor(() => expect(httpGet.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.getByTestId(`action-item-done-${ID_B}`)).toBeDisabled();
+
+    pending[ID_B]({ item: actionItem({ item_id: ID_B, status: "done" }) });
+    await waitFor(() =>
+      expect(screen.getByTestId(`action-item-done-${ID_B}`)).toBeEnabled()
     );
   });
 });

@@ -163,10 +163,20 @@ export function isMigrationPending(err: unknown): boolean {
   );
 }
 
-/** Coord's 409: the item was already resolved with the other status. */
+/**
+ * Coord's 409 `already_resolved`: the item was resolved first, with the other
+ * status, by someone else (the phone, an agent). Both the status and coord's
+ * code must agree — a 409 with any other code is an ordinary refusal.
+ */
 export function isAlreadyResolved(err: unknown): boolean {
-  return httpStatusOf(err) === 409;
+  return (
+    httpStatusOf(err) === 409 && coordErrorCode(err) === "already_resolved"
+  );
 }
+
+/** What the row says after an `already_resolved` refusal and the re-read. */
+export const ALREADY_RESOLVED_SENTENCE =
+  "Already resolved elsewhere — refreshed to show its current state.";
 
 // ---------------------------------------------------------------------------
 // Status → attention → palette.
