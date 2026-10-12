@@ -49,8 +49,19 @@ export function readIsUnknown(loaded: boolean, readFailed: boolean): boolean {
  * match first.
  */
 export function isNotFoundError(err: unknown): boolean {
+  return httpStatusOfError(err) === 404;
+}
+
+/**
+ * The HTTP status coord ANSWERED with, recovered from the message `httpClient`
+ * formats (`<METHOD> <url> failed: <status> - <body>`), or `null` when the
+ * error carries none — a read that never landed. Same anchoring as
+ * {@link isNotFoundError}, which is this function at 404.
+ */
+export function httpStatusOfError(err: unknown): number | null {
   const message = err instanceof Error ? err.message : String(err ?? "");
-  return /\sfailed:\s404\s-\s/.test(message);
+  const m = /\sfailed:\s(\d{3})\s-\s/.exec(message);
+  return m ? Number(m[1]) : null;
 }
 
 /** The detail line for a strip whose counts nobody managed to fetch. */

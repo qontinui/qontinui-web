@@ -55,6 +55,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 TEST_TENANT_ID = uuid4()
 API_PREFIX = "/api/v1/operations"
 
@@ -839,3 +841,150 @@ class TestCoordPlansThroughput:
 
         paths = [getattr(r, "path", "") for r in router.routes]
         assert paths.index("/plans/throughput") < paths.index("/plans/{slug}")
+
+
+class TestCoordPlanAttribution:
+    """``GET /operations/plans/{slug}/attribution`` → coord's operator-only
+    ``/coord/work-units/{slug}/attribution`` (plan
+    ``2026-09-19-plan-library-cannot-answer-what-to-work-on-next`` Phase 0d/7).
+    """
+
+    _SLUG = "2026-09-19-plan-library-cannot-answer-what-to-work-on-next"
+    _BODY = {
+        "slug": _SLUG,
+        "attribution_available": True,
+        "shipped_by": [
+            {
+                "session_name": "plan-foo",
+                "pr_refs": [
+                    {
+                        "repo": "qontinui/qontinui-web",
+                        "pr_number": 12,
+                        "merged": True,
+                        "attribution_is_single_session": True,
+                    }
+                ],
+            }
+        ],
+        "unnamed_session_count": 1,
+        "unattributed_pr_count": 2,
+    }
+
+    def _get(
+        self,
+        client: TestClient,
+        slug: str,
+        *,
+        status_code: int = 200,
+        body: object = None,
+    ):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                status_code=status_code,
+                json_data=self._BODY if body is None else body,
+            )
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/plans/{slug}/attribution")
+        return resp, instance
+
+    def test_proxies_to_the_coord_attribution_door_unchanged(
+        self, auth_client: TestClient
+    ):
+        resp, instance = self._get(auth_client, self._SLUG)
+        assert resp.status_code == 200
+        assert resp.json() == self._BODY
+        url = instance.get.call_args.args[0]
+        assert url.endswith(f"/coord/work-units/{self._SLUG}/attribution")
+        # Nothing invented on the query string.
+        assert not instance.get.call_args.kwargs.get("params")
+
+    def test_the_operator_bearer_is_forwarded(self, auth_client: TestClient):
+        """``tenant_id=`` is what makes ``_proxy_coord_get`` forward the
+        bearer coord authorizes on; without it coord answers 401/403."""
+        with patch_ops(
+            "_tenant_headers",
+            return_value={"Authorization": "Bearer op"},
+        ) as headers:
+            _, instance = self._get(auth_client, self._SLUG)
+        headers.assert_called_once_with(TEST_TENANT_ID)
+        assert instance.get.call_args.kwargs["headers"] == {
+            "Authorization": "Bearer op"
+        }
+
+    def test_an_unavailable_attribution_passes_through_as_unknown(
+        self, auth_client: TestClient
+    ):
+        unavailable = {
+            "slug": self._SLUG,
+            "attribution_available": False,
+            "unavailable_reason": "lineage_tenant_column_missing",
+            "shipped_by": [],
+            "unnamed_session_count": None,
+            "unattributed_pr_count": None,
+        }
+        resp, _ = self._get(auth_client, self._SLUG, body=unavailable)
+        assert resp.status_code == 200
+        assert resp.json() == unavailable
+
+    @pytest.mark.parametrize("status_code", [403, 404])
+    def test_coords_refusal_is_forwarded(
+        self, auth_client: TestClient, status_code: int
+    ):
+        resp, _ = self._get(
+            auth_client, self._SLUG, status_code=status_code, body={"error": "x"}
+        )
+        assert resp.status_code == status_code
+
+    # Each of these REACHES the route (httpx would normalise a bare ``..``
+    # segment away before sending, so it would test nothing) and is refused
+    # only by the slug pattern.
+    @pytest.mark.parametrize("slug", ["..x", ".hidden", "-x", "a%20b"])
+    def test_a_slug_that_could_re_point_the_proxied_path_is_refused(
+        self, auth_client: TestClient, slug: str
+    ):
+        resp, instance = self._get(auth_client, slug)
+        assert resp.status_code in (404, 422)
+        instance.get.assert_not_called()
+
+    def test_a_caller_with_no_bearer_never_reaches_coord(self):
+        """The REAL ``get_tenant_id`` (no override): a request carrying no
+        bearer is refused by the operator-identity resolution before any coord
+        call — the path a device or agent caller without a Cognito token takes.
+        """
+        from app.api.v1.endpoints.operations import get_tenant_id
+
+        app = _build_test_app()
+        del app.dependency_overrides[get_tenant_id]
+        resp, instance = self._get(TestClient(app), self._SLUG)
+        assert resp.status_code in (401, 403)
+        instance.get.assert_not_called()
+
+    def test_an_identity_with_no_operator_tenant_is_refused(self):
+        """coord's ``/admin/coord/me`` resolving no tenant for the bearer (what a
+        non-operator token yields) is a 403 here, and the attribution door is
+        never asked."""
+        from app.api.v1.endpoints.operations import get_tenant_id
+
+        app = _build_test_app()
+        del app.dependency_overrides[get_tenant_id]
+        identity = MagicMock(home_tenant_id=None)
+        with patch_ops(
+            "get_coord_identity",
+            AsyncMock(return_value=identity),
+        ):
+            resp, instance = self._get(TestClient(app), self._SLUG)
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "tenant_not_resolved"
+        instance.get.assert_not_called()
+
+    def test_attribution_depends_on_the_operator_tenant_dependency(self):
+        from app.api.v1.endpoints.operations import get_tenant_id, router
+
+        route = next(
+            r
+            for r in router.routes
+            if getattr(r, "path", "") == "/plans/{slug}/attribution"
+        )
+        calls = [d.call for d in route.dependant.dependencies]
+        assert get_tenant_id in calls

@@ -8,7 +8,8 @@
  * Plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next` Phase 1
  * (the open-artifact affordance folded in from the retired
  * `/admin/coord/plan-library` list) and Phases 3/6 (class, vet freshness and
- * custody spelled out — the row line carries only the short badge).
+ * custody spelled out — the row line carries only the short badge), and
+ * Phase 7 (who shipped it, by session display name — {@link PlanShippedBy}).
  *
  * **The document opens in place, under this row.** `ArtifactDetailPanel` is
  * reused unchanged; following a provenance edge inside it re-points the same
@@ -28,6 +29,8 @@ import type {
 import type { ReconciliationRowData } from "@/components/admin/coord/planReconciliationStatus";
 import { describeStatusClass, needsVetImp } from "./statusClass";
 import { describeCustody } from "./custody";
+import { describePrRef, describeShippedBy } from "./attribution";
+import { useAttribution } from "./useAttribution";
 
 export interface ArtifactDocumentActions {
   fetchDetail: (id: string) => Promise<WorkArtifactDetail | null>;
@@ -81,6 +84,81 @@ export function PlanTriageDetail({ row }: { row: ReconciliationRowData }) {
         <span className={custody.unknown ? "italic" : ""}>{custody.label}</span>
         <span className="text-muted-foreground"> — {custody.title}</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Shipped by": the session display names coord's commit lineage attributes
+ * the unit's cited PRs to, read through the operator-only attribution door.
+ *
+ * Only a unit coord holds is asked about; a stem with no unit, or a work-unit
+ * read that failed, says so instead of reading. Every count coord did not
+ * report, and every name it withheld, is said — never rendered as empty.
+ */
+export function PlanShippedBy({ row }: { row: ReconciliationRowData }) {
+  const askable = row.axis_a.readable && row.axis_a.present;
+  const reading = useAttribution(row.slug, askable);
+  if (!row.axis_a.readable) {
+    return (
+      <div className="text-xs" data-testid="coord-plan-shipped-by">
+        <span className="text-muted-foreground">Shipped by: </span>
+        <span className="italic text-muted-foreground">
+          UNKNOWN — coord&apos;s work-unit read failed, so attribution was not asked
+        </span>
+      </div>
+    );
+  }
+  if (!row.axis_a.present) {
+    return (
+      <div className="text-xs" data-testid="coord-plan-shipped-by">
+        <span className="text-muted-foreground">Shipped by: </span>
+        <span className="text-muted-foreground">
+          coord holds no work unit for this stem, so there is nothing to attribute
+        </span>
+      </div>
+    );
+  }
+  const d = describeShippedBy(reading);
+  return (
+    <div className="text-xs space-y-0.5" data-testid="coord-plan-shipped-by">
+      <div>
+        <span className="text-muted-foreground">Shipped by: </span>
+        {reading.state === "loaded" && reading.groups.length > 0 ? (
+          <ul
+            role="list"
+            className="inline"
+            data-testid="coord-plan-shipped-by-names"
+          >
+            {reading.groups.map((g, i) => (
+              <li key={g.sessionName} className="inline">
+                {i > 0 && ", "}
+                <span className="font-medium">{g.sessionName}</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  ({g.prs.map(describePrRef).join("; ")})
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <span
+            className={d.unknown ? "italic text-muted-foreground" : ""}
+            data-testid="coord-plan-shipped-by-summary"
+          >
+            {d.summary}
+          </span>
+        )}
+      </div>
+      {d.notes.map((note) => (
+        <div
+          key={note}
+          className="text-muted-foreground"
+          data-testid="coord-plan-shipped-by-note"
+        >
+          {note}
+        </div>
+      ))}
     </div>
   );
 }
