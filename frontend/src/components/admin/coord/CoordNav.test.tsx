@@ -35,8 +35,9 @@ const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
-    // `/fleet/health` is read through `httpClient.fetch` (the typed client's
-    // `fetchFleetHealth`). Every route in this suite answers as `httpGet`'s
+    // `/fleet/health` and the notifications badge are read through
+    // `httpClient.fetch` (the typed client's `fetchFleetHealth` and
+    // `fetchNotifications`). Every route in this suite answers as `httpGet`'s
     // parsed body, so the fetch read is served from the same table as a 200
     // Response, and a rejection passes through exactly as `get`'s did.
     fetch: async (url: string, init?: unknown) =>

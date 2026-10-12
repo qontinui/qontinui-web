@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ExternalLink, ListChecks } from "lucide-react";
+import { GlossaryTerm } from "@/components/console";
 import { ComplianceStateNotice } from "./ComplianceStateNotice";
 import {
   ATTRIBUTION_META,
@@ -236,7 +237,9 @@ export function OutstandingWorkLedger({
               <TableRow>
                 <TableHead>Item</TableHead>
                 <TableHead className="w-28">State</TableHead>
-                <TableHead>Gate or stated reason</TableHead>
+                <TableHead>
+                  <GlossaryTerm id="gate">Gate</GlossaryTerm> or stated reason
+                </TableHead>
                 <TableHead className="w-[15rem]">Session</TableHead>
                 <TableHead className="w-44">Reported</TableHead>
               </TableRow>
