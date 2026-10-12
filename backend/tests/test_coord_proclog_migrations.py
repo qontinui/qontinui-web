@@ -30,6 +30,7 @@ revisions. What this pins is the CONTRACT coord's projector and workers
 
 from __future__ import annotations
 
+import ast
 import re
 import uuid
 
@@ -174,6 +175,29 @@ def test_no_statement_coords_migration_classifier_rejects(
                 )
 
 
+_CONNECTION_CALLS = {"execute", "exec_driver_sql", "scalar", "scalars", "executemany"}
+
+
+@pytest.mark.parametrize(("revision_id", "filename"), _REVISIONS)
+def test_no_sql_runs_outside_op_execute(revision_id: str, filename: str) -> None:
+    """Mirror the classifier's ``forbid_unclassifiable_code``: anywhere in the
+    file (helpers and downgrade included), a connection call whose receiver is
+    not ``op`` — ``op.get_bind().execute(...)`` above all — is SQL the
+    classifier cannot inspect, and it escalates the PR to an operator."""
+    tree = ast.parse(_source(filename), filename=filename)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _CONNECTION_CALLS
+        ):
+            receiver = node.func.value
+            assert isinstance(receiver, ast.Name) and receiver.id == "op", (
+                f"{revision_id}:{node.lineno}: SQL executed outside op.execute "
+                f"(`{ast.unparse(node.func)}`)"
+            )
+
+
 _CREATE_INDEX = re.compile(
     r"^CREATE (?P<unique>UNIQUE )?INDEX (?:CONCURRENTLY )?IF NOT EXISTS "
     r"(?P<name>\w+) ON coord\.(?P<table>\w+) \( ?(?P<cols>[^)]*?) ?\)"
@@ -257,6 +281,15 @@ def _assert_present(engine: Engine) -> dict[str, tuple[bool, str]]:
         assert (" WHERE " in indexdef) == bool(match["pred"]), (
             f"{name}: partial predicate drifted: {indexdef}"
         )
+        if match["pred"]:
+            # PG renders `WHERE (x IS NOT NULL)`, with casts and extra parens;
+            # every column the source predicate names must be in the rendering.
+            rendered = indexdef.split(" WHERE ", 1)[1]
+            for column in re.findall(r"\b([a-z_]+)\b", match["pred"]):
+                if column not in {"is", "not", "null", "and", "open"}:
+                    assert column in rendered, (
+                        f"{name}: predicate column {column!r} missing: {indexdef}"
+                    )
     return indexes
 
 

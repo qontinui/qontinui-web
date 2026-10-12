@@ -86,14 +86,33 @@ fails or is withdrawn and is archived within one projector tick never appears
 here. The ``archived_at`` reader must therefore also project the terminal
 verdict of an archived gate whose terminal event was never projected.
 
+If a concurrent build fails, and why this revision cannot check
+==============================================================
+
+A cancelled, deadlocked or timed-out ``CREATE INDEX CONCURRENTLY`` leaves an
+INVALID index behind, and ``IF NOT EXISTS`` then skips it on every re-run
+while the revision reports success. Recovery: find it with
+
+    SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'coord' AND c.relname LIKE 'ix_proclog_%'
+       AND NOT i.indisvalid;
+
+then ``DROP INDEX CONCURRENTLY coord.<name>`` for each and re-run this
+revision. The check cannot live in ``upgrade()``: coord's migration
+classifier rejects any ``.execute`` whose receiver is not ``op`` (an
+``op.get_bind().execute`` validity query escalates the PR to an operator), and
+``op.execute`` of a ``SELECT`` or a ``DO`` block is rejected as an
+unrecognized statement. It runs instead where it can: the Phase 1 exit check
+before Phase 2 deploys, and the Phase 2 projector's health envelope, which
+must report an INVALID ``ix_proclog_*`` index as a degraded source.
+
 Revision 05 also changes live tables now, unlike 01-04: every insert or stamp
 update on the 21 indexed tables maintains the new indexes, and the planner may
 choose them for existing coord queries.
 """
 
 from collections.abc import Sequence
-
-import sqlalchemy as sa
 
 from alembic import op
 
@@ -102,85 +121,6 @@ revision: str = "coord_proclog_05"
 down_revision: str | Sequence[str] | None = "coord_proclog_04"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# Every index upgrade() builds, in build order; _require_valid() checks each.
-INDEX_NAMES: tuple[str, ...] = (
-    "ix_proclog_work_unit_status_history_transitioned_at",
-    "ix_proclog_work_units_created_at",
-    "ix_proclog_work_unit_pr_citations_cited_at",
-    "ix_proclog_work_unit_phase_attestations_attested_at",
-    "ix_proclog_work_unit_phase_attestations_retracted_at",
-    "ix_proclog_repo_branches_author_bound_at",
-    "ix_proclog_merge_proposals_updated_at",
-    "ix_proclog_gates_created_at",
-    "ix_proclog_gates_condition_met_since",
-    "ix_proclog_gates_cleared_at",
-    "ix_proclog_gates_continuation_dispatched_at",
-    "ix_proclog_gates_continuation_consumed_at",
-    "ix_proclog_gates_continuation_cancelled_at",
-    "ix_proclog_gates_continuation_expired_at",
-    "ix_proclog_gates_continuation_deferred_at",
-    "ix_proclog_gates_archived_at",
-    "ix_proclog_claims_audit_occurred_at",
-    "ix_proclog_operator_touches_emitted_at",
-    "ix_proclog_operator_touches_resolved_at",
-    "ix_proclog_operator_touch_classifications_classified_at",
-    "ix_proclog_agent_questions_created_at",
-    "ix_proclog_agent_questions_responded_at",
-    "ix_proclog_session_messages_created_at",
-    "ix_proclog_session_messages_delivered_at",
-    "ix_proclog_session_messages_read_at",
-    "ix_proclog_session_messages_acked_at",
-    "ix_proclog_findings_triaged_at",
-    "ix_proclog_alerts_claimed_at",
-    "ix_proclog_policy_rule_resolutions_outcome_labeled_at",
-    "ix_proclog_work_unit_dispatches_dispatched_at",
-    "ix_proclog_work_unit_dispatches_consumed_at",
-    "ix_proclog_session_expectations_updated_at",
-    "ix_proclog_deploy_signatures_created_at",
-    "ix_proclog_deploy_verifications_created_at",
-    "ix_proclog_session_compliance_updated_at",
-    "ix_proclog_session_policy_reads_read_at",
-    "ix_proclog_gates_terminal_unarchived",
-)
-
-
-def _require_valid() -> None:
-    """Refuse unless every index in ``INDEX_NAMES`` exists and is ``indisvalid``.
-
-    A cancelled, deadlocked or timed-out ``CREATE INDEX CONCURRENTLY`` leaves an
-    INVALID index behind, and ``IF NOT EXISTS`` then skips it on every re-run
-    while the revision reports success — the projector would sequentially scan
-    that table every tick while writes still pay to maintain the dead index.
-    The ``census_idx_01`` / ``coord_test_results_idx_01`` precedent.
-    """
-    rows = (
-        op.get_bind()
-        .execute(
-            sa.text(
-                "SELECT c.relname, i.indisvalid FROM pg_index i "
-                "JOIN pg_class c ON c.oid = i.indexrelid "
-                "JOIN pg_namespace n ON n.oid = c.relnamespace "
-                "WHERE n.nspname = 'coord' AND c.relname = ANY(:names)"
-            ),
-            {"names": list(INDEX_NAMES)},
-        )
-        .all()
-    )
-    valid = {row[0]: bool(row[1]) for row in rows}
-    bad = [
-        f"coord.{name} is {'INVALID' if name in valid else 'absent'}"
-        for name in INDEX_NAMES
-        if not valid.get(name, False)
-    ]
-    if bad:
-        raise RuntimeError(
-            "after CREATE INDEX CONCURRENTLY IF NOT EXISTS: "
-            + "; ".join(bad)
-            + ". A killed concurrent build left each INVALID one (IF NOT EXISTS "
-            "skipped it). Run `DROP INDEX CONCURRENTLY coord.<name>` for each "
-            "and re-run this revision."
-        )
 
 
 def upgrade() -> None:
@@ -485,7 +425,6 @@ def upgrade() -> None:
                 WHERE verdict <> 'open' AND archived_at IS NULL
             """
         )
-        _require_valid()
 
 
 def downgrade() -> None:
