@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { fetchPlansThroughput } from "@/lib/api/operations/coordPlans";
 import { isNotFoundError } from "@/components/console";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
@@ -22,8 +22,6 @@ import {
   sinceForRange,
   type ThroughputReading,
 } from "./throughput";
-
-export const THROUGHPUT_ENDPOINT = "/api/v1/operations/plans/throughput";
 
 /** The newest refresh failed while an earlier reading is still shown. */
 export interface ThroughputRefreshFailure {
@@ -51,10 +49,7 @@ export function useThroughput(days: number): {
     const id = ++reqId.current;
     const qs = new URLSearchParams({ since: sinceForRange(days) });
     try {
-      const body = await httpClient.get<unknown>(
-        `${THROUGHPUT_ENDPOINT}?${qs.toString()}`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchPlansThroughput(qs, COORD_DASHBOARD_POLL_OPTIONS);
       if (!mounted.current || id !== reqId.current) return;
       const next = deriveThroughput(body);
       // Only an ANSWER is held across a later failure; an unreadable body is
