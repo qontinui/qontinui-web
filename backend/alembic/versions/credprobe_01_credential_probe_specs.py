@@ -52,7 +52,8 @@ so a hand DML or a buggy writer cannot put an account id, an ARN or a
 secret-shaped canary into coord:
 
 * ``token`` — D1 grammar: ``cred:<service>[:<scope>]``, lowercase
-  ``[a-z0-9-]``, at most 3 segments; no 12-digit run (an AWS account id); no
+  ``[a-z0-9-]``, at most 3 segments; no 12-digit run, dashes ignored (an AWS
+  account id, including the console's dashed ``1234-5678-9012``); no
   ``arn:``. ``/``, ``\\``, ``~`` and ``@`` are already outside the charset.
 * ``probe_kind`` — the closed enum above.
 * ``region`` — AWS region shape (``eu-central-1``, ``us-gov-west-1``).
@@ -135,7 +136,7 @@ def upgrade() -> None:
             CONSTRAINT ck_credential_probe_specs_token_grammar
                 CHECK (token ~ '^cred:[a-z0-9-]+(:[a-z0-9-]+)?$'),
             CONSTRAINT ck_credential_probe_specs_token_no_account_id
-                CHECK (token !~ '[0-9]{12}'),
+                CHECK (replace(token, '-', '') !~ '[0-9]{12}'),
             CONSTRAINT ck_credential_probe_specs_token_no_arn
                 CHECK (strpos(token, 'arn:') = 0),
             CONSTRAINT ck_credential_probe_specs_probe_kind
