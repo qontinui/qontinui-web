@@ -12197,6 +12197,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/verification/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Verification Metrics
+         * @description Return coord's verification metrics object for the operator's tenant.
+         *
+         *     The tenant is coord's to resolve from the forwarded bearer; nothing from
+         *     the request names it. The body is coord's, verbatim — including the
+         *     ``degraded: true`` answer, which the page renders as "could not look".
+         */
+        get: operations["api_v1_operations_coord_verification_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/deploys": {
         parameters: {
             query?: never;
@@ -74829,6 +74853,38 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_verification_metrics_get: {
+        parameters: {
+            query?: {
+                /** @description ``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through. */
+                window?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

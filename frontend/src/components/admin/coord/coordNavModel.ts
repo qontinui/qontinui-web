@@ -77,6 +77,7 @@ import {
   Rocket,
   Scale,
   ScrollText,
+  SearchCheck,
   Server,
   ShieldCheck,
   SlidersHorizontal,
@@ -328,7 +329,7 @@ export const GROUPS: NavGroup[] = [
         // Phase 5.
         href: "/admin/coord/verification",
         label: "Verification",
-        icon: BadgeCheck,
+        icon: SearchCheck,
         testId: "coord-nav-verification",
       },
       {
