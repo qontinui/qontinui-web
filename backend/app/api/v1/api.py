@@ -87,6 +87,7 @@ from app.api.v1.endpoints import (
     pair_codes,
     phase_results,
     plan_library,
+    plan_library_followups,
     plan_library_scan_roots,
     project_files,
     project_images,
@@ -255,6 +256,14 @@ api_router.include_router(
 # ``tests/test_plan_library_scan_roots.py``.
 api_router.include_router(
     plan_library_scan_roots.router, prefix="/plan-library", tags=["plan-library"]
+)
+# The follow-up closure and anchor doors (``/edges/{edge_id}/anchors``,
+# ``/edges/{edge_id}/resolution``, ``/followups/match``,
+# ``/followups/reconcile``) — the same ordering rule, for the same reason: they
+# must be registered before ``plan_library``'s ``/{artifact_id}/…`` routes.
+# Pinned through this router by ``tests/test_plan_library_followups.py``.
+api_router.include_router(
+    plan_library_followups.router, prefix="/plan-library", tags=["plan-library"]
 )
 api_router.include_router(
     plan_library.router, prefix="/plan-library", tags=["plan-library"]
