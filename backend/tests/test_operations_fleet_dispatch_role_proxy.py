@@ -12,7 +12,8 @@ The properties pinned here:
    re-checks (§D9), but a proxy forwarding any member's write would make coord
    the only gate.
 2. **The write body is CLOSED**: exactly one machine key, no client-asserted
-   author, one of the three roles the table CHECKs.
+   author, one of the three roles the table CHECKs (or `bench`, the legacy
+   spelling of `testbed`, forwarded verbatim).
 3. **Coord's typed refusals survive the hop as STRUCTURED objects** with
    coord's own status — ``last_open_lane`` and ``no_agent_host`` call for
    different operator actions (one admits Force, the other does not), so the
@@ -95,14 +96,19 @@ def _configure_mock_client(MockClient, mock_instance):
 
 
 class TestReadRoles:
-    def test_proxies_coords_read_untouched(self, auth_client: TestClient):
+    # Both spellings: during the rename coord may serve either, and the read
+    # path must stay untyped (passed through), never validated against ours.
+    @pytest.mark.parametrize("suggested", ["testbed", "bench"])
+    def test_proxies_coords_read_untouched(
+        self, auth_client: TestClient, suggested: str
+    ):
         body = {
             "machines": [
                 {
                     "device_id": DEVICE_ID,
                     "name": "monster",
                     "dispatch_role": "unassigned",
-                    "suggestion": {"role": "bench", "mem_total_bytes": 33e9},
+                    "suggestion": {"role": suggested, "mem_total_bytes": 33e9},
                     "lanes": {
                         "agent": {"state": "closed_by_drain"},
                         "ci": {"state": "open"},
@@ -170,14 +176,18 @@ class TestWriteBody:
     ):
         resp, mock_instance = _put(
             auth_client,
-            {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": " rebuild "},
+            {
+                "device_id": DEVICE_ID,
+                "dispatch_role": "testbed",
+                "reason": " rebuild ",
+            },
         )
         assert resp.status_code == 200
         assert mock_instance.put.call_args[0][0].endswith("/coord/fleet/dispatch-role")
         sent = mock_instance.put.call_args.kwargs["json"]
         assert sent == {
             "device_id": DEVICE_ID,
-            "dispatch_role": "bench",
+            "dispatch_role": "testbed",
             "reason": "rebuild",
             "force": False,
         }
@@ -206,39 +216,60 @@ class TestWriteBody:
             "force": True,
         }
 
+    @pytest.mark.parametrize("role", ["testbed", "bench"])
+    def test_both_spellings_of_the_no_lanes_role_are_forwarded_verbatim(
+        self, auth_client: TestClient, role: str
+    ):
+        """``testbed`` is the name; ``bench`` is its legacy input spelling.
+
+        Plan Amendment 2026-10-10 A2/A6. Neither is rewritten into the other:
+        coord is the authority on spelling while the rename is in flight (a
+        coord predating it refuses ``testbed``; one carrying it parses both),
+        so the proxy forwards what the client sent.
+        """
+        resp, mock_instance = _put(
+            auth_client,
+            {"device_id": DEVICE_ID, "dispatch_role": role, "reason": "ui testing"},
+        )
+        assert resp.status_code == 200
+        assert mock_instance.put.call_args.kwargs["json"]["dispatch_role"] == role
+
     @pytest.mark.parametrize(
         "payload",
         [
+            # near-spellings of testbed are typos, not aliases
+            {"device_id": DEVICE_ID, "dispatch_role": "Testbed", "reason": "r"},
+            {"device_id": DEVICE_ID, "dispatch_role": "test_bed", "reason": "r"},
             # neither key
-            {"dispatch_role": "bench", "reason": "r"},
+            {"dispatch_role": "testbed", "reason": "r"},
             # both keys
             {
                 "device_id": DEVICE_ID,
                 "ci_host_name": "dell-2020",
-                "dispatch_role": "bench",
+                "dispatch_role": "testbed",
                 "reason": "r",
             },
             # a role the table CHECK does not admit
             {"device_id": DEVICE_ID, "dispatch_role": "unassigned", "reason": "r"},
             # blank reason
-            {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": "   "},
+            {"device_id": DEVICE_ID, "dispatch_role": "testbed", "reason": "   "},
             # missing reason
-            {"device_id": DEVICE_ID, "dispatch_role": "bench"},
+            {"device_id": DEVICE_ID, "dispatch_role": "testbed"},
             # a client-asserted author
             {
                 "device_id": DEVICE_ID,
-                "dispatch_role": "bench",
+                "dispatch_role": "testbed",
                 "reason": "r",
                 "updated_by": "someone-else@example.com",
             },
             # the device-list spelling, which coord's CI-host key never uses
             {
                 "ci_host_name": "gh-runner-msi-wsl",
-                "dispatch_role": "bench",
+                "dispatch_role": "testbed",
                 "reason": "r",
             },
             # whitespace inside a host name (mdroles_01's CHECK)
-            {"ci_host_name": "dell 2020", "dispatch_role": "bench", "reason": "r"},
+            {"ci_host_name": "dell 2020", "dispatch_role": "testbed", "reason": "r"},
         ],
     )
     def test_malformed_bodies_never_reach_coord(
@@ -285,7 +316,7 @@ class TestRefusalsPassThrough:
         bad.json.side_effect = ValueError("not json")
         resp, _ = _put(
             auth_client,
-            {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": "r"},
+            {"device_id": DEVICE_ID, "dispatch_role": "testbed", "reason": "r"},
             coord_resp=bad,
         )
         assert resp.status_code == 400
@@ -310,7 +341,7 @@ def test_the_write_is_admin_gated_before_any_coord_call() -> None:
     app.dependency_overrides[require_coord_tenant_admin] = _deny
     client = TestClient(app)
     resp, mock_instance = _put(
-        client, {"device_id": DEVICE_ID, "dispatch_role": "bench", "reason": "r"}
+        client, {"device_id": DEVICE_ID, "dispatch_role": "testbed", "reason": "r"}
     )
     assert mock_instance.put.await_count == 0
     assert resp.status_code == 403

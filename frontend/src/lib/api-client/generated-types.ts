@@ -32640,7 +32640,7 @@ export interface components {
              * Dispatch Role
              * @enum {string}
              */
-            dispatch_role: "workhorse" | "bench" | "ci_node";
+            dispatch_role: "workhorse" | "testbed" | "ci_node" | "bench";
             /**
              * Force
              * @default false
