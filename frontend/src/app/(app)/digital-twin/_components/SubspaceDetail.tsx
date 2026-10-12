@@ -24,7 +24,7 @@ import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
 import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
-import type { ResolvedSubspace } from "../_lib/types";
+import type { DriftVerdict, ResolvedSubspace } from "../_lib/types";
 
 interface SubspaceDetailProps {
   row: ResolvedSubspace | null;
@@ -41,17 +41,24 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
 }
 
 /**
- * Detail drawer for one sub-space. For live snapshot observers it fetches the
- * raw DriftVerdict (the exact JSON an AI agent receives) and renders both a
- * human-digestible summary and the raw JSON on demand. For all rows it shows
- * the twin and lifecycle stages, the backing coord tool / observer module, the
- * research doc and, while the row is still being built, the plan building it.
+ * Detail drawer for one sub-space. For live-probed observers answered on the
+ * twin door it fetches the raw answer (the exact JSON an AI agent receives)
+ * and renders both a human-digestible summary and the raw JSON on demand. A
+ * `report` door's answer is not a DriftVerdict, so it gets no verdict
+ * summary — only its raw JSON. An `envelope` door (the admin outbound budget)
+ * is not on the twin door at all, so there is no raw read to fetch here: its
+ * summary and credibility envelope come from the probe's own metrics. For
+ * all rows it shows the twin and lifecycle stages, the backing coord tool /
+ * observer module, the research doc and, while the row is still being built,
+ * the plan building it.
  */
 export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
-  const isSnapshot = row?.query_kind === "snapshot";
+  const readsRaw = !!row && row.liveProbed && row.doorShape !== "envelope";
+  const isReport = row?.doorShape === "report";
+  const isEnvelope = !!row && row.liveProbed && row.doorShape === "envelope";
   const { data, isLoading, isError, error } = useSubspaceRaw(
     row?.id ?? null,
-    !!row && isSnapshot
+    !!row && readsRaw
   );
   const [showRaw, setShowRaw] = useState(false);
 
@@ -88,7 +95,25 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   if (!row) return null;
   const style = presentStatus(row);
   const verdict = data?.verdict;
-  const summary = verdict ? summarizeVerdict(row.id, verdict) : null;
+  // An envelope door has no raw read here; the probe already carried its
+  // top-level DriftVerdict fields, so its live envelope is those metrics.
+  const envelopeVerdict: DriftVerdict | null =
+    isEnvelope && row.metrics
+      ? {
+          coverage: row.metrics.coverage,
+          credibility: row.metrics.credibility,
+          posterior: row.metrics.posterior,
+          staleness_seconds: row.metrics.staleness_seconds,
+          provenance: row.metrics.provenance,
+          drift_class: row.metrics.drift_class ?? undefined,
+        }
+      : null;
+  const summary =
+    verdict && !isReport
+      ? summarizeVerdict(row.id, verdict)
+      : envelopeVerdict
+        ? summarizeVerdict(row.id, envelopeVerdict)
+        : null;
 
   return (
     <Dialog open={!!row} onOpenChange={onOpenChange}>
@@ -105,9 +130,12 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
         </DialogHeader>
 
         <div className="max-h-[70vh] overflow-y-auto pr-1 text-sm">
-          {/* Human-digestible summary (snapshot observers only). */}
-          {isSnapshot && (
-            <div className="mb-3 rounded-md border border-border bg-muted/40 p-3">
+          {/* Human-digestible summary (live-probed observers only). */}
+          {(readsRaw || isEnvelope) && (
+            <div
+              data-testid="digital-twin-drawer-summary"
+              className="mb-3 rounded-md border border-border bg-muted/40 p-3"
+            >
               <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                 <Sparkles className="size-3.5" /> Summary
               </div>
@@ -124,6 +152,18 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                 </p>
               )}
               {summary && <p className="text-sm">{summary.prose}</p>}
+              {isEnvelope && !envelopeVerdict && (
+                <p className="text-sm text-muted-foreground">
+                  The probe returned no credibility envelope.
+                </p>
+              )}
+              {isReport && verdict && (
+                <p className="text-sm">
+                  coord answers this sub-space with its own report, not a
+                  verdict — served, not graded. The raw data below is the
+                  report.
+                </p>
+              )}
             </div>
           )}
 
@@ -232,7 +272,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
           )}
 
           {/* Raw data view — the exact JSON an AI agent receives. */}
-          {isSnapshot && verdict && (
+          {readsRaw && verdict && (
             <>
               <Separator className="my-2" />
               <div className="flex items-center justify-between">
