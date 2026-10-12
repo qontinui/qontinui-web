@@ -373,9 +373,7 @@ describe("coordPromptDocuments — the request each function sends", () => {
       .filter(([, v]) => typeof v === "function")
       .map(([k]) => k)
       .sort();
-    const covered = [
-      ...new Set(CASES.map((c) => c.name.split(" ")[0])),
-    ].sort();
+    const covered = [...new Set(CASES.map((c) => c.name.split(" ")[0]))].sort();
     expect(covered).toEqual(exported);
   });
 });
@@ -454,5 +452,34 @@ describe("coordPromptDocuments — responses", () => {
     await expect(
       api.updatePromptDocument("policy", "p", { body: "x" })
     ).rejects.toThrow();
+  });
+});
+
+describe("coordPromptDocuments — a gap report's proposed clause", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("createPromptDocumentClause posts GapRow's ProposedClause verbatim to the policy document's real clauses route", async () => {
+    // `GapRow`'s "Accept as clause" body: the agent's partial clause, status
+    // forced to `proposed`, plus `updated_by`, which `ClauseCreate` does not
+    // declare (coord ignores it and stamps the operator actor). The handler
+    // forwards the dict verbatim, so the body is sent byte for byte as given.
+    fetchMock.mockResolvedValueOnce(answer({ clause_id: "retry-twin-502" }));
+    await api.createPromptDocumentClause("policy", "escalation-bar", {
+      clause_id: "retry-twin-502",
+      action: "retry once",
+      status: "proposed",
+      tier: "2",
+      updated_by: "op@example.com",
+    });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/coord/prompt-documents/policy/escalation-bar/clauses",
+      {
+        method: "POST",
+        body: '{"clause_id":"retry-twin-502","action":"retry once","status":"proposed","tier":"2","updated_by":"op@example.com"}',
+        idempotent: false,
+      },
+    ]);
   });
 });
