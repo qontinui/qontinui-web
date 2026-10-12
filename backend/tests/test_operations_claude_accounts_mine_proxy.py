@@ -195,6 +195,35 @@ class TestGetMyClaudeAccounts:
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/coord/claude-accounts/usage/mine")
 
+    def test_null_weekly_utilization_is_forwarded_as_null(self, client: TestClient):
+        # Alembic `coord_claude_acct_usage_03` made the column nullable: a
+        # failed probe is NO READING, and must reach the client as null — not
+        # coerced to 0% (or anything else) on the way through.
+        coord_payload = {
+            "accounts": [
+                _account(
+                    _DEVICE_A,
+                    ".claude-gmail",
+                    weekly_utilization=None,
+                    weekly_resets_at=None,
+                    error=True,
+                )
+            ],
+            "table_provisioned": True,
+            "columns_provisioned": True,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            _configure_mock_client(MockClient, instance)
+            body = _get_mine(
+                client, instance, _mock_response(json_data=coord_payload)
+            ).json()
+
+        row = body["accounts"][0]
+        assert "weekly_utilization" in row
+        assert row["weekly_utilization"] is None
+        assert row["error"] is True
+
     def test_no_prepaid_keys_on_the_user_scoped_feed(self, client: TestClient):
         # Prepaid is keyed (tenant, device, provider) — a tenant fact, so it
         # stays on the tenant feed even if a coord build ever sent it here.
