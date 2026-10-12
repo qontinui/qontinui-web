@@ -17,14 +17,17 @@ import { render, screen } from "@testing-library/react";
 const getMock = vi.fn();
 const patchMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    patch: (...args: unknown[]) => patchMock(...args),
-    post: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (...args: unknown[]) => getMock(...args),
+      patch: (...args: unknown[]) => patchMock(...args),
+      post: vi.fn(),
+      delete: vi.fn(),
+    }),
+  };
+});
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
