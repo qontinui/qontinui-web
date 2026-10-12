@@ -8,8 +8,10 @@ import { describe, expect, it } from "vitest";
 import {
   EXPECTED_ORDERING,
   type OpenFollowupResponse,
+  daysInState,
   deriveFollowupHealth,
   describeFollowupWindow,
+  formatAnchor,
 } from "./followupStatus";
 
 function response(
@@ -179,5 +181,63 @@ describe("the strip", () => {
     expect(oldest?.label).toBe("oldest –");
     expect(oldest?.title).not.toMatch(/only on the first page/i);
     expect(oldest?.title).toMatch(/no row to read an age from/i);
+  });
+});
+
+describe("closure states and anchors", () => {
+  it("formats an anchor as repo:path, with its line or line range", () => {
+    expect(formatAnchor({ repo: "acme/widgets", path: "a/b.py" })).toBe(
+      "acme/widgets:a/b.py"
+    );
+    expect(
+      formatAnchor({ repo: "acme/widgets", path: "a/b.py", line_start: 7 })
+    ).toBe("acme/widgets:a/b.py:7");
+    expect(
+      formatAnchor({
+        repo: "acme/widgets",
+        path: "a/b.py",
+        line_start: 7,
+        line_end: 9,
+      })
+    ).toBe("acme/widgets:a/b.py:7-9");
+    expect(
+      formatAnchor({
+        repo: "acme/widgets",
+        path: "a/b.py",
+        line_start: 7,
+        line_end: 7,
+      })
+    ).toBe("acme/widgets:a/b.py:7");
+  });
+
+  it("reads time-in-state from resolved_at, and UNKNOWN without it", () => {
+    const now = new Date("2026-10-12T00:00:00Z");
+    const base = response().items![0];
+    expect(
+      daysInState({ ...base, resolved_at: "2026-10-09T00:00:00Z" }, now)
+    ).toBe(3);
+    expect(daysInState({ ...base, resolved_at: null }, now)).toBeNull();
+    expect(daysInState({ ...base, resolved_at: "not a time" }, now)).toBeNull();
+  });
+
+  it("heads each view with its own finding, and keeps the open caveat to the open view", () => {
+    const empty = response({ items: [], count: 0, total: 0 });
+    expect(deriveFollowupHealth(empty, true, false, 0, "fixing").headline).toBe(
+      "No follow-up is held by an open fix PR"
+    );
+    expect(
+      deriveFollowupHealth(empty, true, false, 0, "fixing").detail
+    ).toBeUndefined();
+    expect(
+      deriveFollowupHealth(response({ total: 4 }), true, false, 0, "resolved")
+        .headline
+    ).toBe("4 follow-ups resolved");
+    expect(
+      deriveFollowupHealth(response({ total: 4 }), true, false, 0, "fixing")
+        .badges[0]?.label
+    ).toBe("fixing 4");
+    expect(deriveFollowupHealth(empty, true, false).detail).toMatch(
+      /open view but are not deleted/
+    );
   });
 });
