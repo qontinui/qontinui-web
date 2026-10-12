@@ -56,7 +56,7 @@ import { LIFECYCLE_STAGES } from "../_lib/lifecycle";
 import { manifest } from "../_lib/resolve";
 import { LifecycleView } from "./LifecycleView";
 
-/** The snapshot sub-spaces qontinui-coord#3128 refuses to a non-system tenant. */
+/** The snapshot sub-spaces coord refuses to a non-system tenant (per qontinui-coord#3128). */
 const SYSTEM_TENANT_SUBSPACES = new Set([
   "release",
   "schema",
@@ -283,7 +283,7 @@ describe("LifecycleView", () => {
   });
 });
 
-describe("LifecycleView restriction (qontinui-coord#3128 split)", () => {
+describe("LifecycleView restriction (the split per qontinui-coord#3128)", () => {
   beforeEach(() => {
     state.probe = {
       data: probeAll(
@@ -305,6 +305,13 @@ describe("LifecycleView restriction (qontinui-coord#3128 split)", () => {
       "Every live probe at this stage is restricted for this tenant."
     );
     expect(release).toHaveTextContent("live-probed · 7 restricted");
+    // No probe answered because none was allowed to: the live count is a dash,
+    // never a 0 that reads as "nothing answered".
+    const liveCount = within(release)
+      .getByText("live-probed · 7 restricted")
+      .parentElement!.querySelector("dd")!;
+    expect(liveCount).toHaveTextContent(/^—$/);
+    expect(liveCount).not.toHaveTextContent("0");
     expect(release).not.toHaveTextContent("No live probe answering");
     // The access legend entry shows only when something is restricted.
     expect(screen.getByText("restricted (access)")).toBeInTheDocument();

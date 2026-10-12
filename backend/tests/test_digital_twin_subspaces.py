@@ -48,9 +48,10 @@ _COORD_SNAPSHOT_SUBSPACES = {
     "memory",
 }
 
-# The snapshot sub-spaces qontinui-coord#3128 scopes to the SystemTenant, so a
-# non-system tenant is refused each of them per cell (403) while ``worktree``
-# and ``memory`` still answer. Hand-copied from that PR, like the list above.
+# The snapshot sub-spaces qontinui-coord#3128 (open at the time of writing)
+# scopes to the SystemTenant, so once it lands a non-system tenant is refused
+# each of them per cell (403) while ``worktree`` and ``memory`` still answer.
+# Hand-copied from that PR's description, like the list above.
 _SYSTEM_TENANT_SUBSPACES = {
     "release",
     "schema",
@@ -347,7 +348,7 @@ class TestSubspacesEndpoint:
         assert {s["status"] for s in body["subspaces"]} == {"restricted"}
 
     def test_one_restricted_cell_does_not_restrict_the_matrix(self):
-        # The realistic qontinui-coord#3128 split for a non-system tenant: coord
+        # The split a non-system tenant sees once qontinui-coord#3128 lands: coord
         # 403s the nine SystemTenant-scoped sub-spaces per cell while worktree
         # and memory answer. The grid-level `restricted` flag hides the WHOLE
         # matrix, so restricted cells must surface only as their own status,

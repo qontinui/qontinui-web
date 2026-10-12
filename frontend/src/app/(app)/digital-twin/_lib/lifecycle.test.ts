@@ -272,7 +272,7 @@ describe("stageSummary", () => {
   });
 
   it("keeps a restricted probe out of the live denominator — an access decision, not silence", () => {
-    // qontinui-coord#3128 refuses SystemTenant sub-spaces per cell to a
+    // Once qontinui-coord#3128 lands, coord refuses SystemTenant sub-spaces per cell to a
     // non-system tenant; those cells must not read as "probed, not answering".
     const counts = coverageOf([
       row("refused_a", ["release"], "snapshot", "implemented", "restricted"),

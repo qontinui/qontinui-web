@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { manifest, resolveSubspaces, summarize } from "./resolve";
 import type { CellStatus, SubspaceProbe } from "./types";
 
-/** The snapshot sub-spaces qontinui-coord#3128 refuses to a non-system tenant. */
+/** The snapshot sub-spaces coord refuses to a non-system tenant (per qontinui-coord#3128). */
 const SYSTEM_TENANT_SUBSPACES = new Set([
   "release",
   "schema",
@@ -230,7 +230,7 @@ describe("summarize", () => {
   });
 
   it("excludes restricted observers from the responding denominator and counts them apart", () => {
-    // The realistic qontinui-coord#3128 split for a non-system tenant: the nine
+    // The split per qontinui-coord#3128 for a non-system tenant: the nine
     // SystemTenant sub-spaces are refused, worktree and memory answer. The
     // gauge must read 2/2 responding · 9 restricted, never 2/11.
     const probes: SubspaceProbe[] = manifest.subspaces

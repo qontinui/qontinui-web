@@ -132,8 +132,12 @@ function CountItem({
   of,
 }: {
   label: string;
-  /** `"probing"` while the count has no verdict yet. */
-  value: number | "probing";
+  /**
+   * `"probing"` while the count has no verdict yet; `"none"` when there is no
+   * count to show at all (every probe was refused), rendered as an em dash so
+   * it never reads as a 0 that looks like "nothing answered".
+   */
+  value: number | "probing" | "none";
   of?: number;
 }) {
   return (
@@ -147,6 +151,8 @@ function CountItem({
           <span className="text-xs font-normal text-muted-foreground">
             probing…
           </span>
+        ) : value === "none" ? (
+          <span className="font-normal text-muted-foreground">—</span>
         ) : (
           <>
             {value}
@@ -177,7 +183,13 @@ function StageCounts({ counts }: { counts: CoverageCounts }) {
             ? `live-probed · ${counts.restricted} restricted`
             : "live-probed"
         }
-        value={probing ? "probing" : counts.live}
+        value={
+          probing
+            ? "probing"
+            : counts.probed === 0 && counts.restricted > 0
+              ? "none"
+              : counts.live
+        }
         of={!probing && counts.probed > 0 ? counts.probed : undefined}
       />
       <CountItem label="built (claim)" value={counts.manifestBuilt} />
