@@ -200,6 +200,10 @@ export interface RedMainAlert {
   fixSession: FixSessionState;
   /** Whether an agent holds the alert's claim, and who. */
   claim: AlertClaimState;
+  /** Whether newer main runs contradict the red push baseline — see {@link parseBaselineFreshness}. */
+  baselineFreshness: BaselineFreshness;
+  /** Failing workflows whose red push baseline a newer passing main run contradicts. */
+  staleWorkflows: string[];
 }
 
 /**
@@ -327,6 +331,7 @@ export function parseRedMainAlerts(
       since: a.first_seen_at,
       fixSession: parseFixSession(detail.fix_session),
       claim: parseAlertClaim(a, claimsScrapeUp),
+      ...parseBaselineFreshness(detail.baseline_freshness),
     });
   }
   // Stable per-repo order so the banner stack never reshuffles between polls.
@@ -352,6 +357,61 @@ export function sinceLabel(iso: string | undefined, nowMs: number): string {
 }
 
 /**
+ * Coord's verdict on whether the red push baseline is still current
+ * (`detail.baseline_freshness`, qontinui-coord `stuck_pr_watcher.rs`
+ * `baseline_freshness_detail`):
+ *
+ * - `all_contradicted` — every failing workflow's newest main run PASSED, so
+ *   the red rests only on stale push baselines and main's status is UNKNOWN.
+ * - `partial` — some, not all, are contradicted: main is still red on the rest.
+ * - `not_contradicted` — the evidence was read and contradicts none of them.
+ * - `unread` — coord could not read the evidence, predates the field, or sent
+ *   something malformed. Never rendered as contradicted.
+ */
+export type BaselineFreshness =
+  | "all_contradicted"
+  | "partial"
+  | "not_contradicted"
+  | "unread";
+
+/**
+ * Parse `detail.baseline_freshness` —
+ * `{"read":"unread"}` or `{"read":"ok","all_contradicted":bool,"workflows":[{workflow,verdict,…}]}`.
+ * Contradiction must be POSITIVELY evidenced: an absent, unread or malformed
+ * payload (including any malformed workflow row, or an `all_contradicted` flag
+ * the rows do not bear out) is `unread`, never contradicted. Pure — exported
+ * for the vitest suite.
+ */
+export function parseBaselineFreshness(raw: unknown): {
+  baselineFreshness: BaselineFreshness;
+  staleWorkflows: string[];
+} {
+  const unread = { baselineFreshness: "unread" as const, staleWorkflows: [] };
+  if (!raw || typeof raw !== "object") return unread;
+  const o = raw as Record<string, unknown>;
+  if (o.read !== "ok" || !Array.isArray(o.workflows)) return unread;
+  const stale: string[] = [];
+  for (const row of o.workflows as unknown[]) {
+    if (!row || typeof row !== "object") return unread;
+    const r = row as Record<string, unknown>;
+    if (typeof r.workflow !== "string" || r.workflow.length === 0)
+      return unread;
+    if (r.verdict === "contradicted") stale.push(r.workflow);
+    else if (r.verdict !== "corroborated" && r.verdict !== "unobserved") {
+      return unread;
+    }
+  }
+  const all = stale.length > 0 && stale.length === o.workflows.length;
+  // Coord's own flag and its rows must agree; a disagreement is malformed.
+  if (o.all_contradicted !== all) return unread;
+  if (all)
+    return { baselineFreshness: "all_contradicted", staleWorkflows: stale };
+  if (stale.length > 0)
+    return { baselineFreshness: "partial", staleWorkflows: stale };
+  return { baselineFreshness: "not_contradicted", staleWorkflows: [] };
+}
+
+/**
  * The banner headline (D2 wording). Pure — exported for the vitest
  * suite.
  */
@@ -363,11 +423,23 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
     a.queuedProposalCount === null
       ? "merge-queue depth unknown"
       : `${a.queuedProposalCount} ${a.queuedProposalCount === 1 ? "proposal" : "proposals"} queued`;
-  return (
-    `🔴 ${a.repo} main is RED${since} — ` +
+  const tail =
     `${a.blockedPrCount} ${prs} read main-red, ${queue}; ` +
-    `a candidate lands only if its own rebased CI is green`
-  );
+    `a candidate lands only if its own rebased CI is green`;
+  if (a.baselineFreshness === "all_contradicted") {
+    // Plan 2026-10-03 D3: never "main is RED", and never "main is green" —
+    // a newer run's job set may differ from the push run's.
+    return (
+      `⚠️ ${a.repo} main status UNKNOWN — red push baseline contradicted by ` +
+      `newer passing runs, awaiting a push run — ${tail}` +
+      (since ? ` (alert open${since})` : "")
+    );
+  }
+  const staleNote =
+    a.baselineFreshness === "partial"
+      ? ` (stale push baseline, contradicted by newer passing runs: ${a.staleWorkflows.join(", ")})`
+      : "";
+  return `🔴 ${a.repo} main is RED${since} — ${tail}${staleNote}`;
 }
 
 /**
@@ -596,6 +668,7 @@ export function RedMainBanner() {
           key={a.alertKey}
           role="alert"
           data-testid="red-main-banner-row"
+          data-baseline-freshness={a.baselineFreshness}
           // Deep-red bar + white text (~10:1, passes WCAG AAA), NOT
           // `bg-destructive text-destructive-foreground`: this app's theme
           // has no `--destructive-foreground` token (see globals.css — the
@@ -616,8 +689,17 @@ export function RedMainBanner() {
             {redMainHeadline(a, nowMs)}
           </span>
           {a.workflows.length > 0 && (
-            <span className="text-xs font-mono text-red-100">
-              failing: {a.workflows.join(", ")}
+            <span
+              className="text-xs font-mono text-red-100"
+              data-testid="red-main-workflows"
+            >
+              {/* When newer passing runs contradict every red push baseline,
+                  coord's evidence says these workflows are NOT currently
+                  failing — label them as the stale baseline, never "failing". */}
+              {a.baselineFreshness === "all_contradicted"
+                ? "red push baseline"
+                : "failing"}
+              : {a.workflows.join(", ")}
             </span>
           )}
           {stale && lastSuccessAt !== null && (

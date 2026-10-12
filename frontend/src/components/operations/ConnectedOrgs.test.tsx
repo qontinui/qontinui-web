@@ -18,12 +18,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const getMock = vi.fn();
+// The accounts READ and the enroll/restore WRITES both go through
+// `httpClient.fetch` (`lib/api/operations/prMergeOnboarding.ts`). The read is
+// answered by `accountsMock` (its resolved value is the parsed body; a
+// rejection is the transport failing) and kept out of `fetchMock`, so every
+// `fetchMock` count below is a count of writes only.
+const accountsMock = vi.fn();
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    fetch: (...args: unknown[]) => fetchMock(...args),
+    fetch: async (...args: unknown[]) => {
+      if (String(args[0]).endsWith("/pr-merge/onboarding/accounts")) {
+        const body: unknown = await accountsMock(...args);
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      return fetchMock(...args);
+    },
   },
 }));
 
@@ -63,13 +73,13 @@ function jsonResponse(body: unknown, status: number): Response {
 
 describe("<ConnectedOrgs> enroll/sync button", () => {
   beforeEach(() => {
-    getMock.mockReset();
+    accountsMock.mockReset();
     fetchMock.mockReset();
     authState.isCoordAdmin = true;
   });
 
   it("labels the button by enrollment state (Enroll vs Sync)", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG, ENROLLED_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG, ENROLLED_ORG] });
     render(<ConnectedOrgs />);
 
     const enrollBtn = await screen.findByTestId("enroll-repos-acme");
@@ -80,7 +90,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   });
 
   it("POSTs to the installation enroll proxy with maxRetries: 0", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
     fetchMock.mockResolvedValue(jsonResponse({ enrolled: "spawned" }, 202));
     render(<ConnectedOrgs />);
 
@@ -97,7 +107,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   it("202 spawn starts the poll and renders repos when they appear", async () => {
     vi.useFakeTimers();
     try {
-      getMock
+      accountsMock
         .mockResolvedValueOnce({ accounts: [EMPTY_ORG] }) // mount
         .mockResolvedValue({
           accounts: [
@@ -139,7 +149,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   });
 
   it("maps a 403 to the admin-required copy", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
     fetchMock.mockResolvedValue(
       jsonResponse({ error: "installation_not_owned_by_tenant" }, 403)
     );
@@ -153,7 +163,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   });
 
   it("maps a 404 to the connect-first copy", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
     fetchMock.mockResolvedValue(
       jsonResponse({ error: "installation_not_mapped" }, 404)
     );
@@ -177,7 +187,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
  */
 describe("<ConnectedOrgs> merge posture + tombstones", () => {
   beforeEach(() => {
-    getMock.mockReset();
+    accountsMock.mockReset();
     fetchMock.mockReset();
     authState.isCoordAdmin = true;
   });
@@ -271,7 +281,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("renders an ALWAYS-present posture indicator per enrolled row, linked to merge settings", async () => {
-    getMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
     render(<ConnectedOrgs />);
 
     const expected: Record<string, string> = {
@@ -290,7 +300,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("keeps the raw pin badge as a SECOND indicator, only when a pin is set", async () => {
-    getMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
     render(<ConnectedOrgs />);
 
     await screen.findByTestId("merge-posture-acme/default");
@@ -307,7 +317,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("renders an un-enrolled row greyed with who/when/why and counts it separately", async () => {
-    getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     render(<ConnectedOrgs />);
 
     const row = await screen.findByTestId(
@@ -328,7 +338,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("offers Re-enroll to a coord admin and hides it from everyone else", async () => {
-    getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     const { unmount } = render(<ConnectedOrgs />);
     expect(
       await screen.findByTestId("reenroll-repo-portofino/infra")
@@ -344,7 +354,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   it("Re-enroll POSTs the restore proxy and polls until the row flips to enrolled", async () => {
     vi.useFakeTimers();
     try {
-      getMock
+      accountsMock
         .mockResolvedValueOnce({ accounts: [TOMBSTONE_ORG] }) // mount
         .mockResolvedValue({
           accounts: [
@@ -410,7 +420,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("maps the restore 404 onto copy that says whether the tombstone was cleared", async () => {
-    getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     fetchMock.mockResolvedValue(
       jsonResponse(
         { error: "no_installation_for_owner", owner: "portofino", restored: true },
@@ -431,7 +441,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     try {
       // Every poll returns the same shape: the enrolled count never grows,
       // because the only repo left to enroll is the tombstoned one.
-      getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+      accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
       fetchMock.mockResolvedValue(jsonResponse({ enrolled: "spawned" }, 202));
       render(<ConnectedOrgs />);
       await act(async () => {

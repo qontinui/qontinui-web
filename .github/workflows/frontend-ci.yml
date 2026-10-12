@@ -80,6 +80,22 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
+      # generated-types.ts is a pure function of the committed, backend-ci-
+      # gated openapi-schema.json. Nothing checked that, and it fell to 51 of
+      # 859 paths before anyone noticed (coord finding 01de0d9c). Regenerate
+      # it with the repo's own generator and fail on any byte of drift. A
+      # backend PR that changes the schema therefore also commits the
+      # regenerated types. The file is in .prettierignore, so it stays raw
+      # generator output.
+      - name: Generated API types match the OpenAPI snapshot
+        working-directory: ./frontend
+        run: |
+          npm run generate-api-types:local
+          if ! git diff --exit-code --stat -- src/lib/api-client/generated-types.ts; then
+            echo "::error file=frontend/src/lib/api-client/generated-types.ts::generated-types.ts is stale against src/lib/api-client/openapi-schema.json. Run 'npm run generate-api-types:local' in frontend/ and commit the result."
+            exit 1
+          fi
+
       # `npm run lint` is `next lint` (src/) followed by `lint:config`: the
       # files beside src/ — next.config.mjs, config/ (the rewrite resolver)
       # and scripts/ — get the full rule set too,

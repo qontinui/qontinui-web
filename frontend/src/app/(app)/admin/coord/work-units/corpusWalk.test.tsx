@@ -23,12 +23,17 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({}),
 }));
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  // The plan reads go through `httpClient.fetch` (the typed /operations
+  // client); `withVerbFetch` routes them through the same `get` mock.
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (...args: unknown[]) => get(...args),
+      post: vi.fn(),
+    }),
+  };
+});
 
 import CoordWorkUnitsListPage from "./page";
 

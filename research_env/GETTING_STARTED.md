@@ -194,7 +194,7 @@ A: Edge detection, contour detection, color clustering, MSER, selective search, 
 A: No! All traditional CV methods work on CPU. SAM2 benefits from GPU but is optional.
 
 **Q: Can I use this for my own project?**
-A: Yes! MIT licensed. Use freely for research or production.
+A: Yes, under the terms of the repository's AGPL-3.0-or-later licence (see the repository [LICENSE](../LICENSE)).
 
 ## Support
 
