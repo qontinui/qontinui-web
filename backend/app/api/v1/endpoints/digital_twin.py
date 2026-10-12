@@ -173,10 +173,14 @@ async def _probe_subspace(
         return {"id": subspace, "status": "error", "error": "coord_unreachable"}
 
     if resp.status_code == 403:
-        # coord's twin tenant gate (require_twin_tenant) denied this operator —
-        # their home tenant is outside COORD_TWIN_ALLOWED_TENANT_IDS. Distinct
-        # from a tool failure: it's an access decision, surfaced as "restricted"
-        # so the UI shows a friendly access message instead of an all-error grid.
+        # coord refused THIS sub-space to this tenant: either its twin tenant
+        # gate (require_twin_tenant) denied the operator outright — home tenant
+        # outside COORD_TWIN_ALLOWED_TENANT_IDS, so every cell 403s — or, since
+        # qontinui-coord#3128, the sub-space is SystemTenant-scoped and a
+        # non-system tenant is refused it per cell while its other cells answer.
+        # Either way it is an access decision, not a tool failure, so the cell
+        # is "restricted" (never "error"). The matrix-level `restricted` flag is
+        # derived below from ALL cells, not from this one.
         return {"id": subspace, "status": "restricted"}
     if resp.status_code == 404:
         # coord serves no snapshot tool for this id (parameterized/not-built).

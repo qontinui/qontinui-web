@@ -41,6 +41,19 @@ import { CoverageMatrix } from "./CoverageMatrix";
 const SNAPSHOT_IDS = manifest.subspaces
   .filter((s) => s.query_kind === "snapshot")
   .map((s) => s.id);
+/** The snapshot sub-spaces qontinui-coord#3128 refuses to a non-system tenant. */
+const SYSTEM_TENANT_SUBSPACES = new Set([
+  "release",
+  "schema",
+  "infra",
+  "infra_health",
+  "config",
+  "health",
+  "deps",
+  "route_serving",
+  "client_telemetry",
+]);
+
 const CLAIMED_BUILT = manifest.subspaces.filter(
   (s) => s.research_status === "implemented" || s.research_status === "partial"
 ).length;
@@ -141,6 +154,34 @@ describe("CoverageMatrix restriction", () => {
     expect(
       screen.getByTestId(`digital-twin-cell-${SNAPSHOT_IDS[1]}`)
     ).not.toHaveTextContent("Restricted");
+  });
+
+  it("counts restricted cells beside the live gauge, never in its denominator", () => {
+    // qontinui-coord#3128 split: nine SystemTenant cells refused, two answer.
+    const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
+      id,
+      status: SYSTEM_TENANT_SUBSPACES.has(id) ? "restricted" : "implemented",
+    }));
+    state.probe = {
+      data: { subspaces, probed: subspaces.length, restricted: false },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<CoverageMatrix />);
+
+    const live = screen.getByTestId("digital-twin-gauge-live");
+    expect(live).toHaveTextContent("2/2");
+    expect(live).not.toHaveTextContent(`2/${SNAPSHOT_IDS.length}`);
+    expect(live).toHaveTextContent("· 9 restricted");
+    expect(gaugeFill("digital-twin-gauge-live").style.width).toBe("100%");
+  });
+
+  it("names no restricted count when nothing is restricted", () => {
+    render(<CoverageMatrix />);
+    expect(screen.getByTestId("digital-twin-gauge-live")).not.toHaveTextContent(
+      "restricted"
+    );
   });
 
   it("shows the access notice instead of the grid when every cell is restricted", () => {
