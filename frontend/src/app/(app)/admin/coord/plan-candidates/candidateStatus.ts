@@ -10,7 +10,7 @@
  * Design decision D6 on the route: *"There is no criticality score. A
  * hardcoded score would be a guess frozen into SQL; the read exposes the
  * evidence and the agent ranks."* So nothing here weights, sums or orders by
- * anything but the route's own declared `oldest_vetted_first`. The readiness
+ * anything but the route's own declared `oldest_captured_first`. The readiness
  * kind below is a statement about **dependencies**, which the payload
  * contains, not a priority.
  *
@@ -62,6 +62,10 @@ import {
   type StatusCurrency,
   type StatusCurrencyState,
 } from "../plan-library/types";
+import {
+  describeBoundedWindow,
+  type BoundedReadMeta,
+} from "@/components/admin/coord/cursorPager";
 
 // ---------------------------------------------------------------------------
 // The wire shape. Mirrors `backend/app/schemas/plan_library.py`
@@ -71,7 +75,7 @@ import {
 export type DocumentState = "present" | "unsynced" | "absent";
 export type CoordLinkState = "linked" | "dangling" | "unavailable" | "unlinked";
 export type CoordPrState = "available" | "unavailable" | "unlinked";
-export type WorkUnitPopulationState = "included" | "unavailable";
+export type WorkUnitPopulationState = "included" | "truncated" | "unavailable";
 
 export interface CandidateLinkedPr {
   repo?: string | null;
@@ -170,12 +174,17 @@ export interface CorpusHealth {
   scan_roots?: ScanRootSummary;
 }
 
-export interface PlanCandidateResponse {
+/**
+ * A keyset walk: the shared bounded-read keys (`BoundedReadMeta`) describe
+ * `items`. `total` counts from THIS page's start — the page adds the rows
+ * already walked (`start`) to state the population — and `next_cursor` is
+ * passed back as `cursor`. There is no `offset`.
+ */
+export interface PlanCandidateResponse extends Partial<
+  Omit<BoundedReadMeta, "total">
+> {
   items?: PlanCandidate[];
-  count?: number;
-  total?: number;
-  offset?: number;
-  limit?: number;
+  total?: number | null;
   ordering?: string;
   coord_available?: boolean;
   work_unit_population_state?: WorkUnitPopulationState;
@@ -573,6 +582,20 @@ export function describePopulation(res: PlanCandidateResponse): DisclosureLine {
         "corpus layers and the total below counts it.",
     };
   }
+  if (state === "truncated") {
+    return {
+      key: "population",
+      level: "caveat",
+      text:
+        "coord's work-unit arm ran, but coord's list did not end within the " +
+        "page cap, so the work-unit half is a LOWER BOUND. The route states " +
+        "no exact total on such a read (its bound is at_least / unknown), " +
+        "and an absent row is not evidence that the plan does not exist.",
+      items: res.work_unit_population_reason
+        ? [res.work_unit_population_reason]
+        : undefined,
+    };
+  }
   return {
     key: "population",
     level: "critical",
@@ -704,33 +727,37 @@ export function deriveCandidateDisclosure(
 // ---------------------------------------------------------------------------
 
 export interface CandidateWindow {
+  /** The population: rows already walked plus the route's `total` from this
+   *  page's start. `null` when the route stated no exact count. */
   total: number | null;
-  offset: number;
+  /** Rows served before this page (from the cursor walk, not an `offset`). */
+  start: number;
   limit: number | null;
   shown: number;
   ordering: string | null;
+  /** `truncated: true` beside a cursor — never inferred from a full page. */
   hasMore: boolean;
-  /** `total` is a corpus figure only when the population arm ran. */
+  nextCursor: string | null;
+  /** `total` is a corpus figure only when the population arm ran in full. */
   totalAdmissible: boolean;
 }
 
 export function describeCandidateWindow(
-  res: PlanCandidateResponse
+  res: PlanCandidateResponse,
+  start = 0
 ): CandidateWindow {
-  const items = res.items ?? [];
-  const total = typeof res.total === "number" ? res.total : null;
-  const offset = typeof res.offset === "number" ? res.offset : 0;
-  const limit = typeof res.limit === "number" ? res.limit : null;
+  const window = describeBoundedWindow(
+    { ...res, total: typeof res.total === "number" ? res.total : null },
+    start
+  );
   return {
-    total,
-    offset,
-    limit,
-    shown: items.length,
+    total: window.populationTotal,
+    start,
+    limit: typeof res.limit === "number" ? res.limit : null,
+    shown: window.shown,
     ordering: typeof res.ordering === "string" ? res.ordering : null,
-    hasMore:
-      total !== null
-        ? offset + items.length < total
-        : limit !== null && items.length >= limit,
+    hasMore: window.hasMore,
+    nextCursor: window.nextCursor,
     totalAdmissible: res.work_unit_population_state === "included",
   };
 }
@@ -758,7 +785,8 @@ const DASH = "–";
 export function deriveCandidateHealth(
   res: PlanCandidateResponse | null,
   loaded: boolean,
-  readFailed: boolean
+  readFailed: boolean,
+  start = 0
 ): CandidateHealth {
   const dashes = [
     { key: "candidates", label: `candidates ${DASH}`, tone: "muted" as const },
@@ -777,7 +805,9 @@ export function deriveCandidateHealth(
     };
   }
   const admissible = res.work_unit_population_state === "included";
-  const total = res.total;
+  // The route's `total` counts from this page's start; the population is the
+  // rows already walked plus it.
+  const total = typeof res.total === "number" ? start + res.total : null;
   const followups = res.open_followup_total;
   return {
     // `readFailed` is in the level, not only in the detail. A green strip
@@ -791,7 +821,9 @@ export function deriveCandidateHealth(
           ? "Nothing unshipped in either corpus layer"
           : `${total} unshipped plans, ranked by nothing — the inputs are yours`
         : "Candidates read; the route served no total"
-      : "coord's work-unit arm did not run — this is the document layer alone",
+      : res.work_unit_population_state === "truncated"
+        ? "coord's work-unit list was cut at its page cap — the population is a lower bound"
+        : "coord's work-unit arm did not run — this is the document layer alone",
     detail: admissible
       ? readFailed
         ? "Last refresh failed — these counts are stale."

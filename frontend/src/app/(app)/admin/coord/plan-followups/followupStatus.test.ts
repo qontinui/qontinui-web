@@ -8,8 +8,10 @@ import { describe, expect, it } from "vitest";
 import {
   EXPECTED_ORDERING,
   type OpenFollowupResponse,
+  daysInState,
   deriveFollowupHealth,
   describeFollowupWindow,
+  formatAnchor,
 } from "./followupStatus";
 
 function response(
@@ -30,7 +32,9 @@ function response(
     ],
     count: 1,
     total: 9,
-    offset: 0,
+    truncated: true,
+    next_cursor: "opaque",
+    bound_kind: "exact",
     limit: 50,
     ordering: "oldest_first",
     ...over,
@@ -61,8 +65,24 @@ describe("the window reports the declared ordering", () => {
   it("reads an unserved total as UNKNOWN, never as items.length", () => {
     const w = describeFollowupWindow(response({ total: undefined }));
     expect(w.total).toBeNull();
-    // A full page still infers "more"; a short one does not.
-    expect(w.hasMore).toBe(false);
+  });
+
+  it("states 'more' only from truncated + a cursor, never from a full page", () => {
+    expect(
+      describeFollowupWindow(response({ truncated: null, next_cursor: null }))
+        .hasMore
+    ).toBe(false);
+    expect(
+      describeFollowupWindow(response({ truncated: false, next_cursor: null }))
+        .hasMore
+    ).toBe(false);
+    expect(describeFollowupWindow(response()).nextCursor).toBe("opaque");
+  });
+
+  it("adds the rows already walked to the route's from-here total", () => {
+    const w = describeFollowupWindow(response({ total: 4 }), 50);
+    expect(w.total).toBe(54);
+    expect(w.start).toBe(50);
   });
 });
 
@@ -127,7 +147,7 @@ describe("the strip", () => {
       )?.label
     ).toBe("oldest 31d");
     expect(
-      deriveFollowupHealth(response({ offset: 50 }), true, false).badges.find(
+      deriveFollowupHealth(response(), true, false, 50).badges.find(
         (b) => b.key === "oldest"
       )?.label
     ).toBe("oldest –");
@@ -161,5 +181,63 @@ describe("the strip", () => {
     expect(oldest?.label).toBe("oldest –");
     expect(oldest?.title).not.toMatch(/only on the first page/i);
     expect(oldest?.title).toMatch(/no row to read an age from/i);
+  });
+});
+
+describe("closure states and anchors", () => {
+  it("formats an anchor as repo:path, with its line or line range", () => {
+    expect(formatAnchor({ repo: "acme/widgets", path: "a/b.py" })).toBe(
+      "acme/widgets:a/b.py"
+    );
+    expect(
+      formatAnchor({ repo: "acme/widgets", path: "a/b.py", line_start: 7 })
+    ).toBe("acme/widgets:a/b.py:7");
+    expect(
+      formatAnchor({
+        repo: "acme/widgets",
+        path: "a/b.py",
+        line_start: 7,
+        line_end: 9,
+      })
+    ).toBe("acme/widgets:a/b.py:7-9");
+    expect(
+      formatAnchor({
+        repo: "acme/widgets",
+        path: "a/b.py",
+        line_start: 7,
+        line_end: 7,
+      })
+    ).toBe("acme/widgets:a/b.py:7");
+  });
+
+  it("reads time-in-state from resolved_at, and UNKNOWN without it", () => {
+    const now = new Date("2026-10-12T00:00:00Z");
+    const base = response().items![0];
+    expect(
+      daysInState({ ...base, resolved_at: "2026-10-09T00:00:00Z" }, now)
+    ).toBe(3);
+    expect(daysInState({ ...base, resolved_at: null }, now)).toBeNull();
+    expect(daysInState({ ...base, resolved_at: "not a time" }, now)).toBeNull();
+  });
+
+  it("heads each view with its own finding, and keeps the open caveat to the open view", () => {
+    const empty = response({ items: [], count: 0, total: 0 });
+    expect(deriveFollowupHealth(empty, true, false, 0, "fixing").headline).toBe(
+      "No follow-up is held by an open fix PR"
+    );
+    expect(
+      deriveFollowupHealth(empty, true, false, 0, "fixing").detail
+    ).toBeUndefined();
+    expect(
+      deriveFollowupHealth(response({ total: 4 }), true, false, 0, "resolved")
+        .headline
+    ).toBe("4 follow-ups resolved");
+    expect(
+      deriveFollowupHealth(response({ total: 4 }), true, false, 0, "fixing")
+        .badges[0]?.label
+    ).toBe("fixing 4");
+    expect(deriveFollowupHealth(empty, true, false).detail).toMatch(
+      /open view but are not deleted/
+    );
   });
 });
