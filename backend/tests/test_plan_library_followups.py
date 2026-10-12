@@ -1395,6 +1395,32 @@ class TestReplaceAnchors:
         assert again.status_code == 200, again.text
         assert again.json()["changed"] is False
 
+    async def test_a_lineless_and_a_lined_anchor_on_one_path_put_cleanly(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """One path carrying a line-less anchor beside a lined one: the stored
+        and requested sets hold ``None`` and an ``int`` in the same tuple slot,
+        which a sorted comparison cannot order — every PUT 500ed."""
+        plan = await _make_artifact(client, stem="putmixed")
+        mixed = [_anchor("mixed.py"), _anchor("mixed.py", line_start=7, line_end=9)]
+        created = await _spawn_with(client, plan, "mixed lines", anchors=mixed)
+        assert created.status_code == 201, created.text
+        edge_id = created.json()["id"]
+
+        # The row as POST stored it already holds the pair; a PUT must read it.
+        body = {"anchors": [*mixed, _anchor("mixed.py", line_start=20)]}
+        resp = await client.put(f"{API_PREFIX}/edges/{edge_id}/anchors", json=body)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["changed"] is True
+        stored = resp.json()["followup"]["anchors"]
+        assert sorted(
+            (a["line_start"] is None, a["line_start"] or 0) for a in stored
+        ) == [(False, 7), (False, 20), (True, 0)]
+
+        again = await client.put(f"{API_PREFIX}/edges/{edge_id}/anchors", json=body)
+        assert again.status_code == 200, again.text
+        assert again.json()["changed"] is False
+
     async def test_an_empty_set_needs_a_reason_and_a_set_clears_it(
         self, client: httpx.AsyncClient
     ) -> None:
