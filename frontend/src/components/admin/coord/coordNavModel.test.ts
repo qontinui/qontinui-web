@@ -47,8 +47,9 @@ const visibleLabels = (id: string, viewer: NavViewer) =>
 const memberLabels = (id: string) => visibleLabels(id, MEMBER);
 
 describe("coordNavModel", () => {
-  it("keeps the four daily destinations as direct tabs", () => {
+  it("opens with Home, then the four daily destinations, as direct tabs", () => {
     expect(DIRECT_TABS.map((t) => [t.label, t.href])).toEqual([
+      ["Home", "/admin/coord/home"],
       ["Pipeline", "/admin/coord/pipeline"],
       ["Pull Requests", "/admin/coord/prs"],
       ["Gates", "/admin/coord/gates"],

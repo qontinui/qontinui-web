@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "plan": "2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen",
+  "metric": "audience_profile/human-operator — One-screen answerability",
+  "procedure": "An independent session snapshots /admin/coord/home through the UI Bridge (text only), answers each question below using ONLY the page's text, and compares every answer with coord's project-state JSON read in the same minute (coord_project_state, or GET /coord/agent-project-state).",
+  "pass_rule": "10 of 10 answered. An answer of 'not measured / unknown, as of T' counts ONLY for a question whose block's door state is genuinely not 'read' in the compared JSON; the same words over a 'read' block are a miss. One miss means the metric reads 'no'.",
+  "questions": [
+    {
+      "id": "q1",
+      "text": "Does anything need me right now, and how many things?",
+      "block": "needs_me",
+      "region": "coord-home.needs-you",
+      "door_fields": ["needs_me.state", "needs_me.total", "needs_me.omitted"],
+      "answer": "The count of decisions waiting on the operator, equal to needs_me.total, with how many are shown and how many omitted; or 'nothing needs you' only when needs_me.total is 0.",
+      "unknown_is_an_answer_only_when": "needs_me.state != \"read\""
+    },
+    {
+      "id": "q2",
+      "text": "For the oldest item that needs me: what is the fork, what is recommended, what changes if I overturn it?",
+      "block": "needs_me",
+      "region": "coord-home.needs-you",
+      "door_fields": [
+        "needs_me.items[0].fork",
+        "needs_me.items[0].recommendation",
+        "needs_me.items[0].if_overturned"
+      ],
+      "answer": "The first listed item's decision text, its recommendation (or the explicit 'open question — no recommendation'), and its if-overturned consequence (or 'not stated'), matching needs_me.items[0].",
+      "unknown_is_an_answer_only_when": "needs_me.state != \"read\""
+    },
+    {
+      "id": "q3",
+      "text": "Is any infrastructure degrading, and since when?",
+      "block": "degradations",
+      "region": "coord-home.degrading",
+      "door_fields": [
+        "degradations.state",
+        "degradations.headline",
+        "degradations.open[].onset_observed_at"
+      ],
+      "answer": "Each open degradation with its onset as observed by coord (absolute and relative time), matching degradations.open[].onset_observed_at; or 'nothing is degrading' only when degradations.headline is 'none'.",
+      "unknown_is_an_answer_only_when": "degradations.state != \"read\""
+    },
+    {
+      "id": "q4",
+      "text": "Is that degradation being auto-remediated or waiting on someone?",
+      "block": "degradations",
+      "region": "coord-home.degrading",
+      "door_fields": [
+        "degradations.open[].auto_remediation.bound",
+        "degradations.open[].auto_remediation.response",
+        "degradations.open[].declared"
+      ],
+      "answer": "Per open degradation, whether an agent response is bound to it, it waits on an operator, or it is a declared drain, matching auto_remediation / declared.",
+      "unknown_is_an_answer_only_when": "degradations.state != \"read\""
+    },
+    {
+      "id": "q5",
+      "text": "How much of what the fleet says it verified survived independent checking?",
+      "block": "correctness",
+      "region": "coord-home.correct",
+      "door_fields": [
+        "correctness.state",
+        "correctness.reason",
+        "correctness.inputs"
+      ],
+      "answer": "The trust-calibration reading with its numerator and denominator; until a source exists, 'Not measured — no trust-calibration source'.",
+      "unknown_is_an_answer_only_when": "correctness.state != \"read\""
+    },
+    {
+      "id": "q6",
+      "text": "Per repo: how much is shipped, in flight, stalled?",
+      "block": "on_track",
+      "region": "coord-home.on-track",
+      "door_fields": [
+        "on_track.groups[].key",
+        "on_track.groups[].classes.shipped",
+        "on_track.groups[].classes.in_flight",
+        "on_track.groups[].classes.stalled"
+      ],
+      "answer": "Per repo group, the shipped, in-flight and no-recorded-change counts, matching on_track.groups[].classes. The page words the 'stalled' class as 'no recorded change in N days'; that wording is the correct answer to 'stalled'.",
+      "unknown_is_an_answer_only_when": "on_track.state != \"read\""
+    },
+    {
+      "id": "q7",
+      "text": "Which named pieces of work are stalled, and for how long?",
+      "block": "on_track",
+      "region": "coord-home.on-track",
+      "door_fields": [
+        "on_track.groups[].named.stalled.units[].slug",
+        "on_track.groups[].named.stalled.units[].age_secs",
+        "on_track.groups[].named.stalled.omitted"
+      ],
+      "answer": "The named units with no recorded change in the stall window and the time since their last recorded change, plus how many more were not named, matching on_track.groups[].named.stalled.",
+      "unknown_is_an_answer_only_when": "on_track.state != \"read\""
+    },
+    {
+      "id": "q8",
+      "text": "What is the current initiative, when does it end, and how much in-flight work is attributed to it?",
+      "block": "on_track",
+      "region": "coord-home.on-track",
+      "door_fields": [
+        "on_track.initiative.state",
+        "on_track.initiative.in_scope",
+        "on_track.initiative.ends",
+        "on_track.initiative.alignment",
+        "on_track.initiative.in_scope[].units.in_flight"
+      ],
+      "answer": "The initiative's in-scope items verbatim and its end date; and the attributed in-flight work — when on_track.initiative.alignment is 'read', the in-flight count summed over in_scope[].units (each item's units shown beside it), and when it is 'unknown' the words 'not yet attributable', which are a correct answer ONLY in that case.",
+      "unknown_is_an_answer_only_when": "on_track.initiative.state != \"read\" || on_track.initiative.alignment == \"unknown\""
+    },
+    {
+      "id": "q9",
+      "text": "Which of the above can this page NOT currently tell me, and as of when was each source last read?",
+      "block": "does_not_know",
+      "region": "coord-home.does-not-know",
+      "door_fields": [
+        "does_not_know[].source",
+        "does_not_know[].state",
+        "does_not_know[].as_of"
+      ],
+      "answer": "Every source the door lists, with its state and as-of time, matching does_not_know[]; the sources not read are exactly those whose state is not 'read'.",
+      "unknown_is_an_answer_only_when": "does_not_know is absent from the door's answer"
+    },
+    {
+      "id": "q10",
+      "text": "Is the merge train moving?",
+      "block": "degradations",
+      "region": "coord-home.degrading",
+      "door_fields": [
+        "degradations.open[?plane==\"merge_train\"]",
+        "degradations.planes.merge_train.fresh",
+        "degradations.planes.merge_train.watchers"
+      ],
+      "answer": "Whether any merge-train degradation is open (a wedged train is one), matching degradations.open rows whose plane is merge_train, AND whether the merge-train watchers are fresh (the 'merge train:' line under Degrading, matching degradations.planes.merge_train.fresh / watchers). 'Nothing is degrading' answers it only when degradations.headline is 'none' and the merge-train line reads every watcher fresh.",
+      "unknown_is_an_answer_only_when": "degradations.state != \"read\""
+    }
+  ]
+}

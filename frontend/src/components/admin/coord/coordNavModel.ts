@@ -10,7 +10,7 @@
  * The groups are persona-shaped (developer / merge maintainer / fleet
  * operator), carried over unchanged from the console's own dropdown nav:
  *
- *   Pipeline · Pull Requests · Gates · Notifications   ← direct
+ *   Home · Pipeline · Pull Requests · Gates · Notifications   ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Agents / Agent Commands / Agent Skills / Prompt Log /
@@ -56,6 +56,7 @@ import {
   Hammer,
   HardDrive,
   History as HistoryIcon,
+  House,
   Inbox,
   KeyRound,
   Layers,
@@ -159,6 +160,17 @@ export interface NavGroup {
 // phase "fleet" means Dev Ops and one word cannot mean two things in one
 // console. `next.config.mjs` 308s the old path.
 export const DIRECT_TABS: NavLeaf[] = [
+  {
+    // The console's landing page: the operator's one screen — what needs
+    // them, what is degrading, what is on track, and what the view does not
+    // know. Plan
+    // `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+    // Phase 4; `/admin/coord` redirects here.
+    href: "/admin/coord/home",
+    label: "Home",
+    icon: House,
+    testId: "coord-nav-home",
+  },
   {
     href: "/admin/coord/pipeline",
     label: "Pipeline",

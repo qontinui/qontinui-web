@@ -64,6 +64,17 @@ describe("CoordNav", () => {
     );
   });
 
+  it("renders the console landing page's crumb as Home", () => {
+    // `/admin/coord` redirects to `/admin/coord/home` (the operator's one
+    // screen), so this is the crumb an operator lands on.
+    pathname = "/admin/coord/home";
+    render(<CoordNav />);
+
+    const crumb = screen.getByTestId("coord-nav-crumb");
+    expect(crumb).toHaveTextContent(/^Home$/);
+    expect(crumb).toContainElement(screen.getByTestId("coord-nav-home-active"));
+  });
+
   it("names the group and the page for a grouped page", () => {
     pathname = "/admin/coord/lands";
     render(<CoordNav />);
