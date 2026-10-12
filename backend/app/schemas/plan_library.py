@@ -653,10 +653,16 @@ class KindForkGroup(BaseModel):
     ``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` —
     the scanner can then unambiguously prefer that row and the fork will heal
     itself. ``False`` means an operator must pick, via ``PATCH .../kind``.
+
+    ``family`` names which kind family forked: ``"spec"`` (the specification
+    kinds) or ``"plan"`` (every other kind). Kinds are counted within one
+    family, so a key forked in BOTH families is two groups sharing
+    ``(slug, source_repo)``; ``family`` is what tells them apart.
     """
 
     slug: str
     source_repo: str | None
+    family: Literal["spec", "plan"]
     kinds: list[str]
     variant_count: int
     resolvable: bool

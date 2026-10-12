@@ -769,3 +769,26 @@ class TestHttpSurface:
             json={"relation": "traces_to", "note": "nowhere"},
         )
         assert resp.status_code == 422, resp.text
+
+    async def test_a_key_forked_in_both_families_serves_two_distinct_groups(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # One (slug, source_repo) forked inside the spec family AND inside the
+        # plan family: two kind-fork groups share the key, and ``family`` is
+        # the only field that tells them apart (the frontend keys on it).
+        slug = _slug("both-fork")
+        for kind in ("requirement", "story", "plan", "handoff"):
+            resp = await client.post(
+                API_PREFIX, json={"kind": kind, "slug": slug, "body": kind}
+            )
+            assert resp.status_code == 201, resp.text
+
+        divergent = await client.get(f"{API_PREFIX}/divergent")
+        assert divergent.status_code == 200, divergent.text
+        forks = [g for g in divergent.json()["kind_forks"] if g["slug"] == slug]
+        assert len(forks) == 2
+        by_family = {g["family"]: g for g in forks}
+        assert set(by_family) == {"spec", "plan"}
+        assert by_family["spec"]["kinds"] == ["requirement", "story"]
+        assert by_family["plan"]["kinds"] == ["handoff", "plan"]
+        assert {g["source_repo"] for g in forks} == {None}

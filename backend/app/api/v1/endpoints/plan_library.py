@@ -2966,6 +2966,9 @@ async def list_divergent_artifacts(
             KindForkGroup(
                 slug=f_slug,
                 source_repo=f_repo,
+                # Every row of a group is in one family (find_kind_forks
+                # buckets by it), so the first row names it.
+                family="spec" if crud.is_spec_kind(variants[0].kind) else "plan",
                 kinds=sorted({row.kind for row in variants}),
                 variant_count=len(variants),
                 # Exactly one locked row is a fork the scanner can heal by

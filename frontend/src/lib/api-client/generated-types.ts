@@ -39472,8 +39472,18 @@ export interface components {
          *     ``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` —
          *     the scanner can then unambiguously prefer that row and the fork will heal
          *     itself. ``False`` means an operator must pick, via ``PATCH .../kind``.
+         *
+         *     ``family`` names which kind family forked: ``"spec"`` (the specification
+         *     kinds) or ``"plan"`` (every other kind). Kinds are counted within one
+         *     family, so a key forked in BOTH families is two groups sharing
+         *     ``(slug, source_repo)``; ``family`` is what tells them apart.
          */
         KindForkGroup: {
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "spec" | "plan";
             /** Kinds */
             kinds: string[];
             /** Resolvable */
@@ -54966,6 +54976,8 @@ export interface components {
             source_path: string | null;
             /** Source Repo */
             source_repo: string | null;
+            /** Spec Ref */
+            spec_ref: string | null;
             /** Status */
             status: string;
             status_currency: components["schemas"]["StatusCurrency"];
@@ -55026,7 +55038,7 @@ export interface components {
              * Relation
              * @enum {string}
              */
-            relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes";
+            relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes" | "derives_from" | "refines" | "implements" | "verifies" | "traces_to";
             /** Size Class */
             size_class?: ("trivial" | "small" | "plan_sized") | null;
             /** To Id */
@@ -55085,7 +55097,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic";
+            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic" | "request" | "requirement" | "interface_mapping" | "story" | "test_case" | "doc_correction";
         };
         /**
          * WorkArtifactListResponse
@@ -55227,6 +55239,8 @@ export interface components {
             source_path: string | null;
             /** Source Repo */
             source_repo: string | null;
+            /** Spec Ref */
+            spec_ref: string | null;
             /** Status */
             status: string;
             status_currency: components["schemas"]["StatusCurrency"];
@@ -55269,7 +55283,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic";
+            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic" | "request" | "requirement" | "interface_mapping" | "story" | "test_case" | "doc_correction";
             /**
              * Kind Is Heuristic
              * @default false
@@ -81028,6 +81042,8 @@ export interface operations {
                 slug?: string | null;
                 /** @description Exact member of intent_refs[] — a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page. */
                 intent_ref?: string | null;
+                /** @description Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization. */
+                spec_ref?: string | null;
                 /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
                 cursor?: string | null;
                 limit?: number;
