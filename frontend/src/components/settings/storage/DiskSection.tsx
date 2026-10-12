@@ -933,7 +933,7 @@ export function DiskSection() {
       settle({
         state: "unavailable",
         reason:
-          `The request to /operations/devices/${encodeURIComponent(id)}/volumes failed: ` +
+          `The device-volumes request failed: ` +
           `${err instanceof Error ? err.message : "unknown error"}. Nothing ` +
           `here describes this disk.`,
       });

@@ -480,6 +480,17 @@ export function FleetOverview({
         fetchFleetTasks(),
       ]);
 
+      // A 2xx whose body does not parse is not "unreachable": it fails the
+      // whole refresh with its own message, as it did when this component
+      // parsed the Response itself — tasks are skipped and `lastUpdated` is
+      // not stamped. The same holds for `/fleet/tasks` below.
+      if (
+        fleetRes.status === "rejected" &&
+        fleetRes.reason instanceof SyntaxError
+      ) {
+        throw fleetRes.reason;
+      }
+
       if (fleetRes.status === "fulfilled") {
         if (!isCurrent()) return;
         setFleet(fleetRes.value);
@@ -493,6 +504,13 @@ export function FleetOverview({
           String(fleetRes.reason)
         );
         setError(`Operations API unreachable: ${reason}`);
+      }
+
+      if (
+        tasksRes.status === "rejected" &&
+        tasksRes.reason instanceof SyntaxError
+      ) {
+        throw tasksRes.reason;
       }
 
       if (tasksRes.status === "fulfilled") {

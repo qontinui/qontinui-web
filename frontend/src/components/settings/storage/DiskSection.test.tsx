@@ -129,6 +129,10 @@ beforeEach(() => {
 });
 
 describe("DiskSection — free space", () => {
+  // `deviceVolumesUrl` is gone: the read is `fetchDeviceVolumes`
+  // (`lib/api/operations/coordFleet.ts`). The title still names the old
+  // builder only because the test-name guard requires every title to stay
+  // unchanged.
   it("consumes the per-device route (deviceVolumesUrl) for THIS device", async () => {
     render(<DiskSection />);
     await waitFor(() => expect(httpFetch).toHaveBeenCalled());
@@ -144,6 +148,19 @@ describe("DiskSection — free space", () => {
       expect(screen.getByText(/HTTP 502/)).toBeInTheDocument()
     );
     expect(screen.getByText(/not an empty disk/i)).toBeInTheDocument();
+  });
+
+  it("names a network failure as the device-volumes request, without a URL", async () => {
+    httpFetch.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          /The device-volumes request failed: Failed to fetch\. Nothing here describes this disk\./
+        )
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/\/operations\//)).toBeNull();
   });
 
   it("distinguishes 'never reported' from a failed read", async () => {
