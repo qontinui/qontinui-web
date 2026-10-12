@@ -17,7 +17,11 @@
  *   have one — `open_page` becomes a link, `run_command` a copyable command —
  *   and each cited glossary term through {@link GlossaryTerm}. The producer's
  *   raw `detail` is shown BESIDE the sentence, as the contract says, never
- *   folded into it.
+ *   folded into it. Only an envelope at a structural position of the body
+ *   gets this.
+ * - **An envelope relayed inside a string field** (`data-refusal="from-text"`):
+ *   its sentence only — no link, no copy button, no terms — because a string
+ *   `detail` / `message` may echo caller input.
  * - **Anything else** (`data-refusal="unstructured"`): exactly the sentence it
  *   showed before the contract existed, and nothing more. The label is what
  *   lets a scenario count the refusals an operator still meets without a next
@@ -64,7 +68,7 @@ export function readingOf(error: unknown): BackendErrorReading {
 
 /**
  * Where an `open_page` target may be linked. An app path (`/admin/…`, not the
- * protocol-relative `//host`) or an absolute `http(s)` URL; anything else — a
+ * protocol-relative `//host`) or an absolute `https:` URL; anything else — a
  * `javascript:` URL above all — is never made clickable. The sentence already
  * names the target, so an unlinkable one loses nothing but the click.
  *
@@ -82,7 +86,9 @@ export function linkableTarget(
   }
   try {
     const url = new URL(t);
-    if (url.protocol === "https:" || url.protocol === "http:") {
+    // `https:` only: a plain-`http:` page named by a refusal is never worth a
+    // one-click link off the console.
+    if (url.protocol === "https:") {
       return { href: url.toString(), external: true };
     }
   } catch {
@@ -198,6 +204,15 @@ export function BackendErrorMessage({
   "data-testid": testId,
 }: BackendErrorMessageProps) {
   const reading = readingOf(error);
+  if (reading.kind === "refusal_from_text") {
+    // The sentence only: an envelope relayed inside a string field gets no
+    // link and no copy button (see the reading's doc).
+    return (
+      <span data-refusal="from-text" data-testid={testId} className={className}>
+        {reading.sentence}
+      </span>
+    );
+  }
   if (reading.kind === "unstructured") {
     return (
       <span

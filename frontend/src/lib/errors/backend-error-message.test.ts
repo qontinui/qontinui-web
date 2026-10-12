@@ -300,7 +300,22 @@ describe("readErrorBody — the Refusal envelope", () => {
     const body = JSON.stringify({
       message: JSON.stringify({ error: "x", refusal }),
     });
-    expect(readErrorBody(body, 502).sentence).toBe(RENDERED);
+    const reading = readErrorBody(body, 502);
+    expect(reading.sentence).toBe(RENDERED);
+    // A string field may echo caller input: its envelope gives the sentence
+    // only, never the typed next action a surface turns into a link.
+    expect(reading.kind).toBe("refusal_from_text");
+    expect("refusal" in reading).toBe(false);
+  });
+
+  it("keeps a structural envelope's typed next action", () => {
+    for (const body of [
+      JSON.stringify({ refusal }),
+      JSON.stringify({ detail: { refusal } }),
+      JSON.stringify(refusal),
+    ]) {
+      expect(readErrorBody(body, 409).kind).toBe("refusal");
+    }
   });
 
   it("prefers body.refusal over a top-level envelope-shaped body", () => {
