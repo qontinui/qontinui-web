@@ -34,7 +34,7 @@ let listingResponse: () => Promise<unknown>;
 const okJson = (body: unknown) =>
   Promise.resolve({ ok: true, status: 200, json: async () => body });
 const status = (code: number) =>
-  Promise.resolve({ ok: false, status: code, json: async () => ({}) });
+  Promise.resolve({ ok: false, status: code, json: async () => ({}), text: async () => "{}" });
 
 const row = { repo: "qontinui/qontinui-coord", pr_number: 1, branch: "b-1" };
 

@@ -27,6 +27,7 @@ vi.mock("@/hooks/useChatWebSocket", () => ({
     return {
       isConnected: runnerId !== null,
       sessionState: "disconnected",
+      sessionError: null,
       messages: [],
       streamingContent: "",
       createSession: vi.fn(),

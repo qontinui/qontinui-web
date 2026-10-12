@@ -1,6 +1,6 @@
 /** Shared visual vocabulary for cell statuses — colors + human labels. */
 
-import type { CellStatus } from "./types";
+import type { AskVia, CellStatus, ResolvedSubspace } from "./types";
 
 export interface StatusStyle {
   label: string;
@@ -12,6 +12,15 @@ export interface StatusStyle {
   meaning: string;
 }
 
+/**
+ * Coloured solid dots (emerald / amber / sky / red) are probe results — live
+ * verdicts from this page's snapshot probe. The two built-but-unprobed
+ * statuses — `interactive` and `unprobed` — are manifest claims, so they
+ * render as hollow rings and never reuse the green / amber live vocabulary.
+ * Solid neutral zinc marks a row with no verdict to show: the roadmap
+ * (`planned`, `not-built`), a probe still in flight (`probing`) and an access
+ * refusal (`restricted`).
+ */
 export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   implemented: {
     label: "Live",
@@ -23,19 +32,29 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     label: "Partial",
     dot: "bg-amber-500",
     border: "border-l-amber-500",
-    meaning: "Observer answering, but some dimensions are unconfigured (coverage < 1).",
+    meaning:
+      "Observer answering, but some dimensions are unconfigured (coverage < 1).",
   },
   blind: {
     label: "Blind",
     dot: "bg-sky-500",
     border: "border-l-sky-500",
-    meaning: "Observer exists but is disabled / unconfigured for this tenant — not the same as unbuilt.",
+    meaning:
+      "Observer exists but is disabled / unconfigured for this tenant — not the same as unbuilt.",
   },
   interactive: {
-    label: "Interactive",
-    dot: "bg-indigo-500",
+    label: "Built · ask it",
+    dot: "border border-indigo-500 bg-transparent",
     border: "border-l-indigo-500",
-    meaning: "Built, but a parameterized query — ask it a specific question in the explorer (Phase 2).",
+    meaning:
+      "Built — a coord tool answers it; ask it in Ask the Twin (Completeness tab). Not probed on this page.",
+  },
+  unprobed: {
+    label: "Built · unprobed",
+    dot: "border border-zinc-500 bg-transparent dark:border-zinc-400",
+    border: "border-l-zinc-500 dark:border-l-zinc-400",
+    meaning:
+      "The manifest claims this observer is built; this page's twin probe does not cover it — a claim, not a live verdict.",
   },
   planned: {
     label: "Planned",
@@ -53,13 +72,15 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     label: "Restricted",
     dot: "bg-zinc-400",
     border: "border-l-zinc-400",
-    meaning: "Access restricted — the twin is limited to internal operators for this tenant.",
+    meaning:
+      "Access restricted — the twin is limited to internal operators for this tenant.",
   },
   error: {
     label: "Error",
     dot: "bg-red-500",
     border: "border-l-red-500",
-    meaning: "The observer was probed but the live read failed — honest error, never a fabricated ok.",
+    meaning:
+      "The observer was probed but the live read failed — honest error, never a fabricated ok.",
   },
   probing: {
     label: "Probing…",
@@ -68,6 +89,79 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     meaning: "Live probe in flight.",
   },
 };
+
+/**
+ * `STATUS_STYLES.interactive` sends the reader to Ask the Twin. That is only
+ * true of a tool coord grants the device session Ask the Twin runs on; a row
+ * with another door (or none) says so instead.
+ */
+const INTERACTIVE_ELSEWHERE: Record<
+  Exclude<AskVia, "ask-the-twin">,
+  Pick<StatusStyle, "label" | "meaning">
+> = {
+  "delivery-tab": {
+    label: "Built · ask it",
+    meaning:
+      "Built — a coord tool answers it; look it up in the Delivery tab. Not probed on this page.",
+  },
+  "not-on-this-page": {
+    label: "Built · not askable here",
+    meaning:
+      "Built — a coord tool answers it, but coord withholds that tool from the device session Ask the Twin runs on, so nothing on this page can ask it.",
+  },
+};
+
+/** The presentation of one row's status (its cell status, refined by its door). */
+export function presentStatus(
+  row: Pick<ResolvedSubspace, "cellStatus" | "ask_via">
+): StatusStyle {
+  const style = STATUS_STYLES[row.cellStatus];
+  if (
+    row.cellStatus !== "interactive" ||
+    row.ask_via === undefined ||
+    row.ask_via === "ask-the-twin"
+  ) {
+    return style;
+  }
+  return { ...style, ...INTERACTIVE_ELSEWHERE[row.ask_via] };
+}
+
+/**
+ * How this page can read a row: what its `query_kind`, refined by `ask_via`,
+ * means here (the detail drawer's "On this page" field). The raw `query_kind`
+ * would mislead — `parameterized` means "a coord tool answers it, but this
+ * page does not probe it", even for a tool coord's own catalog lists as kind
+ * `snapshot` (twin_fidelity, workers, cost).
+ */
+export function pageAccessLabel(
+  row: Pick<ResolvedSubspace, "query_kind" | "ask_via">
+): string {
+  switch (row.query_kind) {
+    case "snapshot":
+      return "Live-probed";
+    case "none":
+      return "Manifest claim (no coord tool)";
+    case "parameterized":
+      switch (row.ask_via) {
+        case "delivery-tab":
+          return "Delivery tab";
+        case "not-on-this-page":
+          return "Not askable here";
+        default:
+          return "Ask the Twin (Completeness tab)";
+      }
+  }
+}
+
+/**
+ * Fills for the bars and gauges that COUNT rows. A count of probe answers uses
+ * the live green; a count of manifest claims uses the claim indigo (the hue of
+ * the `interactive` ring), never a live colour.
+ */
+export const COUNT_FILLS = {
+  live: "bg-emerald-500",
+  claim: "bg-indigo-300 dark:bg-indigo-700",
+} as const;
 
 export function formatStaleness(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return "live";

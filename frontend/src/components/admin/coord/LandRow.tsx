@@ -57,7 +57,10 @@ import {
   RowTime,
   StatusBadge,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchLandVerifications,
+  type CrossRepoVerifications,
+} from "@/lib/api/operations/coordDelivery";
 import {
   VerdictChips,
   VerdictDetail,
@@ -80,35 +83,10 @@ export type { LandRowData };
 // When a recent land carries a `correlation_id`, its cascade may have fanned
 // out to sibling repos. The composed restack-verification verdict lives on
 // coord at `/coord/restacks/verifications`; the web backend proxies it at
-// `${API}/lands/verifications?correlation_id=…`. This panel fetches that ONCE
-// on first mount (the row is otherwise presentational), using the same
-// `httpClient.get` pattern the lands page uses.
-
-const API = "/api/v1/operations";
-
-// Wire shapes mirror coord's `/coord/restacks/verifications` response
-// (snake_case). Rendered defensively — `worst_drift_class` / `d3_outcome` /
-// `verified_at` are null until a repo is verified.
-export interface RepoVerification {
-  repo: string;
-  signature_id?: string | null;
-  worst_drift_class?: string | null;
-  d3_outcome?: string | null;
-  verified_at?: string | null;
-  edge_verdicts?: unknown[] | null;
-}
-
-export interface ComposedVerification {
-  worst_drift_class?: string | null;
-  repo_count?: number | null;
-  verified_count?: number | null;
-}
-
-export interface CrossRepoVerifications {
-  correlation_id?: string | null;
-  repos?: RepoVerification[] | null;
-  composed?: ComposedVerification | null;
-}
+// `/operations/lands/verifications?correlation_id=…`. This panel fetches that
+// ONCE on first mount (the row is otherwise presentational), through
+// `fetchLandVerifications` (`lib/api/operations/coordDelivery.ts`), which also
+// owns the wire shapes.
 
 function CrossRepoVerdictPanel({ correlationId }: { correlationId: string }) {
   const [data, setData] = useState<CrossRepoVerifications | null>(null);
@@ -123,10 +101,7 @@ function CrossRepoVerdictPanel({ correlationId }: { correlationId: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const qs = new URLSearchParams({ correlation_id: correlationId });
-        const body = await httpClient.get<CrossRepoVerifications>(
-          `${API}/lands/verifications?${qs.toString()}`
-        );
+        const body = await fetchLandVerifications(correlationId);
         if (!cancelled) setData(body);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));

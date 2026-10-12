@@ -1,9 +1,0 @@
-# Add these lines to your .gitignore
-
-# OpenAPI Schemas (regenerate from backend)
-src/lib/api-client/openapi-schema.json
-src/lib/api-client/qontinui-openapi-schema.json
-
-# Optional: Uncomment if you want to regenerate types on each checkout
-# src/lib/api-client/generated-types.ts
-# src/lib/api-client/qontinui-generated-types.ts

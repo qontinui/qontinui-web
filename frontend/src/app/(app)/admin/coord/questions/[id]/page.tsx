@@ -132,7 +132,10 @@ import {
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchAgentQuestion,
+  respondToAgentQuestion,
+} from "@/lib/api/operations/agentQuestions";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   QUESTION_STATUS_PALETTE,
@@ -153,8 +156,6 @@ import {
   effectDecisionsFor,
   type QuestionEffect,
 } from "@/components/admin/coord/questionEffect";
-
-const API = "/api/v1/operations";
 
 /**
  * A 200 whose body is not a question row is UNKNOWN, not a missing question.
@@ -262,9 +263,7 @@ export default function CoordQuestionDetailPage() {
     }
     setNotFound(false);
     try {
-      const body = await httpClient.get<unknown>(
-        `${API}/agent-questions/${encodeURIComponent(id)}`
-      );
+      const body = await fetchAgentQuestion(id);
       if (seq !== fetchSeq.current) return;
       setQuestion(extractQuestion(body));
       setError(null);
@@ -323,13 +322,10 @@ export default function CoordQuestionDetailPage() {
       if (!id || !text.trim()) return;
       setSubmitting(true);
       try {
-        await httpClient.post(
-          `${API}/agent-questions/${encodeURIComponent(id)}/respond`,
-          {
-            response: text.trim(),
-            responded_by_operator: user?.email ?? "operator",
-          }
-        );
+        await respondToAgentQuestion(id, {
+          response: text.trim(),
+          responded_by_operator: user?.email ?? "operator",
+        });
         toast.success("Response sent to agent");
         router.push("/admin/coord/questions");
       } catch (e) {

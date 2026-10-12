@@ -711,7 +711,7 @@ graph TB
 ### 1. Permission Checks at Multiple Layers
 
 **Frontend (UX Layer):**
-- `PermissionGate` component hides UI elements
+- Components render conditionally on the `canView` / `canComment` / `canEdit` / `canAdmin` booleans from `usePermissions()` (`@/contexts/collaboration`, inside a `PermissionsProvider`)
 - Hook-based checks (`useProjectPermissions`)
 - Optimistic permission caching
 
@@ -808,7 +808,7 @@ graph TB
 - `ShareProjectDialog` - Modal for sharing
 - `CollaboratorsList` - Display and manage collaborators
 - `PermissionBadge` - Visual permission indicator
-- `PermissionGate` - Conditional rendering by permission
+- Conditional rendering by permission: gate JSX on the `usePermissions()` booleans (`canEdit`, `canComment`, `canAdmin`), or resolve a level with `getPermissionLevel(project, user)` (returns `"owner"` when `project.owner_id` matches the user) and test it with `hasPermission(required, level)` from `@/lib/permissions` (hierarchy `none < view < comment < edit < admin < owner`)
 
 **Invitation Flow:**
 - `/invitations/accept` - Accept invitation page

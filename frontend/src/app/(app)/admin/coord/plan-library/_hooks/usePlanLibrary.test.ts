@@ -2,7 +2,7 @@
  * usePlanLibrary (the all-kinds artifact list) / useScanRoots /
  * usePlanCoverage.
  *
- * For the list: a filter change must reset the offset (page 3 of a new query
+ * For the list: a filter change must reset the cursor walk (page 3 of a new query
  * reads as "no matches"), and the facet chips come from the LOADED page, not
  * a fixed vocabulary.
  *
@@ -80,7 +80,7 @@ beforeEach(() => {
 
 describe("usePlanLibrary — filters", () => {
   it("puts every filter on the query string", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
 
     const { result } = renderHook(() => usePlanLibrary());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -100,7 +100,7 @@ describe("usePlanLibrary — filters", () => {
   });
 
   it("debounces typed text but applies the kind dropdown at once", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
 
     const { result } = renderHook(() => usePlanLibrary());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -130,20 +130,45 @@ describe("usePlanLibrary — filters", () => {
     getMock.mockResolvedValue({
       items: [row()],
       total: 500,
-      offset: 0,
       limit: 50,
     });
 
     const { result } = renderHook(() => usePlanLibrary());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => result.current.setOffset(100));
-    await waitFor(() => expect(result.current.offset).toBe(100));
+    act(() => result.current.pager.next("cursor-at-100", 100));
+    await waitFor(() => expect(result.current.pager.start).toBe(100));
 
     act(() => result.current.updateFilter("kind", "plan"));
 
     // Staying on page 3 of a NEW query renders empty and reads as "no matches".
-    await waitFor(() => expect(result.current.offset).toBe(0));
+    await waitFor(() => expect(result.current.pager.start).toBe(0));
+    expect(String(getMock.mock.calls.at(-1)?.[0])).not.toContain("cursor=");
+  });
+
+  it("pages by the route's cursor, never an offset", async () => {
+    getMock.mockResolvedValue({
+      items: [row()],
+      total: 500,
+      truncated: true,
+      next_cursor: "opaque-token",
+      limit: 50,
+    });
+
+    const { result } = renderHook(() => usePlanLibrary());
+    await waitFor(() => expect(result.current.window?.hasMore).toBe(true));
+    expect(String(getMock.mock.calls.at(-1)?.[0])).not.toContain("offset=");
+
+    act(() => result.current.pager.next("opaque-token", 1));
+    await waitFor(() =>
+      expect(String(getMock.mock.calls.at(-1)?.[0])).toContain(
+        "cursor=opaque-token"
+      )
+    );
+    // `total` counts from the page's own start; the population adds the walk.
+    await waitFor(() =>
+      expect(result.current.window?.populationTotal).toBe(501)
+    );
   });
 
   it("derives the facet chips from the loaded page only", async () => {
@@ -158,7 +183,6 @@ describe("usePlanLibrary — filters", () => {
         }),
       ],
       total: 2,
-      offset: 0,
       limit: 50,
     });
 
@@ -180,7 +204,6 @@ describe("usePlanLibrary — failure is not emptiness", () => {
     getMock.mockResolvedValueOnce({
       items: [row()],
       total: 1,
-      offset: 0,
       limit: 50,
     });
 
@@ -212,14 +235,15 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
     return { promise, resolve, reject };
   }
 
-  const page = (title: string, offset: number) => ({
+  const page = (title: string, start: number) => ({
     items: [row({ title })],
-    total: 200,
-    offset,
+    total: 200 - start,
+    truncated: true,
+    next_cursor: `after-${start}`,
     limit: 50,
   });
 
-  // `load` is recreated on [applied, offset] and fired by an effect, so two
+  // `load` is recreated on [applied, cursor] and fired by an effect, so two
   // of it are in flight whenever the operator pages or retypes faster than
   // the backend answers. The hook passes no abort signal, so both settle and
   // it carries a generation counter; each of these tests pins one of its four
@@ -233,7 +257,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
     const { result } = renderHook(() => usePlanLibrary());
     // Page forward before page 1 has landed.
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
     await waitFor(() =>
       expect(result.current.items[0]?.title).toBe("page two")
     );
@@ -245,7 +269,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
     // Page 1's rows under a "51–100 of 200" pager is the visible symptom.
     expect(result.current.items[0]?.title).toBe("page two");
-    expect(result.current.offset).toBe(50);
+    expect(result.current.pager.start).toBe(50);
   });
 
   it("does not paint a late FAILURE banner over fresh rows", async () => {
@@ -257,7 +281,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
       .mockResolvedValueOnce(page("fresh", 50));
 
     const { result } = renderHook(() => usePlanLibrary());
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
     await waitFor(() => expect(result.current.items[0]?.title).toBe("fresh"));
 
     await act(async () => {
@@ -278,7 +302,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
       .mockRejectedValueOnce(new Error("backend down"));
 
     const { result } = renderHook(() => usePlanLibrary());
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
     await waitFor(() => expect(result.current.error).toContain("backend down"));
 
     await act(async () => {
@@ -299,7 +323,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
       .mockImplementationOnce(() => second.promise);
 
     const { result } = renderHook(() => usePlanLibrary());
-    act(() => result.current.setOffset(50));
+    act(() => result.current.pager.next("cursor-at-50", 50));
 
     await act(async () => {
       first.resolve(page("page one", 0));
@@ -318,7 +342,7 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
 describe("usePlanLibrary — kind correction", () => {
   it("patches the kind and reloads the list", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
     patchMock.mockResolvedValue({ ...row(), kind: "handoff" });
 
     const { result } = renderHook(() => usePlanLibrary());
@@ -344,7 +368,7 @@ describe("usePlanLibrary — kind correction", () => {
   });
 
   it("surfaces a 409 identity collision instead of guessing a merge", async () => {
-    getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });
+    getMock.mockResolvedValue({ items: [], total: 0, limit: 50 });
     patchMock.mockRejectedValue(new Error("kind_identity_conflict"));
 
     const { result } = renderHook(() => usePlanLibrary());
