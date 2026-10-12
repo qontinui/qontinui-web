@@ -179,14 +179,6 @@ export function describeContentFork(
 }
 
 /**
- * A kind fork's badge, split on the route's own `resolvable`.
- *
- * `resolvable` is forwarded, never recomputed here: it is
- * `sum(kind_locked) == 1` over the variants the route selected, and
- * re-deriving it from a payload this page may have filtered would be a second
- * spelling of one rule.
- */
-/**
  * The list key for a kind-fork group. `(slug, source_repo)` alone is not
  * unique: one key forked in both families is served as two groups.
  */
@@ -194,6 +186,14 @@ export function kindForkKey(group: KindForkGroup): string {
   return `${group.slug}:${group.source_repo ?? "no-repo"}:${group.family ?? "no-family"}`;
 }
 
+/**
+ * A kind fork's badge, split on the route's own `resolvable`.
+ *
+ * `resolvable` is forwarded, never recomputed here: it is
+ * `sum(kind_locked) == 1` over the variants the route selected, and
+ * re-deriving it from a payload this page may have filtered would be a second
+ * spelling of one rule.
+ */
 export function describeKindFork(group: KindForkGroup): RowStatus<ForkKind> {
   if (group.resolvable) {
     return {
