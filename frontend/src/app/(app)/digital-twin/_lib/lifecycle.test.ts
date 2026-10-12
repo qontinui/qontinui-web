@@ -237,6 +237,7 @@ describe("stageSummary", () => {
     const verify = stageSummary(FIXTURE).verify;
     expect(verify).toEqual({
       probed: 3,
+      restricted: 0,
       live: 2, // implemented + partial answer; blind does not
       pending: 0,
       manifestBuilt: 2, // the parameterized and the none row — claims
@@ -250,6 +251,7 @@ describe("stageSummary", () => {
   it("counts a stage no row observes as all zeros", () => {
     expect(stageSummary(FIXTURE).intent).toEqual({
       probed: 0,
+      restricted: 0,
       live: 0,
       pending: 0,
       manifestBuilt: 0,
@@ -269,13 +271,31 @@ describe("stageSummary", () => {
     expect(counts).toMatchObject({ probed: 3, live: 1, pending: 1 });
   });
 
+  it("keeps a restricted probe out of the live denominator — an access decision, not silence", () => {
+    // Once qontinui-coord#3128 lands, coord refuses SystemTenant sub-spaces per cell to a
+    // non-system tenant; those cells must not read as "probed, not answering".
+    const counts = coverageOf([
+      row("refused_a", ["release"], "snapshot", "implemented", "restricted"),
+      row("refused_b", ["release"], "snapshot", "implemented", "restricted"),
+      row("answered", ["release"], "snapshot", "implemented", "implemented"),
+    ]);
+    expect(counts).toMatchObject({
+      probed: 1,
+      restricted: 2,
+      live: 1,
+      pending: 0,
+      total: 3,
+    });
+  });
+
   it("puts every real row of every stage in exactly one bucket", () => {
     const summary = stageSummary(resolveSubspaces([], false));
     for (const stage of STAGE_IDS) {
       const c = summary[stage];
-      expect(c.probed + c.manifestBuilt + c.planned + c.notBuilt, stage).toBe(
-        c.total
-      );
+      expect(
+        c.probed + c.restricted + c.manifestBuilt + c.planned + c.notBuilt,
+        stage
+      ).toBe(c.total);
       // No probe answered: nothing is live, whatever the manifest claims —
       // and nothing is pending either, because the probe is not in flight.
       expect(c.live, stage).toBe(0);
