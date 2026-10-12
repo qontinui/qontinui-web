@@ -146,14 +146,21 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "Markdown documents and wiki pages, with full version history "
                 "(GET /pages/{id}/versions, POST …/versions/{n}/revert) and "
                 "backlinks (GET /pages/{id}/backlinks). Filters: kind, slug, q "
-                "(full-text). A list read carries no bodies (body_md is null)."
+                "(full-text), source_repo + source_path (exact: the repository "
+                "file a published page mirrors). A list read carries no bodies "
+                "(body_md is null). A page published from a repository carries "
+                "source_repo/source_path/source_sha; a PATCH naming a source "
+                "refuses a page with none or another (409 source_mismatch), and "
+                "a keyed create colliding on a source converges on that page. "
+                "via_device/via_session say which device and reported session "
+                "wrote the current version."
             ),
             permission="editing_roles",
             read_model=PageRead,
             create_model=PageCreate,
             update_model=PageUpdate,
             operations=frozenset({"list", "get", "create", "update", "delete"}),
-            list_filters=("kind", "slug", "q"),
+            list_filters=("kind", "slug", "q", "source_repo", "source_path"),
             store=page_store,
             tables=("pages", "page_versions", "page_links"),
             audit_exclude=frozenset({"body_md"}),

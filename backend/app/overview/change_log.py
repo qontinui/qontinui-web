@@ -10,7 +10,8 @@ names the overview as the place the edit came from.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import re
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from fastapi import Request
@@ -20,10 +21,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.overview import CHANGE_SOURCES, ChangeLog
 
+if TYPE_CHECKING:
+    from app.overview.permissions import OverviewAccess
+
 #: The request header a client names its surface with. The overview pages send
 #: ``ui``; the CSV paste and the gantt import send ``import``. Absent — which
 #: is what an agent or script sends — reads as ``api``.
 SOURCE_HEADER = "X-Overview-Source"
+
+#: The request header a client REPORTS its session with: a lowercase
+#: 8-4-4-4-12 uuid (a Claude Code ``Session-Id``). Coord's device JWT carries
+#: no session id, so nothing can prove one — the value is a label, recorded
+#: when it has the right shape and otherwise ignored (plan
+#: ``2026-10-07-agents-publish-documents-to-the-project-overview`` D2).
+SESSION_HEADER = "X-Overview-Session"
+
+_SESSION_SHAPE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 ChangeAction = Literal["create", "update", "delete"]
 
@@ -37,6 +52,31 @@ def change_source(request: Request) -> str:
     """
     value = (request.headers.get(SOURCE_HEADER) or "").strip().lower()
     return value if value in CHANGE_SOURCES else "api"
+
+
+def reported_session(request: Request) -> str | None:
+    """The session :data:`SESSION_HEADER` reports, or ``None``.
+
+    A malformed value is dropped with no record and no error: like the source
+    header it is a label, never an authorization input, so a bad one must not
+    fail the write — and must not be stored either, since a reader treats a
+    stored value as a session id.
+    """
+    value = (request.headers.get(SESSION_HEADER) or "").strip()
+    return value if _SESSION_SHAPE.fullmatch(value) else None
+
+
+def attribution(access: OverviewAccess, request: Request) -> dict[str, Any]:
+    """Who made a write, as every change-log row records it: the person, the
+    device the write came through (from the verified token), and the session
+    the client reported. Spread into :func:`record` so no call site can record
+    the person and forget the device."""
+    return {
+        "actor": access.actor,
+        "actor_user_id": access.user_id,
+        "via_device": access.via_device,
+        "via_session": reported_session(request),
+    }
 
 
 def snapshot(value: BaseModel | dict[str, Any] | None) -> dict[str, Any] | None:
@@ -64,6 +104,8 @@ async def record(
     version_before: int | None = None,
     version_after: int | None = None,
     idempotency_key: str | None = None,
+    via_device: UUID | None = None,
+    via_session: str | None = None,
 ) -> ChangeLog:
     """Append one row. Flushes but does not commit — the caller's transaction
     decides, so the row lands exactly when the write it describes does."""
@@ -80,6 +122,8 @@ async def record(
         version_before=version_before,
         version_after=version_after,
         idempotency_key=idempotency_key,
+        via_device=via_device,
+        via_session=via_session,
     )
     db.add(row)
     await db.flush()
@@ -121,6 +165,7 @@ async def history(
     resource: str,
     record_id: str | None,
     limit: int,
+    source: str | None = None,
 ) -> list[ChangeLog]:
     """Newest first. ``limit + 1`` rows are read so the caller can say whether
     it truncated, rather than presenting the cap as the whole history."""
@@ -129,6 +174,8 @@ async def history(
     )
     if record_id is not None:
         stmt = stmt.where(ChangeLog.record_id == record_id)
+    if source is not None:
+        stmt = stmt.where(ChangeLog.source == source)
     stmt = stmt.order_by(ChangeLog.created_at.desc(), ChangeLog.id.desc()).limit(
         limit + 1
     )
