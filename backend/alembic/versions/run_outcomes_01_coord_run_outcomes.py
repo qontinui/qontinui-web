@@ -1,7 +1,7 @@
 """coord.run_outcomes: the durable store behind the run_outcome anchor's metric arm
 
 Revision ID: run_outcomes_01
-Revises: devcred_01_credential_deny_and_bound_pair_codes
+Revises: plan_library_11_followup_anchors_and_closure
 Create Date: 2026-10-10
 
 Plan ``2026-10-09-spec-front-end-of-the-software-factory`` Phase 2, step 2.
@@ -106,8 +106,8 @@ local throwaway databases can carry it.
 
 ## Head choice
 
-``down_revision`` is ``devcred_01_credential_deny_and_bound_pair_codes``, the single
-head of ``origin/main`` at ``eb54e0bb9`` (``alembic heads`` printed exactly that one head). If main has moved before it lands, re-point
+``down_revision`` is ``plan_library_11_followup_anchors_and_closure``, the single
+head of ``origin/main`` at ``70810a296`` (``alembic heads`` printed exactly that one head). If main has moved before it lands, re-point
 ``down_revision``, the ``Revises:`` header and ``_PARENT_REVISION_ID`` in the
 migration test at the new single head. Do not add an ``alembic merge``.
 
@@ -126,7 +126,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "run_outcomes_01"
-down_revision: str | Sequence[str] | None = "devcred_01_credential_deny_and_bound_pair_codes"
+down_revision: str | Sequence[str] | None = "plan_library_11_followup_anchors_and_closure"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
