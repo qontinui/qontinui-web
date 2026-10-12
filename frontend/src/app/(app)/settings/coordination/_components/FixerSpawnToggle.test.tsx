@@ -18,8 +18,19 @@ import userEvent from "@testing-library/user-event";
 const get = vi.fn();
 const patch = vi.fn();
 
+// The fixer dial reads and writes through the typed `/operations` client
+// (`lib/api/operations/prMerge`), which calls `httpClient.fetch`. This adapter
+// routes those calls back onto the `get` / `patch` spies, so each test keeps
+// stating its transport as "the GET answers X" / "the PATCH rejects with Y".
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
+    fetch: async (url: string, init?: RequestInit) => {
+      const body =
+        init?.method === "PATCH"
+          ? await patch(url, JSON.parse(String(init.body)))
+          : await get(url);
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
     get: (...args: unknown[]) => get(...args),
     patch: (...args: unknown[]) => patch(...args),
     post: vi.fn(),

@@ -13,8 +13,8 @@
  *
  * The wire types below are hand-written and each names the handler it mirrors
  * in `backend/app/api/v1/endpoints/operations/__init__.py` (the backend proxies
- * coord's `pr_merge` routes). Only the settings-page routes live here; the
- * merge pipeline and train routes are a later Phase 7 batch.
+ * coord's `pr_merge` routes): the settings-page routes (Phase 7a), and the
+ * merge pipeline, train and recovery routes (Phase 7 batch 7).
  *
  * Writes whose result no caller reads resolve `null` for a 2xx whose body does
  * not parse (a 204 included): the 2xx is the fact that the change landed, and
@@ -25,7 +25,19 @@
  */
 
 import { httpClient } from "@/services/service-factory";
-import type { MergeEnabledResponse } from "@/components/operations/mergeTypes";
+import type {
+  BlastRadiusBlock,
+  BlastRadiusBlocksResponse,
+  MergeEnabledResponse,
+  PrListResponse,
+  PrRow,
+  PrStateResponse,
+  ProposalDetail,
+  QueueResponse,
+  SuggestionListResponse,
+  SuggestionRow,
+  TrainHealth,
+} from "@/components/operations/mergeTypes";
 import { OPERATIONS_BASE, readJson } from "./base";
 
 // ----------------------------------------------------------------------------
@@ -385,4 +397,359 @@ export async function fetchMergeEconomics(): Promise<unknown> {
     maxRetries: 0,
   });
   return readJson<unknown>(res, `GET ${url}`);
+}
+
+// ----------------------------------------------------------------------------
+// Tenant `auto_fix_pr` dial — the settings-page fixer toggle
+// ----------------------------------------------------------------------------
+
+/**
+ * `PATCH /pr-merge/settings` with ONLY `auto_fix_pr` — `patch_pr_merge_settings`.
+ * `null` clears the tenant column back to "follow the default". The caller
+ * confirms the write by reading the dial back out of the echoed profile, so
+ * the body is parsed strictly. Not re-sent on a 5xx (`idempotent: false`).
+ */
+export async function patchTenantAutoFixPr(
+  autoFixPr: boolean | null
+): Promise<TenantSettingsResponse> {
+  const url = `${OPERATIONS_BASE}/pr-merge/settings`;
+  const res = await httpClient.fetch(url, {
+    method: "PATCH",
+    body: JSON.stringify({ auto_fix_pr: autoFixPr }),
+    idempotent: false,
+  });
+  return readJson<TenantSettingsResponse>(res, `PATCH ${url}`);
+}
+
+// ----------------------------------------------------------------------------
+// Merge pipeline — the fleet hero's reads (`useMergePipelineData`)
+// ----------------------------------------------------------------------------
+//
+// Every read here is a dashboard poll: one request, no client retries
+// (`maxRetries: 0`, the `COORD_DASHBOARD_POLL_OPTIONS` policy) — the next poll
+// is the retry. Each body is returned as served; the callers keep tolerating
+// both the wrapped and the bare-array wire shapes.
+
+/** `GET /merge/queue` — `get_merge_queue`, the proposal queue. */
+export async function fetchMergeQueue(): Promise<
+  QueueResponse | ProposalDetail[]
+> {
+  const url = `${OPERATIONS_BASE}/merge/queue`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<QueueResponse | ProposalDetail[]>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /pr-merge/prs?merged_count_hours=<h>` — `get_pr_merge_prs`, the OPEN
+ * PR listing plus coord's cheap merged COUNT over the last `hours`.
+ */
+export async function fetchOpenPrsWithMergedCount(
+  hours: number
+): Promise<PrListResponse | PrRow[]> {
+  const url = `${OPERATIONS_BASE}/pr-merge/prs?merged_count_hours=${hours}`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<PrListResponse | PrRow[]>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /pr-merge/prs?include_merged=<h>` — `get_pr_merge_prs` with the
+ * recently-merged ROWS, an order of magnitude dearer than the open listing.
+ * No client retry: each attempt is a full coord query.
+ */
+export async function fetchPrsIncludingMerged(
+  hours: number
+): Promise<PrListResponse | PrRow[]> {
+  const url = `${OPERATIONS_BASE}/pr-merge/prs?include_merged=${hours}`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<PrListResponse | PrRow[]>(res, `GET ${url}`);
+}
+
+/** `GET /pr-merge/prs` — `get_pr_merge_prs`, the plain open-PR listing. */
+export async function fetchOpenPrs(): Promise<PrListResponse> {
+  const url = `${OPERATIONS_BASE}/pr-merge/prs`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<PrListResponse>(res, `GET ${url}`);
+}
+
+/** `GET /pr-merge/suggestions` — `get_pr_merge_suggestions`. */
+export async function fetchMergeSuggestions(): Promise<
+  SuggestionListResponse | SuggestionRow[]
+> {
+  const url = `${OPERATIONS_BASE}/pr-merge/suggestions`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<SuggestionListResponse | SuggestionRow[]>(res, `GET ${url}`);
+}
+
+/**
+ * `POST /pr-merge/suggestions/{alert_id}/{accept|reject|mute}` —
+ * `post_pr_merge_suggestion_accept` / `_reject` / `_mute`. Nothing reads the
+ * echo, so a 2xx whose body does not parse resolves `null` (the action
+ * landed). Not re-sent on a 5xx (`idempotent: false`).
+ */
+export async function actOnMergeSuggestion(
+  alertId: number,
+  action: "accept" | "reject" | "mute",
+  body: Record<string, unknown>
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/pr-merge/suggestions/${alertId}/${action}`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `GET /pr-merge/blast-radius-blocks` — `get_pr_merge_blast_radius_blocks`. */
+export async function fetchBlastRadiusBlocks(): Promise<
+  BlastRadiusBlocksResponse | BlastRadiusBlock[]
+> {
+  const url = `${OPERATIONS_BASE}/pr-merge/blast-radius-blocks`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<BlastRadiusBlocksResponse | BlastRadiusBlock[]>(
+    res,
+    `GET ${url}`
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Per-PR reads — train health, check breakdown, dependency graph
+// ----------------------------------------------------------------------------
+
+/** `GET /pr-merge/health` — `get_pr_merge_health`, merge-train liveness. */
+export async function fetchTrainHealth(): Promise<TrainHealth> {
+  const url = `${OPERATIONS_BASE}/pr-merge/health`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<TrainHealth>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /pr-merge/prs/{repo:path}/{pr_number}/checks` —
+ * `get_pr_merge_pr_checks`, one PR's per-check breakdown. `repo` is
+ * percent-encoded (`owner%2Fname`), as this read has always sent it.
+ */
+export async function fetchPrChecks(
+  repo: string,
+  prNumber: number
+): Promise<PrStateResponse> {
+  const url = `${OPERATIONS_BASE}/pr-merge/prs/${encodeURIComponent(repo)}/${prNumber}/checks`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<PrStateResponse>(res, `GET ${url}`);
+}
+
+// Wire types — mirror `get_pr_merge_graph`, which proxies coord's
+// `src/pr_merge/graph_routes.rs::GraphResponse` verbatim.
+
+export interface GraphPrRef {
+  repo: string;
+  pr: number;
+}
+
+export interface GraphNode {
+  repo: string;
+  pr_number: number;
+  tenant_id: string | null;
+  outer_state: string | null;
+  /**
+   * The topological-merge predicate (`is_pr_ready_for_topo_merge`). It
+   * requires review `APPROVED`, which agents on this fleet never give, so it
+   * reads `false` for PRs the merge train will land. Secondary signal only —
+   * never the "landable" colour.
+   */
+  topo_merge_ready?: boolean;
+  /**
+   * The merge predicate's latest verdict (the latest `predicate_eval`
+   * `pr_events` row — the same verdict `coord_pr_status` serves). `"none"`
+   * means the predicate passed; `null` means no verdict is recorded. Absent
+   * on a coord that predates the field.
+   */
+  block_reason_code?: string | null;
+  /**
+   * LEGACY: the pre-rename wire name of `topo_merge_ready` (same predicate).
+   * Served only by a coord predating plan
+   * `2026-09-28-coord-pr-merge-ready-false-stall-and-events-tenant-mismatch`
+   * Phase 2c; read only when `block_reason_code` is absent.
+   */
+  ready?: boolean;
+  merge_state_status: string | null;
+}
+
+export interface GraphEdge {
+  from: GraphPrRef;
+  to: GraphPrRef;
+  /** "upstream_of" | "stacked_on" — kept as string for forward-compat. */
+  kind: string;
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  topo_order: GraphPrRef[];
+  cycle_detected: boolean;
+  cycle_members: GraphPrRef[];
+}
+
+/**
+ * `GET /pr-merge/graph?repo=<owner/name>&pr=<n>` — `get_pr_merge_graph`, the
+ * dependency DAG of one PR's connected component. The query is built with
+ * `URLSearchParams`, as it always was (`/` → `%2F`).
+ */
+export async function fetchPrGraph(
+  repo: string,
+  pr: number
+): Promise<GraphResponse> {
+  const params = new URLSearchParams({ repo, pr: String(pr) });
+  const url = `${OPERATIONS_BASE}/pr-merge/graph?${params.toString()}`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<GraphResponse>(res, `GET ${url}`);
+}
+
+// ----------------------------------------------------------------------------
+// Tenant self-service merge recovery (plan
+// `2026-07-30-coord-tenant-self-service-merge-recovery` Phase 4)
+// ----------------------------------------------------------------------------
+//
+// Two reads that tell a tenant WHY their PR is wedged, and two Tier-2 writes
+// that let them clear it themselves. All four proxy straight through the web
+// backend to coord on the SAME paths coord's MCP tools drive, and the backend
+// proxies coord's status code + JSON body VERBATIM, so coord's 409
+// `land_in_flight` / `batch_in_flight` and its deliberate 404-not-403
+// `*_not_found_in_tenant_scope` reach the caller intact. The bodies resolve
+// `unknown`: `StuckPrRecoveryPanel`'s parsers own the shapes.
+
+/**
+ * `GET /pr-merge/{repo:path}/stuck-nudges` — `get_pr_merge_stuck_nudges`:
+ * `{repo, enabled, cooldown_secs, max_nudges, nudges[], stuck_now[]}`.
+ * `repo` is `owner/name`, inlined UNENCODED (the route's `:path` converter
+ * takes the slash). A panel poll: no client retries.
+ */
+export async function fetchStuckNudges(repo: string): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/pr-merge/${repo}/stuck-nudges`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /pr-merge/verdict/{owner}/{name}/{pr_number}` —
+ * `get_pr_merge_verdict`, coord's merge verdict for one PR (the recovery card
+ * needs its `proposal.proposal_id`). A panel poll: no client retries.
+ */
+export async function fetchPrMergeVerdict(
+  owner: string,
+  name: string,
+  prNumber: number
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/pr-merge/verdict/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${prNumber}`;
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    maxRetries: 0,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** The body of `POST /pr-merge/proposals/{proposal_id}/cancel`. */
+export interface ProposalCancelWrite {
+  /**
+   * `false` STOPS (the cancelled prior stays on record and blocks a retry at
+   * this commit); `true` clears the block AND re-enqueues a fresh attempt.
+   * Genuinely different actions — never one button.
+   */
+  unblock: boolean;
+  reason: string;
+}
+
+/**
+ * `POST /pr-merge/proposals/{proposal_id}/cancel` —
+ * `post_pr_merge_proposal_cancel`. Coord 409s `land_in_flight` /
+ * `batch_in_flight` / already-terminal, and 404s
+ * `proposal_not_found_in_tenant_scope` cross-tenant. A 2xx whose body does
+ * not parse resolves `null`: the cancel landed. Not re-sent on a 5xx
+ * (`idempotent: false`).
+ */
+export async function cancelMergeProposal(
+  proposalId: string,
+  write: ProposalCancelWrite
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/pr-merge/proposals/${encodeURIComponent(proposalId)}/cancel`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify({ unblock: write.unblock, reason: write.reason }),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/**
+ * `POST /pr-merge/prs/{owner}/{name}/{pr_number}/reevaluate` —
+ * `post_pr_merge_reevaluate`: re-run coord's merge decision for one PR
+ * against fresh GitHub truth. Sends `{}`. Returns `{repo, pr_number,
+ * evaluated, result, outer_state, block_reason_code, block_payload}`, or 404
+ * `pr_not_found_in_tenant_scope`. A 2xx whose body does not parse resolves
+ * `null`. Not re-sent on a 5xx (`idempotent: false`).
+ */
+export async function reevaluatePr(
+  owner: string,
+  name: string,
+  prNumber: number
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/pr-merge/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${prNumber}/reevaluate`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify({}),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/**
+ * `POST /prs/{owner}/{repo}/{number}/draft-state` — `set_pr_draft_state`
+ * (plan `2026-07-23-operator-set-pr-draft-state`). `draft: false` marks the
+ * PR ready for review (releasing it to the merge train), `true` converts it
+ * back to draft (the documented hold). The backend forwards to coord's
+ * `POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state`.
+ * Nothing reads the echo, so a 2xx whose body does not parse resolves `null`.
+ * Not re-sent on a 5xx (`idempotent: false`).
+ */
+export async function setPrDraftState(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  draft: boolean
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/prs/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${prNumber}/draft-state`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify({ draft }),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
