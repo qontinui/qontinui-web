@@ -86229,7 +86229,7 @@
             "description": "The bytes are not an accepted image format."
           },
           "422": {
-            "description": "Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep)."
+            "description": "Unreadable image, too many frames or pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep)."
           }
         },
         "security": [

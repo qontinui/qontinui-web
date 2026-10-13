@@ -528,6 +528,36 @@ class TestUpload:
         assert len(_stored_files(storage)) == 1
         assert len(await _rows(async_db_session, tenant_a)) == 1
 
+    @pytest.mark.parametrize("fault", [MemoryError, NameError])
+    async def test_a_server_fault_while_sniffing_is_a_5xx_not_a_refusal(
+        self,
+        async_db_session: AsyncSession,
+        tenant_a: UUID,
+        storage: ObjectStorageService,
+        monkeypatch: pytest.MonkeyPatch,
+        fault: type[BaseException],
+    ) -> None:
+        """The review's case, through the route: a fault of this server while
+        the bytes are sniffed — memory exhausted, a defect in a helper — was
+        answered 422 image_unreadable, blaming the upload. It is a 500 now,
+        and nothing is stored."""
+
+        def broken(data: bytes) -> object:
+            raise fault("the server's fault, not the upload's")
+
+        monkeypatch.setattr(endpoints, "sniff_image", broken)
+        app = _build_app(
+            db_session=async_db_session, tenant_id=tenant_a, storage=storage
+        )
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            resp = await _upload(client, _png())
+        assert resp.status_code == 500
+        assert _stored_files(storage) == []
+        assert await _rows(async_db_session, tenant_a) == []
+
     @pytest.mark.parametrize(
         ("pillow_format", "claimed_name", "claimed_type", "mime", "ext"),
         [
