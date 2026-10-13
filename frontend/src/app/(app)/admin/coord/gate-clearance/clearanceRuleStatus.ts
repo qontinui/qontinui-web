@@ -32,7 +32,7 @@
 import type { Attention } from "@/components/console/attention";
 import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
 import { AUTHOR_RED, INERT } from "@/components/console/statusRow";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import { INERT_EXPLANATIONS, inertReason } from "./gateClearance";
 
 /** The vocabulary the ROW renders. */

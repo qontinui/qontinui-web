@@ -33,7 +33,7 @@
  * and every gate in it falls to the audience default.
  */
 
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 /** The decision domain these rules live under (coord `GATE_CLEARANCE_DOMAIN`). */
 export const GATE_CLEARANCE_DOMAIN = "gate_clearance";

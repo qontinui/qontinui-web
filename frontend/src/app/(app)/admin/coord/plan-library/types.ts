@@ -377,14 +377,6 @@ export type CitationScopeBackfillWriteLevel =
 export const CITATION_SCOPE_BACKFILL_WRITE_DEFAULT_LEVEL: CitationScopeBackfillWriteLevel =
   "dry_run";
 
-// `FleetPolicyView` / `FleetPolicyWriteResult` moved to the shared module when
-// the `policy_write` dial became a second consumer — one wire contract, one
-// definition. Re-exported here so this file's public surface is unchanged.
-export type {
-  FleetPolicyView,
-  FleetPolicyWriteResult,
-} from "../_shared/fleetPolicy";
-
 // ──────────────────── scan sources (per-device readings) ────────────────────
 
 /**

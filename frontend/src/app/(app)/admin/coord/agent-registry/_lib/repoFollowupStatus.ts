@@ -1,13 +1,14 @@
 /**
- * Per-repo follow-up dials — the wire shapes and every PURE derivation the
- * panel renders from (R8: no internal vocabulary on a primary surface; the
- * derivation lives here, not in JSX).
+ * Per-repo follow-up dials — the display vocabulary and every PURE derivation
+ * the panel renders from (R8: no internal vocabulary on a primary surface;
+ * the derivation lives here, not in JSX).
  *
  * Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind`
  * Phase 4b. Two per-repo coord settings, each proxied by
- * `backend/app/api/v1/endpoints/repo_followup_dials.py`:
+ * `backend/app/api/v1/endpoints/repo_followup_dials.py` and called through
+ * `@/lib/api/operations/repoFollowupDials` (which owns the wire types):
  *
- * - **Post-merge follow-up scope** (`/api/v1/operations/post-merge-followup-scope`)
+ * - **Post-merge follow-up scope** (`/post-merge-followup-scope`)
  *   — whether a merged PR in this repo spawns its follow-up session: every
  *   merge (`all`, the default), only merges touching the repo's code globs
  *   (`code_only`), or never (`none`). The read also carries the fleet
@@ -15,7 +16,7 @@
  *   nothing, so a scope set here does not yet stop any spawn. That has to be
  *   on screen beside the setting, or an operator who sets `none` believes
  *   follow-ups stopped when they did not.
- * - **Continuation-delivery mode** (`/api/v1/operations/continuation-delivery-mode`)
+ * - **Continuation-delivery mode** (`/continuation-delivery-mode`)
  *   — how work is delivered back to an author session.
  *
  * The rules this module holds:
@@ -42,72 +43,25 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console";
+import type {
+  ContinuationDeliveryModeView,
+  DeliveryMode,
+  FollowupScope,
+  PostMergeFollowupScopeView,
+  RolloutMode,
+} from "@/lib/api/operations/repoFollowupDials";
 
-export const POST_MERGE_SCOPE_API =
-  "/api/v1/operations/post-merge-followup-scope";
-export const CONTINUATION_DELIVERY_API =
-  "/api/v1/operations/continuation-delivery-mode";
-
-export type FollowupScope = "all" | "code_only" | "none";
 export const FOLLOWUP_SCOPES: readonly FollowupScope[] = [
   "all",
   "code_only",
   "none",
 ];
 
-export type RolloutMode = "shadow" | "enforce" | "off";
-
-export type DeliveryMode =
-  | "in_session_with_spawn_fallback"
-  | "spawn_always"
-  | "notify_only";
 export const DELIVERY_MODES: readonly DeliveryMode[] = [
   "in_session_with_spawn_fallback",
   "spawn_always",
   "notify_only",
 ];
-
-/** Mirrors the backend's `PostMergeFollowupScopeView`. */
-export interface PostMergeFollowupScopeView {
-  repo: string;
-  scope: FollowupScope;
-  code_paths: string[];
-  /** `null` — coord did not say: UNKNOWN, neither "repo" nor "default". */
-  resolved_scope: "repo" | "default" | null;
-  /** `null` — coord did not say: UNKNOWN, not any of the three. */
-  mode: RolloutMode | null;
-  can_edit: boolean;
-}
-
-/** Mirrors `PostMergeFollowupScopeWriteResult`. */
-export interface PostMergeFollowupScopeWriteResult {
-  ok: boolean;
-  repo: string;
-  written_scope: FollowupScope;
-  stored_code_paths: string[] | null;
-  updated_by: string | null;
-  /** A SECOND, fresh read. `null` + `readback_error` = UNKNOWN. */
-  effective: PostMergeFollowupScopeView | null;
-  readback_error: string | null;
-}
-
-/** Mirrors `ContinuationDeliveryModeView`. */
-export interface ContinuationDeliveryModeView {
-  repo: string;
-  mode: DeliveryMode;
-  /** Always `false` today — coord's read is fail-open. */
-  provenance_known: boolean;
-  can_edit: boolean;
-}
-
-/** Mirrors `ContinuationDeliveryModeWriteResult`. */
-export interface ContinuationDeliveryModeWriteResult {
-  ok: boolean;
-  repo: string;
-  written_mode: DeliveryMode;
-  effective: ContinuationDeliveryModeView | null;
-  readback_error: string | null;
-}
 
 /** What a repo row shows for the scope. */
 export type FollowupScopeKind = FollowupScope | "unknown";

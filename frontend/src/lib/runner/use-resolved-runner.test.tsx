@@ -141,6 +141,64 @@ describe("resolve client", () => {
     [{ outcome: "drain_unreadable" }, { status: "drain_unreadable" }],
     [
       {
+        outcome: "all_capable_offline",
+        capable_offline: 2,
+        pin_released_reason: "offline",
+        pin_released_detail: "stale heartbeat",
+      },
+      {
+        status: "all_offline",
+        capableOffline: 2,
+        pinReleased: { reason: "offline", detail: "stale heartbeat" },
+      },
+    ],
+    [
+      {
+        outcome: "all_capable_at_capacity",
+        capable_devices: 1,
+        pin_released_reason: null,
+      },
+      { status: "all_at_capacity", capableDevices: 1, pinReleased: null },
+    ],
+    [
+      {
+        outcome: "all_capable_role_closed",
+        pin_released_reason: "role_closes_agent_lane",
+        pin_released_detail: "bench",
+      },
+      {
+        status: "all_role_closed",
+        pinReleased: { reason: "role_closes_agent_lane", detail: "bench" },
+      },
+    ],
+    [
+      {
+        outcome: "pin_ineligible",
+        device_id: A,
+        reason: "role_closes_agent_lane",
+        detail: "bench",
+        missing_capabilities: [],
+      },
+      {
+        status: "pin_ineligible",
+        deviceId: A,
+        reason: "role_closes_agent_lane",
+        detail: "bench",
+        missingCapabilities: [],
+      },
+    ],
+    // The web backend's name for a coord tag it does not know.
+    [
+      { outcome: "unknown_outcome", raw_outcome: "all_capable_teleported" },
+      { status: "unknown_outcome", rawOutcome: "all_capable_teleported" },
+    ],
+    // A tag THIS build does not know is named too, never "malformed".
+    [
+      { outcome: "teleported" },
+      { status: "unknown_outcome", rawOutcome: "teleported" },
+    ],
+    [
+      {
         outcome: "unavailable",
         reason: "not_deployed",
         status: 404,
@@ -159,7 +217,10 @@ describe("resolve client", () => {
 
   it.each([
     [{ outcome: "resolved", device_id: A }],
-    [{ outcome: "teleported" }],
+    [{ outcome: "unknown_outcome" }],
+    [{ outcome: 7 }],
+    [{ outcome: "" }],
+    [{}],
     [null],
     ["resolved"],
   ])("anything off-contract is UNKNOWN, never a device: %o", (body) => {

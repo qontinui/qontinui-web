@@ -53,8 +53,24 @@ export interface VercelDeployment {
    */
   readySubstate?: string;
   created?: number;
+  /**
+   * Why an ERROR deployment failed, e.g. `git_info_fail` (Vercel could not
+   * fetch the commit from GitHub, so no build ran) or `BUILD_UTILS_SPAWN_1`
+   * (the build command exited non-zero). Carried by the v6 list response.
+   */
+  errorCode?: string;
   meta?: { githubCommitSha?: string };
 }
+
+/**
+ * ERROR codes for which Vercel never ran a build: it failed to fetch the
+ * commit from GitHub. Measured 2026-10-12: `dpl_8KvGmkfdbGv897YBGTRewzY5d8s1`
+ * (main ae35b66e6) and `dpl_B5KYzWp8i6cTbuWV84LYctwe85eQ` (main a04174bad)
+ * both failed with a GitHub 403 secondary-rate-limit; ae35b66e6 had built
+ * READY as a preview 22 min earlier. The v13 `builds` array cannot separate
+ * this from a real build failure: it is `[]` on both.
+ */
+const FETCH_FAILURE_CODES = new Set(["git_info_fail"]);
 
 export interface ClassifyInput {
   /** The main commit whose production deployment is wanted (40-hex). */
@@ -147,6 +163,21 @@ export function classify(input: ClassifyInput): Outcome {
 
   // A failed production build of a main head is red.
   const errored = mine.find((d) => stateOf(d) === "ERROR");
+  if (errored && FETCH_FAILURE_CODES.has(errored.errorCode ?? "")) {
+    // Still red: the head of main is not live. But no build ran, so the
+    // message must not send anyone looking for a code fault.
+    return {
+      kind: "fail",
+      reason:
+        `production deployment ${errored.uid} for ${sha} is in ERROR with errorCode ${errored.errorCode}: ` +
+        `Vercel could not fetch the commit from GitHub, so NO BUILD RAN and this says nothing about the code. ` +
+        `Usually transient (measured: a GitHub 403 secondary rate limit). Redeploy the same commit to production ` +
+        `(\`vercel redeploy ${errored.uid} --target production\`, or Redeploy on the deployment in the ` +
+        `Vercel dashboard), then re-smoke it with ` +
+        `\`gh workflow run verify-frontend-run.yml --ref main -f sha=${sha}\`. ` +
+        `If the redeploy fails the same way, check the Vercel GitHub integration's access to the repo.`,
+    };
+  }
   if (errored) {
     return {
       kind: "fail",
