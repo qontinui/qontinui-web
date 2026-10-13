@@ -37,3 +37,63 @@ export function registrationBodyWithCallerId(
     registrationMetadata: { ...meta, userId },
   });
 }
+
+/**
+ * The names under which the SDK relay reads a caller identity (per-user tab
+ * scoping, §4.2), spelled exactly as it reads them. With the auth gate on,
+ * the only identity the relay may act on is the verified one this route sends
+ * as `X-Caller-User-Id`. So a request that names a caller itself, under
+ * either name, has it removed before it is forwarded: from the query, from
+ * the top level of a JSON body, and from the body's nested `request` object.
+ * Only these exact names; nothing else is removed.
+ */
+export const CALLER_IDENTITY_KEYS: readonly string[] = [
+  "__callerUserId",
+  "callerUserId",
+];
+
+/**
+ * `url` without any query parameter named as a caller identity — every
+ * occurrence of a repeated key, matched on the decoded name — or null when it
+ * carries none, so the caller keeps the original URL.
+ */
+export function urlWithoutCallerIdentity(url: string): string | null {
+  const parsed = new URL(url);
+  const present = CALLER_IDENTITY_KEYS.filter((key) =>
+    parsed.searchParams.has(key)
+  );
+  if (present.length === 0) return null;
+  for (const key of present) parsed.searchParams.delete(key);
+  return parsed.toString();
+}
+
+/**
+ * `parsedBody` without the caller identity in the places the SDK reads one:
+ * top-level `__callerUserId` and `callerUserId`, and `__callerUserId` on the
+ * nested `request` object. Returns null when the body is not a JSON object or
+ * carries none of them, so the caller keeps streaming the original body.
+ */
+export function bodyWithoutCallerIdentity(
+  parsedBody: unknown
+): Record<string, unknown> | null {
+  if (!isPlainObject(parsedBody)) return null;
+  const top = CALLER_IDENTITY_KEYS.filter((key) =>
+    Object.hasOwn(parsedBody, key)
+  );
+  const nested = parsedBody.request;
+  const nestedHasKey =
+    isPlainObject(nested) && Object.hasOwn(nested, "__callerUserId");
+  if (top.length === 0 && !nestedHasKey) return null;
+  const out: Record<string, unknown> = { ...parsedBody };
+  for (const key of top) delete out[key];
+  if (nestedHasKey) {
+    const request: Record<string, unknown> = { ...nested };
+    delete request.__callerUserId;
+    out.request = request;
+  }
+  return out;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
