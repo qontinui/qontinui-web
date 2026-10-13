@@ -112,7 +112,11 @@ export async function fetchContinuationDeliveryMode(
   return readJson<ContinuationDeliveryModeView>(res, `GET ${url}`);
 }
 
-/** `PUT /continuation-delivery-mode` (`put_continuation_delivery_mode`). */
+/**
+ * `PUT /continuation-delivery-mode` (`put_continuation_delivery_mode`).
+ * `idempotent: false` is a no-op: the client's method rule still retries a
+ * PUT on a 5xx, exactly as the `httpClient.put` this replaced did.
+ */
 export async function putContinuationDeliveryMode(
   repo: string,
   mode: DeliveryMode

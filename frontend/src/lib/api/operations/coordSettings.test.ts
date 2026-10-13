@@ -137,9 +137,9 @@ describe("coordSettings", () => {
 
   it("deletePrioritySet DELETEs and resolves undefined on 204", async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
-    await expect(deletePrioritySet("1")).resolves.toBeUndefined();
+    await expect(deletePrioritySet("p/1")).resolves.toBeUndefined();
     expect(fetchMock.mock.calls[0]).toEqual([
-      "/api/v1/operations/coord/priority-sets/1",
+      "/api/v1/operations/coord/priority-sets/p%2F1",
       { method: "DELETE", idempotent: false },
     ]);
   });
