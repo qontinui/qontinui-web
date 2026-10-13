@@ -345,17 +345,24 @@ export function deriveInteractable(el: Record<string, unknown>): boolean {
 // The SDK's facts arrive in one of two shapes, and BOTH must project, because
 // snapshot producers upgrade over time:
 //
-//   - ENVELOPED (SDK >= 0.31): `mediaMetadata` is an Observation —
-//     `{status, value, provenance}` — whose `provenance.coverage.unmeasured`
-//     names every fact the SDK could not measure. `measured` supplies the
-//     fields; an unmeasured dimension, or an `unknown` / `absent` envelope,
-//     leaves them OMITTED. An envelope passed through unwrapped would land an
-//     object on a scalar field, fail serde, and reject the WHOLE snapshot.
-//   - LEGACY (older SDKs): `mediaMetadata` is the bare fact record. Fields that
-//     mean the same thing project; `oversizeRatio` (DPR-blind: a correctly
-//     sized image reads 2x oversized on a 2x screen) and `transferSize` (0 on
-//     every cache hit, keyed on `img.src`) measure something else and are
-//     omitted, as are the facts that version never measured.
+//   - ENVELOPED (the SDK's media-observation change, plan
+//     2026-10-13-image-generation-and-visual-judgment Phase 5):
+//     `mediaMetadata` is an Observation — `{status, value, provenance}` —
+//     whose `provenance.coverage.unmeasured` names every fact the SDK could
+//     not measure. `measured` supplies the fields; an unmeasured dimension, or
+//     an `unknown` / `absent` envelope, leaves them OMITTED. An envelope passed
+//     through unwrapped would land an object on a scalar field, fail serde, and
+//     reject the WHOLE snapshot.
+//   - LEGACY (an SDK from before that change): `mediaMetadata` is the bare
+//     fact record. Fields that mean the same thing project; `oversizeRatio`
+//     (DPR-blind: a correctly sized image reads 2x oversized on a 2x screen)
+//     and `transferSize` (0 on every cache hit, keyed on `img.src`) measure
+//     something else and are omitted, as are the facts that version never
+//     measured.
+//
+//     REMOVAL TRIGGER for the legacy branch: once every deployed producer
+//     emits the envelope — qontinui-web and the runner both run a Phase 5 SDK
+//     — delete it here and in the Python projector together.
 //
 // Mirrors `project_media` in the Python projector; a change to one belongs in
 // the other.
@@ -490,6 +497,26 @@ function nonEmpty(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v : null;
 }
 
+/**
+ * HTML's "ASCII whitespace" at either end: tab, LF, FF, CR, space.
+ * Deliberately not `String.prototype.trim`, which also strips U+00A0 and every
+ * other Unicode space.
+ */
+const ASCII_WHITESPACE_EDGES = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
+
+/**
+ * `ElementMedia.alt` from the SDK's two halves. The text is stripped of ASCII
+ * whitespace (HTML's definition), and an alt that is PRESENT and empty after
+ * stripping is decorative — `alt="  "` reads as `alt=""` does.
+ */
+function mediaAlt(altText: unknown, decorative: boolean): MediaAlt {
+  if (typeof altText === "string") {
+    const text = altText.replace(ASCII_WHITESPACE_EDGES, "");
+    return text ? { decorative, text } : { decorative: true };
+  }
+  return { decorative };
+}
+
 /** A non-negative integral byte count (`u64` on the Rust side), or null. */
 function byteCount(v: unknown): number | null {
   const n = finiteNumber(v);
@@ -590,8 +617,18 @@ export function projectMedia(el: Record<string, unknown>): ElementMedia | null {
   const fact = (name: string): unknown => (unmeasured.has(name) ? undefined : facts[name]);
   const redacted = asRecord(state.redaction)?.content === true;
 
+  // `natural_px` is the image RESOURCE's own pixel size. For a srcset
+  // candidate the browser's `naturalWidth` is DENSITY-CORRECTED (a 1280w
+  // source shown at DPR 2 reads ~640; a `2x` candidate reads half its size),
+  // and a legacy SDK reads it raw without saying which candidate it matched —
+  // so a legacy row with a `srcset` or `<picture>` sources carries no natural
+  // size worth trusting, and it is omitted. An enveloped row's producer
+  // de-corrects it by the matched candidate (or omits it), so it passes.
   const natural = mediaSize(fact("naturalWidth"), fact("naturalHeight"), true);
-  if (natural) media.natural_px = natural;
+  const sources = fact("sources");
+  const densityCorrected =
+    legacy && (nonEmpty(fact("srcset")) !== null || (Array.isArray(sources) && sources.length > 0));
+  if (natural && !densityCorrected) media.natural_px = natural;
   const rendered = mediaSize(fact("renderedWidth"), fact("renderedHeight"), false);
   if (rendered) media.rendered_px = rendered;
 
@@ -622,14 +659,14 @@ export function projectMedia(el: Record<string, unknown>): ElementMedia | null {
     // Legacy `isDecorative` is `img.alt === ''`, which reads a MISSING alt as
     // decorative. Only an image whose alt text is present can be trusted; the
     // other kinds measure it from attributes that mean it.
-    const altText = nonEmpty(fact("altText"));
+    const altText = fact("altText");
     const decorative = fact("isDecorative");
     if (
       !redacted &&
       typeof decorative === "boolean" &&
-      ((kind !== "img" && kind !== "picture") || altText !== null)
+      ((kind !== "img" && kind !== "picture") || typeof altText === "string")
     ) {
-      media.alt = altText !== null ? { decorative, text: altText } : { decorative };
+      media.alt = mediaAlt(altText, decorative);
     }
     return media;
   }
@@ -664,8 +701,7 @@ export function projectMedia(el: Record<string, unknown>): ElementMedia | null {
   ) {
     // The SDK reads both halves together; an absent altText beside them is
     // its MEASURED "this element has no text alternative".
-    const altText = nonEmpty(facts.altText);
-    media.alt = altText !== null ? { decorative, text: altText } : { decorative };
+    media.alt = mediaAlt(facts.altText, decorative);
   }
   const lcp = fact("isLcpCandidate");
   if (typeof lcp === "boolean") media.is_lcp_candidate = lcp;
@@ -675,8 +711,10 @@ export function projectMedia(el: Record<string, unknown>): ElementMedia | null {
   if (slot !== null && !redacted) media.slot_id = slot;
   if (!unmeasured.has("placeholder")) {
     // The SDK sets it only when the marker is there: absent-and-unlisted is
-    // its measured "no placeholder marker".
-    media.placeholder = facts.placeholder === true;
+    // its measured "no placeholder marker". A PRESENT non-boolean is no
+    // reading of the marker at all, so it is omitted, never coerced.
+    if (!("placeholder" in facts)) media.placeholder = false;
+    else if (typeof facts.placeholder === "boolean") media.placeholder = facts.placeholder;
   }
   return media;
 }
@@ -691,6 +729,11 @@ export function projectMedia(el: Record<string, unknown>): ElementMedia | null {
  * `video`, `canvas`). Whatever a source put there is fallback content or an
  * SVG `<title>`, i.e. a text alternative, which the vision-core `Element`
  * contract forbids in `text`; it lives in `media.alt`.
+ *
+ * It also DELETES the SDK's raw `mediaMetadata` (top level and in `state`)
+ * once `media` is projected from it: the raw observation carries the image
+ * URLs that `media` reduces to a digest, and these rows are uploaded as CI
+ * artifacts from a public repository.
  *
  * Does NOT touch `bbox` — that is `normalizeBboxes`'s job in the spec (the one
  * pre-existing shape transform). Does NOT touch `id`.
@@ -710,6 +753,12 @@ export function enrichElement(el: Record<string, unknown>): void {
     const media = projectMedia(el);
     if (media) el.media = media;
   }
+  // ...and then the RAW observation goes, both copies. It carries the URLs
+  // `media` deliberately reduces to a digest — `src`, `srcset`, `<source>`
+  // srcsets, a video `poster` — and the style gate uploads these rows as CI
+  // artifacts from a public repository. vision-core never reads it.
+  delete el.mediaMetadata;
+  if (state) delete state.mediaMetadata;
   const mediaRec = asRecord(el.media);
   const tag = lowerTag(el);
   const kind =
