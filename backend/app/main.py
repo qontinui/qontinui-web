@@ -30,6 +30,7 @@ if os.environ.get("QONTINUI_DISABLE_CLOUD_EXTENSIONS") != "1":
         pass
 
 from app.api.v1.api import api_router
+from app.api.v1.endpoints import image_assets as image_assets_endpoints
 from app.api.v1.endpoints.plan_library import (
     ARTIFACT_EXPORT_HEADERS,
     CORPUS_EXPORT_HEADERS,
@@ -223,6 +224,17 @@ app.add_middleware(
             message=(
                 "Files can be at most "
                 f"{overview_files.MAX_FILE_BYTES // (1024 * 1024)} MB."
+            ),
+        ),
+        # The content-addressed image store's upload (plan
+        # 2026-10-13-image-generation-and-visual-judgment, Phase 13). The
+        # handler then holds the image part itself to MAX_IMAGE_BYTES.
+        ("POST", f"{settings.API_V1_STR}/image-assets"): BodyLimit(
+            max_bytes=image_assets_endpoints.MAX_UPLOAD_REQUEST_BYTES,
+            error="image_too_large",
+            message=(
+                "Images can be at most "
+                f"{image_assets_endpoints.MAX_IMAGE_BYTES // (1024 * 1024)} MB."
             ),
         ),
     },

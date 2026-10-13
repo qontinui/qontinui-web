@@ -5691,6 +5691,45 @@
         "title": "Body_upload_image_api_v1_projects__project_id__images_upload_post",
         "type": "object"
       },
+      "Body_upload_image_asset_api_v1_image_assets_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "The image. Its filename and Content-Type are ignored: the format is read from the bytes.",
+            "title": "File",
+            "type": "string"
+          },
+          "kind": {
+            "description": "How the image entered the store.",
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Kept verbatim.",
+            "title": "Provenance"
+          }
+        },
+        "required": [
+          "file",
+          "kind"
+        ],
+        "title": "Body_upload_image_asset_api_v1_image_assets_post",
+        "type": "object"
+      },
       "Body_upload_recording_api_v1_recordings_upload_post": {
         "properties": {
           "description": {
@@ -27367,6 +27406,155 @@
           }
         },
         "title": "IllustrationSettingsSchema",
+        "type": "object"
+      },
+      "ImageAssetUploadResponse": {
+        "description": "``created`` is true when this request created the row (HTTP 201) and\nfalse when the tenant already held these bytes (HTTP 200).",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "kind",
+          "mime_type",
+          "width",
+          "height",
+          "byte_size",
+          "provenance",
+          "created_at",
+          "updated_at",
+          "created"
+        ],
+        "title": "ImageAssetUploadResponse",
+        "type": "object"
+      },
+      "ImageAssetWithUrl": {
+        "description": "A stored image plus a time-limited URL to its bytes.",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "url_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url Expires At"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "kind",
+          "mime_type",
+          "width",
+          "height",
+          "byte_size",
+          "provenance",
+          "created_at",
+          "updated_at",
+          "url",
+          "url_expires_at"
+        ],
+        "title": "ImageAssetWithUrl",
         "type": "object"
       },
       "ImageExtractRequest": {
@@ -51180,6 +51368,298 @@
           }
         },
         "title": "SkillUpdate",
+        "type": "object"
+      },
+      "SlotCandidateAsset": {
+        "description": "The asset a candidate names, as stored.",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "kind",
+          "mime_type",
+          "width",
+          "height",
+          "byte_size"
+        ],
+        "title": "SlotCandidateAsset",
+        "type": "object"
+      },
+      "SlotCandidateDemotion": {
+        "description": "A slot's previous choice, returned to ``candidate`` because another\nasset was chosen in the same request.",
+        "properties": {
+          "asset_sha256": {
+            "title": "Asset Sha256",
+            "type": "string"
+          },
+          "status_after": {
+            "const": "candidate",
+            "default": "candidate",
+            "title": "Status After",
+            "type": "string"
+          },
+          "status_before": {
+            "const": "chosen",
+            "default": "chosen",
+            "title": "Status Before",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_sha256"
+        ],
+        "title": "SlotCandidateDemotion",
+        "type": "object"
+      },
+      "SlotCandidateList": {
+        "description": "``GET /api/v1/image-assets/slot-candidates`` \u2014 one slot's candidates,\noldest first. The query is echoed so an empty list can be checked against\nwhat was asked; ``truncated`` says whether more rows exist past ``limit``.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCandidateOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "slot_id": {
+            "title": "Slot Id",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "candidate",
+                  "chosen",
+                  "rejected",
+                  "shipped"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "slot_id",
+          "status",
+          "limit",
+          "truncated",
+          "candidates"
+        ],
+        "title": "SlotCandidateList",
+        "type": "object"
+      },
+      "SlotCandidateOut": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/SlotCandidateAsset"
+          },
+          "asset_sha256": {
+            "title": "Asset Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "judge": {
+            "additionalProperties": true,
+            "title": "Judge",
+            "type": "object"
+          },
+          "recipe_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Hash"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "slot_id": {
+            "title": "Slot Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "candidate",
+              "chosen",
+              "rejected",
+              "shipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "repo",
+          "slot_id",
+          "asset_sha256",
+          "status",
+          "recipe_hash",
+          "values",
+          "judge",
+          "created_at",
+          "updated_at",
+          "asset"
+        ],
+        "title": "SlotCandidateOut",
+        "type": "object"
+      },
+      "SlotCandidateUpsert": {
+        "additionalProperties": false,
+        "description": "``PUT /api/v1/image-assets/slot-candidates`` \u2014 propose an asset for a\nslot, or move a proposal.\n\nIdentity is ``repo`` + ``slot_id`` + ``asset_sha256``. ``status`` is\nalways sent. ``recipe_hash``, ``values`` and ``judge`` are replaced when\nsent and left as stored when omitted (``recipe_hash: null`` clears it).",
+        "properties": {
+          "asset_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Asset Sha256",
+            "type": "string"
+          },
+          "judge": {
+            "additionalProperties": true,
+            "title": "Judge",
+            "type": "object"
+          },
+          "recipe_hash": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Hash"
+          },
+          "repo": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?$",
+            "title": "Repo",
+            "type": "string"
+          },
+          "slot_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Slot Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "candidate",
+              "chosen",
+              "rejected",
+              "shipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "repo",
+          "slot_id",
+          "asset_sha256",
+          "status"
+        ],
+        "title": "SlotCandidateUpsert",
+        "type": "object"
+      },
+      "SlotCandidateUpsertResponse": {
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/SlotCandidateOut"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "demoted": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCandidateDemotion"
+            },
+            "title": "Demoted",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate",
+          "created",
+          "demoted"
+        ],
+        "title": "SlotCandidateUpsertResponse",
         "type": "object"
       },
       "SnapshotRun": {
@@ -87834,6 +88314,370 @@
         "summary": "Get Responsible Users",
         "tags": [
           "identity-resolution"
+        ]
+      }
+    },
+    "/api/v1/image-assets": {
+      "post": {
+        "description": "Store one image under the hash of its bytes, for the caller's tenant.",
+        "operationId": "api_v1_image_assets_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_image_asset_api_v1_image_assets_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAssetUploadResponse"
+                }
+              }
+            },
+            "description": "The tenant already held these bytes; nothing was re-stored (kind / provenance updated as sent)."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAssetUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "413": {
+            "description": "The image is larger than the store accepts."
+          },
+          "415": {
+            "description": "The bytes are not an accepted image format."
+          },
+          "422": {
+            "description": "Unreadable image, too many pixels, or bad fields."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload an image to the content-addressed store",
+        "tags": [
+          "image-assets"
+        ]
+      }
+    },
+    "/api/v1/image-assets/slot-candidates": {
+      "delete": {
+        "description": "Delete the (repo, slot_id, asset_sha256) candidate row.",
+        "operationId": "api_v1_image_assets_slot_candidates_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?$",
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slot_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "title": "Slot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "asset_sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Asset Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such candidate for this tenant."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Withdraw one proposal (the image itself stays)",
+        "tags": [
+          "image-assets"
+        ]
+      },
+      "get": {
+        "description": "The slot's candidates, oldest first, each with the asset it names.",
+        "operationId": "api_v1_image_assets_slot_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?$",
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slot_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "title": "Slot Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only candidates in this status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "candidate",
+                    "chosen",
+                    "rejected",
+                    "shipped"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only candidates in this status.",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List one image slot's candidates",
+        "tags": [
+          "image-assets"
+        ]
+      },
+      "put": {
+        "description": "Create or update the (repo, slot_id, asset_sha256) candidate.\n\n``recipe_hash``, ``values`` and ``judge`` are replaced when sent and kept\nwhen omitted. ``status: chosen`` returns the slot's previous choice to\n``candidate`` in the same transaction; ``demoted`` names it.",
+        "operationId": "api_v1_image_assets_slot_candidates_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlotCandidateUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotCandidateUpsertResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotCandidateUpsertResponse"
+                }
+              }
+            },
+            "description": "The candidate was created."
+          },
+          "404": {
+            "description": "This tenant holds no image with that sha256."
+          },
+          "409": {
+            "description": "Another choice for the slot landed concurrently."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Propose an image for a slot, or move a proposal",
+        "tags": [
+          "image-assets"
+        ]
+      }
+    },
+    "/api/v1/image-assets/{sha256}": {
+      "get": {
+        "description": "Answers only when the caller's tenant holds an image with this hash.",
+        "operationId": "api_v1_image_assets_sha256_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Seconds the URL stays valid.",
+            "in": "query",
+            "name": "expires_in",
+            "required": false,
+            "schema": {
+              "default": 3600,
+              "description": "Seconds the URL stays valid.",
+              "maximum": 604800,
+              "minimum": 60,
+              "title": "Expires In",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAssetWithUrl"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "This tenant holds no image with that sha256."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read one image's record and a time-limited URL to its bytes",
+        "tags": [
+          "image-assets"
         ]
       }
     },

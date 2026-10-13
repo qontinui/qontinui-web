@@ -211,6 +211,15 @@ STORES: Final[dict[str, Store]] = {
         states=("open", "fixing", "fixed", "already_fixed", "dismissed"),
         terminal=("fixed", "already_fixed", "dismissed"),
     ),
+    # An image-slot candidate's status (plan
+    # 2026-10-13-image-generation-and-visual-judgment, Phase 13). Every move is
+    # a caller's PUT except one: choosing another candidate of the slot returns
+    # a ``chosen`` row to ``candidate`` automatically, so ``chosen`` is not
+    # terminal. Nothing automatic moves the other three.
+    "image_slot_candidates": Store(
+        states=("candidate", "chosen", "rejected", "shipped"),
+        terminal=("candidate", "rejected", "shipped"),
+    ),
 }
 
 
@@ -270,6 +279,8 @@ _FOLLOWUP_RESOLUTION_VERB = Verb(
 )
 _MEMORY_DELETE = f"DELETE {_V1}/memory/records/{{memory_id}}"
 _TESTING = f"{_V1}/testing/runs"
+_IMAGE_ASSETS = f"{_V1}/image-assets"
+_SLOT_CANDIDATES = f"{_IMAGE_ASSETS}/slot-candidates"
 
 #: One row per device-JWT-admitted write route. Classified by reading each
 #: handler, not its summary.
@@ -520,6 +531,60 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
     ("POST", f"{_V1}/memory/jobs/claim"): Ephemeral(
         "claims queue jobs for this worker — a lease the reaper requeues when "
         "it lapses, asserting nothing a later reader relies on"
+    ),
+    # ── content-addressed image store (``get_memory_tenant``) ───────────
+    ("POST", _IMAGE_ASSETS): Evidence(
+        closed_fields=("kind",),
+        correction=SupersedeArg(
+            property="the uploaded bytes (their server-computed sha256)",
+            how=(
+                "re-uploading the same bytes keeps the stored object and the "
+                "row, sets kind to the value sent and replaces provenance when "
+                "one is sent, so a wrong kind or provenance is corrected by "
+                "re-uploading with the right one. The row's identity, MIME "
+                "type and dimensions are computed from the bytes by the "
+                "server, so they cannot be asserted wrongly"
+            ),
+        ),
+        # A multipart route: the non-file fields arrive as Form fields and are
+        # validated through this model by hand.
+        body_model="app.schemas.image_assets:ImageAssetUploadFields",
+    ),
+    ("PUT", _SLOT_CANDIDATES): Evidence(
+        closed_fields=("status",),
+        store="image_slot_candidates",
+        correction=SupersedeArg(
+            property="repo + slot_id + asset_sha256",
+            how=(
+                "a re-PUT of the same candidate sets status and replaces "
+                "recipe_hash, values and judge when they are sent; a wrong "
+                "choice is corrected by choosing the right candidate, which "
+                "returns the wrong one to candidate in the same transaction"
+            ),
+        ),
+        aspects=(
+            (
+                "identity",
+                # A candidate filed under the wrong repo, slot or asset is
+                # withdrawn, then re-PUT under the right identity.
+                Verb(
+                    verb=f"DELETE {_SLOT_CANDIDATES}",
+                    admits=("candidate", "chosen", "rejected", "shipped"),
+                ),
+            ),
+        ),
+    ),
+    ("DELETE", _SLOT_CANDIDATES): Evidence(
+        closed_fields=(),
+        correction=SupersedeArg(
+            property="repo + slot_id + asset_sha256",
+            how=(
+                "a wrongly withdrawn candidate is restored by re-PUTting the "
+                "same identity; the delete removed its stored status, "
+                "recipe_hash, values and judge, so that PUT re-sends them. The "
+                "image asset itself is never touched by the delete"
+            ),
+        ),
     ),
     # ── testing (runner → backend reports; ``get_runner_user``) ──────────
     ("POST", _TESTING): Evidence(
