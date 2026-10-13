@@ -128,9 +128,58 @@ describe("passThroughBody", () => {
       method: "POST",
       body: bytes,
     });
-    const { request, parsedBody } = await passThroughBodyWithPeek(req, "POST");
+    const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+      req,
+      "POST"
+    );
+    expect(bodyState).toBe("parsed");
     expect(parsedBody).toEqual({ text: "X" });
     expect(await request.json()).toEqual({ text: "X" });
+  });
+
+  it("reports a body as absent for a bodiless method or an empty body", async () => {
+    const get = await passThroughBodyWithPeek(
+      makeRequest("http://localhost/api/ui-bridge/control/snapshot"),
+      "GET"
+    );
+    expect(get.bodyState).toBe("absent");
+    const empty = await passThroughBodyWithPeek(
+      makeRequest("http://localhost/api/ui-bridge/ai/find", { method: "POST" }),
+      "POST"
+    );
+    expect(empty.bodyState).toBe("absent");
+    expect(empty.parsedBody).toBeUndefined();
+  });
+
+  it("reports a body the SDK's parser refuses as unparseable, and still forwards its bytes", async () => {
+    const req = makeRequest("http://localhost/api/ui-bridge/ai/find", {
+      method: "POST",
+      body: "text=X",
+    });
+    const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+      req,
+      "POST"
+    );
+    expect(bodyState).toBe("unparseable");
+    expect(parsedBody).toBeUndefined();
+    expect(await request.text()).toBe("text=X");
+  });
+
+  it("reports a body whose stream fails as unreadable", async () => {
+    const req = new NextRequest("http://localhost/api/ui-bridge/ai/find", {
+      method: "POST",
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(new Error("the client went away"));
+        },
+      }),
+    });
+    const { parsedBody, bodyState } = await passThroughBodyWithPeek(
+      req,
+      "POST"
+    );
+    expect(bodyState).toBe("unreadable");
+    expect(parsedBody).toBeUndefined();
   });
 
   it("BODY_METHODS contains exactly POST/PUT/PATCH", () => {

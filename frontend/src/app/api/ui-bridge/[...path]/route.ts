@@ -51,7 +51,10 @@ import {
 } from "@qontinui/ui-bridge/server";
 import { handlers, relay, getRelayBusStatus } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
-import { passThroughBodyWithPeek } from "./body-passthrough";
+import {
+  passThroughBodyWithPeek,
+  unreadableBodyResponse,
+} from "./body-passthrough";
 import {
   bodyWithoutCallerIdentity,
   registrationBodyWithCallerId,
@@ -274,12 +277,34 @@ async function wrapHandler(
   // arrived at the relay with `text` missing.
   //
   // We use `passThroughBodyWithPeek` (a `passThroughBody` superset) so we
-  // get a best-effort parsed JSON copy back on the same read — needed
-  // for the audit-log safe summary in the auditable-write branch below.
-  const { request: bodyPreserved, parsedBody } = await passThroughBodyWithPeek(
-    request,
-    method,
-  );
+  // get the body back, parsed by the SDK's own parser, on the same read —
+  // needed for the caller-identity strip and for the audit-log safe
+  // summary in the auditable-write branch below.
+  const {
+    request: bodyPreserved,
+    parsedBody,
+    bodyState,
+  } = await passThroughBodyWithPeek(request, method);
+
+  // Fail closed under the auth gate. The caller-identity strip below can
+  // only remove an identity from a body it parsed, so a body present but
+  // not parseable the way the SDK parses it is refused with a typed 400
+  // instead of being forwarded as it came. With the gate off nothing
+  // changes: there is no verified identity to protect.
+  //
+  // No route is exempt. Census of the installed SDK
+  // (`@qontinui/ui-bridge` 0.30.0, whose Next adapter is unchanged from
+  // 0.28.0): its Next handler reads every body it reads with
+  // `request.json()` — the `bodyRequired` routes of `UI_BRIDGE_ROUTES`,
+  // `POST /heartbeat`, `POST /commands` and `POST /tabs/cdp/new` — and no
+  // route reads a multipart, binary or text body. Its own clients, and this
+  // app's, send only JSON bodies. `route.real-sdk.test.ts` pins the census.
+  if (
+    callerUserId &&
+    (bodyState === "unparseable" || bodyState === "unreadable")
+  ) {
+    return unreadableBodyResponse(bodyState);
+  }
 
   // Per-user tab scoping (§4.2, SDK ≥ 0.12.0): when the auth gate
   // produced an authenticated userId, splice it onto the forwarded
