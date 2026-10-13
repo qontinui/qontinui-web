@@ -10,23 +10,35 @@ caps the body at the ASGI boundary instead:
 * otherwise the bytes are counted as they arrive, and the request is refused
   the moment the count passes the cap (a chunked body declares no length).
 
-Either refusal is a ``413`` shaped like the route's own refusals
-(``{"detail": {"error": ..., "message": ...}}``), and this middleware sends it
-ITSELF. Once the count passes the cap, whatever the inner app answers is
-discarded: in the real app the ``BaseHTTPMiddleware`` layers inside this one
-wrap the overflow in ``ExceptionGroup``s, which FastAPI's body parsing reports
-as ``400 There was an error parsing the body`` — a refusal that names the
-wrong cause. The cap was the cause, so the cap answers.
+Either refusal is a ``413`` that this middleware sends ITSELF, in the same
+flat body the app's ``HTTPException`` handler
+(``app.middleware.error_handler.http_exception_handler``) renders for a route's
+own refusal — ``error``, ``message``, ``max_bytes`` (the per-file maximum the
+message names), ``timestamp`` and ``path`` — so a client meets one 413 shape
+whichever of the two refused it. It carries ``X-Request-ID`` when the request
+has one, and its log line names the request id.
+
+Once the count passes the cap, whatever the inner app answers is discarded:
+the cap was the cause, so the cap answers — a ``BaseHTTPMiddleware`` layer
+between this one and the app would otherwise turn the overflow into
+``ExceptionGroup``s that FastAPI reports as ``400 There was an error parsing
+the body``. ``app.main`` installs this middleware INNERMOST: no layer outside
+it reads the body, so the cap still runs before anything parses it, and the
+request-id, metrics and logging layers all wrap it — they record the 413 the
+client receives, not a 400 the client never sees.
 """
 
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import structlog
 from fastapi import HTTPException
+from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = structlog.get_logger(__name__)
@@ -34,12 +46,35 @@ logger = structlog.get_logger(__name__)
 
 @dataclass(frozen=True)
 class BodyLimit:
+    #: The cap on the whole request body, framing included.
     max_bytes: int
     error: str
     message: str
+    #: The per-file maximum ``message`` names, reported to the client as
+    #: ``max_bytes`` — the same number the route's own refusal reports.
+    #: Defaults to the body cap.
+    max_file_bytes: int | None = None
 
-    def detail(self) -> dict[str, str]:
-        return {"error": self.error, "message": self.message}
+    def detail(self) -> dict[str, Any]:
+        return {
+            "error": self.error,
+            "message": self.message,
+            "max_bytes": (
+                self.max_file_bytes
+                if self.max_file_bytes is not None
+                else self.max_bytes
+            ),
+        }
+
+
+def _request_id(scope: Scope) -> str | None:
+    """The id ``RequestIDMiddleware`` put in the request state, if it ran."""
+    state = scope.get("state")
+    if isinstance(state, Mapping):
+        value = state.get("request_id")
+        if isinstance(value, str):
+            return value
+    return None
 
 
 class BodyLimitMiddleware:
@@ -61,15 +96,14 @@ class BodyLimitMiddleware:
         for name, value in scope.get("headers", []):
             if name == b"content-length":
                 if value.isdigit() and int(value) > limit.max_bytes:
-                    # Refused outside the logging and metrics middleware, so
-                    # recorded here.
                     logger.warning(
                         "request_body_too_large",
                         path=scope["path"],
+                        request_id=_request_id(scope),
                         declared_bytes=int(value),
                         max_bytes=limit.max_bytes,
                     )
-                    await _refuse(send, limit)
+                    await _refuse(scope, send, limit)
                     return
                 break
 
@@ -93,8 +127,7 @@ class BodyLimitMiddleware:
         async def tracked_send(message: Message) -> None:
             nonlocal started
             if overflowed and not started:
-                # The inner app's answer to a body this middleware cut off —
-                # FastAPI's "error parsing the body" 400 in the real stack.
+                # The inner app's answer to a body this middleware cut off.
                 return
             if message["type"] == "http.response.start":
                 started = True
@@ -104,7 +137,7 @@ class BodyLimitMiddleware:
             await self.app(scope, counted_receive, tracked_send)
         except Exception:
             # Raised past every inner handler (a non-FastAPI consumer of the
-            # body, or BaseHTTPMiddleware's ExceptionGroup): the overflow is
+            # body, or a BaseHTTPMiddleware's ExceptionGroup): the overflow is
             # answered below; anything else is not this middleware's.
             if not overflowed or started:
                 raise
@@ -112,23 +145,29 @@ class BodyLimitMiddleware:
             logger.warning(
                 "request_body_too_large",
                 path=scope["path"],
+                request_id=_request_id(scope),
                 received_bytes=received,
                 max_bytes=limit.max_bytes,
             )
-            await _refuse(send, limit)
+            await _refuse(scope, send, limit)
 
 
-async def _refuse(send: Send, limit: BodyLimit) -> None:
-    body = json.dumps({"detail": limit.detail()}).encode()
-    await send(
+async def _refuse(scope: Scope, send: Send, limit: BodyLimit) -> None:
+    """The 413, in ``http_exception_handler``'s flat shape."""
+    body = json.dumps(
         {
-            "type": "http.response.start",
-            "status": 413,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-                (b"connection", b"close"),
-            ],
+            **limit.detail(),
+            "timestamp": time.time(),
+            "path": str(Request(scope).url),
         }
-    )
+    ).encode()
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode()),
+        (b"connection", b"close"),
+    ]
+    request_id = _request_id(scope)
+    if request_id is not None:
+        headers.append((b"x-request-id", request_id.encode("latin-1", "replace")))
+    await send({"type": "http.response.start", "status": 413, "headers": headers})
     await send({"type": "http.response.body", "body": body})

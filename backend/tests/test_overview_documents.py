@@ -667,7 +667,7 @@ class TestBodyLimit:
             big = await c.post("/up", files={"file": ("a.txt", b"x" * 1000)})
         assert small.status_code == 200
         assert big.status_code == 413
-        assert big.json()["detail"]["error"] == "file_too_large"
+        assert big.json()["error"] == "file_too_large"
         assert reached == [True]
 
     async def test_an_undeclared_length_is_counted_as_it_arrives(self) -> None:
@@ -691,5 +691,5 @@ class TestBodyLimit:
                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
             )
         assert response.status_code == 413
-        assert response.json()["detail"]["error"] == "file_too_large"
+        assert response.json()["error"] == "file_too_large"
         assert reached == []
