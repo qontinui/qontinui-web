@@ -659,7 +659,10 @@ const SHARED_SRC =
 const SHARED_DIGEST =
   "a846bcf412cf708ec0a4ac6a972307cbcb250b75509765fd44c49caecbd01f94";
 
-/** An SDK Observation envelope around one media fact record. */
+/**
+ * An SDK Observation envelope around one media fact record. The provenance is
+ * the real capture's (fixtures/sdk-find-media-response.json).
+ */
 function measured(
   value: Record<string, unknown>,
   unmeasured: string[] = []
@@ -668,7 +671,7 @@ function measured(
     status: "measured",
     value,
     provenance: {
-      producer: { id: "sdk/media-discovery", version: "0.31.0" },
+      producer: { id: "sdk/media-discovery", version: "0.30.0" },
       observedAt: "2026-10-13T08:12:27.592Z",
       evaluatedAt: "2026-10-13T08:12:27.592Z",
       coverage: {
