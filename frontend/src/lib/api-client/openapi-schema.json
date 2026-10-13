@@ -2642,6 +2642,56 @@
         "title": "AggregatedTaskRuns",
         "type": "object"
       },
+      "AllCapableAtCapacityOutcome": {
+        "description": "Capable, undrained online devices exist and every one is at its\n``max_concurrent_agents`` cap.",
+        "properties": {
+          "capable_devices": {
+            "title": "Capable Devices",
+            "type": "integer"
+          },
+          "outcome": {
+            "const": "all_capable_at_capacity",
+            "default": "all_capable_at_capacity",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pin_released_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Detail"
+          },
+          "pin_released_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_a_paired_device",
+                  "offline",
+                  "missing_capabilities",
+                  "drained",
+                  "role_closes_agent_lane",
+                  "at_capacity"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Reason"
+          }
+        },
+        "required": [
+          "capable_devices"
+        ],
+        "title": "AllCapableAtCapacityOutcome",
+        "type": "object"
+      },
       "AllCapableDrainedOutcome": {
         "properties": {
           "outcome": {
@@ -2668,7 +2718,9 @@
                   "not_a_paired_device",
                   "offline",
                   "missing_capabilities",
-                  "drained"
+                  "drained",
+                  "role_closes_agent_lane",
+                  "at_capacity"
                 ],
                 "type": "string"
               },
@@ -2680,6 +2732,99 @@
           }
         },
         "title": "AllCapableDrainedOutcome",
+        "type": "object"
+      },
+      "AllCapableOfflineOutcome": {
+        "description": "No ONLINE device is capable, but a capable one was seen recently \u2014\nbring it up rather than look for another.",
+        "properties": {
+          "capable_offline": {
+            "title": "Capable Offline",
+            "type": "integer"
+          },
+          "outcome": {
+            "const": "all_capable_offline",
+            "default": "all_capable_offline",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pin_released_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Detail"
+          },
+          "pin_released_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_a_paired_device",
+                  "offline",
+                  "missing_capabilities",
+                  "drained",
+                  "role_closes_agent_lane",
+                  "at_capacity"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Reason"
+          }
+        },
+        "required": [
+          "capable_offline"
+        ],
+        "title": "AllCapableOfflineOutcome",
+        "type": "object"
+      },
+      "AllCapableRoleClosedOutcome": {
+        "description": "Every capable device (online, or offline but seen recently) is closed by\nits DISPATCH ROLE (bench / ci_node) \u2014 only a role change helps.",
+        "properties": {
+          "outcome": {
+            "const": "all_capable_role_closed",
+            "default": "all_capable_role_closed",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pin_released_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Detail"
+          },
+          "pin_released_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_a_paired_device",
+                  "offline",
+                  "missing_capabilities",
+                  "drained",
+                  "role_closes_agent_lane",
+                  "at_capacity"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Reason"
+          }
+        },
+        "title": "AllCapableRoleClosedOutcome",
         "type": "object"
       },
       "AllocationRead": {
@@ -15800,12 +15945,16 @@
         "description": "``POST /api/v1/devices/resolve`` \u2014 always 200, switch on ``outcome``.",
         "discriminator": {
           "mapping": {
+            "all_capable_at_capacity": "#/components/schemas/AllCapableAtCapacityOutcome",
             "all_capable_drained": "#/components/schemas/AllCapableDrainedOutcome",
+            "all_capable_offline": "#/components/schemas/AllCapableOfflineOutcome",
+            "all_capable_role_closed": "#/components/schemas/AllCapableRoleClosedOutcome",
             "drain_unreadable": "#/components/schemas/DrainUnreadableOutcome",
             "no_capable_device": "#/components/schemas/NoCapableDeviceOutcome",
             "pin_ineligible": "#/components/schemas/PinIneligibleOutcome",
             "resolved": "#/components/schemas/ResolvedOutcome",
-            "unavailable": "#/components/schemas/UnavailableOutcome"
+            "unavailable": "#/components/schemas/UnavailableOutcome",
+            "unknown_outcome": "#/components/schemas/UnknownOutcome"
           },
           "propertyName": "outcome"
         },
@@ -15820,13 +15969,25 @@
             "$ref": "#/components/schemas/NoCapableDeviceOutcome"
           },
           {
+            "$ref": "#/components/schemas/AllCapableOfflineOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/AllCapableAtCapacityOutcome"
+          },
+          {
             "$ref": "#/components/schemas/AllCapableDrainedOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/AllCapableRoleClosedOutcome"
           },
           {
             "$ref": "#/components/schemas/DrainUnreadableOutcome"
           },
           {
             "$ref": "#/components/schemas/UnavailableOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/UnknownOutcome"
           }
         ],
         "title": "DeviceResolveResponse"
@@ -33184,7 +33345,9 @@
                   "not_a_paired_device",
                   "offline",
                   "missing_capabilities",
-                  "drained"
+                  "drained",
+                  "role_closes_agent_lane",
+                  "at_capacity"
                 ],
                 "type": "string"
               },
@@ -33193,6 +33356,18 @@
               }
             ],
             "title": "Pin Released Reason"
+          },
+          "stale_capable": {
+            "default": 0,
+            "description": "Capable devices last seen before coord's offline window (reported, never waited for). 0 from a coord that predates the field.",
+            "title": "Stale Capable",
+            "type": "integer"
+          },
+          "unprobed_online_devices": {
+            "default": 0,
+            "description": "Online devices that have not run the cred probes while a cred: token is required. 0 from a coord that predates the field.",
+            "title": "Unprobed Online Devices",
+            "type": "integer"
           }
         },
         "required": [
@@ -37760,7 +37935,9 @@
               "not_a_paired_device",
               "offline",
               "missing_capabilities",
-              "drained"
+              "drained",
+              "role_closes_agent_lane",
+              "at_capacity"
             ],
             "title": "Reason",
             "type": "string"
@@ -44157,7 +44334,9 @@
                   "not_a_paired_device",
                   "offline",
                   "missing_capabilities",
-                  "drained"
+                  "drained",
+                  "role_closes_agent_lane",
+                  "at_capacity"
                 ],
                 "type": "string"
               },
@@ -59977,6 +60156,27 @@
           "package_id"
         ],
         "title": "UninstallRequest",
+        "type": "object"
+      },
+      "UnknownOutcome": {
+        "description": "Coord answered a 200 with an ``outcome`` tag this build does not know.\n\nNot ``malformed_response``: coord spoke the contract's envelope, it just\nhas an arm this build predates. ``raw_outcome`` is coord's tag verbatim so\nthe gap is named, not swallowed. Names no device \u2014 never a pick.",
+        "properties": {
+          "outcome": {
+            "const": "unknown_outcome",
+            "default": "unknown_outcome",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "raw_outcome": {
+            "description": "Coord's outcome tag, verbatim.",
+            "title": "Raw Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw_outcome"
+        ],
+        "title": "UnknownOutcome",
         "type": "object"
       },
       "UnreadCountResponse": {

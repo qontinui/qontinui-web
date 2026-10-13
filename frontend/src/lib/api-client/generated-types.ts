@@ -25984,6 +25984,24 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * AllCapableAtCapacityOutcome
+         * @description Capable, undrained online devices exist and every one is at its
+         *     ``max_concurrent_agents`` cap.
+         */
+        AllCapableAtCapacityOutcome: {
+            /** Capable Devices */
+            capable_devices: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_at_capacity";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
         /** AllCapableDrainedOutcome */
         AllCapableDrainedOutcome: {
             /**
@@ -25994,7 +26012,41 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableOfflineOutcome
+         * @description No ONLINE device is capable, but a capable one was seen recently —
+         *     bring it up rather than look for another.
+         */
+        AllCapableOfflineOutcome: {
+            /** Capable Offline */
+            capable_offline: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_offline";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableRoleClosedOutcome
+         * @description Every capable device (online, or offline but seen recently) is closed by
+         *     its DISPATCH ROLE (bench / ci_node) — only a role change helps.
+         */
+        AllCapableRoleClosedOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_role_closed";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
         };
         /** AllocationRead */
         AllocationRead: {
@@ -31993,7 +32045,7 @@ export interface components {
          * DeviceResolveResponse
          * @description ``POST /api/v1/devices/resolve`` — always 200, switch on ``outcome``.
          */
-        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"];
+        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableOfflineOutcome"] | components["schemas"]["AllCapableAtCapacityOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["AllCapableRoleClosedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"] | components["schemas"]["UnknownOutcome"];
         /**
          * DeviceResponse
          * @description Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.
@@ -40439,7 +40491,19 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            /**
+             * Stale Capable
+             * @description Capable devices last seen before coord's offline window (reported, never waited for). 0 from a coord that predates the field.
+             * @default 0
+             */
+            stale_capable: number;
+            /**
+             * Unprobed Online Devices
+             * @description Online devices that have not run the cred probes while a cred: token is required. 0 from a coord that predates the field.
+             * @default 0
+             */
+            unprobed_online_devices: number;
         };
         /**
          * NodeMetadata
@@ -42541,7 +42605,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained";
+            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity";
         };
         /**
          * PlanCandidate
@@ -45369,7 +45433,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
             /**
              * Via
              * @enum {string}
@@ -52029,6 +52093,26 @@ export interface components {
              * @description Package ID to uninstall
              */
             package_id: number;
+        };
+        /**
+         * UnknownOutcome
+         * @description Coord answered a 200 with an ``outcome`` tag this build does not know.
+         *
+         *     Not ``malformed_response``: coord spoke the contract's envelope, it just
+         *     has an arm this build predates. ``raw_outcome`` is coord's tag verbatim so
+         *     the gap is named, not swallowed. Names no device — never a pick.
+         */
+        UnknownOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "unknown_outcome";
+            /**
+             * Raw Outcome
+             * @description Coord's outcome tag, verbatim.
+             */
+            raw_outcome: string;
         };
         /**
          * UnreadCountResponse
