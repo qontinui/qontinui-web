@@ -66,7 +66,13 @@ from app.models.image_asset import (
     ImageAsset,
     ImageSlotCandidate,
 )
-from app.schemas.image_assets import ImageAssetKind, SlotCandidateStatus
+from app.schemas.image_assets import (
+    MAX_JSON_DEPTH,
+    MAX_PROVENANCE_BYTES,
+    ImageAssetKind,
+    SlotCandidateStatus,
+    stored_json_bytes,
+)
 from app.services.storage import LocalBackend, ObjectStorageService
 from tests.test_image_sniff import encode, png_header_only, with_orientation
 from tests.test_object_storage_content_addressed import fake_s3_backend
@@ -210,6 +216,15 @@ def _png(seed: int = 0, size: tuple[int, int] = (7, 5)) -> bytes:
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _nested(depth: int) -> dict[str, Any]:
+    """A JSON object ``depth`` levels deep: ``depth`` objects, each inside the
+    last, the innermost holding a number."""
+    value: Any = 1
+    for _ in range(depth):
+        value = {"d": value}
+    return value
 
 
 # ===========================================================================
@@ -392,8 +407,12 @@ class TestUpload:
         body = again.json()
         assert body["kind"] == "candidate"
         assert body["provenance"] == {"seed": 1, "ai_generated": True, "model": "zit"}
-        # What it sent but could not apply is named, not silently dropped.
-        assert body["conflicts"] == ["kind", "provenance.seed"]
+        # What it sent but could not apply is named, with why — not dropped
+        # silently.
+        assert body["conflicts"] == [
+            {"path": "kind", "reason": "kind_stands"},
+            {"path": "provenance.seed", "reason": "stored_value_stands"},
+        ]
         assert body["updated_at"] > first["updated_at"]
         # Nothing new: nothing moves and nothing conflicts.
         same = (await _upload(client_a, data, provenance={"model": "zit"})).json()
@@ -415,10 +434,47 @@ class TestUpload:
             provenance={"iptc": {"digital_source_type": "digitalCapture"}},
         )
         assert relabelled.json()["provenance"] == marked
-        assert relabelled.json()["conflicts"] == ["provenance.iptc.digital_source_type"]
+        assert relabelled.json()["conflicts"] == [
+            {
+                "path": "provenance.iptc.digital_source_type",
+                "reason": "stored_value_stands",
+            }
+        ]
         emptied = (await _upload(client_a, data, provenance={})).json()
         assert emptied["provenance"] == marked
         assert emptied["conflicts"] == []
+
+    async def test_merged_provenance_is_held_to_the_cap(
+        self, client_a: httpx.AsyncClient
+    ) -> None:
+        """The review's case: re-uploads carrying ~60 KB of keys the record
+        does not have. Merged, the record would pass MAX_PROVENANCE_BYTES —
+        an upload's own cap — so those new keys are refused, each named with
+        why, and no stored key is dropped to make room. A key that still fits
+        is added, so the cap is a cap, not a freeze."""
+
+        def keys(prefix: str) -> dict[str, str]:
+            return {f"{prefix}{i:04d}": "x" * 90 for i in range(600)}
+
+        data = _png()
+        first = await _upload(client_a, data, provenance=keys("a"))
+        assert first.status_code == 201, first.text
+        assert stored_json_bytes(keys("a")) <= MAX_PROVENANCE_BYTES
+        assert stored_json_bytes({**keys("a"), **keys("b")}) > MAX_PROVENANCE_BYTES
+        for prefix in ("b", "c"):
+            again = await _upload(client_a, data, provenance=keys(prefix))
+            assert again.status_code == 200, again.text
+            body = again.json()
+            assert body["provenance"] == keys("a")
+            assert body["updated_at"] == first.json()["updated_at"]
+            assert body["conflicts"] == [
+                {"path": f"provenance.{key}", "reason": "provenance_full"}
+                for key in keys(prefix)
+            ]
+        fits = (await _upload(client_a, data, provenance={"note": "fits"})).json()
+        assert fits["conflicts"] == []
+        assert fits["provenance"] == {**keys("a"), "note": "fits"}
+        assert stored_json_bytes(fits["provenance"]) <= MAX_PROVENANCE_BYTES
 
     @pytest.mark.parametrize(
         "provenance",
@@ -446,6 +502,31 @@ class TestUpload:
         assert resp.json()["error"] == "provenance_invalid"
         assert _stored_files(storage) == []
         assert await _rows(async_db_session, tenant_a) == []
+
+    async def test_provenance_nested_past_the_bound_is_refused_before_any_write(
+        self,
+        client_a: httpx.AsyncClient,
+        tenant_a: UUID,
+        storage: ObjectStorageService,
+        async_db_session: AsyncSession,
+    ) -> None:
+        """A record nested MAX_JSON_DEPTH levels deep is stored and read back;
+        one level more — and the review's 255, 256 and 1000 — is a 422 that
+        writes neither an object nor a row."""
+        kept = await _upload(client_a, _png(seed=1), provenance=_nested(MAX_JSON_DEPTH))
+        assert kept.status_code == 201, kept.text
+        assert kept.json()["provenance"] == _nested(MAX_JSON_DEPTH)
+        read = await client_a.get(f"{API}/{kept.json()['sha256']}")
+        assert read.status_code == 200, read.text
+        assert read.json()["provenance"] == _nested(MAX_JSON_DEPTH)
+        for depth in (MAX_JSON_DEPTH + 1, 255, 256, 1000):
+            refused = await _upload(
+                client_a, _png(seed=depth), provenance=_nested(depth)
+            )
+            assert refused.status_code == 422, (depth, refused.text[:300])
+            assert refused.json()["error"] == "provenance_invalid", depth
+        assert len(_stored_files(storage)) == 1
+        assert len(await _rows(async_db_session, tenant_a)) == 1
 
     @pytest.mark.parametrize(
         ("pillow_format", "claimed_name", "claimed_type", "mime", "ext"),
@@ -1286,6 +1367,29 @@ async def test_values_json_storage_cannot_hold_are_a_422_not_a_500(
     assert (await _list(client_a)).json()["candidates"] == []
 
 
+@pytest.mark.parametrize("field", ["values", "judge"])
+async def test_json_nested_past_the_bound_is_a_422_and_no_list_is_poisoned(
+    client_a: httpx.AsyncClient, field: str
+) -> None:
+    """The review's case: values or judge nested 256-900 levels deep were
+    STORED, then every list of the slot answered 500 until the candidate was
+    deleted (the response serializer stops at 255 levels); 1000 levels and
+    more were a 500 before any write. MAX_JSON_DEPTH levels are stored and
+    listed; one more, 255, 256 and 1000 are a 422 — and the slot's list still
+    answers, holding exactly what was stored."""
+    digest = (await _upload(client_a, _png())).json()["sha256"]
+    kept = await _put(client_a, asset_sha256=digest, **{field: _nested(MAX_JSON_DEPTH)})
+    assert kept.status_code == 201, kept.text
+    for depth in (MAX_JSON_DEPTH + 1, 255, 256, 1000):
+        refused = await _put(client_a, asset_sha256=digest, **{field: _nested(depth)})
+        assert refused.status_code == 422, (depth, refused.text[:300])
+        assert f"nested more than {MAX_JSON_DEPTH} levels deep" in refused.text
+        listed = await _list(client_a)
+        assert listed.status_code == 200, (depth, listed.text[:300])
+        [candidate] = listed.json()["candidates"]
+        assert candidate[field] == _nested(MAX_JSON_DEPTH)
+
+
 async def test_concurrent_re_uploads_merge_and_keep_the_first_kind(
     test_engine: Any, committed_tenant: UUID
 ) -> None:
@@ -1313,7 +1417,9 @@ async def test_concurrent_re_uploads_merge_and_keep_the_first_kind(
         )
         await setup.commit()
 
-    async def reupload(kind: str, provenance: dict[str, Any]) -> tuple[bool, list[str]]:
+    async def reupload(
+        kind: str, provenance: dict[str, Any]
+    ) -> tuple[bool, list[crud.UploadConflict]]:
         async with maker() as session:
             _row, created, conflicts = await crud.upsert_asset(
                 session, **common, kind=kind, provenance=provenance
@@ -1326,10 +1432,12 @@ async def test_concurrent_re_uploads_merge_and_keep_the_first_kind(
         reupload("capture", {"model": "m", "ai_generated": False}),
     )
     assert [created for created, _ in results] == [False, False]
-    assert sorted(c for _, conflicts in results for c in conflicts) == [
-        "kind",
-        "kind",
-        "provenance.ai_generated",
+    assert sorted(
+        (c.path, c.reason) for _, conflicts in results for c in conflicts
+    ) == [
+        ("kind", "kind_stands"),
+        ("kind", "kind_stands"),
+        ("provenance.ai_generated", "stored_value_stands"),
     ]
     async with maker() as check:
         row = await crud.get_asset(check, tenant_id=tenant, sha256=digest)

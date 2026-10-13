@@ -538,10 +538,12 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         correction=AppendOnlyByDesign(
             "the record of how an image entered and what produced it is never "
             "rewritten, on purpose: a re-upload of the same bytes keeps the "
-            "first kind and only ADDS provenance keys, so a later uploader can "
-            "never drop or change the generator's AI-generated marker. A "
-            "re-upload reports what it sent but could not apply in its "
-            "`conflicts`. The row's identity, MIME type, dimensions and "
+            "first kind and only ADDS provenance keys (up to the provenance "
+            "cap; past it, the re-upload's new keys are refused, never a "
+            "stored one dropped), so a later uploader can never drop or change "
+            "the generator's AI-generated marker. A re-upload reports what it "
+            "sent but could not apply, and why, in its `conflicts`. The row's "
+            "identity, MIME type, dimensions and "
             "orientation are computed from the bytes by the server, so they "
             "cannot be asserted wrongly"
         ),

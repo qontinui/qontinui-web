@@ -27,6 +27,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.image_asset import ImageAsset, ImageSlotCandidate
+from app.schemas.image_assets import (
+    MAX_PROVENANCE_BYTES,
+    ConflictReason,
+    stored_json_bytes,
+)
 
 
 def _now() -> datetime:
@@ -43,30 +48,45 @@ UNSET: Any = _Unset()
 # ── assets ──────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class UploadConflict:
+    """Something a re-upload sent that was not applied, and why
+    (``app.schemas.image_assets.ConflictReason``)."""
+
+    path: str
+    reason: ConflictReason
+
+
 def merge_provenance(
     stored: dict[str, Any], incoming: dict[str, Any], prefix: str = "provenance"
-) -> tuple[dict[str, Any], list[str]]:
-    """``stored`` with ``incoming``'s keys ADDED; ``(merged, conflicts)``.
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """``stored`` with ``incoming``'s keys ADDED; ``(merged, differing, added)``.
 
     Never removes a key and never changes a stored value: a later upload of
     the same bytes can only add to the record. That is what keeps the
     generator's AI-generated marker (and every other first-recorded fact)
     from being dropped or rewritten by whoever uploads the bytes next. Nested
-    objects merge the same way, key by key; any other differing value is a
-    conflict — the stored value stands, and its dotted path is reported.
+    objects merge the same way, key by key; any other differing value is not
+    applied — the stored value stands. ``differing`` and ``added`` are dotted
+    paths.
     """
     merged = dict(stored)
-    conflicts: list[str] = []
+    differing: list[str] = []
+    added: list[str] = []
     for key, value in incoming.items():
         path = f"{prefix}.{key}"
         if key not in merged:
             merged[key] = value
+            added.append(path)
         elif isinstance(merged[key], dict) and isinstance(value, dict):
-            merged[key], nested = merge_provenance(merged[key], value, path)
-            conflicts += nested
+            merged[key], nested_differing, nested_added = merge_provenance(
+                merged[key], value, path
+            )
+            differing += nested_differing
+            added += nested_added
         elif merged[key] != value:
-            conflicts.append(path)
-    return merged, conflicts
+            differing.append(path)
+    return merged, differing, added
 
 
 async def get_asset(
@@ -94,16 +114,19 @@ async def upsert_asset(
     kind: str,
     provenance: dict[str, Any] | None,
     orientation: int | None,
-) -> tuple[ImageAsset, bool, list[str]]:
+) -> tuple[ImageAsset, bool, list[UploadConflict]]:
     """Record that the tenant holds these bytes; ``(row, created, conflicts)``.
 
     A re-upload of the same bytes keeps the row and its ``created_at``. The
     FIRST upload's ``kind`` stands, and ``provenance`` is merged
-    (:func:`merge_provenance`): keys are added, never removed or changed.
-    ``conflicts`` names what this upload sent that was therefore NOT applied —
-    ``kind`` and ``provenance.<path>`` entries. ``updated_at`` moves only when
-    a key was added. The byte-derived columns are never rewritten: the hash
-    names the bytes, so they cannot differ.
+    (:func:`merge_provenance`): keys are added, never removed or changed —
+    and the merged record is held to ``MAX_PROVENANCE_BYTES``, like an
+    upload's own: when this upload's new keys would grow it past that, none
+    of them is added (a stored key is never dropped to make room).
+    ``conflicts`` names what this upload sent that was therefore NOT applied,
+    each with its reason. ``updated_at`` moves only when a key was added. The
+    byte-derived columns are never rewritten: the hash names the bytes, so
+    they cannot differ.
 
     Two uploads of the same bytes may race. One inserts; the other's insert
     finds the row (waiting for the first to commit, if it has not) and merges
@@ -147,10 +170,13 @@ async def upsert_asset(
         .execution_options(populate_existing=True)
     )
     row = existing.scalar_one()
-    conflicts = ["kind"] if row.kind != kind else []
+    conflicts = [UploadConflict("kind", "kind_stands")] if row.kind != kind else []
     if provenance:
-        merged, provenance_conflicts = merge_provenance(row.provenance, provenance)
-        conflicts += provenance_conflicts
+        merged, differing, added = merge_provenance(row.provenance, provenance)
+        conflicts += [UploadConflict(path, "stored_value_stands") for path in differing]
+        if added and stored_json_bytes(merged) > MAX_PROVENANCE_BYTES:
+            conflicts += [UploadConflict(path, "provenance_full") for path in added]
+            merged = row.provenance
         if merged != row.provenance:
             row.provenance = merged
             row.updated_at = now
