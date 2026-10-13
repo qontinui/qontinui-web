@@ -14,6 +14,7 @@ import {
   fetchRepoProfile,
   patchRepoProfile,
   setMergeEnabled,
+  type ExpediteDials,
   type RawRepoOverride,
   type RepoProfilePatch,
   type RepoProfileResponse,
@@ -32,6 +33,15 @@ import {
   parseFloatOrThrow,
   parseIntOrThrow,
 } from "./format";
+import {
+  EXPEDITE_KEYS,
+  ExpediteDialsSection,
+  expediteFieldsFrom,
+  expeditePatchFrom,
+  type ExpediteFields,
+  type ExpediteKey,
+  type ExpediteReadState,
+} from "./ExpediteDialsSection";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -43,6 +53,7 @@ export function RepoOverrideCard({
   repoRow,
   tenantPaused,
   ffLandHeadSyncWritable,
+  expediteWritable,
   onSaved,
 }: {
   repoRow: TenantRepoRow;
@@ -58,6 +69,13 @@ export function RepoOverrideCard({
    * every mount. One read, one answer, every card.
    */
   ffLandHeadSyncWritable: boolean;
+  /**
+   * Whether coord's settings wire carries the expedited-land dials — read off
+   * the TENANT settings response for the same build-not-repo reason as
+   * `ffLandHeadSyncWritable`. Without it the expedite controls are disabled
+   * and their keys are never sent (`deny_unknown_fields`).
+   */
+  expediteWritable: boolean;
   onSaved: () => void;
 }) {
   const [repoProfile, setRepoProfile] = useState<RepoProfileResponse | null>(
@@ -128,6 +146,14 @@ export function RepoOverrideCard({
   const [ffLandHeadSyncOverride, setFfLandHeadSyncOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
+  // The per-repo expedited-land dials, seeded from `expedite_override` (read
+  // best-effort coord-side, so carried apart from `raw_override`). Their keys
+  // share the dirty set below; until seeded they read as unknown, never as
+  // inherit.
+  const [expedite, setExpedite] = useState<ExpediteFields>(() =>
+    expediteFieldsFrom(null)
+  );
+  const [expediteSeeded, setExpediteSeeded] = useState(false);
   // Body keys the operator has edited this session; only these are PATCHed.
   //
   // Mirrored SYNCHRONOUSLY in `dirtyRef` (every write goes through
@@ -196,6 +222,29 @@ export function RepoOverrideCard({
     []
   );
 
+  /**
+   * Seed the expedite fields from a stored `expedite_override` object. Same
+   * `keep` rule as `seedFromRaw`. `null` (unreadable) seeds nothing: the
+   * fields stay unknown.
+   */
+  const seedExpedite = useCallback(
+    (dials: ExpediteDials | null | undefined, keep: ReadonlySet<string>) => {
+      if (!dials) return;
+      const f = expediteFieldsFrom(dials);
+      setExpedite((prev) => {
+        const next = { ...prev };
+        for (const key of EXPEDITE_KEYS) {
+          if (!keep.has(key)) {
+            (next as Record<ExpediteKey, string>)[key] = f[key];
+          }
+        }
+        return next;
+      });
+      setExpediteSeeded(true);
+    },
+    []
+  );
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -221,6 +270,7 @@ export function RepoOverrideCard({
         if (body.raw_override) {
           seedFromRaw(body.raw_override, dirtyRef.current);
         }
+        seedExpedite(body.expedite_override, dirtyRef.current);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -234,7 +284,7 @@ export function RepoOverrideCard({
     return () => {
       cancelled = true;
     };
-  }, [repoRow.repo, seedFromRaw]);
+  }, [repoRow.repo, seedFromRaw, seedExpedite]);
 
   const handleSave = useCallback(async () => {
     setError(null);
@@ -296,6 +346,12 @@ export function RepoOverrideCard({
             : ffLandHeadSyncOverride === "true";
       }
 
+      // The expedite dials: edited keys only, never on a build that does not
+      // carry them. Throws on an invalid size before anything is sent.
+      if (expediteWritable) {
+        Object.assign(body, expeditePatchFrom(expedite, dirty));
+      }
+
       // Skip the PATCH entirely when no profile field changed (e.g. a
       // merge-enablement-only save) — an empty body is a wasted round-trip and
       // needlessly couples the enablement POST to the PATCH succeeding.
@@ -319,6 +375,7 @@ export function RepoOverrideCard({
             // is replaced by what coord now stores.
             seedFromRaw(saved.raw_override, dirtyAfterSave(sent));
           }
+          seedExpedite(saved.expedite_override, dirtyAfterSave(sent));
         }
         // The PATCH consumed these edits; a later failure (the enablement
         // POST below) must not leave them flagged for a re-send.
@@ -367,7 +424,10 @@ export function RepoOverrideCard({
     autoFixRedMainOverride,
     ffLandHeadSyncOverride,
     ffLandHeadSyncWritable,
+    expedite,
+    expediteWritable,
     seedFromRaw,
+    seedExpedite,
     dirtyAfterSave,
     clearDirty,
     onSaved,
@@ -555,6 +615,24 @@ export function RepoOverrideCard({
             </p>
           </div>
         </div>
+        <ExpediteDialsSection
+          tier="repo"
+          fields={expedite}
+          readState={expediteReadStateFor(
+            expediteWritable,
+            expediteSeeded,
+            readSettled
+          )}
+          onChange={<K extends ExpediteKey>(
+            key: K,
+            value: ExpediteFields[K]
+          ) => {
+            setExpedite((prev) => ({ ...prev, [key]: value }));
+            markDirty(key);
+          }}
+          testIdPrefix="repo"
+          testIdSuffix={`-${repoRow.repo}`}
+        />
         <div className="space-y-1">
           <Label>Escalate paths extra (one per line)</Label>
           <Textarea
@@ -588,4 +666,19 @@ export function RepoOverrideCard({
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * The per-repo card's expedite read state: unsupported without the build
+ * capability; loaded once seeded; loading until the profile read (or a save)
+ * has answered; unknown when it answered without readable dials.
+ */
+function expediteReadStateFor(
+  writable: boolean,
+  seeded: boolean,
+  readSettled: boolean
+): ExpediteReadState {
+  if (!writable) return "unsupported";
+  if (seeded) return "loaded";
+  return readSettled ? "unknown" : "loading";
 }
