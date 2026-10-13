@@ -160,9 +160,10 @@ export function TenantDefaultsCard({
       // re-seed effect: when the dials are unreadable every reload hands back
       // the same `null`, the effect never re-runs, and a stale edited key
       // would be re-sent by the next unrelated save — reverting another
-      // operator's switch-off.
+      // operator's switch-off. The fields are NOT re-seeded from the
+      // pre-save read: after a 2xx they hold exactly what coord now stores,
+      // and the reload's effect replaces them with a fresh read.
       setExpediteEdited(new Set());
-      setExpedite(expediteFieldsFrom(expediteTenant));
       onSaved();
     } catch (err) {
       log.warn("save tenant settings failed", err);
@@ -181,7 +182,6 @@ export function TenantDefaultsCard({
     shadowFloor,
     escalatePathsText,
     expediteState,
-    expediteTenant,
     expedite,
     expediteEdited,
     onSaved,
@@ -333,6 +333,9 @@ export function TenantDefaultsCard({
           readState={expediteState}
           onChange={onExpediteChange}
           testIdPrefix="settings"
+          // No edits while a save is in flight: the save clears the edited
+          // set when it lands, which would silently drop a mid-save edit.
+          busy={saving}
         />
         <div className="space-y-1">
           <Label htmlFor="escalate-paths">Escalate paths (one per line)</Label>
