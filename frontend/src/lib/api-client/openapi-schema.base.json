@@ -5411,7 +5411,7 @@
             "type": "string"
           },
           "kind": {
-            "description": "How the image entered the store.",
+            "description": "How the image entered the store. The first upload's kind stands.",
             "enum": [
               "candidate",
               "derivative",
@@ -5430,7 +5430,7 @@
                 "type": "null"
               }
             ],
-            "description": "The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Kept verbatim.",
+            "description": "The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys and never removes or changes one.",
             "title": "Provenance"
           }
         },
@@ -26814,6 +26814,13 @@
             "title": "Byte Size",
             "type": "integer"
           },
+          "conflicts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
           "created": {
             "title": "Created",
             "type": "boolean"
@@ -26841,6 +26848,17 @@
             "title": "Mime Type",
             "type": "string"
           },
+          "orientation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orientation"
+          },
           "provenance": {
             "additionalProperties": true,
             "title": "Provenance",
@@ -26866,17 +26884,19 @@
           "mime_type",
           "width",
           "height",
+          "orientation",
           "byte_size",
           "provenance",
           "created_at",
           "updated_at",
-          "created"
+          "created",
+          "conflicts"
         ],
         "title": "ImageAssetUploadResponse",
         "type": "object"
       },
       "ImageAssetWithUrl": {
-        "description": "A stored image plus a time-limited URL to its bytes.",
+        "description": "A stored image plus a URL to its bytes.\n\nOn S3 / MinIO ``url`` is a presigned URL. Its ``url_expires_at`` is the\nrequested lifetime capped at the signing credential's own expiry when the\nbackend can read one (an assumed role, an instance or task profile): a\npresigned URL stops working when the credential that signed it expires,\nwhatever its ``X-Amz-Expires`` says. When no expiry can be read \u2014 long-lived\naccess keys, or credentials whose expiry botocore does not expose \u2014 the\nvalue ASSUMES the credential outlives the URL.\n\nOn the local development backend ``url`` is this API's own authenticated\ncontent route (``GET /api/v1/image-assets/{sha256}/content``): fetch it\nwith the same credential. It does not expire, so ``url_expires_at`` is\nnull.",
         "properties": {
           "byte_size": {
             "title": "Byte Size",
@@ -26904,6 +26924,17 @@
           "mime_type": {
             "title": "Mime Type",
             "type": "string"
+          },
+          "orientation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orientation"
           },
           "provenance": {
             "additionalProperties": true,
@@ -26946,6 +26977,7 @@
           "mime_type",
           "width",
           "height",
+          "orientation",
           "byte_size",
           "provenance",
           "created_at",
@@ -50458,7 +50490,7 @@
         "type": "object"
       },
       "SlotCandidateList": {
-        "description": "``GET /api/v1/image-assets/slot-candidates`` \u2014 one slot's candidates,\noldest first. The query is echoed so an empty list can be checked against\nwhat was asked; ``truncated`` says whether more rows exist past ``limit``.",
+        "description": "``GET /api/v1/image-assets/slot-candidates`` \u2014 one page of a slot's\ncandidates, ``oldest`` or ``newest`` first.\n\nThe query is echoed so an empty page can be checked against what was\nasked. ``truncated`` says whether more rows exist past this page, and\n``next_cursor`` \u2014 set exactly when it is true \u2014 fetches them: pass it back\nas ``after`` with the same ``order``.",
         "properties": {
           "candidates": {
             "items": {
@@ -50470,6 +50502,25 @@
           "limit": {
             "title": "Limit",
             "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "order": {
+            "enum": [
+              "oldest",
+              "newest"
+            ],
+            "title": "Order",
+            "type": "string"
           },
           "repo": {
             "title": "Repo",
@@ -50505,8 +50556,10 @@
           "repo",
           "slot_id",
           "status",
+          "order",
           "limit",
           "truncated",
+          "next_cursor",
           "candidates"
         ],
         "title": "SlotCandidateList",
@@ -86112,7 +86165,7 @@
     },
     "/api/v1/image-assets": {
       "post": {
-        "description": "Store one image under the hash of its bytes, for the caller's tenant.",
+        "description": "Store one image under the hash of its bytes, for the caller's tenant.\n\nEvery refusal \u2014 a malformed or unstorable field, an oversized or\nunreadable image \u2014 happens before anything is written to storage.",
         "operationId": "api_v1_image_assets_post",
         "requestBody": {
           "content": {
@@ -86133,7 +86186,7 @@
                 }
               }
             },
-            "description": "The tenant already held these bytes; nothing was re-stored (kind / provenance updated as sent)."
+            "description": "The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys; `conflicts` names what was not applied."
           },
           "201": {
             "content": {
@@ -86152,7 +86205,7 @@
             "description": "The bytes are not an accepted image format."
           },
           "422": {
-            "description": "Unreadable image, too many pixels, or bad fields."
+            "description": "Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000)."
           }
         },
         "security": [
@@ -86241,7 +86294,7 @@
         ]
       },
       "get": {
-        "description": "The slot's candidates, oldest first, each with the asset it names.",
+        "description": "One page of the slot's candidates, each with the asset it names.",
         "operationId": "api_v1_image_assets_slot_candidates_get",
         "parameters": [
           {
@@ -86293,6 +86346,22 @@
             }
           },
           {
+            "description": "oldest (the default) or newest first.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "oldest",
+              "description": "oldest (the default) or newest first.",
+              "enum": [
+                "oldest",
+                "newest"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -86302,6 +86371,25 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "The previous page's next_cursor, with the same order.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous page's next_cursor, with the same order.",
+              "title": "After"
             }
           }
         ],
@@ -86317,14 +86405,7 @@
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "A malformed cursor, or one for the other order."
           }
         },
         "security": [
@@ -86335,7 +86416,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "List one image slot's candidates",
+        "summary": "List one image slot's candidates, a page at a time",
         "tags": [
           "image-assets"
         ]
@@ -86421,13 +86502,13 @@
             }
           },
           {
-            "description": "Seconds the URL stays valid.",
+            "description": "Seconds a presigned URL stays valid (S3 / MinIO).",
             "in": "query",
             "name": "expires_in",
             "required": false,
             "schema": {
               "default": 3600,
-              "description": "Seconds the URL stays valid.",
+              "description": "Seconds a presigned URL stays valid (S3 / MinIO).",
               "maximum": 604800,
               "minimum": 60,
               "title": "Expires In",
@@ -86468,7 +86549,65 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Read one image's record and a time-limited URL to its bytes",
+        "summary": "Read one image's record and a URL to its bytes",
+        "tags": [
+          "image-assets"
+        ]
+      }
+    },
+    "/api/v1/image-assets/{sha256}/content": {
+      "get": {
+        "description": "The bytes of an image the caller's tenant holds \u2014 the same 404 as the\nrecord route for any other hash, another tenant's included.",
+        "operationId": "api_v1_image_assets_sha256_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/avif": {},
+              "image/gif": {},
+              "image/jpeg": {},
+              "image/png": {},
+              "image/webp": {}
+            },
+            "description": "The image's bytes, as uploaded."
+          },
+          "404": {
+            "description": "This tenant holds no image with that sha256."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "The record exists but its stored bytes do not."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read one image's bytes",
         "tags": [
           "image-assets"
         ]

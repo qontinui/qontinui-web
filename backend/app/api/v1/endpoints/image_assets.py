@@ -10,33 +10,48 @@ Endpoints (mounted under ``/api/v1/image-assets``):
 
 * ``POST ""`` — upload one image as ``multipart/form-data`` (``file``,
   ``kind``, optional ``provenance``). The server hashes the bytes, reads the
-  format, MIME type and dimensions FROM them (the filename and the part's
-  Content-Type are ignored), caps the size, and stores the object at
+  format, MIME type, dimensions and EXIF orientation FROM them (the filename
+  and the part's Content-Type are ignored), caps the size and the total
+  pixels, and stores the object at
   ``image-assets/{tenant_id}/sha256/{h[:2]}/{h}{ext}``. Idempotent: the same
-  bytes again answer ``200`` with ``created: false`` and write no object;
-  ``kind`` is set to the value sent and ``provenance`` replaced when sent.
-* ``GET "/slot-candidates"`` — one slot's candidates (``repo``, ``slot_id``,
-  optional ``status``, ``limit``), oldest first, each with its asset.
+  bytes again answer ``200`` with ``created: false`` and write no object. The
+  FIRST upload's ``kind`` stands and ``provenance`` only gains keys;
+  ``conflicts`` names whatever a re-upload sent that was therefore not
+  applied.
+* ``GET "/slot-candidates"`` — one page of a slot's candidates (``repo``,
+  ``slot_id``, optional ``status``, ``order`` oldest|newest, ``limit``,
+  ``after``), each with its asset; ``next_cursor`` fetches the next page.
 * ``PUT "/slot-candidates"`` — propose an asset for a slot, or move a
   proposal (``status``, ``recipe_hash``, ``values``, ``judge``). Choosing one
   returns the slot's previous choice to ``candidate`` in the same transaction
   and says so in ``demoted``.
 * ``DELETE "/slot-candidates"`` — withdraw one proposal (the asset stays).
-* ``GET "/{sha256}"`` — one asset and a time-limited URL to its bytes.
+* ``GET "/{sha256}"`` — one asset and a URL to its bytes: presigned on S3 /
+  MinIO, this API's content route on the local backend.
+* ``GET "/{sha256}/content"`` — the bytes themselves, to the tenant that holds
+  them.
 
 Auth: :func:`app.api.v1.endpoints.memory.get_memory_tenant`, unchanged — a
 coord device JWT, the coord service token, or an operator's session. The
-tenant comes ONLY from that principal, never from the request. A hash the
-caller's tenant does not hold answers ``404`` whether or not another tenant
-holds it, and every object key names its tenant, so nothing in this API can
-reveal or reach another tenant's images.
+tenant comes ONLY from that principal, never from the request. Every lookup is
+tenant-scoped: a hash the caller's tenant does not hold answers the same
+``404`` whether or not another tenant holds it, and every object key names its
+tenant, so no route here reveals or serves another tenant's image.
+
+One exposure sits OUTSIDE this API, and this module does not close it: on the
+LOCAL development backend the objects are files under ``uploads/``, which
+``app.main`` mounts at ``/uploads`` for avatars with no authentication, so
+anyone who knows a tenant id and a hash can fetch an image there. No route
+here hands out such a URL — the local backend's ``GET "/{sha256}"`` points at
+the authenticated content route instead.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any, Final, cast
+from typing import Annotated, Any, BinaryIO, Final, cast
 
 import structlog
 from fastapi import (
@@ -51,6 +66,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +74,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.api.strict_query import StrictQueryRoute
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant
+from app.core.config import settings
 from app.crud import image_assets as crud
 from app.models.image_asset import ImageAsset, ImageSlotCandidate
 from app.schemas.image_assets import (
@@ -65,6 +82,7 @@ from app.schemas.image_assets import (
     REPO_PATTERN,
     SHA256_PATTERN,
     SLOT_ID_PATTERN,
+    CandidateOrder,
     ImageAssetKind,
     ImageAssetOut,
     ImageAssetUploadFields,
@@ -105,6 +123,9 @@ MAX_URL_EXPIRY_SECONDS: Final = 7 * 24 * 3600
 DEFAULT_CANDIDATE_LIMIT: Final = 100
 MAX_CANDIDATE_LIMIT: Final = 500
 
+#: Bytes per read when streaming an image back.
+_CONTENT_CHUNK_BYTES: Final = 256 * 1024
+
 _ACCEPTED_MIME_TYPES: Final = [fmt.mime_type for fmt in ACCEPTED_FORMATS]
 
 
@@ -127,6 +148,12 @@ def _asset_not_found() -> HTTPException:
         "image_asset_not_found",
         "This tenant holds no image with that sha256.",
     )
+
+
+def _content_url(sha256: str) -> str:
+    """This API's authenticated content route for ``sha256``, absolute."""
+    base = settings.BACKEND_URL.rstrip("/")
+    return f"{base}{settings.API_V1_STR}/image-assets/{sha256}/content"
 
 
 def _candidate_out(
@@ -158,11 +185,15 @@ def _candidate_out(
         200: {
             "model": ImageAssetUploadResponse,
             "description": "The tenant already held these bytes; nothing was "
-            "re-stored (kind / provenance updated as sent).",
+            "re-stored. The first upload's kind stands and provenance only "
+            "gained keys; `conflicts` names what was not applied.",
         },
         413: {"description": "The image is larger than the store accepts."},
         415: {"description": "The bytes are not an accepted image format."},
-        422: {"description": "Unreadable image, too many pixels, or bad fields."},
+        422: {
+            "description": "Unreadable image, too many pixels, or a field that "
+            "is malformed or cannot be stored (NaN, U+0000)."
+        },
     },
     summary="Upload an image to the content-addressed store",
 )
@@ -177,27 +208,36 @@ async def upload_image_asset(
     ],
     kind: Annotated[
         ImageAssetKind,
-        Form(description="How the image entered the store."),
+        Form(
+            description="How the image entered the store. The first upload's "
+            "kind stands."
+        ),
     ],
     provenance: Annotated[
         str | None,
         Form(
             description="The generator's provenance record: a JSON object, "
-            f"serialized, at most {MAX_PROVENANCE_BYTES} bytes. Kept verbatim."
+            f"serialized, at most {MAX_PROVENANCE_BYTES} bytes. Stored as JSONB; "
+            "a re-upload adds keys and never removes or changes one."
         ),
     ] = None,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
     db: AsyncSession = Depends(get_async_db),
     storage: ObjectStorageService = Depends(get_object_storage),
 ) -> ImageAssetUploadResponse:
-    """Store one image under the hash of its bytes, for the caller's tenant."""
+    """Store one image under the hash of its bytes, for the caller's tenant.
+
+    Every refusal — a malformed or unstorable field, an oversized or
+    unreadable image — happens before anything is written to storage.
+    """
     try:
         fields = ImageAssetUploadFields.model_validate(
             {"kind": kind, "provenance": provenance}
         )
     except ValidationError as exc:
         # ``kind`` was already held to its Literal by FastAPI, so in practice
-        # this is ``provenance``: not JSON, not an object, or too large.
+        # this is ``provenance``: not JSON, not an object, too large, or
+        # holding a value JSON storage refuses (NaN, U+0000).
         first = exc.errors()[0]
         field = str(first["loc"][0]) if first["loc"] else "form"
         raise _refusal(
@@ -239,7 +279,7 @@ async def upload_image_asset(
         tenant_id=principal.tenant_id,
         content_type=sniffed.mime_type,
     )
-    row, created = await crud.upsert_asset(
+    row, created, conflicts = await crud.upsert_asset(
         db,
         tenant_id=principal.tenant_id,
         sha256=stored.sha256,
@@ -250,6 +290,7 @@ async def upload_image_asset(
         byte_size=stored.size,
         kind=fields.kind,
         provenance=fields.provenance,
+        orientation=sniffed.orientation,
     )
     await db.commit()
 
@@ -260,13 +301,17 @@ async def upload_image_asset(
         sha256=stored.sha256,
         mime_type=sniffed.mime_type,
         byte_size=stored.size,
-        kind=fields.kind,
+        frames=sniffed.frames,
+        kind=row.kind,
         created=created,
         object_written=stored.written,
+        conflicts=len(conflicts),
     )
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return ImageAssetUploadResponse(
-        **ImageAssetOut.model_validate(row).model_dump(), created=created
+        **ImageAssetOut.model_validate(row).model_dump(),
+        created=created,
+        conflicts=conflicts,
     )
 
 
@@ -276,7 +321,8 @@ async def upload_image_asset(
 @router.get(
     "/slot-candidates",
     response_model=SlotCandidateList,
-    summary="List one image slot's candidates",
+    responses={422: {"description": "A malformed cursor, or one for the other order."}},
+    summary="List one image slot's candidates, a page at a time",
 )
 async def list_slot_candidates(
     repo: Annotated[str, Query(min_length=1, max_length=200, pattern=REPO_PATTERN)],
@@ -287,13 +333,30 @@ async def list_slot_candidates(
         SlotCandidateStatus | None,
         Query(alias="status", description="Only candidates in this status."),
     ] = None,
+    order: Annotated[
+        CandidateOrder,
+        Query(description="oldest (the default) or newest first."),
+    ] = "oldest",
     limit: Annotated[
         int, Query(ge=1, le=MAX_CANDIDATE_LIMIT)
     ] = DEFAULT_CANDIDATE_LIMIT,
+    after: Annotated[
+        str | None,
+        Query(
+            max_length=512,
+            description="The previous page's next_cursor, with the same order.",
+        ),
+    ] = None,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
     db: AsyncSession = Depends(get_async_db),
 ) -> SlotCandidateList:
-    """The slot's candidates, oldest first, each with the asset it names."""
+    """One page of the slot's candidates, each with the asset it names."""
+    try:
+        resume = crud.decode_cursor(after, order) if after is not None else None
+    except crud.InvalidCursor as exc:
+        raise _refusal(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_cursor", str(exc)
+        ) from exc
     rows, truncated = await crud.list_slot_candidates(
         db,
         tenant_id=principal.tenant_id,
@@ -301,13 +364,18 @@ async def list_slot_candidates(
         slot_id=slot_id,
         status=status_filter,
         limit=limit,
+        order=order,
+        after=resume,
     )
+    next_cursor = crud.encode_cursor(rows[-1][0], order) if truncated else None
     return SlotCandidateList(
         repo=repo,
         slot_id=slot_id,
         status=status_filter,
+        order=order,
         limit=limit,
         truncated=truncated,
+        next_cursor=next_cursor,
         candidates=[_candidate_out(candidate, asset) for candidate, asset in rows],
     )
 
@@ -423,7 +491,7 @@ async def delete_slot_candidate(
     "/{sha256}",
     response_model=ImageAssetWithUrl,
     responses={404: {"description": "This tenant holds no image with that sha256."}},
-    summary="Read one image's record and a time-limited URL to its bytes",
+    summary="Read one image's record and a URL to its bytes",
 )
 async def get_image_asset(
     sha256: Annotated[str, Path(pattern=SHA256_PATTERN)],
@@ -432,7 +500,7 @@ async def get_image_asset(
         Query(
             ge=60,
             le=MAX_URL_EXPIRY_SECONDS,
-            description="Seconds the URL stays valid.",
+            description="Seconds a presigned URL stays valid (S3 / MinIO).",
         ),
     ] = DEFAULT_URL_EXPIRY_SECONDS,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
@@ -444,16 +512,84 @@ async def get_image_asset(
     if row is None:
         raise _asset_not_found()
 
-    url = storage.generate_presigned_url(row.storage_key, expiration=expires_in)
-    # The local development backend serves its files from a static mount with
-    # no expiry, so it gets no expiry time rather than one it cannot keep.
-    expires_at = (
-        None
-        if isinstance(storage.backend, LocalBackend)
-        else datetime.now(UTC) + timedelta(seconds=expires_in)
-    )
+    url: str
+    expires_at: datetime | None
+    if isinstance(storage.backend, LocalBackend):
+        # The local backend's own URL is the unauthenticated /uploads static
+        # mount; hand out the tenant-checked content route instead. It does
+        # not expire, so no expiry time is claimed for it.
+        url, expires_at = _content_url(row.sha256), None
+    else:
+        url = storage.generate_presigned_url(row.storage_key, expiration=expires_in)
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+        # A presigned URL dies with the temporary credential that signed it.
+        credential_expiry = storage.backend.credential_expires_at()
+        if credential_expiry is not None and credential_expiry < expires_at:
+            expires_at = credential_expiry
     return ImageAssetWithUrl(
         **ImageAssetOut.model_validate(row).model_dump(),
         url=url,
         url_expires_at=expires_at,
+    )
+
+
+@router.get(
+    "/{sha256}/content",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {mime: {} for mime in _ACCEPTED_MIME_TYPES},
+            "description": "The image's bytes, as uploaded.",
+        },
+        404: {"description": "This tenant holds no image with that sha256."},
+        500: {"description": "The record exists but its stored bytes do not."},
+    },
+    summary="Read one image's bytes",
+)
+async def get_image_asset_content(
+    sha256: Annotated[str, Path(pattern=SHA256_PATTERN)],
+    principal: MemoryPrincipal = Depends(get_memory_tenant),
+    db: AsyncSession = Depends(get_async_db),
+    storage: ObjectStorageService = Depends(get_object_storage),
+) -> StreamingResponse:
+    """The bytes of an image the caller's tenant holds — the same 404 as the
+    record route for any other hash, another tenant's included."""
+    row = await crud.get_asset(db, tenant_id=principal.tenant_id, sha256=sha256)
+    if row is None:
+        raise _asset_not_found()
+    try:
+        stream = await asyncio.to_thread(storage.open_stream, row.storage_key)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        logger.error(
+            "image_object_missing",
+            tenant_id=str(principal.tenant_id),
+            sha256=row.sha256,
+            storage_key=row.storage_key,
+        )
+        raise _refusal(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "image_object_missing",
+            "The image's record exists but its stored bytes do not; uploading "
+            "the same bytes again restores them.",
+        ) from exc
+
+    def chunks(source: BinaryIO) -> Iterator[bytes]:
+        try:
+            while chunk := source.read(_CONTENT_CHUNK_BYTES):
+                yield chunk
+        finally:
+            source.close()
+
+    return StreamingResponse(
+        chunks(stream),
+        media_type=row.mime_type,
+        headers={
+            # The bytes behind a hash never change; the response is the
+            # tenant's own, so no shared cache may keep it.
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "ETag": f'"{row.sha256}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )

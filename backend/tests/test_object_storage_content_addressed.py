@@ -66,6 +66,11 @@ class FakeS3Client:
         self.extra_args[Key] = ExtraArgs
         self.puts += 1
 
+    def get_object(self, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": io.BytesIO(self.objects[Key])}
+
     def delete_object(self, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
         self.objects.pop(Key, None)
         return {}
@@ -281,3 +286,100 @@ def test_the_key_function_refuses_a_non_digest() -> None:
         content_addressed_key(PREFIX, UUID(int=1), "ABC", ".png")
     with pytest.raises(ValueError):
         content_addressed_key(PREFIX, UUID(int=1), "a" * 63, ".png")
+
+
+# ── the local backend writes atomically ─────────────────────────────────
+
+
+def test_a_local_write_never_shows_a_partial_object(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bytes are copied to a temporary file and moved into place: while
+    the copy runs, nothing exists at the key — so no reader, and no
+    concurrent upload's ``file_exists``, can see half an object."""
+    from app.services.storage import local_backend
+
+    backend = LocalBackend(base_path=tmp_path)
+    service = _service(backend)
+    tenant = uuid4()
+    key = content_addressed_key(
+        PREFIX, tenant, hashlib.sha256(DATA).hexdigest(), ".png"
+    )
+    seen_during_copy: list[bool] = []
+    real_copy = local_backend.shutil.copyfileobj
+
+    def watching_copy(src: Any, dst: Any, *args: Any) -> None:
+        seen_during_copy.append((tmp_path / key).exists())
+        real_copy(src, dst, *args)
+
+    monkeypatch.setattr(local_backend.shutil, "copyfileobj", watching_copy)
+    stored = service.put_content_addressed(DATA, ".png", PREFIX, tenant_id=tenant)
+    assert seen_during_copy == [False]
+    assert (tmp_path / key).read_bytes() == DATA
+    assert stored.written is True
+    assert not [
+        p for p in (tmp_path / key).parent.iterdir() if p.name.endswith(".partial")
+    ]
+
+
+def test_a_failed_local_write_leaves_neither_object_nor_temp_file(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.storage import local_backend
+
+    backend = LocalBackend(base_path=tmp_path)
+
+    def failing_copy(src: Any, dst: Any, *args: Any) -> None:
+        dst.write(b"half")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(local_backend.shutil, "copyfileobj", failing_copy)
+    with pytest.raises(HTTPException):
+        _service(backend).put_content_addressed(DATA, ".png", PREFIX, tenant_id=uuid4())
+    assert [p for p in tmp_path.rglob("*") if p.is_file()] == []
+
+
+def test_a_peers_write_in_flight_is_not_mistaken_for_damage(
+    tmp_path: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A concurrent upload of the same bytes is, at that moment, only a
+    temporary file beside the key: this upload sees no object, writes its
+    own (identical) bytes, and reports no repair."""
+    backend = LocalBackend(base_path=tmp_path)
+    tenant = uuid4()
+    key = content_addressed_key(
+        PREFIX, tenant, hashlib.sha256(DATA).hexdigest(), ".png"
+    )
+    target = tmp_path / key
+    target.parent.mkdir(parents=True, exist_ok=True)
+    (target.parent / f".{target.name}.peer.partial").write_bytes(DATA[:10])
+    with caplog.at_level("INFO"):
+        stored = _service(backend).put_content_addressed(
+            DATA, ".png", PREFIX, tenant_id=tenant
+        )
+    assert stored.written is True
+    assert target.read_bytes() == DATA
+    assert "content_addressed_object_repaired" not in caplog.text
+
+
+# ── a presigned URL's credential ────────────────────────────────────────
+
+
+def test_the_s3_backend_reads_a_temporary_credentials_expiry() -> None:
+    from datetime import UTC, datetime, timedelta
+    from types import SimpleNamespace
+
+    s3, client = fake_s3_backend()
+    assert s3.credential_expires_at() is None  # long-lived keys: nothing to read
+    expiry = datetime.now(UTC) + timedelta(minutes=5)
+    client._request_signer = SimpleNamespace(  # type: ignore[attr-defined]
+        _credentials=SimpleNamespace(_expiry_time=expiry)
+    )
+    assert s3.credential_expires_at() == expiry
+    client._request_signer = SimpleNamespace(  # type: ignore[attr-defined]
+        _credentials=SimpleNamespace(_expiry_time=expiry.replace(tzinfo=None))
+    )
+    assert s3.credential_expires_at() is None  # naive: not a time it can compare
+    assert LocalBackend(base_path=".").credential_expires_at() is None

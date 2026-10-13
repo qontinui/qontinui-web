@@ -15,12 +15,14 @@ The callers commit; these functions only flush.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import and_, delete, select, update
+from sqlalchemy import and_, delete, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +41,32 @@ UNSET: Any = _Unset()
 
 
 # ── assets ──────────────────────────────────────────────────────────────
+
+
+def merge_provenance(
+    stored: dict[str, Any], incoming: dict[str, Any], prefix: str = "provenance"
+) -> tuple[dict[str, Any], list[str]]:
+    """``stored`` with ``incoming``'s keys ADDED; ``(merged, conflicts)``.
+
+    Never removes a key and never changes a stored value: a later upload of
+    the same bytes can only add to the record. That is what keeps the
+    generator's AI-generated marker (and every other first-recorded fact)
+    from being dropped or rewritten by whoever uploads the bytes next. Nested
+    objects merge the same way, key by key; any other differing value is a
+    conflict — the stored value stands, and its dotted path is reported.
+    """
+    merged = dict(stored)
+    conflicts: list[str] = []
+    for key, value in incoming.items():
+        path = f"{prefix}.{key}"
+        if key not in merged:
+            merged[key] = value
+        elif isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key], nested = merge_provenance(merged[key], value, path)
+            conflicts += nested
+        elif merged[key] != value:
+            conflicts.append(path)
+    return merged, conflicts
 
 
 async def get_asset(
@@ -65,14 +93,21 @@ async def upsert_asset(
     byte_size: int,
     kind: str,
     provenance: dict[str, Any] | None,
-) -> tuple[ImageAsset, bool]:
-    """Record that the tenant holds these bytes; ``(row, created)``.
+    orientation: int | None,
+) -> tuple[ImageAsset, bool, list[str]]:
+    """Record that the tenant holds these bytes; ``(row, created, conflicts)``.
 
-    A re-upload of the same bytes keeps the row (and its ``created_at``), sets
-    ``kind`` to the value sent, and replaces ``provenance`` only when one is
-    sent. ``updated_at`` moves only when one of them actually changed. The
-    byte-derived columns are never rewritten: the hash names the bytes, so
-    they cannot differ.
+    A re-upload of the same bytes keeps the row and its ``created_at``. The
+    FIRST upload's ``kind`` stands, and ``provenance`` is merged
+    (:func:`merge_provenance`): keys are added, never removed or changed.
+    ``conflicts`` names what this upload sent that was therefore NOT applied —
+    ``kind`` and ``provenance.<path>`` entries. ``updated_at`` moves only when
+    a key was added. The byte-derived columns are never rewritten: the hash
+    names the bytes, so they cannot differ.
+
+    Two uploads of the same bytes may race. One inserts; the other's insert
+    finds the row (waiting for the first to commit, if it has not) and merges
+    under a row lock, so neither upload's provenance is lost.
     """
     now = _now()
     inserted = await db.scalars(
@@ -87,6 +122,7 @@ async def upsert_asset(
             byte_size=byte_size,
             kind=kind,
             provenance=provenance if provenance is not None else {},
+            orientation=orientation,
             # Stamped here, not by the column default: now() is the
             # TRANSACTION's start, so rows written in one transaction would
             # all tie and "oldest first" would fall back to a random id.
@@ -99,10 +135,11 @@ async def upsert_asset(
     )
     row = inserted.one_or_none()
     if row is not None:
-        return row, True
+        return row, True, []
 
     # The tenant already holds these bytes (or a concurrent upload of them
-    # won the insert). Lock the row so two re-uploads cannot interleave.
+    # won the insert). Lock the row so two re-uploads cannot interleave: each
+    # merges onto what the other committed.
     existing = await db.execute(
         select(ImageAsset)
         .where(ImageAsset.tenant_id == tenant_id, ImageAsset.sha256 == sha256)
@@ -110,17 +147,15 @@ async def upsert_asset(
         .execution_options(populate_existing=True)
     )
     row = existing.scalar_one()
-    changed = False
-    if row.kind != kind:
-        row.kind = kind
-        changed = True
-    if provenance is not None and row.provenance != provenance:
-        row.provenance = provenance
-        changed = True
-    if changed:
-        row.updated_at = now
-        await db.flush()
-    return row, False
+    conflicts = ["kind"] if row.kind != kind else []
+    if provenance:
+        merged, provenance_conflicts = merge_provenance(row.provenance, provenance)
+        conflicts += provenance_conflicts
+        if merged != row.provenance:
+            row.provenance = merged
+            row.updated_at = now
+            await db.flush()
+    return row, False, conflicts
 
 
 # ── slot candidates ─────────────────────────────────────────────────────
@@ -231,6 +266,41 @@ async def upsert_slot_candidate(
     return CandidateWrite(candidate=row, created=False, demoted=demoted)
 
 
+CandidateOrder = Literal["oldest", "newest"]
+
+
+class InvalidCursor(ValueError):
+    """A list cursor that does not decode, or was minted for the other order."""
+
+
+def encode_cursor(candidate: ImageSlotCandidate, order: CandidateOrder) -> str:
+    """Opaque keyset cursor: the last row's ``(created_at, id)`` and the order
+    it was read in. Its composition is not a client contract — callers only
+    echo it back as ``after``."""
+    raw = f"{order}|{candidate.created_at.isoformat()}|{candidate.id}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def decode_cursor(cursor: str, order: CandidateOrder) -> tuple[datetime, UUID]:
+    """Inverse of :func:`encode_cursor`; :class:`InvalidCursor` on anything
+    malformed, or on a cursor read in the other order — continuing a newest-
+    first walk with an oldest-first cursor would skip or repeat rows."""
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        minted_order, created_raw, id_raw = raw.split("|")
+        created_at = datetime.fromisoformat(created_raw)
+        row_id = UUID(id_raw)
+    except (ValueError, binascii.Error, UnicodeError) as exc:
+        raise InvalidCursor("malformed cursor") from exc
+    if created_at.tzinfo is None:
+        raise InvalidCursor("malformed cursor")
+    if minted_order != order:
+        raise InvalidCursor(
+            f"the cursor continues an order={minted_order} listing, not order={order}"
+        )
+    return created_at, row_id
+
+
 async def list_slot_candidates(
     db: AsyncSession,
     *,
@@ -239,11 +309,17 @@ async def list_slot_candidates(
     slot_id: str,
     status: str | None,
     limit: int,
+    order: CandidateOrder = "oldest",
+    after: tuple[datetime, UUID] | None = None,
 ) -> tuple[list[tuple[ImageSlotCandidate, ImageAsset]], bool]:
-    """The slot's candidates with their assets, oldest first; ``(rows, truncated)``.
+    """One page of the slot's candidates with their assets; ``(rows, truncated)``.
 
-    Reads one row past ``limit`` so ``truncated`` is a reading, not a guess.
+    Keyset-paged on ``(created_at, id)`` — a total order, so a page boundary
+    never skips or repeats a row — ``oldest`` or ``newest`` first, resuming
+    after ``after``. Reads one row past ``limit`` so ``truncated`` is a
+    reading, not a guess.
     """
+    key = tuple_(ImageSlotCandidate.created_at, ImageSlotCandidate.id)
     query = (
         select(ImageSlotCandidate, ImageAsset)
         .join(
@@ -258,12 +334,23 @@ async def list_slot_candidates(
             ImageSlotCandidate.repo == repo,
             ImageSlotCandidate.slot_id == slot_id,
         )
-        .order_by(ImageSlotCandidate.created_at, ImageSlotCandidate.id)
+        .order_by(
+            *(
+                (ImageSlotCandidate.created_at, ImageSlotCandidate.id)
+                if order == "oldest"
+                else (
+                    ImageSlotCandidate.created_at.desc(),
+                    ImageSlotCandidate.id.desc(),
+                )
+            )
+        )
         .limit(limit + 1)
         .execution_options(populate_existing=True)
     )
     if status is not None:
         query = query.where(ImageSlotCandidate.status == status)
+    if after is not None:
+        query = query.where(key > after if order == "oldest" else key < after)
     rows = [(candidate, asset) for candidate, asset in (await db.execute(query)).all()]
     return rows[:limit], len(rows) > limit
 
