@@ -39,8 +39,10 @@ Relations
    plan §3.5 "Shadow rows"):
 
    * ``uq_expedited_land_requests_idem`` — UNIQUE ``(tenant_id,
-     idempotency_key, attempt)``: idempotent replay and ``attempt + 1`` after a
-     retryable refusal (plan §5.4).
+     idempotency_key, attempt)`` over CALLER rows only (``parent_request_id IS
+     NULL``): idempotent replay and ``attempt + 1`` after a retryable refusal
+     (plan §5.4). A coord-side child request (plan §3.1) inherits its parent's
+     key and is not a caller request, so it is outside this index.
    * ``uq_expedited_land_requests_live_per_pr`` — UNIQUE ``(tenant_id, repo,
      pr_number)`` WHERE ``state`` is non-terminal: at most one live request per
      PR (S14; ``pr_busy``).
@@ -50,11 +52,15 @@ Relations
    * ``ix_expedited_land_requests_due`` — the worker's ``FOR UPDATE SKIP
      LOCKED`` claim over ``pending`` / ``evaluating`` rows by ``retry_at``.
    * ``ix_expedited_land_requests_reconcile`` — the reconciler's scan over
-     ``admitted`` / ``land_unconfirmed`` / ``land_unknown`` / ``landed`` rows.
+     ``admitted`` / ``land_unconfirmed`` / ``land_unknown`` / ``landed`` /
+     ``expired`` rows (an expired request's proposal may still land, §3.5).
+     ``landed_at`` dates a land for the 7-day ``land_rolled_back`` scan.
    * ``ix_expedited_land_requests_device_window`` /
      ``ix_expedited_land_requests_repo_window`` /
      ``ix_expedited_land_requests_head`` — the durable rate-limit counts (S14)
      and the held-refusal lookup on ``(tenant, repo, pr, head)`` (plan §5.4).
+     The two window indexes cover caller rows only: retries and children never
+     count against S14 (plan §3.1).
 
 2. ``coord.merge_proposals`` — a partial UNIQUE index on
    ``(metadata->>'expedite_request_id')``: a second proposal stamped for one
@@ -64,21 +70,27 @@ Relations
    — the S13 falsifier: sampled landed expedites queued for a fresh-context
    review, and an APPEND-ONLY verdict log keyed on the review gate. The log is a
    MEASUREMENT with no effect on any session (plan §3.3 S13, vet round 24 #1).
+   Append-only is coord's convention; no trigger enforces it.
    Neither table is readable through any device tool (vet round 33 #9).
 
 4. ``coord.expedite_worker_heartbeat`` — the worker's and the reconciler's own
    progress heartbeat, keyed ``(leader_term, task)`` so neither overwrites the
    other (plan §4.5). ``seed_failed`` marks a best-effort failed seed, which is
-   stale by definition.
+   stale by definition. Indexed by ``boot_id`` for the confirmed-dead test; one
+   row per leader term, pruned by the reconciler.
 
 5. ``coord.expedite_clean_shutdowns`` — boot ids that shut down gracefully, so a
    deploy failover's re-claim is never counted toward ``poison_row``.
 
-6. ``coord.notifications`` — ``request_id`` / ``event`` / ``coord_retries`` plus
-   a partial UNIQUE ``(request_id, kind, event, coord_retries)``: each expedite
-   notice is written ``INSERT … ON CONFLICT DO NOTHING``, so two leaders can
-   never send one notice twice (plan §4.4, §7). NULL ``request_id`` rows (every
-   existing producer) are outside the index.
+6. ``coord.notifications`` — ``request_id`` (nullable) / ``event`` / ``coord_retries``
+   (both NOT NULL with a constant default, a metadata-only add) plus a partial
+   UNIQUE ``(request_id, kind, event, coord_retries)``: each expedite notice is
+   written ``INSERT … ON CONFLICT DO NOTHING``, so two leaders can never send one
+   notice twice (plan §4.4, §7). Because ``event`` and ``coord_retries`` cannot be
+   NULL, no NULL can make two copies of one notice distinct. NULL ``request_id``
+   rows (every existing producer) are outside the index. Notices the plan routes
+   to ``coord.pr_events`` only are deduplicated in coord code (a lookup under the
+   request's advisory lock); this revision adds no index to ``pr_events``.
 
 7. Dials on ``coord.tenant_merge_settings`` and ``coord.tenant_repo_profiles``
    (all nullable; NULL = inherit the next tier up):
@@ -96,6 +108,12 @@ The new ``eval_attempt`` reasons (``absent_enqueue_error``,
 ``expedite_eval_deadline``) need no DDL: ``coord.pr_events`` payloads are not
 CHECK-constrained.
 
+Locking. The new tables are created and indexed in the migration transaction
+(zero rows). Columns on the live ``notifications`` / ``tenant_merge_settings`` /
+``tenant_repo_profiles`` tables are metadata-only adds under ``SET LOCAL
+lock_timeout = '3s'``. The two indexes on live tables (``merge_proposals``,
+``notifications``) are built ``CONCURRENTLY`` in an autocommit block.
+
 Writes **no rows**.
 """
 
@@ -110,27 +128,18 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-# Non-terminal request states — the set the per-PR partial unique index holds.
-# `land_unconfirmed` and `land_unknown` are non-terminal after `admitted`
-# (plan §3.5); every other state is terminal.
-_LIVE_STATES = (
-    "'pending', 'evaluating', 'admitted', 'land_unconfirmed', 'land_unknown'"
-)
 
-_ALL_STATES = (
-    "'pending', 'evaluating', 'admitted', 'land_unconfirmed', 'land_unknown', "
-    "'landed', 'landed_unattributed', 'land_rolled_back', 'refused', "
-    "'proposal_voided', 'proposal_cancelled', 'proposal_failed', 'expired'"
-)
+# Every op.execute argument below is a plain string LITERAL, never an f-string or
+# a loop over table names: coord's migration classifier admits only a static
+# op.execute argument, and the `alembic-schema-arg-gate` pre-commit hook parses
+# the raw SQL to prove every statement names its schema.
 
 
 def upgrade() -> None:
     """Create the expedite relations, indexes and dial columns. No rows."""
-    op.execute("CREATE SCHEMA IF NOT EXISTS coord")
-
-    # 1. The request store.
+    # 1. The request store. A NEW table: its indexes are built on zero rows.
     op.execute(
-        f"""
+        """
         CREATE TABLE IF NOT EXISTS coord.expedited_land_requests (
             id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             attempt                     INTEGER NOT NULL DEFAULT 1,
@@ -142,7 +151,7 @@ def upgrade() -> None:
             reason                      TEXT NOT NULL,
             disclosure                  TEXT NOT NULL DEFAULT '',
             independence                JSONB NULL,
-            requester                   JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            requester                   JSONB NOT NULL DEFAULT '{}'::jsonb,
             remedies_jobs               JSONB NOT NULL DEFAULT '[]'::jsonb,
             idempotency_key             TEXT NOT NULL,
             head_session_id             UUID NULL,
@@ -165,6 +174,7 @@ def upgrade() -> None:
             pushed_tip                  TEXT NULL,
             main_sha_before             TEXT NULL,
             land_sha                    TEXT NULL,
+            landed_at                   TIMESTAMPTZ NULL,
             verified_at                 TIMESTAMPTZ NULL,
             post_land                   JSONB NULL,
             siblings_in_flight          INTEGER NULL,
@@ -183,10 +193,16 @@ def upgrade() -> None:
             CONSTRAINT ck_expedited_land_requests_reason
                 CHECK (reason IN ('red_main_remedy', 'coord_stall')),
             CONSTRAINT ck_expedited_land_requests_state
-                CHECK (state IN ({_ALL_STATES})),
+                CHECK (state IN ('pending', 'evaluating', 'admitted',
+                                 'land_unconfirmed', 'land_unknown', 'landed',
+                                 'landed_unattributed', 'land_rolled_back',
+                                 'refused', 'proposal_voided',
+                                 'proposal_cancelled', 'proposal_failed',
+                                 'expired')),
             CONSTRAINT ck_expedited_land_requests_shadow_verdict
                 CHECK (shadow_verdict IS NULL
-                       OR shadow_verdict IN ('would_land', 'would_refuse', 'unknown')),
+                       OR shadow_verdict IN ('would_land', 'would_refuse',
+                                             'unknown')),
             CONSTRAINT ck_expedited_land_requests_pr_comment_state
                 CHECK (pr_comment_state IN ('none', 'creating', 'created')),
             CONSTRAINT ck_expedited_land_requests_attempt_positive
@@ -210,21 +226,23 @@ def upgrade() -> None:
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_expedited_land_requests_idem
             ON coord.expedited_land_requests (tenant_id, idempotency_key, attempt)
-         WHERE NOT shadow
+         WHERE NOT shadow AND parent_request_id IS NULL
         """
     )
     op.execute(
-        f"""
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_expedited_land_requests_live_per_pr
             ON coord.expedited_land_requests (tenant_id, repo, pr_number)
-         WHERE NOT shadow AND state IN ({_LIVE_STATES})
+         WHERE NOT shadow
+           AND state IN ('pending', 'evaluating', 'admitted',
+                         'land_unconfirmed', 'land_unknown')
         """
     )
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_expedited_land_requests_child
             ON coord.expedited_land_requests (parent_request_id, child_seq)
-         WHERE parent_request_id IS NOT NULL
+         WHERE NOT shadow AND parent_request_id IS NOT NULL
         """
     )
     op.execute(
@@ -247,14 +265,14 @@ def upgrade() -> None:
         """
         CREATE INDEX IF NOT EXISTS ix_expedited_land_requests_device_window
             ON coord.expedited_land_requests (tenant_id, device_id, created_at)
-         WHERE NOT shadow
+         WHERE NOT shadow AND parent_request_id IS NULL
         """
     )
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS ix_expedited_land_requests_repo_window
             ON coord.expedited_land_requests (tenant_id, repo, created_at)
-         WHERE NOT shadow
+         WHERE NOT shadow AND parent_request_id IS NULL
         """
     )
     op.execute(
@@ -279,21 +297,21 @@ def upgrade() -> None:
         """
         COMMENT ON COLUMN coord.expedited_land_requests.refusal IS
             'The typed refusal for refused / proposal_voided / proposal_failed '
-            'rows: {code, cause|class, retryable, retry_after_secs, detail, '
-            'last_code}. The code set is closed in Rust, not by a CHECK here.'
+            'rows, and the code of a would_refuse shadow verdict: {code, '
+            'cause|class, retryable, retry_after_secs, detail, last_code}. The '
+            'code set is closed in Rust, not by a CHECK here.'
         """
     )
-
-    # 2. One stamped proposal per request.
     op.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_merge_proposals_expedite_request_id
-            ON coord.merge_proposals ((metadata->>'expedite_request_id'))
-         WHERE metadata ? 'expedite_request_id'
+        COMMENT ON COLUMN coord.expedited_land_requests.shadow_verdict IS
+            'Shadow sweep / shadow-mode verdict. would_refuse carries its code in '
+            'refusal; unknown is the sweep''s shadow_unknown{input} (an input '
+            'was not fetched or was paced), excluded from the false-accept metric.'
         """
     )
 
-    # 3. The S13 independence sampler: items + append-only verdict log.
+    # 2. The S13 independence sampler: items + verdict log. New tables.
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.expedite_independence_reviews (
@@ -354,13 +372,14 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.expedite_independence_verdicts IS
-            'Append-only verdict log for the expedite independence sampler. A '
-            'MEASUREMENT only: no verdict restricts a session or lands anything. '
-            'Only from_claimant_device rows count toward resolution.'
+            'Verdict log for the expedite independence sampler, append-only BY '
+            'CONVENTION (coord never UPDATEs or DELETEs it; no trigger enforces '
+            'it). A MEASUREMENT only: no verdict restricts a session or lands '
+            'anything. Only from_claimant_device rows count toward resolution.'
         """
     )
 
-    # 4. Worker / reconciler progress heartbeat.
+    # 3. Worker / reconciler progress heartbeat, and graceful shutdowns. New.
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.expedite_worker_heartbeat (
@@ -376,8 +395,19 @@ def upgrade() -> None:
         )
         """
     )
-
-    # 5. Graceful-shutdown records (poison_row accounting).
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_expedite_worker_heartbeat_boot
+            ON coord.expedite_worker_heartbeat (boot_id, heartbeat_at)
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON TABLE coord.expedite_worker_heartbeat IS
+            'One row per (leader_term, task). Grows by one row per leader term; '
+            'the expedite reconciler prunes terms older than 7 days.'
+        """
+    )
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.expedite_clean_shutdowns (
@@ -387,110 +417,127 @@ def upgrade() -> None:
         """
     )
 
-    # 6. Notification dedup columns.
+    # 4. Columns on EXISTING live tables. Metadata-only adds (nullable, or NOT
+    # NULL with a constant default), under a short lock_timeout so a queued
+    # ACCESS EXCLUSIVE lock fails the deploy fast instead of stalling the train.
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
-        "ALTER TABLE coord.notifications ADD COLUMN IF NOT EXISTS request_id UUID NULL"
-    )
-    op.execute(
-        "ALTER TABLE coord.notifications ADD COLUMN IF NOT EXISTS event TEXT NULL"
-    )
-    op.execute(
-        "ALTER TABLE coord.notifications "
-        "ADD COLUMN IF NOT EXISTS coord_retries INTEGER NULL"
+        """
+        ALTER TABLE coord.notifications
+            ADD COLUMN IF NOT EXISTS request_id UUID NULL,
+            ADD COLUMN IF NOT EXISTS event TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS coord_retries INTEGER NOT NULL DEFAULT 0
+        """
     )
     op.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_request_event
-            ON coord.notifications (request_id, kind, event, coord_retries)
-         WHERE request_id IS NOT NULL
+        ALTER TABLE coord.tenant_merge_settings
+            ADD COLUMN IF NOT EXISTS expedited_land TEXT NULL
+                CONSTRAINT ck_tenant_merge_settings_expedited_land
+                CHECK (expedited_land IS NULL
+                       OR expedited_land IN ('on', 'shadow', 'off')),
+            ADD COLUMN IF NOT EXISTS expedite_max_files INTEGER NULL
+                CONSTRAINT ck_tenant_merge_settings_expedite_max_files
+                CHECK (expedite_max_files IS NULL OR expedite_max_files > 0),
+            ADD COLUMN IF NOT EXISTS expedite_max_changed_lines INTEGER NULL
+                CONSTRAINT ck_tenant_merge_settings_expedite_max_changed_lines
+                CHECK (expedite_max_changed_lines IS NULL
+                       OR expedite_max_changed_lines > 0),
+            ADD COLUMN IF NOT EXISTS expedite_review_arm BOOLEAN NULL
         """
     )
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_repo_profiles
+            ADD COLUMN IF NOT EXISTS expedited_land TEXT NULL
+                CONSTRAINT ck_tenant_repo_profiles_expedited_land
+                CHECK (expedited_land IS NULL
+                       OR expedited_land IN ('on', 'shadow', 'off')),
+            ADD COLUMN IF NOT EXISTS expedite_max_files INTEGER NULL
+                CONSTRAINT ck_tenant_repo_profiles_expedite_max_files
+                CHECK (expedite_max_files IS NULL OR expedite_max_files > 0),
+            ADD COLUMN IF NOT EXISTS expedite_max_changed_lines INTEGER NULL
+                CONSTRAINT ck_tenant_repo_profiles_expedite_max_changed_lines
+                CHECK (expedite_max_changed_lines IS NULL
+                       OR expedite_max_changed_lines > 0),
+            ADD COLUMN IF NOT EXISTS expedite_review_arm BOOLEAN NULL
+        """
+    )
+    # SET LOCAL is transaction-scoped and env.py wraps the whole run in one
+    # transaction, so put it back or it leaks into every later revision.
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
-    # 7. Dials (tenant tier, then repo tier). NULL = inherit.
-    for table in ("tenant_merge_settings", "tenant_repo_profiles"):
+    # 5. Indexes on EXISTING live tables: CONCURRENTLY, outside the transaction.
+    with op.get_context().autocommit_block():
+        # One stamped proposal per request, whichever leader inserts it.
         op.execute(
-            f"ALTER TABLE coord.{table} "
-            "ADD COLUMN IF NOT EXISTS expedited_land TEXT NULL"
+            """
+            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS
+                uq_merge_proposals_expedite_request_id
+            ON coord.merge_proposals ((metadata->>'expedite_request_id'))
+            WHERE metadata ? 'expedite_request_id'
+            """
         )
+        # Notice dedup: event and coord_retries are NOT NULL, so no NULL can
+        # make two otherwise-identical notices distinct.
         op.execute(
-            f"ALTER TABLE coord.{table} "
-            "ADD COLUMN IF NOT EXISTS expedite_max_files INTEGER NULL"
-        )
-        op.execute(
-            f"ALTER TABLE coord.{table} "
-            "ADD COLUMN IF NOT EXISTS expedite_max_changed_lines INTEGER NULL"
-        )
-        op.execute(
-            f"ALTER TABLE coord.{table} "
-            "ADD COLUMN IF NOT EXISTS expedite_review_arm BOOLEAN NULL"
-        )
-        op.execute(
-            f"""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                     WHERE conname = 'ck_{table}_expedited_land'
-                ) THEN
-                    ALTER TABLE coord.{table}
-                        ADD CONSTRAINT ck_{table}_expedited_land
-                        CHECK (expedited_land IS NULL
-                               OR expedited_land IN ('on', 'shadow', 'off'));
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                     WHERE conname = 'ck_{table}_expedite_sizes'
-                ) THEN
-                    ALTER TABLE coord.{table}
-                        ADD CONSTRAINT ck_{table}_expedite_sizes
-                        CHECK ((expedite_max_files IS NULL OR expedite_max_files > 0)
-                           AND (expedite_max_changed_lines IS NULL
-                                OR expedite_max_changed_lines > 0));
-                END IF;
-            END $$;
+            """
+            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS
+                uq_notifications_request_event
+            ON coord.notifications (request_id, kind, event, coord_retries)
+            WHERE request_id IS NOT NULL
             """
         )
 
 
 def downgrade() -> None:
-    """Drop everything upgrade() created, in reverse order."""
-    for table in ("tenant_repo_profiles", "tenant_merge_settings"):
+    """Drop everything upgrade() created, in reverse order. Idempotent."""
+    with op.get_context().autocommit_block():
         op.execute(
-            f"ALTER TABLE coord.{table} "
-            f"DROP CONSTRAINT IF EXISTS ck_{table}_expedite_sizes"
+            "DROP INDEX CONCURRENTLY IF EXISTS coord.uq_notifications_request_event"
         )
         op.execute(
-            f"ALTER TABLE coord.{table} "
-            f"DROP CONSTRAINT IF EXISTS ck_{table}_expedited_land"
+            "DROP INDEX CONCURRENTLY IF EXISTS "
+            "coord.uq_merge_proposals_expedite_request_id"
         )
-        for column in (
-            "expedite_review_arm",
-            "expedite_max_changed_lines",
-            "expedite_max_files",
-            "expedited_land",
-        ):
-            op.execute(f"ALTER TABLE coord.{table} DROP COLUMN IF EXISTS {column}")
 
-    op.execute("DROP INDEX IF EXISTS coord.uq_notifications_request_event")
-    for column in ("coord_retries", "event", "request_id"):
-        op.execute(f"ALTER TABLE coord.notifications DROP COLUMN IF EXISTS {column}")
+    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_repo_profiles
+            DROP CONSTRAINT IF EXISTS ck_tenant_repo_profiles_expedite_max_changed_lines,
+            DROP CONSTRAINT IF EXISTS ck_tenant_repo_profiles_expedite_max_files,
+            DROP CONSTRAINT IF EXISTS ck_tenant_repo_profiles_expedited_land,
+            DROP COLUMN IF EXISTS expedite_review_arm,
+            DROP COLUMN IF EXISTS expedite_max_changed_lines,
+            DROP COLUMN IF EXISTS expedite_max_files,
+            DROP COLUMN IF EXISTS expedited_land
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.tenant_merge_settings
+            DROP CONSTRAINT IF EXISTS ck_tenant_merge_settings_expedite_max_changed_lines,
+            DROP CONSTRAINT IF EXISTS ck_tenant_merge_settings_expedite_max_files,
+            DROP CONSTRAINT IF EXISTS ck_tenant_merge_settings_expedited_land,
+            DROP COLUMN IF EXISTS expedite_review_arm,
+            DROP COLUMN IF EXISTS expedite_max_changed_lines,
+            DROP COLUMN IF EXISTS expedite_max_files,
+            DROP COLUMN IF EXISTS expedited_land
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE coord.notifications
+            DROP COLUMN IF EXISTS coord_retries,
+            DROP COLUMN IF EXISTS event,
+            DROP COLUMN IF EXISTS request_id
+        """
+    )
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
     op.execute("DROP TABLE IF EXISTS coord.expedite_clean_shutdowns")
     op.execute("DROP TABLE IF EXISTS coord.expedite_worker_heartbeat")
-    op.execute("DROP INDEX IF EXISTS coord.ix_expedite_independence_verdicts_review")
     op.execute("DROP TABLE IF EXISTS coord.expedite_independence_verdicts")
-    op.execute("DROP INDEX IF EXISTS coord.uq_expedite_independence_reviews_request")
     op.execute("DROP TABLE IF EXISTS coord.expedite_independence_reviews")
-    op.execute("DROP INDEX IF EXISTS coord.uq_merge_proposals_expedite_request_id")
-    for index in (
-        "ix_expedited_land_requests_head",
-        "ix_expedited_land_requests_repo_window",
-        "ix_expedited_land_requests_device_window",
-        "ix_expedited_land_requests_reconcile",
-        "ix_expedited_land_requests_due",
-        "uq_expedited_land_requests_child",
-        "uq_expedited_land_requests_live_per_pr",
-        "uq_expedited_land_requests_idem",
-    ):
-        op.execute(f"DROP INDEX IF EXISTS coord.{index}")
     op.execute("DROP TABLE IF EXISTS coord.expedited_land_requests")
