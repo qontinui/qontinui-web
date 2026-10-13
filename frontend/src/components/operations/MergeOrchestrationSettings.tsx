@@ -44,6 +44,7 @@ import {
   fetchTenantRepos,
   fetchTenantSettings,
   type EffectiveProfile,
+  type ExpediteDials,
   type SloResponse,
   type TenantRepoRow,
 } from "@/lib/api/operations/prMerge";
@@ -53,6 +54,7 @@ import { TenantDefaultsCard } from "./merge-settings/TenantDefaultsCard";
 import { RepoOverrideCard } from "./merge-settings/RepoOverrideCard";
 import { SloDashboardCard } from "./merge-settings/SloDashboardCard";
 import { ffLandHeadSyncSupported } from "./merge-settings/format";
+import { expediteReadState } from "./merge-settings/ExpediteDialsSection";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -62,6 +64,11 @@ const log = createLogger("MergeOrchestrationSettings");
 
 export function MergeOrchestrationSettings() {
   const [profile, setProfile] = useState<EffectiveProfile | null>(null);
+  // The tenant read's RAW expedite dials: `undefined` until the read lands AND
+  // on a coord build that does not serve them; `null` = unreadable.
+  const [expediteTenant, setExpediteTenant] = useState<
+    ExpediteDials | null | undefined
+  >(undefined);
   const [repos, setRepos] = useState<TenantRepoRow[] | null>(null);
   const [slo, setSlo] = useState<SloResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +126,7 @@ export function MergeOrchestrationSettings() {
         if (!r.ok) throw r.err;
         if (cancelled) return;
         setProfile(s.body.profile);
+        setExpediteTenant(s.body.expedite_tenant);
         setRepos(r.body.repos);
         setError(null);
         if (sl.ok) {
@@ -230,7 +238,11 @@ export function MergeOrchestrationSettings() {
             </CardContent>
           </Card>
         ) : (
-          <TenantDefaultsCard profile={profile} onSaved={triggerReload} />
+          <TenantDefaultsCard
+            profile={profile}
+            expediteTenant={expediteTenant}
+            onSaved={triggerReload}
+          />
         )}
         <Card>
           <CardHeader>
@@ -264,6 +276,12 @@ export function MergeOrchestrationSettings() {
                     // fail-closed, since the cost of guessing wrong is a 400
                     // that takes the whole per-repo save with it.
                     ffLandHeadSyncWritable={ffLandHeadSyncSupported(profile)}
+                    // Same fail-closed capability read: the expedite keys are
+                    // writable only on a coord build whose TENANT read serves
+                    // them (the key's presence, even as `null`).
+                    expediteWritable={
+                      expediteReadState(expediteTenant) !== "unsupported"
+                    }
                     onSaved={triggerReload}
                   />
                 ))}
