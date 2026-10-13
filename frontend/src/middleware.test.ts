@@ -42,4 +42,21 @@ describe("middleware — anonymous requests", () => {
     expect(res.status).toBe(307);
     expect(new URL(res.headers.get("location") ?? "").pathname).toBe("/login");
   });
+
+  it("keeps a lookalike of a card route gated", () => {
+    // `-xg4ifa` is the suffix an `(app)` group card would be served at;
+    // `opengraph-image2` is a numbered card no tree serves.
+    for (const path of [
+      "/opengraph-image2",
+      "/opengraph-image-xg4ifa",
+      "/twitter-image9-zzzzzz",
+    ]) {
+      const res = anonymous(path);
+
+      expect({ path, status: res.status }).toEqual({ path, status: 307 });
+      expect(new URL(res.headers.get("location") ?? "").pathname).toBe(
+        "/login"
+      );
+    }
+  });
 });

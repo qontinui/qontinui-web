@@ -41,19 +41,28 @@ export const PUBLIC_PREFIXES = [
   "/__ui-bridge__",
 ];
 
-// The social-card routes of the top-level trees (`@/lib/server/social-card`).
-// Next serves `app/opengraph-image.tsx` at `/opengraph-image` and a route
-// group's copy at `/opengraph-image-<6-char hash of the group path>`
-// (`/opengraph-image-pwu6ef` for `(marketing)`). The optional digit is Next's
-// numbered-variant form. These paths have no file extension, so the
-// middleware's static-asset matcher does not skip them. Link-preview
-// crawlers send no auth cookie, so without this pattern every card would be
-// redirected to /login and the preview would show no image.
-const SOCIAL_CARD_ROUTE = /^\/(?:opengraph|twitter)-image\d?(?:-[0-9a-z]{6})?$/;
+// The social cards Next serves for the public trees
+// (`@/lib/server/social-card`): `app/{opengraph,twitter}-image.tsx` at
+// `/opengraph-image` and `/twitter-image`, and the `(marketing)` group's
+// copies at the same names plus Next's 6-char hash of the group path. These
+// paths have no file extension, so the middleware's static-asset matcher does
+// not skip them. Link-preview crawlers send no auth cookie, so an unlisted
+// card is redirected to /login and the preview shows no image.
+//
+// Exact paths, never a pattern: a pattern also admits the card a gated tree
+// such as `(app)` would get. `public-routes.test.ts` derives the served URLs
+// from the files on disk and fails until this list is exactly the cards that
+// describe a public page. Exported for that test only.
+export const SOCIAL_CARD_PATHS: ReadonlySet<string> = new Set([
+  "/opengraph-image",
+  "/twitter-image",
+  "/opengraph-image-pwu6ef",
+  "/twitter-image-pwu6ef",
+]);
 
 export function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
-  if (SOCIAL_CARD_ROUTE.test(pathname)) return true;
+  if (SOCIAL_CARD_PATHS.has(pathname)) return true;
   return PUBLIC_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
