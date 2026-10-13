@@ -1,7 +1,7 @@
 /**
  * Independent post-land verification metrics — the wire shape of coord's
- * `GET /coord/verification/metrics` (proxied at
- * `/api/v1/operations/coord/verification/metrics`) and the pure derivations
+ * `GET /coord/verification/metrics` (read through
+ * `lib/api/operations/coordVerification.ts`) and the pure derivations
  * both of its readers share: the overview's "Can I trust 'done'?" tile and
  * the `/admin/coord/verification` drill-down.
  *
@@ -25,9 +25,6 @@
  * `null` from coord is carried as `null` all the way to the renderer, which
  * prints a word or a dash for it — nothing in here defaults a count to 0.
  */
-
-export const VERIFICATION_METRICS_API =
-  "/api/v1/operations/coord/verification/metrics";
 
 /** The window the tile reads. coord's default is also 28 days. */
 export const DEFAULT_METRICS_WINDOW = "28d";

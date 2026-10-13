@@ -17,11 +17,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { fetchCoordFindings } from "@/lib/api/operations/coordFindings";
+import { fetchVerificationMetrics } from "@/lib/api/operations/coordVerification";
 import {
   DEFAULT_METRICS_WINDOW,
   REFUTED_FINDING_TOPIC,
-  VERIFICATION_METRICS_API,
   couldNotLookReason,
   parseVerificationMetrics,
   readLastGood,
@@ -29,7 +29,6 @@ import {
   type VerificationMetrics,
 } from "./verificationMetrics";
 
-const FINDINGS_API = "/api/v1/operations/coord/findings";
 /** Refutations are rare by construction; one page is the window's worth. */
 const REFUTED_FINDINGS_LIMIT = 100;
 
@@ -84,10 +83,7 @@ export function useVerificationMetrics(
     setRefuted({ status: "loading" });
     setLastGood(readLastGood(tenantId));
 
-    const metricsP = httpClient
-      .get<unknown>(
-        `${VERIFICATION_METRICS_API}?window=${encodeURIComponent(windowParam)}`
-      )
+    const metricsP = fetchVerificationMetrics(windowParam)
       .then((raw) => {
         const metrics = parseVerificationMetrics(raw);
         if (gen !== generation.current) return;
@@ -102,18 +98,17 @@ export function useVerificationMetrics(
         setRead({ status: "error", reason: couldNotLookReason(err) });
       });
 
-    const qs = new URLSearchParams({
+    const refutedP = fetchCoordFindings({
+      limit: REFUTED_FINDINGS_LIMIT,
       topic: REFUTED_FINDING_TOPIC,
-      limit: String(REFUTED_FINDINGS_LIMIT),
-    });
-    const refutedP = httpClient
-      .get<{
-        findings?: RefutedFinding[] | null;
-        unavailable?: string | null;
-        count?: number | null;
-        limit?: number | null;
-      }>(`${FINDINGS_API}?${qs.toString()}`)
-      .then((body) => {
+    })
+      .then((raw) => {
+        const body = (raw ?? {}) as {
+          findings?: RefutedFinding[] | null;
+          unavailable?: string | null;
+          count?: number | null;
+          limit?: number | null;
+        };
         if (gen !== generation.current) return;
         if (body.unavailable || !Array.isArray(body.findings)) {
           setRefuted({

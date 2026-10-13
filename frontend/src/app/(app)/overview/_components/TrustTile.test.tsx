@@ -11,7 +11,7 @@
 import { render, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const http = vi.hoisted(() => ({ get: vi.fn() }));
+const http = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock("@/services/service-factory", () => ({ httpClient: http }));
 
 import {
@@ -29,9 +29,11 @@ function serve(
   metrics: Answer,
   findings: Answer = { findings: [], available: true }
 ) {
-  http.get.mockImplementation((url: string) => {
+  http.fetch.mockImplementation((url: string) => {
     const a = url.includes("/verification/metrics") ? metrics : findings;
-    return a instanceof Error ? Promise.reject(a) : Promise.resolve(a);
+    return a instanceof Error
+      ? Promise.reject(a)
+      : Promise.resolve(new Response(JSON.stringify(a)));
   });
 }
 
@@ -59,7 +61,7 @@ describe("TrustTile", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW);
     window.localStorage.clear();
-    http.get.mockReset();
+    http.fetch.mockReset();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -185,11 +187,11 @@ describe("TrustTile", () => {
     const el = await settled("could_not_look");
     expect(el.textContent).toContain("the list of projects couldn’t be loaded");
     expect(el.textContent).toContain("HTTP 500: boom");
-    expect(http.get).not.toHaveBeenCalled();
+    expect(http.fetch).not.toHaveBeenCalled();
   });
 
   it("announces loading accessibly", () => {
-    http.get.mockReturnValue(new Promise(() => {}));
+    http.fetch.mockReturnValue(new Promise(() => {}));
     render(<TrustTile tenantId="t-1" hold={false} />);
     const loading = document.querySelector(
       '[data-ui-bridge-id="overview.summary.trust.loading"]'

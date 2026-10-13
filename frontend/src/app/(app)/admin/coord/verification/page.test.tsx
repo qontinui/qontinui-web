@@ -8,7 +8,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const http = vi.hoisted(() => ({ get: vi.fn() }));
+const http = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock("@/services/service-factory", () => ({ httpClient: http }));
 vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({ activeTenantId: "t-1", loading: false, error: null }),
@@ -23,11 +23,15 @@ import {
 import CoordVerificationPage from "./page";
 
 function serve(metrics: unknown) {
-  http.get.mockImplementation((url: string) =>
+  http.fetch.mockImplementation((url: string) =>
     Promise.resolve(
-      url.includes("/verification/metrics")
-        ? metrics
-        : { available: true, findings: [REFUTATION_FINDING] }
+      new Response(
+        JSON.stringify(
+          url.includes("/verification/metrics")
+            ? metrics
+            : { available: true, findings: [REFUTATION_FINDING] }
+        )
+      )
     )
   );
 }
@@ -36,7 +40,7 @@ describe("CoordVerificationPage", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW);
-    http.get.mockReset();
+    http.fetch.mockReset();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -47,7 +51,7 @@ describe("CoordVerificationPage", () => {
     expect(
       within(series).getAllByTestId("coord-verification-series-week")
     ).toHaveLength(12);
-    expect(http.get.mock.calls[0][0]).toContain("window=28d");
+    expect(http.fetch.mock.calls[0][0]).toContain("window=28d");
 
     expect(
       screen
