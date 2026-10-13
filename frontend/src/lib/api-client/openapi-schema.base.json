@@ -8545,7 +8545,7 @@
         "type": "object"
       },
       "CiNodeConfig": {
-        "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
+        "description": "The ``CiNodeSettings`` fields, with the runner's own defaults.\n\n``model_access`` is the exception: its default is ``None`` (\"not set\nhere\"), not the runner's ``True``, because an absent value must leave the\nrunner's stored consent alone rather than overwrite it.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
         "properties": {
           "enabled": {
             "default": false,
@@ -8571,6 +8571,17 @@
             "minimum": 1.0,
             "title": "Min Free Disk Gb",
             "type": "integer"
+          },
+          "model_access": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Access"
           },
           "repo_allowlist": {
             "items": {

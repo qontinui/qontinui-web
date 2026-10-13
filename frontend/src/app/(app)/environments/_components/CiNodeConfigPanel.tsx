@@ -261,8 +261,90 @@ export function configsEqual(a: CiNodeConfig, b: CiNodeConfig): boolean {
     // change nobody made.
     (a.max_concurrent_builds ?? null) === (b.max_concurrent_builds ?? null) &&
     a.min_free_disk_gb === b.min_free_disk_gb &&
+    // Same normalisation: a stored config predating `model_access` reads as
+    // "not set here", not as a change.
+    (a.model_access ?? null) === (b.model_access ?? null) &&
     a.repo_allowlist.length === b.repo_allowlist.length &&
     a.repo_allowlist.every((r, i) => r === b.repo_allowlist[i])
+  );
+}
+
+/**
+ * The words beside the model-access switch for its three states. `null` is
+ * "not set from qontinui.io" — the runner keeps its own value, which is on
+ * unless someone changed it on the machine — and is said in so many words, so
+ * it never reads as a confirmed "on".
+ */
+export function modelAccessStateText(value: boolean | null): string {
+  if (value === true) return "on";
+  if (value === false) return "off";
+  return "not set from qontinui.io — the runner keeps its own setting, which is on unless changed on the machine";
+}
+
+/**
+ * "Let CI steps use this machine's Claude accounts" — the DEVICE scope of the
+ * CI model-access off-switches (plan
+ * `2026-10-13-ci-node-runs-model-dependent-eval-steps` D6; the tenant and repo
+ * scopes live on Dev Ops ▸ CI). Default on. The consequence — including what
+ * off does NOT stop (D11) — is stated before the control, as for `enabled`.
+ */
+function ModelAccessField({
+  machineId,
+  value,
+  onChange,
+}: {
+  machineId: string;
+  value: boolean | null;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="space-y-2" data-testid="ci-node-model-access">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">
+          Model access for CI steps on this machine
+        </p>
+        <p className="text-sm text-muted-foreground">
+          A repository can mark CI steps that call a model (its{" "}
+          <code className="font-mono text-xs">.qontinui/ci.toml</code> declares{" "}
+          <code className="font-mono text-xs">[model]</code>). On this machine
+          those calls run through the runner on your own Claude accounts, within
+          the budget the repository declares; the step itself is never given a
+          login. It is on unless you turn it off. Turned off, those steps still
+          run, without model access, and their results read UNKNOWN.
+        </p>
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="ci-node-model-access-residual"
+        >
+          What off does not stop: CI steps run as your user, so a step that
+          deliberately points <code className="font-mono text-xs">claude</code>{" "}
+          at this machine&apos;s account files can still use them. Only allow
+          repositories you trust.
+        </p>
+      </div>
+      <label
+        className="flex items-center gap-3 rounded-md border border-border px-3 py-2"
+        htmlFor={`ci-node-model-access-${machineId}`}
+      >
+        <Switch
+          id={`ci-node-model-access-${machineId}`}
+          data-testid="ci-node-model-access-switch"
+          checked={value ?? true}
+          onCheckedChange={(checked) => onChange(checked)}
+        />
+        <span className="text-sm">
+          Let CI steps use this machine&apos;s Claude accounts
+          <span
+            className="text-muted-foreground"
+            data-testid="ci-node-model-access-state"
+            data-state={value === null ? "unset" : value ? "on" : "off"}
+          >
+            {" "}
+            — {modelAccessStateText(value)}
+          </span>
+        </span>
+      </label>
+    </div>
   );
 }
 
@@ -627,6 +709,12 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
           </span>
         </label>
       </div>
+
+      <ModelAccessField
+        machineId={machine.id}
+        value={draft.model_access ?? null}
+        onChange={(next) => setDraft((d) => ({ ...d, model_access: next }))}
+      />
 
       {/* The delivery record. Deliberately worded as "requested"/"sent", never
           "active": there is no read-back and no ack, so a stronger word here

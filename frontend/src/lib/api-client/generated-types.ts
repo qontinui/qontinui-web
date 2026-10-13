@@ -29092,7 +29092,11 @@ export interface components {
         };
         /**
          * CiNodeConfig
-         * @description The four ``CiNodeSettings`` fields, with the runner's own defaults.
+         * @description The ``CiNodeSettings`` fields, with the runner's own defaults.
+         *
+         *     ``model_access`` is the exception: its default is ``None`` ("not set
+         *     here"), not the runner's ``True``, because an absent value must leave the
+         *     runner's stored consent alone rather than overwrite it.
          *
          *     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
          *     on purpose: a machine that has never been configured here must round-trip
@@ -29113,6 +29117,8 @@ export interface components {
              * @default 20
              */
             min_free_disk_gb: number;
+            /** Model Access */
+            model_access?: boolean | null;
             /** Repo Allowlist */
             repo_allowlist?: string[];
         };
