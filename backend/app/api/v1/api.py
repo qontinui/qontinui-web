@@ -34,6 +34,7 @@ from app.api.v1.endpoints import (
     automation_ws,
     background_removal,
     batch_import,
+    build_records,
     capture,
     chat_sessions,
     claude_accounts,
@@ -76,6 +77,7 @@ from app.api.v1.endpoints import (
     identity_resolution,
     images,
     integration_testing,
+    internal,
     issues,
     known_issues,
     library,
@@ -87,6 +89,7 @@ from app.api.v1.endpoints import (
     pair_codes,
     phase_results,
     plan_library,
+    plan_library_followups,
     plan_library_scan_roots,
     project_files,
     project_images,
@@ -235,6 +238,10 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Internal coord -> web service surface (no user auth; shared-secret gated).
+# `POST /internal/coord-push` sends operator-action-item pushes for coord
+# (plan 2026-10-12-operator-action-items-pushed-to-the-phone, Phase 3).
+api_router.include_router(internal.router, prefix="/internal", tags=["internal"])
 # Per-repo follow-up dials (post-merge follow-up scope, continuation-delivery
 # mode) — proxies of coord's two per-repo `tenant_repo_profiles` dials, under
 # the same `/operations` prefix as the fleet-policy proxy they copy, so the
@@ -255,6 +262,14 @@ api_router.include_router(
 # ``tests/test_plan_library_scan_roots.py``.
 api_router.include_router(
     plan_library_scan_roots.router, prefix="/plan-library", tags=["plan-library"]
+)
+# The follow-up closure and anchor doors (``/edges/{edge_id}/anchors``,
+# ``/edges/{edge_id}/resolution``, ``/followups/match``,
+# ``/followups/reconcile``) — the same ordering rule, for the same reason: they
+# must be registered before ``plan_library``'s ``/{artifact_id}/…`` routes.
+# Pinned through this router by ``tests/test_plan_library_followups.py``.
+api_router.include_router(
+    plan_library_followups.router, prefix="/plan-library", tags=["plan-library"]
 )
 api_router.include_router(
     plan_library.router, prefix="/plan-library", tags=["plan-library"]
@@ -279,6 +294,13 @@ api_router.include_router(conditions.router, prefix="/conditions", tags=["condit
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
+)
+# Build records (plan 2026-10-09-factory-built-product-portfolio-and-launch-kit,
+# Phase 1) — the authed coord export proxy and the publish step. The frozen,
+# unauthenticated copy is served by ``public.router`` at
+# ``/public/build-records/{slug}``.
+api_router.include_router(
+    build_records.router, prefix="/build-records", tags=["build-records"]
 )
 # Project Overview — the business-leader surface (overview.*): the project
 # settings, hand-written. Tenant-scoped on the active coord tenant, so the frontend attaches

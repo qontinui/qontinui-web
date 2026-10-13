@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isValidAppId,
+  registeredAppSuggestions,
   snapshotHasElementTree,
   summarizeSpecGraph,
 } from "./ui-bridge-types";
@@ -157,5 +158,46 @@ describe("snapshotHasElementTree", () => {
         note: "SDK was not connected. This is a native window capture fallback — no element tree is available.",
       })
     ).toBe(false);
+  });
+});
+
+describe("registeredAppSuggestions", () => {
+  it("suggests each registered id, labelled by display name when it differs", () => {
+    expect(
+      registeredAppSuggestions({
+        ok: true,
+        apps: [
+          { app_id: "qontinui-runner", display_name: "Qontinui Runner" },
+          { app_id: "plain", display_name: "plain" },
+          { app_id: "nameless" },
+        ],
+      })
+    ).toEqual([
+      { id: "qontinui-runner", note: "Qontinui Runner" },
+      { id: "plain" },
+      { id: "nameless" },
+    ]);
+  });
+
+  it("is null when no apps array was read, so the caller falls back", () => {
+    expect(registeredAppSuggestions(undefined)).toBeNull();
+    expect(registeredAppSuggestions({ ok: true })).toBeNull();
+  });
+
+  it("is empty, not null, for an empty registry", () => {
+    expect(registeredAppSuggestions({ ok: true, apps: [] })).toEqual([]);
+  });
+
+  it("drops ids the registry could never have admitted, and duplicates", () => {
+    expect(
+      registeredAppSuggestions({
+        apps: [
+          { app_id: "Bad/Id" },
+          { display_name: "no id" },
+          { app_id: "dup" },
+          { app_id: "dup" },
+        ],
+      })
+    ).toEqual([{ id: "dup" }]);
   });
 });
