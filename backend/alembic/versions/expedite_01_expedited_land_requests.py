@@ -114,6 +114,19 @@ Locking. The new tables are created and indexed in the migration transaction
 lock_timeout = '3s'``. The two indexes on live tables (``merge_proposals``,
 ``notifications``) are built ``CONCURRENTLY`` in an autocommit block.
 
+Recovering a failed concurrent build. A cancelled or failed ``CONCURRENTLY``
+build leaves an INVALID index that ``IF NOT EXISTS`` then keeps on every re-run.
+After deploy, check ``SELECT indexrelid::regclass, indisvalid FROM pg_index
+WHERE indexrelid IN ('coord.uq_merge_proposals_expedite_request_id'::regclass,
+'coord.uq_notifications_request_event'::regclass)``. If either reads ``false``:
+``DROP INDEX CONCURRENTLY`` it, ``alembic stamp escalation_verdicts_01``, and
+re-run ``alembic upgrade head`` (every other statement here is idempotent).
+
+Writer obligation (coord). ``event`` defaults to ``''``: a coord writer must set
+a non-empty ``event`` on every expedite notice, or two different notices for one
+``(request_id, kind, coord_retries)`` collide and the second is dropped as
+"already sent".
+
 Writes **no rows**.
 """
 
