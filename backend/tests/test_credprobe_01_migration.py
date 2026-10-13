@@ -247,7 +247,8 @@ def test_credential_probe_specs_schema_roundtrip() -> None:
         check_def = scalar(
             engine,
             "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
-            "WHERE conname = 'ck_credential_probe_specs_token_no_account_id'",
+            "WHERE conname = 'ck_credential_probe_specs_token_no_account_id' "
+            "AND conrelid = 'coord.credential_probe_specs'::regclass",
         )
         assert isinstance(check_def, str) and check_def.startswith("CHECK "), check_def
         expr = check_def.removeprefix("CHECK ")
