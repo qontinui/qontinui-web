@@ -183,6 +183,21 @@ export type PauseReasonCode =
    *  a token this bundle cannot name and rank it below `ci-pending`. */
   | "dependency-upstream-closed"
   | "ci-failed"
+  /** coord's `ci-failed-infra-kill` merge_status, added by
+   *  qontinui-coord#2723: every failing check run at the head failed on a
+   *  self-hosted runner with zero failed steps — an infrastructure failure.
+   *  `blocking`, the grade this file reserves for "operator action needed":
+   *  the remedy is re-running the failed jobs once the runner is healthy,
+   *  which is infra-side, not the author's code — and
+   *  coord's own bounded re-run reflex is a deferred phase, so nothing clears
+   *  it on a timer yet. Mapped rather than left to `ci-failed`'s copy, which
+   *  tells the reader the PR's own CI is red. */
+  | "ci-failed-infra-kill"
+  /** coord's `ci-failed-stale-base` merge_status: CI is red but `main` has
+   *  moved past the PR's CI base, so the red may be main's fault. `waiting`,
+   *  with `behind-base`: the remedy is coord's own BEHIND freshen (it updates
+   *  the branch and CI re-runs), not author work. */
+  | "ci-failed-stale-base"
   | "ci-pending"
   | "conflicts"
   | "behind-base"
@@ -260,28 +275,36 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   // timer clears and that the author must move (re-anchor or remove a label).
   "dependency-upstream-closed": 10,
   "ci-failed": 11,
+  // Beside its `ci-failed` sibling — the same red, but the move is infra's
+  // re-run, not the author's push. Above the remaining author-side CI states
+  // because, like them, nothing lands until it goes green.
+  "ci-failed-infra-kill": 12,
   // Sits with the CI-dimension reasons rather than beside `review-required`,
   // matching coord's own dimension mapping for this code
   // (`merge_verdict.rs`: `"required-checks-missing" => Some("ci")`). The whole
   // point of the split is that this block belongs to CI, not to a reviewer, so
   // ranking it next to `review-required` would re-tell the story we removed.
-  "required-checks-missing": 12,
-  conflicts: 13,
-  "blast-radius-block": 14,
-  "review-required": 15,
-  "behind-base": 16,
-  "ci-pending": 17,
-  draft: 18,
+  "required-checks-missing": 13,
+  conflicts: 14,
+  "blast-radius-block": 15,
+  "review-required": 16,
+  // Beside `behind-base`, for the reason they share a clearer: coord's own
+  // BEHIND freshen. A red on a stale base is not a diagnosis of the PR, so it
+  // ranks below every author-side red rather than with `ci-failed`.
+  "ci-failed-stale-base": 17,
+  "behind-base": 18,
+  "ci-pending": 19,
+  draft: 20,
   // Beside `draft`, and for the same reason: neither is a cause of the pause,
   // so neither may outrank a reason that is. Nothing below it is reachable
   // alongside it — `no-candidates` is emitted only when `reasons` is otherwise
   // EMPTY — so this rank is read against the reasons ABOVE it and nothing else.
-  "landed-open": 19,
+  "landed-open": 21,
   // Last before `no-candidates`: a token we cannot name explains less than any
   // reason we CAN name, so it never outranks a real diagnosis — but it still
   // sorts above "nothing to do", which would be a false all-clear.
-  "unrecognized-status": 20,
-  "no-candidates": 21,
+  "unrecognized-status": 22,
+  "no-candidates": 23,
 };
 
 const REASON_META: Record<
@@ -321,6 +344,18 @@ const REASON_META: Record<
     severity: "blocking",
   },
   "ci-failed": { label: "CI red", severity: "blocking" },
+  // `blocking`: nothing re-runs a killed job on a timer yet, and the axis's
+  // `blocking` grade is the one that says "operator action needed". The label
+  // names the cause so the row never reads as the author's red.
+  "ci-failed-infra-kill": {
+    label: "CI red: runner killed",
+    severity: "blocking",
+  },
+  // `waiting`, with `behind-base`: coord's freshen is the named clearer.
+  "ci-failed-stale-base": {
+    label: "CI red on a stale base",
+    severity: "waiting",
+  },
   // `blocking`, not `waiting`. coord reconciles `required_checks_satisfied`
   // against GitHub's own aggregate at hydration, so a surviving `false` is a
   // genuine unsatisfied requirement — it may never clear on its own. Its
@@ -349,6 +384,12 @@ const REASON_META: Record<
 /** Map a coord `merge_status` token onto a pause reason. */
 const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
   "ci-failed": "ci-failed",
+  // Both CI-red tokens coord exonerates the author from get their OWN reasons:
+  // folding them into `ci-failed` would re-tell the "needs its author" story
+  // coord split them out to retract, and leaving them unmapped would drop them
+  // into the `unrecognized-status` fallback for states coord fully diagnosed.
+  "ci-failed-infra-kill": "ci-failed-infra-kill",
+  "ci-failed-stale-base": "ci-failed-stale-base",
   "ci-pending": "ci-pending",
   conflicts: "conflicts",
   "behind-base": "behind-base",
@@ -1960,6 +2001,25 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
             `be proposed until they go green.`
         : `${n} PR${plural} with red CI — not proposable until green.`;
     }
+    case "ci-failed-infra-kill": {
+      const contexts = [
+        ...new Set(prs.flatMap((p) => p.failing_contexts ?? [])),
+      ].slice(0, 4);
+      const which = contexts.length ? ` (${contexts.join(", ")})` : "";
+      return (
+        `${n} PR${plural} with red CI${which} where every failing job died ` +
+        `on a self-hosted runner with no step failing — an infrastructure ` +
+        `failure, not the author's code. Re-run the failed jobs once the ` +
+        `runner is healthy.`
+      );
+    }
+    case "ci-failed-stale-base":
+      return (
+        `${n} PR${plural} with red CI on a stale base — main has moved past ` +
+        `the CI base, so the red may be main's. coord freshens ` +
+        `${n === 1 ? "it" : "them"} (updates the branch and re-runs CI); ` +
+        `not the author's move.`
+      );
     case "ci-pending": {
       const contexts = [
         ...new Set(prs.flatMap((p) => p.pending_contexts ?? [])),
