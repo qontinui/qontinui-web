@@ -67,7 +67,7 @@ from app.models.image_asset import (
 )
 from app.schemas.image_assets import ImageAssetKind, SlotCandidateStatus
 from app.services.storage import LocalBackend, ObjectStorageService
-from tests.test_image_sniff import encode, png_header_only
+from tests.test_image_sniff import encode, png_header_only, with_orientation
 from tests.test_object_storage_content_addressed import fake_s3_backend
 
 API = "/api/v1/image-assets"
@@ -335,6 +335,28 @@ class TestUpload:
         [row] = await _rows(async_db_session, tenant_a)
         assert row.storage_key == key
         stored = Path(storage.backend.base_path) / key  # type: ignore[attr-defined]
+        assert stored.read_bytes() == data
+
+    async def test_a_quarter_turned_photo_is_recorded_at_its_displayed_size(
+        self,
+        client_a: httpx.AsyncClient,
+        tenant_a: UUID,
+        storage: ObjectStorageService,
+        async_db_session: AsyncSession,
+    ) -> None:
+        """A 40×20 JPEG tagged EXIF orientation 6 is SHOWN 20×40, so the record
+        says 20×40 and orientation 6 — while the stored object is the uploaded
+        bytes, unrotated: the store records how an image displays, it never
+        re-encodes one."""
+        data = with_orientation("JPEG", (40, 20), 6)
+        resp = await _upload(client_a, data)
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert (body["width"], body["height"], body["orientation"]) == (20, 40, 6)
+
+        [row] = await _rows(async_db_session, tenant_a)
+        assert (row.width, row.height, row.orientation) == (20, 40, 6)
+        stored = Path(storage.backend.base_path) / row.storage_key  # type: ignore[attr-defined]
         assert stored.read_bytes() == data
 
     async def test_the_same_bytes_again_are_the_same_asset_and_no_write(
