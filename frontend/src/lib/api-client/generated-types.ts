@@ -26340,7 +26340,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | string | null;
         };
         /** AllCapableDrainedOutcome */
         AllCapableDrainedOutcome: {
@@ -26352,7 +26352,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | string | null;
         };
         /**
          * AllCapableOfflineOutcome
@@ -26370,7 +26370,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | string | null;
         };
         /**
          * AllCapableRoleClosedOutcome
@@ -26386,7 +26386,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | string | null;
         };
         /** AllocationRead */
         AllocationRead: {
@@ -43101,11 +43101,8 @@ export interface components {
              * @enum {string}
              */
             outcome: "pin_ineligible";
-            /**
-             * Reason
-             * @enum {string}
-             */
-            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity";
+            /** Reason */
+            reason: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | string;
         };
         /**
          * PlanCandidate
@@ -45954,7 +45951,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | string | null;
             /**
              * Via
              * @enum {string}

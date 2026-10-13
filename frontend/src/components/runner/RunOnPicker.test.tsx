@@ -146,6 +146,7 @@ function laptopIneligible() {
             via: "pool",
             pinReleased: {
               reason: "offline",
+              rawReason: "offline",
               detail: "no heartbeat for 12 minutes",
             },
           };

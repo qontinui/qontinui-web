@@ -40,7 +40,10 @@ export type PinIneligibility =
 
 /** Why a pin was dropped on the way to a `placeable` answer. */
 export interface PinReleased {
-  reason: PinIneligibility;
+  /** Null when coord sent a code this build predates (see `rawReason`). */
+  reason: PinIneligibility | null;
+  /** Coord's code, verbatim — the only name an unrecognised code has. */
+  rawReason: string;
   detail: string | null;
 }
 
@@ -58,7 +61,9 @@ export type ResolvedRunnerState =
       /** A `machine_bound` pin coord refused — never re-targeted. */
       status: "pin_ineligible";
       deviceId: string;
-      reason: PinIneligibility;
+      /** Null when coord sent a code this build predates (see `rawReason`). */
+      reason: PinIneligibility | null;
+      rawReason: string;
       detail: string;
       missingCapabilities: string[];
     }
@@ -66,6 +71,10 @@ export type ResolvedRunnerState =
       status: "no_capable";
       missing: string[];
       onlineDevices: number;
+      /** Capable runners last seen before coord's offline window. */
+      staleCapable: number;
+      /** Online runners that have not yet run the credential probes. */
+      unprobedOnlineDevices: number;
       pinReleased: PinReleased | null;
     }
   | { status: "all_drained"; pinReleased: PinReleased | null }
@@ -173,15 +182,28 @@ export function isNothingEligible(
   }
 }
 
-function pinReason(v: unknown): PinIneligibility | null {
-  return PIN_REASONS.includes(v as PinIneligibility)
-    ? (v as PinIneligibility)
-    : null;
+/** A pin code: one this build knows, or — when coord added one — that code
+ *  verbatim with `reason: null`. Null only for an empty or non-string code,
+ *  which is not the contract. */
+function pinReason(
+  v: unknown
+): { reason: PinIneligibility | null; rawReason: string } | null {
+  if (typeof v !== "string" || v === "") return null;
+  return {
+    reason: PIN_REASONS.includes(v as PinIneligibility)
+      ? (v as PinIneligibility)
+      : null,
+    rawReason: v,
+  };
 }
 
 function pinReleased(body: Record<string, unknown>): PinReleased | null {
-  const reason = pinReason(body.pin_released_reason);
-  return reason ? { reason, detail: str(body.pin_released_detail) } : null;
+  const code = pinReason(body.pin_released_reason);
+  return code ? { ...code, detail: str(body.pin_released_detail) } : null;
+}
+
+function count(v: unknown): number {
+  return typeof v === "number" ? v : 0;
 }
 
 /**
@@ -207,12 +229,12 @@ export function parseDeviceResolve(body: unknown): ResolvedRunnerState {
     }
     case "pin_ineligible": {
       const deviceId = str(b.device_id);
-      const reason = pinReason(b.reason);
-      if (!deviceId || !reason) break;
+      const code = pinReason(b.reason);
+      if (!deviceId || !code) break;
       return {
         status: "pin_ineligible",
         deviceId,
-        reason,
+        ...code,
         detail: str(b.detail) ?? "",
         missingCapabilities: strList(b.missing_capabilities),
       };
@@ -221,8 +243,10 @@ export function parseDeviceResolve(body: unknown): ResolvedRunnerState {
       return {
         status: "no_capable",
         missing: strList(b.missing),
-        onlineDevices:
-          typeof b.online_devices === "number" ? b.online_devices : 0,
+        onlineDevices: count(b.online_devices),
+        // 0 from a coord that predates the fields.
+        staleCapable: count(b.stale_capable),
+        unprobedOnlineDevices: count(b.unprobed_online_devices),
         pinReleased: pinReleased(b),
       };
     case "all_capable_drained":
@@ -230,15 +254,13 @@ export function parseDeviceResolve(body: unknown): ResolvedRunnerState {
     case "all_capable_offline":
       return {
         status: "all_offline",
-        capableOffline:
-          typeof b.capable_offline === "number" ? b.capable_offline : 0,
+        capableOffline: count(b.capable_offline),
         pinReleased: pinReleased(b),
       };
     case "all_capable_at_capacity":
       return {
         status: "all_at_capacity",
-        capableDevices:
-          typeof b.capable_devices === "number" ? b.capable_devices : 0,
+        capableDevices: count(b.capable_devices),
         pinReleased: pinReleased(b),
       };
     case "all_capable_role_closed":
