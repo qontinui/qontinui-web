@@ -13,7 +13,7 @@
  *   overrides (positive integers; blank = inherit).
  * - `expedite_review_arm` — the S13 independence-review arm's off-switch.
  *
- * Three read states, kept apart on purpose — an unreadable off-switch must
+ * Four read states, kept apart on purpose — an unreadable off-switch must
  * never be drawn as "inherit" (served policy `verification-and-evidence`
  * `unknown-must-not-render-as-a-default`):
  *
@@ -112,7 +112,7 @@ export function expediteFieldsFrom(
 function parsePositiveSize(field: string, raw: string): number | null {
   const t = raw.trim();
   if (t === "") return null;
-  if (!/^\d+$/.test(t) || Number(t) <= 0 || !Number.isSafeInteger(Number(t))) {
+  if (!/^\d+$/.test(t) || Number(t) <= 0 || Number(t) > 2_147_483_647) {
     throw new Error(
       `${field}: must be a positive whole number, or blank to inherit`
     );
