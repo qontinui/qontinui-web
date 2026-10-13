@@ -20,6 +20,7 @@ from app.services.image_sniff import (
     AVIF,
     GIF,
     JPEG,
+    MAX_FRAMES,
     MAX_IMAGE_PIXELS,
     PNG,
     WEBP,
@@ -295,16 +296,18 @@ def _animated_webp(frames: int, canvas: tuple[int, int]) -> bytes:
     return bytes(data)
 
 
-def test_thousands_of_frames_each_under_the_bound_are_refused_in_total() -> None:
-    """The review's case: 150 KB declaring 3,000 frames of 9,000 × 9,000 —
-    243 billion pixels to decode, every single frame under the bound."""
-    data = _animated_webp(3000, (9000, 9000))
+def test_many_frames_each_under_the_bound_are_refused_in_total() -> None:
+    """The round-1 review's construction, within the frame cap: a few dozen
+    KB declaring MAX_FRAMES frames of 9,000 × 9,000 — 81 billion pixels to
+    decode, every single frame under the bound. (Its own 3,000 frames now
+    meet the frame cap first: test_frames_past_the_cap_are_refused_by_name.)"""
+    data = _animated_webp(MAX_FRAMES, (9000, 9000))
     assert len(data) < 200_000
     assert 9000 * 9000 <= MAX_IMAGE_PIXELS  # each frame alone would pass
     with pytest.raises(ImageRefused) as excinfo:
         sniff_image(data)
     assert excinfo.value.code == "image_too_many_pixels"
-    assert "3000 frame" in excinfo.value.message
+    assert f"{MAX_FRAMES} frame" in excinfo.value.message
 
 
 def test_the_total_bound_is_frames_times_canvas() -> None:
@@ -387,21 +390,23 @@ def test_the_gif_canvas_is_the_one_pillow_grows_to(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The walk agrees with the decoder it bounds: Pillow, decoding every
-    frame, ends on the canvas the walk computed. (Each frame here holds one
-    pixel of data for a larger claimed extent, so Pillow is told to decode
-    what is there.)"""
-    from app.services.image_sniff import _gif_canvas
+    frame, counts the frames the walk counted and ends on the canvas the walk
+    computed. (Each frame here holds one pixel of data for a larger claimed
+    extent, so Pillow is told to decode what is there.)"""
+    from app.services.image_sniff import _gif_structure
 
     monkeypatch.setattr(ImageFile, "LOAD_TRUNCATED_IMAGES", True)
     data = gif_with_frames(
         (10, 10), [(0, 0, 1, 1), (30, 2, 5, 5), (1, 40, 4, 3), (0, 0, 2, 2)]
     )
     with Image.open(io.BytesIO(data)) as image:
-        for index in range(image.n_frames):
+        counted = image.n_frames
+        for index in range(counted):
             image.seek(index)
             image.load()
         decoded = image.size
-    assert _gif_canvas(data) == decoded == (35, 43)
+    assert _gif_structure(data, stop_after=MAX_FRAMES + 1) == (counted, decoded)
+    assert (counted, decoded) == (4, (35, 43))
 
 
 # ── a multi-picture JPEG is bounded by its largest picture ──────────────
@@ -599,3 +604,198 @@ def test_a_damaged_file_is_refused_never_raised() -> None:
                     pillow_raises_unanticipated += 1
     assert escapes == []
     assert pillow_raises_unanticipated > 0
+
+
+# ── at most MAX_FRAMES frames, refused by name, before anything walks them ──
+
+
+def _one_pixel_frames(count: int) -> bytes:
+    return gif_with_frames((1, 1), [(0, 0, 1, 1)] * count)
+
+
+def _apng_declaring(frames: int) -> bytes:
+    """A two-frame APNG whose acTL chunk DECLARES ``frames`` frames (its
+    CRC recomputed, so Pillow reads the count as written)."""
+    images = [Image.new("RGB", (4, 4), (i * 90, 0, 0)) for i in range(2)]
+    buf = io.BytesIO()
+    images[0].save(buf, format="PNG", save_all=True, append_images=images[1:])
+    data = bytearray(buf.getvalue())
+    at = data.find(b"acTL")
+    assert at > 0, "expected an animated PNG"
+    data[at + 4 : at + 8] = struct.pack(">I", frames)
+    crc = zlib.crc32(bytes(data[at : at + 12])) & 0xFFFFFFFF
+    data[at + 12 : at + 16] = struct.pack(">I", crc)
+    return bytes(data)
+
+
+def test_frames_up_to_the_cap_are_accepted() -> None:
+    assert sniff_image(_one_pixel_frames(MAX_FRAMES)).frames == MAX_FRAMES
+    assert sniff_image(_animated_webp(MAX_FRAMES, (4, 4))).frames == MAX_FRAMES
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param(_one_pixel_frames(MAX_FRAMES + 1), id="gif"),
+        pytest.param(_animated_webp(3000, (16, 16)), id="webp-3000"),
+        pytest.param(_apng_declaring(MAX_FRAMES + 1), id="apng-declared"),
+    ],
+)
+def test_frames_past_the_cap_are_refused_by_name(data: bytes) -> None:
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(data)
+    assert excinfo.value.code == "image_too_many_frames"
+    assert f"at most {MAX_FRAMES}" in excinfo.value.message
+
+
+def test_a_gif_past_the_cap_is_refused_before_anything_walks_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review's measurement: 25 MiB of 1×1 frames (~1.7 M) were all
+    counted — 2.1 s of CPU — before anything could refuse them. The walk that
+    counts a GIF's frames stops one past the cap, and Pillow's own walk of
+    every frame (``n_frames``) is never started."""
+    from PIL import GifImagePlugin
+
+    from app.services.image_sniff import _gif_structure
+
+    def walk_everything(self: object) -> int:
+        raise AssertionError("Pillow walked every frame")
+
+    data = _one_pixel_frames(200_000)
+    assert _gif_structure(data, stop_after=MAX_FRAMES + 1)[0] == MAX_FRAMES + 1
+    monkeypatch.setattr(
+        GifImagePlugin.GifImageFile, "n_frames", property(walk_everything)
+    )
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(data)
+    assert excinfo.value.code == "image_too_many_frames"
+
+
+def test_bytes_between_gif_blocks_are_skipped_as_pillow_skips_them() -> None:
+    """Pillow skips any byte that starts no block; the walk does too — and
+    finds the next block by search, so a megabyte of such bytes costs no
+    per-byte Python. It counts what Pillow counts."""
+    from app.services.image_sniff import _gif_structure
+
+    frames = gif_with_frames((10, 10), [(0, 0, 1, 1), (2, 3, 4, 4)])
+    second = frames.index(b"\x21\xf9", 30)  # the second frame's control block
+    data = frames[:second] + b"\x00" * 1_000_000 + frames[second:]
+    with Image.open(io.BytesIO(data)) as image:
+        counted = image.n_frames
+    assert _gif_structure(data, stop_after=MAX_FRAMES + 1) == (counted, (10, 10))
+    assert sniff_image(data).frames == counted == 2
+
+
+@pytest.mark.parametrize(
+    ("damage", "why"),
+    [
+        (b"\x21\xf9\x00\x3b", "an extension whose first sub-block is empty"),
+        (b"\x21\xf9\x02\x00\x00\x00\x3b", "a graphic control block too short"),
+        (b"\x21", "an extension cut off before its label"),
+    ],
+)
+def test_a_gif_structure_pillow_would_lose_its_place_in_is_unreadable(
+    damage: bytes, why: str
+) -> None:
+    """Where Pillow's own walk would raise, or read the next block's first
+    byte as a length and parse a different file from there, the walk refuses
+    instead — so a frame cannot be hidden from the bound by a structure the
+    two read differently."""
+    frames = gif_with_frames((10, 10), [(0, 0, 1, 1), (0, 0, 2, 2)])
+    data = frames[:-1] + damage  # in place of the trailer
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(data)
+    assert excinfo.value.code == "image_unreadable", why
+
+
+# ── a fault of this server is not a refusal ─────────────────────────────
+
+
+class _RecordingLogger:
+    """Stands in for the module logger (a structlog reconfigure would not
+    reach a logger cached on first use)."""
+
+    def __init__(self) -> None:
+        self.warnings: list[dict[str, object]] = []
+
+    def warning(self, event: str, **fields: object) -> None:
+        self.warnings.append({"event": event, **fields})
+
+
+@pytest.mark.parametrize(
+    ("helper", "data"),
+    [
+        pytest.param(
+            "_gif_structure", gif_with_frames((4, 4), [(0, 0, 1, 1)]), id="gif"
+        ),
+        pytest.param("_orientation", encode("PNG"), id="orientation"),
+        pytest.param(
+            "_largest_picture", mpo_claiming((16, 16)), id="multi-picture-jpeg"
+        ),
+    ],
+)
+def test_a_defect_in_a_helper_is_a_fault_not_a_refusal(
+    monkeypatch: pytest.MonkeyPatch, helper: str, data: bytes
+) -> None:
+    """The review's case: a NameError in a helper turned every valid upload
+    into a 422 image_unreadable, logged nowhere. It now propagates — the
+    route answers 5xx and the server's handler logs it."""
+    from app.services import image_sniff
+
+    def defect(*args: object, **kwargs: object) -> object:
+        raise NameError("name 'undefined' is not defined")
+
+    sniff_image(data)  # valid as it stands
+    monkeypatch.setattr(image_sniff, helper, defect)
+    with pytest.raises(NameError):
+        sniff_image(data)
+
+
+@pytest.mark.parametrize("error", [MemoryError, RecursionError])
+def test_memory_and_recursion_errors_from_pillow_are_not_refusals(
+    monkeypatch: pytest.MonkeyPatch, error: type[BaseException]
+) -> None:
+    data = encode("PNG")
+
+    def exhausted(*args: object, **kwargs: object) -> object:
+        raise error()
+
+    monkeypatch.setattr(Image, "open", exhausted)
+    with pytest.raises(error):
+        sniff_image(data)
+
+
+def test_a_corrupt_file_is_still_refused_and_its_cause_logged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every swallowed exception is counted: a warning naming its type and
+    message — with its traceback when Pillow did not anticipate it
+    (RuntimeError from libavif), without one when it did."""
+    from app.services import image_sniff
+
+    recorder = _RecordingLogger()
+    monkeypatch.setattr(image_sniff, "logger", recorder)
+
+    avif = bytearray(encode("AVIF", (16, 12)))
+    at = avif.find(b"pixi")
+    avif[at + 10] = avif[at + 9] + 2  # channels of different bit depths
+    gif = _gif_animation()
+    cut_gif = gif[: _second_frame_descriptor(gif) + 4]
+    for data in (bytes(avif), cut_gif, b"\x89PNG\r\n\x1a\n" + b"\x00" * 16):
+        with pytest.raises(ImageRefused) as excinfo:
+            sniff_image(data)
+        assert excinfo.value.code == "image_unreadable"
+
+    logged = {w["error_type"]: w for w in recorder.warnings}
+    assert [w["event"] for w in recorder.warnings] == ["image_unreadable"] * 3
+    assert isinstance(logged["RuntimeError"]["exc_info"], RuntimeError)
+    assert logged["RuntimeError"]["format"] == "AVIF"
+    assert "Not implemented" in str(logged["RuntimeError"]["error"])
+    assert set(logged) == {
+        "RuntimeError",
+        "_GifStructureRefused",
+        "UnidentifiedImageError",
+    }
+    assert logged["_GifStructureRefused"]["exc_info"] is None
+    assert logged["UnidentifiedImageError"]["exc_info"] is None

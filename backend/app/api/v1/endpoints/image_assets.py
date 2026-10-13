@@ -11,8 +11,8 @@ Endpoints (mounted under ``/api/v1/image-assets``):
 * ``POST ""`` — upload one image as ``multipart/form-data`` (``file``,
   ``kind``, optional ``provenance``). The server hashes the bytes, reads the
   format, MIME type, dimensions and EXIF orientation FROM them (the filename
-  and the part's Content-Type are ignored), caps the size and the total
-  pixels, and stores the object at
+  and the part's Content-Type are ignored), caps the size, the frame count
+  and the total pixels, and stores the object at
   ``image-assets/{tenant_id}/sha256/{h[:2]}/{h}{ext}``. Idempotent: the same
   bytes again answer ``200`` with ``created: false`` and write no object. The
   FIRST upload's ``kind`` stands and ``provenance`` only gains keys, up to the
@@ -193,8 +193,9 @@ def _candidate_out(
         413: {"description": "The image is larger than the store accepts."},
         415: {"description": "The bytes are not an accepted image format."},
         422: {
-            "description": "Unreadable image, too many pixels, or a field that "
-            "is malformed or cannot be stored (NaN, U+0000, nested too deep)."
+            "description": "Unreadable image, too many frames or pixels, or a "
+            "field that is malformed or cannot be stored (NaN, U+0000, nested "
+            "too deep)."
         },
     },
     summary="Upload an image to the content-addressed store",

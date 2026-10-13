@@ -68186,7 +68186,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep). */
+            /** @description Unreadable image, too many frames or pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep). */
             422: {
                 headers: {
                     [name: string]: unknown;
