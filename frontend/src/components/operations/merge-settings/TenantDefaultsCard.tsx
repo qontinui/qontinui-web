@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   patchTenantSettings,
   type EffectiveProfile,
@@ -155,10 +156,18 @@ export function TenantDefaultsCard({
         Object.assign(body, expeditePatchFrom(expedite, expediteEdited));
       }
       await patchTenantSettings(body);
+      // The save consumed the expedite edits. Clear them HERE, not only in the
+      // re-seed effect: when the dials are unreadable every reload hands back
+      // the same `null`, the effect never re-runs, and a stale edited key
+      // would be re-sent by the next unrelated save — reverting another
+      // operator's switch-off.
+      setExpediteEdited(new Set());
+      setExpedite(expediteFieldsFrom(expediteTenant));
       onSaved();
     } catch (err) {
       log.warn("save tenant settings failed", err);
-      setError(httpFailureText(err, { withBody: false }));
+      // A 422 is coord naming the refused dial (`dial_value_invalid`): show it.
+      setError(httpFailureText(err, { withBody: httpStatusOf(err) === 422 }));
     } finally {
       setSaving(false);
     }
@@ -172,6 +181,7 @@ export function TenantDefaultsCard({
     shadowFloor,
     escalatePathsText,
     expediteState,
+    expediteTenant,
     expedite,
     expediteEdited,
     onSaved,
