@@ -989,3 +989,152 @@ describe("enrichElement — media kinds and the painted-text rule", () => {
     expect(el.media).toEqual({ kind: "video" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review round's contract rules (M1, m3, m4, m5, m7)
+// ---------------------------------------------------------------------------
+
+// The second shared vector: a lone surrogate digests as U+FFFD, which is what
+// Node's UTF-8 encoding does. Pinned in all four suites.
+const SHARED_SURROGATE_SRC = "http://localhost:3001/img/\ud800.png";
+const SHARED_SURROGATE_DIGEST =
+  "6f45e1fb51856d9f4f25eea51558783cc2c060af2ba43ea46c8bdab5dbdf23a6";
+
+/** A LEGACY (pre-envelope) image fact record, before the Phase 5 change. */
+function legacyImage(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    mediaType: "image",
+    src: "/img/hero.jpg",
+    isDecorative: false,
+    altText: "Hero",
+    naturalWidth: 640,
+    naturalHeight: 360,
+    renderedWidth: 320,
+    renderedHeight: 180,
+    loadingState: "loaded",
+    lazyLoading: false,
+    ...extra,
+  };
+}
+
+describe("M1: natural_px is source pixels, never a density-corrected reading", () => {
+  // A legacy SDK reads `naturalWidth`, which the browser density-corrects for
+  // a srcset candidate: a 1280w source at DPR 2 reads 640, a `2x` candidate
+  // reads half its size. Such a row carries no source-pixel size.
+  it("omits it for a legacy w-descriptor srcset row", () => {
+    const media = mediaOf(
+      mediaRow(legacyImage({ srcset: "/img/hero-640.jpg 640w, /img/hero-1280.jpg 1280w", sizes: "100vw" }))
+    );
+    expect(media.natural_px).toBeUndefined();
+    expect(media.rendered_px).toEqual({ w: 320, h: 180 });
+  });
+
+  it("omits it for a legacy x-descriptor srcset row", () => {
+    const media = mediaOf(mediaRow(legacyImage({ srcset: "/img/hero.jpg 1x, /img/hero@2x.jpg 2x" })));
+    expect(media.natural_px).toBeUndefined();
+  });
+
+  it("omits it for a legacy <picture> with sources", () => {
+    const media = mediaOf(
+      mediaRow(
+        legacyImage({ mediaType: "picture", sources: [{ srcset: "/img/hero.avif", type: "image/avif" }] }),
+        { tagName: "picture" }
+      )
+    );
+    expect(media.natural_px).toBeUndefined();
+  });
+
+  it("keeps it for a legacy plain src row", () => {
+    expect(mediaOf(mediaRow(legacyImage())).natural_px).toEqual({ w: 640, h: 360 });
+  });
+
+  it("passes an enveloped row through: its producer de-corrects or omits", () => {
+    const media = mediaOf(
+      mediaRow(
+        measured({
+          ...IMAGE_FACTS,
+          srcset: "/a-640.jpg 640w, /a-1280.jpg 1280w",
+          naturalWidth: 1280,
+          naturalHeight: 720,
+        })
+      )
+    );
+    expect(media.natural_px).toEqual({ w: 1280, h: 720 });
+  });
+});
+
+describe("m3: enriched rows carry no raw media URLs", () => {
+  it("drops the raw observation, both copies, after projecting it", () => {
+    const urls = [
+      "https://cdn.example.com/signed/hero.jpg?token=SECRET",
+      "https://cdn.example.com/hero-1280.jpg",
+      "https://cdn.example.com/hero.avif",
+      "https://cdn.example.com/poster.jpg",
+    ];
+    const facts = {
+      ...IMAGE_FACTS,
+      src: urls[0],
+      srcset: `${urls[1]} 1280w`,
+      sources: [{ srcset: urls[2], type: "image/avif" }],
+      videoState: { poster: urls[3], currentTime: 0, duration: 1, paused: true, muted: true },
+    };
+    const el = mediaRow(measured(facts), { state: { mediaMetadata: measured(facts) } });
+    enrichElement(el);
+    const written = JSON.stringify(el);
+    for (const url of urls) expect(written).not.toContain(url);
+    expect("mediaMetadata" in el).toBe(false);
+    expect("mediaMetadata" in (el.state as Record<string, unknown>)).toBe(false);
+    // ...while the projection it was dropped for is intact.
+    expect((el.media as Record<string, unknown>).src_digest).toBe(sha256(urls[0]!));
+  });
+
+  it("leaves the real captured row with no URL anywhere", () => {
+    const rows = (capturedFind as { elements: Array<Record<string, unknown>> }).elements;
+    const row = structuredClone(rows[0]);
+    if (!row) throw new Error("the captured find response carries no row");
+    enrichElement(row);
+    expect(JSON.stringify(row)).not.toContain("http://localhost:3000/img/hero.png");
+  });
+});
+
+describe("m4: a present non-boolean placeholder is omitted, never coerced", () => {
+  it("reads absent-and-unlisted as a measured false, and keeps a real false", () => {
+    expect(mediaOf(mediaRow(measured(IMAGE_FACTS))).placeholder).toBe(false);
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, placeholder: false }))).placeholder).toBe(false);
+  });
+
+  it("omits a present non-boolean", () => {
+    for (const junk of ["true", 1, null, { x: 1 }]) {
+      const media = mediaOf(mediaRow(measured({ ...IMAGE_FACTS, placeholder: junk })));
+      expect("placeholder" in media).toBe(false);
+    }
+  });
+});
+
+describe("m5: the shared lone-surrogate digest vector", () => {
+  it("digests a lone surrogate as U+FFFD, directly and through a row", () => {
+    expect(srcDigest(SHARED_SURROGATE_SRC)).toBe(SHARED_SURROGATE_DIGEST);
+    const media = mediaOf(mediaRow(measured({ ...IMAGE_FACTS, src: SHARED_SURROGATE_SRC })));
+    expect(media.src_digest).toBe(SHARED_SURROGATE_DIGEST);
+  });
+});
+
+describe("m7: alt text loses ASCII whitespace; an alt that strips to nothing is decorative", () => {
+  it("strips HTML's ASCII whitespace but not NBSP", () => {
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, altText: " \tHero\n" }))).alt).toEqual({
+      decorative: false,
+      text: "Hero",
+    });
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, altText: "\u00a0Hero" }))).alt).toEqual({
+      decorative: false,
+      text: "\u00a0Hero",
+    });
+  });
+
+  it("reads a whitespace-only alt as decorative, enveloped and legacy", () => {
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, altText: " \t\n\f\r " }))).alt).toEqual({
+      decorative: true,
+    });
+    expect(mediaOf(mediaRow(legacyImage({ altText: "   " }))).alt).toEqual({ decorative: true });
+  });
+});
