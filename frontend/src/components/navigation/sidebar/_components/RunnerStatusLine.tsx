@@ -21,7 +21,10 @@ import {
   type RunnerDotStatus,
 } from "@/components/runner/runner-state";
 import type { RunnerLocality } from "@/lib/runner/locality";
-import type { ResolvedRunnerState } from "@/lib/runner/resolve";
+import {
+  isNothingEligible,
+  type ResolvedRunnerState,
+} from "@/lib/runner/resolve";
 import { cn } from "@/lib/utils";
 
 interface RunnerStatusLineProps {
@@ -50,16 +53,10 @@ function unresolvedLabel(
   if (listState === "failed") return "Runner list unavailable";
   if (listState === "loading") return "Loading runners";
   if (runnerCount === 0) return "No runner paired";
-  switch (resolution.status) {
-    case "loading":
-      return "Resolving runner";
-    case "no_capable":
-    case "all_drained":
-    case "pin_ineligible":
-      return "No runner available";
-    default:
-      return "Runner unknown";
-  }
+  if (resolution.status === "loading") return "Resolving runner";
+  if (resolution.status === "all_offline") return "Runner offline";
+  if (isNothingEligible(resolution)) return "No runner available";
+  return "Runner unknown";
 }
 
 /**
@@ -77,12 +74,16 @@ function resolverNotice(
   switch (resolution.status) {
     case "unavailable":
     case "drain_unreadable":
+    case "unknown_outcome":
       if (!activeRunner) return "Resolver unavailable";
       return pin?.id === activeRunner.id
         ? "Resolver unavailable — using your pick"
         : `Resolver unavailable — showing ${activeRunner.name ?? "this runner"}'s data`;
     case "no_capable":
     case "all_drained":
+    case "all_offline":
+    case "all_at_capacity":
+    case "all_role_closed":
     case "pin_ineligible":
       return activeRunner
         ? "Not eligible for new work — showing its data"
