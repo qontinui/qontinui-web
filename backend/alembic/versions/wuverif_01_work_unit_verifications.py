@@ -125,9 +125,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "wuverif_01"
-down_revision: str | Sequence[str] | None = (
-    "notif_producerless_02_drop_dead_prefs"
-)
+down_revision: str | Sequence[str] | None = "notif_producerless_02_drop_dead_prefs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
