@@ -473,6 +473,15 @@ export interface AcceptBody {
 }
 
 /**
+ * Per-step provisioning outcomes, e.g.
+ * `{registry: "inserted", bare_init: "created", hook: "refreshed",
+ * mirror_seed: "seeded", reconcile: "ok"}`. Values are human-readable; a
+ * failed step reads `"failed: <reason>"`. Keys are open-ended (coord may add
+ * steps), so this is a plain string map rather than a closed shape.
+ */
+export type ProvisioningSteps = Record<string, string>;
+
+/**
  * `post_pr_merge_onboarding_accept`'s body. `provisioning` /
  * `worktree_allocation` are optional: an older coord returns the pre-parity
  * envelope with neither, which the wizard renders as UNKNOWN.
@@ -482,8 +491,7 @@ export interface AcceptResponse {
   profile_version?: number;
   profile_source?: string;
   updated_at?: string;
-  /** Per-step provisioning outcomes; open-ended keys, "failed: <reason>" values. */
-  provisioning?: Record<string, string>;
+  provisioning?: ProvisioningSteps;
   worktree_allocation?: string;
 }
 

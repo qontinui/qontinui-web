@@ -21,7 +21,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
 vi.mock("@/contexts/auth-context", () => ({

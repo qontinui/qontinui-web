@@ -76,6 +76,7 @@ from app.api.v1.endpoints import (
     identity_resolution,
     images,
     integration_testing,
+    internal,
     issues,
     known_issues,
     library,
@@ -87,6 +88,7 @@ from app.api.v1.endpoints import (
     pair_codes,
     phase_results,
     plan_library,
+    plan_library_followups,
     plan_library_scan_roots,
     project_files,
     project_images,
@@ -235,6 +237,10 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Internal coord -> web service surface (no user auth; shared-secret gated).
+# `POST /internal/coord-push` sends operator-action-item pushes for coord
+# (plan 2026-10-12-operator-action-items-pushed-to-the-phone, Phase 3).
+api_router.include_router(internal.router, prefix="/internal", tags=["internal"])
 # Per-repo follow-up dials (post-merge follow-up scope, continuation-delivery
 # mode) — proxies of coord's two per-repo `tenant_repo_profiles` dials, under
 # the same `/operations` prefix as the fleet-policy proxy they copy, so the
@@ -255,6 +261,14 @@ api_router.include_router(
 # ``tests/test_plan_library_scan_roots.py``.
 api_router.include_router(
     plan_library_scan_roots.router, prefix="/plan-library", tags=["plan-library"]
+)
+# The follow-up closure and anchor doors (``/edges/{edge_id}/anchors``,
+# ``/edges/{edge_id}/resolution``, ``/followups/match``,
+# ``/followups/reconcile``) — the same ordering rule, for the same reason: they
+# must be registered before ``plan_library``'s ``/{artifact_id}/…`` routes.
+# Pinned through this router by ``tests/test_plan_library_followups.py``.
+api_router.include_router(
+    plan_library_followups.router, prefix="/plan-library", tags=["plan-library"]
 )
 api_router.include_router(
     plan_library.router, prefix="/plan-library", tags=["plan-library"]

@@ -27,32 +27,46 @@ export default function ChatPage() {
   const runnerId = dispatchTarget.runnerId;
   const isRunnerConnected = runnerId !== null;
 
-  // Clear timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (createTimeoutRef.current) {
-        clearTimeout(createTimeoutRef.current);
-      }
-    };
+  const clearCreateTimeout = useCallback(() => {
+    if (createTimeoutRef.current) {
+      clearTimeout(createTimeoutRef.current);
+      createTimeoutRef.current = null;
+    }
   }, []);
 
-  const { createSession, isConnected: isChatWsConnected } = useChatWebSocket({
+  // Clear timeout on unmount
+  useEffect(() => clearCreateTimeout, [clearCreateTimeout]);
+
+  const {
+    createSession,
+    isConnected: isChatWsConnected,
+    sessionError,
+  } = useChatWebSocket({
     runnerId,
     onSessionCreated: useCallback(
       (id: string) => {
-        if (createTimeoutRef.current) {
-          clearTimeout(createTimeoutRef.current);
-          createTimeoutRef.current = null;
-        }
+        clearCreateTimeout();
         setIsCreating(false);
         router.push(`/chat/${id}`);
       },
-      [router]
+      [clearCreateTimeout, router]
     ),
   });
 
+  // The create failed: the runner refused the spawn (`chat_created` with
+  // `error`, e.g. a drained device), the relay could not forward it, or it
+  // was never sent. No session is coming, so stop waiting now and say why —
+  // rather than spinning out the safety timeout and resetting in silence.
+  // `createSession` clears the error, so it always belongs to the latest try.
+  useEffect(() => {
+    if (!sessionError) return;
+    clearCreateTimeout();
+    setIsCreating(false);
+  }, [sessionError, clearCreateTimeout]);
+
   const handleNewChat = useCallback(() => {
     if (!isRunnerConnected) return;
+    clearCreateTimeout();
     setIsCreating(true);
 
     const sent = createSession();
@@ -67,7 +81,7 @@ export default function ChatPage() {
       setIsCreating(false);
       createTimeoutRef.current = null;
     }, 15000);
-  }, [isRunnerConnected, createSession]);
+  }, [isRunnerConnected, clearCreateTimeout, createSession]);
 
   return (
     <div
@@ -184,6 +198,17 @@ export default function ChatPage() {
                   )}
                   Start New Chat
                 </Button>
+                {sessionError && (
+                  // `role="alert"`: it replaces a navigation that will never
+                  // happen, and appears asynchronously.
+                  <p
+                    id="chat-create-error"
+                    role="alert"
+                    className="mt-4 max-w-md text-center text-sm text-red-400 break-words"
+                  >
+                    {sessionError}
+                  </p>
+                )}
               </div>
             </>
           )}

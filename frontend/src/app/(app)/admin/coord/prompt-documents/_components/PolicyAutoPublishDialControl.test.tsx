@@ -23,18 +23,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { FleetPolicyView } from "../../_shared/fleetPolicy";
+import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 
 const getMock = vi.fn();
 const putMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const method = init.method ?? "GET";
+      const body = JSON.parse(init.body ?? "null");
+      let out: unknown;
+      if (method === "GET") out = await getMock(url);
+      else if (method === "PUT") out = await putMock(url, body);
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      // A mock that resolves a `Response` (an error path) is answered
+      // as-is, so a non-2xx goes through `readJson` like the real one.
+      return out instanceof Response
+        ? out
+        : new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 vi.mock("sonner", () => ({
@@ -226,7 +236,9 @@ describe("what it refuses to do on one click", () => {
 
   it("does not report a change when the write fails", async () => {
     getMock.mockResolvedValue(view({ effective_level: "on" }));
-    putMock.mockRejectedValue(new Error("boom"));
+    putMock.mockImplementation(
+      async () => new Response("boom", { status: 500 })
+    );
     const onLevelChanged = vi.fn();
     render(<PolicyAutoPublishDialControl onLevelChanged={onLevelChanged} />);
 

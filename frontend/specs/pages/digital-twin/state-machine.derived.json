@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "digital-twin",
   "name": "Digital Twin Explorer",
-  "description": "The /digital-twin completeness matrix + the cell-detail interactive flow + the Delivery-tab verdict lookup (coord#634/web#587, hardened by web#609/#612/#614, UI-Bridge-instrumented by web#617 and this change for the Delivery card). ci-bot is a superuser so the authed page renders. Two route stubs make the page deterministic without live coord: GET /api/v1/digital-twin/subspaces (the matrix probe, restricted:false) sets the cells' credibility/status, and GET /api/v1/digital-twin/subspace/schema/raw returns a DriftVerdict so the Schema drawer's 'Show raw data' toggle (gated on isSnapshot && verdict) renders. Assertions target the web#617 useUIElement ids (digital-twin-tab-*, digital-twin-cell-*, digital-twin-show-raw), which resolve against the UI-Bridge registry the matcher reads; the page titles ('Digital Twin', 'Ask the Twin') resolve via the wrapper's content-discovery pass (provider.tsx contentDiscovery enabled). STRUCTURE NOTE: spec-ci's structural lane evaluates every state against the INITIAL render, so only initially-present states are declared (shell + matrix). The cell -> drawer -> raw-verdict interaction is a transition with activateStates:[] whose waitAfter (the show-raw toggle appearing) is the pass condition. CI runs with NO connected runner, so Ask-the-Twin and the UI Bridge tab show their 'Connect a runner' empty states — their runner-only input ids (ask-the-twin-*, ui-bridge-*) do NOT mount and are NOT asserted; the cell-drawer flow needs no runner. The drawer is a modal Dialog, so a tab-switch transition is intentionally omitted (it would either be blocked by the open modal or unmount the matrix the drawer transition needs). Read-only; structural.",
+  "description": "The /digital-twin Explorer — four tabs (Completeness, the default; Lifecycle; Delivery; UI Bridge) over a 57-row manifest taxonomy of the twin of the software-development process: the completeness matrix + the cell-detail interactive flow + the Lifecycle-tab stage pipeline + the Delivery-tab verdict lookup (coord#634/web#587, hardened by web#609/#612/#614, UI-Bridge-instrumented by web#617 and later changes for the Delivery card and the Lifecycle tab). ci-bot is a superuser so the authed page renders. Route stubs make the page deterministic without live coord: GET /api/v1/digital-twin/subspaces (the probe of the 11 snapshot sub-spaces the backend's _PROBEABLE_SUBSPACES lists, restricted:false) sets the cells' credibility/status for both the matrix and the Lifecycle view, GET /api/v1/digital-twin/subspace/schema/raw returns a DriftVerdict so the Schema drawer's 'Show raw data' toggle (gated on isSnapshot && verdict) renders, and GET /api/v1/digital-twin/delivery/verdict answers the Delivery lookup. Assertions target the web#617 useUIElement ids (digital-twin-tab-*, digital-twin-cell-*, digital-twin-show-raw), which resolve against the UI-Bridge registry the matcher reads; the page titles ('Digital Twin', 'Ask the Twin') resolve via the wrapper's content-discovery pass (provider.tsx contentDiscovery enabled). STRUCTURE NOTE: spec-ci's structural lane evaluates every state against the INITIAL render, so only initially-present states are declared (shell + matrix). Tab switches, the Lifecycle pipeline (digital-twin-stage-<stage>, cells digital-twin-stage-<stage>-cell-<id> — stage-scoped because a row shows under every stage it observes) and the cell -> drawer -> raw-verdict interaction are transitions with activateStates:[] whose waitAfter conditions are the pass condition. Radix Tabs unmounts inactive content, so every tab-switch transition switches back to Completeness before it ends, and all of them run BEFORE the drawer transition (the drawer is a modal Dialog that would block a tab click and needs the matrix mounted). CI runs with NO connected runner, so Ask-the-Twin and the UI Bridge tab show their 'Connect a runner' empty states — their runner-only input ids (ask-the-twin-*, ui-bridge-*) do NOT mount and are NOT asserted; no transition here needs a runner. Read-only; structural.",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
     "tags": ["coord", "digital-twin", "twin", "route-stub", "ui-bridge-instrumented"],
@@ -14,7 +14,7 @@
         "status": 200,
         "contentType": "application/json",
         "body": {
-          "probed": 10,
+          "probed": 11,
           "restricted": false,
           "subspaces": [
             { "id": "release", "status": "partial", "tool": "coord_query_release_state", "metrics": { "coverage": 0.9, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "ecs_describe_tasks", "drift_class": "none" } },
@@ -26,7 +26,8 @@
             { "id": "deps", "status": "blind", "tool": "coord_query_dependency_state", "metrics": { "coverage": 0.0, "credibility": 0.0, "posterior": 0.0, "staleness_seconds": null, "provenance": "dependency_observer:unconfigured", "drift_class": "unknown" } },
             { "id": "route_serving", "status": "implemented", "tool": "coord_query_route_serving_drift", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "coord_manifest", "drift_class": "none" } },
             { "id": "client_telemetry", "status": "partial", "tool": "coord_query_client_telemetry_drift", "metrics": { "coverage": 0.6, "credibility": 0.7, "posterior": 0.7, "staleness_seconds": null, "provenance": "served_bundle_observer", "drift_class": "none" } },
-            { "id": "worktree", "status": "partial", "tool": "coord_list_worktrees", "metrics": { "coverage": 0.5, "credibility": 0.7, "posterior": 0.7, "staleness_seconds": null, "provenance": "worktree_observer", "drift_class": "none" } }
+            { "id": "worktree", "status": "partial", "tool": "coord_list_worktrees", "metrics": { "coverage": 0.5, "credibility": 0.7, "posterior": 0.7, "staleness_seconds": null, "provenance": "worktree_observer", "drift_class": "none" } },
+            { "id": "memory", "status": "implemented", "tool": "coord_query_memory_state", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "coord_memory_observations", "drift_class": "none" } }
           ]
         }
       },
@@ -91,7 +92,7 @@
     {
       "id": "digital-twin-shell",
       "name": "Explorer shell + tabs",
-      "description": "The /digital-twin chrome that renders on the default Completeness tab: the page title, the three tab triggers (Completeness / Delivery / UI Bridge — registered via web#617 useUIElement ids), and the 'Ask the Twin' section heading (which renders in both the runner and no-runner branches — in CI there is no runner, so its input/submit controls do not mount and are not asserted). Identifies the page mounted, authenticated, not redirected.",
+      "description": "The /digital-twin chrome that renders on the default Completeness tab: the page title, the four tab triggers (Completeness / Lifecycle / Delivery / UI Bridge — registered via useUIElement ids; the Lifecycle trigger's assertion is appended last so the earlier assertion indices stay stable), and the 'Ask the Twin' section heading (which renders in both the runner and no-runner branches — in CI there is no runner, so its input/submit controls do not mount and are not asserted). Identifies the page mounted, authenticated, not redirected.",
       "isInitial": true,
       "assertions": [
         {
@@ -148,6 +149,17 @@
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
+        },
+        {
+          "id": "digital-twin-shell-elem-5",
+          "description": "Lifecycle tab trigger (id digital-twin-tab-lifecycle) — the second tab, the stage pipeline of the twin of the software-development process.",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-tab-lifecycle" }, "label": "Lifecycle tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
         }
       ],
       "provenance": { "source": "ai-generated" }
@@ -155,7 +167,7 @@
     {
       "id": "digital-twin-matrix",
       "name": "Completeness matrix cells",
-      "description": "The sub-space cells the matrix renders from the 25-row manifest taxonomy (the matrix denominator), joined with the stubbed GET /subspaces probe for live status. Each cell is registered with a web#617 useUIElement id digital-twin-cell-<manifestId>; this state asserts a representative set across status classes: schema (snapshot, implemented — the drawer-transition target), infra (snapshot, implemented), deps (snapshot, the 'blind' class). settleUntilPresent waits for digital-twin-cell-schema to register before the matcher snapshots, dodging the probe/render load race.",
+      "description": "The sub-space cells the matrix renders from the 57-row manifest taxonomy (the matrix denominator), joined with the stubbed GET /subspaces probe for live status. Each cell is registered with a web#617 useUIElement id digital-twin-cell-<manifestId>; this state asserts a representative set across status classes: schema (snapshot, implemented — the drawer-transition target), infra (snapshot, implemented), deps (snapshot, the 'blind' class). settleUntilPresent waits for digital-twin-cell-schema to register before the matcher snapshots, dodging the probe/render load race.",
       "assertions": [
         {
           "id": "digital-twin-matrix-elem-0",
@@ -219,6 +231,28 @@
           "type": "click",
           "target": { "id": "digital-twin-delivery-submit" },
           "waitAfter": { "type": "element", "query": { "id": "digital-twin-delivery-show-raw" }, "timeout": 12000 }
+        },
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-tab-completeness" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-cell-schema" }, "timeout": 10000 }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
+      "id": "digital-twin-lifecycle-view",
+      "name": "Lifecycle tab: switch, see the stage pipeline, switch back",
+      "description": "Behavioral READ of the Lifecycle tab (the twin of the software-development process laid over intent → plan → implement → verify → integrate → release → operate → learn): (1) click the Lifecycle tab trigger (id digital-twin-tab-lifecycle) -> LifecycleView mounts one section per stage, each registered with a useUIElement id digital-twin-stage-<stage>; the pass condition is the Verify stage section (id digital-twin-stage-verify) appearing. The sections render from the checked-in manifest joined with the stubbed GET /subspaces probe, so they mount whatever the probe answers (only a restricted:true probe would replace them with the access notice; the stub sends restricted:false). Cells in this view carry stage-scoped ids (digital-twin-stage-<stage>-cell-<id>) because a row shows under every stage it observes, and the matrix's digital-twin-cell-<id> ids are unmounted while this tab is open. (2) switch back to the Completeness tab (id digital-twin-tab-completeness) so the matrix remounts for the open-drawer transition that follows (Radix Tabs unmounts inactive content), asserted by digital-twin-cell-schema reappearing. activateStates is empty; the transition passes iff every action executes and each waitAfter resolves. Runs after the Delivery lookup and BEFORE the open-drawer transition, so it never collides with the modal Dialog that transition opens. Needs no connected runner (the probe is coord-backed and stubbed here).",
+      "fromStates": ["digital-twin-shell"],
+      "activateStates": [],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-tab-lifecycle" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-stage-verify" }, "timeout": 10000 }
         },
         {
           "type": "click",

@@ -1,8 +1,11 @@
 """Tests for the Digital Twin Explorer matrix endpoint + classification.
 
-Two layers:
+Three layers:
   - Pure `_classify` unit tests: the envelope → cell-status rubric (the goal
     #3/#4 surface — how a DriftVerdict becomes implemented / partial / blind).
+  - The probe list itself: `_PROBEABLE_SUBSPACES` against a hand-copied list
+    of coord's snapshot ids, and against the frontend manifest's `snapshot`
+    rows, read from disk.
   - An integration test over `GET /api/v1/digital-twin/subspaces` with a mocked
     coord: per-sub-space probe → cell, with honest blind/error degradation.
 
@@ -10,7 +13,9 @@ Mirrors the proxy-test pattern in ``test_operations_gates_proxy.py``: minimal
 FastAPI app + mocked ``httpx.AsyncClient`` so no live coord/runner is needed.
 """
 
+import json
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -19,9 +24,78 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.v1.endpoints.digital_twin import _classify
+from app.api.v1.endpoints.digital_twin import _PROBEABLE_SUBSPACES, _classify
 
 API_PREFIX = "/api/v1/digital-twin"
+
+# The snapshot ids coord ``twin_routes.rs`` ``subspace_tool`` serves
+# (``memory`` since 2026-07-10), HAND-COPIED from qontinui-coord: coord is
+# another repo, so nothing in this suite can read its map. This copy stays
+# right only while someone re-verifies it against ``subspace_tool`` whenever
+# coord's map or ``_PROBEABLE_SUBSPACES`` changes (last checked 2026-10-11, on
+# qontinui-coord origin/main f608425968df).
+_COORD_SNAPSHOT_SUBSPACES = {
+    "release",
+    "schema",
+    "infra",
+    "infra_health",
+    "config",
+    "health",
+    "deps",
+    "route_serving",
+    "client_telemetry",
+    "worktree",
+    "memory",
+}
+
+# The snapshot sub-spaces qontinui-coord#3128 (open at the time of writing)
+# scopes to the SystemTenant, so once it lands a non-system tenant is refused
+# each of them per cell (403) while ``worktree`` and ``memory`` still answer.
+# Hand-copied from that PR's description, like the list above.
+_SYSTEM_TENANT_SUBSPACES = {
+    "release",
+    "schema",
+    "infra",
+    "infra_health",
+    "config",
+    "health",
+    "deps",
+    "route_serving",
+    "client_telemetry",
+}
+
+# backend/tests/x.py -> parents[2] == the repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+# The frontend manifest — the matrix's denominator, whose ``snapshot`` rows are
+# the ids the page expects this backend to probe.
+_MANIFEST = (
+    _REPO_ROOT
+    / "frontend"
+    / "src"
+    / "app"
+    / "(app)"
+    / "digital-twin"
+    / "_lib"
+    / "subspaces.manifest.json"
+)
+
+
+def _manifest_snapshot_ids() -> set[str]:
+    """The ``id`` of every ``query_kind: snapshot`` manifest row.
+
+    Fails closed: a missing manifest, or one with no snapshot rows, fails the
+    test instead of comparing the probe list against an empty set.
+    """
+    if not _MANIFEST.is_file():
+        pytest.fail(
+            f"Manifest not found: {_MANIFEST}. The probe list is pinned to its "
+            "snapshot rows; if the manifest moved, update _MANIFEST."
+        )
+    rows = json.loads(_MANIFEST.read_text(encoding="utf-8"))["subspaces"]
+    ids = {row["id"] for row in rows if row["query_kind"] == "snapshot"}
+    if not ids:
+        pytest.fail(f"No snapshot rows in {_MANIFEST}; the pin would be vacuous.")
+    return ids
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +229,34 @@ def _status_response(status_code: int) -> MagicMock:
 
 
 class TestSubspacesEndpoint:
+    def test_probe_list_matches_pinned_coord_snapshot_ids(self):
+        """The probe list equals the hand-copied list of coord's snapshot ids.
+
+        A pin against a COPY, not against coord: a change to coord's map leaves
+        this green until someone updates ``_COORD_SNAPSHOT_SUBSPACES``. What it
+        does catch is an edit to the tuple alone. A missing id is a sub-space
+        coord serves that the page never asks about (``memory`` sat unprobed
+        from 2026-07-10 until this test); an extra id 404s at coord and renders
+        as a permanent error cell.
+        """
+        assert set(_PROBEABLE_SUBSPACES) == _COORD_SNAPSHOT_SUBSPACES
+        assert len(_PROBEABLE_SUBSPACES) == len(_COORD_SNAPSHOT_SUBSPACES)
+        # `auth` stays out on purpose (recon-sensitive; coord leaves it unmapped).
+        assert "auth" not in _PROBEABLE_SUBSPACES
+
+    def test_probe_list_matches_the_manifest_snapshot_rows(self):
+        """The probe list equals the frontend manifest's ``snapshot`` rows.
+
+        A real pin: it reads the manifest itself. A manifest ``snapshot`` row
+        this backend does not probe resolves to ``error`` forever on the page;
+        a probed id with no ``snapshot`` row is a probe nothing renders.
+        ``_lib/lifecycle.test.ts`` asserts the same equality from the frontend
+        side by parsing the tuple, because each side's CI runs only on its own
+        paths: this test catches a backend-only edit, that one a frontend-only
+        edit.
+        """
+        assert _manifest_snapshot_ids() == set(_PROBEABLE_SUBSPACES)
+
     def test_probes_all_and_classifies_per_subspace(self):
         client = TestClient(_build_test_app())
 
@@ -190,8 +292,11 @@ class TestSubspacesEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         by_id = {s["id"]: s for s in body["subspaces"]}
-        assert body["probed"] == len(body["subspaces"])
+        assert body["probed"] == len(body["subspaces"]) == len(_PROBEABLE_SUBSPACES)
+        assert set(by_id) == _COORD_SNAPSHOT_SUBSPACES
         assert by_id["release"]["status"] == "implemented"
+        # Ξ_Memory rides the same verdict route as every other snapshot cell.
+        assert by_id["memory"]["status"] == "implemented"
         assert by_id["infra"]["status"] == "partial"
         assert by_id["config"]["status"] == "blind"
         assert by_id["worktree"]["status"] == "no_snapshot_tool"
@@ -241,6 +346,68 @@ class TestSubspacesEndpoint:
         body = resp.json()
         assert body["restricted"] is True
         assert {s["status"] for s in body["subspaces"]} == {"restricted"}
+
+    def test_one_restricted_cell_does_not_restrict_the_matrix(self):
+        # The split a non-system tenant sees once qontinui-coord#3128 lands: coord
+        # 403s the nine SystemTenant-scoped sub-spaces per cell while worktree
+        # and memory answer. The grid-level `restricted` flag hides the WHOLE
+        # matrix, so restricted cells must surface only as their own status,
+        # never as the flag, while any cell still answers.
+        client = TestClient(_build_test_app())
+
+        def fake_get(url, **kwargs):
+            subspace = url.split("/twin/", 1)[1].split("/", 1)[0]
+            if subspace in _SYSTEM_TENANT_SUBSPACES:
+                return _status_response(403)
+            return _verdict_response(1.0, "live_aws")
+
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(),
+            ),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = fake_get
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["restricted"] is False
+        by_status: dict[str, set[str]] = {}
+        for s in body["subspaces"]:
+            by_status.setdefault(s["status"], set()).add(s["id"])
+        assert by_status["restricted"] == _SYSTEM_TENANT_SUBSPACES
+        assert len(by_status["restricted"]) == 9
+        assert by_status["implemented"] == {"worktree", "memory"}
+        assert body["probed"] == len(_PROBEABLE_SUBSPACES)
+
+    def test_empty_probe_list_is_not_restricted(self):
+        # `all()` over nothing is True; an empty matrix is not an access denial.
+        client = TestClient(_build_test_app())
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(),
+            ),
+            patch("app.api.v1.endpoints.digital_twin._PROBEABLE_SUBSPACES", ()),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = lambda url, **kw: _status_response(403)
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["probed"] == 0
+        assert body["restricted"] is False
 
 
 # ---------------------------------------------------------------------------

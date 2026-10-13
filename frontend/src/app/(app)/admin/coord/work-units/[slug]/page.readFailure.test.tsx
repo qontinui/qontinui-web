@@ -22,12 +22,17 @@ import { render, screen, waitFor } from "@testing-library/react";
 
 const httpGet = vi.fn();
 const httpPost = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => httpGet(...args),
-    post: (...args: unknown[]) => httpPost(...args),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  // The plan reads go through `httpClient.fetch` (the typed /operations
+  // client); `withVerbFetch` routes them through the same `get` mock.
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (...args: unknown[]) => httpGet(...args),
+      post: (...args: unknown[]) => httpPost(...args),
+    }),
+  };
+});
 
 /**
  * Mutable so a test can change the ROUTE PARAM and re-render, which is the

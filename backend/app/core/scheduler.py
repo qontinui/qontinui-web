@@ -514,6 +514,12 @@ async def _job_journey_edge_retention() -> Any:
     return await _run_committed(run_journey_edge_retention)
 
 
+async def _job_followup_reconcile() -> Any:
+    from app.jobs.followup_reconcile import run_followup_reconcile
+
+    return await run_followup_reconcile()
+
+
 def install_default_tasks(service: SchedulerService) -> None:
     """Register the canonical Qontinui schedule on ``service``.
 
@@ -696,6 +702,28 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="journey_edge_retention",
             coro=_job_journey_edge_retention,
             interval_seconds=3600.0,
+            run_at_boot=True,
+        )
+    )
+
+    # Plan-library follow-up reconcile (plan
+    # 2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down
+    # Phase 5): every ``fixing`` follow-up whose PR coord has settled moves —
+    # ``fixed`` when coord's land record says it landed, back to ``open`` when
+    # it closed unlanded — across every organization, through web's coord
+    # service identity. It is what closes a follow-up when no session asks, so
+    # it must not wait on one. Every 15 minutes: a land is visible in the
+    # queue within a quarter hour, at the cost of one coord read per DISTINCT
+    # open fix PR per pass (none at all when nothing is ``fixing``).
+    # ``run_at_boot`` because this backend redeploys more often than some
+    # cadences fire (see memory_reindex). Kill switch:
+    # QONTINUI_SCHEDULER_FOLLOWUP_RECONCILE_ENABLED=0. A coord it cannot read
+    # moves no row and logs the count as UNKNOWN.
+    service.register(
+        ScheduledTask(
+            name="followup_reconcile",
+            coro=_job_followup_reconcile,
+            interval_seconds=900.0,
             run_at_boot=True,
         )
     )

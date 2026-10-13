@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { describePendingInstallationFailure } from "@/lib/onboarding-pending";
 
 /**
  * Pins each `prMergeOnboarding` function's exact request: the RELATIVE URL
@@ -47,7 +48,11 @@ describe("prMergeOnboarding", () => {
   });
 
   it("fetchGithubAppConfig GETs /pr-merge/onboarding/github-app, declared idempotent, and parses the body", async () => {
-    const body = { app_slug: "qontinui", client_id: "Iv1", oauth_configured: true };
+    const body = {
+      app_slug: "qontinui",
+      client_id: "Iv1",
+      oauth_configured: true,
+    };
     fetchMock.mockResolvedValueOnce(answer(body));
     await expect(fetchGithubAppConfig()).resolves.toEqual(body);
     expect(fetchMock.mock.calls[0]).toEqual([
@@ -74,7 +79,9 @@ describe("prMergeOnboarding", () => {
 
   it("mintConnectStateToken resolves null for a 2xx whose body does not parse", async () => {
     fetchMock.mockResolvedValueOnce(rawAnswer("not json", 200));
-    await expect(mintConnectStateToken({ flow: "connect" })).resolves.toBeNull();
+    await expect(
+      mintConnectStateToken({ flow: "connect" })
+    ).resolves.toBeNull();
   });
 
   it("mintConnectStateToken rejects a non-2xx in httpClient's error shape", async () => {
@@ -115,7 +122,9 @@ describe("prMergeOnboarding", () => {
   });
 
   it("claimInstallation carries coord's error body on a rejection, for httpBodyOf", async () => {
-    fetchMock.mockResolvedValueOnce(answer({ error: "connect_state_expired" }, 400));
+    fetchMock.mockResolvedValueOnce(
+      answer({ error: "connect_state_expired" }, 400)
+    );
     const err = await claimInstallation({
       code: "c",
       account_login: "acme",
@@ -192,7 +201,9 @@ describe("prMergeOnboarding", () => {
   it("fetchPreconditionStatus GETs /pr-merge/onboarding/precondition-status with the poll budget", async () => {
     const body = { paired: true, claude_code_available: true, ready: true };
     fetchMock.mockResolvedValueOnce(answer(body));
-    await expect(fetchPreconditionStatus({ maxRetries: 0 })).resolves.toEqual(body);
+    await expect(fetchPreconditionStatus({ maxRetries: 0 })).resolves.toEqual(
+      body
+    );
     expect(fetchMock.mock.calls[0]).toEqual([
       "/api/v1/operations/pr-merge/onboarding/precondition-status",
       { maxRetries: 0, method: "GET", idempotent: true },
@@ -216,7 +227,9 @@ describe("prMergeOnboarding", () => {
   it("fetchAuditStatus GETs audit-status with the agent id percent-encoded", async () => {
     const body = { status: "running", agent_id: "a b" };
     fetchMock.mockResolvedValueOnce(answer(body));
-    await expect(fetchAuditStatus("a b", { maxRetries: 0 })).resolves.toEqual(body);
+    await expect(fetchAuditStatus("a b", { maxRetries: 0 })).resolves.toEqual(
+      body
+    );
     expect(fetchMock.mock.calls[0]).toEqual([
       "/api/v1/operations/pr-merge/onboarding/audit-status?agent_id=a%20b",
       { maxRetries: 0, method: "GET", idempotent: true },
@@ -276,10 +289,48 @@ describe("fetchPendingInstallation", () => {
 
   it("throws on a non-2xx, naming the status, so callers fold it into UNKNOWN", async () => {
     fetchMock.mockReset();
-    fetchMock.mockResolvedValue(answer({ detail: "coord is not reachable" }, 502));
+    fetchMock.mockResolvedValue(
+      answer({ detail: "coord is not reachable" }, 502)
+    );
     const err = await fetchPendingInstallation({ account_login: "acme" }).catch(
       (e: unknown) => e
     );
     expect(httpStatusOf(err)).toBe(502);
+  });
+
+  it("a real client rejection words the UNKNOWN verdict by its status alone", async () => {
+    // End to end through the client, so a change to `readJson`'s rejection
+    // shape cannot leave `describePendingInstallationFailure` quoting a URL.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(
+      answer({ detail: "coord is not reachable" }, 502)
+    );
+    const err = await fetchPendingInstallation({ account_login: "acme" }).catch(
+      (e: unknown) => e
+    );
+    expect(describePendingInstallationFailure(err)).toEqual({
+      kind: "unknown",
+      message:
+        "couldn't check with coord (pending-installation check failed: HTTP 502)",
+    });
+  });
+
+  it("a transport rejection from httpClient passes through, quoted by its message", async () => {
+    // httpClient words its own transport failures (timeout, offline); the
+    // client must not rewrap them, so the verdict quotes that wording as-is.
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValue(
+      new Error(
+        "Request timeout - backend may be starting up. Please try again."
+      )
+    );
+    const err = await fetchPendingInstallation({ account_login: "acme" }).catch(
+      (e: unknown) => e
+    );
+    expect(describePendingInstallationFailure(err)).toEqual({
+      kind: "unknown",
+      message:
+        "couldn't check with coord (Request timeout - backend may be starting up. Please try again.)",
+    });
   });
 });

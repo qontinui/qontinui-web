@@ -1,13 +1,18 @@
 /**
  * Join the static taxonomy manifest (denominator) with the live per-tenant
- * probe (numerator) into the rows the matrix renders.
+ * probe (numerator) into the rows the matrix and the lifecycle view render.
  *
  * - `snapshot` rows take their status from the live probe (implemented /
  *   partial / blind / error). While the probe is loading they show `probing`.
- * - `parameterized` rows are interactive-only (Phase 2): they show
- *   `interactive` when built, else their research status. No live verdict here.
- * - `none` rows (core/internal or not built) show their research status
- *   directly — these are manifest claims, not live-verified.
+ *   These are the only live verdicts on the page.
+ * - Built (implemented / partial) rows this page does not probe show a CLAIM
+ *   status, never the live vocabulary: `interactive` when a coord tool answers
+ *   them (a `parameterized` row, whose `ask_via` says where on this page it can
+ *   be asked — Ask the Twin, the Delivery tab, or nowhere, because coord
+ *   withholds some tools from device sessions), `unprobed` when no coord tool
+ *   does (a `none` row).
+ * - Unbuilt rows show their research status (`planned` / `not-built`) whatever
+ *   their query kind.
  */
 
 import manifestJson from "./subspaces.manifest.json";
@@ -22,23 +27,17 @@ import type {
 
 export const manifest = manifestJson as unknown as SubspaceManifest;
 
-function researchStatusToCell(status: ResearchStatus): CellStatus {
-  switch (status) {
-    case "implemented":
-      return "implemented";
-    case "partial":
-      return "partial";
-    case "planned":
-      return "planned";
-    case "not-yet":
-      return "not-built";
-  }
+/** Whether the manifest claims the observer is built (implemented or partial). */
+export function claimsBuilt(
+  status: ResearchStatus
+): status is "implemented" | "partial" {
+  return status === "implemented" || status === "partial";
 }
 
 function resolveOne(
   entry: SubspaceManifestEntry,
   probesById: Map<string, SubspaceProbe>,
-  isProbing: boolean,
+  isProbing: boolean
 ): ResolvedSubspace {
   if (entry.query_kind === "snapshot") {
     const probe = probesById.get(entry.id);
@@ -57,25 +56,27 @@ function resolveOne(
     };
   }
 
-  if (entry.query_kind === "parameterized") {
-    // Built but needs arguments — answerable in the Phase 2 explorer, not the
-    // matrix. Unbuilt parameterized tools fall back to their research status.
-    if (
-      entry.research_status === "implemented" ||
-      entry.research_status === "partial"
-    ) {
-      return { ...entry, cellStatus: "interactive" };
-    }
-    return { ...entry, cellStatus: researchStatusToCell(entry.research_status) };
+  if (!claimsBuilt(entry.research_status)) {
+    return {
+      ...entry,
+      cellStatus: entry.research_status === "planned" ? "planned" : "not-built",
+    };
   }
 
-  // query_kind === "none": static manifest status.
-  return { ...entry, cellStatus: researchStatusToCell(entry.research_status) };
+  // Built, but this page's twin probe does not cover it — a manifest claim
+  // either way. A coord tool answers a parameterized row on demand (its
+  // `ask_via` says where on this page, if anywhere); a `none` row has no coord
+  // tool at all.
+  return {
+    ...entry,
+    cellStatus:
+      entry.query_kind === "parameterized" ? "interactive" : "unprobed",
+  };
 }
 
 export function resolveSubspaces(
   probes: SubspaceProbe[] | undefined,
-  isProbing: boolean,
+  isProbing: boolean
 ): ResolvedSubspace[] {
   const probesById = new Map((probes ?? []).map((p) => [p.id, p]));
   return manifest.subspaces.map((e) => resolveOne(e, probesById, isProbing));
@@ -91,9 +92,26 @@ export interface CompletenessSummary {
    * working twin. Blind / error / probing are NOT counted.
    */
   responding: number;
-  /** Total snapshot observers probed. */
+  /**
+   * Snapshot observers whose probe is still in flight (`probing`) — no verdict
+   * yet, so while any are pending the gauge says "probing…" instead of a
+   * count that would read as "not responding".
+   */
+  pending: number;
+  /**
+   * Snapshot observers probed and NOT refused — the gauge's denominator. A
+   * `restricted` cell is an access decision, not an observer that failed to
+   * answer, so it is excluded here and counted in `restricted` instead;
+   * otherwise a tenant refused the SystemTenant sub-spaces (per qontinui-coord#3128) would
+   * read "2/11 responding", as if nine observers were down.
+   */
   snapshotTotal: number;
-  /** Sub-spaces the research roadmap considers built (implemented or partial). */
+  /** Snapshot observers coord refused for this tenant (cell `restricted`). */
+  restricted: number;
+  /**
+   * Sub-spaces the manifest CLAIMS are built (implemented or partial) — a
+   * static claim across every row, not a live verdict.
+   */
   built: number;
   /** Total sub-spaces in the taxonomy. */
   total: number;
@@ -101,18 +119,31 @@ export interface CompletenessSummary {
 
 export function summarize(rows: ResolvedSubspace[]): CompletenessSummary {
   let responding = 0;
+  let pending = 0;
   let snapshotTotal = 0;
+  let restricted = 0;
   let built = 0;
   for (const r of rows) {
-    if (r.query_kind === "snapshot") {
+    if (r.query_kind === "snapshot" && r.cellStatus === "restricted") {
+      restricted += 1;
+    } else if (r.query_kind === "snapshot") {
       snapshotTotal += 1;
       if (r.cellStatus === "implemented" || r.cellStatus === "partial") {
         responding += 1;
+      } else if (r.cellStatus === "probing") {
+        pending += 1;
       }
     }
-    if (r.research_status === "implemented" || r.research_status === "partial") {
+    if (claimsBuilt(r.research_status)) {
       built += 1;
     }
   }
-  return { responding, snapshotTotal, built, total: rows.length };
+  return {
+    responding,
+    pending,
+    snapshotTotal,
+    restricted,
+    built,
+    total: rows.length,
+  };
 }

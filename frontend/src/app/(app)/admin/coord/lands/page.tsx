@@ -15,8 +15,9 @@
  *      "no data yet", never a fabricated 0/100%).
  *
  * Coord base URL + operator auth are reused exactly as the sibling coord
- * pages (git-ops / plans): `httpClient.get` hits the web backend at
- * `/api/v1/operations/*`, which forwards the operator's Cognito bearer to
+ * pages (git-ops / plans): the typed client in
+ * `lib/api/operations/coordDelivery.ts` hits the web backend's `/operations`
+ * routes, which forward the operator's Cognito bearer to
  * coord (`settings.COORD_URL`) via the new lands proxy block in
  * `operations.py`. The frontend never talks to coord directly.
  *
@@ -104,7 +105,11 @@ import {
   type HealthBadge,
   type HealthStripLevel,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchLandPrecision,
+  fetchLandPreview,
+  fetchLandList,
+} from "@/lib/api/operations/coordDelivery";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { LandRow } from "@/components/admin/coord/LandRow";
@@ -124,12 +129,7 @@ import {
 } from "@/components/admin/coord/LandPrecisionPanel";
 import { useTenantDefaultRepo } from "@/components/operations/useTenantDefaultRepo";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
-
-interface LandsResponse {
-  lands?: LandRowData[] | null;
-}
 
 type TabId = "all" | "attention" | "unverified";
 
@@ -204,10 +204,7 @@ function LandPrecisionSection({
   const load = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const body = await httpClient.get<PrecisionResponse>(
-          `${API}/lands/precision`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchLandPrecision(COORD_DASHBOARD_POLL_OPTIONS);
         if (isCurrent()) onData(body, null);
       } catch (e) {
         if (isCurrent()) {
@@ -387,10 +384,7 @@ export default function CoordLandsPage() {
     setPreviewLoading(true);
     setPreviewError(null);
     try {
-      const qs = new URLSearchParams({ repo, pr });
-      const body = await httpClient.get<LandPreviewResponse>(
-        `${API}/lands/preview?${qs.toString()}`
-      );
+      const body = await fetchLandPreview({ repo, pr });
       setPreview(body);
     } catch (e) {
       setPreview(null);
@@ -406,11 +400,8 @@ export default function CoordLandsPage() {
   const fetchLands = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const qs = new URLSearchParams();
-        if (landsRepoFilter.trim()) qs.set("repo", landsRepoFilter.trim());
-        qs.set("limit", "25");
-        const body = await httpClient.get<LandsResponse>(
-          `${API}/lands?${qs.toString()}`,
+        const body = await fetchLandList(
+          { repo: landsRepoFilter.trim() || undefined, limit: 25 },
           COORD_DASHBOARD_POLL_OPTIONS
         );
         if (!isCurrent()) return;

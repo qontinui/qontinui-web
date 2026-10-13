@@ -33,7 +33,9 @@ name: Migration Reversal Test
 # PR, a migration chained off a stale head, a merge revision. Its consumer is coord's
 # agent evidence door, which reads it as positive evidence that THIS PR's one migration
 # was exercised; a red there only withholds an agent clearance. Requiring it would
-# block every multi-migration PR outright.
+# block every multi-migration PR outright. (A PR whose only changes under versions/
+# are proven non-executable edits to existing revisions concludes `success` with an
+# `MRT_VERDICT ok non_executable_edits=<n>` line that names no revision -- see the job.)
 #
 # The expensive jobs (`reverse`, `tested`) are additionally gated on
 # `needs.detect.outputs.relevant`.
@@ -761,22 +763,25 @@ jobs:
   # does not say the migration ran.
   #
   # This job inverts both. It checks out the PR BASE, overlays ONLY the
-  # PR's one changed file under `backend/alembic/versions/` from the PR
+  # PR's one ADDED file under `backend/alembic/versions/` from the PR
   # head, and runs up -> down -> up there -- so `env.py`, `alembic.ini`, the
   # models, `pyproject.toml` and the poetry lock all come from the base, and
   # nothing else in the head runs in that process. And it emits `success`
-  # ONLY when ALL of these hold; every other outcome, including every shape
-  # `reverse` skips, is a FAILURE with an `::error::` naming the condition:
+  # ONLY when ALL of these hold (or, with no migration added, on the
+  # non-executable-edits-only verdict below); every other outcome, including
+  # every shape `reverse` skips, is a FAILURE with an `::error::` naming the
+  # condition:
   #   (a) exactly one file under backend/alembic/versions/ is ADDED, and it
   #       is a regular, top-level `.py` migration file;
-  #   (b) no file under backend/alembic/versions/ is modified, deleted,
-  #       renamed or type-changed (an edit keeps a revision id the base
-  #       already has; a deletion or rename means this job would test a
-  #       different tree from the one that lands; copy detection is off --
-  #       `-M` without `-C` -- so a copy of a base file appears as `A` and is
-  #       caught by (c)'s new-revision-id check), and the added path does
-  #       not already exist at the base TIP (a stale-base PR whose file the
-  #       base has since added would otherwise replace the base's copy);
+  #   (b) no file under backend/alembic/versions/ is deleted, renamed or
+  #       type-changed, and none is modified EXCEPT by a proven
+  #       non-executable edit (below) -- any other edit keeps a revision id
+  #       the base already has; a deletion or rename means this job would
+  #       test a different tree from the one that lands; copy detection is
+  #       off -- `-M` without `-C` -- so a copy of a base file appears as `A`
+  #       and is caught by (c)'s new-revision-id check -- and the added path
+  #       does not already exist at the base TIP (a stale-base PR whose file
+  #       the base has since added would otherwise replace the base's copy);
   #   (c) after the overlay, the revision graph resolves to exactly ONE head,
   #       that head's file IS the overlaid file, alembic raised no duplicate
   #       warning while building it ("present more than once" / "loaded
@@ -829,6 +834,28 @@ jobs:
   #       normalizer fails the snapshot -- it does not guess -- on a `$tag$`
   #       token inside a literal that spans lines; see the reversibility
   #       step's NORMALIZE note.
+  # A proven non-executable edit (plan
+  # 2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down,
+  # D8) is an `M` entry whose head blob differs from its base-TIP blob only
+  # in comments, statement-position plain string literals (a docstring may
+  # be reworded, never added or removed), blank lines and trailing
+  # whitespace, with an unchanged regular-file mode. It is decided per file
+  # by scripts/ci/mrt_qualify.py `is_non_executable_edit`, a clause-for-
+  # clause port of coord's `migration_classifier::is_non_executable_edit`,
+  # so this check and coord's merge engine admit exactly the same edits;
+  # the parity table in backend/tests/test_mrt_qualify.py holds the two
+  # together. Nothing in the PR is imported or run to decide it: both blobs
+  # are read with `git cat-file` and handed to Python's own parser and
+  # tokenizer as bytes. Such a file is printed as exempt and keeps its base
+  # text in the isolated tree, which is equivalent by proof; an added
+  # migration beside it is tested exactly as above.
+  # When EVERY change under versions/ is such an edit and none is added,
+  # there is no migration to exercise (D9): the qualifier writes
+  # MRT_DOC_ONLY=1, the rest of the qualifying step and every later step
+  # are skipped, and the job concludes `success` on the final step's
+  # `MRT_VERDICT ok non_executable_edits=<n> files=<...>` line -- a
+  # positive verdict naming what was proven, never a skip. It deliberately
+  # carries no head=/down=: nothing was exercised.
   # Every step that imports the migration must end with an explicit
   # `MRT_VERDICT ok ...` line that the trusted shell parses; an exit code of
   # 0 alone is never read as a pass (a top-level `sys.exit(0)` in a
@@ -858,6 +885,9 @@ jobs:
   # the header -- and it is deliberately red on a PR that carries two
   # migrations or chains off a stale head: a multi-migration PR is still
   # tested by `reverse`, it just cannot be agent-cleared on this signal.
+  # A non-executable-edits-only success exercised no migration, so it is no
+  # evidence that one was: the consumer keys on `MRT_VERDICT ok head=<rev>
+  # down=<rev>` / `MRT_TESTED`, never on this check's conclusion alone.
   # Cost, accepted in the plan: a migration that imports app code changed
   # in the same head fails here. That is red and visible; split the PR.
   tested:
@@ -915,6 +945,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The qualifier below is Python's own parser and tokenizer at work on
+      # the PR's revision files (scripts/ci/mrt_qualify.py), so its verdict
+      # is pinned to the interpreter family its tests run on rather than to
+      # whatever `python3` the runner image ships. Nothing reads the tree
+      # here, and the install further down reuses this same interpreter.
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
       # Conditions (a) and (b), then switch the whole tree to the BASE sha.
       # Runs before any install, so a PR that cannot qualify fails in
       # seconds -- and so the install below resolves the BASE's
@@ -922,6 +962,16 @@ jobs:
       # is overlaid from the PR head only AFTER the base's revision set has
       # been read (see "Base revision set" below), so that read sees a pure
       # base tree.
+      #
+      # The qualifier is scripts/ci/mrt_qualify.py (tested by
+      # backend/tests/test_mrt_qualify.py); it reads the two blobs of every
+      # `M` entry with `git cat-file` and decides the non-executable-edit
+      # exemption from them as bytes, importing nothing. When EVERY change
+      # is such an edit it writes MRT_DOC_ONLY=1, and the rest of this step
+      # -- the head-mode check, the base-tip check and the switch to the
+      # base, all of which read MRT_MIGRATION -- is skipped here, every later
+      # step is skipped by its `if: env.MRT_DOC_ONLY != '1'`, and
+      # "Non-executable edits only" concludes the job.
       - name: Qualify the PR's migration and switch to the base tree
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -934,70 +984,34 @@ jobs:
           # Three-dot from the HEAD SHA (not the merge ref's `HEAD`), so the
           # changed set and the overlay below read the same commit.
           git diff -z --name-status -M "$BASE_SHA"..."$HEAD_SHA" > "$RUNNER_TEMP/mrt-diff.bin"
-          python3 - "$RUNNER_TEMP/mrt-diff.bin" <<'PY'
-          import os
-          import re
-          import sys
+          python3 scripts/ci/mrt_qualify.py \
+            --diff "$RUNNER_TEMP/mrt-diff.bin" \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --env-out "$RUNNER_TEMP/mrt-env"
 
-          VERSIONS = "backend/alembic/versions/"
-          # A top-level migration module with a plain name. Anything else under
-          # versions/ (a subdirectory, a non-.py file, an odd spelling) is not a
-          # file alembic loads as a revision here, so it cannot be "the" tested
-          # migration -- and the name is written to $GITHUB_ENV below, so it
-          # must not be able to carry a newline either.
-          MIGRATION = re.compile(r"backend/alembic/versions/[A-Za-z0-9_][A-Za-z0-9_.-]*\.py")
-
-          def fail(cond, msg):
-              print(f"::error title=Migration Reversal Tested - condition ({cond}) failed::{msg}")
-              sys.exit(1)
-
-          fields = open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape").split("\0")
-          if fields and fields[-1] == "":
-              fields.pop()
-          entries = []
-          i = 0
-          while i < len(fields):
-              status = fields[i]
-              # R<score> / C<score> carry two paths (old, new); every other
-              # status carries one.
-              n = 2 if status[:1] in ("R", "C") else 1
-              paths = fields[i + 1 : i + 1 + n]
-              if len(paths) != n:
-                  fail("b", f"could not parse git diff --name-status output near {status!r}; refusing to guess.")
-              entries.append((status, paths))
-              i += 1 + n
-
-          touched = [(s, p) for s, p in entries if any(x.startswith(VERSIONS) for x in p)]
-          for s, p in touched:
-              print(f"  {s}\t{' -> '.join(p)}")
-
-          # ONLY an addition qualifies. An edit (M) of an existing migration
-          # keeps that file's revision id -- an id the base already defines --
-          # so it is not a new migration. D/R/T would test a different
-          # revision graph from the one that lands.
-          removed = [(s, p) for s, p in touched if s[:1] != "A"]
-          if removed:
-              shown = "; ".join(f"{s} {' -> '.join(p)}" for s, p in removed)
-              fail("b", f"a file under {VERSIONS} is modified, deleted, renamed or type-changed against the base ({shown}). Only a newly ADDED migration file can be the tested migration: an edit keeps a revision id the base already defines, and a deletion or rename tests a different revision graph from the one that lands.")
-
-          if len(touched) != 1:
-              fail("a", f"exactly one file under {VERSIONS} must be added; this PR adds {len(touched)}. Split the PR so each migration is tested on its own.")
-
-          status, (path,) = touched[0]
-          if not MIGRATION.fullmatch(path):
-              fail("a", f"the one changed file under {VERSIONS} ({path!r}) is not a top-level .py migration file.")
-
-          # Later steps read it from $GITHUB_ENV; the rest of THIS step reads
-          # it from the file (a $GITHUB_ENV write is not visible until the
-          # next step).
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
-              fh.write(f"MRT_MIGRATION={path}\n")
-          with open(os.path.join(os.environ["RUNNER_TEMP"], "mrt-path"), "w", encoding="utf-8") as fh:
-              fh.write(path)
-          print(f"Conditions (a) and (b) hold: the one migration file is {path} ({status}).")
-          PY
-
-          MRT_MIGRATION=$(cat "$RUNNER_TEMP/mrt-path")
+          # Later steps read these from $GITHUB_ENV; the rest of THIS step
+          # reads them from the file (a $GITHUB_ENV write is not visible until
+          # the next step). An exit 0 alone is not a verdict: the file must
+          # say which of the two outcomes this is.
+          cat "$RUNNER_TEMP/mrt-env" >> "$GITHUB_ENV"
+          doc_only=$(sed -n 's/^MRT_DOC_ONLY=//p' "$RUNNER_TEMP/mrt-env")
+          case "$doc_only" in
+            1)
+              echo "Every change under backend/alembic/versions/ is a proven non-executable edit and none is added: there is no migration to exercise, so the head-mode, base-tip and switch-to-base checks below (each reads MRT_MIGRATION) are skipped."
+              exit 0
+              ;;
+            0) ;;
+            *)
+              echo "::error title=Migration Reversal Tested - condition (b) failed::the qualifier exited 0 without saying whether this PR adds a migration (MRT_DOC_ONLY='${doc_only}'), so whether it qualifies is UNKNOWN -- not passed."
+              exit 1
+              ;;
+          esac
+          MRT_MIGRATION=$(sed -n 's/^MRT_MIGRATION=//p' "$RUNNER_TEMP/mrt-env")
+          if [ -z "$MRT_MIGRATION" ]; then
+            echo "::error title=Migration Reversal Tested - condition (a) failed::the qualifier exited 0 without naming the migration it qualified, so there is nothing to test -- not passed."
+            exit 1
+          fi
 
           # Condition (a), continued: the migration must be a REGULAR file at
           # the head. A symlink (mode 120000) pointing at an existing revision
@@ -1048,6 +1062,7 @@ jobs:
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
+        if: env.MRT_DOC_ONLY != '1'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
@@ -1059,19 +1074,16 @@ jobs:
 
       # Same sibling path-deps as `reverse` (mirrors backend-ci.yml).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        if: env.MRT_DOC_ONLY != '1'
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.12'
-
       # Resolves the BASE's lock: the tree was switched above.
       - name: Install dependencies
+        if: env.MRT_DOC_ONLY != '1'
         run: |
           cd backend
           pip install poetry
@@ -1092,6 +1104,7 @@ jobs:
       # refused, so the overlay never replaces a base file.
       # Written under $RUNNER_TEMP, never $GITHUB_ENV.
       - name: Base revision set (pure base tree, before the overlay)
+        if: env.MRT_DOC_ONLY != '1'
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
@@ -1130,6 +1143,7 @@ jobs:
 
       # The isolation: take exactly one file from the PR head onto the base.
       - name: Overlay the PR's migration onto the base tree
+        if: env.MRT_DOC_ONLY != '1'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -1152,6 +1166,7 @@ jobs:
           fi
 
       - name: Install postgresql-client
+        if: env.MRT_DOC_ONLY != '1'
         id: apt_psql
         # Same guarded, apt-only, bounded step as `reverse` -- see the long
         # note there for why only apt lives here and why it is bounded.
@@ -1189,6 +1204,7 @@ jobs:
           sudo apt-get install -y "$pkg"
 
       - name: Create named schemas + extension
+        if: env.MRT_DOC_ONLY != '1'
         id: schemas
         # Unbounded, as in `reverse`: a failure here is a verdict on the
         # change, never the infrastructure marker's business, so this step's
@@ -1210,6 +1226,7 @@ jobs:
       # the isolated tree -- the same object `alembic heads` prints from --
       # never from the migration file's text.
       - name: Head identity (one head, it is the overlaid file, not a merge)
+        if: env.MRT_DOC_ONLY != '1'
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
@@ -1324,6 +1341,7 @@ jobs:
       # under test: any non-zero exit, unexpected alembic_version, or schema
       # difference fails the job.
       - name: Reversibility test (upgrade → downgrade -1 → upgrade, schema compared)
+        if: env.MRT_DOC_ONLY != '1'
         id: reversibility
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
@@ -1647,6 +1665,42 @@ jobs:
             echo "\`$tested\`"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Migration Reversal Tested: $MRT_MIGRATION passed upgrade -> downgrade -1 -> upgrade on the isolated base tree, with the schema restored by the downgrade and re-produced by the re-applied upgrade. $tested"
+
+      # D9's verdict: the qualifier proved every change under
+      # backend/alembic/versions/ a non-executable edit and none is added, so
+      # there is no migration to exercise and every step above that would
+      # have exercised one was skipped. The job's `success` then rests on
+      # THIS step's line, which names what was proven -- it cannot be
+      # confused with "detect found nothing", and an absent or zero count is
+      # a failure, never a pass. The line deliberately carries no head= /
+      # down=: nothing was exercised, so a consumer that needs "this PR's
+      # migration ran" must key on `MRT_VERDICT ok head=<rev> down=<rev>` or
+      # MRT_TESTED, never on this check's conclusion alone.
+      #
+      # The two steps below it need no D9 guard. "Name an unavailable
+      # postgresql client" fires only on an output of `Install
+      # postgresql-client`, which a doc-only run skips; and the explainer is
+      # a failure/cancel post-mortem whose `if:` must stay byte-identical
+      # across its eight carriers (backend/tests/test_ci_timeout_marker.py).
+      - name: Non-executable edits only (no migration to exercise)
+        if: env.MRT_DOC_ONLY == '1'
+        run: |
+          set -euo pipefail
+          n="${MRT_NON_EXECUTABLE_EDITS:-}"
+          files="${MRT_NON_EXECUTABLE_FILES:-}"
+          if ! [[ "$n" =~ ^[1-9][0-9]*$ ]] || [ -z "$files" ]; then
+            echo "::error title=Migration Reversal Tested - condition (b) failed::the qualifier reported non-executable edits only, but no positive edit count ('${n}') or file list ('${files}') reached this step, so what was proven is UNKNOWN -- not passed."
+            exit 1
+          fi
+          verdict="MRT_VERDICT ok non_executable_edits=$n files=$files"
+          {
+            echo "### Migration Reversal Tested"
+            echo
+            echo "No migration was exercised: every change under \`backend/alembic/versions/\` is a proven non-executable edit to an existing revision (comments, statement-position string literals, blank lines and trailing whitespace only)."
+            echo
+            echo "\`$verdict\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$verdict"
 
       # The one red the explainer below cannot name: `Install postgresql-client`
       # found no install candidate for the PG_MAJOR client, exited 0 (so the

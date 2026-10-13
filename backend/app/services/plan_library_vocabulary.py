@@ -42,6 +42,11 @@ from app.schemas.plan_library import (
     WorkArtifactUpsert,
     WriteDoorCorrection,
 )
+from app.schemas.plan_library_followups import (
+    FollowupSizeClass,
+    FollowupSizeClassSource,
+    FollowupTransitionTarget,
+)
 from app.schemas.plan_library_scan_roots import ScanRootState, SlugCensusSource
 from app.services.plan_difficulty import MODEL_TIERS
 
@@ -49,6 +54,8 @@ _PREFIX: Final = "/api/v1/plan-library"
 _UPSERT: Final = f"POST {_PREFIX}"
 _EDGE_CREATE: Final = f"POST {_PREFIX}/{{artifact_id}}/edges"
 _SCAN_ROOTS: Final = f"POST {_PREFIX}/scan-roots"
+_ANCHORS_PUT: Final = f"PUT {_PREFIX}/edges/{{edge_id}}/anchors"
+_RESOLUTION: Final = f"POST {_PREFIX}/edges/{{edge_id}}/resolution"
 
 KIND_MEANINGS: Final[dict[str, str]] = {
     "investigation_prompt": "A prompt that asks an agent to investigate a question.",
@@ -131,6 +138,39 @@ RELATION_MEANINGS: Final[dict[str, str]] = {
         "THIS measurement FALSIFIES THAT artifact's claim. Two-ended (to_id "
         "required); not supersedes, which means a newer version of the same thing."
     ),
+}
+
+SIZE_CLASS_MEANINGS: Final[dict[str, str]] = {
+    "trivial": (
+        "The expected fix is NON-EXECUTABLE (a comment, a docstring, a "
+        "non-code file) — the class a session folds into a PR that already "
+        "touches the file, and the follow-up sweep batches."
+    ),
+    "small": (
+        "One PR-sized change within about three files and no design question; "
+        "folded only when its hunk stays inside files the PR already touches."
+    ),
+    "plan_sized": "Needs design, several repos, or a plan of its own; never folded in.",
+}
+
+SIZE_CLASS_SOURCE_MEANINGS: Final[dict[str, str]] = {
+    "declared": "The follow-up's writer sized it (set by the server when POST …/edges carries size_class).",
+    "sweep": "The follow-up sweep sized it after attempting the fix and proving it was not non-executable.",
+}
+
+RESOLUTION_MEANINGS: Final[dict[str, str]] = {
+    "open": (
+        "Back to the open queue: from fixing when its PR closed unlanded, or "
+        "from fixed / already_fixed / dismissed to correct a wrong closure "
+        "(resolution_note required then)."
+    ),
+    "fixing": "A PR that fixes it is open; resolution_pr (owner/name#n) required.",
+    "fixed": (
+        "coord observed that PR land — normally written by the reconcile from "
+        "coord's land record; by hand it needs the land commit."
+    ),
+    "already_fixed": "An earlier commit already fixed it; resolution_commit required.",
+    "dismissed": "Closed without a fix; resolution_note (the reason) required.",
 }
 
 RELATION_NOTE: Final = (
@@ -216,6 +256,36 @@ def closed_fields() -> list[ClosedFieldVocabulary]:
             accepted_by=[_SCAN_ROOTS],
             values=_terms(SlugCensusSource, SLUG_CENSUS_SOURCE_MEANINGS),
             note="At most one census per source in a report.",
+        ),
+        ClosedFieldVocabulary(
+            field="size_class",
+            written_as=(
+                "request body `size_class` (a spawned_followup on POST …/edges; "
+                "PUT …/anchors, with size_class_source)"
+            ),
+            accepted_by=[_EDGE_CREATE, _ANCHORS_PUT],
+            values=_terms(FollowupSizeClass, SIZE_CLASS_MEANINGS),
+            note="Omitted is UNCLASSIFIED — never read as small.",
+        ),
+        ClosedFieldVocabulary(
+            field="size_class_source",
+            written_as=(
+                "request body `size_class_source` on PUT …/anchors (POST …/edges "
+                "stores `declared` itself)"
+            ),
+            accepted_by=[_ANCHORS_PUT],
+            values=_terms(FollowupSizeClassSource, SIZE_CLASS_SOURCE_MEANINGS),
+        ),
+        ClosedFieldVocabulary(
+            field="resolution",
+            written_as="request body `resolution` on POST …/edges/{edge_id}/resolution",
+            accepted_by=[_RESOLUTION],
+            values=_terms(FollowupTransitionTarget, RESOLUTION_MEANINGS),
+            note=(
+                "Legal moves: open → fixing | already_fixed | dismissed; fixing → "
+                "fixed | open; fixed / already_fixed / dismissed → open (with a "
+                "reason). Anything else is a 409 naming the current state."
+            ),
         ),
         ClosedFieldVocabulary(
             field="difficulty_source",

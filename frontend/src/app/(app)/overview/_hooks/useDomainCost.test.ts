@@ -10,7 +10,11 @@ import { renderHook, waitFor } from "@testing-library/react";
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  // `fetchDomainCost` calls `httpClient.fetch`; route it through the stub.
+  httpClient: {
+    fetch: async (url: string) =>
+      new Response(JSON.stringify(await httpGet(url))),
+  },
 }));
 
 import { useDomainCost } from "./useDomainCost";
