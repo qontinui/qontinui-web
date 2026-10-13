@@ -46,16 +46,25 @@ export async function passThroughBody(
 }
 
 /**
- * Pre-read the request body once and return both the fresh `NextRequest`
- * AND a best-effort parsed JSON peek of the body — without reading the
- * bytes twice. The peek lets the audit-log middleware extract a safe
- * summary (elementId, action, textLength) on the same single read.
+ * What the route knows about a request body, read the way the SDK reads it.
  *
- * Returns `{request, parsedBody: undefined}` when:
- *   - The method has no body (GET/DELETE/HEAD/OPTIONS).
- *   - The body is empty.
- *   - Reading the body throws.
- *   - The body is non-JSON / unparseable.
+ *  - `absent`      — the method carries no body here, or the body is empty.
+ *  - `parsed`      — the SDK's parser parsed it; `parsedBody` is the result.
+ *  - `unparseable` — bytes are present and the SDK's parser refused them.
+ *  - `unreadable`  — reading the bytes threw, so nothing is known about them.
+ */
+export type BodyState = "absent" | "parsed" | "unparseable" | "unreadable";
+
+/**
+ * Pre-read the request body once and return both the fresh `NextRequest`
+ * AND the body as the SDK will parse it — without reading the bytes twice.
+ * The parsed peek lets the audit-log middleware extract a safe summary
+ * (elementId, action, textLength), and lets `route.ts` remove a caller
+ * identity the body names, on the same single read.
+ *
+ * `parsedBody` is set only when `bodyState` is `parsed`. When the method has
+ * no body, the body is empty, or reading it throws, the original `request`
+ * is returned unchanged.
  *
  * The returned `request` carries the same bytes as the original (re-wrapped
  * with `Content-Type: application/json`) so the SDK's `request.json()`
@@ -64,36 +73,23 @@ export async function passThroughBody(
 export async function passThroughBodyWithPeek(
   request: NextRequest,
   method: string
-): Promise<{ request: NextRequest; parsedBody: unknown | undefined }> {
+): Promise<{
+  request: NextRequest;
+  parsedBody: unknown | undefined;
+  bodyState: BodyState;
+}> {
   if (!BODY_METHODS.has(method)) {
-    return { request, parsedBody: undefined };
+    return { request, parsedBody: undefined, bodyState: "absent" };
   }
   let raw: ArrayBuffer;
   try {
     raw = await request.arrayBuffer();
   } catch {
-    return { request, parsedBody: undefined };
+    return { request, parsedBody: undefined, bodyState: "unreadable" };
   }
   if (raw.byteLength === 0) {
-    return { request, parsedBody: undefined };
+    return { request, parsedBody: undefined, bodyState: "absent" };
   }
-
-  // Best-effort JSON peek. If the body isn't JSON the audit summary just
-  // gets `undefined` here and the row records the command without a
-  // summary — never blocks the request.
-  let parsedBody: unknown | undefined;
-  try {
-    parsedBody = JSON.parse(Buffer.from(raw).toString("utf-8"));
-  } catch {
-    parsedBody = undefined;
-  }
-
-  // Copy ALL inbound headers, then force Content-Type to JSON. Some clients
-  // (curl without `-H` for instance) post bodies with no Content-Type at
-  // all; the SDK then can't parse and returns `{}`. Forcing the header here
-  // means the proxy ALWAYS hands the SDK a well-formed JSON request.
-  const headers = new Headers(request.headers);
-  headers.set("Content-Type", "application/json");
 
   // `NextRequest` extends `Request`. Re-construct from the original URL so
   // `request.nextUrl.searchParams` keeps working downstream. We use the
@@ -104,10 +100,66 @@ export async function passThroughBodyWithPeek(
     input: string | URL,
     init?: RequestInit
   ) => NextRequest;
+
+  // The peek parses with the SDK's own parser. The SDK reads every body it
+  // reads with `request.json()`, called on the request this route forwards:
+  // an instance of `NextRequestCtor` carrying these same bytes. So the peek
+  // calls exactly that — `.json()` on a throwaway instance of the same class
+  // built from the same bytes — rather than imitating it. Whatever that
+  // parser accepts (however many leading byte-order marks it drops, whatever
+  // it does with invalid UTF-8) the peek accepts identically, and whatever it
+  // refuses the peek refuses. The caller-identity strip in `route.ts` depends
+  // on that: a body the peek could not parse but the SDK could would reach
+  // the SDK unstripped.
+  let parsedBody: unknown | undefined;
+  let bodyState: BodyState;
+  try {
+    parsedBody = await new NextRequestCtor(request.url, {
+      method,
+      body: raw,
+    }).json();
+    bodyState = "parsed";
+  } catch {
+    parsedBody = undefined;
+    bodyState = "unparseable";
+  }
+
+  // Copy ALL inbound headers, then force Content-Type to JSON. Some clients
+  // (curl without `-H` for instance) post bodies with no Content-Type at
+  // all; the SDK then can't parse and returns `{}`. Forcing the header here
+  // means the proxy ALWAYS hands the SDK a well-formed JSON request.
+  const headers = new Headers(request.headers);
+  headers.set("Content-Type", "application/json");
+
   const out = new NextRequestCtor(request.url, {
     method,
     headers,
     body: raw,
   });
-  return { request: out, parsedBody };
+  return { request: out, parsedBody, bodyState };
+}
+
+/**
+ * The typed refusal `route.ts` returns, with the auth gate on, for a body it
+ * cannot read the way the SDK reads it (`bodyState` `unparseable` or
+ * `unreadable`). A caller identity cannot be removed from a body that cannot
+ * be parsed, so such a body is refused rather than forwarded as it came.
+ */
+export function unreadableBodyResponse(
+  bodyState: "unparseable" | "unreadable"
+): Response {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      code: bodyState === "unparseable" ? "BODY_NOT_JSON" : "BODY_UNREADABLE",
+      message:
+        bodyState === "unparseable"
+          ? "UI Bridge relay request bodies must be JSON; this body could not be parsed as JSON"
+          : "UI Bridge relay could not read this request body",
+    }),
+    {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
 }

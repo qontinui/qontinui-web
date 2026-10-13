@@ -10,7 +10,7 @@
  * The groups are persona-shaped (developer / merge maintainer / fleet
  * operator), carried over unchanged from the console's own dropdown nav:
  *
- *   Pipeline · Pull Requests · Gates · Notifications   ← direct
+ *   Pipeline · Pull Requests · Gates · Notifications · Action items   ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Agents / Agent Commands / Agent Skills / Prompt Log /
@@ -39,6 +39,7 @@ import {
   Anchor,
   BadgeCheck,
   Bell,
+  BellRing,
   BookOpen,
   Bot,
   Boxes,
@@ -184,6 +185,17 @@ export const DIRECT_TABS: NavLeaf[] = [
     label: "Notifications",
     icon: Bell,
     testId: "coord-nav-notifications",
+  },
+  {
+    // Fifth direct tab, beside Notifications and for the opposite reason:
+    // notifications are what agents DID, action items are what the operator
+    // OWES (plan `2026-10-12-operator-action-items-pushed-to-the-phone`). An
+    // owed to-do buried two clicks deep is the failure the feature exists to
+    // prevent, and the page is the fallback when a push did not land.
+    href: "/admin/coord/action-items",
+    label: "Action items",
+    icon: BellRing,
+    testId: "coord-nav-action-items",
   },
 ];
 

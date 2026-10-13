@@ -39,13 +39,18 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true }),
 }));
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (url: string) => get(url),
-    post: vi.fn(),
-    patch: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  // The plan reads go through `httpClient.fetch` (the typed /operations
+  // client); `withVerbFetch` routes them through the same `get` mock.
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (url: string) => get(url),
+      post: vi.fn(),
+      patch: vi.fn(),
+    }),
+  };
+});
 // The two imported corpus-health panels own their reads and their tests; here
 // they are stand-ins so opening the strip asserts placement, not their body.
 vi.mock("../plan-library/_components/ScanSourcesPanel", () => ({

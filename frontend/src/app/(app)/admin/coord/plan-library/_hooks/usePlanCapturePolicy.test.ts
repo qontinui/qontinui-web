@@ -18,11 +18,21 @@ const toastWarning = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const method = init.method ?? "GET";
+      const body = JSON.parse(init.body ?? "null");
+      let out: unknown;
+      if (method === "GET") out = await getMock(url);
+      else if (method === "PUT") out = await putMock(url, body);
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      // A mock that resolves a `Response` (an error path) is answered
+      // as-is, so a non-2xx goes through `readJson` like the real one.
+      return out instanceof Response
+        ? out
+        : new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 // Arrow indirection: `vi.mock` factories hoist above these consts, so naming
@@ -88,7 +98,9 @@ describe("usePlanCapturePolicy — reads the resolved value", () => {
     const { result } = renderHook(() => usePlanCapturePolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    getMock.mockRejectedValueOnce(new Error("coord is not reachable"));
+    getMock.mockResolvedValueOnce(
+      new Response("coord is not reachable", { status: 502 })
+    );
     await act(async () => {
       await result.current.reload();
     });
@@ -249,7 +261,9 @@ describe("usePlanCapturePolicy — writes", () => {
 
   it("surfaces a rejected write without touching the displayed value", async () => {
     getMock.mockResolvedValue(RECORD_TENANT);
-    putMock.mockRejectedValue(new Error("admin_required"));
+    putMock.mockImplementation(
+      async () => new Response("admin_required", { status: 403 })
+    );
 
     const { result } = renderHook(() => usePlanCapturePolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));

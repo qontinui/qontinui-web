@@ -201,6 +201,30 @@ describe("RunnerStatusLine resolver state", () => {
     ).toBeInTheDocument();
   });
 
+  it("every capable runner offline, none kept: 'Runner offline'", () => {
+    setContext(null, [DESK, LAPTOP], [], "loaded", {
+      resolution: {
+        status: "all_offline",
+        capableOffline: 2,
+        pinReleased: null,
+      },
+    });
+    renderLine();
+    expect(screen.getByText("Runner offline")).toBeInTheDocument();
+    expect(
+      screen.getByText("No runner is eligible for new work")
+    ).toBeInTheDocument();
+  });
+
+  it("an outcome this build does not know reads as UNKNOWN, not 'none eligible'", () => {
+    setContext(null, [DESK, LAPTOP], [], "loaded", {
+      resolution: { status: "unknown_outcome", rawOutcome: "x" },
+    });
+    renderLine();
+    expect(screen.getByText("Runner unknown")).toBeInTheDocument();
+    expect(screen.getByText("Resolver unavailable")).toBeInTheDocument();
+  });
+
   it("coord moved off the user's pick: says so", () => {
     setContext(DESK, [DESK, LAPTOP], [[DESK.id, "local"]], "loaded", {
       pin: { id: LAPTOP.id, name: LAPTOP.name },
