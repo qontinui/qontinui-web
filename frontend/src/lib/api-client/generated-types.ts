@@ -7892,6 +7892,9 @@ export interface paths {
         /**
          * Upload an image to the content-addressed store
          * @description Store one image under the hash of its bytes, for the caller's tenant.
+         *
+         *     Every refusal — a malformed or unstorable field, an oversized or
+         *     unreadable image — happens before anything is written to storage.
          */
         post: operations["api_v1_image_assets_post"];
         delete?: never;
@@ -7908,8 +7911,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List one image slot's candidates
-         * @description The slot's candidates, oldest first, each with the asset it names.
+         * List one image slot's candidates, a page at a time
+         * @description One page of the slot's candidates, each with the asset it names.
          */
         get: operations["api_v1_image_assets_slot_candidates_get"];
         /**
@@ -7940,10 +7943,31 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read one image's record and a time-limited URL to its bytes
+         * Read one image's record and a URL to its bytes
          * @description Answers only when the caller's tenant holds an image with this hash.
          */
         get: operations["api_v1_image_assets_sha256_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's bytes
+         * @description The bytes of an image the caller's tenant holds — the same 404 as the
+         *     record route for any other hash, another tenant's included.
+         */
+        get: operations["api_v1_image_assets_sha256_content_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -27936,13 +27960,13 @@ export interface components {
             file: string;
             /**
              * Kind
-             * @description How the image entered the store.
+             * @description How the image entered the store. The first upload's kind stands.
              * @enum {string}
              */
             kind: "candidate" | "derivative" | "capture" | "exemplar";
             /**
              * Provenance
-             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Kept verbatim.
+             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys and never removes or changes one.
              */
             provenance?: string | null;
         };
@@ -38195,6 +38219,8 @@ export interface components {
         ImageAssetUploadResponse: {
             /** Byte Size */
             byte_size: number;
+            /** Conflicts */
+            conflicts: string[];
             /** Created */
             created: boolean;
             /**
@@ -38211,6 +38237,8 @@ export interface components {
             kind: "candidate" | "derivative" | "capture" | "exemplar";
             /** Mime Type */
             mime_type: string;
+            /** Orientation */
+            orientation: number | null;
             /** Provenance */
             provenance: {
                 [key: string]: unknown;
@@ -38227,7 +38255,20 @@ export interface components {
         };
         /**
          * ImageAssetWithUrl
-         * @description A stored image plus a time-limited URL to its bytes.
+         * @description A stored image plus a URL to its bytes.
+         *
+         *     On S3 / MinIO ``url`` is a presigned URL. Its ``url_expires_at`` is the
+         *     requested lifetime capped at the signing credential's own expiry when the
+         *     backend can read one (an assumed role, an instance or task profile): a
+         *     presigned URL stops working when the credential that signed it expires,
+         *     whatever its ``X-Amz-Expires`` says. When no expiry can be read — long-lived
+         *     access keys, or credentials whose expiry botocore does not expose — the
+         *     value ASSUMES the credential outlives the URL.
+         *
+         *     On the local development backend ``url`` is this API's own authenticated
+         *     content route (``GET /api/v1/image-assets/{sha256}/content``): fetch it
+         *     with the same credential. It does not expire, so ``url_expires_at`` is
+         *     null.
          */
         ImageAssetWithUrl: {
             /** Byte Size */
@@ -38246,6 +38287,8 @@ export interface components {
             kind: "candidate" | "derivative" | "capture" | "exemplar";
             /** Mime Type */
             mime_type: string;
+            /** Orientation */
+            orientation: number | null;
             /** Provenance */
             provenance: {
                 [key: string]: unknown;
@@ -48759,15 +48802,26 @@ export interface components {
         };
         /**
          * SlotCandidateList
-         * @description ``GET /api/v1/image-assets/slot-candidates`` — one slot's candidates,
-         *     oldest first. The query is echoed so an empty list can be checked against
-         *     what was asked; ``truncated`` says whether more rows exist past ``limit``.
+         * @description ``GET /api/v1/image-assets/slot-candidates`` — one page of a slot's
+         *     candidates, ``oldest`` or ``newest`` first.
+         *
+         *     The query is echoed so an empty page can be checked against what was
+         *     asked. ``truncated`` says whether more rows exist past this page, and
+         *     ``next_cursor`` — set exactly when it is true — fetches them: pass it back
+         *     as ``after`` with the same ``order``.
          */
         SlotCandidateList: {
             /** Candidates */
             candidates: components["schemas"]["SlotCandidateOut"][];
             /** Limit */
             limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Order
+             * @enum {string}
+             */
+            order: "oldest" | "newest";
             /** Repo */
             repo: string;
             /** Slot Id */
@@ -68087,7 +68141,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The tenant already held these bytes; nothing was re-stored (kind / provenance updated as sent). */
+            /** @description The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys; `conflicts` names what was not applied. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -68119,7 +68173,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unreadable image, too many pixels, or bad fields. */
+            /** @description Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -68135,7 +68189,11 @@ export interface operations {
                 slot_id: string;
                 /** @description Only candidates in this status. */
                 status?: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+                /** @description oldest (the default) or newest first. */
+                order?: "oldest" | "newest";
                 limit?: number;
+                /** @description The previous page's next_cursor, with the same order. */
+                after?: string | null;
             };
             header?: never;
             path?: never;
@@ -68152,14 +68210,12 @@ export interface operations {
                     "application/json": components["schemas"]["SlotCandidateList"];
                 };
             };
-            /** @description Validation Error */
+            /** @description A malformed cursor, or one for the other order. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };
@@ -68260,7 +68316,7 @@ export interface operations {
     api_v1_image_assets_sha256_get: {
         parameters: {
             query?: {
-                /** @description Seconds the URL stays valid. */
+                /** @description Seconds a presigned URL stays valid (S3 / MinIO). */
                 expires_in?: number;
             };
             header?: never;
@@ -68295,6 +68351,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image's bytes, as uploaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/avif": unknown;
+                    "image/gif": unknown;
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
+                    "image/webp": unknown;
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The record exists but its stored bytes do not. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

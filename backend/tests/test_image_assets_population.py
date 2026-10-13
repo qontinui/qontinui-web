@@ -4,15 +4,18 @@ Plan ``2026-10-13-image-generation-and-visual-judgment`` Phase 13. The store's
 population is a device — ``studio compile`` (Phase 19) holding a coord device
 JWT — calling the HTTP routes. ``tests/test_image_assets_api.py`` covers those
 routes in depth with the tenant dependency replaced by a fixed principal. These
-tests replace nothing on the request's path except coord itself:
+tests keep the request's path real except where noted:
 
 * the request goes through ``app.main.app`` — its middleware stack, its router
   and the upload's real request-body cap;
-* the tenant comes from the REAL ``get_memory_tenant``, given a device JWT
-  whose coord signature check (``coord_jwks_client.verify_token``) and
-  device-user lookup (``_verify_device_jwt``) are stubbed exactly as
-  ``tests/test_memory_auth.py`` stubs them — so the principal a route sees is
-  the one that dependency resolves, not one a test injected;
+* the tenant comes from the REAL ``get_memory_tenant``, given a device JWT.
+  Two calls it makes are stubbed, exactly as ``tests/test_memory_auth.py``
+  stubs them: coord's signature check (``coord_jwks_client.verify_token``) and
+  the backend's device verification (``_verify_device_jwt``), which on the
+  real path also looks up the device's web user and refuses an inactive one —
+  so that user lookup and its is_active check are NOT exercised here. The
+  principal a route sees is still the one ``get_memory_tenant`` resolves from
+  the token's claims, not one a test injected;
 * only the database session and the object store's directory are the test's
   own.
 
@@ -145,8 +148,10 @@ async def _upload(client: httpx.AsyncClient, device: str, data: bytes) -> str:
 
 
 async def test_upload_is_filed_under_its_tenant_alone(population, tmp_path) -> None:
-    """An upload by device A is filed under A's tenant key, readable by A through
-    GET /{sha256}, and invisible (404) to device B of another tenant."""
+    """An upload by device A is filed under A's tenant key, its bytes readable by
+    A through the URL GET /{sha256} hands out (the authenticated content route,
+    on this local backend), and invisible (404) to device B of another tenant —
+    as a record and as bytes."""
     mine, theirs = await _resolve(DEVICE_A), await _resolve(DEVICE_B)
     assert mine.tenant_id != theirs.tenant_id
 
@@ -161,10 +166,15 @@ async def test_upload_is_filed_under_its_tenant_alone(population, tmp_path) -> N
 
     read = await population.get(f"{API}/{digest}", headers=_bearer(DEVICE_A))
     assert read.status_code == 200, read.text
-    assert read.json()["url"].endswith(key)
+    url = read.json()["url"]
+    assert url.endswith(f"{API}/{digest}/content")
+    content = await population.get(url, headers=_bearer(DEVICE_A))
+    assert content.status_code == 200 and content.content == data
 
     foreign = await population.get(f"{API}/{digest}", headers=_bearer(DEVICE_B))
     assert foreign.status_code == 404
+    foreign_bytes = await population.get(url, headers=_bearer(DEVICE_B))
+    assert foreign_bytes.status_code == 404
 
 
 async def test_slot_candidates_chosen_listed_and_withdrawn(population) -> None:

@@ -535,16 +535,15 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
     # ── content-addressed image store (``get_memory_tenant``) ───────────
     ("POST", _IMAGE_ASSETS): Evidence(
         closed_fields=("kind",),
-        correction=SupersedeArg(
-            property="the uploaded bytes (their server-computed sha256)",
-            how=(
-                "re-uploading the same bytes keeps the stored object and the "
-                "row, sets kind to the value sent and replaces provenance when "
-                "one is sent, so a wrong kind or provenance is corrected by "
-                "re-uploading with the right one. The row's identity, MIME "
-                "type and dimensions are computed from the bytes by the "
-                "server, so they cannot be asserted wrongly"
-            ),
+        correction=AppendOnlyByDesign(
+            "the record of how an image entered and what produced it is never "
+            "rewritten, on purpose: a re-upload of the same bytes keeps the "
+            "first kind and only ADDS provenance keys, so a later uploader can "
+            "never drop or change the generator's AI-generated marker. A "
+            "re-upload reports what it sent but could not apply in its "
+            "`conflicts`. The row's identity, MIME type, dimensions and "
+            "orientation are computed from the bytes by the server, so they "
+            "cannot be asserted wrongly"
         ),
         # A multipart route: the non-file fields arrive as Form fields and are
         # validated through this model by hand.

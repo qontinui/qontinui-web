@@ -10,8 +10,12 @@ design rationale.
     ``image-assets/{tenant_id}/sha256/{h[:2]}/{h}{ext}`` — a key that names the
     tenant, so no object is ever shared between tenants (one tenant's erasure
     can never break another's asset, and a write reveals nothing about what
-    another tenant holds). ``mime_type``, ``width`` and ``height`` are read from
-    the bytes, never taken from the client.
+    another tenant holds). ``mime_type``, ``width``, ``height`` and
+    ``orientation`` are read from the bytes, never taken from the client;
+    ``width`` × ``height`` is the image as displayed (the EXIF orientation
+    applied). The FIRST upload's ``kind`` stands, and ``provenance`` only ever
+    gains keys — a later upload of the same bytes can add to it but never
+    remove or change what is there (the AI-generated marker included).
 
 ``ImageSlotCandidate``
     An asset proposed for one image slot of one repo — the record the asset
@@ -42,6 +46,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    SmallInteger,
     String,
     UniqueConstraint,
     text,
@@ -110,6 +115,10 @@ class ImageAsset(Base):
         ),
         CheckConstraint("byte_size > 0", name="ck_image_assets_byte_size_positive"),
         CheckConstraint(
+            "orientation IS NULL OR orientation BETWEEN 1 AND 8",
+            name="ck_image_assets_orientation",
+        ),
+        CheckConstraint(
             "jsonb_typeof(provenance) = 'object'",
             name="ck_image_assets_provenance_object",
         ),
@@ -129,6 +138,8 @@ class ImageAsset(Base):
     width: Mapped[int] = mapped_column(Integer, nullable=False)
     height: Mapped[int] = mapped_column(Integer, nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    #: The EXIF orientation (1-8) the file declares; NULL when it declares none.
+    orientation: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     provenance: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )

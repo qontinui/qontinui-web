@@ -309,6 +309,25 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
             _asset(tenant_a, "e" * 64, n=0),
             "ck_image_assets_byte_size_positive",
         )
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO web.image_assets (tenant_id, sha256, storage_key, "
+                    "mime_type, width, height, byte_size, kind, orientation) VALUES "
+                    "(:t, :s, 'k', 'image/png', 1, 1, 1, 'capture', 6)"
+                ),
+                {"t": tenant_a, "s": "9" * 64},
+            )
+        _refused(
+            engine,
+            text(
+                "INSERT INTO web.image_assets (tenant_id, sha256, storage_key, "
+                "mime_type, width, height, byte_size, kind, orientation) VALUES "
+                "(:t, :s, 'k', 'image/png', 1, 1, 1, 'capture', 9)"
+            ),
+            {"t": tenant_a, "s": "8" * 64},
+            "ck_image_assets_orientation",
+        )
         # The same bytes for ANOTHER tenant are a separate row.
         with engine.begin() as conn:
             conn.execute(_ASSET_INSERT, _asset(tenant_b, sha_a))

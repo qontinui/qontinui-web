@@ -12,7 +12,7 @@ import struct
 import zlib
 
 import pytest
-from PIL import Image, features
+from PIL import Image, ImageFile, ImageOps, features
 
 from app.models.image_asset import IMAGE_MIME_TYPES
 from app.services.image_sniff import (
@@ -191,3 +191,136 @@ def test_the_accepted_formats_are_the_mime_types_the_table_allows() -> None:
     test holds equal to it) must list exactly what the sniffer can produce."""
     assert tuple(fmt.mime_type for fmt in ACCEPTED_FORMATS) == IMAGE_MIME_TYPES
     assert len({fmt.extension for fmt in ACCEPTED_FORMATS}) == len(ACCEPTED_FORMATS)
+
+
+# ── orientation: the stored size is the DISPLAYED size ──────────────────
+
+
+def _with_orientation(fmt: str, size: tuple[int, int], orientation: int) -> bytes:
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    buf = io.BytesIO()
+    Image.new("RGB", size, (10, 20, 30)).save(buf, format=fmt, exif=exif.tobytes())
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("fmt", ["JPEG", "WEBP", "AVIF"])
+def test_a_quarter_turn_orientation_exchanges_width_and_height(fmt: str) -> None:
+    """The review's case: a 40×20 JPEG tagged orientation 6 is shown 20×40
+    by every browser, so 20×40 is what the store records."""
+    data = _with_orientation(fmt, (40, 20), 6)
+    with Image.open(io.BytesIO(data)) as probe:
+        shown = ImageOps.exif_transpose(probe).size
+    sniffed = sniff_image(data)
+    assert (sniffed.width, sniffed.height) == shown == (20, 40)
+    assert sniffed.orientation == 6
+
+
+@pytest.mark.parametrize(
+    ("orientation", "size"),
+    [
+        (1, (40, 20)),
+        (2, (40, 20)),
+        (3, (40, 20)),
+        (4, (40, 20)),
+        (5, (20, 40)),
+        (6, (20, 40)),
+        (7, (20, 40)),
+        (8, (20, 40)),
+    ],
+)
+def test_every_orientation_maps_to_its_displayed_size(
+    orientation: int, size: tuple[int, int]
+) -> None:
+    sniffed = sniff_image(_with_orientation("JPEG", (40, 20), orientation))
+    assert (sniffed.width, sniffed.height) == size
+    assert sniffed.orientation == orientation
+
+
+def test_no_orientation_and_an_impossible_one_are_both_none() -> None:
+    plain = sniff_image(encode("JPEG", (40, 20)))
+    assert plain.orientation is None and (plain.width, plain.height) == (40, 20)
+    bogus = sniff_image(_with_orientation("JPEG", (40, 20), 9))
+    assert bogus.orientation is None and (bogus.width, bogus.height) == (40, 20)
+
+
+def test_reading_the_orientation_decodes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Orientation comes from the metadata the header carried: no format's
+    pixel decoder (``ImageFile.load``) runs, for a still image or a PNG whose
+    ``getexif()`` would otherwise load the image to find a late eXIf chunk."""
+
+    # Encoding the fixtures loads pixels; only the SNIFF must not.
+    fixtures = {
+        fmt: _with_orientation(fmt, (40, 20), 6)
+        for fmt in ("JPEG", "PNG", "WEBP", "AVIF")
+    }
+
+    def refuse_decode(self: Image.Image) -> None:
+        raise AssertionError("the sniffer decoded pixels")
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", refuse_decode)
+    monkeypatch.setattr(Image.Image, "load", refuse_decode)
+    for fmt, data in fixtures.items():
+        assert sniff_image(data).orientation == 6, fmt
+
+
+# ── the pixel bound counts every frame ──────────────────────────────────
+
+
+def _animated_webp(frames: int, canvas: tuple[int, int]) -> bytes:
+    """An animated WebP of ``frames`` 1×1 frames whose VP8X header DECLARES
+    ``canvas`` — the review's construction: tiny on disk, huge to decode."""
+    images = [
+        Image.new("RGB", (1, 1), ((i * 7) % 256, (i * 13) % 256, (i * 29) % 256))
+        for i in range(frames)
+    ]
+    buf = io.BytesIO()
+    images[0].save(
+        buf,
+        format="WEBP",
+        save_all=True,
+        append_images=images[1:],
+        lossless=True,
+        duration=10,
+    )
+    data = bytearray(buf.getvalue())
+    at = data.find(b"VP8X") + 8
+    w, h = canvas
+    data[at + 4 : at + 7] = (w - 1).to_bytes(3, "little")
+    data[at + 7 : at + 10] = (h - 1).to_bytes(3, "little")
+    return bytes(data)
+
+
+def test_thousands_of_frames_each_under_the_bound_are_refused_in_total() -> None:
+    """The review's case: 150 KB declaring 3,000 frames of 9,000 × 9,000 —
+    243 billion pixels to decode, every single frame under the bound."""
+    data = _animated_webp(3000, (9000, 9000))
+    assert len(data) < 200_000
+    assert 9000 * 9000 <= MAX_IMAGE_PIXELS  # each frame alone would pass
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(data)
+    assert excinfo.value.code == "image_too_many_pixels"
+    assert "3000 frame" in excinfo.value.message
+
+
+def test_the_total_bound_is_frames_times_canvas() -> None:
+    """Two frames of 6,000² (72 M) pass; two of 7,000² (98 M) do not, though
+    one 7,000² frame (49 M) is well under the bound."""
+    ok = sniff_image(_animated_webp(2, (6000, 6000)))
+    assert (ok.width, ok.height, ok.frames) == (6000, 6000, 2)
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(_animated_webp(2, (7000, 7000)))
+    assert excinfo.value.code == "image_too_many_pixels"
+
+
+def test_an_animation_within_the_bound_is_accepted() -> None:
+    frames = [Image.new("RGB", (64, 48), (i * 40, 0, 0)) for i in range(5)]
+    for fmt in ("GIF", "WEBP", "PNG"):
+        buf = io.BytesIO()
+        frames[0].save(
+            buf, format=fmt, save_all=True, append_images=frames[1:], duration=50
+        )
+        sniffed = sniff_image(buf.getvalue())
+        assert (sniffed.width, sniffed.height, sniffed.frames) == (64, 48, 5), fmt

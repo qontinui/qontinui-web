@@ -179,10 +179,14 @@ class ObjectStorageService:
 
         Idempotent through :meth:`file_exists`: when an object is already
         stored at the key with the same size, nothing is written (the key
-        already names these exact bytes). An object at the key with a
-        DIFFERENT size can only be a torn earlier write (a crash mid-copy on
-        the local backend; S3's PUT is atomic), so it is overwritten — the
-        repair is logged. Works on every backend, because it uses only the
+        already names these exact bytes). Every backend's write is atomic —
+        S3's PUT, and the local backend's temp-file-then-``os.replace`` — so an
+        in-flight write by a concurrent upload is never visible at the key,
+        and two concurrent uploads of the same bytes both write the same
+        bytes. An object at the key with a DIFFERENT size is therefore damage
+        from outside this method (a file written before writes were atomic, a
+        hand edit, a truncated restore): it is overwritten and the repair is
+        logged. Works on every backend, because it uses only the
         :class:`StorageBackend` contract.
         """
         sha256 = hashlib.sha256(data).hexdigest()

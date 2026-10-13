@@ -23,14 +23,20 @@ Tables
 ``web.image_assets``
     One row per (tenant, image), unique on ``(tenant_id, sha256)``. The
     server computes ``sha256`` from the uploaded bytes and reads
-    ``mime_type``, ``width`` and ``height`` from them; the client's filename
-    and Content-Type are never trusted. ``storage_key`` is the object's key,
+    ``mime_type``, ``width``, ``height`` and ``orientation`` from them; the
+    client's filename and Content-Type are never trusted. ``width`` ×
+    ``height`` is the image as DISPLAYED — for EXIF orientations 5-8 the
+    encoded dimensions exchanged — and ``orientation`` is that EXIF value
+    (NULL when the file declares none). ``storage_key`` is the object's key,
     ``image-assets/{tenant_id}/sha256/{h[:2]}/{h}{ext}`` — it names the
     tenant, so an object is NEVER shared across tenants: one tenant's erasure
     cannot break another's asset, and a write cannot reveal whether another
     tenant holds the same image. ``kind`` is how the image entered
-    (``candidate`` | ``derivative`` | ``capture`` | ``exemplar``);
-    ``provenance`` is the generator's record, kept verbatim.
+    (``candidate`` | ``derivative`` | ``capture`` | ``exemplar``) — the FIRST
+    upload's stands. ``provenance`` is the generator's record, stored as JSONB
+    (so key order and duplicate keys are not preserved); a later upload of the
+    same bytes merges into it, adding keys but never removing or changing one,
+    so the AI-generated marker cannot be dropped.
 
 ``web.image_slot_candidates``
     An asset proposed for one image slot (``slot_id``) of one repo, with the
@@ -106,6 +112,9 @@ def upgrade() -> None:
             byte_size    BIGINT NOT NULL
                 CONSTRAINT ck_image_assets_byte_size_positive
                 CHECK (byte_size > 0),
+            orientation  SMALLINT
+                CONSTRAINT ck_image_assets_orientation
+                CHECK (orientation IS NULL OR orientation BETWEEN 1 AND 8),
             provenance   JSONB NOT NULL DEFAULT '{}'::jsonb
                 CONSTRAINT ck_image_assets_provenance_object
                 CHECK (jsonb_typeof(provenance) = 'object'),

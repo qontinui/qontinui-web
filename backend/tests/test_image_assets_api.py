@@ -43,6 +43,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from PIL import Image
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -54,7 +55,10 @@ from app.api.v1.endpoints import image_assets as endpoints
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant
 from app.core.config import settings
 from app.crud import image_assets as crud
-from app.middleware.error_handler import http_exception_handler
+from app.middleware.error_handler import (
+    http_exception_handler,
+    validation_exception_handler,
+)
 from app.models.image_asset import (
     IMAGE_ASSET_KINDS,
     SLOT_CANDIDATE_STATUSES,
@@ -107,10 +111,12 @@ def _build_app(
     *, db_session: Any, tenant_id: UUID, storage: ObjectStorageService
 ) -> FastAPI:
     """The image router with db, tenant and object store stubbed at the route
-    boundary — and the production HTTP error handler, so refusals carry the
-    shape a client sees (``error`` / ``message`` at the top level)."""
+    boundary — and the production HTTP and validation error handlers, so
+    refusals carry the shape a client sees (``error`` / ``message`` at the top
+    level; a 422 that never echoes the request's input back)."""
     app = FastAPI()
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
 
     async def _db() -> AsyncIterator[Any]:
         yield db_session
@@ -235,25 +241,38 @@ class TestSchemaBinding:
         assert get_args(ImageAssetKind) == IMAGE_ASSET_KINDS
         assert get_args(SlotCandidateStatus) == SLOT_CANDIDATE_STATUSES
 
+    @pytest.mark.parametrize(
+        ("field", "value", "constraint"),
+        [
+            ("kind", "thumbnail", "ck_image_assets_kind"),
+            ("orientation", 9, "ck_image_assets_orientation"),
+        ],
+    )
     async def test_a_check_bites_in_the_test_database(
-        self, async_db_session: AsyncSession, tenant_a: UUID
+        self,
+        async_db_session: AsyncSession,
+        tenant_a: UUID,
+        field: str,
+        value: Any,
+        constraint: str,
     ) -> None:
-        async_db_session.add(
-            ImageAsset(
-                tenant_id=tenant_a,
-                sha256="a" * 64,
-                storage_key="k",
-                mime_type="image/png",
-                width=1,
-                height=1,
-                byte_size=1,
-                kind="thumbnail",
-            )
-        )
+        row: dict[str, Any] = {
+            "tenant_id": tenant_a,
+            "sha256": "a" * 64,
+            "storage_key": "k",
+            "mime_type": "image/png",
+            "width": 1,
+            "height": 1,
+            "byte_size": 1,
+            "kind": "candidate",
+            field: value,
+        }
+        # A SAVEPOINT: the refusal rolls back only itself, never the
+        # fixture's outer transaction.
         with pytest.raises(IntegrityError) as excinfo:
-            await async_db_session.flush()
-        assert "ck_image_assets_kind" in str(excinfo.value)
-        await async_db_session.rollback()
+            async with async_db_session.begin_nested():
+                async_db_session.add(ImageAsset(**row))
+        assert constraint in str(excinfo.value)
 
     async def test_the_composite_fk_refuses_a_cross_tenant_candidate(
         self, async_db_session: AsyncSession, tenant_a: UUID, tenant_b: UUID
@@ -271,15 +290,17 @@ class TestSchemaBinding:
             )
         )
         await async_db_session.flush()
-        async_db_session.add(
-            ImageSlotCandidate(
-                tenant_id=tenant_b, repo=REPO, slot_id=SLOT, asset_sha256="b" * 64
-            )
-        )
         with pytest.raises(IntegrityError) as excinfo:
-            await async_db_session.flush()
+            async with async_db_session.begin_nested():
+                async_db_session.add(
+                    ImageSlotCandidate(
+                        tenant_id=tenant_b,
+                        repo=REPO,
+                        slot_id=SLOT,
+                        asset_sha256="b" * 64,
+                    )
+                )
         assert "fk_image_slot_candidates_asset" in str(excinfo.value)
-        await async_db_session.rollback()
 
 
 # ===========================================================================
@@ -306,6 +327,8 @@ class TestUpload:
         assert body["byte_size"] == len(data)
         assert body["kind"] == "candidate"
         assert body["provenance"] == {"model": "z-image-turbo"}
+        assert body["orientation"] is None
+        assert body["conflicts"] == []
         assert "storage_key" not in body
 
         key = f"image-assets/{tenant_a}/sha256/{digest[:2]}/{digest}.png"
@@ -331,22 +354,74 @@ class TestUpload:
         assert len(storage.backend.writes) == 1  # type: ignore[attr-defined]
         assert len(await _rows(async_db_session, tenant_a)) == 1
 
-    async def test_a_re_upload_corrects_kind_and_provenance(
+    async def test_a_re_upload_keeps_the_first_kind_and_only_adds_provenance(
         self, client_a: httpx.AsyncClient
     ) -> None:
         data = _png()
-        first = (await _upload(client_a, data, provenance={"seed": 1})).json()
-        corrected = await _upload(
-            client_a, data, kind="exemplar", provenance={"seed": 2}
+        first = (
+            await _upload(client_a, data, provenance={"seed": 1, "ai_generated": True})
+        ).json()
+        assert first["conflicts"] == []
+        again = await _upload(
+            client_a, data, kind="exemplar", provenance={"seed": 2, "model": "zit"}
         )
-        assert corrected.status_code == 200
-        body = corrected.json()
-        assert (body["kind"], body["provenance"]) == ("exemplar", {"seed": 2})
+        assert again.status_code == 200
+        body = again.json()
+        assert body["kind"] == "candidate"
+        assert body["provenance"] == {"seed": 1, "ai_generated": True, "model": "zit"}
+        # What it sent but could not apply is named, not silently dropped.
+        assert body["conflicts"] == ["kind", "provenance.seed"]
         assert body["updated_at"] > first["updated_at"]
-        # Omitted provenance is kept; nothing changed, so updated_at holds.
-        again = (await _upload(client_a, data, kind="exemplar")).json()
-        assert again["provenance"] == {"seed": 2}
-        assert again["updated_at"] == body["updated_at"]
+        # Nothing new: nothing moves and nothing conflicts.
+        same = (await _upload(client_a, data, provenance={"model": "zit"})).json()
+        assert same["conflicts"] == []
+        assert same["updated_at"] == body["updated_at"]
+
+    async def test_a_later_upload_cannot_drop_the_ai_generated_marker(
+        self, client_a: httpx.AsyncClient
+    ) -> None:
+        data = _png()
+        marked = {
+            "iptc": {"digital_source_type": "trainedAlgorithmicMedia"},
+            "provider": "local-gpu",
+        }
+        await _upload(client_a, data, provenance=marked)
+        relabelled = await _upload(
+            client_a,
+            data,
+            provenance={"iptc": {"digital_source_type": "digitalCapture"}},
+        )
+        assert relabelled.json()["provenance"] == marked
+        assert relabelled.json()["conflicts"] == ["provenance.iptc.digital_source_type"]
+        emptied = (await _upload(client_a, data, provenance={})).json()
+        assert emptied["provenance"] == marked
+        assert emptied["conflicts"] == []
+
+    @pytest.mark.parametrize(
+        "provenance",
+        [
+            '{"seed": NaN}',
+            '{"seed": -Infinity}',
+            '{"note": "a\\u0000b"}',
+            '{"a\\u0000": 1}',
+        ],
+        ids=["nan", "infinity", "nul-in-value", "nul-in-key"],
+    )
+    async def test_provenance_json_storage_cannot_hold_is_refused_before_any_write(
+        self,
+        client_a: httpx.AsyncClient,
+        tenant_a: UUID,
+        storage: ObjectStorageService,
+        async_db_session: AsyncSession,
+        provenance: str,
+    ) -> None:
+        """Python's JSON reader accepts these; PostgreSQL's JSONB does not. They
+        are a 422 at the door — never a 500 after the object is stored."""
+        resp = await _upload(client_a, _png(), provenance=provenance)
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error"] == "provenance_invalid"
+        assert _stored_files(storage) == []
+        assert await _rows(async_db_session, tenant_a) == []
 
     @pytest.mark.parametrize(
         ("pillow_format", "claimed_name", "claimed_type", "mime", "ext"),
@@ -440,6 +515,15 @@ class TestUpload:
         assert over.status_code == 413
         assert over.json()["error"] == "image_too_large"
         assert over.json()["max_bytes"] == len(data) - 1
+        # The same keys BodyLimitMiddleware's refusal carries
+        # (tests/test_body_limit_real_stack.py): one 413 shape.
+        assert set(over.json()) == {
+            "error",
+            "message",
+            "max_bytes",
+            "timestamp",
+            "path",
+        }
         assert _stored_files(storage) == []
         assert await _rows(async_db_session, tenant_a) == []
 
@@ -514,8 +598,12 @@ class TestTenantIsolation:
         assert str(tenant_a) in row_a.storage_key
         assert str(tenant_b) in row_b.storage_key
         assert len(_stored_files(storage)) == 2
-        url_b = (await client_b.get(f"{API}/{_sha(data)}")).json()["url"]
-        assert str(tenant_b) in url_b and str(tenant_a) not in url_b
+        # Each tenant reads its OWN object through the tenant-checked content
+        # route the local backend's URL points at.
+        for client in (client_a, client_b):
+            url = (await client.get(f"{API}/{_sha(data)}")).json()["url"]
+            assert url.endswith(f"/image-assets/{_sha(data)}/content")
+            assert (await client.get(url)).content == data
 
     async def test_no_candidate_route_reaches_another_tenants_asset(
         self, client_a: httpx.AsyncClient, client_b: httpx.AsyncClient
@@ -558,14 +646,19 @@ class TestRead:
             "mime_type",
             "width",
             "height",
+            "orientation",
             "byte_size",
             "provenance",
         ):
             assert body[field] == uploaded[field]
-        key = f"image-assets/{tenant_a}/sha256/{digest[:2]}/{digest}.png"
-        assert body["url"] == f"{settings.BACKEND_URL.rstrip('/')}/uploads/{key}"
-        # The local backend's static mount never expires a URL, so no expiry
-        # time is claimed for it.
+        # NOT the unauthenticated /uploads static mount the local backend
+        # stores under: this API's tenant-checked content route, which does
+        # not expire — so no expiry time is claimed for it.
+        assert body["url"] == (
+            f"{settings.BACKEND_URL.rstrip('/')}{settings.API_V1_STR}"
+            f"/image-assets/{digest}/content"
+        )
+        assert "/uploads/" not in body["url"]
         assert body["url_expires_at"] is None
 
     async def test_get_over_s3_returns_a_signed_url_that_expires(
@@ -889,6 +982,7 @@ async def test_two_choices_racing_meet_the_index(
                 byte_size=1,
                 kind="candidate",
                 provenance=None,
+                orientation=None,
             )
         await setup.commit()
 
@@ -986,6 +1080,7 @@ async def test_the_routes_are_mounted_on_the_real_app(real_app: FastAPI) -> None
         ("PUT", SLOTS),
         ("DELETE", SLOTS),
         ("GET", f"{API}/{{sha256}}"),
+        ("GET", f"{API}/{{sha256}}/content"),
     }
     paths = [path for _method, path in routes]
     assert paths.index(SLOTS) < paths.index(f"{API}/{{sha256}}")
@@ -1002,3 +1097,249 @@ async def test_the_real_app_runs_the_real_tenant_dependency(real_app: FastAPI) -
 # The upload's request-body cap — refused before parsing on a declared length,
 # and at the cap on a chunked body — is driven through this real stack, for
 # every capped route, by ``tests/test_body_limit_real_stack.py``.
+
+
+# ===========================================================================
+# Review round 1 — the content route, credential lifetimes, paging, JSON
+# storage, concurrent uploads
+# ===========================================================================
+
+
+class TestContentRoute:
+    async def test_the_bytes_are_served_to_their_tenant_only(
+        self, client_a: httpx.AsyncClient, client_b: httpx.AsyncClient
+    ) -> None:
+        data = _png()
+        digest = (await _upload(client_a, data)).json()["sha256"]
+        url = (await client_a.get(f"{API}/{digest}")).json()["url"]
+        resp = await client_a.get(url)
+        assert resp.status_code == 200
+        assert resp.content == data
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.headers["etag"] == f'"{digest}"'
+        assert resp.headers["cache-control"].startswith("private")
+        # Another tenant's probe answers exactly what an unknown hash does.
+        foreign = await client_b.get(f"{API}/{digest}/content")
+        unknown = await client_b.get(f"{API}/{'0' * 64}/content")
+        assert foreign.status_code == unknown.status_code == 404
+        strip = ("timestamp", "path")
+        assert {k: v for k, v in foreign.json().items() if k not in strip} == {
+            k: v for k, v in unknown.json().items() if k not in strip
+        }
+
+    async def test_a_record_whose_bytes_are_gone_is_a_typed_500(
+        self, client_a: httpx.AsyncClient, storage: ObjectStorageService
+    ) -> None:
+        digest = (await _upload(client_a, _png())).json()["sha256"]
+        for path in _stored_files(storage):
+            path.unlink()
+        resp = await client_a.get(f"{API}/{digest}/content")
+        assert resp.status_code == 500
+        assert resp.json()["error"] == "image_object_missing"
+
+    async def test_the_content_route_reads_through_s3_too(
+        self, async_db_session: AsyncSession, tenant_a: UUID
+    ) -> None:
+        s3, _s3_client = fake_s3_backend()
+        service = ObjectStorageService.__new__(ObjectStorageService)
+        service.backend = s3
+        app = _build_app(
+            db_session=async_db_session, tenant_id=tenant_a, storage=service
+        )
+        data = _png(3)
+        async with _client(app) as http:
+            digest = (await _upload(http, data)).json()["sha256"]
+            resp = await http.get(f"{API}/{digest}/content")
+        assert resp.status_code == 200 and resp.content == data
+
+
+async def test_a_presigned_urls_expiry_is_capped_by_its_signing_credential(
+    async_db_session: AsyncSession, tenant_a: UUID
+) -> None:
+    """A presigned URL dies with the temporary credential that signed it, so
+    the expiry reported is the earlier of the two."""
+    s3, client = fake_s3_backend()
+    credential_expiry = datetime.now(UTC) + timedelta(minutes=5)
+    client._request_signer = SimpleNamespace(  # type: ignore[attr-defined]
+        _credentials=SimpleNamespace(_expiry_time=credential_expiry)
+    )
+    service = ObjectStorageService.__new__(ObjectStorageService)
+    service.backend = s3
+    app = _build_app(db_session=async_db_session, tenant_id=tenant_a, storage=service)
+    async with _client(app) as http:
+        digest = (await _upload(http, _png())).json()["sha256"]
+        long_lived = await http.get(f"{API}/{digest}", params={"expires_in": 3600})
+        short = await http.get(f"{API}/{digest}", params={"expires_in": 120})
+    assert (
+        datetime.fromisoformat(long_lived.json()["url_expires_at"]) == credential_expiry
+    )
+    assert datetime.fromisoformat(short.json()["url_expires_at"]) < credential_expiry
+
+
+class TestPaging:
+    async def _slot_of(self, client: httpx.AsyncClient, n: int) -> list[str]:
+        hashes = [(await _upload(client, _png(i))).json()["sha256"] for i in range(n)]
+        for digest in hashes:
+            assert (await _put(client, asset_sha256=digest)).status_code == 201
+        return hashes
+
+    @pytest.mark.parametrize("order", ["oldest", "newest"])
+    async def test_next_cursor_walks_every_row_once_in_either_order(
+        self, client_a: httpx.AsyncClient, order: str
+    ) -> None:
+        hashes = await self._slot_of(client_a, 5)
+        expected = hashes if order == "oldest" else hashes[::-1]
+        seen: list[str] = []
+        cursor: str | None = None
+        pages = 0
+        while True:
+            params: dict[str, Any] = {"limit": 2, "order": order}
+            if cursor is not None:
+                params["after"] = cursor
+            page = (await _list(client_a, **params)).json()
+            pages += 1
+            assert page["order"] == order
+            assert (page["next_cursor"] is not None) == page["truncated"]
+            seen += [c["asset_sha256"] for c in page["candidates"]]
+            if not page["truncated"]:
+                break
+            cursor = page["next_cursor"]
+        assert seen == expected
+        assert pages == 3
+
+    async def test_a_cursor_is_refused_in_the_other_order_or_malformed(
+        self, client_a: httpx.AsyncClient
+    ) -> None:
+        await self._slot_of(client_a, 3)
+        cursor = (await _list(client_a, limit=1)).json()["next_cursor"]
+        assert cursor is not None
+        wrong_order = await _list(client_a, limit=1, order="newest", after=cursor)
+        assert wrong_order.status_code == 422
+        assert wrong_order.json()["error"] == "invalid_cursor"
+        garbled = await _list(client_a, after="not-a-cursor")
+        assert garbled.status_code == 422
+        assert garbled.json()["error"] == "invalid_cursor"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"values": {"contrast": float("nan")}},
+        {"judge": {"margin": float("inf")}},
+        {"values": {"note": "x\x00y"}},
+    ],
+    ids=["values-nan", "judge-infinity", "values-nul"],
+)
+async def test_values_json_storage_cannot_hold_are_a_422_not_a_500(
+    client_a: httpx.AsyncClient, extra: dict[str, Any]
+) -> None:
+    digest = (await _upload(client_a, _png())).json()["sha256"]
+    # json.dumps writes NaN / Infinity tokens, as a client's encoder may;
+    # httpx's own refuses to, so the body is encoded here.
+    body = json.dumps(
+        {
+            "repo": REPO,
+            "slot_id": SLOT,
+            "asset_sha256": digest,
+            "status": "candidate",
+            **extra,
+        }
+    )
+    resp = await client_a.put(
+        SLOTS, content=body, headers={"content-type": "application/json"}
+    )
+    assert resp.status_code == 422, resp.text
+    assert "JSON storage cannot hold" in resp.text
+
+
+async def test_concurrent_re_uploads_merge_and_keep_the_first_kind(
+    test_engine: Any, committed_tenant: UUID
+) -> None:
+    """Two re-uploads of the same bytes race. The row lock makes each merge
+    onto what the other committed: neither provenance is lost, the first kind
+    stands, and each reports what it could not apply."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    tenant = committed_tenant
+    digest = "6" * 64
+    common: dict[str, Any] = {
+        "tenant_id": tenant,
+        "sha256": digest,
+        "storage_key": f"image-assets/{tenant}/sha256/66/{digest}.png",
+        "mime_type": "image/png",
+        "width": 1,
+        "height": 1,
+        "byte_size": 1,
+        "orientation": None,
+    }
+    async with maker() as setup:
+        await crud.upsert_asset(
+            setup, **common, kind="candidate", provenance={"ai_generated": True}
+        )
+        await setup.commit()
+
+    async def reupload(kind: str, provenance: dict[str, Any]) -> tuple[bool, list[str]]:
+        async with maker() as session:
+            _row, created, conflicts = await crud.upsert_asset(
+                session, **common, kind=kind, provenance=provenance
+            )
+            await session.commit()
+            return created, conflicts
+
+    results = await asyncio.gather(
+        reupload("exemplar", {"seed": 1}),
+        reupload("capture", {"model": "m", "ai_generated": False}),
+    )
+    assert [created for created, _ in results] == [False, False]
+    assert sorted(c for _, conflicts in results for c in conflicts) == [
+        "kind",
+        "kind",
+        "provenance.ai_generated",
+    ]
+    async with maker() as check:
+        row = await crud.get_asset(check, tenant_id=tenant, sha256=digest)
+    assert row is not None
+    assert row.kind == "candidate"
+    assert row.provenance == {"ai_generated": True, "seed": 1, "model": "m"}
+
+
+async def test_concurrent_first_uploads_create_one_row_and_keep_both_provenances(
+    test_engine: Any, committed_tenant: UUID
+) -> None:
+    """Neither upload sees a row; one inserts, the other's insert waits on it
+    and then merges — one row, one creator, both records' keys."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    tenant = committed_tenant
+    digest = "7" * 64
+    common: dict[str, Any] = {
+        "tenant_id": tenant,
+        "sha256": digest,
+        "storage_key": f"image-assets/{tenant}/sha256/77/{digest}.png",
+        "mime_type": "image/png",
+        "width": 1,
+        "height": 1,
+        "byte_size": 1,
+        "orientation": None,
+    }
+
+    async def upload(kind: str, provenance: dict[str, Any]) -> tuple[str, bool]:
+        async with maker() as session:
+            _row, created, _conflicts = await crud.upsert_asset(
+                session, **common, kind=kind, provenance=provenance
+            )
+            await session.commit()
+            return kind, created
+
+    results = await asyncio.gather(
+        upload("candidate", {"a": 1}), upload("exemplar", {"b": 2})
+    )
+    creators = [kind for kind, created in results if created]
+    assert len(creators) == 1
+    async with maker() as check:
+        row = await crud.get_asset(check, tenant_id=tenant, sha256=digest)
+    assert row is not None
+    assert row.kind == creators[0]
+    assert row.provenance == {"a": 1, "b": 2}

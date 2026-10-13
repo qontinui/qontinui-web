@@ -8,6 +8,7 @@ in a request — it is the server-side principal ``get_memory_tenant`` resolves.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from typing import Any, Final, Literal
 
@@ -44,8 +45,50 @@ SLOT_ID_PATTERN: Final = r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
 RECIPE_HASH_PATTERN: Final = r"^[A-Za-z0-9][A-Za-z0-9:._-]*$"
 
 
-def _json_size(value: Any) -> int:
-    return len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+def _unstorable(value: Any, path: str) -> str | None:
+    """Why ``value`` cannot be stored in a JSONB column, or None.
+
+    Valid JSON for Python is not always storable JSON for PostgreSQL: a
+    float that is NaN or ±Infinity (``json.loads`` accepts ``NaN`` and
+    ``Infinity``), a string or key holding U+0000, and a lone surrogate
+    (which has no UTF-8 form) are all refused by the database — AFTER the
+    request was accepted, as a 500. Refusing them here makes them a 422 at
+    the door, before anything is written.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return f"{path} is {value!r}, which JSON storage cannot hold"
+    if isinstance(value, str):
+        if "\x00" in value:
+            return f"{path} contains U+0000, which JSON storage cannot hold"
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            return f"{path} contains a lone surrogate, which has no UTF-8 form"
+        return None
+    if isinstance(value, dict):
+        for key, item in value.items():
+            reason = _unstorable(key, f"{path} key") or _unstorable(
+                item, f"{path}.{key}"
+            )
+            if reason:
+                return reason
+        return None
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            reason = _unstorable(item, f"{path}[{index}]")
+            if reason:
+                return reason
+    return None
+
+
+def _storable_json_size(value: Any, name: str) -> int:
+    """UTF-8 bytes of ``value`` as JSON; ValueError when it is not storable."""
+    reason = _unstorable(value, name)
+    if reason:
+        raise ValueError(reason)
+    return len(
+        json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    )
 
 
 # ── uploads ─────────────────────────────────────────────────────────────
@@ -64,7 +107,9 @@ class ImageAssetUploadFields(BaseModel):
 
     kind: ImageAssetKind
     #: The generator's provenance record, a JSON object serialized into the
-    #: form field. Kept verbatim.
+    #: form field. Stored as JSONB (key order and duplicate keys are not
+    #: preserved); a later upload of the same bytes merges into it, adding keys
+    #: and never removing or changing one.
     provenance: Json[dict[str, Any]] | None = None
 
     @field_validator("provenance", mode="before")
@@ -76,18 +121,33 @@ class ImageAssetUploadFields(BaseModel):
             )
         return value
 
+    @field_validator("provenance", mode="after")
+    @classmethod
+    def _storable_provenance(cls, value: dict[str, Any] | None) -> Any:
+        if value is not None:
+            _storable_json_size(value, "provenance")
+        return value
+
 
 class ImageAssetOut(BaseModel):
-    """One stored image. ``mime_type``, ``width`` and ``height`` were read from
-    the bytes; ``sha256`` was computed from them."""
+    """One stored image. ``mime_type``, ``width``, ``height`` and
+    ``orientation`` were read from the bytes; ``sha256`` was computed from
+    them."""
 
     model_config = ConfigDict(from_attributes=True)
 
     sha256: str
+    #: How the image FIRST entered the store; a later upload of the same bytes
+    #: does not change it.
     kind: ImageAssetKind
     mime_type: str
+    #: The image as DISPLAYED: for EXIF orientations 5-8 the encoded width and
+    #: height exchanged, as a browser renders it.
     width: int
     height: int
+    #: The EXIF orientation (1-8) the file declares; null when it declares
+    #: none.
+    orientation: int | None
     byte_size: int
     provenance: dict[str, Any]
     created_at: datetime
@@ -99,15 +159,32 @@ class ImageAssetUploadResponse(ImageAssetOut):
     false when the tenant already held these bytes (HTTP 200)."""
 
     created: bool
+    #: What this upload sent that the store did NOT apply, because the first
+    #: upload's value stands: ``kind`` when it differed, and
+    #: ``provenance.<path>`` for each provenance value that differed from the
+    #: stored one. Empty when everything sent was applied (or was already
+    #: there).
+    conflicts: list[str]
 
 
 class ImageAssetWithUrl(ImageAssetOut):
-    """A stored image plus a time-limited URL to its bytes."""
+    """A stored image plus a URL to its bytes.
+
+    On S3 / MinIO ``url`` is a presigned URL. Its ``url_expires_at`` is the
+    requested lifetime capped at the signing credential's own expiry when the
+    backend can read one (an assumed role, an instance or task profile): a
+    presigned URL stops working when the credential that signed it expires,
+    whatever its ``X-Amz-Expires`` says. When no expiry can be read — long-lived
+    access keys, or credentials whose expiry botocore does not expose — the
+    value ASSUMES the credential outlives the URL.
+
+    On the local development backend ``url`` is this API's own authenticated
+    content route (``GET /api/v1/image-assets/{sha256}/content``): fetch it
+    with the same credential. It does not expire, so ``url_expires_at`` is
+    null.
+    """
 
     url: str
-    #: When ``url`` stops working. ``null`` when the storage backend serves the
-    #: object with no expiry (the local development backend's static mount) —
-    #: never an expiry time it cannot enforce.
     url_expires_at: datetime | None
 
 
@@ -141,7 +218,10 @@ class SlotCandidateUpsert(BaseModel):
     @model_validator(mode="after")
     def _cap_json(self) -> SlotCandidateUpsert:
         for name in ("values", "judge"):
-            if _json_size(getattr(self, name)) > MAX_CANDIDATE_JSON_BYTES:
+            if (
+                _storable_json_size(getattr(self, name), name)
+                > MAX_CANDIDATE_JSON_BYTES
+            ):
                 raise ValueError(
                     f"{name} is larger than {MAX_CANDIDATE_JSON_BYTES} bytes as JSON"
                 )
@@ -193,15 +273,25 @@ class SlotCandidateUpsertResponse(BaseModel):
     demoted: list[SlotCandidateDemotion]
 
 
+#: The order a slot's candidates are listed in.
+CandidateOrder = Literal["oldest", "newest"]
+
+
 class SlotCandidateList(BaseModel):
-    """``GET /api/v1/image-assets/slot-candidates`` — one slot's candidates,
-    oldest first. The query is echoed so an empty list can be checked against
-    what was asked; ``truncated`` says whether more rows exist past ``limit``.
+    """``GET /api/v1/image-assets/slot-candidates`` — one page of a slot's
+    candidates, ``oldest`` or ``newest`` first.
+
+    The query is echoed so an empty page can be checked against what was
+    asked. ``truncated`` says whether more rows exist past this page, and
+    ``next_cursor`` — set exactly when it is true — fetches them: pass it back
+    as ``after`` with the same ``order``.
     """
 
     repo: str
     slot_id: str
     status: SlotCandidateStatus | None
+    order: CandidateOrder
     limit: int
     truncated: bool
+    next_cursor: str | None
     candidates: list[SlotCandidateOut]
