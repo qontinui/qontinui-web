@@ -67,6 +67,8 @@ import type { PrMergeStatus } from "@/services/admin-dev-service";
  * | `awaiting-specialist-review` | `waiting` | (escalation arm) | The specialist review is dispatched; a verdict is coming back. That is a nameable clearer, which is what amber requires. |
  * | `conflicts` | `author` | `conflict` / `not-mergeable` | A real merge conflict. Only a human resolves it. |
  * | `ci-failed` | `author` | `checks-failing` | A check reported failure. **The other half of the original bug** — this is the state that genuinely needs a push. |
+ * | `ci-failed-stale-base` | `waiting` | `needs-rebase` (same clearer) | A check is red, but the PR's base is stale — `main` has moved past the CI base, so the red may be main's fault rather than this PR's. coord diagnosed it (predicate code `ci-not-green-stale-base`) and its remedy is coord's OWN BEHIND freshen, which updates the branch and re-runs CI. A nameable clearer that is not the author, which is exactly what amber requires; red would send the author to fix a failure that may not be theirs. |
+ * | `ci-failed-infra-kill` | `waiting` | (none — see why) | Added by qontinui-coord#2723 and mapped here AHEAD of coord emitting it: every failing check run at the head failed on a SELF-HOSTED runner with zero failed steps — an infrastructure failure (runner lost, host down, setup/credential error), proven by coord's own per-job classifier. Not the author's code, so never author red. The remedy is re-running the failed jobs once the runner is healthy — infra/operator-side, named in coord's `blocking_summary`. Nothing clears it on its own (coord's bounded re-run reflex is a deferred phase), so `WAITING_AMBER` would promise a self-clearing that never comes: like `terminal-proposal-held` it is a real block with no self-clearing promise and no author move, so it sits at `UNKNOWN_AMBER`. No `prPipeline` counterpart: no existing `UnifiedStatusKind` fits (there it still reads as `checks-failing`, `author`). |
  * | `required-checks-missing` | `author` | `checks-failing` (same class) | A required check is UNSATISFIED. coord reconciles `required_checks_satisfied` against GitHub's aggregate at hydration, so a surviving `false` may never clear on its own. `trainActivity` grades it `blocking` and names `ci-failed` — not `behind-base` — as its sibling; amber here would promise a clearer that does not exist. |
  * | `review-required` | `author` | `requirements` | A required review or ruleset condition is unmet. Nothing dispatches the reviewer for you. |
  * | `blast-radius-block` | `author` | `requirements` | Over the repo's line budget: coord parks it and waits for a human decision. No timer clears it. |
@@ -92,6 +94,15 @@ export const PR_ATTENTION_BY_MERGE_STATUS: Record<PrMergeStatus, Attention> = {
   // --- waiting on something that will clear itself → amber ------------------
   "behind-base": "waiting",
   "awaiting-specialist-review": "waiting",
+  // Red on a stale base: coord's own BEHIND freshen is the remedy (it updates
+  // the branch and CI re-runs), so the clearer is coord, never the author.
+  "ci-failed-stale-base": "waiting",
+  // Red from a self-hosted runner kill (zero failed steps; qontinui-coord#2723):
+  // the remedy is a re-run once the runner is healthy — infra/operator-side,
+  // not the author's code. No operator attention exists in this vocabulary;
+  // `author` would be the misreading coord split this token out to stop.
+  // Palette is the ignorance floor, not the self-clearing amber — see below.
+  "ci-failed-infra-kill": "waiting",
   // --- someone must act now → red ------------------------------------------
   conflicts: "author",
   "ci-failed": "author",
@@ -126,6 +137,9 @@ export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   "landed-open": INERT,
   "behind-base": WAITING_AMBER,
   "awaiting-specialist-review": WAITING_AMBER,
+  // A CI red coord exonerates the author from, with a self-clearing promise:
+  // coord's own BEHIND freshen updates the branch and re-runs CI.
+  "ci-failed-stale-base": WAITING_AMBER,
   conflicts: AUTHOR_RED,
   "ci-failed": AUTHOR_RED,
   "required-checks-missing": AUTHOR_RED,
@@ -138,6 +152,14 @@ export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   // the self-clearing promise — see `UNKNOWN_AMBER`'s own doc.
   "predicate-blocked": UNKNOWN_AMBER,
   "terminal-proposal-held": UNKNOWN_AMBER,
+  // A CI red coord exonerates the author from, with NO self-clearing promise:
+  // nothing re-runs a killed job yet, so `WAITING_AMBER` would lie. Same
+  // floor as `terminal-proposal-held`, for the same reason. The grade differs
+  // from train activity on purpose: there `trainActivity.ts` grades it
+  // `blocking` (that axis's "operator action needed"), because the axis is
+  // "why is the train paused" and a red no timer clears is a block; here the
+  // axis is whose colour the badge wears, and red would name the author.
+  "ci-failed-infra-kill": UNKNOWN_AMBER,
   unknown: UNKNOWN_AMBER,
 };
 
