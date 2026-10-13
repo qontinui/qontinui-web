@@ -171,6 +171,7 @@ export function ExpediteDialsSection({
   onChange,
   testIdPrefix,
   testIdSuffix = "",
+  busy = false,
 }: {
   tier: "tenant" | "repo";
   fields: ExpediteFields;
@@ -178,8 +179,10 @@ export function ExpediteDialsSection({
   onChange: <K extends ExpediteKey>(key: K, value: ExpediteFields[K]) => void;
   testIdPrefix: string;
   testIdSuffix?: string;
+  /** Disable the controls without changing the read state (a save in flight). */
+  busy?: boolean;
 }) {
-  const disabled = readState === "unsupported";
+  const disabled = readState === "unsupported" || busy;
   const unknown = readState === "unknown";
   const inheritLabel =
     tier === "tenant" ? "inherit (fleet default)" : "inherit tenant";
@@ -203,7 +206,7 @@ export function ExpediteDialsSection({
             : " A repo can override each one below."}
         </p>
       </div>
-      {disabled && (
+      {readState === "unsupported" && (
         <p
           className="text-xs text-amber-400"
           data-testid={id("expedite-unsupported")}
@@ -217,9 +220,9 @@ export function ExpediteDialsSection({
           className="text-xs text-amber-400"
           data-testid={id("expedite-unknown")}
         >
-          coord could not read the current values, so they are shown as unknown,
-          not as inherited. You can still set them; a field you leave untouched
-          is left unchanged.
+          coord could not read the current values, so any not set here are shown
+          as unknown, not as inherited. You can still set them; a field you
+          leave untouched is left unchanged.
         </p>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -278,9 +281,11 @@ export function ExpediteDialsSection({
           <Label htmlFor={id("expedite-max-files")}>Max files</Label>
           <Input
             id={id("expedite-max-files")}
-            type="number"
-            min={1}
-            step={1}
+            // Text, not `number`: a number input reports "" for input it
+            // cannot parse, which would be sent as clear-to-inherit instead
+            // of being refused by `parsePositiveSize`.
+            type="text"
+            inputMode="numeric"
             value={fields.expedite_max_files}
             disabled={disabled}
             onChange={(e) => onChange("expedite_max_files", e.target.value)}
@@ -294,9 +299,11 @@ export function ExpediteDialsSection({
           </Label>
           <Input
             id={id("expedite-max-changed-lines")}
-            type="number"
-            min={1}
-            step={1}
+            // Text, not `number`: a number input reports "" for input it
+            // cannot parse, which would be sent as clear-to-inherit instead
+            // of being refused by `parsePositiveSize`.
+            type="text"
+            inputMode="numeric"
             value={fields.expedite_max_changed_lines}
             disabled={disabled}
             onChange={(e) =>
@@ -308,8 +315,8 @@ export function ExpediteDialsSection({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        The size limits cap what one expedited land may change (blank = inherit;
-        the built-in limit is 20 files and 400 changed lines).
+        The size limits cap what one expedited land may change (blank = inherit
+        the built-in limit).
       </p>
     </div>
   );

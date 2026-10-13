@@ -2144,9 +2144,9 @@ describe("<MergeOrchestrationSettings> expedited-land dials", () => {
     });
     await waitFor(() => expect(patchBodies()).toHaveLength(1));
     expect(patchBodies()[0].body.expedited_land).toBe("off");
-    // The reload hands back the same `null`: the control is UNKNOWN again,
-    // not the value just typed.
-    await waitFor(() => expect(land.value).toBe("unknown"));
+    // After the 2xx the control holds what coord now stores; the reload's
+    // `null` changes nothing, and the edit is consumed.
+    expect(land.value).toBe("off");
 
     // An unrelated save must not carry the consumed edit.
     fireEvent.change(el("settings-min-green-dwell"), {
@@ -2159,6 +2159,50 @@ describe("<MergeOrchestrationSettings> expedited-land dials", () => {
     const second = patchBodies()[1].body;
     expect(second.min_green_dwell_secs).toBe(90);
     for (const k of EXPEDITE_KEYS) expect(k in second).toBe(false);
+  });
+
+  it("shows the value just SAVED, not the pre-save read, when the reload fails", async () => {
+    let settingsReads = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (
+        init?.method !== "PATCH" &&
+        url.includes("/pr-merge/settings") &&
+        ++settingsReads > 1
+      ) {
+        return Promise.resolve(new Response("down", { status: 503 }));
+      }
+      return Promise.resolve(route(url, init, STORED_TENANT, "absent", false));
+    });
+    render(<MergeOrchestrationSettings />);
+    const land = (await screen.findByTestId(
+      "settings-expedited-land"
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(land.value).toBe("shadow"));
+    fireEvent.change(land, { target: { value: "off" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    await screen.findByText(/settings: HTTP 503/);
+    expect(settingsReads).toBe(2);
+    // coord stores `off`; the stale pre-save `shadow` must not come back.
+    expect(land.value).toBe("off");
+  });
+
+  it("refuses an unparseable size instead of sending it as a clear", async () => {
+    renderWith(STORED_TENANT);
+    await waitFor(() =>
+      expect(el("settings-expedite-max-files").value).toBe("12")
+    );
+    fireEvent.change(el("settings-expedite-max-files"), {
+      target: { value: "1e3" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    expect(
+      await screen.findByText(/expedite_max_files: must be a positive/)
+    ).toBeInTheDocument();
+    expect(patchBodies()).toEqual([]);
   });
 
   it("disables the dials, says why, and sends no key on an older coord build", async () => {
