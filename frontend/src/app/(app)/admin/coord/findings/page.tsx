@@ -85,8 +85,13 @@ import {
   RowTime,
   StatusBadge,
   readIsUnknown,
+  GlossaryTerm,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchCoordFindingById,
+  fetchCoordFindings,
+  type FindingsQuery,
+} from "@/lib/api/operations/coordFindings";
 import {
   type CoordFindingRow,
   type FindingsResponse,
@@ -106,7 +111,6 @@ import {
   triageSentence,
 } from "./_lib/findingStatus";
 
-const API = "/api/v1/operations";
 /** Page size asked of coord. Coord owns the clamp; this is a request. */
 const PAGE_SIZE = 50;
 
@@ -126,16 +130,15 @@ function buildQuery(params: {
   triaged: boolean | null;
   /** Only ever a `next_cursor` coord minted for THIS query — never invented. */
   cursor?: string | null;
-}): string {
-  const qs = new URLSearchParams();
-  qs.set("limit", String(PAGE_SIZE));
-  if (params.topic.trim()) qs.set("topic", params.topic.trim());
-  if (params.kind.trim()) qs.set("kind", params.kind.trim());
-  if (params.resourceKey.trim())
-    qs.set("resource_keys", params.resourceKey.trim());
-  if (params.triaged !== null) qs.set("triaged", String(params.triaged));
-  if (params.cursor) qs.set("cursor", params.cursor);
-  return qs.toString();
+}): FindingsQuery {
+  return {
+    limit: PAGE_SIZE,
+    topic: params.topic.trim() || undefined,
+    kind: params.kind.trim() || undefined,
+    resourceKeys: params.resourceKey.trim() || undefined,
+    triaged: params.triaged,
+    cursor: params.cursor,
+  };
 }
 
 /** The envelope, defensively: coord's shape, and nothing assumed present. */
@@ -302,13 +305,13 @@ export default function CoordFindingsPage() {
     setWalkStalled(false);
     try {
       const body = readBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/findings?${buildQuery({
+        await fetchCoordFindings(
+          buildQuery({
             topic,
             kind,
             resourceKey,
             triaged,
-          })}`
+          })
         )
       );
       if (!current()) return;
@@ -415,14 +418,14 @@ export default function CoordFindingsPage() {
     setPagingError(null);
     try {
       const body = readBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/findings?${buildQuery({
+        await fetchCoordFindings(
+          buildQuery({
             topic,
             kind,
             resourceKey,
             triaged,
             cursor,
-          })}`
+          })
         )
       );
       if (!current()) return;
@@ -484,11 +487,7 @@ export default function CoordFindingsPage() {
     setLinkedLoading(true);
     setLinkedFailed(false);
     try {
-      const body = readBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/findings?finding_id=${encodeURIComponent(linkedId.trim())}`
-        )
-      );
+      const body = readBody(await fetchCoordFindingById(linkedId.trim()));
       if (linkedGenRef.current !== gen) return;
       if (body.unavailable) {
         // The BY-ID read's own degrade, kept apart from the list read's, which
@@ -782,7 +781,8 @@ export default function CoordFindingsPage() {
             </p>
           ) : (
             <p className="text-sm italic text-muted-foreground">
-              No findings match these filters.
+              No <GlossaryTerm id="finding">findings</GlossaryTerm> match these
+              filters.
             </p>
           )
         }

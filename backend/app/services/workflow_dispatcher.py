@@ -32,7 +32,10 @@ from app.models.app_deploy_state import AppDeploymentFreshness, AppDeployState
 from app.models.device import Device
 from app.models.unified_workflow import UnifiedWorkflow
 from app.schemas.device_resolve import (
+    AllCapableAtCapacityOutcome,
     AllCapableDrainedOutcome,
+    AllCapableOfflineOutcome,
+    AllCapableRoleClosedOutcome,
     DeviceResolveRequest,
     DeviceResolveResult,
     DrainUnreadableOutcome,
@@ -40,6 +43,7 @@ from app.schemas.device_resolve import (
     PinIneligibleOutcome,
     ResolvedOutcome,
     UnavailableOutcome,
+    UnknownOutcome,
 )
 from app.schemas.workflow_dispatch import WorkflowDispatchResponse
 from app.services.coord_device_resolve import CoordCaller, resolve_device
@@ -135,6 +139,16 @@ def _refusal_for(outcome: DeviceResolveResult) -> AutoPickRefusal:
             ),
             outcome=outcome,
         )
+    if isinstance(outcome, UnknownOutcome):
+        return AutoPickRefusal(
+            code="device_resolver_unknown_outcome",
+            message=(
+                "Coord's device resolver answered with an outcome this build "
+                f"does not know ({outcome.raw_outcome!r}), so no runner is "
+                "picked automatically. Choose a runner explicitly."
+            ),
+            outcome=outcome,
+        )
     if isinstance(outcome, DrainUnreadableOutcome):
         return AutoPickRefusal(
             code="drain_unreadable",
@@ -148,6 +162,35 @@ def _refusal_for(outcome: DeviceResolveResult) -> AutoPickRefusal:
         return AutoPickRefusal(
             code="all_capable_runners_drained",
             message="Every runner able to run this is drained.",
+            outcome=outcome,
+        )
+    if isinstance(outcome, AllCapableRoleClosedOutcome):
+        return AutoPickRefusal(
+            code="all_capable_runners_role_closed",
+            message=(
+                "Every runner able to run this has a role (bench / CI node) "
+                "that does not accept this work. Change a runner's role to "
+                "workhorse to run it there."
+            ),
+            outcome=outcome,
+        )
+    if isinstance(outcome, AllCapableOfflineOutcome):
+        return AutoPickRefusal(
+            code="all_capable_runners_offline",
+            message=(
+                "Every runner able to run this is offline "
+                f"({outcome.capable_offline} seen recently). Start one so it "
+                "connects, then retry."
+            ),
+            outcome=outcome,
+        )
+    if isinstance(outcome, AllCapableAtCapacityOutcome):
+        return AutoPickRefusal(
+            code="all_capable_runners_at_capacity",
+            message=(
+                "Every runner able to run this is at its limit on concurrent "
+                "sessions. Retry when one finishes, or choose a runner explicitly."
+            ),
             outcome=outcome,
         )
     if isinstance(outcome, NoCapableDeviceOutcome):

@@ -1,5 +1,25 @@
 name: Cross-browser Survey
 
+# ADVISORY BY DESIGN -- the survey's test pass/fail never reds a check run.
+#
+# Every survey test still runs. Failing tests are REPORTED, not raised: a
+# `$GITHUB_STEP_SUMMARY` table of failing tests per browser, the uploaded
+# Playwright report + test-results artifacts, and a `::warning::` annotation
+# carrying the failure count (.github/scripts/playwright-survey-summary.py).
+# Why: this runs nightly on main, and a red job check run on main's tip makes
+# coord hold EVERY qontinui-web PR (coord blocks on any red check on main,
+# required or not) -- so a handful of known browser-specific survey failures
+# froze the whole web merge train every night (2026-10-12, 2026-10-13 at
+# 37e7a1c02). Job-level `continue-on-error` did not prevent that: it keeps
+# the RUN green but the job's check run still concludes `failure`.
+#
+# Infrastructure breakage still fails loudly: every setup / install /
+# migration / auth step is untouched, and the summary script exits non-zero
+# when the run itself did not happen (no report, globalSetup or webServer
+# error, the `setup` project failing, zero survey tests executed or ALL of
+# them failing (a server dying mid-run), or a non-zero
+# Playwright exit no failing test explains).
+#
 # Phase 3 cross-browser baseline collection. Lives in its own workflow
 # file (not e2e-tests.yml) so that a newer push to main cannot cancel
 # an in-flight Mobile Chrome — `e2e-tests.yml` uses `cancel-in-progress:
@@ -42,7 +62,10 @@ jobs:
   cross-browser-survey:
     name: Frontend E2E Tests — cross-browser survey (${{ matrix.browser }})
     if: github.event_name != 'pull_request'
-    continue-on-error: true
+    # No job-level `continue-on-error`: test results are already advisory
+    # (see the header), so the only thing left that can red this job is
+    # genuine infrastructure breakage -- which should red the run too, not
+    # hide behind a green run the way the 2026-05-30 setup failure did.
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -566,17 +589,41 @@ jobs:
         run: |
           alembic upgrade heads
 
-      - name: Create dev user for E2E auth setup
+      # Hermetic auth, copied from e2e-playwright-stack.yml (itself mirroring
+      # spec-ci.yml + style-gate.yml, the ONE canonical CI auth contract):
+      # mint a run-local RS256 id token + JWKS, point the backend's Cognito
+      # verifier at the local issuer (env on the survey step below), and let
+      # auth.setup.ts lane 1 (QONTINUI_TEST_ID_TOKEN) seed it. This replaces
+      # the old "Create dev user" step, which ran backend/create_admin.py --
+      # deleted with the local-password stack in #342 (Cognito sole auth).
+      # Every matrix entry failed there from 2026-05-30 on; the job-level
+      # `continue-on-error: true` kept the RUN green, so it went unnoticed.
+      - name: Mint local id token + serve JWKS
         working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-          TESTING: '1'
-          ENVIRONMENT: development
-          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
-          STORAGE_BACKEND: local
-          REDIS_ENABLED: 'false'
         run: |
-          python create_admin.py
+          set -euo pipefail
+          # Mint as the canonical dev user (dev-credentials.json), so the
+          # token links to the superuser row global-setup seeds rather than
+          # JIT-provisioning a data-less user -- see e2e-playwright-stack.yml.
+          EMAIL=$(python -c "import json; print(json.load(open('../dev-credentials.json'))['email'])")
+          TOKEN=$(python scripts/spec_ci_local_idp.py \
+            --issuer "http://127.0.0.1:8770" \
+            --audience spec-ci-local \
+            --email "$EMAIL" \
+            --out-dir /tmp/e2e-idp)
+          echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          (cd /tmp/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
+          for i in $(seq 1 15); do
+            # Quiet probe: the first poll usually lands before the server
+            # binds, and its "curl: (7)" line reads like a failure. The
+            # unconditional check after the loop stays loud.
+            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null 2>&1; then
+              echo "local JWKS up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
 
       # Single project per matrix entry. workers=1 (inherited from
       # playwright.config.ts) keeps within-project execution serial; the
@@ -597,8 +644,32 @@ jobs:
           # first-hit latency, so the dev server is still the right server
           # for it; moving it onto a build is a separate change.
           PLAYWRIGHT_WEB_SERVER: dev
+          # Hermetic-auth backend config. global-setup.ts spawns uvicorn with
+          # `...process.env`, so these reach the backend's Cognito verifier:
+          # it trusts the run-local issuer minted above. Values mirror
+          # e2e-playwright-stack.yml / spec-ci.yml.
+          COGNITO_USER_POOL_ID: spec-ci-local-pool
+          COGNITO_ISSUER: http://127.0.0.1:8770
+          COGNITO_ALLOWED_AUDIENCES: spec-ci-local
+          # Authenticate the backend's GitHub Releases fetch
+          # (backend/app/api/v1/endpoints/releases.py reads GITHUB_TOKEN). Shared
+          # runner IPs exhaust the 60/hr anonymous api.github.com limit, which
+          # empties the release payload and fails the Download Page specs; the
+          # token lifts that anonymous limit. Mirrors e2e-playwright-stack.yml.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BROWSER: ${{ matrix.browser }}
+        # Advisory test verdict: capture Playwright's exit code instead of
+        # letting it fail the step, then let the summary script decide. It
+        # exits 0 on survey test failures (reporting them) and non-zero only
+        # on infrastructure failure (see the header comment).
         run: |
-          npx playwright test --project="${{ matrix.browser }}"
+          rm -f test-results/results.json
+          set +e
+          npx playwright test --project="$BROWSER"
+          pw_exit=$?
+          set -e
+          python ../.github/scripts/playwright-survey-summary.py \
+            test-results/results.json "$BROWSER" "$pw_exit"
 
       # Artifact names must be unique across matrix entries
       # (actions/upload-artifact@v4 rejects collisions). browser-slug

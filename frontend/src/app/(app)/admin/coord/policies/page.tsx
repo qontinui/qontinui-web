@@ -50,7 +50,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchNextStepSettingsFleet,
+  type NextStepSettingsFleet,
+  type TenantNextStepSetting,
+} from "@/lib/api/operations/coordSettings";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { DesignPoliciesSection } from "./_components/DesignPoliciesSection";
@@ -61,33 +65,20 @@ import {
   rowAccentProps,
   type HealthBadge,
   type HealthStripLevel,
+  GlossaryTerm,
 } from "@/components/console";
 import {
   derivePolicyAutonomyStatus,
   POLICY_STATUS_PALETTE,
 } from "./policyAutonomyStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-// The level union lives with the derivation that reads it (R8), so the page
-// and its palette can never disagree about what coord's vocabulary is.
-import type { AutonomyLevel } from "./policyAutonomyStatus";
-
-interface TenantPolicySetting {
-  tenant_id: string;
-  slug: string;
-  autonomy_level: AutonomyLevel;
-  effective: boolean;
-  updated_at: string;
-}
-
-interface FleetResponse {
-  master_enabled: boolean;
-  tenants: TenantPolicySetting[];
-}
+// The level union is the client's wire type, which the derivation reads too
+// (R8), so the page and its palette can never disagree about coord's vocabulary.
+import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -124,15 +115,14 @@ function autonomyChip(level: AutonomyLevel) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CoordPoliciesPage() {
-  const [data, setData] = useState<FleetResponse | null>(null);
+  const [data, setData] = useState<NextStepSettingsFleet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openTenant, setOpenTenant] = useState<string | null>(null);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<FleetResponse>(
-        `${API}/coord/next-step-settings/fleet`,
+      const body = await fetchNextStepSettingsFleet(
         COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!isCurrent()) return;
@@ -268,7 +258,9 @@ export default function CoordPoliciesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Tenant</TableHead>
+                  <TableHead>
+                    <GlossaryTerm id="tenant">Tenant</GlossaryTerm>
+                  </TableHead>
                   <TableHead>Level</TableHead>
                   <TableHead>coord will</TableHead>
                   <TableHead>Updated</TableHead>
@@ -318,7 +310,7 @@ function TenantRow({
   expanded,
   onToggle,
 }: {
-  tenant: TenantPolicySetting;
+  tenant: TenantNextStepSetting;
   expanded: boolean;
   onToggle: () => void;
 }) {

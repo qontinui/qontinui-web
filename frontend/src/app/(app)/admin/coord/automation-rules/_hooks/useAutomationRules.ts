@@ -1,7 +1,7 @@
 "use client";
 
 import { useCoordPolicies } from "../../_shared/useCoordPolicies";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import type { PolicyCreate, PolicyRow, PolicyUpdate, RuleKind } from "../types";
 
 /** The two policy kinds the Automation Rules surface authors. */
