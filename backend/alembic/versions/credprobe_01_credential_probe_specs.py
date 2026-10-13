@@ -155,7 +155,8 @@ def upgrade() -> None:
                        = (canary_parameter IS NOT NULL)),
             CONSTRAINT ck_credential_probe_specs_canary_charset
                 CHECK (canary_parameter IS NULL
-                       OR canary_parameter ~ '^[A-Za-z0-9_./-]{1,2048}$'),
+                       OR (canary_parameter ~ '^[A-Za-z0-9_./-]+$'
+                           AND length(canary_parameter) <= 2048)),
             CONSTRAINT ck_credential_probe_specs_canary_not_secret_shaped
                 CHECK (canary_parameter IS NULL
                        OR canary_parameter !~* '(password|secret|token|key|credential)'),
