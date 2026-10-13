@@ -211,6 +211,8 @@ export async function patchCoordPolicy<TUpdate>(
  * A 204 resolves `undefined`, as `httpClient.delete` did.
  */
 export async function deleteCoordPolicy(policyId: string): Promise<unknown> {
+  // `idempotent: false` is a no-op here: the client still retries a DELETE
+  // on a 5xx by method, exactly as `httpClient.delete` did.
   const url = `${OPERATIONS_BASE}/coord/policies/${encodeURIComponent(policyId)}`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
@@ -246,6 +248,8 @@ export async function putCoordPolicySystemOverride<TCreate>(
   systemRuleId: string,
   body: { disabled: boolean } | TCreate
 ): Promise<unknown> {
+  // `idempotent: false` is a no-op here: the client still retries a PUT on a
+  // 5xx by method, exactly as `httpClient.put` did.
   const url = `${OPERATIONS_BASE}/coord/policies/system/${encodeURIComponent(systemRuleId)}/override`;
   const res = await httpClient.fetch(url, {
     method: "PUT",
@@ -262,6 +266,8 @@ export async function putCoordPolicySystemOverride<TCreate>(
 export async function deleteCoordPolicySystemOverride(
   systemRuleId: string
 ): Promise<unknown> {
+  // `idempotent: false` is a no-op here: the client still retries a DELETE
+  // on a 5xx by method, exactly as `httpClient.delete` did.
   const url = `${OPERATIONS_BASE}/coord/policies/system/${encodeURIComponent(systemRuleId)}/override`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",

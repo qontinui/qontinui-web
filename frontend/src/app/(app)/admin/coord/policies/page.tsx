@@ -76,9 +76,9 @@ const POLL_INTERVAL_MS = 30_000;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-// The level union lives with the derivation that reads it (R8), so the page
-// and its palette can never disagree about what coord's vocabulary is.
-import type { AutonomyLevel } from "./policyAutonomyStatus";
+// The level union is the client's wire type, which the derivation reads too
+// (R8), so the page and its palette can never disagree about coord's vocabulary.
+import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

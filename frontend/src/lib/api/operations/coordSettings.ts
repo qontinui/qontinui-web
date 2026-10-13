@@ -20,6 +20,11 @@ import { OPERATIONS_BASE, readJson } from "./base";
 
 // ───────────────────────────── next-step settings ─────────────────────────────
 
+/**
+ * Coord's tenant autonomy vocabulary, as it arrives on the wire. The one
+ * definition: `policies/policyAutonomyStatus.ts` and the settings page import
+ * it from here.
+ */
 export type AutonomyLevel = "always_escalate" | "guidance_only" | "auto_decide";
 
 /** One decision domain of `NextStepSettings` (coord's next-step settings row). */
@@ -205,6 +210,8 @@ export async function updatePrioritySet(
  * `httpClient.delete` did.
  */
 export async function deletePrioritySet(id: string): Promise<unknown> {
+  // `idempotent: false` is a no-op here: the client still retries a DELETE
+  // on a 5xx by method, exactly as `httpClient.delete` did.
   const url = `${OPERATIONS_BASE}/coord/priority-sets/${encodeURIComponent(id)}`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",

@@ -18,11 +18,17 @@ vi.mock("@/services/service-factory", () => ({
     // The hooks call `httpClient.fetch` (the typed /operations client); route
     // each request onto the per-verb mock the assertions below read.
     fetch: async (url: string, init: { method?: string; body?: string }) => {
-      const out =
-        init.method === "GET"
-          ? await getMock(url)
-          : await patchMock(url, JSON.parse(init.body ?? "null"));
-      return new Response(JSON.stringify(out ?? null));
+      const method = init.method ?? "GET";
+      const body = JSON.parse(init.body ?? "null");
+      let out: unknown;
+      if (method === "GET") out = await getMock(url);
+      else if (method === "PATCH") out = await patchMock(url, body);
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      // A mock that resolves a `Response` (an error path) is answered
+      // as-is, so a non-2xx goes through `readJson` like the real one.
+      return out instanceof Response
+        ? out
+        : new Response(JSON.stringify(out ?? null));
     },
   },
 }));
@@ -99,10 +105,8 @@ describe("useTranscriptSyncPolicy", () => {
     const { result } = renderHook(() => useTranscriptSyncPolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    patchMock.mockRejectedValueOnce(
-      new Error(
-        `PATCH ${TRANSCRIPT_SYNC_API} failed: 504 - {"detail":"timeout waiting for coord"}`
-      )
+    patchMock.mockResolvedValueOnce(
+      new Response('{"detail":"timeout waiting for coord"}', { status: 504 })
     );
     await act(async () => {
       await result.current.setEnabled(false);
@@ -117,8 +121,8 @@ describe("useTranscriptSyncPolicy", () => {
     const { result } = renderHook(() => useTranscriptSyncPolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    patchMock.mockRejectedValueOnce(
-      new Error(`PATCH ${TRANSCRIPT_SYNC_API} failed: 403 - admin_required`)
+    patchMock.mockResolvedValueOnce(
+      new Response("admin_required", { status: 403 })
     );
     await act(async () => {
       await result.current.setEnabled(false);
