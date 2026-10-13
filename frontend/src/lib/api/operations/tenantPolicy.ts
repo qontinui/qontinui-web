@@ -82,11 +82,17 @@ export interface FleetPolicyWrite {
   change_note: string;
 }
 
-/** `GET /fleet-policy?domain=` (`get_fleet_policy`) — what one domain resolves. */
+/**
+ * `GET /fleet-policy?domain=[&repo=]` (`get_fleet_policy`) — what one domain
+ * resolves. With `repo`, coord resolves as that repo would, so a repo-band row
+ * for it can win; without it, repo-band rows never match.
+ */
 export async function fetchFleetPolicy(
-  domain: string
+  domain: string,
+  repo?: string
 ): Promise<FleetPolicyView> {
-  const url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}`;
+  const repoParam = repo ? `&repo=${encodeURIComponent(repo)}` : "";
+  const url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}${repoParam}`;
   const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
   return readJson<FleetPolicyView>(res, `GET ${url}`);
 }

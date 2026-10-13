@@ -3774,6 +3774,87 @@ class TestCallerTokenForwarding:
         assert r.json()["requested"]["max_concurrent_builds"] is None
 
 
+class TestCiNodeModelAccessRoundTrip:
+    """``model_access`` — "Let CI steps use this machine's Claude accounts" —
+    round-trips through the CI-node PUT/GET and reaches coord's directive only
+    when the machine row carries a value (plan
+    ``2026-10-13-ci-node-runs-model-dependent-eval-steps`` Phase 4)."""
+
+    async def _machine(self, client, device_id: str, name: str) -> str:
+        r = await client.post(
+            f"{API_PREFIX}/machines/dispatch-enroll",
+            json={"name": name, "target_device_id": device_id},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["machine"]["id"]
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_off_is_stored_forwarded_and_read_back(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "model-off-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": False},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["model_access"] is False
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert ci_node["model_access"] is False
+
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["model_access"] is False
+
+            # Turning it back on travels as an explicit true.
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": True},
+            )
+            assert r.status_code == 200, r.text
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert ci_node["model_access"] is True
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert r.json()["requested"]["model_access"] is True
+
+    @pytest.mark.asyncio
+    async def test_an_untouched_switch_is_not_sent_and_reads_as_not_set(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A save that never set the switch must not speak for it: coord gets
+        no key, so the runner keeps whatever consent it already holds."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "model-unset-box")
+            # Never configured: the GET reports "not set here", not a guess.
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["model_access"] is None
+
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True},
+            )
+            assert r.status_code == 200, r.text
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert "model_access" not in ci_node
+            assert r.json()["requested"]["model_access"] is None
+
+
 async def _new_user(db: AsyncSession, label: str):
     """Create + persist a real ``auth.users`` row (devenv FKs require one)."""
     from app.models.user import User

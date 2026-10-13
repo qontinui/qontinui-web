@@ -611,3 +611,109 @@ describe("CiNodeConfigPanel", () => {
     expect(screen.queryByTestId("ci-node-enabled")).toBeNull();
   });
 });
+
+/**
+ * "Let CI steps use this machine's Claude accounts" — the device-scope
+ * off-switch of plan `2026-10-13-ci-node-runs-model-dependent-eval-steps`
+ * (D6, Phase 4). Default on; an untouched switch never speaks for the runner.
+ */
+describe("CiNodeConfigPanel — model access", () => {
+  function putBody(call = 1): Record<string, unknown> {
+    const [, init] = fetchMock.mock.calls[call] as [string, RequestInit];
+    expect(init.method).toBe("PUT");
+    return JSON.parse(String(init.body));
+  }
+
+  it("names what off does not stop, before the switch", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const field = await screen.findByTestId("ci-node-model-access");
+    const residual = within(field).getByTestId("ci-node-model-access-residual");
+    expect(residual.textContent).toMatch(/deliberately points claude/i);
+    expect(residual.textContent).toMatch(/account files/i);
+    const sw = within(field).getByTestId("ci-node-model-access-switch");
+    expect(
+      residual.compareDocumentPosition(sw) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(field.textContent).toMatch(/still run/i);
+    expect(field.textContent).toMatch(/UNKNOWN/);
+  });
+
+  it("an unset value shows the switch on, says it is not set here, and saves nothing for it", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    expect(screen.getByTestId("ci-node-model-access-switch")).toBeChecked();
+    const label = screen.getByTestId("ci-node-model-access-state");
+    expect(label).toHaveAttribute("data-state", "unset");
+    expect(label.textContent).toMatch(/not set from qontinui\.io/);
+
+    // Change something else: the switch's value travels as null (the backend
+    // then omits it, so the runner keeps its own).
+    fireEvent.click(screen.getByTestId("ci-node-enabled"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(state({ dispatched: true })));
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(putBody().model_access ?? null).toBeNull();
+  });
+
+  it("turning it off is a change, and saves an explicit false", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("ci-node-model-access-switch"));
+    expect(screen.getByTestId("ci-node-model-access-state")).toHaveAttribute(
+      "data-state",
+      "off"
+    );
+    expect(screen.getByTestId("ci-node-apply")).toBeEnabled();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, model_access: false },
+          configured: true,
+          dispatched: true,
+        })
+      )
+    );
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(putBody().model_access).toBe(false);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("ci-node-model-access-switch")
+      ).not.toBeChecked()
+    );
+  });
+
+  it("a stored false reads back off; turning it on saves an explicit true", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, model_access: false },
+          configured: true,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-model-access-switch")).not.toBeChecked();
+
+    fireEvent.click(screen.getByTestId("ci-node-model-access-switch"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(state({ dispatched: true })));
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(putBody().model_access).toBe(true);
+  });
+
+  it("configsEqual treats a config predating the field as unset, not as a change", () => {
+    const base = state().requested;
+    const legacy = { ...base };
+    delete legacy.model_access;
+    expect(configsEqual({ ...base, model_access: null }, legacy)).toBe(true);
+    expect(configsEqual({ ...base, model_access: false }, legacy)).toBe(false);
+  });
+});
