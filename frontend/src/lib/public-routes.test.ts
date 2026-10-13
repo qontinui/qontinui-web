@@ -3,46 +3,24 @@ import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fillMetadataSegment } from "next/dist/lib/metadata/get-metadata-route";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths";
+import {
+  CARD_ROUTE_FILE,
+  cardRoutes,
+  type CardRoute,
+} from "@/test/social-card-routes";
 import { isPublic, SOCIAL_CARD_PATHS } from "./public-routes";
 
 const APP_DIR = join(__dirname, "..", "app");
-
-/** A code-rendered social card: served at an extensionless URL. */
-const CARD_FILE = /^((?:opengraph|twitter)-image)\d?\.(?:tsx|ts|jsx|js)$/;
 const PAGE_FILE = /^page\.(?:tsx|ts|jsx|js|mdx)$/;
-
-interface CardModule {
-  /** The card's directory, absolute. */
-  dir: string;
-  /** Its app-dir segment, e.g. `/` or `/(marketing)`. */
-  segment: string;
-  file: string;
-  /** `opengraph-image` or `twitter-image`. */
-  kind: string;
-}
 
 const segmentOf = (dir: string) =>
   `/${relative(APP_DIR, dir).split(sep).join("/")}`;
 
 /** Every social-card route module under `src/app`. */
-function socialCardModules(): CardModule[] {
-  const found: CardModule[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      const kind = CARD_FILE.exec(entry.name)?.[1];
-      if (entry.isDirectory()) walk(full);
-      else if (kind) {
-        found.push({ dir, segment: segmentOf(dir), file: entry.name, kind });
-      }
-    }
-  };
-  walk(APP_DIR);
-  return found;
-}
+const socialCardModules = () => cardRoutes(APP_DIR);
 
 /** The URL Next serves a card module at, named by Next's own function. */
-function servedUrl({ segment, file }: CardModule) {
+function servedUrl({ segment, file }: CardRoute) {
   return fillMetadataSegment(segment, {}, file.replace(/\.\w+$/, ""));
 }
 
@@ -51,12 +29,12 @@ function servedUrl({ segment, file }: CardModule) {
  * subtree that ships its own card of the same kind (that card describes
  * those pages instead). Private `_folders` hold no routes.
  */
-function describedPages(card: CardModule): string[] {
+function describedPages(card: CardRoute): string[] {
   const pages: string[] = [];
   const walk = (dir: string) => {
     const entries = readdirSync(dir, { withFileTypes: true });
     const ownCard = entries.some(
-      (e) => e.isFile() && CARD_FILE.exec(e.name)?.[1] === card.kind
+      (e) => e.isFile() && CARD_ROUTE_FILE.exec(e.name)?.[1] === card.kind
     );
     if (dir !== card.dir && ownCard) return;
     for (const entry of entries) {
