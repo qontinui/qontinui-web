@@ -1,7 +1,7 @@
 """Build-record export: product definitions, public snapshots, visibility re-check.
 
 Revision ID: build_records_01_export
-Revises: notif_producerless_02_drop_dead_prefs
+Revises: wuverif_01
 Create Date: 2026-10-10
 
 Phase 1 of plan ``2026-10-09-factory-built-product-portfolio-and-launch-kit``.
@@ -88,7 +88,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "build_records_01_export"
-down_revision: str | Sequence[str] | None = "notif_producerless_02_drop_dead_prefs"
+down_revision: str | Sequence[str] | None = "wuverif_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
