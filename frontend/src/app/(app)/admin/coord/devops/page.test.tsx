@@ -247,6 +247,7 @@ function hostSample(
     age_secs: 15,
     cpu_cores: 16,
     load_1m: null,
+    cpu_temp_c: null,
     mem_total_bytes: 1,
     mem_available_bytes: 1,
     commit_total_bytes: 1,
@@ -726,6 +727,7 @@ function incidentSample(deviceId: string) {
     age_secs: 15,
     cpu_cores: 16,
     load_1m: null,
+    cpu_temp_c: null,
     mem_total_bytes: 137_000_000_000,
     // Healthy on every memory instrument — that is the whole point.
     mem_available_bytes: 38_400_000_000,
