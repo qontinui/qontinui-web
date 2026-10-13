@@ -27,8 +27,11 @@ const get = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: vi.fn(),
+    // The page reads through `lib/api/operations/agentQuestions.ts`, which
+    // calls `httpClient.fetch`; this routes it through the same per-URL stub,
+    // and a rejection passes through exactly as `get`'s did.
+    fetch: async (url: string) =>
+      new Response(JSON.stringify((await get(url)) ?? null)),
   },
 }));
 

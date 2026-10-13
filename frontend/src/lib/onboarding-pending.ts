@@ -27,31 +27,9 @@
  * `verification-and-evidence` `silent-empty-is-unknown`).
  */
 
-import { OPERATIONS_API } from "@/components/operations/utils";
 import { absoluteTime } from "@/components/console/time";
-import { httpClient } from "@/services/service-factory";
-
-/**
- * Coord's envelope for `GET /coord/onboarding/pending-installations`, passed
- * through verbatim by `GET /api/v1/operations/pr-merge/onboarding/pending-installation`.
- */
-export interface PendingInstallationResponse {
-  /** `true` = seen and unclaimed; `false` = claimed or never seen; `null` = UNKNOWN. */
-  pending: boolean | null;
-  installation_id: number | null;
-  account_login: string | null;
-  account_type: string | null;
-  repo_count: number | null;
-  received_at: string | null;
-  claimed_at: string | null;
-  /** Set on the UNKNOWN arm: `"pending_installations_table_absent"`. */
-  reason?: string;
-}
-
-/** Exactly one key — the same rule coord and the proxy enforce (400 otherwise). */
-export type PendingInstallationKey =
-  | { installation_id: number }
-  | { account_login: string };
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import type { PendingInstallationResponse } from "@/lib/api/operations/prMergeOnboarding";
 
 export type PendingInstallationKind =
   | "pending"
@@ -62,30 +40,6 @@ export type PendingInstallationKind =
 export interface PendingInstallationVerdict {
   kind: PendingInstallationKind;
   message: string;
-}
-
-/**
- * Fetch one pending-installation row through the web proxy.
- *
- * Throws on a non-2xx (the message carries the status) so a caller can fold
- * transport failure into the UNKNOWN arm — a 502 from coord is "couldn't
- * check", not "not installed".
- */
-export async function fetchPendingInstallation(
-  key: PendingInstallationKey
-): Promise<PendingInstallationResponse> {
-  const params = new URLSearchParams(
-    "installation_id" in key
-      ? { installation_id: String(key.installation_id) }
-      : { account_login: key.account_login }
-  );
-  const res = await httpClient.fetch(
-    `${OPERATIONS_API}/pr-merge/onboarding/pending-installation?${params.toString()}`
-  );
-  if (!res.ok) {
-    throw new Error(`pending-installation check failed: HTTP ${res.status}`);
-  }
-  return (await res.json()) as PendingInstallationResponse;
 }
 
 /** "3 repos" / "1 repo" / "an unknown number of repos" (null is not zero). */
@@ -156,6 +110,15 @@ export function describePendingInstallation(
 export function describePendingInstallationFailure(
   err: unknown
 ): PendingInstallationVerdict {
-  const detail = err instanceof Error ? err.message : String(err);
+  // A status rejection from `fetchPendingInstallation` (`readJson`'s
+  // `GET <url> failed: <status> - <body>`) is worded by its status alone, as
+  // the check always has been; anything else (a network error) is its message.
+  const status = httpStatusOf(err);
+  const detail =
+    status !== null
+      ? `pending-installation check failed: HTTP ${status}`
+      : err instanceof Error
+        ? err.message
+        : String(err);
   return { kind: "unknown", message: `couldn't check with coord (${detail})` };
 }
