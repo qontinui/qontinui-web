@@ -52,7 +52,11 @@ import {
 import { handlers, relay, getRelayBusStatus } from "@/lib/ui-bridge/relay";
 import { NextRequest } from "next/server";
 import { passThroughBodyWithPeek } from "./body-passthrough";
-import { registrationBodyWithCallerId } from "./_caller-identity";
+import {
+  bodyWithoutCallerIdentity,
+  registrationBodyWithCallerId,
+  urlWithoutCallerIdentity,
+} from "./_caller-identity";
 import {
   isBrowserRequiredRoute,
   isKnownRoute,
@@ -389,6 +393,11 @@ async function wrapHandler(
  * the verified id keeps register + list aligned, and (defense in depth) stops a
  * client from registering a tab under any other user's id.
  *
+ * And it drops every caller identity the request itself names — in the query
+ * string or the JSON body, in the exact spellings the SDK reads one from
+ * (`CALLER_IDENTITY_KEYS`) — so the verified header is the only identity the
+ * relay can act on.
+ *
  * The original request is not mutated (Next request headers are read-only).
  */
 function withCallerIdentity(
@@ -403,24 +412,31 @@ function withCallerIdentity(
     init?: RequestInit
   ) => NextRequest;
 
+  // Only the verified identity may reach the relay: a caller identity named
+  // by the request itself is dropped from the query and from the body.
+  const url = urlWithoutCallerIdentity(request.url) ?? request.url;
+  const strippedBody = bodyWithoutCallerIdentity(parsedBody);
+
   // If the body carries registrationMetadata, re-serialize it with the
   // verified userId. `parsedBody` is the best-effort JSON peek from
   // `passThroughBodyWithPeek` — present for the JSON POSTs that register a tab
   // (e.g. /heartbeat). A new string body means fetch must recompute the length.
-  const rewrittenBody = registrationBodyWithCallerId(parsedBody, userId);
+  const rewrittenBody =
+    registrationBodyWithCallerId(strippedBody ?? parsedBody, userId) ??
+    (strippedBody !== null ? JSON.stringify(strippedBody) : null);
   if (rewrittenBody !== null) {
     headers.delete("content-length");
-    return new NextRequestCtor(request.url, {
+    return new NextRequestCtor(url, {
       method: request.method,
       headers,
       body: rewrittenBody,
     });
   }
 
-  // No registrationMetadata to align → forward the (already re-wrapped) body
+  // Nothing to rewrite in the body → forward the (already re-wrapped) body
   // stream unchanged. `arrayBuffer()` was consumed by `passThroughBody` when a
   // body exists, so any body present here is the re-wrapped stream.
-  return new NextRequestCtor(request.url, {
+  return new NextRequestCtor(url, {
     method: request.method,
     headers,
     body: request.body,

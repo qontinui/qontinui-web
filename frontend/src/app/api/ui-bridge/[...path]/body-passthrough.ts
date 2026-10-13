@@ -81,9 +81,15 @@ export async function passThroughBodyWithPeek(
   // Best-effort JSON peek. If the body isn't JSON the audit summary just
   // gets `undefined` here and the row records the command without a
   // summary — never blocks the request.
+  //
+  // Decoded exactly as the SDK's `request.json()` decodes the same bytes
+  // (UTF-8 with a leading byte-order mark dropped), so the peek parses
+  // whatever the SDK will parse. The caller-identity strip in `route.ts`
+  // depends on that: a body the peek could not read would reach the SDK
+  // unstripped.
   let parsedBody: unknown | undefined;
   try {
-    parsedBody = JSON.parse(Buffer.from(raw).toString("utf-8"));
+    parsedBody = JSON.parse(new TextDecoder("utf-8").decode(raw));
   } catch {
     parsedBody = undefined;
   }

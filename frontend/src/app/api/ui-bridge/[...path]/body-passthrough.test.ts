@@ -11,7 +11,11 @@
 
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { passThroughBody, BODY_METHODS } from "./body-passthrough";
+import {
+  passThroughBody,
+  passThroughBodyWithPeek,
+  BODY_METHODS,
+} from "./body-passthrough";
 
 function makeRequest(
   url: string,
@@ -111,6 +115,22 @@ describe("passThroughBody", () => {
     const forwarded = await passThroughBody(original, "POST");
     expect(forwarded.nextUrl.searchParams.get("recency")).toBe("current");
     expect(forwarded.nextUrl.searchParams.get("debug")).toBe("1");
+  });
+
+  it("peeks a body with a leading byte-order mark, as the SDK's request.json() parses it", async () => {
+    const bytes = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode('{"text":"X"}'),
+    ]);
+    const req = new NextRequest("http://localhost/api/ui-bridge/ai/find", {
+      method: "POST",
+      body: bytes,
+    });
+    const { request, parsedBody } = await passThroughBodyWithPeek(req, "POST");
+    expect(parsedBody).toEqual({ text: "X" });
+    expect(await request.json()).toEqual({ text: "X" });
   });
 
   it("BODY_METHODS contains exactly POST/PUT/PATCH", () => {
