@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   patchTenantSettings,
@@ -168,7 +169,11 @@ export function TenantDefaultsCard({
     } catch (err) {
       log.warn("save tenant settings failed", err);
       // A 422 is coord naming the refused dial (`dial_value_invalid`): show it.
-      setError(httpFailureText(err, { withBody: httpStatusOf(err) === 422 }));
+      setError(
+        httpStatusOf(err) === 422
+          ? operationsErrorMessage(err)
+          : httpFailureText(err, { withBody: false })
+      );
     } finally {
       setSaving(false);
     }
