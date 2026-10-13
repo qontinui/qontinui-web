@@ -13,7 +13,8 @@ Layers:
 * **Layer 2** — tenant isolation: another tenant's hash answers exactly like
   an unknown one, the same bytes are two objects, and no candidate route
   reaches across.
-* **Layer 3** — the presigned GET, on the local and the S3 backend.
+* **Layer 3** — the GET by hash: a presigned URL on S3, the authenticated
+  content route on the local backend, and the content route itself.
 * **Layer 4** — slot candidates: upsert, the one-choice rule, list by slot,
   withdrawal, and the race the partial unique index settles.
 * **Layer 5** — the real app's wiring: the routes are mounted and the real
@@ -426,8 +427,9 @@ class TestUpload:
             '{"seed": -Infinity}',
             '{"note": "a\\u0000b"}',
             '{"a\\u0000": 1}',
+            '{"note": "x\\ud800y"}',
         ],
-        ids=["nan", "infinity", "nul-in-value", "nul-in-key"],
+        ids=["nan", "infinity", "nul-in-value", "nul-in-key", "lone-surrogate"],
     )
     async def test_provenance_json_storage_cannot_hold_is_refused_before_any_write(
         self,
@@ -648,7 +650,7 @@ class TestTenantIsolation:
 
 
 # ===========================================================================
-# Layer 3 — the presigned GET
+# Layer 3 — the GET by hash: a presigned URL, or the content route
 # ===========================================================================
 
 
@@ -1244,20 +1246,29 @@ class TestPaging:
 
 
 @pytest.mark.parametrize(
-    "extra",
+    ("extra", "reason"),
     [
-        {"values": {"contrast": float("nan")}},
-        {"judge": {"margin": float("inf")}},
-        {"values": {"note": "x\x00y"}},
+        ({"values": {"contrast": float("nan")}}, "JSON storage cannot hold"),
+        ({"judge": {"margin": float("inf")}}, "JSON storage cannot hold"),
+        ({"values": {"note": "x\x00y"}}, "JSON storage cannot hold"),
+        ({"values": {"note": "x\ud800y"}}, "lone surrogate"),
+        ({"judge": {"\udc00": 1}}, "lone surrogate"),
     ],
-    ids=["values-nan", "judge-infinity", "values-nul"],
+    ids=[
+        "values-nan",
+        "judge-infinity",
+        "values-nul",
+        "values-lone-surrogate",
+        "judge-key-lone-surrogate",
+    ],
 )
 async def test_values_json_storage_cannot_hold_are_a_422_not_a_500(
-    client_a: httpx.AsyncClient, extra: dict[str, Any]
+    client_a: httpx.AsyncClient, extra: dict[str, Any], reason: str
 ) -> None:
     digest = (await _upload(client_a, _png())).json()["sha256"]
-    # json.dumps writes NaN / Infinity tokens, as a client's encoder may;
-    # httpx's own refuses to, so the body is encoded here.
+    # json.dumps writes NaN / Infinity tokens and \ud800-style escapes, as a
+    # client's encoder may; httpx's own refuses NaN, so the body is encoded
+    # here.
     body = json.dumps(
         {
             "repo": REPO,
@@ -1271,7 +1282,8 @@ async def test_values_json_storage_cannot_hold_are_a_422_not_a_500(
         SLOTS, content=body, headers={"content-type": "application/json"}
     )
     assert resp.status_code == 422, resp.text
-    assert "JSON storage cannot hold" in resp.text
+    assert reason in resp.text
+    assert (await _list(client_a)).json()["candidates"] == []
 
 
 async def test_concurrent_re_uploads_merge_and_keep_the_first_kind(
