@@ -1,8 +1,16 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { colors } from "@qontinui/design-tokens";
+import { cardRoutes } from "@/test/social-card-routes";
 import {
   renderSocialCard,
   SOCIAL_CARD_CONTENT_TYPE,
@@ -11,8 +19,8 @@ import {
 } from "./social-card";
 
 const FRONTEND = join(__dirname, "..", "..", "..");
+const APP_DIR = join(FRONTEND, "src", "app");
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const CARD_ROUTE = /^(?:opengraph|twitter)-image\d?\.tsx$/;
 const CARD_INPUTS_LINE = /^\/\/ card-inputs: (\w+)\r?$/m;
 
 /** Width and height from the PNG's IHDR chunk: what the file really is. */
@@ -36,13 +44,15 @@ function cardInputsDigest(): string {
   return hash.digest("hex").slice(0, 16);
 }
 
-/** Every card route file under `src/app`. */
-function cardRoutes(dir = join(FRONTEND, "src", "app")): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return cardRoutes(full);
-    return CARD_ROUTE.test(entry.name) ? [full] : [];
-  });
+/** The card routes under `appDir` whose `card-inputs` line is not `digest`. */
+function staleCardRoutes(appDir: string, digest: string) {
+  return cardRoutes(appDir)
+    .map(({ path }) => ({
+      route: relative(appDir, path),
+      cardInputs: CARD_INPUTS_LINE.exec(readFileSync(path, "utf8"))?.[1],
+    }))
+    .filter(({ cardInputs }) => cardInputs !== digest)
+    .sort((a, b) => a.route.localeCompare(b.route));
 }
 
 describe("renderSocialCard", () => {
@@ -62,14 +72,40 @@ describe("renderSocialCard", () => {
   // keep the old card. See "Cache-busting" in social-card.tsx.
   it("names every card route after the card's current inputs", () => {
     const digest = cardInputsDigest();
-    const routes = cardRoutes();
-    expect(routes.length).toBeGreaterThan(0);
-    for (const route of routes) {
-      const line = CARD_INPUTS_LINE.exec(readFileSync(route, "utf8"))?.[1];
-      expect(
-        { route: relative(FRONTEND, route), cardInputs: line },
-        `set the route's \`// card-inputs:\` line to ${digest}`
-      ).toEqual({ route: relative(FRONTEND, route), cardInputs: digest });
+    expect(cardRoutes(APP_DIR).length).toBeGreaterThan(0);
+    expect(
+      staleCardRoutes(APP_DIR, digest),
+      `set each listed route's \`// card-inputs:\` line to ${digest}`
+    ).toEqual([]);
+  });
+
+  // Next serves a card from a .tsx, .ts, .jsx or .js module alike, so a card
+  // in any of them must be held to the digest.
+  it("holds a card route in every extension Next serves to the digest", () => {
+    const app = mkdtempSync(join(tmpdir(), "card-routes-"));
+    try {
+      const card = (rel: string, digest: string) => {
+        mkdirSync(join(app, rel, ".."), { recursive: true });
+        writeFileSync(join(app, rel), `// card-inputs: ${digest}\n`);
+      };
+      card("opengraph-image.tsx", "aaaaaaaaaaaaaaaa");
+      card("(marketing)/twitter-image.ts", "0000000000000000");
+      card("a/opengraph-image2.jsx", "0000000000000000");
+      card("b/twitter-image.js", "aaaaaaaaaaaaaaaa");
+      card("c/opengraph-image.md", "0000000000000000"); // not a route module
+
+      expect(staleCardRoutes(app, "aaaaaaaaaaaaaaaa")).toEqual([
+        {
+          route: join("(marketing)", "twitter-image.ts"),
+          cardInputs: "0000000000000000",
+        },
+        {
+          route: join("a", "opengraph-image2.jsx"),
+          cardInputs: "0000000000000000",
+        },
+      ]);
+    } finally {
+      rmSync(app, { recursive: true, force: true });
     }
   });
 });
