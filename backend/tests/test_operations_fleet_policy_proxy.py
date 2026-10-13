@@ -804,3 +804,28 @@ class TestRepoOverrides:
         }
         assert body["effective"]["resolved_scope"] == "repo"
         assert body["effective"]["repo_overrides"] == COORD_REPO_OVERRIDES
+
+
+def test_the_view_projection_delivers_coords_repo_overrides():
+    """ARMING (`_fleet_policy_repo_overrides`): the projection BOTH proxy
+    routes call -- the GET, and the PUT's read-back -- delivers coord's
+    `repo_overrides` whole, and a list it cannot read whole as UNKNOWN (None),
+    never a partial one. Without the change the view has no such field, and
+    the console has no list of overrides to render or clear.
+    """
+    from app.api.v1.endpoints.operations import _fleet_policy_view
+
+    coord_body = {
+        "domain": "image_generation",
+        "effective_level": "on",
+        "master_enabled": True,
+        "resolved_scope": "tenant",
+        "repo_overrides": COORD_REPO_OVERRIDES,
+    }
+    view = _fleet_policy_view(coord_body, domain="image_generation", can_edit=True)
+    assert view.model_dump().get("repo_overrides") == COORD_REPO_OVERRIDES
+
+    torn = dict(coord_body, repo_overrides=[COORD_REPO_OVERRIDES[0], "acme/web"])
+    torn_view = _fleet_policy_view(torn, domain="image_generation", can_edit=True)
+    assert "repo_overrides" in torn_view.model_dump()
+    assert torn_view.model_dump()["repo_overrides"] is None
