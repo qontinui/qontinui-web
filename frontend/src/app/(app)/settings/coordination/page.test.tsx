@@ -14,13 +14,26 @@ import userEvent from "@testing-library/user-event";
 const get = vi.fn();
 const put = vi.fn();
 
+// Both the fixer dial (`lib/api/operations/prMerge`) and the next-step
+// settings (`lib/api/operations/coordSettings`) go through the typed
+// `/operations` client, which calls `httpClient.fetch`. This adapter routes a
+// GET onto the `get` spy, the next-step save (PUT) onto `put`, and the dial's
+// PATCH onto `patchViaFetch`; any other verb throws. Each test keeps stating
+// its transport as "the GET answers X" / "the PUT receives Y".
+const patchViaFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    patch: vi.fn(),
-    post: vi.fn(),
-    put: (...args: unknown[]) => put(...args),
-    delete: vi.fn(),
+    fetch: async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      let body: unknown;
+      if (method === "GET") body = await get(url);
+      else if (method === "PUT")
+        body = await put(url, JSON.parse(String(init?.body)));
+      else if (method === "PATCH")
+        body = await patchViaFetch(url, JSON.parse(String(init?.body)));
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
   },
 }));
 

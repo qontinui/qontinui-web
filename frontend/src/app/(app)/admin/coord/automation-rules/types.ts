@@ -14,7 +14,7 @@
  * runner's `BackoffConfig` so the runner-rules projection round-trips.
  */
 
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 /** Exponential-backoff schedule for a terminal-regex rule. */
 export interface BackoffConfig {

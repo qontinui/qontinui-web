@@ -34,6 +34,11 @@ from app.schemas.plan_library import (
     WorkArtifactKind,
     WorkArtifactRelation,
 )
+from app.schemas.plan_library_followups import (
+    FollowupSizeClass,
+    FollowupSizeClassSource,
+    FollowupTransitionTarget,
+)
 from app.schemas.plan_library_scan_roots import ScanRootState, SlugCensusSource
 from app.services import plan_library_vocabulary as vocab
 from app.services.plan_difficulty import MODEL_TIERS
@@ -50,6 +55,9 @@ _LITERALS: dict[str, tuple[Any, dict[str, str]]] = {
     "difficulty_source": (DifficultySource, vocab.DIFFICULTY_SOURCE_MEANINGS),
     "state": (ScanRootState, vocab.SCAN_ROOT_STATE_MEANINGS),
     "censuses[].source": (SlugCensusSource, vocab.SLUG_CENSUS_SOURCE_MEANINGS),
+    "size_class": (FollowupSizeClass, vocab.SIZE_CLASS_MEANINGS),
+    "size_class_source": (FollowupSizeClassSource, vocab.SIZE_CLASS_SOURCE_MEANINGS),
+    "resolution": (FollowupTransitionTarget, vocab.RESOLUTION_MEANINGS),
 }
 
 

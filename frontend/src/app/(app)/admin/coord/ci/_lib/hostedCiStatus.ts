@@ -7,7 +7,8 @@
  * (D7). The setting is the fleet-policy domain `github_hosted_ci`: a tenant
  * default (`on` | `off`) plus per-repo overrides (`on` | `off`, or `inherit`
  * to clear one). The read is `GET /api/v1/operations/ci-hosting` (a proxy of
- * coord's `GET /coord/ci-hosting/effective`); writes reuse
+ * coord's `GET /coord/ci-hosting/effective`, read by `fetchCiHosting` in
+ * `lib/api/operations/ciStatus.ts`); writes reuse
  * `PUT /api/v1/operations/fleet-policy`.
  *
  * The rules this module holds:
@@ -39,9 +40,6 @@ import {
 
 /** The fleet-policy domain coord stores this setting under. */
 export const GITHUB_HOSTED_CI_DOMAIN = "github_hosted_ci";
-
-/** The web proxy of coord's hosted-CI read. */
-export const CI_HOSTING_API = "/api/v1/operations/ci-hosting";
 
 export type HostedCiLevel = "on" | "off";
 export const HOSTED_CI_LEVELS: readonly HostedCiLevel[] = ["on", "off"];

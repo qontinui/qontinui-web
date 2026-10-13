@@ -29,11 +29,13 @@ from pydantic import ValidationError
 
 from app.core.config import coord_device_base
 from app.schemas.device_resolve import (
+    KNOWN_COORD_OUTCOMES,
     CoordResolveBody,
     DeviceResolveRequest,
     DeviceResolveResult,
     UnavailableOutcome,
     UnavailableReason,
+    UnknownOutcome,
 )
 from app.services.coord_device import extract_bearer
 
@@ -104,9 +106,11 @@ async def resolve_device(
     """Ask coord which of the caller's devices should run this work.
 
     Returns one of coord's outcomes (``resolved``, ``pin_ineligible``,
-    ``no_capable_device``, ``all_capable_drained``, ``drain_unreadable``) or
-    ``unavailable`` when coord's answer could not be obtained. Never raises
-    for a coord-side condition.
+    ``no_capable_device``, ``all_capable_offline``, ``all_capable_at_capacity``,
+    ``all_capable_drained``, ``all_capable_role_closed``, ``drain_unreadable``),
+    ``unknown_outcome`` when coord answered with a tag this build does not
+    know, or ``unavailable`` when coord's answer could not be obtained. Never
+    raises for a coord-side condition.
     """
     if not caller.bearer:
         # Nothing to authorize as; an anonymous call would be refused anyway,
@@ -147,6 +151,21 @@ async def resolve_device(
     if status >= 400:
         return _unavailable("refused", status=status, code=_error_code(resp))
     try:
-        return CoordResolveBody.model_validate(resp.json()).root
-    except (ValueError, ValidationError):
+        payload = resp.json()
+    except ValueError:
+        return _unavailable("malformed_response", status=status)
+    raw_outcome = payload.get("outcome") if isinstance(payload, dict) else None
+    if (
+        isinstance(raw_outcome, str)
+        and raw_outcome
+        and raw_outcome not in KNOWN_COORD_OUTCOMES
+    ):
+        # Coord added an arm this build predates. Name it rather than read it
+        # as a broken coord; it is still no pick.
+        logger.warning("device_resolve_unknown_outcome", raw_outcome=raw_outcome)
+        return UnknownOutcome(raw_outcome=raw_outcome)
+    try:
+        return CoordResolveBody.model_validate(payload).root
+    except ValidationError:
+        # A known tag whose fields are not the contract.
         return _unavailable("malformed_response", status=status)

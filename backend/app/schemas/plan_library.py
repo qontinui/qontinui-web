@@ -41,10 +41,18 @@ deprecated.
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.bounded_read import BoundedReadMeta
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from app.schemas.plan_library_followups import (
+    FOLLOWUP_ANCHORS_MAX,
+    FollowupAnchorIn,
+    FollowupFacts,
+    FollowupSizeClass,
+    OpenFollowup,
+    check_anchor_set,
+)
 from app.schemas.plan_library_scan_roots import ScanRootListResponse
 
 WorkArtifactKind = Literal[
@@ -163,6 +171,14 @@ class WorkArtifactEdgeCreate(BaseModel):
     ``{"relation": "spawned_followup", "note": "<text>", "to_id": null}``, and
     ``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal
     and records a follow-up that already has an owner.
+
+    A ``spawned_followup`` may also carry what makes it MATCHABLE (plan
+    ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
+    D2/D3): ``anchors`` (the files it is about), ``size_class`` and — when it
+    names no file — ``unanchored_reason``. All three are OPTIONAL on this
+    door for now: every writer still sends the note-only shape, and refusing
+    it before they send the new one would stop the queue filling (D3's refusal
+    is sequenced after the writers). They apply to ``spawned_followup`` only.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -173,6 +189,24 @@ class WorkArtifactEdgeCreate(BaseModel):
     #: Optional on a two-ended edge. **Required, and non-blank, on
     #: ``spawned_followup``** — with no far end the note is the whole payload.
     note: str | None = None
+    #: The files this follow-up is about — ``owner/name`` + a repo-relative
+    #: path, with optional line hints. ``spawned_followup`` only.
+    anchors: list[FollowupAnchorIn] | None = Field(
+        None, max_length=FOLLOWUP_ANCHORS_MAX
+    )
+    #: ``trivial`` | ``small`` | ``plan_sized``, stored as ``declared``.
+    #: ``spawned_followup`` only; omitted is UNCLASSIFIED.
+    size_class: FollowupSizeClass | None = None
+    #: Why the follow-up names no file. ``spawned_followup`` only; contradicts
+    #: a non-empty ``anchors``.
+    unanchored_reason: str | None = Field(None, max_length=2000)
+
+    @field_validator("anchors")
+    @classmethod
+    def _unique_anchors(
+        cls, value: list[FollowupAnchorIn] | None
+    ) -> list[FollowupAnchorIn] | None:
+        return None if value is None else check_anchor_set(value)
 
 
 class WorkArtifactEdgeClaim(BaseModel):
@@ -433,6 +467,11 @@ class WorkArtifactEdgeRead(BaseORMSchema):
     peer_kind: str | None = None
     peer_slug: str | None = None
     peer_title: str | None = None
+    #: On a ``spawned_followup``: its state (``open`` / ``claimed`` / a
+    #: resolution), anchors, size class and closure facts. ``None`` on every
+    #: other relation — those carry none of it. A re-post that lands on an
+    #: existing follow-up returns it here AS IT IS, resolved ones included.
+    followup: FollowupFacts | None = None
 
 
 class WorkArtifactDetail(WorkArtifactSummary):
@@ -825,48 +864,11 @@ class PlanDifficultyResponse(BaseModel):
 
 # ─────────────── open follow-ups (Phase 7) ───────────────
 #
-# The one-ended ``spawned_followup`` edge, read back. See
-# ``plan_library_03_spawned_followup`` for why the edge exists at all.
-
-
-class OpenFollowup(BaseModel):
-    """Work a plan SURFACED and deliberately did not do, with no owner yet.
-
-    The row is a ``spawned_followup`` edge whose ``to_id`` is still NULL. The
-    originating artifact is denormalized in so the queue renders without an
-    N+1 fetch, and ``note`` carries the finding itself — with no far end there
-    is nowhere else for it to live, which is why the schema requires it.
-    """
-
-    edge_id: UUID
-    #: The artifact that surfaced this — normally the plan that said
-    #: "worth its own plan" and moved on.
-    from_id: UUID
-    from_kind: str
-    from_slug: str
-    from_title: str
-    #: The finding. Non-blank by construction
-    #: (``ck_work_artifact_edges_followup_note``).
-    note: str
-    created_by: str | None = None
-    created_at: IsoDatetime
-    #: Days since the follow-up was recorded. An OLD unowned follow-up is the
-    #: interesting one — it is work the fleet has known about and not picked
-    #: up — which is also why the default ordering is oldest first.
-    age_days: float
-
-
-class OpenFollowupResponse(BoundedReadMeta):
-    """A page of open (unclaimed) follow-ups — a keyset walk over the edge's
-    immutable ``(created_at, id)``, oldest first. The bounded-read keys
-    describe ``items``; ``next_cursor`` is passed back as ``cursor``."""
-
-    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    items: list[OpenFollowup]
-    #: Named so a consumer can assert it did not silently change. Oldest first
-    #: is the useful default here, not an arbitrary one.
-    ordering: Literal["oldest_first"] = "oldest_first"
+# The one-ended ``spawned_followup`` edge, read back — :class:`OpenFollowup`
+# and :class:`OpenFollowupResponse` live in ``app.schemas.plan_library_followups``
+# with the rest of the follow-up family (closure states and anchors, plan
+# ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``).
+# ``open_followups`` below embeds the queue row.
 
 
 class PlanCandidateResponse(BoundedReadMeta):

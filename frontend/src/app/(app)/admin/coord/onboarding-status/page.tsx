@@ -81,7 +81,6 @@ import { Button } from "@/components/ui/button";
 import { ConnectedOrgs } from "@/components/operations/ConnectedOrgs";
 import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
-import { OPERATIONS_API } from "@/components/operations/utils";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { StatusBadge } from "@/components/console";
@@ -90,35 +89,18 @@ import {
   claimBannerBorder,
   deriveClaimStatus,
 } from "@/components/admin/coord/onboardingClaimStatus";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  claimInstallation,
+  fetchPendingInstallation,
+  type ClaimResponse,
+  type PendingInstallationResponse,
+} from "@/lib/api/operations/prMergeOnboarding";
 import {
   classifyPendingInstallation,
-  fetchPendingInstallation,
   formatRepoCount,
-  type PendingInstallationResponse,
 } from "@/lib/onboarding-pending";
 import { absoluteTime } from "@/components/console/time";
-
-/**
- * Coord's claim success envelope (frozen contract, coord PR #901).
- *
- * **Only `account_login` is rendered.** The rest of this interface is a record
- * of the wire shape, kept so a future reader can see what the response carries
- * without re-reading coord — it is deliberately not a to-do list of fields to
- * surface. The `enrolled` comment used to claim the shape was "rendered
- * generically"; nothing rendered it, and the checklist below reports enrolment
- * from its own poll rather than from this envelope. Corrected rather than
- * implemented: a banner that reprints ids the checklist already covers is more
- * chrome, which is what R9 exists to remove.
- */
-interface ClaimResponse {
-  ok: boolean;
-  account_login: string;
-  installation_id: number;
-  tenant_id: string;
-  /** Coord-owned shape (count or flag). Not read here — see the note above. */
-  enrolled?: unknown;
-}
 
 /**
  * `recover` is a claim we deliberately did not (or could not) complete but
@@ -511,27 +493,32 @@ export default function OnboardingStatusPage() {
     ) => {
       setPhase("claiming");
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/onboarding/claim`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              code: claimCode,
-              ...target,
-              // The server-minted state is what binds this claim to the tenant
-              // that STARTED the flow, instead of to whoever's bearer arrives.
-              connect_state: connectStateToken,
-              // Clone-picker connect binds only — no repo enrollment / PRs.
-              ...(isRunnerClone ? { bind_only: true } : {}),
-            }),
-          }
-        );
-        const body = await res
-          .json()
-          .catch(() => ({}) as Record<string, unknown>);
+        const body = await claimInstallation({
+          code: claimCode,
+          ...target,
+          // The server-minted state is what binds this claim to the tenant
+          // that STARTED the flow, instead of to whoever's bearer arrives.
+          connect_state: connectStateToken,
+          // Clone-picker connect binds only — no repo enrollment / PRs.
+          ...(isRunnerClone ? { bind_only: true as const } : {}),
+        });
         if (!mountedRef.current) return;
-        if (!res.ok) {
-          if (isRecoverableClaimRejection(res.status, body)) {
+        // A 2xx whose body does not parse is still a landed claim.
+        setClaim(body ?? ({} as ClaimResponse));
+        setPhase("success");
+      } catch (e) {
+        if (!mountedRef.current) return;
+        const status = httpStatusOf(e);
+        if (status !== null) {
+          // coord's error body, parsed as the claim always read it: a body
+          // that is not JSON is `{}`.
+          let body: unknown;
+          try {
+            body = JSON.parse(httpBodyOf(e) ?? "");
+          } catch {
+            body = {};
+          }
+          if (isRecoverableClaimRejection(status, body)) {
             setRecoverMessage(
               "Your connect link expired or had already been used, so we " +
                 "stopped before binding anything. Start the connect again below."
@@ -539,14 +526,10 @@ export default function OnboardingStatusPage() {
             setPhase("recover");
             return;
           }
-          setClaimError(messageForClaimError(res.status, body));
+          setClaimError(messageForClaimError(status, body));
           setPhase("error");
           return;
         }
-        setClaim(body as ClaimResponse);
-        setPhase("success");
-      } catch (e) {
-        if (!mountedRef.current) return;
         setClaimError(e instanceof Error ? e.message : String(e));
         setPhase("error");
       }
