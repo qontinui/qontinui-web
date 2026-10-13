@@ -92,7 +92,14 @@ export function expediteFieldsFrom(
     };
   }
   return {
-    expedited_land: dials.expedited_land ?? "inherit",
+    // Through the closed set: a value outside it is shown as unknown, never
+    // as whatever option the browser falls back to.
+    expedited_land:
+      dials.expedited_land === null
+        ? "inherit"
+        : (["on", "shadow", "off"] as const).includes(dials.expedited_land)
+          ? dials.expedited_land
+          : "unknown",
     expedite_max_files:
       dials.expedite_max_files === null ? "" : String(dials.expedite_max_files),
     expedite_max_changed_lines:
@@ -186,7 +193,13 @@ export function ExpediteDialsSection({
   const unknown = readState === "unknown";
   const inheritLabel =
     tier === "tenant" ? "inherit (fleet default)" : "inherit tenant";
-  const sizePlaceholder = unknown ? "unknown" : "inherit";
+  // Only a LOADED read may say "inherit"; before it answers, it is unknown.
+  const sizePlaceholder =
+    readState === "loaded"
+      ? "inherit"
+      : readState === "unsupported"
+        ? ""
+        : "unknown";
   const id = (name: string) => `${testIdPrefix}-${name}${testIdSuffix}`;
 
   return (
