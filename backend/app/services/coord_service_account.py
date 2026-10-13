@@ -187,6 +187,41 @@ class CoordServiceAccountClient:
             body = {"error": resp.text[:500]}
         return resp.status_code, body
 
+    async def get(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        timeout_s: float = 10.0,
+    ) -> tuple[int, object]:
+        """``GET`` ``path`` on coord as web's service principal, for web's OWN
+        scheduled work — so no ``X-Qontinui-User-Id``: there is no end-user it
+        acts for. First consumer: the ``followup_reconcile`` task reading
+        coord's ``GET /coord/pr/{repo}/{n}/landed`` (plan
+        ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
+        Phase 5).
+
+        Returns ``(status_code, body)`` — the body parsed as JSON, or
+        ``{"error": <text>}`` when it is not JSON, or ``None`` when empty.
+        Raises :class:`CoordServiceAccountDisabledError` when the feature is
+        off, and lets a mint failure (``RuntimeError``) or an httpx transport
+        error propagate: the caller decides what an unreachable coord means.
+        """
+        token = await self._ensure_token()
+        async with httpx.AsyncClient(timeout=timeout_s) as c:
+            resp = await c.get(
+                f"{self._coord_url}{path}",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+            )
+        if resp.status_code == 204 or not resp.content:
+            return resp.status_code, None
+        try:
+            body: object = resp.json()
+        except ValueError:
+            body = {"error": resp.text[:500]}
+        return resp.status_code, body
+
     # -- device machine-key exchange (4b cold-start recovery) ------------
 
     async def mint_device_token(

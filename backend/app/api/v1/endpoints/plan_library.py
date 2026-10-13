@@ -12,7 +12,7 @@ Routes
 ``GET   /plan-library/reconciliation`` three-way plan-status agreement (Phase 4)
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
 ``GET   /plan-library/candidates`` unshipped plans + ranking INPUTS (Phase 6)
-``GET   /plan-library/followups``  identified-but-UNOWNED follow-ups (Phase 7)
+``GET   /plan-library/followups``  follow-ups by state (open by default), repo, size class, anchoring
 ``GET   /plan-library/vocabulary`` every closed field the write doors accept + how a wrong write is corrected
 ``GET   /plan-library/export``     the filtered corpus as a zip of verbatim .md
 ``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
@@ -21,6 +21,13 @@ Routes
 ``PATCH /plan-library/edges/{id}`` claim an open follow-up (Phase 7)
 ``PATCH /plan-library/{id}/kind``  correct the kind and LOCK it against re-scans
 ``POST  /plan-library/{id}/edges`` add a provenance edge in either direction
+
+The follow-up closure and anchor doors (``PUT /edges/{id}/anchors``,
+``POST /edges/{id}/resolution``, ``POST /followups/match``,
+``POST /followups/reconcile``) live in the sibling
+``app.api.v1.endpoints.plan_library_followups``, mounted under the same prefix
+BEFORE this router (``app/api/v1/api.py``) so ``/{artifact_id}`` never
+captures them.
 
 Invariants this module is responsible for
 -----------------------------------------
@@ -118,7 +125,7 @@ import io
 import json
 import re
 import zipfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast, get_args
@@ -161,6 +168,7 @@ from app.core.bounded_read import (
 )
 from app.crud import plan_scan_root as scan_root_crud
 from app.crud import work_artifact as crud
+from app.crud import work_artifact_followups as followups_crud
 from app.models.user import User
 from app.models.work_artifact import (
     RELATIONS_ALLOWING_OPEN_TARGET,
@@ -183,8 +191,6 @@ from app.schemas.plan_library import (
     DivergentVariant,
     DocumentState,
     KindForkGroup,
-    OpenFollowup,
-    OpenFollowupResponse,
     PlanCandidate,
     PlanCandidateResponse,
     PlanDifficultyItem,
@@ -213,6 +219,14 @@ from app.schemas.plan_library import (
     WorkArtifactVersionRead,
     WorkUnitPopulationState,
 )
+from app.schemas.plan_library_followups import (
+    FollowupFilters,
+    FollowupSizeClassFilter,
+    FollowupStateFilter,
+    OpenFollowupResponse,
+    is_blank,
+    normalize_repo,
+)
 from app.schemas.plan_library_scan_roots import ScanRootListResponse, ScanRootRow
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
@@ -221,6 +235,11 @@ from app.services.plan_difficulty import (
     MODEL_SELECTORS,
     MODEL_TIERS,
     RUBRIC_VERSION,
+)
+from app.services.plan_library_followup_view import (
+    age_days,
+    edge_read,
+    open_followup,
 )
 from app.services.plan_library_vocabulary import build_vocabulary
 from app.services.plan_scan_root_health import (
@@ -493,37 +512,6 @@ def _summary(row: WorkArtifact, status_currency: StatusCurrency) -> WorkArtifact
     )
 
 
-def _age_days(anchor: datetime, now: datetime) -> float:
-    """Whole-ish days between ``anchor`` and ``now``, three decimals.
-
-    Defends against a naive timestamp even though the columns are
-    ``timestamptz``: the arithmetic raises rather than degrading if one side
-    ever arrives without a tzinfo.
-    """
-    if anchor.tzinfo is None:  # pragma: no cover — the column is timestamptz
-        anchor = anchor.replace(tzinfo=UTC)
-    return round((now - anchor).total_seconds() / 86400.0, 3)
-
-
-def _open_followup(
-    edge: WorkArtifactEdge, origin: WorkArtifact, now: datetime
-) -> OpenFollowup:
-    """Project one open ``spawned_followup`` edge onto its response row."""
-    return OpenFollowup(
-        edge_id=edge.id,
-        from_id=origin.id,
-        from_kind=origin.kind,
-        from_slug=origin.slug,
-        from_title=origin.title,
-        # Non-blank by construction (``ck_work_artifact_edges_followup_note``);
-        # the ``or ""`` only satisfies the type, it is not a real branch.
-        note=edge.note or "",
-        created_by=edge.created_by,
-        created_at=edge.created_at,
-        age_days=_age_days(edge.created_at, now),
-    )
-
-
 def _work_unit_candidate(unit: crud.CandidateWorkUnit, now: datetime) -> PlanCandidate:
     """Project a candidate that exists ONLY as a coord work unit.
 
@@ -572,7 +560,7 @@ def _work_unit_candidate(unit: crud.CandidateWorkUnit, now: datetime) -> PlanCan
         authored_at=None,
         created_at=unit.created_at,
         last_touched=unit.updated_at,
-        age_days=_age_days(unit.order_key, now),
+        age_days=age_days(unit.order_key, now),
         coord=CandidateCoordLink(
             work_unit_slug=unit.slug,
             work_unit_state="linked",
@@ -2607,9 +2595,27 @@ def candidates_fingerprint(
     )
 
 
-def followups_fingerprint(org_id: UUID | None) -> ScopeFingerprint:
-    """``/followups``' cursor scope."""
-    return CursorScope(crud.FOLLOWUP_SORT_KEY).opt_uuid("org", org_id).finish()
+def followups_fingerprint(
+    org_id: UUID | None,
+    *,
+    state: str = "open",
+    repo: str | None = None,
+    size_class: str | None = None,
+    anchored: bool | None = None,
+) -> ScopeFingerprint:
+    """``/followups``' cursor scope: the org and EVERY filter, as applied — a
+    cursor minted under one state or filter set is refused under another."""
+    return (
+        CursorScope(crud.FOLLOWUP_SORT_KEY)
+        .opt_uuid("org", org_id)
+        .opt_str("state", state)
+        .opt_str("repo", repo)
+        .opt_str("size_class", size_class)
+        .opt_str(
+            "anchored", None if anchored is None else ("true" if anchored else "false")
+        )
+        .finish()
+    )
 
 
 def reconciliation_fingerprint(
@@ -4020,6 +4026,9 @@ async def list_plan_candidates(
     followup_rows, followup_total = await crud.list_open_followups(
         db, org_id=org_id, limit=limit
     )
+    followup_anchors = await followups_crud.load_anchors(
+        db, (edge.id for edge, _ in followup_rows)
+    )
 
     # Report-only on THIS route: before it carried the block, /candidates read
     # neither the capture census nor the scan-root table, so a failure in
@@ -4155,7 +4164,8 @@ async def list_plan_candidates(
         # failure or a truncated walk, never with a whole result.
         work_unit_population_reason=population_reason,
         open_followups=[
-            _open_followup(edge, origin, now) for edge, origin in followup_rows
+            open_followup(edge, origin, followup_anchors[edge.id], now)
+            for edge, origin in followup_rows
         ],
         open_followup_total=followup_total,
         corpus_health=corpus_health,
@@ -4257,44 +4267,92 @@ async def list_plan_difficulty(
 @router.get(
     "/followups",
     response_model=OpenFollowupResponse,
-    summary="Follow-ups a plan identified but nobody owns yet",
+    summary="Follow-ups a plan identified, by state (open by default)",
 )
 async def list_open_followups(
     cursor: str | None = Query(None, description=_CURSOR_DESCRIPTION),
     limit: int = Query(50, ge=1, le=200),
+    state: FollowupStateFilter = Query(
+        "open",
+        description="`open` (default: nobody owns it and nothing closed it), "
+        "`fixing` (a PR that fixes it is open), `fixed`, `already_fixed`, "
+        "`dismissed`, or `resolved` (any of the last three).",
+    ),
+    repo: str | None = Query(
+        None,
+        description="`owner/name`: only follow-ups with an anchor in this repo.",
+    ),
+    size_class: FollowupSizeClassFilter | None = Query(
+        None,
+        description="`trivial` | `small` | `plan_sized`, or `unclassified` "
+        "for follow-ups nobody has sized.",
+    ),
+    anchored: bool | None = Query(
+        None,
+        description="`true`: only follow-ups with at least one anchor; "
+        "`false`: only those with none.",
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> OpenFollowupResponse:
-    """The queryable form of "worth its own plan".
+    """The queryable form of "worth its own plan", and of its closure.
 
     Phase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. A plan
     routinely surfaces work it deliberately does not do, and until this route
     that lived ONLY as prose in the plan body — unrecoverable from the data, so
     nothing could answer "show me follow-ups with no owning plan". It is now a
-    ``spawned_followup`` edge whose ``to_id`` is still NULL, and this is the
-    read that lists them.
+    ``spawned_followup`` edge, and this is the read that lists them.
 
-    **Open only.** A follow-up that has been claimed
-    (``PATCH /plan-library/edges/{edge_id}``) is an ordinary two-ended
-    provenance edge and drops out of this list — but it is not deleted, and it
-    stays on the originating artifact's edge list, so the trail from "this plan
-    surfaced it" to "that plan owns it" survives the claim.
+    **Open by default** (``state=open``): nobody owns it and nothing closed it.
+    A follow-up leaves the open view two ways, and neither deletes it:
+
+    * **claimed** — an artifact owns it (``PATCH /plan-library/edges/{edge_id}``);
+      it becomes an ordinary two-ended provenance edge on the originating
+      artifact's edge list and is not in this read under any state;
+    * **resolved** — plan
+      ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``:
+      ``fixing`` while a PR that fixes it is open, then ``fixed`` once coord
+      observes the PR land; or ``already_fixed`` / ``dismissed``. Each is
+      readable here by ``state``.
+
+    Every row carries its ``state``, its file ``anchors`` and its size class,
+    so ``?state=open&anchored=false`` is the unanchored backlog and
+    ``?state=fixing`` the work held by open PRs.
 
     **Oldest first**, and that is the useful default rather than an arbitrary
     one: an old unowned follow-up is work the fleet has known about and
     repeatedly not picked up. A keyset walk over the edge's immutable
-    ``(created_at, id)``: ``total`` counts the open follow-ups from this
+    ``(created_at, id)``: ``total`` counts the matching follow-ups from this
     page's start and ``next_cursor`` reaches the rest, so a bounded page can
-    never be mistaken for the whole queue.
+    never be mistaken for the whole set. A cursor is bound to the filters it
+    was minted under.
     """
+    try:
+        repo_key = normalize_repo(repo) if repo is not None else None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     org_id = await _resolve_org_id(db, current_user)
-    fingerprint = followups_fingerprint(org_id)
+    fingerprint = followups_fingerprint(
+        org_id, state=state, repo=repo_key, size_class=size_class, anchored=anchored
+    )
     after = fingerprint.decode_param(cursor, surface="GET /plan-library/followups")
     rows, total = await crud.list_open_followups(
-        db, org_id=org_id, after=after, limit=limit
+        db,
+        org_id=org_id,
+        after=after,
+        limit=limit,
+        state=state,
+        repo=repo_key,
+        size_class=size_class,
+        anchored=anchored,
     )
+    anchors = await followups_crud.load_anchors(db, (edge.id for edge, _ in rows))
     now = datetime.now(UTC)
-    items = [_open_followup(edge, origin, now) for edge, origin in rows]
+    items = [
+        open_followup(edge, origin, anchors[edge.id], now) for edge, origin in rows
+    ]
     last_edge = rows[-1][0] if rows else None
     meta = _walk_meta(
         shown=len(items),
@@ -4307,7 +4365,13 @@ async def list_open_followups(
         ),
         fingerprint=fingerprint,
     )
-    return OpenFollowupResponse(**meta.model_dump(), items=items)
+    return OpenFollowupResponse(
+        **meta.model_dump(),
+        items=items,
+        filters=FollowupFilters(
+            state=state, repo=repo_key, size_class=size_class, anchored=anchored
+        ),
+    )
 
 
 # NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
@@ -4394,21 +4458,22 @@ async def get_work_artifact(
     versions = await crud.list_versions(db, row.id)
     edge_rows = await crud.list_edges(db, row.id)
 
+    edge_anchors = await followups_crud.load_anchors(
+        db,
+        (
+            edge.id
+            for edge, _, _ in edge_rows
+            if edge.relation == SPAWNED_FOLLOWUP_RELATION
+        ),
+    )
     # A dangling work_unit_slug is NOT resolved and NOT an error — see
     # invariant 3 in the module docstring.
     edges = [
-        WorkArtifactEdgeRead(
-            id=edge.id,
-            from_id=edge.from_id,
-            to_id=edge.to_id,
-            relation=edge.relation,
-            note=edge.note,
-            created_by=edge.created_by,
-            created_at=edge.created_at,
+        edge_read(
+            edge,
             direction="outgoing" if direction == "outgoing" else "incoming",
-            peer_kind=peer.kind if peer is not None else None,
-            peer_slug=peer.slug if peer is not None else None,
-            peer_title=peer.title if peer is not None else None,
+            peer=peer,
+            anchors=edge_anchors.get(edge.id, []),
         )
         for edge, direction, peer in edge_rows
     ]
@@ -4690,6 +4755,11 @@ async def claim_followup_edge(
       targets: silently re-pointing the edge would erase the first claim with
       no trace and leave two callers each believing they own the work. The
       response names the current owner.
+    * **409** — already resolved (``fixing``, ``fixed``, ``already_fixed``,
+      ``dismissed``): it left the open queue through its resolution, and a row
+      holds at most one way out. The response names the resolution; reopen it
+      (``POST /plan-library/edges/{edge_id}/resolution``) first if an
+      artifact should own it instead.
     """
     org_id = await _resolve_org_id(db, current_user)
     found = await crud.get_edge(db, edge_id, org_id=org_id)
@@ -4738,6 +4808,16 @@ async def claim_followup_edge(
                 "to_id": str(exc.to_id),
             },
         ) from exc
+    except crud.FollowupResolved as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "followup_resolved",
+                "message": str(exc),
+                "edge_id": str(exc.edge_id),
+                "resolution": exc.resolution,
+            },
+        ) from exc
 
     logger.info(
         "plan_library.followup_claimed",
@@ -4749,20 +4829,13 @@ async def claim_followup_edge(
         actor=_actor(current_user),
     )
 
-    return WorkArtifactEdgeRead(
-        id=claimed.id,
-        from_id=claimed.from_id,
-        to_id=claimed.to_id,
-        relation=claimed.relation,
-        note=claimed.note,
-        created_by=claimed.created_by,
-        created_at=claimed.created_at,
-        # Relative to the artifact that SURFACED the work — the same frame
-        # ``GET /{id}`` uses when it renders this edge on ``origin``.
+    # Relative to the artifact that SURFACED the work — the same frame
+    # ``GET /{id}`` uses when it renders this edge on ``origin``.
+    return edge_read(
+        claimed,
         direction="outgoing",
-        peer_kind=target.kind,
-        peer_slug=target.slug,
-        peer_title=target.title,
+        peer=target,
+        anchors=(await followups_crud.load_anchors(db, [claimed.id]))[claimed.id],
     )
 
 
@@ -4869,6 +4942,19 @@ async def create_work_artifact_edge(
     Re-posting the same note is idempotent on ``(from_id, relation, note)``,
     while a DIFFERENT note is a second follow-up — a plan may surface several.
 
+    A ``spawned_followup`` may also carry ``anchors`` (the files it is about:
+    ``{repo: "owner/name", path, line_start?, line_end?, symbol?}``),
+    ``size_class`` (``trivial`` | ``small`` | ``plan_sized``) and — when it names
+    no file — ``unanchored_reason``. All OPTIONAL for now (plan
+    ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down`` D3:
+    the refusal of the note-only shape lands after every writer sends the new
+    one). They are stored atomically with a new follow-up; a re-post that lands
+    on an existing one fills only what it lacks (anchors when it has none, a
+    class when it is unclassified) and never overwrites —
+    ``PUT /plan-library/edges/{edge_id}/anchors`` replaces. The response's
+    ``followup`` block is the row as stored, including its ``state``: a
+    re-post of a RESOLVED follow-up's note returns that resolved row.
+
     Every other relation still REJECTS a null target here, with a 422 rather
     than a database error. That is deliberate belt and braces:
     ``ck_work_artifact_edges_open_target`` would refuse the row anyway, but
@@ -4932,6 +5018,35 @@ async def create_work_artifact_edge(
             ),
         )
 
+    facts_supplied = [
+        name
+        for name in ("anchors", "size_class", "unanchored_reason")
+        if getattr(payload, name) is not None
+    ]
+    if facts_supplied and not open_target_ok:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"{', '.join(facts_supplied)} only apply to "
+                f"'{SPAWNED_FOLLOWUP_RELATION}' — relation '{payload.relation}' "
+                "carries no anchors or size class."
+            ),
+        )
+    if payload.unanchored_reason is not None:
+        if is_blank(payload.unanchored_reason):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="unanchored_reason is blank; omit it or say why.",
+            )
+        if payload.anchors:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "unanchored_reason contradicts a non-empty anchors list — "
+                    "a follow-up either names its files or says why it cannot."
+                ),
+            )
+
     org_id = await _resolve_org_id(db, current_user)
     anchor = await crud.get_artifact(db, artifact_id, org_id=org_id)
     if anchor is None:
@@ -4950,6 +5065,33 @@ async def create_work_artifact_edge(
                 detail=f"Work artifact not found: {peer_id}",
             )
 
+    # A follow-up's anchors and size class are written INSIDE create_edge's
+    # transaction, so a new follow-up never commits without them.
+    write_facts: Callable[[WorkArtifactEdge, bool], Awaitable[bool]] | None = None
+    if open_target_ok:
+        anchor_specs = [
+            followups_crud.AnchorSpec(
+                repo=a.repo,
+                path=a.path,
+                line_start=a.line_start,
+                line_end=a.line_end,
+                symbol=a.symbol,
+            )
+            for a in payload.anchors or []
+        ]
+
+        async def _write_facts(edge: WorkArtifactEdge, created: bool) -> bool:
+            return await followups_crud.write_followup_facts(
+                db,
+                edge,
+                created=created,
+                anchors=anchor_specs,
+                size_class=payload.size_class,
+                unanchored_reason=payload.unanchored_reason,
+            )
+
+        write_facts = _write_facts
+
     # No peer at all is the ONE-ENDED case, already narrowed to
     # ``spawned_followup`` above: the edge runs out of ``anchor`` into nothing.
     incoming = payload.from_id is not None
@@ -4960,21 +5102,19 @@ async def create_work_artifact_edge(
         relation=payload.relation,
         note=payload.note,
         created_by=_actor(current_user),
+        on_write=write_facts,
     )
 
     if created:
         response.status_code = status.HTTP_201_CREATED
 
-    return WorkArtifactEdgeRead(
-        id=edge.id,
-        from_id=edge.from_id,
-        to_id=edge.to_id,
-        relation=edge.relation,
-        note=edge.note,
-        created_by=edge.created_by,
-        created_at=edge.created_at,
+    return edge_read(
+        edge,
         direction="incoming" if incoming else "outgoing",
-        peer_kind=peer.kind if peer is not None else None,
-        peer_slug=peer.slug if peer is not None else None,
-        peer_title=peer.title if peer is not None else None,
+        peer=peer,
+        anchors=(
+            (await followups_crud.load_anchors(db, [edge.id]))[edge.id]
+            if open_target_ok
+            else ()
+        ),
     )

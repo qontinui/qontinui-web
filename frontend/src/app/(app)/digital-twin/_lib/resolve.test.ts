@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 import { manifest, resolveSubspaces, summarize } from "./resolve";
 import type { CellStatus, SubspaceProbe } from "./types";
 
+/** The snapshot sub-spaces coord refuses to a non-system tenant (per qontinui-coord#3128). */
+const SYSTEM_TENANT_SUBSPACES = new Set([
+  "release",
+  "schema",
+  "infra",
+  "infra_health",
+  "config",
+  "health",
+  "deps",
+  "route_serving",
+  "client_telemetry",
+]);
+
 /**
  * The parameterized-row tools coord does NOT grant the device session Ask the
  * Twin runs on — the ones outside `device_default_allow_set`
@@ -214,6 +227,25 @@ describe("summarize", () => {
     expect(loading.responding).toBe(0);
     // Once loaded, a missing probe is an error, not a probe in flight.
     expect(summarize(resolveSubspaces([], false)).pending).toBe(0);
+  });
+
+  it("excludes restricted observers from the responding denominator and counts them apart", () => {
+    // The split per qontinui-coord#3128 for a non-system tenant: the nine
+    // SystemTenant sub-spaces are refused, worktree and memory answer. The
+    // gauge must read 2/2 responding · 9 restricted, never 2/11.
+    const probes: SubspaceProbe[] = manifest.subspaces
+      .filter((s) => s.query_kind === "snapshot")
+      .map((s) => ({
+        id: s.id,
+        status: SYSTEM_TENANT_SUBSPACES.has(s.id)
+          ? "restricted"
+          : "implemented",
+      }));
+    const s = summarize(resolveSubspaces(probes, false));
+    expect(s.responding).toBe(2);
+    expect(s.snapshotTotal).toBe(2);
+    expect(s.restricted).toBe(9);
+    expect(s.pending).toBe(0);
   });
 
   it("counts built from the manifest claim alone, independent of the probe", () => {

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
 import { resolveSubspaces, summarize } from "../_lib/resolve";
-import { COUNT_FILLS } from "../_lib/status-presentation";
+import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
@@ -25,6 +25,7 @@ function Gauge({
   label,
   barClassName,
   pending = false,
+  restricted = 0,
   testId,
 }: {
   value: number;
@@ -34,6 +35,12 @@ function Gauge({
   barClassName: string;
   /** The count has no verdict yet (its probe is in flight). */
   pending?: boolean;
+  /**
+   * Cells coord refused for this tenant. Outside `total` (an access decision is
+   * not an observer that failed to answer), so they are named beside the count
+   * instead of reading as missing answers.
+   */
+  restricted?: number;
   testId: string;
 }) {
   const pct = !pending && total > 0 ? Math.round((value / total) * 100) : 0;
@@ -49,6 +56,15 @@ function Gauge({
           </span>
         )}
         <span className="text-sm text-muted-foreground">{label}</span>
+        {restricted > 0 && (
+          <span
+            data-slot="gauge-restricted"
+            className="text-sm text-muted-foreground"
+            title={STATUS_STYLES.restricted.meaning}
+          >
+            · {restricted} restricted
+          </span>
+        )}
       </div>
       <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
         <div
@@ -83,6 +99,7 @@ export function CoverageMatrix() {
           value={summary.responding}
           total={summary.snapshotTotal}
           pending={summary.pending > 0}
+          restricted={summary.restricted}
           label="live observers responding (this tenant)"
           barClassName={COUNT_FILLS.live}
         />

@@ -53,7 +53,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import { fetchOpenAlertsOfKind } from "@/lib/api/operations/alerts";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 
 /**
@@ -103,7 +103,6 @@ export interface CoordAlertRow {
   claim?: CoordAlertClaim | null;
 }
 
-const API = "/api/v1/operations";
 /** The banner's poll cadence. */
 const POLL_INTERVAL_MS = 10_000;
 
@@ -582,8 +581,8 @@ export function RedMainBanner() {
       // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
       // this banner is mounted by the coord layout on every page, and the
       // next tick is the retry. `inFlight` above is its single-flight.
-      const body = await httpClient.get<unknown>(
-        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`,
+      const body = await fetchOpenAlertsOfKind(
+        RED_MAIN_KIND,
         COORD_DASHBOARD_POLL_OPTIONS
       );
       // Tolerate both `{alerts: [...]}` and bare-list shapes (two coord

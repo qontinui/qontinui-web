@@ -1,17 +1,24 @@
 /**
- * `GET /api/v1/plan-library/followups` — work a plan surfaced and nobody
- * owns, derived.
+ * `GET /api/v1/plan-library/followups` — work a plan surfaced, by state.
  *
- * Plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store` Phase 4c.
- * The consumer for a route that had none.
+ * Plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store` Phase 4c
+ * made this the consumer for a route that had none. Plan
+ * `2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down`
+ * Phase 3 gave the follow-up a closure state and file anchors, so the page
+ * now reads it by state.
  *
  * ## What the rows actually are
  *
- * A `spawned_followup` edge whose `to_id` is still NULL. The route's own words
- * for why it exists: *"A plan routinely surfaces work it deliberately does not
- * do, and until this route that lived ONLY as prose in the plan body —
- * unrecoverable from the data, so nothing could answer 'show me follow-ups
- * with no owning plan'."*
+ * A `spawned_followup` edge no artifact owns. The route's own words for why it
+ * exists: *"A plan routinely surfaces work it deliberately does not do, and
+ * until this route that lived ONLY as prose in the plan body — unrecoverable
+ * from the data, so nothing could answer 'show me follow-ups with no owning
+ * plan'."*
+ *
+ * Each row is in one state: `open` (nobody owns it and nothing closed it),
+ * `fixing` (a PR that fixes it is open), or resolved — `fixed` (coord saw that
+ * PR land), `already_fixed` (an earlier commit fixed it) or `dismissed`
+ * (closed without a fix, with a reason).
  *
  * ## Three properties a renderer must not lose
  *
@@ -25,10 +32,10 @@
  *    returning a literal `false`, with a test asserting that literal: a
  *    tautology no render path called, which could not fail and therefore
  *    guarded nothing.
- * 2. **Open only, and "open" is not "undone".** A claimed follow-up becomes an
- *    ordinary two-ended edge and drops out of this list — *but it is not
- *    deleted*, and it stays on the originating artifact's edge list. So an
- *    empty page means "nothing is unowned", never "nothing was surfaced".
+ * 2. **Leaving the open view is not "undone".** A claimed follow-up becomes
+ *    an ordinary two-ended edge and a resolved one moves to its state view —
+ *    *neither is deleted*. So an empty open view means "nothing is unowned
+ *    and unresolved", never "nothing was surfaced".
  * 3. **Oldest first is the useful default, and it is DECLARED.** `ordering`
  *    is on the response type *"so a consumer can assert it did not silently
  *    change"*. An old unowned follow-up is work the fleet has known about and
@@ -41,9 +48,39 @@ import {
 } from "@/components/admin/coord/cursorPager";
 
 // ---------------------------------------------------------------------------
-// The wire shape. Mirrors `backend/app/schemas/plan_library.py`
-// (`OpenFollowupResponse` / `OpenFollowup`).
+// The wire shape. Mirrors `backend/app/schemas/plan_library_followups.py`
+// (`OpenFollowupResponse` / `OpenFollowup` / `FollowupFacts`).
 // ---------------------------------------------------------------------------
+
+/** What a follow-up IS right now (`FollowupState`). */
+export type FollowupState =
+  | "open"
+  | "fixing"
+  | "fixed"
+  | "already_fixed"
+  | "dismissed"
+  | "claimed";
+
+/** One file a follow-up is about. `repo` + `path` are the match key; the
+ *  line hints drift and are never part of a match. */
+export interface FollowupAnchor {
+  repo: string;
+  path: string;
+  line_start?: number | null;
+  line_end?: number | null;
+  symbol?: string | null;
+}
+
+/** One transition, as `resolution_history` records it. */
+export interface FollowupHistoryEntry {
+  from: string;
+  to: string;
+  at: string;
+  by?: string | null;
+  pr?: string | null;
+  commit?: string | null;
+  note?: string | null;
+}
 
 export interface OpenFollowup {
   edge_id: string;
@@ -57,6 +94,23 @@ export interface OpenFollowup {
   created_by?: string | null;
   created_at: string;
   age_days?: number;
+  /** Absent only from a backend that predates closure states — then the row
+   *  is `open` by the only definition that backend had. */
+  state?: FollowupState;
+  anchors?: FollowupAnchor[];
+  /** `null` is UNCLASSIFIED — nobody has sized it, not "small". */
+  size_class?: "trivial" | "small" | "plan_sized" | null;
+  size_class_source?: "declared" | "sweep" | null;
+  unanchored_reason?: string | null;
+  resolution?: "fixing" | "fixed" | "already_fixed" | "dismissed" | null;
+  /** `owner/name#n`. */
+  resolution_pr?: string | null;
+  resolution_commit?: string | null;
+  resolution_note?: string | null;
+  resolved_by?: string | null;
+  /** When the current state was entered — a `fixing` row's age reads here. */
+  resolved_at?: string | null;
+  resolution_history?: FollowupHistoryEntry[];
 }
 
 /**
@@ -71,12 +125,57 @@ export interface OpenFollowupResponse extends Partial<
   total?: number | null;
   /** Declared by the route: `"oldest_first"`. */
   ordering?: string;
+  /** The filters the page was read under, echoed by the route. */
+  filters?: { state?: string | null } | null;
+}
+
+// ---------------------------------------------------------------------------
+// The views the page offers. Each is one `?state=` value of the route.
+// ---------------------------------------------------------------------------
+
+export type FollowupView = "open" | "fixing" | "resolved";
+
+export const FOLLOWUP_VIEWS: readonly FollowupView[] = [
+  "open",
+  "fixing",
+  "resolved",
+];
+
+export const FOLLOWUP_VIEW_LABELS: Record<FollowupView, string> = {
+  open: "Open",
+  fixing: "Fixing",
+  resolved: "Resolved",
+};
+
+/** `repo:path`, with `:line` (or `:start-end`) when the anchor names lines. */
+export function formatAnchor(anchor: FollowupAnchor): string {
+  const base = `${anchor.repo}:${anchor.path}`;
+  const start = anchor.line_start;
+  if (typeof start !== "number") return base;
+  const end = anchor.line_end;
+  return typeof end === "number" && end > start
+    ? `${base}:${start}-${end}`
+    : `${base}:${start}`;
+}
+
+/**
+ * Days since a row entered its current state (`resolved_at`), or `null` when
+ * the row carries no such time — UNKNOWN, never "0 days".
+ */
+export function daysInState(
+  followup: OpenFollowup,
+  now: Date = new Date()
+): number | null {
+  if (!followup.resolved_at) return null;
+  const entered = Date.parse(followup.resolved_at);
+  if (Number.isNaN(entered)) return null;
+  return Math.max(0, (now.getTime() - entered) / 86_400_000);
 }
 
 export interface FollowupWindow {
-  /** The whole open queue (rows already walked + the route's `total` from
-   *  this page's start); `null` when the route served no count — UNKNOWN,
-   *  never `items.length`. */
+  /** The whole view (rows already walked + the route's `total` from this
+   *  page's start); `null` when the route served no count — UNKNOWN, never
+   *  `items.length`. */
   total: number | null;
   /** Rows served before this page, from the cursor walk. */
   start: number;
@@ -132,6 +231,23 @@ export interface FollowupHealth {
 
 const DASH = "–";
 
+/** Each view's headline, for a known total. */
+function headlineFor(view: FollowupView, total: number): string {
+  if (view === "fixing") {
+    return total === 0
+      ? "No follow-up is held by an open fix PR"
+      : `${total} follow-ups held by an open fix PR`;
+  }
+  if (view === "resolved") {
+    return total === 0
+      ? "No follow-up has been resolved"
+      : `${total} follow-ups resolved`;
+  }
+  return total === 0
+    ? "No follow-up is waiting for an owner"
+    : `${total} follow-ups nobody owns`;
+}
+
 /**
  * The strip.
  *
@@ -145,25 +261,26 @@ export function deriveFollowupHealth(
   res: OpenFollowupResponse | null,
   loaded: boolean,
   readFailed: boolean,
-  start = 0
+  start = 0,
+  view: FollowupView = "open"
 ): FollowupHealth {
   const dashes = [
-    { key: "open", label: `open ${DASH}`, tone: "muted" as const },
+    { key: "open", label: `${view} ${DASH}`, tone: "muted" as const },
     { key: "oldest", label: `oldest ${DASH}`, tone: "muted" as const },
   ];
   if (!loaded || res === null) {
     return {
       level: "amber",
       headline: readFailed
-        ? "Could not read the follow-up queue — unknown, not empty"
-        : "Reading the follow-up queue…",
+        ? "Could not read the follow-ups — unknown, not empty"
+        : "Reading the follow-ups…",
       detail: readFailed
         ? "A failed read is the absence of a measurement, never a measured zero."
         : "counts appear once the route answers",
       badges: dashes,
     };
   }
-  // The route's `total` counts from this page's start; the whole queue is
+  // The route's `total` counts from this page's start; the whole view is
   // the rows already walked plus it.
   const total = typeof res.total === "number" ? start + res.total : null;
   const items = res.items ?? [];
@@ -194,22 +311,20 @@ export function deriveFollowupHealth(
     level: readFailed ? "amber" : "green",
     headline:
       typeof total === "number"
-        ? total === 0
-          ? "No follow-up is waiting for an owner"
-          : `${total} follow-ups nobody owns`
+        ? headlineFor(view, total)
         : "Follow-ups read; the route served no total",
     detail: readFailed
       ? "Last refresh failed — these counts are stale."
-      : typeof total === "number" && total === 0
-        ? "Claimed follow-ups drop out of this list but are not deleted — an empty queue means nothing is UNOWNED, not that nothing was surfaced."
+      : view === "open" && typeof total === "number" && total === 0
+        ? "Claimed and resolved follow-ups drop out of the open view but are not deleted — an empty open view means nothing is UNOWNED and unresolved, not that nothing was surfaced."
         : undefined,
     badges: [
       {
         key: "open",
-        label: `open ${typeof total === "number" ? total : DASH}`,
+        label: `${view} ${typeof total === "number" ? total : DASH}`,
         tone: "muted",
         title:
-          "Unpaged total, so a bounded page can never be mistaken for the whole queue.",
+          "Unpaged total, so a bounded page can never be mistaken for the whole view.",
       },
       {
         key: "oldest",

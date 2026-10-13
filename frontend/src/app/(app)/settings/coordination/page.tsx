@@ -19,10 +19,8 @@ import {
   ChevronRight,
   RotateCcw,
 } from "lucide-react";
-import {
-  useNextStepSettings,
-  type AutonomyLevel,
-} from "./_hooks/useNextStepSettings";
+import { useNextStepSettings } from "./_hooks/useNextStepSettings";
+import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 import { PrioritySetsSection } from "./_components/PrioritySetsSection";
 import { FixerSpawnToggle } from "./_components/FixerSpawnToggle";
 
