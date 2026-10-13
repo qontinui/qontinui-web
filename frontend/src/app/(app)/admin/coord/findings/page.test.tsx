@@ -25,10 +25,27 @@ import userEvent from "@testing-library/user-event";
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  // The page reads through `lib/api/operations/coordFindings.ts`, which calls
+  // `httpClient.fetch`; route it through the same per-URL stub. A rejection
+  // passes through exactly as `get`'s did.
+  httpClient: {
+    fetch: async (url: string) =>
+      new Response(JSON.stringify((await httpGet(url)) ?? null)),
+  },
 }));
 
 import CoordFindingsPage from "./page";
+
+/**
+ * The empty state wraps "findings" in a `GlossaryTerm`, so its sentence spans
+ * elements and a plain text matcher would find nothing — which would make the
+ * `toBeNull()` assertions below pass vacuously. Match the paragraph's whole
+ * text instead.
+ */
+function emptyStateText(re: RegExp) {
+  return (_: string, el: Element | null) =>
+    el?.tagName === "P" && re.test(el.textContent ?? "");
+}
 
 const ID_A = "fec41291-67ed-4cf8-b331-888ad1126b45";
 const ID_B = "0f4d1a2b-6c8e-4f10-9a33-2b7c5d8e1f90";
@@ -81,7 +98,7 @@ function page(
   };
 }
 
-/** Every URL `httpClient.get` was called with, in order. */
+/** Every URL the page read, in order. */
 function urls(): string[] {
   return httpGet.mock.calls.map((c) => String(c[0]));
 }
@@ -825,7 +842,9 @@ describe("CoordFindingsPage", () => {
         /could not be read/i
       );
       // The empty state must not contradict the banner above it.
-      expect(screen.queryByText(/no findings match/i)).toBeNull();
+      expect(
+        screen.queryByText(emptyStateText(/no findings match/i))
+      ).toBeNull();
       expect(screen.getByTestId("coord-findings-unknown")).toHaveTextContent(
         /unknown/i
       );
@@ -896,7 +915,9 @@ describe("CoordFindingsPage", () => {
       expect(
         await screen.findByTestId("coord-findings-unknown")
       ).toHaveTextContent(/unknown, not none/i);
-      expect(screen.queryByText(/no findings match/i)).toBeNull();
+      expect(
+        screen.queryByText(emptyStateText(/no findings match/i))
+      ).toBeNull();
       expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
         /could not read the findings store/i
       );
@@ -973,7 +994,9 @@ describe("CoordFindingsPage", () => {
       expect(
         await screen.findByTestId("coord-findings-unknown")
       ).toHaveTextContent(/unknown, not none/i);
-      expect(screen.queryByText(/no findings match these filters/i)).toBeNull();
+      expect(
+        screen.queryByText(emptyStateText(/no findings match these filters/i))
+      ).toBeNull();
       expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
         /could not read the findings store/i
       );
@@ -984,7 +1007,9 @@ describe("CoordFindingsPage", () => {
       render(<CoordFindingsPage />);
 
       expect(
-        await screen.findByText(/no findings match these filters/i)
+        await screen.findByText(
+          emptyStateText(/no findings match these filters/i)
+        )
       ).toBeInTheDocument();
       expect(screen.queryByTestId("coord-findings-unknown")).toBeNull();
     });

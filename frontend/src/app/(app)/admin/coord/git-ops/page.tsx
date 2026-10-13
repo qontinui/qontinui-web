@@ -66,6 +66,7 @@ import {
   StatCluster,
   StatusBadge,
   type Stat,
+  GlossaryTerm,
 } from "@/components/console";
 import { deriveGitOpStatus, GIT_OP_STATUS_PALETTE } from "./gitOpStatus";
 
@@ -210,7 +211,9 @@ function BranchesPanel({
             >
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="px-4 py-2">Device</th>
+                  <th className="px-4 py-2">
+                    <GlossaryTerm id="device">Device</GlossaryTerm>
+                  </th>
                   <th className="px-4 py-2">Repo</th>
                   <th className="px-4 py-2">Branch</th>
                   <th className="px-4 py-2">SHA</th>
@@ -467,7 +470,9 @@ export default function CoordGitOpsPage() {
                 <th className="px-4 py-2">Branch</th>
                 <th className="px-4 py-2">SHA</th>
                 <th className="px-4 py-2">Message</th>
-                <th className="px-4 py-2">Device</th>
+                <th className="px-4 py-2">
+                  <GlossaryTerm id="device">Device</GlossaryTerm>
+                </th>
                 <th className="px-4 py-2">Session</th>
                 <th className="px-4 py-2">Time</th>
               </tr>

@@ -14,7 +14,7 @@ import {
 } from "../_lib/lifecycle";
 import type { CoverageCounts, LifecycleStageInfo } from "../_lib/lifecycle";
 import { resolveSubspaces } from "../_lib/resolve";
-import { COUNT_FILLS } from "../_lib/status-presentation";
+import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
@@ -25,8 +25,9 @@ import {
 
 /**
  * Honesty-bar segments, in order. Only the first is a live verdict; then come
- * probes still in flight (no verdict yet), probes that did not answer,
- * manifest claims, and the roadmap.
+ * probes still in flight (no verdict yet), probes that did not answer, probes
+ * coord refused for this tenant (an access decision, not silence), manifest
+ * claims, and the roadmap.
  */
 const SEGMENTS = [
   {
@@ -43,6 +44,11 @@ const SEGMENTS = [
     key: "silent",
     label: "probed, not answering",
     className: "bg-sky-500",
+  },
+  {
+    key: "restricted",
+    label: "restricted (access)",
+    className: STATUS_STYLES.restricted.dot,
   },
   {
     key: "claim",
@@ -63,6 +69,7 @@ function segmentValues(c: CoverageCounts): Record<SegmentKey, number> {
     live: c.live,
     pending: c.pending,
     silent: c.probed - c.live - c.pending,
+    restricted: c.restricted,
     claim: c.manifestBuilt,
     unbuilt: c.planned + c.notBuilt,
   };
@@ -92,11 +99,24 @@ function HonestyBar({ counts }: { counts: CoverageCounts }) {
   );
 }
 
-/** The legend; the probing entry shows only while a probe is in flight. */
-function HonestyLegend({ probing }: { probing: boolean }) {
+/**
+ * The legend; the probing entry shows only while a probe is in flight, and the
+ * restricted entry only when coord refused at least one probe.
+ */
+function HonestyLegend({
+  probing,
+  restricted,
+}: {
+  probing: boolean;
+  restricted: boolean;
+}) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-      {SEGMENTS.filter((s) => probing || s.key !== "pending").map((s) => (
+      {SEGMENTS.filter(
+        (s) =>
+          (probing || s.key !== "pending") &&
+          (restricted || s.key !== "restricted")
+      ).map((s) => (
         <li key={s.key} className="flex items-center gap-1.5">
           <span className={cn("size-2 rounded-full", s.className)} />
           {s.label}
@@ -112,8 +132,12 @@ function CountItem({
   of,
 }: {
   label: string;
-  /** `"probing"` while the count has no verdict yet. */
-  value: number | "probing";
+  /**
+   * `"probing"` while the count has no verdict yet; `"none"` when there is no
+   * count to show at all (every probe was refused), rendered as an em dash so
+   * it never reads as a 0 that looks like "nothing answered".
+   */
+  value: number | "probing" | "none";
   of?: number;
 }) {
   return (
@@ -127,6 +151,8 @@ function CountItem({
           <span className="text-xs font-normal text-muted-foreground">
             probing…
           </span>
+        ) : value === "none" ? (
+          <span className="font-normal text-muted-foreground">—</span>
         ) : (
           <>
             {value}
@@ -152,8 +178,18 @@ function StageCounts({ counts }: { counts: CoverageCounts }) {
   return (
     <dl className="grid grid-cols-3 gap-2">
       <CountItem
-        label="live-probed"
-        value={probing ? "probing" : counts.live}
+        label={
+          counts.restricted > 0
+            ? `live-probed · ${counts.restricted} restricted`
+            : "live-probed"
+        }
+        value={
+          probing
+            ? "probing"
+            : counts.probed === 0 && counts.restricted > 0
+              ? "none"
+              : counts.live
+        }
         of={!probing && counts.probed > 0 ? counts.probed : undefined}
       />
       <CountItem label="built (claim)" value={counts.manifestBuilt} />
@@ -167,6 +203,9 @@ function StageCounts({ counts }: { counts: CoverageCounts }) {
 
 /** Say in words when nothing at a stage is live-verified. */
 function liveProbeNote(counts: CoverageCounts): string | null {
+  if (counts.probed === 0 && counts.restricted > 0) {
+    return "Every live probe at this stage is restricted for this tenant.";
+  }
   if (counts.probed === 0) {
     return "No live probe at this stage — every status here is a manifest claim.";
   }
@@ -178,8 +217,11 @@ function liveProbeNote(counts: CoverageCounts): string | null {
 /** A twin card's live-probe count — in words while it has no verdict yet. */
 function liveProbeSummary(counts: CoverageCounts): string {
   if (counts.pending > 0) return "probing…";
-  if (counts.probed === 0) return "no live probe";
-  return `${counts.live}/${counts.probed} live-probed`;
+  const restricted =
+    counts.restricted > 0 ? `${counts.restricted} restricted` : null;
+  if (counts.probed === 0) return restricted ?? "no live probe";
+  const live = `${counts.live}/${counts.probed} live-probed`;
+  return restricted ? `${live} · ${restricted}` : live;
 }
 
 interface StageSectionProps {
@@ -305,6 +347,7 @@ export function LifecycleView() {
   const byStage = useMemo(() => stageSummary(rows), [rows]);
   const byTwin = useMemo(() => twinSummary(rows), [rows]);
   const probing = rows.some((r) => r.cellStatus === "probing");
+  const anyRestricted = rows.some((r) => r.cellStatus === "restricted");
 
   if (data?.restricted) return <TwinAccessRestricted />;
 
@@ -354,7 +397,7 @@ export function LifecycleView() {
           })}
         </ul>
 
-        <HonestyLegend probing={probing} />
+        <HonestyLegend probing={probing} restricted={anyRestricted} />
       </section>
 
       {isError && <CoordUnreachableBanner error={error} />}

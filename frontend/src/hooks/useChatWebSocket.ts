@@ -79,10 +79,11 @@ function errorText(...candidates: unknown[]): string | null {
  * (`chat_session_state`, `chat_message_ack`, `error`, `chat_output`, …). Its
  * `chat_response` broadcast carries an `AiOutputEvent` under `data`, which
  * spells it `taskRunId` (qontinui-runner `mcp/shared.rs`). A relay chat
- * session's own output names no run: the runner spawns it without a session
- * context (`backend_relay.rs` `handle_chat_create`). The backend's own frames
- * name none either. (The runner would rewrap a `session-state` broadcast the
- * same way, under `data`, but nothing on the runner produces one.)
+ * session's output names its run on a runner that spawns it with a session
+ * context (`backend_relay.rs` `handle_chat_create`); an older runner spawned it
+ * without one, so its output names no run. The runner's `session-state`
+ * broadcast arrives as `chat_session_state` with the same `data.taskRunId`.
+ * The backend's own frames name none.
  */
 function frameRunId(msg: Record<string, unknown>): string | null {
   if (typeof msg.task_run_id === "string" && msg.task_run_id) {
@@ -94,6 +95,42 @@ function frameRunId(msg: Record<string, unknown>): string | null {
     if (typeof run === "string" && run) return run;
   }
   return null;
+}
+
+/** Every state `AiSessionState` admits. */
+const KNOWN_SESSION_STATES: ReadonlySet<string> = new Set<AiSessionState>([
+  "connecting",
+  "initializing",
+  "ready",
+  "processing",
+  "interrupting",
+  "closed",
+  "disconnected",
+  "error",
+  "not_found",
+  "restoring",
+]);
+
+/**
+ * The runner's own state word, read as an `AiSessionState`, or `null` when it
+ * names none this page models. The runner's `SessionState::as_event_str` also
+ * says `created`, `promoting` and `closing` (qontinui-runner
+ * `claude_session/state.rs`), which its `session-state` broadcast now sends on
+ * every transition; they map to the nearest state rather than leaking through
+ * as values the UI does not know.
+ */
+export function toAiSessionState(raw: unknown): AiSessionState | null {
+  if (typeof raw !== "string") return null;
+  switch (raw) {
+    case "created":
+      return "initializing";
+    case "promoting":
+      return "processing";
+    case "closing":
+      return "closed";
+    default:
+      return KNOWN_SESSION_STATES.has(raw) ? (raw as AiSessionState) : null;
+  }
 }
 
 /** The requests that load a session: its live state, then its transcript. */
@@ -365,7 +402,8 @@ export function useChatWebSocket({
             (msg.state as string) ||
             ((msg.data as Record<string, unknown>)?.state as string) ||
             "not_found";
-          const state = rawState;
+          const state = toAiSessionState(rawState);
+          if (state === null) break;
           const canSend = msg.can_send as boolean;
           const canInterrupt = msg.can_interrupt as boolean;
 
@@ -392,7 +430,7 @@ export function useChatWebSocket({
             ]);
           }
 
-          setSessionState(state as AiSessionState);
+          setSessionState(state);
 
           // Also use can_send/can_interrupt for more precise state
           if (canSend && state !== "closed") {
@@ -413,9 +451,9 @@ export function useChatWebSocket({
               errorText(msg.error) ?? "The runner did not accept the message."
             );
           }
-          const ackState = msg.state as string;
+          const ackState = toAiSessionState(msg.state);
           if (ackState) {
-            setSessionState(ackState as AiSessionState);
+            setSessionState(ackState);
           }
           break;
         }

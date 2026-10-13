@@ -151,7 +151,7 @@ def _include_object(object_, name, type_, reflected, compare_to):  # noqa: ARG00
 
 
 # ---------------------------------------------------------------------------
-# No revision's ``lock_timeout`` reaches the next one.
+# No revision's ``lock_timeout`` or ``search_path`` reaches the next one.
 #
 # Revisions bound their DDL's lock wait with ``SET LOCAL lock_timeout`` (house
 # style — a QUEUED ``ACCESS EXCLUSIVE`` request blocks every reader behind it),
@@ -168,6 +168,16 @@ def _include_object(object_, name, type_, reflected, compare_to):  # noqa: ARG00
 # ``op.execute`` it rejects (web#1457, which tried the per-file edit). One hook
 # also covers every future revision without a convention to remember.
 #
+# ``search_path`` leaks the same way, and with a sharper failure: 26 landed
+# revisions (the ``consolidation_phase2_v_*`` series, ``appid_01``,
+# ``obsappfill_01``) open with a session-level ``SET search_path TO project,
+# public`` and never restore it. Left alone, every later revision in a
+# batch that includes a setter (every fresh-database build) resolves an
+# unqualified name ``project``-first, while the same revision applied in a batch
+# without one resolves it ``public``-first — one revision, two schemas,
+# depending on how the chain was batched (``coord_pgss_ext_01`` put
+# ``pg_stat_statements`` in ``project`` on a fresh build, ``public`` on prod).
+#
 # ``RESET`` rather than ``SET LOCAL ... = DEFAULT``: it clears a session-level
 # ``SET`` as well as a ``SET LOCAL`` (a ``SET LOCAL`` would mask a leaked
 # session value only until the next autocommit block commits). It restores the
@@ -176,17 +186,18 @@ def _include_object(object_, name, type_, reflected, compare_to):  # noqa: ARG00
 # batch transaction it is transactional like any other ``SET``.
 #
 # Runs after every applied step, up or down, online or offline (``--sql``
-# renders the statement after each revision). Stamp steps run no revision code,
-# so there is nothing to restore and the statement is skipped.
+# renders the statements after each revision). Stamp steps run no revision
+# code, so there is nothing to restore and the statements are skipped.
 # ---------------------------------------------------------------------------
-RESET_LOCK_TIMEOUT_SQL = "RESET lock_timeout"
+RESET_AFTER_EACH_REVISION_SQL = ("RESET lock_timeout", "RESET search_path")
 
 
-def _reset_lock_timeout(ctx, step, heads, run_args):  # noqa: ARG001
-    """``on_version_apply`` hook: undo any ``lock_timeout`` the step just set."""
+def _reset_revision_settings(ctx, step, heads, run_args):  # noqa: ARG001
+    """``on_version_apply`` hook: undo any setting the step just changed."""
     if step.is_stamp:
         return
-    ctx.execute(RESET_LOCK_TIMEOUT_SQL)
+    for statement in RESET_AFTER_EACH_REVISION_SQL:
+        ctx.execute(statement)
 
 
 def run_migrations_offline() -> None:
@@ -209,7 +220,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
         include_object=_include_object,
-        on_version_apply=_reset_lock_timeout,
+        on_version_apply=_reset_revision_settings,
     )
 
     with context.begin_transaction():
@@ -235,7 +246,7 @@ def run_migrations_online() -> None:
             target_metadata=_target_metadata(),
             include_schemas=True,
             include_object=_include_object,
-            on_version_apply=_reset_lock_timeout,
+            on_version_apply=_reset_revision_settings,
         )
 
         with context.begin_transaction():

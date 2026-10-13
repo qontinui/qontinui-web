@@ -1,12 +1,5 @@
 [
   {
-    "file": "app/(app)/admin/coord/work-units/page.tsx",
-    "method": "GET",
-    "path": "<unresolved> url #1",
-    "reason": "unresolved",
-    "kind": "unresolved"
-  },
-  {
     "file": "app/(app)/workflow-viz/_hooks/useHistoricalData.ts",
     "method": "GET",
     "path": "/api/v1/historical/test-run/{param}",
@@ -17,13 +10,6 @@
     "file": "app/dev/reset/page.tsx",
     "method": "POST",
     "path": "/api/v1/auth/jwt/logout",
-    "reason": "dead",
-    "kind": "no-path"
-  },
-  {
-    "file": "components/admin/coord/GapRow.tsx",
-    "method": "POST",
-    "path": "/api/v1/operations/coord/prompt-documents/policy/{param}/clauses",
     "reason": "dead",
     "kind": "no-path"
   },

@@ -183,3 +183,59 @@ export interface UiBridgeSnapshot {
 export function snapshotHasElementTree(snap: UiBridgeSnapshot): boolean {
   return snap.source !== "native_capture";
 }
+
+/**
+ * One row of the runner's app registry as `GET /apps` sends it (qontinui-schemas
+ * `rust/src/apps.rs` `App`). The row carries more (`repo_root`,
+ * `ui_bridge_url`, thresholds, …); only the two fields the App picker reads
+ * are named here.
+ */
+export interface RegisteredApp {
+  app_id?: string;
+  display_name?: string;
+  [k: string]: unknown;
+}
+
+/**
+ * The runner's `GET /apps` body (qontinui-runner `spec_api/apps.rs`
+ * `handle_list_apps`): bare `{ ok, apps }`, no `ApiResponse` envelope. Its
+ * failure (`{ ok: false, reason }`) is thrown by `runnerProxyGet`, never
+ * returned.
+ */
+export interface AppListResponse {
+  ok?: boolean;
+  apps?: RegisteredApp[];
+}
+
+/** A suggestion for the App field: the id, and an optional human label. */
+export interface AppIdSuggestion {
+  id: string;
+  note?: string;
+}
+
+/**
+ * The App field's suggestions from the runner's own registry: one per
+ * registered app, labelled with its `display_name` when that says more than
+ * the id. `null` when the body carries no `apps` array — that is "the
+ * registry was not read", not "no apps are registered", so the caller falls
+ * back to its static suggestions rather than offering nothing. An `apps: []`
+ * IS an answer, and yields no suggestions. Rows whose id the registry could
+ * never have admitted (see `isValidAppId`) are dropped: suggesting one would
+ * only offer an id the panel refuses to send.
+ */
+export function registeredAppSuggestions(
+  resp: AppListResponse | undefined
+): AppIdSuggestion[] | null {
+  if (!resp || !Array.isArray(resp.apps)) return null;
+  const out: AppIdSuggestion[] = [];
+  const seen = new Set<string>();
+  for (const app of resp.apps) {
+    const id = typeof app?.app_id === "string" ? app.app_id : "";
+    if (!isValidAppId(id) || seen.has(id)) continue;
+    seen.add(id);
+    const name =
+      typeof app.display_name === "string" ? app.display_name.trim() : "";
+    out.push(name && name !== id ? { id, note: name } : { id });
+  }
+  return out;
+}

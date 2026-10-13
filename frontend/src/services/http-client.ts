@@ -126,6 +126,12 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // device-owner scoped and ignores the header. Plan
   // 2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to.
   "/api/v1/fleet/test-targets",
+  // Build records — `get_tenant_id` / `require_coord_tenant_admin_target`
+  // coord proxies, plus the publish step that freezes a snapshot owned by the
+  // selected tenant. Does NOT match the unauthenticated
+  // `/api/v1/public/build-records/…`, which resolves no tenant. Plan
+  // 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
+  "/api/v1/build-records/",
 ];
 
 function readActiveTenantId(): string | null {

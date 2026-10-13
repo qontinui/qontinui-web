@@ -11,8 +11,20 @@ const putMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: vi.fn(),
-    put: (...args: unknown[]) => putMock(...args),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const method = init.method ?? "GET";
+      const body = JSON.parse(init.body ?? "null");
+      let out: unknown;
+      if (method === "PUT") out = await putMock(url, body);
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      // A mock that resolves a `Response` (an error path) is answered
+      // as-is, so a non-2xx goes through `readJson` like the real one.
+      return out instanceof Response
+        ? out
+        : new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 vi.mock("sonner", () => ({
@@ -93,7 +105,9 @@ describe("useRepoFleetPolicyWrite", () => {
   });
 
   it("a rejected write reports failure and records nothing", async () => {
-    putMock.mockRejectedValue(new Error("PUT failed: 403 - admin_required"));
+    putMock.mockImplementation(
+      async () => new Response("admin_required", { status: 403 })
+    );
     const { result } = renderHook(() =>
       useRepoFleetPolicyWrite("github_hosted_ci", "GitHub-hosted CI")
     );

@@ -185,11 +185,21 @@ export function rowsForStage<T extends Pick<SubspaceManifestEntry, "stages">>(
 /**
  * How much of a set of rows the twin observes, and how credibly. Every row
  * lands in exactly one bucket, so
- * `probed + manifestBuilt + planned + notBuilt === total`.
+ * `probed + restricted + manifestBuilt + planned + notBuilt === total`.
  */
 export interface CoverageCounts {
-  /** Snapshot rows — the only rows this page live-probes. */
+  /**
+   * Snapshot rows — the only rows this page live-probes — that coord did NOT
+   * refuse. The denominator of every live count.
+   */
   probed: number;
+  /**
+   * Snapshot rows coord refused for this tenant (cell status `restricted`):
+   * an access decision, not a silent observer, so they sit outside `probed`
+   * rather than reading as "probed, not answering" (once qontinui-coord#3128 lands, coord refuses the
+   * SystemTenant sub-spaces per cell to a non-system tenant).
+   */
+  restricted: number;
   /** Of `probed`: rows ANSWERING (implemented or partial cell status). */
   live: number;
   /**
@@ -219,6 +229,7 @@ export interface CoverageCounts {
 export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
   const counts: CoverageCounts = {
     probed: 0,
+    restricted: 0,
     live: 0,
     pending: 0,
     manifestBuilt: 0,
@@ -228,7 +239,9 @@ export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
     total: rows.length,
   };
   for (const r of rows) {
-    if (r.query_kind === "snapshot") {
+    if (r.query_kind === "snapshot" && r.cellStatus === "restricted") {
+      counts.restricted += 1;
+    } else if (r.query_kind === "snapshot") {
       counts.probed += 1;
       if (r.cellStatus === "implemented" || r.cellStatus === "partial") {
         counts.live += 1;
