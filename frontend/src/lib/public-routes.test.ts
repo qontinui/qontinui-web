@@ -3,23 +3,37 @@ import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fillMetadataSegment } from "next/dist/lib/metadata/get-metadata-route";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths";
-import { isPublic } from "./public-routes";
+import { isPublic, SOCIAL_CARD_PATHS } from "./public-routes";
 
 const APP_DIR = join(__dirname, "..", "app");
 
 /** A code-rendered social card: served at an extensionless URL. */
-const CARD_FILE = /^(?:opengraph|twitter)-image\d?\.(?:tsx|ts|jsx|js)$/;
+const CARD_FILE = /^((?:opengraph|twitter)-image)\d?\.(?:tsx|ts|jsx|js)$/;
+const PAGE_FILE = /^page\.(?:tsx|ts|jsx|js|mdx)$/;
 
-/** Every social-card route module under `src/app`, with its app-dir segment. */
-function socialCardModules(): { segment: string; file: string }[] {
-  const found: { segment: string; file: string }[] = [];
+interface CardModule {
+  /** The card's directory, absolute. */
+  dir: string;
+  /** Its app-dir segment, e.g. `/` or `/(marketing)`. */
+  segment: string;
+  file: string;
+  /** `opengraph-image` or `twitter-image`. */
+  kind: string;
+}
+
+const segmentOf = (dir: string) =>
+  `/${relative(APP_DIR, dir).split(sep).join("/")}`;
+
+/** Every social-card route module under `src/app`. */
+function socialCardModules(): CardModule[] {
+  const found: CardModule[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
+      const kind = CARD_FILE.exec(entry.name)?.[1];
       if (entry.isDirectory()) walk(full);
-      else if (CARD_FILE.test(entry.name)) {
-        const rel = relative(APP_DIR, dir).split(sep).join("/");
-        found.push({ segment: `/${rel}`, file: entry.name });
+      else if (kind) {
+        found.push({ dir, segment: segmentOf(dir), file: entry.name, kind });
       }
     }
   };
@@ -28,8 +42,33 @@ function socialCardModules(): { segment: string; file: string }[] {
 }
 
 /** The URL Next serves a card module at, named by Next's own function. */
-function servedUrl({ segment, file }: { segment: string; file: string }) {
+function servedUrl({ segment, file }: CardModule) {
   return fillMetadataSegment(segment, {}, file.replace(/\.\w+$/, ""));
+}
+
+/**
+ * The pages a card describes: every page under its segment, except in a
+ * subtree that ships its own card of the same kind (that card describes
+ * those pages instead). Private `_folders` hold no routes.
+ */
+function describedPages(card: CardModule): string[] {
+  const pages: string[] = [];
+  const walk = (dir: string) => {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    const ownCard = entries.some(
+      (e) => e.isFile() && CARD_FILE.exec(e.name)?.[1] === card.kind
+    );
+    if (dir !== card.dir && ownCard) return;
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith("_")) {
+        walk(join(dir, entry.name));
+      } else if (entry.isFile() && PAGE_FILE.test(entry.name)) {
+        pages.push(normalizeAppPath(`${segmentOf(dir)}/page`));
+      }
+    }
+  };
+  walk(card.dir);
+  return pages;
 }
 
 describe("isPublic — social-card routes", () => {
@@ -44,18 +83,33 @@ describe("isPublic — social-card routes", () => {
     ]);
   });
 
-  it("makes every card exactly as reachable as the pages it describes", () => {
-    // A link-preview crawler carries no auth cookie. A card under a public
-    // tree must answer it, or the preview renders with no image.
+  it("admits a card exactly when a page it describes is public", () => {
+    // A link-preview crawler carries no auth cookie. A card describing a
+    // public page must answer it, or that page's preview has no image; a card
+    // describing only gated pages must stay gated.
     const cards = socialCardModules();
     expect(cards.length).toBeGreaterThan(0);
     for (const card of cards) {
-      const pagesPath = normalizeAppPath(card.segment) || "/";
+      const pages = describedPages(card);
+      const url = servedUrl(card);
       expect(
-        { card: servedUrl(card), public: isPublic(servedUrl(card)) },
-        `${card.segment}/${card.file}`
-      ).toEqual({ card: servedUrl(card), public: isPublic(pagesPath) });
+        pages.length,
+        `${card.segment}/${card.file} describes no page`
+      ).toBeGreaterThan(0);
+      expect(
+        { card: url, public: isPublic(url) },
+        `${card.segment}/${card.file} describes ${pages.length} page(s), public: ${pages.filter(isPublic).slice(0, 5).join(", ") || "none"}`
+      ).toEqual({ card: url, public: pages.some(isPublic) });
     }
+  });
+
+  it("lists no card path that is not a served card describing a public page", () => {
+    const served = socialCardModules()
+      .filter((card) => describedPages(card).some(isPublic))
+      .map(servedUrl)
+      .sort();
+
+    expect([...SOCIAL_CARD_PATHS].sort()).toEqual(served);
   });
 
   it.each([
@@ -63,7 +117,6 @@ describe("isPublic — social-card routes", () => {
     "/twitter-image",
     "/opengraph-image-pwu6ef",
     "/twitter-image-pwu6ef",
-    "/opengraph-image2",
   ])("treats %s as public", (path) => {
     expect(isPublic(path)).toBe(true);
   });
@@ -74,9 +127,14 @@ describe("isPublic — social-card routes", () => {
     "/opengraph-image-pwu6ef/extra",
     "/opengraph-image-toolong7",
     "/opengraph-image-PWU6EF",
+    "/opengraph-image2",
     "/build/opengraph-image",
     "/xopengraph-image",
-  ])("does not let the card pattern open %s", (path) => {
+    // The card an `(app)` route group would be served at, and a numbered
+    // variant with a made-up group hash: neither is a served public card.
+    "/opengraph-image-xg4ifa",
+    "/twitter-image9-zzzzzz",
+  ])("keeps %s gated", (path) => {
     expect(isPublic(path)).toBe(false);
   });
 });
