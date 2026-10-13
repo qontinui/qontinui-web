@@ -17,7 +17,7 @@ exactly as §3 states them, coord-qualified idempotent DDL, removals only in
 column-drop guard reading the upgrade as dropping nothing.
 
 With a database (``QONTINUI_TEST_PG=host:port`` or ``QONTINUI_TEST_PG_DSN``;
-skipped otherwise): column shape, every one of the eight CHECKs refusing its
+skipped otherwise): column shape, every one of the nine CHECKs refusing its
 violation and admitting its honest row, the series index, idempotent upgrade
 and an up/down/up round-trip.
 """
@@ -332,6 +332,14 @@ def test_table_shape_and_every_check() -> None:
             "SELECT indisvalid FROM pg_index WHERE indexrelid = "
             f"'{_SCHEMA}.{_INDEX}'::regclass",
         )
+        # The DESC is what lets the latest-per-metric rollup be an index scan
+        # (module docstring, "Index shape is the read's shape").
+        indexdef = scalar(
+            engine, f"SELECT pg_get_indexdef('{_SCHEMA}.{_INDEX}'::regclass)"
+        )
+        assert str(indexdef).endswith(
+            "USING btree (tenant_id, kind, name, observed_at DESC)"
+        ), indexdef
 
         # Honest rows, one per shape the docstring promises is storable.
         _insert(engine)
@@ -386,6 +394,10 @@ def test_table_shape_and_every_check() -> None:
             # 8. a reason that names a verdict input agrees with it
             _unknown(unknown_reason="no_target"),
             _unknown(unknown_reason="no_direction"),
+            # 9. a query that is never executed cannot carry a verdict
+            {"source_query_type": "manual"},
+            {"source_query_type": "untyped", "target_state": "off_target"},
+            {"source_query_type": "absent", "source_query_digest": None},
         ]
         for overrides in refused:
             with pytest.raises(sqlalchemy.exc.IntegrityError):

@@ -30,8 +30,7 @@ natural second"* probed kind; today ``PROBED_KINDS`` contains only
 the authored metrics on this tenant cannot answer whether the thing they
 measure is moving.
 
-No table like this exists: ``git grep metric_history`` over qontinui-web
-returns nothing.
+No such table exists in the alembic chain before this revision.
 
 Why a HISTORY, when the sibling claim table is current-row-only
 ===============================================================
@@ -273,8 +272,8 @@ would break the writer for no benefit.
                         sibling: an untyped ``'{}'`` leaves the literal's type
                         unresolved where a ``jsonb`` one is required.
 
-The eight CHECK constraints, and what each catches
-===================================================
+The nine CHECK constraints, and what each catches
+==================================================
 
 One entry per named ``CONSTRAINT`` in the ``CREATE TABLE`` below, in the order
 that block declares them, and the count is the count. A reader auditing
@@ -326,6 +325,15 @@ different order than the DDL sends that reader away with the wrong picture.
    a ``direction``-without-``target`` row exists and nothing stops it being
    written ``no_direction`` — a row that lies about its own remedy, on the
    column §4 routes on.
+
+9. ``ck_success_metric_history_unexecuted_is_unknown`` — a row whose
+   ``source_query_type`` is ``manual``, ``untyped`` or ``absent`` must be
+   ``unknown``. §3 says none of those is ever executed (``manual:`` is
+   *"never executed … always UNKNOWN"*; an untyped or missing query is never
+   run), so an ``on_target`` / ``off_target`` verdict on such a row can only
+   have been guessed. Only ``named`` and ``http`` rows may carry a verdict.
+   Like 7 and 8 it is one-directional: an executed query may still resolve
+   ``unknown`` (``probe_error``, ``unknown_named_query``, ``no_target`` …).
 
 7 and 8 together say one thing: **a reason that makes a checkable claim about
 another column of its own row must agree with that column.** Five of the seven
@@ -397,8 +405,11 @@ It is built ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` inside
 table created one statement earlier a plain build would cost nothing, but
 coord's merge-train migration classifier
 (``qontinui-coord/crates/coord/src/pr_merge/migration_classifier.rs``)
-admits no other index build and no f-string ``op.execute``, and this PR must
-land without an operator override. ``autocommit_block`` commits the
+admits a plain build there only as ``AutoSafeIfNewTables`` — a claim coord
+must still discharge against trunk before treating the set as safe — while a
+``CONCURRENTLY`` build classifies ``AutoSafe`` outright. It also admits no
+f-string ``op.execute``. This PR should land without an operator override, so
+it takes the unconditional form. ``autocommit_block`` commits the
 transaction ``env.py`` opened, so the ``CREATE TABLE`` is durable before the
 build starts (precedent ``coord_alerts_flakeidx_01``). A KILLED concurrent
 build leaves an INVALID index that ``IF NOT EXISTS`` would then skip — check
@@ -473,7 +484,7 @@ def upgrade() -> None:
     # ----------------------------------------------------------------
     # 1. The append-only series. Raw SQL rather than op.create_table for
     #    the same reason as every sibling coord.* revision: the
-    #    IF NOT EXISTS guard, the '{}'::jsonb default and the eight
+    #    IF NOT EXISTS guard, the '{}'::jsonb default and the nine
     #    named CHECKs all want to be stated literally.
     # ----------------------------------------------------------------
     op.execute(
@@ -604,7 +615,16 @@ def upgrade() -> None:
                         OR target IS NULL)
                        AND (unknown_reason IS DISTINCT FROM 'no_direction'
                             OR direction IS NULL
-                            OR btrim(direction) = ''))
+                            OR btrim(direction) = '')),
+
+            -- A query that is never executed (manual:, untyped, absent --
+            -- plan section 3) cannot have produced a verdict, so its row
+            -- is unknown. Only named and http rows may be on or off
+            -- target. One-directional: an executed query may still
+            -- resolve unknown.
+            CONSTRAINT ck_success_metric_history_unexecuted_is_unknown
+                CHECK (source_query_type IN ('named', 'http')
+                       OR target_state = 'unknown')
         )
         """
     )
