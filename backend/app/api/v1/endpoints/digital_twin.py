@@ -15,9 +15,12 @@ exact bearer-forwarding + tenant-resolution helpers proven in ``operations.py``
 so there is one ContextVar and one auth posture.
 
 Only **snapshot** sub-spaces (no required args → a meaningful whole-sub-space
-verdict) are live-probed. Parameterized-query sub-spaces (ci/log/ast/type/
-origin_resolution) are interactive-only and surfaced from the manifest's static
-status in Phase 2's explorer, not here.
+verdict) are live-probed. Every other manifest row (ci/log/ast/type/
+origin_resolution, the process + intent rows, …) renders the manifest's static
+claim. Where a coord tool answers such a row, the row's ``ask_via`` says where
+on the page it can be asked: Ask the Twin, the Delivery tab, or nowhere —
+coord withholds the tools of some rows (log, ast, type and origin_resolution
+among them) from the device session Ask the Twin runs on.
 """
 
 import asyncio
@@ -54,10 +57,22 @@ router = APIRouter()
 # "error", never hang the matrix.
 _TWIN_PROBE_TIMEOUT = httpx.Timeout(8.0, connect=4.0)
 
-# The fleet-wide SNAPSHOT sub-spaces the matrix live-probes. Mirrors the
-# ``subspace_tool`` map in coord ``twin_routes.rs`` (guarded there by a unit
-# test). If this list and coord's map drift, coord answers 404 for an unmapped
-# id and the cell degrades to ``no_snapshot_tool`` — benign, never a crash.
+# The SNAPSHOT sub-spaces the matrix live-probes — exactly the ids coord's
+# ``subspace_tool`` map in ``twin_routes.rs`` serves (``auth`` is the one
+# sub-space coord deliberately leaves unmapped).
+#
+# This tuple is a HAND COPY of coord's map. coord is another repo, so no test
+# here can read it; ``tests/test_digital_twin_subspaces.py`` compares the tuple
+# with a hand-copied list of coord's ids. Re-verify both against
+# ``subspace_tool`` whenever either side changes. If they drift, coord answers
+# 404 for an unmapped id and the cell degrades to ``no_snapshot_tool`` — benign,
+# never a crash.
+#
+# The frontend manifest's ``snapshot`` rows must equal this tuple, and that IS
+# pinned from both sides, because each side's CI runs only on its own paths:
+# ``tests/test_digital_twin_subspaces.py`` reads the manifest, and
+# ``_lib/lifecycle.test.ts`` parses this literal. Keep it a flat tuple of
+# string literals (comments allowed) so that parse keeps working.
 _PROBEABLE_SUBSPACES: tuple[str, ...] = (
     "release",
     "schema",
@@ -70,10 +85,16 @@ _PROBEABLE_SUBSPACES: tuple[str, ...] = (
     # NOTE: `auth` is intentionally absent — coord_query_auth_config exposes
     # Cognito pool wiring / tenancy graph (the most recon-sensitive sub-space),
     # so coord drops it from its snapshot map (/coord/twin/auth/verdict 404s) and
-    # we don't probe it. The manifest marks `auth` parameterized (interactive
-    # explorer only).
+    # we don't probe it. The manifest marks `auth` parameterized — a static
+    # claim; coord also withholds the tool from device sessions, so Ask the Twin
+    # cannot ask it either.
     "client_telemetry",
     "worktree",
+    # Ξ_Memory (coord_query_memory_state; coord mapped it 2026-07-10). The
+    # no-arg call is the snapshot for the CALLER'S tenant — coord carries the
+    # verified operator's tenant into the tool — so it scopes like every other
+    # probe here.
+    "memory",
 )
 
 # Coverage at/above this counts as a fully-wired observer. Below it (but > 0 and
@@ -152,10 +173,14 @@ async def _probe_subspace(
         return {"id": subspace, "status": "error", "error": "coord_unreachable"}
 
     if resp.status_code == 403:
-        # coord's twin tenant gate (require_twin_tenant) denied this operator —
-        # their home tenant is outside COORD_TWIN_ALLOWED_TENANT_IDS. Distinct
-        # from a tool failure: it's an access decision, surfaced as "restricted"
-        # so the UI shows a friendly access message instead of an all-error grid.
+        # coord refused THIS sub-space to this tenant: either its twin tenant
+        # gate (require_twin_tenant) denied the operator outright — home tenant
+        # outside COORD_TWIN_ALLOWED_TENANT_IDS, so every cell 403s — or, once
+        # qontinui-coord#3128 lands, the sub-space is SystemTenant-scoped and a
+        # non-system tenant is refused it per cell while its other cells answer.
+        # Either way it is an access decision, not a tool failure, so the cell
+        # is "restricted" (never "error"). The matrix-level `restricted` flag is
+        # derived below from ALL cells, not from this one.
         return {"id": subspace, "status": "restricted"}
     if resp.status_code == 404:
         # coord serves no snapshot tool for this id (parameterized/not-built).
@@ -260,11 +285,15 @@ async def get_twin_subspaces(
         results = await asyncio.gather(
             *(_probe_subspace(client, s, headers) for s in _PROBEABLE_SUBSPACES)
         )
-    # coord's twin tenant gate (when armed) 403s every route for an operator
-    # outside COORD_TWIN_ALLOWED_TENANT_IDS. Surface that as a top-level
-    # `restricted` flag so the UI shows a friendly access message rather than an
-    # all-"error" grid (an access decision, not an outage).
-    restricted = any(r.get("status") == "restricted" for r in results)
+    # coord answers 403 per sub-space: its twin tenant gate (when armed) denies
+    # every route for an operator outside COORD_TWIN_ALLOWED_TENANT_IDS, and a
+    # SystemTenant-scoped cell is denied to a non-system tenant on its own while
+    # the tenant's other cells answer. The top-level `restricted` flag replaces
+    # the WHOLE grid with an access notice, so it is set only when EVERY probed
+    # cell is restricted — one restricted cell renders as that cell's own
+    # "restricted" status, and the rest of the grid stays visible. An empty
+    # probe list is not a denial, so it is never restricted.
+    restricted = bool(results) and all(r.get("status") == "restricted" for r in results)
     payload = {
         "subspaces": list(results),
         "probed": len(results),

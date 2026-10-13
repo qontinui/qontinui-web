@@ -1,29 +1,88 @@
 /**
- * Digital Twin Explorer — shared types for the completeness matrix.
+ * Digital Twin Explorer — shared types for the completeness matrix and the
+ * lifecycle view.
  *
  * The manifest (`subspaces.manifest.json`) is the denominator (full taxonomy);
  * the backend `/api/v1/digital-twin/subspaces` probe is the numerator (live
  * per-tenant observer status). They are joined by `id`.
  */
 
-/** How a sub-space can be queried — drives whether the matrix live-probes it. */
+/**
+ * How this page can read a sub-space:
+ *  - `snapshot` — live-probed here, through coord's twin verdict route (the
+ *    backend probes exactly `_PROBEABLE_SUBSPACES` in
+ *    `backend/app/api/v1/endpoints/digital_twin.py`).
+ *  - `parameterized` — a coord tool answers it (with or without arguments),
+ *    but this page does not probe it. The row's `ask_via` says where on this
+ *    page it can be asked: Ask the Twin, the Delivery tab, or nowhere (coord
+ *    withholds some tools from the device session Ask the Twin runs on).
+ *  - `none` — no coord query tool.
+ *
+ * Statuses on `parameterized` and `none` rows are manifest claims, not live
+ * verdicts.
+ */
 export type QueryKind = "snapshot" | "parameterized" | "none";
+
+/**
+ * Where on this page a `parameterized` row's coord tool can be asked:
+ *  - `ask-the-twin` — Ask the Twin (coord grants the tool to device sessions);
+ *  - `delivery-tab` — the Delivery tab (coord's SSO delivery-verdict route);
+ *  - `not-on-this-page` — nowhere: coord withholds the tool from the device
+ *    session Ask the Twin runs on, and no other door here asks it.
+ */
+export type AskVia = "ask-the-twin" | "delivery-tab" | "not-on-this-page";
 
 /** Research-side maturity, from the qontinui-research roadmap. */
 export type ResearchStatus = "implemented" | "partial" | "planned" | "not-yet";
+
+/**
+ * The three coupled twins of the software-development process. `environment`
+ * is the system being built and run (code, deps, schema, infra, releases,
+ * runtime health); `process` is the work in flight (CI runs, the merge train,
+ * gates, sessions, work units, plans, findings, the cost of work); `intent` is
+ * what the operator wants (policy, intent documents, spec claims, operator
+ * touches).
+ */
+export type TwinPlant = "environment" | "process" | "intent";
+
+/** The lifecycle stages the twin observes, in order (see `lifecycle.ts`). */
+export type LifecycleStage =
+  | "intent"
+  | "plan"
+  | "implement"
+  | "verify"
+  | "integrate"
+  | "release"
+  | "operate"
+  | "learn";
 
 /** One row of the checked-in taxonomy manifest. */
 export interface SubspaceManifestEntry {
   id: string;
   symbol: string;
   tier: 1 | 2 | 3;
-  layer: "coord" | "ui-bridge";
+  /** Where the observer runs: coord, the UI Bridge SDK, or the runner. */
+  layer: "coord" | "ui-bridge" | "runner";
+  /** Which of the three coupled twins this sub-space belongs to. */
+  twin: TwinPlant;
+  /** The lifecycle stages it observes — non-empty, in lifecycle order. */
+  stages: LifecycleStage[];
   description: string;
   research_status: ResearchStatus;
   research_doc: string;
   query_kind: QueryKind;
   coord_query_tool: string | null;
   observer_module: string | null;
+  /**
+   * Set on every `parameterized` row, absent on the others. Ask the Twin runs
+   * on the runner's DEVICE credential, and coord serves a device session only
+   * its device allow set (`agent_tool_access.rs` `device_default_allow_set`),
+   * so a built tool outside that set is answered by coord yet not askable from
+   * Ask the Twin.
+   */
+  ask_via?: AskVia;
+  /** The plan slug that builds a planned / partial row (shown in the drawer). */
+  plan?: string | null;
 }
 
 export interface SubspaceManifest {
@@ -72,6 +131,11 @@ export interface SubspacesProbeResponse {
 /**
  * The display status the matrix renders per cell. Combines the live probe
  * (snapshot rows) with the manifest's static status (parameterized / none rows).
+ *
+ * Only a snapshot row can be `implemented` / `partial` / `blind` / `error` /
+ * `probing` / `restricted` — those are probe results. A built row this page
+ * does not probe is `interactive` (a coord tool answers it) or `unprobed` (no
+ * coord tool): either way a manifest claim, never the live vocabulary.
  */
 export type CellStatus =
   | "implemented"
@@ -80,6 +144,7 @@ export type CellStatus =
   | "planned"
   | "not-built"
   | "interactive"
+  | "unprobed"
   | "error"
   | "probing"
   | "restricted";

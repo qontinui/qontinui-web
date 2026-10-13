@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * `GET /api/v1/operations/domain-cost` — coord's domain cost ledger, for the
+ * `GET /operations/domain-cost` (`fetchDomainCost`) — coord's domain cost ledger, for the
  * Overview's "Domain cost" cards.
  *
  * Plan `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
@@ -17,15 +17,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { fetchDomainCost } from "@/lib/api/operations/coordDelivery";
 import {
   COORD_DASHBOARD_POLL_OPTIONS,
   describeCoordPollError,
 } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import { isDomainCostPayload, type DomainCostPayload } from "../_lib/domainCost";
-
-export const DOMAIN_COST_API = "/api/v1/operations/domain-cost";
 
 /**
  * Poll cadence. The ledger moves when a work unit ships, not second to
@@ -70,10 +68,7 @@ export function useDomainCost(
     async (isCurrent: () => boolean) => {
       if (hold) return;
       try {
-        const body = await httpClient.get<unknown>(
-          DOMAIN_COST_API,
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
+        const body = await fetchDomainCost(COORD_DASHBOARD_POLL_OPTIONS);
         if (!isCurrent()) return;
         if (!isDomainCostPayload(body)) {
           setError("coord answered without a domain cost ledger");

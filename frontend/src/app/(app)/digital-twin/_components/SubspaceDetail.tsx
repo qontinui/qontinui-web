@@ -14,8 +14,9 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Code2, Loader2, Sparkles } from "lucide-react";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
+import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
-import { STATUS_STYLES } from "../_lib/status-presentation";
+import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 
 interface SubspaceDetailProps {
@@ -35,14 +36,15 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
 /**
  * Detail drawer for one sub-space. For live snapshot observers it fetches the
  * raw DriftVerdict (the exact JSON an AI agent receives) and renders both a
- * human-digestible summary and the raw JSON on demand. For all rows it shows the
- * backing coord tool / observer module + research doc.
+ * human-digestible summary and the raw JSON on demand. For all rows it shows
+ * the twin and lifecycle stages, the backing coord tool / observer module, the
+ * research doc and, while the row is still being built, the plan building it.
  */
 export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   const isSnapshot = row?.query_kind === "snapshot";
   const { data, isLoading, isError, error } = useSubspaceRaw(
     row?.id ?? null,
-    !!row && isSnapshot,
+    !!row && isSnapshot
   );
   const [showRaw, setShowRaw] = useState(false);
 
@@ -59,7 +61,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   });
 
   if (!row) return null;
-  const style = STATUS_STYLES[row.cellStatus];
+  const style = presentStatus(row);
   const verdict = data?.verdict;
   const summary = verdict ? summarizeVerdict(row.id, verdict) : null;
 
@@ -102,10 +104,20 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
 
           <Field label="Status" value={style.label} />
           <p className="pb-2 text-xs text-muted-foreground">{style.meaning}</p>
+          <Field label="Twin" value={twinPlantInfo(row.twin).label} />
+          <Field
+            label="Lifecycle stages"
+            value={inLifecycleOrder(row.stages)
+              .map((stage) => stageInfo(stage).label)
+              .join(", ")}
+          />
           <Field label="Tier" value={`Tier ${row.tier}`} />
           <Field label="Layer" value={row.layer} />
           <Field label="Research status" value={row.research_status} />
-          <Field label="Query kind" value={row.query_kind} />
+          {/* What the row's query_kind + ask_via mean HERE — the raw
+              query_kind reads `parameterized` even for a tool coord's own
+              catalog lists as kind `snapshot`. */}
+          <Field label="On this page" value={pageAccessLabel(row)} />
 
           {summary && (
             <>
@@ -151,6 +163,12 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
             label="Research"
             value={<code className="text-xs">{row.research_doc}</code>}
           />
+          {row.plan && (
+            <Field
+              label="Planned in"
+              value={<code className="text-xs">{row.plan}</code>}
+            />
+          )}
 
           {/* Raw data view — the exact JSON an AI agent receives. */}
           {isSnapshot && verdict && (

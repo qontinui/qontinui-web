@@ -44,6 +44,7 @@ import {
   type PairStartResponse,
   type PairedElsewhereDevice,
   type PreconditionStatus,
+  type ProvisioningSteps,
   type StarterProfile,
 } from "@/lib/api/operations/prMergeOnboarding";
 import {
@@ -95,13 +96,6 @@ const WORKTREE_ALLOCATION_VALUES: readonly string[] = [
   "blocked_no_remote",
   "pending_first_reconcile",
 ];
-
-// Per-step provisioning outcomes, e.g.
-// {registry: "inserted", bare_init: "created", hook: "refreshed",
-//  mirror_seed: "seeded", reconcile: "ok"}. Values are human-readable; a
-// failed step reads "failed: <reason>". Keys are open-ended (coord may add
-// steps), so this is a plain string map rather than a closed shape.
-type ProvisioningSteps = Record<string, string>;
 
 // Coord's machine-readable refusal contract for this route.
 interface CoordErrorBody {

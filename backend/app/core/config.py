@@ -247,6 +247,23 @@ class Settings(BaseSettings):
         description="sub=service:<name> the web backend mints at coord",
     )
 
+    # coord -> web internal hop (plan
+    # ``2026-10-12-operator-action-items-pushed-to-the-phone``, D2). Coord
+    # presents this in the ``X-Coord-Service-Secret`` header on
+    # ``POST /api/v1/internal/coord-push``; the backend constant-time compares.
+    # Empty (the default) means the hop is UNCONFIGURED and the route rejects
+    # EVERY call with 401 — an unauthenticated call is never accepted. Which
+    # secret each side mounts is recorded in that plan's "What exists" table
+    # (the coord -> web internal channel row); the value must match coord's.
+    COORD_WEB_SERVICE_SECRET: str = Field(
+        default="",
+        description=(
+            "Shared secret coord presents (X-Coord-Service-Secret) on the "
+            "internal coord -> web routes. Empty disables them: every call "
+            "is rejected with 401."
+        ),
+    )
+
     # AWS Cognito user-pool identity (unified-Cognito-identity Phase 1).
     # The web backend dual-accepts Cognito user-pool JWTs alongside the
     # local FastAPI-Users HS256 JWT. Defaults target the production web

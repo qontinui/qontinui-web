@@ -55,9 +55,10 @@ import {
   type Attention,
 } from "@/components/console";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { fireKillSwitch } from "@/lib/api/operations/prMerge";
 import { CiRepoStrip } from "./CiRepoStrip";
-import { OPERATIONS_API, relativeTime } from "./utils";
+import { relativeTime } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
 import {
   formatChurnValue,
@@ -492,6 +493,8 @@ function EmergencyStopControl({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MergeEnabledResponse | null>(null);
+  /** The stop landed (2xx) but its body did not parse — no echo to show. */
+  const [stoppedNoEcho, setStoppedNoEcho] = useState(false);
 
   const fire = useCallback(async () => {
     setError(null);
@@ -515,25 +518,26 @@ function EmergencyStopControl({
     if (!ok) return;
     setSubmitting(true);
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/kill-switch`,
-        {
-          method: "POST",
-          body: JSON.stringify({ scope, reason: trimmed }),
-        }
-      );
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}${body ? `: ${body}` : ""}`);
-      }
-      const data = (await res.json()) as MergeEnabledResponse;
+      // A 2xx whose body does not parse resolves `null`: the stop LANDED, so
+      // the form resets and `onActed` fires, and the panel says it stopped
+      // without the echo it could not read.
+      const data = await fireKillSwitch({ scope, reason: trimmed });
       setResult(data);
+      setStoppedNoEcho(data === null);
       setReason("");
       setTenantWide(false);
       onActed?.();
     } catch (err) {
       log.warn("emergency stop failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      // The wording this panel has always shown for a refusal:
+      // `HTTP <status>: <body>`.
+      const status = httpStatusOf(err);
+      if (status !== null) {
+        const body = httpBodyOf(err) ?? "";
+        setError(`HTTP ${status}${body ? `: ${body}` : ""}`);
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -608,6 +612,14 @@ function EmergencyStopControl({
           <code>{String(result.previous_merge_enabled)}</code> →{" "}
           <code>{String(result.merge_enabled)}</code>,{" "}
           {result.affected_repos.length} repo(s) affected.
+        </p>
+      )}
+      {stoppedNoEcho && (
+        <p
+          className="text-xs text-amber-200"
+          data-testid={`emergency-stop-no-echo-${repo}`}
+        >
+          Stopped (no echo returned).
         </p>
       )}
       <Button
