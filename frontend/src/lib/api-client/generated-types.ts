@@ -27966,7 +27966,7 @@ export interface components {
             kind: "candidate" | "derivative" | "capture" | "exemplar";
             /**
              * Provenance
-             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys and never removes or changes one.
+             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys, up to that same cap, and never removes or changes one.
              */
             provenance?: string | null;
         };
@@ -38187,6 +38187,19 @@ export interface components {
             show_type?: boolean | null;
         };
         /**
+         * ImageAssetConflict
+         * @description One thing a re-upload sent that the store did not apply.
+         */
+        ImageAssetConflict: {
+            /** Path */
+            path: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "kind_stands" | "stored_value_stands" | "provenance_full";
+        };
+        /**
          * ImageAssetUploadResponse
          * @description ``created`` is true when this request created the row (HTTP 201) and
          *     false when the tenant already held these bytes (HTTP 200).
@@ -38195,7 +38208,7 @@ export interface components {
             /** Byte Size */
             byte_size: number;
             /** Conflicts */
-            conflicts: string[];
+            conflicts: components["schemas"]["ImageAssetConflict"][];
             /** Created */
             created: boolean;
             /**
@@ -68116,7 +68129,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys; `conflicts` names what was not applied. */
+            /** @description The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys (up to its cap); `conflicts` names what was not applied, and why. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -68148,7 +68161,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000). */
+            /** @description Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep). */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -15,9 +15,9 @@ Endpoints (mounted under ``/api/v1/image-assets``):
   pixels, and stores the object at
   ``image-assets/{tenant_id}/sha256/{h[:2]}/{h}{ext}``. Idempotent: the same
   bytes again answer ``200`` with ``created: false`` and write no object. The
-  FIRST upload's ``kind`` stands and ``provenance`` only gains keys;
-  ``conflicts`` names whatever a re-upload sent that was therefore not
-  applied.
+  FIRST upload's ``kind`` stands and ``provenance`` only gains keys, up to the
+  same cap an upload's own provenance has; ``conflicts`` names whatever a
+  re-upload sent that was therefore not applied, and why.
 * ``GET "/slot-candidates"`` — one page of a slot's candidates (``repo``,
   ``slot_id``, optional ``status``, ``order`` oldest|newest, ``limit``,
   ``after``), each with its asset; ``next_cursor`` fetches the next page.
@@ -83,6 +83,7 @@ from app.schemas.image_assets import (
     SHA256_PATTERN,
     SLOT_ID_PATTERN,
     CandidateOrder,
+    ImageAssetConflict,
     ImageAssetKind,
     ImageAssetOut,
     ImageAssetUploadFields,
@@ -186,13 +187,14 @@ def _candidate_out(
             "model": ImageAssetUploadResponse,
             "description": "The tenant already held these bytes; nothing was "
             "re-stored. The first upload's kind stands and provenance only "
-            "gained keys; `conflicts` names what was not applied.",
+            "gained keys (up to its cap); `conflicts` names what was not "
+            "applied, and why.",
         },
         413: {"description": "The image is larger than the store accepts."},
         415: {"description": "The bytes are not an accepted image format."},
         422: {
             "description": "Unreadable image, too many pixels, or a field that "
-            "is malformed or cannot be stored (NaN, U+0000)."
+            "is malformed or cannot be stored (NaN, U+0000, nested too deep)."
         },
     },
     summary="Upload an image to the content-addressed store",
@@ -218,7 +220,8 @@ async def upload_image_asset(
         Form(
             description="The generator's provenance record: a JSON object, "
             f"serialized, at most {MAX_PROVENANCE_BYTES} bytes. Stored as JSONB; "
-            "a re-upload adds keys and never removes or changes one."
+            "a re-upload adds keys, up to that same cap, and never removes or "
+            "changes one."
         ),
     ] = None,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
@@ -236,8 +239,8 @@ async def upload_image_asset(
         )
     except ValidationError as exc:
         # ``kind`` was already held to its Literal by FastAPI, so in practice
-        # this is ``provenance``: not JSON, not an object, too large, or
-        # holding a value JSON storage refuses (NaN, U+0000).
+        # this is ``provenance``: not JSON, not an object, too large, nested
+        # too deep, or holding a value JSON storage refuses (NaN, U+0000).
         first = exc.errors()[0]
         field = str(first["loc"][0]) if first["loc"] else "form"
         raise _refusal(
@@ -311,7 +314,7 @@ async def upload_image_asset(
     return ImageAssetUploadResponse(
         **ImageAssetOut.model_validate(row).model_dump(),
         created=created,
-        conflicts=conflicts,
+        conflicts=[ImageAssetConflict(path=c.path, reason=c.reason) for c in conflicts],
     )
 
 

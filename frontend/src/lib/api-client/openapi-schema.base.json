@@ -5430,7 +5430,7 @@
                 "type": "null"
               }
             ],
-            "description": "The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys and never removes or changes one.",
+            "description": "The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys, up to that same cap, and never removes or changes one.",
             "title": "Provenance"
           }
         },
@@ -26807,6 +26807,30 @@
         "title": "IllustrationSettingsSchema",
         "type": "object"
       },
+      "ImageAssetConflict": {
+        "description": "One thing a re-upload sent that the store did not apply.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "kind_stands",
+              "stored_value_stands",
+              "provenance_full"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "ImageAssetConflict",
+        "type": "object"
+      },
       "ImageAssetUploadResponse": {
         "description": "``created`` is true when this request created the row (HTTP 201) and\nfalse when the tenant already held these bytes (HTTP 200).",
         "properties": {
@@ -26816,7 +26840,7 @@
           },
           "conflicts": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/ImageAssetConflict"
             },
             "title": "Conflicts",
             "type": "array"
@@ -86186,7 +86210,7 @@
                 }
               }
             },
-            "description": "The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys; `conflicts` names what was not applied."
+            "description": "The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys (up to its cap); `conflicts` names what was not applied, and why."
           },
           "201": {
             "content": {
@@ -86205,7 +86229,7 @@
             "description": "The bytes are not an accepted image format."
           },
           "422": {
-            "description": "Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000)."
+            "description": "Unreadable image, too many pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep)."
           }
         },
         "security": [
