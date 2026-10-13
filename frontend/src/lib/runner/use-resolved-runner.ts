@@ -20,6 +20,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  isNothingEligible,
   requestDeviceResolve,
   type ResolvedRunnerState,
   type ResolveWorkClass,
@@ -106,14 +107,10 @@ export function useResolvedRunner({
         setAnsweredTag(tag);
         if (next.status === "resolved") {
           setLastResolved(next.deviceId);
-        } else if (
-          next.status === "no_capable" ||
-          next.status === "all_drained" ||
-          next.status === "pin_ineligible"
-        ) {
+        } else if (isNothingEligible(next)) {
           // Coord answered: nothing is eligible. The last pick is no longer
-          // a safe fallback. (`unavailable` / `drain_unreadable` are UNKNOWN
-          // and keep it.)
+          // a safe fallback. (`unavailable` / `drain_unreadable` /
+          // `unknown_outcome` are UNKNOWN and keep it.)
           setLastResolved(null);
         }
       },
