@@ -7,17 +7,33 @@ function anonymous(path: string) {
   return middleware(new NextRequest(`https://qontinui.io${path}`));
 }
 
-describe("middleware — anonymous requests", () => {
-  it.each([
-    "/opengraph-image",
-    "/twitter-image",
-    "/opengraph-image-pwu6ef",
-    "/twitter-image-pwu6ef",
-  ])("lets a crawler fetch the social card %s", (path) => {
-    const res = anonymous(path);
+/**
+ * Where Next serves the app's social cards: `app/` and `app/(marketing)/`
+ * (`src/lib/public-routes.test.ts` derives these from the files on disk).
+ */
+const SOCIAL_CARD_ROUTES = [
+  "/opengraph-image",
+  "/twitter-image",
+  "/opengraph-image-pwu6ef",
+  "/twitter-image-pwu6ef",
+];
 
-    expect(res.headers.get("location")).toBeNull();
-    expect(res.headers.get("x-middleware-next")).toBe("1");
+describe("middleware — anonymous requests", () => {
+  // One plain test, not `it.each`, so it can be named exactly: it is the
+  // arming test for the card routes' public-route entry.
+  it("lets an anonymous link-preview crawler fetch every social card", () => {
+    for (const path of SOCIAL_CARD_ROUTES) {
+      const res = anonymous(path);
+
+      expect({ path, redirect: res.headers.get("location") }).toEqual({
+        path,
+        redirect: null,
+      });
+      expect({ path, next: res.headers.get("x-middleware-next") }).toEqual({
+        path,
+        next: "1",
+      });
+    }
   });
 
   it("still sends an anonymous request for a protected route to /login", () => {
