@@ -7880,6 +7880,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an image to the content-addressed store
+         * @description Store one image under the hash of its bytes, for the caller's tenant.
+         */
+        post: operations["api_v1_image_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/slot-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List one image slot's candidates
+         * @description The slot's candidates, oldest first, each with the asset it names.
+         */
+        get: operations["api_v1_image_assets_slot_candidates_get"];
+        /**
+         * Propose an image for a slot, or move a proposal
+         * @description Create or update the (repo, slot_id, asset_sha256) candidate.
+         *
+         *     ``recipe_hash``, ``values`` and ``judge`` are replaced when sent and kept
+         *     when omitted. ``status: chosen`` returns the slot's previous choice to
+         *     ``candidate`` in the same transaction; ``demoted`` names it.
+         */
+        put: operations["api_v1_image_assets_slot_candidates_put"];
+        post?: never;
+        /**
+         * Withdraw one proposal (the image itself stays)
+         * @description Delete the (repo, slot_id, asset_sha256) candidate row.
+         */
+        delete: operations["api_v1_image_assets_slot_candidates_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's record and a time-limited URL to its bytes
+         * @description Answers only when the caller's tenant holds an image with this hash.
+         */
+        get: operations["api_v1_image_assets_sha256_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integration-testing/execute": {
         parameters: {
             query?: never;
@@ -27855,6 +27927,25 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_image_asset_api_v1_image_assets_post */
+        Body_upload_image_asset_api_v1_image_assets_post: {
+            /**
+             * File
+             * @description The image. Its filename and Content-Type are ignored: the format is read from the bytes.
+             */
+            file: string;
+            /**
+             * Kind
+             * @description How the image entered the store.
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /**
+             * Provenance
+             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Kept verbatim.
+             */
+            provenance?: string | null;
+        };
         /** Body_upload_recording_api_v1_recordings_upload_post */
         Body_upload_recording_api_v1_recordings_upload_post: {
             /** Description */
@@ -38070,6 +38161,83 @@ export interface components {
             show_find?: boolean | null;
             /** Show Type */
             show_type?: boolean | null;
+        };
+        /**
+         * ImageAssetUploadResponse
+         * @description ``created`` is true when this request created the row (HTTP 201) and
+         *     false when the tenant already held these bytes (HTTP 200).
+         */
+        ImageAssetUploadResponse: {
+            /** Byte Size */
+            byte_size: number;
+            /** Created */
+            created: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * ImageAssetWithUrl
+         * @description A stored image plus a time-limited URL to its bytes.
+         */
+        ImageAssetWithUrl: {
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Url */
+            url: string;
+            /** Url Expires At */
+            url_expires_at: string | null;
+            /** Width */
+            width: number;
         };
         /**
          * ImageExtractRequest
@@ -48521,6 +48689,143 @@ export interface components {
             } | null;
             /** Version */
             version?: string | null;
+        };
+        /**
+         * SlotCandidateAsset
+         * @description The asset a candidate names, as stored.
+         */
+        SlotCandidateAsset: {
+            /** Byte Size */
+            byte_size: number;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * SlotCandidateDemotion
+         * @description A slot's previous choice, returned to ``candidate`` because another
+         *     asset was chosen in the same request.
+         */
+        SlotCandidateDemotion: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Status After
+             * @default candidate
+             * @constant
+             */
+            status_after: "candidate";
+            /**
+             * Status Before
+             * @default chosen
+             * @constant
+             */
+            status_before: "chosen";
+        };
+        /**
+         * SlotCandidateList
+         * @description ``GET /api/v1/image-assets/slot-candidates`` — one slot's candidates,
+         *     oldest first. The query is echoed so an empty list can be checked against
+         *     what was asked; ``truncated`` says whether more rows exist past ``limit``.
+         */
+        SlotCandidateList: {
+            /** Candidates */
+            candidates: components["schemas"]["SlotCandidateOut"][];
+            /** Limit */
+            limit: number;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /** Status */
+            status: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** SlotCandidateOut */
+        SlotCandidateOut: {
+            asset: components["schemas"]["SlotCandidateAsset"];
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Judge */
+            judge: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * SlotCandidateUpsert
+         * @description ``PUT /api/v1/image-assets/slot-candidates`` — propose an asset for a
+         *     slot, or move a proposal.
+         *
+         *     Identity is ``repo`` + ``slot_id`` + ``asset_sha256``. ``status`` is
+         *     always sent. ``recipe_hash``, ``values`` and ``judge`` are replaced when
+         *     sent and left as stored when omitted (``recipe_hash: null`` clears it).
+         */
+        SlotCandidateUpsert: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /** Judge */
+            judge?: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash?: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
+        };
+        /** SlotCandidateUpsertResponse */
+        SlotCandidateUpsertResponse: {
+            candidate: components["schemas"]["SlotCandidateOut"];
+            /** Created */
+            created: boolean;
+            /** Demoted */
+            demoted: components["schemas"]["SlotCandidateDemotion"][];
         };
         /** SnapshotRun */
         SnapshotRun: {
@@ -67732,6 +68037,230 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResponsibleUsersResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_asset_api_v1_image_assets_post"];
+            };
+        };
+        responses: {
+            /** @description The tenant already held these bytes; nothing was re-stored (kind / provenance updated as sent). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description The image is larger than the store accepts. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The bytes are not an accepted image format. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unreadable image, too many pixels, or bad fields. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_get: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                /** @description Only candidates in this status. */
+                status?: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlotCandidateUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description The candidate was created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Another choice for the slot landed concurrently. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_delete: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                asset_sha256: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such candidate for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_get: {
+        parameters: {
+            query?: {
+                /** @description Seconds the URL stays valid. */
+                expires_in?: number;
+            };
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetWithUrl"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
