@@ -1,7 +1,7 @@
 """coord work-unit verifications table + per-tenant verification dials
 
 Revision ID: wuverif_01
-Revises: twin_fidelity_01_coord_twin_fidelity_observations
+Revises: notif_producerless_02_drop_dead_prefs
 Create Date: 2026-09-30
 
 Phase 1 (storage) of the work-unit verification plan. DDL ONLY: no route, no
@@ -110,9 +110,9 @@ this one.
 Head resolution
 ===============
 
-``down_revision = "twin_fidelity_01_coord_twin_fidelity_observations"`` —
-the single head of qontinui-web ``origin/main`` @ ``c7b061bd9``, measured
-2026-10-12 by AST-parsing every file in ``backend/alembic/versions`` and taking
+``down_revision = "notif_producerless_02_drop_dead_prefs"`` —
+the single head of qontinui-web ``origin/main`` @ ``607d39598``, measured
+2026-10-13 by AST-parsing every file in ``backend/alembic/versions`` and taking
 the one ``revision`` no file names as ``down_revision``. If main moves before
 this lands, re-chain onto the live head (prove ONE head with
 ``ScriptDirectory.from_config(...).get_heads()``), and re-point the
@@ -126,7 +126,7 @@ from alembic import op
 # revision identifiers, used by Alembic.
 revision: str = "wuverif_01"
 down_revision: str | Sequence[str] | None = (
-    "twin_fidelity_01_coord_twin_fidelity_observations"
+    "notif_producerless_02_drop_dead_prefs"
 )
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
