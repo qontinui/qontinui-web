@@ -11,7 +11,12 @@ import {
   removeCognitoGroupUser,
   type CognitoGroupUserRow,
 } from "@/lib/api/operations/cognitoGroups";
-import { operationsErrorMessage } from "@/lib/api/operations/base";
+import {
+  operationsErrorMessage,
+  operationsErrorReading,
+} from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
+import { BackendErrorMessage } from "@/components/console";
 import { requireRows } from "../_lib/groupName";
 import { log } from "../_lib/log";
 
@@ -35,7 +40,7 @@ export function CognitoGroupMembers({
 }) {
   const [users, setUsers] = useState<CognitoGroupUserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -54,7 +59,7 @@ export function CognitoGroupMembers({
       // and renders the section error as literally "HTTP 400" — the status
       // the backend stopped relying on precisely because it says nothing.
       // `operationsErrorMessage` is what the mutations on this page use.
-      setError(operationsErrorMessage(err));
+      setError(operationsErrorReading(err));
     } finally {
       setLoading(false);
     }
@@ -100,7 +105,8 @@ export function CognitoGroupMembers({
   if (error) {
     return (
       <p className="text-sm text-destructive flex items-center gap-1.5 py-2">
-        <AlertTriangle className="h-4 w-4" /> {error}
+        <AlertTriangle className="h-4 w-4" />{" "}
+        <BackendErrorMessage error={error} />
       </p>
     );
   }

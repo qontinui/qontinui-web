@@ -18,7 +18,7 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ user: { email: "operator@local" } }),
 }));
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: vi.fn(), post: vi.fn() },
+  httpClient: { fetch: vi.fn() },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 

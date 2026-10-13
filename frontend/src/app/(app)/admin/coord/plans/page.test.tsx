@@ -52,15 +52,20 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true }),
 }));
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    get: (...args: unknown[]) => {
-      const side = sideRead(String(args[0]));
-      return side !== undefined ? Promise.resolve(side) : get(...args);
-    },
-    post: vi.fn(),
-  },
-}));
+vi.mock("@/services/service-factory", async () => {
+  // The plan reads go through `httpClient.fetch` (the typed /operations
+  // client); `withVerbFetch` routes them through the same `get` mock.
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (...args: unknown[]) => {
+        const side = sideRead(String(args[0]));
+        return side !== undefined ? Promise.resolve(side) : get(...args);
+      },
+      post: vi.fn(),
+    }),
+  };
+});
 
 import CoordPlansListPage from "./page";
 
