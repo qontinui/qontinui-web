@@ -5,6 +5,13 @@ import { Header } from "@/components/marketing/header";
 import { Footer } from "@/components/marketing/footer";
 import "./marketing.css";
 
+// Card images come from `opengraph-image.tsx` / `twitter-image.tsx` beside
+// this layout, never from `images` here. This object REPLACES the openGraph
+// and twitter objects inherited from the root, cards included, so this
+// segment needs its own card files. And Next merges a file-based card only
+// into a segment whose own `openGraph` / `twitter` has no `images` key. So
+// declaring `images` here silently drops the generated card; that is how
+// this layout once served the 152×177 `q-logo.png` declared as 512×512.
 export const metadata: Metadata = {
   title: "Qontinui - Open Source AI Development Platform",
   description:
@@ -14,22 +21,13 @@ export const metadata: Metadata = {
     description:
       "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring. Multi-provider support for Claude and Gemini.",
     siteName: "Qontinui",
-    images: [
-      {
-        url: "/q-logo.png",
-        width: 512,
-        height: 512,
-        alt: "Qontinui Logo",
-      },
-    ],
     type: "website",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Qontinui - Open Source AI Development Platform",
     description:
       "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring.",
-    images: ["/q-logo.png"],
   },
 };
 
