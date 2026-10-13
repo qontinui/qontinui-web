@@ -10,8 +10,9 @@ import {
   type MyTenantsResponse,
   type TenantRoleEntry,
 } from "@/lib/api/operations/coordMembers";
-import { operationsErrorMessage } from "@/lib/api/operations/base";
-import { CollapsiblePanel } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
+import { BackendErrorMessage, CollapsiblePanel } from "@/components/console";
 import {
   CoordProjectRenameDialog,
   type RenameTarget,
@@ -38,7 +39,7 @@ import { log } from "../_lib/log";
 export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
   const [data, setData] = useState<MyTenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   // The row whose Rename dialog is open. The dialog is MOUNTED only while this
   // is set, so the rest of the page never pays for its tenant-context and UI
   // Bridge hooks.
@@ -88,7 +89,7 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
       setData(json);
     } catch (err) {
       log.warn("load my-tenants failed", err);
-      setError(operationsErrorMessage(err));
+      setError(operationsErrorReading(err));
     } finally {
       setLoading(false);
     }
@@ -165,7 +166,8 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
           <Skeleton className="h-10 w-full" />
         ) : error ? (
           <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
+            <AlertTriangle className="h-4 w-4" />{" "}
+            <BackendErrorMessage error={error} />
           </p>
         ) : data ? (
           <div className="space-y-2 text-sm">

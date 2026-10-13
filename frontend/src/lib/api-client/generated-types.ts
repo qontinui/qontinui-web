@@ -7815,6 +7815,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/internal/coord-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Coord Push
+         * @description Push one notification to every active device of the named users.
+         *
+         *     ``devices: 0`` is an answer, not an error: coord maps it to the item's
+         *     ``no_devices`` state. Expo failures are counted, not raised, so the
+         *     response is always the counts — a non-2xx from this route means the call
+         *     itself was refused (401 secret, 422 body), never that Expo failed.
+         */
+        post: operations["api_v1_internal_coord_push_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/issues": {
         parameters: {
             query?: never;
@@ -8838,6 +8863,61 @@ export interface paths {
          */
         put: operations["api_v1_notifications_notification_id_read_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/action-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Operator Action Items
+         * @description Return the tenant's operator action items.
+         *
+         *     Response envelope mirrors coord:
+         *     ``{"items": [...], "next_cursor": str|null,
+         *     "counts": {"open": N, "done": N, "dismissed": N}}``. ``counts`` are
+         *     server-computed over the whole tenant, not the page — consumers read them
+         *     rather than counting ``items``.
+         *
+         *     Every param is forwarded **verbatim** and only when the caller set it;
+         *     bounds live in coord (one clamp, one place). Tenant-scoped and
+         *     operator-bearer-forwarding, same posture as ``/operations/notifications``.
+         */
+        get: operations["api_v1_operations_action_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/action-items/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Operator Action Items Resolve
+         * @description Resolve an action item as ``done`` or ``dismissed``.
+         *
+         *     Coord answers ``{"item": {...}}``; ``resolved_by`` is the principal coord
+         *     derives from the forwarded bearer, never a body field. Coord's 404 (an item
+         *     outside the caller's tenant) and 409 ``already_resolved`` pass through with
+         *     coord's status.
+         */
+        post: operations["api_v1_operations_action_items_resolve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -25084,6 +25164,34 @@ export interface components {
             to_state?: string | null;
         };
         /**
+         * ActionItemResolveBody
+         * @description Body for ``POST /operations/action-items/resolve``.
+         *
+         *     Mirrors coord's resolve request. **Coord remains the authority** — this is
+         *     defence in depth at the boundary and must never accept something coord
+         *     rejects. ``extra="forbid"`` makes a misspelled field a loud 422 here
+         *     instead of a silently dropped key.
+         */
+        ActionItemResolveBody: {
+            /**
+             * Item Id
+             * Format: uuid
+             * @description The action item to resolve.
+             */
+            item_id: string;
+            /**
+             * Note
+             * @description Optional resolution note, at most 1000 characters.
+             */
+            note?: string | null;
+            /**
+             * Status
+             * @description Terminal status. Re-sending the same one is idempotent; a different one answers coord's 409 `already_resolved`.
+             * @enum {string}
+             */
+            status: "done" | "dismissed";
+        };
+        /**
          * ActionReliabilityStats
          * @description Reliability statistics for an action type.
          */
@@ -25984,6 +26092,24 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * AllCapableAtCapacityOutcome
+         * @description Capable, undrained online devices exist and every one is at its
+         *     ``max_concurrent_agents`` cap.
+         */
+        AllCapableAtCapacityOutcome: {
+            /** Capable Devices */
+            capable_devices: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_at_capacity";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
         /** AllCapableDrainedOutcome */
         AllCapableDrainedOutcome: {
             /**
@@ -25994,7 +26120,41 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableOfflineOutcome
+         * @description No ONLINE device is capable, but a capable one was seen recently —
+         *     bring it up rather than look for another.
+         */
+        AllCapableOfflineOutcome: {
+            /** Capable Offline */
+            capable_offline: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_offline";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableRoleClosedOutcome
+         * @description Every capable device (online, or offline but seen recently) is closed by
+         *     its DISPATCH ROLE (bench / ci_node) — only a role change helps.
+         */
+        AllCapableRoleClosedOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_role_closed";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
         };
         /** AllocationRead */
         AllocationRead: {
@@ -30014,6 +30174,85 @@ export interface components {
             written_mode: "in_session_with_spawn_fallback" | "spawn_always" | "notify_only";
         };
         /**
+         * CoordPushRequest
+         * @description Body coord sends to ``POST /internal/coord-push``.
+         *
+         *     Deliberately carries NO ``category`` / ``channel_id`` (plan D7): a push
+         *     naming an Android channel the device has not created is not displayed
+         *     while Expo still returns an ``ok`` ticket, which would turn ``accepted``
+         *     into an invisible failure.
+         */
+        CoordPushRequest: {
+            /**
+             * Body
+             * @description Notification body, at most 1000 UTF-8 bytes. Coord sends at most 180 characters.
+             */
+            body: string;
+            /**
+             * Collapse Id
+             * @description Newer pushes with the same id replace older ones on the device.
+             */
+            collapse_id?: string | null;
+            /**
+             * Data
+             * @description Opaque payload delivered to the app (e.g. the deep link). At most 1024 bytes as serialized JSON.
+             */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "high" | "default";
+            /**
+             * Title
+             * @description At most 200 characters and 600 UTF-8 bytes.
+             */
+            title: string;
+            /**
+             * User Ids
+             * @description Web user ids (auth.users.id) to push to. 1-50.
+             */
+            user_ids: string[];
+        };
+        /**
+         * CoordPushResponse
+         * @description Per-request counts coord records as the item's push state.
+         */
+        CoordPushResponse: {
+            /**
+             * Accepted
+             * @description Tickets Expo answered with status ok.
+             */
+            accepted: number;
+            /**
+             * Deactivated
+             * @description Tokens deactivated because their ticket said DeviceNotRegistered.
+             */
+            deactivated: number;
+            /**
+             * Devices
+             * @description Active push devices the batch was sent to.
+             */
+            devices: number;
+            /**
+             * Errors
+             * @description At most 3 error messages, first seen first.
+             */
+            errors: string[];
+            /**
+             * Failed
+             * @description Messages without an ok ticket.
+             */
+            failed: number;
+            /**
+             * Users
+             * @description Distinct requested users with >= 1 active device.
+             */
+            users: number;
+        };
+        /**
          * CoordSignal
          * @description A coord-owned signal, or an explicit statement that it is UNKNOWN.
          *
@@ -31993,7 +32232,7 @@ export interface components {
          * DeviceResolveResponse
          * @description ``POST /api/v1/devices/resolve`` — always 200, switch on ``outcome``.
          */
-        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"];
+        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableOfflineOutcome"] | components["schemas"]["AllCapableAtCapacityOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["AllCapableRoleClosedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"] | components["schemas"]["UnknownOutcome"];
         /**
          * DeviceResponse
          * @description Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.
@@ -40439,7 +40678,19 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            /**
+             * Stale Capable
+             * @description Capable devices last seen before coord's offline window (reported, never waited for). 0 from a coord that predates the field.
+             * @default 0
+             */
+            stale_capable: number;
+            /**
+             * Unprobed Online Devices
+             * @description Online devices that have not run the cred probes while a cred: token is required. 0 from a coord that predates the field.
+             * @default 0
+             */
+            unprobed_online_devices: number;
         };
         /**
          * NodeMetadata
@@ -42541,7 +42792,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained";
+            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity";
         };
         /**
          * PlanCandidate
@@ -45369,7 +45620,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
             /**
              * Via
              * @enum {string}
@@ -52029,6 +52280,26 @@ export interface components {
              * @description Package ID to uninstall
              */
             package_id: number;
+        };
+        /**
+         * UnknownOutcome
+         * @description Coord answered a 200 with an ``outcome`` tag this build does not know.
+         *
+         *     Not ``malformed_response``: coord spoke the contract's envelope, it just
+         *     has an arm this build predates. ``raw_outcome`` is coord's tag verbatim so
+         *     the gap is named, not swallowed. Names no device — never a pick.
+         */
+        UnknownOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "unknown_outcome";
+            /**
+             * Raw Outcome
+             * @description Coord's outcome tag, verbatim.
+             */
+            raw_outcome: string;
         };
         /**
          * UnreadCountResponse
@@ -66882,6 +67153,41 @@ export interface operations {
             };
         };
     };
+    api_v1_internal_coord_push_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Coord-Service-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoordPushRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoordPushResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_issues_get: {
         parameters: {
             query?: {
@@ -69047,6 +69353,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_action_items_get: {
+        parameters: {
+            query?: {
+                /** @description `open` (coord's default) | `done` | `dismissed` | `all`. Forwarded verbatim — coord owns the vocabulary and answers 400 otherwise. */
+                status?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description Opaque keyset cursor from a prior response's ``next_cursor``. */
+                cursor?: string | null;
+                /** @description Return at most this one item (any status). */
+                item_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_action_items_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionItemResolveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

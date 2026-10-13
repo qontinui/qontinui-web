@@ -85,6 +85,7 @@ import {
   RowTime,
   StatusBadge,
   readIsUnknown,
+  GlossaryTerm,
 } from "@/components/console";
 import {
   fetchCoordFindingById,
@@ -780,7 +781,8 @@ export default function CoordFindingsPage() {
             </p>
           ) : (
             <p className="text-sm italic text-muted-foreground">
-              No findings match these filters.
+              No <GlossaryTerm id="finding">findings</GlossaryTerm> match these
+              filters.
             </p>
           )
         }
