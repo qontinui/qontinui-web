@@ -82,6 +82,25 @@ def get_authorization_identifier(request: Request) -> str:
     return f"ip:{host or 'unknown'}"
 
 
+def get_peer_ip_identifier(request: Request) -> str:
+    """Per-PEER bucket for unauthenticated public reads.
+
+    The rightmost ``X-Forwarded-For`` entry (the address the ALB saw, which a
+    client cannot forge), else the socket peer — see
+    ``app.middleware.logging_middleware.peer_ip_from``. Keying on the LEFTMOST
+    entry would let a caller pick a fresh bucket per request.
+
+    **Do not rename the ``request`` parameter** (see
+    :func:`get_authorization_identifier`).
+    """
+    from app.middleware.logging_middleware import peer_ip_from
+
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    peer = peer_ip_from(request.headers.get("x-forwarded-for"), host)
+    return f"peer:{peer or 'unknown'}"
+
+
 # Create limiter instance
 limiter = Limiter(
     key_func=get_remote_address,

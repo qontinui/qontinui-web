@@ -23,6 +23,12 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.bridge_audit_log import BridgeAuditLog
+from app.models.build_record import (
+    BuildRecordPendingNotPublic,
+    BuildRecordPublicSlug,
+    BuildRecordSnapshot,
+    GithubRateBudget,
+)
 from app.models.capture import (
     CaptureAction,
     CaptureDetectedElement,
@@ -238,6 +244,7 @@ from app.models.visual_comparison_result import (
 from app.models.work_artifact import (
     WorkArtifact,
     WorkArtifactEdge,
+    WorkArtifactEdgeAnchor,
     WorkArtifactVersion,
 )
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
@@ -305,6 +312,12 @@ __all__ = [
     "AuditLog",
     # UI Bridge co-pilot audit (§4.8)
     "BridgeAuditLog",
+    # Public build-record snapshots (web.build_record_*), Phase 1 of
+    # 2026-10-09-factory-built-product-portfolio-and-launch-kit
+    "BuildRecordPublicSlug",
+    "BuildRecordSnapshot",
+    "BuildRecordPendingNotPublic",
+    "GithubRateBudget",
     # Analytics
     "AnalyticsEvent",
     # Detected Issues
@@ -533,6 +546,7 @@ __all__ = [
     "WorkArtifact",
     "WorkArtifactVersion",
     "WorkArtifactEdge",
+    "WorkArtifactEdgeAnchor",
     # Per-device plan-scan-source readings (agent.plan_scan_root_observations)
     "PlanScanRootObservation",
     # Per-device refused scan-source reports (agent.plan_scan_root_refusals)

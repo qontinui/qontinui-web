@@ -110,6 +110,200 @@ NOTE_TRIM_CHARS = " \t\n\r\f\v"
 #: CRUD dedup lookup can be served by that index and shares its grain.
 NOTE_TRIM_SQL = r"btrim(note, E' \t\n\r\f\v')"
 
+# ── follow-up closure and anchors (``plan_library_11_followup_anchors_and_closure``)
+#
+# Plan ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
+# D1/D2. A ``spawned_followup`` used to leave the queue ONLY by being claimed by
+# an artifact (``to_id``), so a two-line fix that never earns a plan could never
+# close. It now has a closure state of its own and structured file anchors.
+
+#: How a follow-up was closed, NULL meaning OPEN. ``fixing``: a PR that fixes
+#: it is open. ``fixed``: coord observed that PR land (the land commit is
+#: stamped whenever coord recorded one). ``already_fixed``: an earlier commit
+#: fixed it (the commit is required). ``dismissed``: closed without a fix (the
+#: reason is required). Mirrors ``ck_work_artifact_edges_resolution``.
+FOLLOWUP_RESOLUTIONS: tuple[str, ...] = (
+    "fixing",
+    "fixed",
+    "already_fixed",
+    "dismissed",
+)
+
+#: The resolutions a record RESTS in: nothing automatic moves them (the
+#: reconcile only walks ``fixing``). Reopening one is the store's correction
+#: verb — see ``app.crud.work_artifact_followups.LEGAL_TRANSITIONS``.
+FOLLOWUP_TERMINAL_RESOLUTIONS: tuple[str, ...] = ("fixed", "already_fixed", "dismissed")
+
+#: The expected size of the fix. ``trivial``: non-executable by the
+#: exec-equivalence checker's definition; ``small``: one PR-sized change in
+#: about three files with no design question; ``plan_sized``: needs a plan.
+#: NULL is UNCLASSIFIED. Mirrors ``ck_work_artifact_edges_size_class``.
+FOLLOWUP_SIZE_CLASSES: tuple[str, ...] = ("trivial", "small", "plan_sized")
+
+#: Who classified it: the writer (``declared``) or the follow-up sweep after
+#: attempting the fix (``sweep``). Mirrors ``ck_work_artifact_edges_size_class_source``.
+FOLLOWUP_SIZE_CLASS_SOURCES: tuple[str, ...] = ("declared", "sweep")
+
+#: The predicate of every follow-up NOT owned by an artifact, whatever its
+#: resolution — the population the state views (``fixing``, the resolved ones)
+#: and the reconcile walk read. Spelled with LITERALS on purpose: a query that
+#: binds ``relation = $1`` cannot prove a partial index's predicate under a
+#: generic prepared plan, so every reader renders this string verbatim and the
+#: planner can match ``ix_work_artifact_edges_open_followups_created_id``.
+#: The column names are unqualified; every statement that embeds this joins
+#: only tables without a ``relation`` / ``to_id`` column of their own.
+UNCLAIMED_FOLLOWUP_SQL = "relation = 'spawned_followup' AND to_id IS NULL"
+
+#: The ONE spelling of "this follow-up is OPEN": unowned AND unresolved. The
+#: model's open-queue index, the migration's index build (a static literal —
+#: coord's migration classifier refuses an interpolated ``op.execute``, and no
+#: revision imports ``app``; the migration test pins the two equal), and the
+#: open reads (``list_open_followups``, ``match_followups``) all render it.
+#:
+#: Composition with qontinui-web#1459 (edge correction, ``retracted_at``): that
+#: PR is not on ``main``. Whichever of the two lands second chains on the
+#: other's revision and adds ``AND retracted_at IS NULL`` here and to the
+#: rebuilt partial index, and ``transition_followup`` refuses a retracted row.
+OPEN_FOLLOWUP_SQL = f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution IS NULL"
+
+#: An anchor's / a resolution PR's repository: ``owner/name``.
+FOLLOWUP_REPO_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+
+#: A resolution PR citation: ``owner/name#<number>``.
+FOLLOWUP_PR_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$"
+
+#: A commit sha, abbreviated (>= 7) or full, lowercase hex.
+FOLLOWUP_COMMIT_PATTERN = "^[0-9a-f]{7,64}$"
+
+#: The whitespace set every blank-text CHECK here strips — :data:`NOTE_TRIM_SQL`'s
+#: set, for the same reason (one-argument ``btrim`` strips spaces only).
+_TRIM_SET_SQL = r"E' \t\n\r\f\v'"
+
+#: The longest anchor path the store accepts (the API refuses longer first).
+FOLLOWUP_ANCHOR_PATH_MAX = 1024
+
+#: ``(name, predicate)`` of every CHECK the closure columns carry on
+#: ``agent.work_artifact_edges``, in the order ``plan_library_11`` declares
+#: them. Held as data, not inlined in ``__table_args__``, so the migration test
+#: can prove each migrated constraint equal to this one THROUGH POSTGRES'S OWN
+#: NORMALISATION (it re-declares each predicate here on a probe table and
+#: compares ``pg_get_constraintdef``) — a string compare against the revision
+#: would pass on a reformatting and fail on nothing.
+FOLLOWUP_EDGE_CHECKS: tuple[tuple[str, str], ...] = (
+    # Every closure column is NULL — and the history empty — unless the edge is
+    # a follow-up. The four other relations keep exactly the shape they had.
+    (
+        "ck_work_artifact_edges_followup_only_columns",
+        "relation = 'spawned_followup' OR ("
+        "resolution IS NULL AND resolution_pr IS NULL "
+        "AND resolution_commit IS NULL AND resolution_note IS NULL "
+        "AND resolved_by IS NULL AND resolved_at IS NULL "
+        "AND size_class IS NULL AND size_class_source IS NULL "
+        "AND unanchored_reason IS NULL "
+        "AND resolution_history = '[]'::jsonb)",
+    ),
+    (
+        "ck_work_artifact_edges_resolution",
+        "resolution IN ('fixing', 'fixed', 'already_fixed', 'dismissed')",
+    ),
+    # Owned by an artifact and closed by a resolution are two different ways
+    # out of the queue; a row holds at most one.
+    (
+        "ck_work_artifact_edges_resolution_unclaimed",
+        "resolution IS NULL OR to_id IS NULL",
+    ),
+    (
+        "ck_work_artifact_edges_resolution_pr_shape",
+        f"resolution_pr ~ '{FOLLOWUP_PR_PATTERN}'",
+    ),
+    (
+        "ck_work_artifact_edges_resolution_commit_shape",
+        f"resolution_commit ~ '{FOLLOWUP_COMMIT_PATTERN}'",
+    ),
+    (
+        "ck_work_artifact_edges_resolution_pr_required",
+        "resolution IS NULL OR resolution NOT IN ('fixing', 'fixed') "
+        "OR resolution_pr IS NOT NULL",
+    ),
+    # ``already_fixed`` is nothing BUT its commit. ``fixed`` is coord's land
+    # verdict, and coord may hold no commit for a land (a PR whose commits
+    # landed through another one) — the verdict still stands, so a ``fixed``
+    # row carries the commit whenever coord recorded one and is never refused
+    # for lacking it.
+    (
+        "ck_work_artifact_edges_resolution_commit_required",
+        "resolution IS DISTINCT FROM 'already_fixed' OR resolution_commit IS NOT NULL",
+    ),
+    # When the current state was entered — a ``fixing`` row's age reads from it.
+    (
+        "ck_work_artifact_edges_resolved_at_required",
+        "resolution IS NULL OR resolved_at IS NOT NULL",
+    ),
+    (
+        "ck_work_artifact_edges_dismissed_reason",
+        "resolution IS DISTINCT FROM 'dismissed' OR (resolution_note IS NOT NULL "
+        f"AND btrim(resolution_note, {_TRIM_SET_SQL}) <> '')",
+    ),
+    # The current-state columns describe the CURRENT state: an open row (never
+    # resolved, or reopened) carries none of them. What happened before lives
+    # in ``resolution_history``.
+    (
+        "ck_work_artifact_edges_open_carries_no_resolution",
+        "resolution IS NOT NULL OR (resolution_pr IS NULL "
+        "AND resolution_commit IS NULL AND resolution_note IS NULL "
+        "AND resolved_by IS NULL AND resolved_at IS NULL)",
+    ),
+    (
+        "ck_work_artifact_edges_resolution_history_array",
+        "jsonb_typeof(resolution_history) = 'array'",
+    ),
+    (
+        "ck_work_artifact_edges_size_class",
+        "size_class IN ('trivial', 'small', 'plan_sized')",
+    ),
+    (
+        "ck_work_artifact_edges_size_class_source",
+        "size_class_source IN ('declared', 'sweep')",
+    ),
+    (
+        "ck_work_artifact_edges_size_class_paired",
+        "(size_class IS NULL) = (size_class_source IS NULL)",
+    ),
+    (
+        "ck_work_artifact_edges_unanchored_reason_nonblank",
+        f"unanchored_reason IS NULL OR btrim(unanchored_reason, {_TRIM_SET_SQL}) <> ''",
+    ),
+)
+
+#: ``(name, predicate)`` of every CHECK on ``agent.work_artifact_edge_anchors``.
+#: A path is repo-relative with forward slashes: non-empty, no leading or
+#: trailing ``/`` or space, no backslash (``chr(92)``), no empty, ``.`` or
+#: ``..`` segment, no control character. A directory anchor is refused rather
+#: than stored, because matching is exact on ``(repo, path)`` and a directory
+#: would never match a changed file — an anchor that silently matches nothing.
+FOLLOWUP_ANCHOR_CHECKS: tuple[tuple[str, str], ...] = (
+    (
+        "ck_work_artifact_edge_anchors_repo_shape",
+        f"length(repo) <= 255 AND repo ~ '{FOLLOWUP_REPO_PATTERN}'",
+    ),
+    (
+        "ck_work_artifact_edge_anchors_path_shape",
+        f"path <> '' AND length(path) <= {FOLLOWUP_ANCHOR_PATH_MAX} "
+        "AND left(path, 1) NOT IN ('/', ' ') AND right(path, 1) NOT IN ('/', ' ') "
+        "AND strpos(path, chr(92)) = 0 AND strpos(path, '//') = 0 "
+        "AND path !~ '(^|/)[.][.]?(/|$)' AND path !~ ('[' || chr(1) || '-' || chr(31) || chr(127) || '-' || chr(159) || ']')",
+    ),
+    (
+        "ck_work_artifact_edge_anchors_lines",
+        "(line_start IS NULL OR line_start >= 1) AND (line_end IS NULL "
+        "OR (line_start IS NOT NULL AND line_end >= line_start))",
+    ),
+    (
+        "ck_work_artifact_edge_anchors_symbol_nonblank",
+        f"symbol IS NULL OR btrim(symbol, {_TRIM_SET_SQL}) <> ''",
+    ),
+)
+
 #: The indexed full-text expression, spelled once and reused.
 #:
 #: BOTH consumers are built from this one string: ``ix_work_artifacts_search``
@@ -470,13 +664,27 @@ class WorkArtifactEdge(Base):
         ),
         Index("ix_work_artifact_edges_from_id", "from_id"),
         Index("ix_work_artifact_edges_to_id", "to_id"),
-        # ``/followups``' keyset walk over the open queue only
-        # (``plan_library_10_keyset_walk_indexes``).
+        # Every UNCLAIMED follow-up, whatever its resolution
+        # (``plan_library_10_keyset_walk_indexes``). Built when "open" meant
+        # ``to_id IS NULL``, so the name predates the closure states; it now
+        # serves the walks over the state views (``fixing`` and the resolved
+        # ones) and the reconcile's walk over ``fixing``. Not renamed: coord's
+        # migration classifier refuses a DROP or a RENAME on the upgrade path,
+        # which would park the revision that renamed it.
         Index(
             "ix_work_artifact_edges_open_followups_created_id",
             "created_at",
             "id",
-            postgresql_where=text("relation = 'spawned_followup' AND to_id IS NULL"),
+            postgresql_where=text(UNCLAIMED_FOLLOWUP_SQL),
+        ),
+        # ``/followups``' keyset walk over the OPEN queue — unowned AND
+        # unresolved (``plan_library_11_followup_anchors_and_closure``), so a
+        # first page never scans the resolved history first.
+        Index(
+            "ix_work_artifact_edges_open_followup_queue_created_id",
+            "created_at",
+            "id",
+            postgresql_where=text(OPEN_FOLLOWUP_SQL),
         ),
         # The duplicate guard for OPEN follow-ups. The unique index above
         # cannot constrain them — SQL NULLs are distinct, so every null-target
@@ -511,6 +719,11 @@ class WorkArtifactEdge(Base):
             f"OR (note IS NOT NULL AND {NOTE_TRIM_SQL} <> '')",
             name="ck_work_artifact_edges_followup_note",
         ),
+        # The closure columns' fences (``plan_library_11_followup_anchors_and_closure``).
+        *(
+            CheckConstraint(predicate, name=name)
+            for name, predicate in FOLLOWUP_EDGE_CHECKS
+        ),
         {"schema": "agent"},
     )
 
@@ -544,6 +757,111 @@ class WorkArtifactEdge(Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=text("now()"),
+    )
+
+    # ── closure (``plan_library_11_followup_anchors_and_closure``) ──────────
+    #
+    # Valid only on a ``spawned_followup`` (``ck_work_artifact_edges_followup_only_columns``).
+    # Written ONLY by ``app.crud.work_artifact_followups.transition_followup``,
+    # which locks the row, applies the legal-transition table and appends to
+    # ``resolution_history`` in the same write.
+
+    #: :data:`FOLLOWUP_RESOLUTIONS`, or NULL for an OPEN follow-up.
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: ``owner/name#<n>`` — the PR fixing (``fixing``) or that fixed (``fixed``) it.
+    resolution_pr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The land commit (``fixed``) or the earlier fixing commit (``already_fixed``).
+    resolution_commit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why — required on ``dismissed``.
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Who made the transition into the current state.
+    resolved_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: When the current state was entered.
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: Append-only ``[{from, to, at, by, pr, commit, note}, ...]``. Never
+    #: mutated in place — a write assigns a new list, so SQLAlchemy sees it.
+    resolution_history: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'[]'::jsonb"),
+        default=list,
+    )
+
+    # ── matching facts (D2) ─────────────────────────────────────────────
+
+    #: :data:`FOLLOWUP_SIZE_CLASSES`, or NULL for UNCLASSIFIED.
+    size_class: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: :data:`FOLLOWUP_SIZE_CLASS_SOURCES`; set iff ``size_class`` is.
+    size_class_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why the follow-up carries no anchor, so an unanchored row is VISIBLY
+    #: unanchored rather than silently unmatchable.
+    unanchored_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class WorkArtifactEdgeAnchor(Base):
+    """One file a follow-up is about: ``(repo, path)`` plus line hints.
+
+    Many per follow-up (D2): a finding routinely names several files, in
+    several repositories. Matching is EXACT on ``(repo, path)`` —
+    ``ix_work_artifact_edge_anchors_repo_path`` answers "the follow-ups on
+    these N files" in one query for any diff size. ``line_start`` /
+    ``line_end`` / ``symbol`` are hints for whoever folds the fix in, never
+    part of the match: lines drift with every commit.
+
+    Rows are only ever written through
+    ``app.crud.work_artifact_followups`` (create with the edge, or replaced
+    wholesale by ``PUT /plan-library/edges/{edge_id}/anchors``), and deleting
+    the edge deletes them (``ON DELETE CASCADE``).
+    """
+
+    __tablename__ = "work_artifact_edge_anchors"
+    __table_args__ = (
+        # One anchor per (follow-up, file, starting line); a line-less anchor
+        # collapses onto -1 so two line-less anchors on one file collide too.
+        Index(
+            "uq_work_artifact_edge_anchors_edge_repo_path_line",
+            "edge_id",
+            "repo",
+            "path",
+            text("coalesce(line_start, -1)"),
+            unique=True,
+        ),
+        Index("ix_work_artifact_edge_anchors_repo_path", "repo", "path"),
+        *(
+            CheckConstraint(predicate, name=name)
+            for name, predicate in FOLLOWUP_ANCHOR_CHECKS
+        ),
+        {"schema": "agent"},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    edge_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("agent.work_artifact_edges.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    #: ``owner/name``.
+    repo: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Repo-relative, forward slashes (``ck_work_artifact_edge_anchors_path_shape``).
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    line_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    line_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    symbol: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

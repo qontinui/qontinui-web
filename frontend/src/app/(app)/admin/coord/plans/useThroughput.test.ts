@@ -9,9 +9,16 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 const getMock = vi.fn();
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => getMock(...args) },
-}));
+vi.mock("@/services/service-factory", async () => {
+  // The throughput read goes through `httpClient.fetch` (the typed
+  // /operations client); `withVerbFetch` routes it through the `get` mock.
+  const { withVerbFetch } = await import("@/test/verbFetch");
+  return {
+    httpClient: withVerbFetch({
+      get: (...args: unknown[]) => getMock(...args),
+    }),
+  };
+});
 
 import { useThroughput } from "./useThroughput";
 

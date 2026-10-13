@@ -13,6 +13,7 @@ import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import {
+  useRunnerApps,
   useRunnerSnapshot,
   useRunnerSpecGraph,
   useRunnerSpecList,
@@ -22,8 +23,10 @@ import { sharesRelayCause } from "../_lib/relay-error-presentation";
 import {
   APP_ID_RULE,
   isValidAppId,
+  registeredAppSuggestions,
   RUNNER_APP_ID,
   snapshotHasElementTree,
+  type AppIdSuggestion,
   summarizeSpecGraph,
   type UiBridgeSnapshot,
 } from "../_lib/ui-bridge-types";
@@ -31,14 +34,16 @@ import {
 /**
  * Suggestions for the App field — a datalist, not an allowlist: any id the
  * runner has registered works, and an id it has not registered answers
- * `404 app-not-found`. A runner registers ids through its dev bootstrap or
- * `POST /apps`, besides its own UI (see `RUNNER_APP_ID`). The dev bootstrap
- * (QONTINUI_DEV_BOOTSTRAP=1, `bootstrap_dev_apps`) registers `qontinui-web`
- * and `qontinui-supervisor`, each only when its `<workspace>/<dir>/frontend`
- * directory exists. The runner's `GET /apps` listing is not on its relay
- * allowlist, so the registered set cannot be read from here.
+ * `404 app-not-found`. The panel suggests the runner's REGISTERED ids, read
+ * from its `GET /apps` (see `useRunnerApps`). These static ids are the
+ * fallback while that read is loading or when it fails — a published runner
+ * whose relay allowlist predates `GET /apps` answers 403. A runner registers
+ * ids through its dev bootstrap or `POST /apps`, besides its own UI (see
+ * `RUNNER_APP_ID`). The dev bootstrap (QONTINUI_DEV_BOOTSTRAP=1,
+ * `bootstrap_dev_apps`) registers `qontinui-web` and `qontinui-supervisor`,
+ * each only when its `<workspace>/<dir>/frontend` directory exists.
  */
-const APP_ID_SUGGESTIONS: ReadonlyArray<{ id: string; note: string }> = [
+const APP_ID_SUGGESTIONS: ReadonlyArray<AppIdSuggestion> = [
   { id: RUNNER_APP_ID, note: "The runner's own UI" },
   { id: "qontinui-web", note: "Dev bootstrap only (QONTINUI_DEV_BOOTSTRAP=1)" },
   {
@@ -117,6 +122,21 @@ export function UiBridgePanel() {
   const appIdInvalid = appId !== "" && !appIdValid;
   const [snapshotRequested, setSnapshotRequested] = useState(false);
 
+  // The runner's registered apps, when it can say; the static suggestions
+  // otherwise (loading, a 403 from a runner whose relay allowlist predates
+  // `GET /apps`, or any other failure). No banner for that: the field is free
+  // text either way, and the suggestions are only a convenience.
+  const registeredApps = useRunnerApps(deviceId);
+  // A failed REFETCH keeps the last good `data` beside `isError`; the list is
+  // only trusted while the latest read succeeded.
+  const registeredData = registeredApps.isError
+    ? undefined
+    : registeredApps.data;
+  const appSuggestions = useMemo(
+    () => registeredAppSuggestions(registeredData) ?? APP_ID_SUGGESTIONS,
+    [registeredData]
+  );
+
   const specList = useRunnerSpecList(deviceId, appId);
   const specGraph = useRunnerSpecGraph(deviceId, appId);
   const snapshot = useRunnerSnapshot(deviceId, snapshotRequested);
@@ -190,7 +210,7 @@ export function UiBridgePanel() {
           className={`h-7 w-48 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${appIdInvalid ? "border-amber-500" : "border-input"}`}
         />
         <datalist id="dt-app-id-options">
-          {APP_ID_SUGGESTIONS.map(({ id, note }) => (
+          {appSuggestions.map(({ id, note }) => (
             <option key={id} value={id} label={note} />
           ))}
         </datalist>

@@ -75,6 +75,7 @@ import type {
   ListPolicyProposalsResponse,
   ListWritesResponse,
 } from "@/app/(app)/admin/coord/prompt-document-proposals/types";
+import type { ProposedClause } from "@/components/admin/coord/policy-gap";
 import { OPERATIONS_BASE, readJson } from "./base";
 
 // ─────────────────────────────── documents ───────────────────────────────
@@ -254,11 +255,19 @@ export async function listPromptDocumentClauses(
 /**
  * `POST /coord/prompt-documents/{kind}/{name}/clauses` —
  * `create_prompt_document_clause`. A duplicate `clause_id` is coord's 409.
+ *
+ * The handler takes `dict[str, Any]` and forwards it verbatim, and coord
+ * validates the clause. So the body is either the editor's complete
+ * `ClauseCreate`, or a gap report's agent-authored `ProposedClause`
+ * (`GapRow`'s "Accept as clause"). The latter's other fields are optional, but
+ * its `clause_id` is required here, as it is for the editor. Any `position` it
+ * carries is honoured by coord. Any `updated_by` is ignored: coord stamps the
+ * author from the operator actor, not from the body.
  */
 export async function createPromptDocumentClause(
   kind: PromptDocumentKind,
   name: string,
-  clause: ClauseCreate
+  clause: ClauseCreate | (ProposedClause & { clause_id: string })
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses`;
   const res = await httpClient.fetch(url, {

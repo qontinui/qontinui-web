@@ -151,6 +151,7 @@ import {
   RecordList,
   RefreshButton,
   readIsUnknown,
+  GlossaryTerm,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import { planAuthoredAt } from "@/components/admin/coord/planStatus";
@@ -169,7 +170,11 @@ import {
   matchesDifficulty,
   type DifficultyFilter,
 } from "@/components/admin/coord/planDifficulty";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchPlans,
+  fetchPlansOverview,
+  type WorkUnitOverview,
+} from "@/lib/api/operations/coordPlans";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
 import {
   WALK_MAX_PAGES,
@@ -182,7 +187,6 @@ import {
   type OverviewTotal,
   type ServerOrder,
   type WalkOutcome,
-  type WorkUnitOverview,
 } from "./planWalk";
 import { usePlanDifficulty } from "./usePlanDifficulty";
 import {
@@ -195,8 +199,6 @@ import {
   SHEPHERD_SLUG_PREFIX,
   type ShepherdFilter,
 } from "./plansHealth";
-
-const API = "/api/v1/operations";
 
 /** What one row IS here — see `PlansHealthNoun` in `plansHealth.tsx`. */
 const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
@@ -417,8 +419,7 @@ export default function CoordWorkUnitsListPage() {
           qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
         }
         const outcome = await walkWorkUnits(
-          (url) => httpClient.get(url),
-          `${API}/plans`,
+          (query) => fetchPlans(query),
           qs,
           order,
           guard.isNewest
@@ -426,9 +427,7 @@ export default function CoordWorkUnitsListPage() {
         if (outcome === null || !guard.isNewest()) return;
         let overview: WorkUnitOverview | null = null;
         if (outcome.kind !== "single_page") {
-          overview = await httpClient
-            .get<WorkUnitOverview>(`${API}/plans/overview`)
-            .catch(() => null);
+          overview = await fetchPlansOverview().catch(() => null);
           if (!guard.isNewest()) return;
         }
         setData({ outcome, overview, readAt: new Date().toISOString() });
@@ -1152,15 +1151,17 @@ export default function CoordWorkUnitsListPage() {
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-stale"
             >
-              No work units matched status={status === "any" ? "any" : status}{" "}
-              at the last good read — this list has not refreshed since.
+              No <GlossaryTerm id="work_unit">work units</GlossaryTerm> matched
+              status={status === "any" ? "any" : status} at the last good read —
+              this list has not refreshed since.
             </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-empty"
             >
-              No work units matching status={status === "any" ? "any" : status}
+              No <GlossaryTerm id="work_unit">work units</GlossaryTerm> matching
+              status={status === "any" ? "any" : status}
               {shepherd === "exclude"
                 ? ", excluding coord's merge escalations."
                 : "."}
