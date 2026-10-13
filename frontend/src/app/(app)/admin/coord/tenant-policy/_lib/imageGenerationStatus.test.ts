@@ -89,9 +89,9 @@ describe("isOwnerName", () => {
 
 describe("readTenantImageGeneration", () => {
   it("reads no row + `on` as the declared default, and says it is a default", () => {
-    expect(
-      readTenantImageGeneration(view({ resolved_scope: "none" }))
-    ).toEqual({ state: "known", level: "on", defaulted: true });
+    expect(readTenantImageGeneration(view({ resolved_scope: "none" }))).toEqual(
+      { state: "known", level: "on", defaulted: true }
+    );
   });
 
   it("reads no row + any other level as UNKNOWN — never `on`, never `off`", () => {

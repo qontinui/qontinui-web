@@ -40,18 +40,27 @@ import {
  *   write that had started: a fresh override list is then the confirmed state
  *   of every repo, while a read that began before a write says nothing about
  *   what that write did.
+ *
+ * A repo write that LANDS is a write to this dial's own read — it changes
+ * `repo_overrides` — so it retires every read that began before it
+ * (`noteWriteLanded`), as a tenant write does. Otherwise a Refresh issued
+ * before the write could land after the write's own re-read and repaint the
+ * pre-write override list.
  */
 export function useImageGenerationPolicy() {
   const dial = useTenantFleetPolicyDial<ImageGenerationLevel>(
     IMAGE_GENERATION_DOMAIN,
     "image generation",
-    "studio"
+    // Who resolves the level, for the disagreement toast. Not "studio": no
+    // Studio build reads this setting yet (Phase 12 step 3).
+    "readers"
   );
-  const { policy, reload } = dial;
+  const { policy, reload, noteWriteLanded } = dial;
   const repoWrite = useRepoFleetPolicyWrite<ImageGenerationRepoChoice>(
     IMAGE_GENERATION_DOMAIN,
     "image generation",
-    reload
+    reload,
+    noteWriteLanded
   );
   const { write, clearReadbackErrors } = repoWrite;
 

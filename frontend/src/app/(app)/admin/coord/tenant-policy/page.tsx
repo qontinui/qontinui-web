@@ -19,8 +19,8 @@
  *   machine is pinned (plan
  *   `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`
  *   Phase 3);
- * * image generation — the `image_generation` fleet-policy dial Studio reads
- *   before each image request (`on` | `local_only` | `off`), with per-repo
+ * * image generation — the `image_generation` fleet-policy dial Studio is to
+ *   read before each image request (no Studio build reads it yet) (`on` | `local_only` | `off`), with per-repo
  *   overrides (plan `2026-10-13-image-generation-and-visual-judgment` Phase 12).
  *
  * Authz: like every `/admin/coord` page, any tenant member may VIEW it; the

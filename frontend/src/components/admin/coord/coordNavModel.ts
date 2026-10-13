@@ -666,8 +666,8 @@ export const GROUPS: NavGroup[] = [
         // the `account_selection_mode` dial runners force-apply unless the
         // machine is pinned (plan
         // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),
-        // and the `image_generation` dial Studio reads before each image
-        // request, with per-repo overrides (plan
+        // and the `image_generation` dial Studio is to read before each image
+        // request (recorded, not yet enforced), with per-repo overrides (plan
         // `2026-10-13-image-generation-and-visual-judgment`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",

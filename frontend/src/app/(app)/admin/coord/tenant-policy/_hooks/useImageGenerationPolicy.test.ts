@@ -100,7 +100,9 @@ async function mounted() {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // reset, not clear: a test that fails mid-write must not leave queued
+  // `mock*Once` answers behind for the next test to consume.
+  vi.resetAllMocks();
 });
 
 describe("useImageGenerationPolicy — reading", () => {
@@ -317,6 +319,77 @@ describe("useImageGenerationPolicy — the repo write", () => {
     expect(result.current.repoReadbackErrors).toEqual({
       "acme/app": "read-back failed: coord returned 502",
     });
+  });
+
+  it("a refresh that began before a repo write cannot repaint the pre-write list", async () => {
+    getMock.mockResolvedValueOnce(NO_ROW);
+    const { result } = await mounted();
+
+    const afterWrite = { ...NO_ROW, repo_overrides: OVERRIDES };
+    const slowRead = deferred<typeof NO_ROW>();
+    getMock.mockReturnValueOnce(slowRead.promise); // the Refresh, issued first
+    getMock.mockResolvedValueOnce(afterWrite); // the write's own re-read
+    putMock.mockResolvedValueOnce(
+      writeResult(
+        {
+          ...afterWrite,
+          resolved_scope: "repo",
+          effective_level: "local_only",
+        },
+        null
+      )
+    );
+
+    let refresh!: Promise<boolean>;
+    act(() => {
+      refresh = result.current.refresh();
+    });
+    await act(async () => {
+      await result.current.writeRepo("acme/site", "local_only");
+    });
+    await waitFor(() =>
+      expect(result.current.overrides).toEqual([
+        { repo: "acme/site", level: "local_only", raw: "local_only" },
+      ])
+    );
+
+    // The Refresh lands last, carrying the list as it was before the write.
+    let applied: boolean | undefined;
+    await act(async () => {
+      slowRead.resolve(NO_ROW);
+      applied = await refresh;
+    });
+    expect(applied).toBe(false);
+    expect(result.current.overrides).toEqual([
+      { repo: "acme/site", level: "local_only", raw: "local_only" },
+    ]);
+  });
+
+  it("a write that landed unconfirmed also retires a refresh that began before it", async () => {
+    getMock.mockResolvedValueOnce(NO_ROW);
+    const { result } = await mounted();
+
+    const slowRead = deferred<typeof NO_ROW>();
+    getMock.mockReturnValueOnce(slowRead.promise);
+    putMock.mockResolvedValueOnce(
+      writeResult(null, "read-back failed: coord returned 502", "off")
+    );
+
+    let refresh!: Promise<boolean>;
+    act(() => {
+      refresh = result.current.refresh();
+    });
+    await act(async () => {
+      await result.current.writeRepo("acme/app", "off");
+    });
+    let applied: boolean | undefined;
+    await act(async () => {
+      slowRead.resolve(NO_ROW);
+      applied = await refresh;
+    });
+    // The write changed coord's rows; a read that began before it is not
+    // what coord resolves now, so it is not applied.
+    expect(applied).toBe(false);
   });
 
   it("names coord's refusal of a mistyped level in operator words", async () => {

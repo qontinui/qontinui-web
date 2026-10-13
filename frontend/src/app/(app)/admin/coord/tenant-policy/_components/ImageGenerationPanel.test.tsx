@@ -99,7 +99,9 @@ const effective = () => screen.getByTestId("image-generation-effective");
 const blurb = () => screen.getByTestId("image-generation-blurb").textContent;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // reset, not clear: a test that fails mid-write must not leave queued
+  // `mock*Once` answers behind for the next test to consume.
+  vi.resetAllMocks();
 });
 
 describe("ImageGenerationPanel — the tenant level", () => {
@@ -111,10 +113,10 @@ describe("ImageGenerationPanel — the tenant level", () => {
     expect(screen.getByTestId("image-generation-scope").textContent).toBe(
       "none"
     );
-    expect(
-      screen.getByTestId("image-generation-no-row").textContent
-    ).toMatch(/nobody chose this: On is image generation's default/);
-    expect(blurb()).toMatch(/Agents may generate images/);
+    expect(screen.getByTestId("image-generation-no-row").textContent).toMatch(
+      /nobody chose this: On is image generation's default/
+    );
+    expect(blurb()).toMatch(/agents may generate images/);
   });
 
   it("shows local only, and what it keeps on the machine", async () => {
@@ -128,7 +130,8 @@ describe("ImageGenerationPanel — the tenant level", () => {
   it("shows off, and that requests are refused", async () => {
     await renderWith(view("off", "tenant", { master_enabled: true }));
     expect(effective().textContent).toBe("Off");
-    expect(blurb()).toMatch(/No images are generated/);
+    expect(blurb()).toMatch(/no image be generated/);
+    expect(blurb()).toMatch(/refused with a reason that names this setting/);
   });
 
   it("a coord that predates the domain (no row, `off`) is UNKNOWN — never On, never Off", async () => {
@@ -139,7 +142,7 @@ describe("ImageGenerationPanel — the tenant level", () => {
     expect(effective().className).toMatch(/amber/);
     const notice = screen.getByTestId("image-generation-undeclared-default");
     expect(notice.querySelector("code")?.textContent).toBe("off");
-    expect(notice.textContent).toMatch(/What Studio resolves is unknown/);
+    expect(notice.textContent).toMatch(/What coord resolves is unknown/);
     expect(blurb()).toMatch(/unknown/);
     expect(screen.queryByTestId("image-generation-no-row")).toBeNull();
     // No level button is pressed as though it were in force.
@@ -154,9 +157,8 @@ describe("ImageGenerationPanel — the tenant level", () => {
     await renderWith(view("maybe", "tenant"));
     expect(effective().textContent).toBe("unknown");
     expect(
-      screen
-        .getByTestId("image-generation-unrecognized")
-        .querySelector("code")?.textContent
+      screen.getByTestId("image-generation-unrecognized").querySelector("code")
+        ?.textContent
     ).toBe("maybe");
   });
 
@@ -167,9 +169,9 @@ describe("ImageGenerationPanel — the tenant level", () => {
     expect(screen.getByTestId("image-generation-error").textContent).toMatch(
       /HTTP 502.*The current value is unknown/
     );
-    expect(
-      screen.getByTestId("image-generation-readonly").textContent
-    ).toMatch(/could not be read/);
+    expect(screen.getByTestId("image-generation-readonly").textContent).toMatch(
+      /could not be read/
+    );
     expect(
       screen.getByTestId("image-generation-overrides-unknown").textContent
     ).toMatch(/unknown until the setting can be read/);
@@ -188,16 +190,15 @@ describe("ImageGenerationPanel — the tenant level", () => {
       view("on", "tenant", { can_edit: false, repo_overrides: [SITE_LOCAL] })
     );
     expect(
-      (screen.getByTestId("image-generation-off") as HTMLButtonElement)
-        .disabled
+      (screen.getByTestId("image-generation-off") as HTMLButtonElement).disabled
     ).toBe(true);
     expect(
       (screen.getByTestId("image-generation-add-repo") as HTMLInputElement)
         .disabled
     ).toBe(true);
-    expect(
-      screen.getByTestId("image-generation-readonly").textContent
-    ).toMatch(/not an admin/);
+    expect(screen.getByTestId("image-generation-readonly").textContent).toMatch(
+      /not an admin/
+    );
   });
 
   it("writes the clicked level at the tenant band and shows the read-back", async () => {
@@ -223,6 +224,23 @@ describe("ImageGenerationPanel — the tenant level", () => {
     await renderWith(view("on", "tenant"));
     const refresh = screen.getByTestId("image-generation-refresh");
     expect(refresh.getAttribute("aria-label")).toBe("Refresh");
+  });
+
+  it("says plainly that the setting is recorded but not yet enforced", async () => {
+    // No Studio build reads this dial yet (plan Phase 12 step 3), so no copy
+    // may say Studio checks it, resolves it, or that older builds ignore it.
+    await renderWith(view("off", "tenant", { repo_overrides: [SITE_LOCAL] }));
+    expect(
+      screen.getByTestId("image-generation-not-enforced").textContent
+    ).toMatch(
+      /Recorded, not yet enforced\..*No Studio build reads this setting yet/
+    );
+    const row = screen.getByTestId("image-generation-override-row");
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    const text =
+      screen.getByTestId("image-generation-policy").textContent ?? "";
+    expect(text).not.toMatch(/Studio (checks|resolves|does)/);
+    expect(text).not.toMatch(/ignore it/);
   });
 });
 
@@ -267,7 +285,9 @@ describe("ImageGenerationPanel — per-repo overrides", () => {
     ).toBeTruthy();
     expect(within(rows[1]).getByText("–")).toBeTruthy();
     expect(
-      rows[1].querySelector("[data-console-row]")?.getAttribute("data-attention")
+      rows[1]
+        .querySelector("[data-console-row]")
+        ?.getAttribute("data-attention")
     ).toBe("waiting");
   });
 
@@ -287,10 +307,14 @@ describe("ImageGenerationPanel — per-repo overrides", () => {
         ) as HTMLButtonElement
       ).disabled
     ).toBe(true);
-    fireEvent.click(within(detail).getByTestId("image-generation-override-inherit"));
+    fireEvent.click(
+      within(detail).getByTestId("image-generation-override-inherit")
+    );
 
     await waitFor(() =>
-      expect(screen.getByTestId("image-generation-overrides-empty")).toBeTruthy()
+      expect(
+        screen.getByTestId("image-generation-overrides-empty")
+      ).toBeTruthy()
     );
     expect(putMock).toHaveBeenCalledWith("/api/v1/operations/fleet-policy", {
       domain: "image_generation",
@@ -301,6 +325,49 @@ describe("ImageGenerationPanel — per-repo overrides", () => {
       change_note:
         'Set image generation for acme/site to "inherit" from the console',
     });
+  });
+
+  it("spins only the override button that was clicked while its write is in flight", async () => {
+    await renderWith(view("on", "tenant", { repo_overrides: [SITE_LOCAL] }));
+    let release!: (v: unknown) => void;
+    putMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    getMock.mockResolvedValueOnce(
+      view("on", "tenant", {
+        repo_overrides: [
+          { ...SITE_LOCAL, level: "off", effective_level: "off" },
+        ],
+      })
+    );
+
+    const row = screen.getByTestId("image-generation-override-row");
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    const detail = screen.getByTestId("image-generation-override-detail");
+    fireEvent.click(
+      within(detail).getByTestId("image-generation-override-off")
+    );
+
+    const spinning = (choice: string) =>
+      screen
+        .getByTestId(`image-generation-override-${choice}`)
+        .querySelector(".animate-spin") !== null;
+    await waitFor(() => expect(spinning("off")).toBe(true));
+    for (const choice of ["on", "local_only", "inherit"]) {
+      expect(spinning(choice), choice).toBe(false);
+    }
+
+    release(written(view("on", "tenant"), "off"));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByTestId("image-generation-policy")
+          .querySelector(".animate-spin")
+      ).toBeNull()
+    );
   });
 
   it("adds an override for a typed repo, sent the way coord stores it", async () => {
@@ -352,9 +419,9 @@ describe("ImageGenerationPanel — per-repo overrides", () => {
         ).disabled
       ).toBe(true);
     }
-    expect(
-      screen.getByTestId("image-generation-add-hint").textContent
-    ).toMatch(/owner\/name/);
+    expect(screen.getByTestId("image-generation-add-hint").textContent).toMatch(
+      /owner\/name/
+    );
     expect(putMock).not.toHaveBeenCalled();
   });
 
@@ -372,10 +439,9 @@ describe("ImageGenerationPanel — per-repo overrides", () => {
     await renderWith(view("on", "tenant"));
     putMock.mockImplementation(
       async () =>
-        new Response(
-          JSON.stringify({ error: "repo_key_not_owner_name" }),
-          { status: 400 }
-        )
+        new Response(JSON.stringify({ error: "repo_key_not_owner_name" }), {
+          status: 400,
+        })
     );
     fireEvent.change(screen.getByTestId("image-generation-add-repo"), {
       target: { value: "acme/site" },

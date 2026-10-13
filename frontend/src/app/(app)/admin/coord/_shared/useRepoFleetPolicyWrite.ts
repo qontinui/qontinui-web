@@ -71,11 +71,17 @@ export function describeWriteRefusal(err: unknown): string | null {
  *                    change another's, so a caller may update just that repo
  *                    from the read-back, or re-read its own aggregate when
  *                    that is its one source of display.
+ * @param onLanded    called the moment a write LANDS — whether or not its
+ *                    read-back succeeded, and before `onConfirmed` — so a
+ *                    caller whose aggregate read shows repo rows can retire
+ *                    any read that began before the write (a read issued
+ *                    earlier would otherwise repaint the pre-write list).
  */
 export function useRepoFleetPolicyWrite<L extends string>(
   domain: string,
   label: string,
-  onConfirmed?: (repo: string, effective: FleetPolicyView) => void
+  onConfirmed?: (repo: string, effective: FleetPolicyView) => void,
+  onLanded?: () => void
 ) {
   /** The repo whose write is in flight, so only its control spins. */
   const [savingRepo, setSavingRepo] = useState<string | null>(null);
@@ -107,6 +113,7 @@ export function useRepoFleetPolicyWrite<L extends string>(
             changeNote ??
             `Set ${label} for ${repo} to "${level}" from the console`,
         });
+        onLanded?.();
         if (result.effective) {
           setReadbackErrors((prev) => {
             if (!(repo in prev)) return prev;
@@ -141,7 +148,7 @@ export function useRepoFleetPolicyWrite<L extends string>(
         setSavingRepo(null);
       }
     },
-    [domain, label, onConfirmed]
+    [domain, label, onConfirmed, onLanded]
   );
 
   const clearReadbackErrors = useCallback(() => setReadbackErrors({}), []);

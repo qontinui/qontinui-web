@@ -35,11 +35,17 @@ import {
   type ImageGenerationRepoChoice,
 } from "../types";
 
+/**
+ * What each level ASKS for. Worded as a request, not as behaviour: no Studio
+ * build reads this setting yet (plan Phase 12 step 3), so stating what agents
+ * "do" under a level would claim an enforcement that does not exist. The
+ * header says so outright (`image-generation-not-enforced`).
+ */
 const LEVEL_BLURB: Record<ImageGenerationLevel, string> = {
-  on: "Agents may generate images — with the fleet's own image generator, and with a cloud image provider only within the quota the launch kit grants it.",
+  on: "On asks that agents may generate images — with the fleet's own image generator, and with a cloud image provider only within the quota the launch kit grants it.",
   local_only:
-    "Images are generated only on the fleet's own hardware. Nothing — prompt or image — is sent to a cloud image provider or cloud model, so a step that would need one is skipped.",
-  off: "No images are generated and no image model is called. An image request is refused with a reason that names this setting.",
+    "Local only asks that images be generated only on the fleet's own hardware: no prompt or image goes to a cloud image provider or cloud model, and a step that would need one is skipped.",
+  off: "Off asks that no image be generated and no image model be called, and that an image request be refused with a reason that names this setting.",
 };
 
 /**
@@ -132,12 +138,19 @@ export function ImageGenerationPanel() {
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
               Whether agents may generate images for this tenant&apos;s
               products, and whether a prompt or an image may leave the
-              fleet&apos;s own hardware to do it. Studio checks this before
-              each image request, for the repo it is generating for; a repo
-              with an override below follows its override instead.
+              fleet&apos;s own hardware to do it. Studio is to read this before
+              each image request, for the repo it is generating for; a repo with
+              an override below follows its override instead.
             </p>
-            <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-              Studio builds that predate this setting ignore it.
+            <p
+              className="mt-1 max-w-2xl text-xs text-muted-foreground"
+              data-testid="image-generation-not-enforced"
+            >
+              <strong className="font-semibold text-foreground">
+                Recorded, not yet enforced.
+              </strong>{" "}
+              No Studio build reads this setting yet, so a change here is stored
+              and shown below but does not yet change what any agent does.
             </p>
           </div>
         </div>
@@ -174,7 +187,7 @@ export function ImageGenerationPanel() {
               </Button>
             ))}
             <div className="ml-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Studio resolves</span>
+              <span>Coord resolves</span>
               <Badge
                 variant={
                   displayLevel !== null && displayLevel !== "off"
@@ -224,15 +237,15 @@ export function ImageGenerationPanel() {
               Coord answered with no row for this tenant, but with{" "}
               <code>{tenant.raw}</code> rather than image generation&apos;s
               default (On): the coord answering predates this setting, or
-              reported no level at all. What Studio resolves is unknown.
+              reported no level at all. What coord resolves is unknown.
             </Notice>
           )}
 
           {tenant?.state === "unrecognised" && (
             <Notice testId="image-generation-unrecognized">
               The resolved level is <code>{tenant.raw}</code>, which is not one
-              of the levels above, so what Studio does with it is unknown. Pick
-              a level to replace the row.
+              of the levels above, so what it allows is unknown. Pick a level to
+              replace the row.
             </Notice>
           )}
 
@@ -250,9 +263,9 @@ export function ImageGenerationPanel() {
           {readbackError && (
             <Notice testId="image-generation-readback-error">
               The write to <code>{lastWrite?.written_level}</code> was accepted,
-              but reading back what Studio resolves failed ({readbackError}).
-              The value above is the last one confirmed and may be stale.
-              Refresh to re-check.
+              but reading back what coord resolves failed ({readbackError}). The
+              value above is the last one confirmed and may be stale. Refresh to
+              re-check.
             </Notice>
           )}
 
@@ -329,7 +342,7 @@ export function ImageGenerationPanel() {
                     canEdit={canEdit}
                     saving={savingRepo === o.repo}
                     busy={savingRepo !== null}
-                    onChoose={(choice) => void writeRepo(o.repo, choice)}
+                    onChoose={(choice) => writeRepo(o.repo, choice)}
                   />
                 )}
               />
@@ -385,8 +398,7 @@ export function ImageGenerationPanel() {
                 className="text-xs text-muted-foreground"
                 data-testid="image-generation-add-hint"
               >
-                Name the repo as owner/name — for example
-                qontinui/qontinui-web.
+                Name the repo as owner/name — for example qontinui/qontinui-web.
               </p>
             )}
             {existing && (
@@ -461,8 +473,16 @@ function OverrideRow({
   canEdit: boolean;
   saving: boolean;
   busy: boolean;
-  onChoose: (choice: ImageGenerationRepoChoice) => void;
+  onChoose: (choice: ImageGenerationRepoChoice) => Promise<boolean>;
 }) {
+  /**
+   * Which choice's write is in flight, so only that button spins — as the
+   * tenant row does. Cleared when the write settles, so a later write to this
+   * repo from the add form does not spin a stale button here.
+   */
+  const [pending, setPending] = useState<ImageGenerationRepoChoice | null>(
+    null
+  );
   const status = overrideStatus(override, { tenant, stale, readbackError });
   // A listed row IS an override, so `inherit` is never the current choice; an
   // unknown or unconfirmed one highlights nothing.
@@ -473,7 +493,9 @@ function OverrideRow({
       data-testid="image-generation-override-row"
       identity={override.repo}
       label="image generation"
-      status={<StatusBadge status={status} palette={IMAGE_GENERATION_PALETTE} />}
+      status={
+        <StatusBadge status={status} palette={IMAGE_GENERATION_PALETTE} />
+      }
       reason={status.reason}
       attention={status.attention}
       expanded={expanded}
@@ -485,7 +507,7 @@ function OverrideRow({
           <p className="text-xs">
             {readbackError || override.level === null
               ? status.reason
-              : `Studio resolves ${IMAGE_GENERATION_LEVEL_LABEL[override.level]} for this repo, from its own override${stale ? " (the last refresh failed, so this may be stale)" : ""}. Inherit clears the override, so the repo follows the tenant setting (${tenantLevel === null ? "currently unknown" : IMAGE_GENERATION_LEVEL_LABEL[tenantLevel]}).`}
+              : `Coord resolves ${IMAGE_GENERATION_LEVEL_LABEL[override.level]} for this repo, from its own override${stale ? " (the last refresh failed, so this may be stale)" : ""}. Inherit clears the override, so the repo follows the tenant setting (${tenantLevel === null ? "currently unknown" : IMAGE_GENERATION_LEVEL_LABEL[tenantLevel]}).`}
           </p>
         }
         problems={
@@ -506,10 +528,15 @@ function OverrideRow({
                 size="sm"
                 variant={current === choice ? "default" : "outline"}
                 disabled={!canEdit || busy || current === choice}
-                onClick={() => onChoose(choice)}
+                onClick={() => {
+                  setPending(choice);
+                  void onChoose(choice).finally(() => setPending(null));
+                }}
                 data-testid={`image-generation-override-${choice}`}
               >
-                {saving && <Loader2 className="size-3.5 animate-spin" />}
+                {saving && pending === choice && (
+                  <Loader2 className="size-3.5 animate-spin" />
+                )}
                 {IMAGE_GENERATION_REPO_CHOICE_LABEL[choice]}
               </Button>
             ))}

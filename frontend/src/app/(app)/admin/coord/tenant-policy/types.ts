@@ -91,8 +91,9 @@ export function parseAccountSelectionLevel(
  * per-repo override. Plan `2026-10-13-image-generation-and-visual-judgment`
  * Phase 12 (D1.7: it ships on, with off-switches at tenant and machine scope).
  *
- * Studio reads it before each image request, naming the repo it is generating
- * for (`GET /coord/fleet-policy?domain=image_generation&repo=<owner/name>`), so
+ * Studio is to read it before each image request, naming the repo it is
+ * generating for (`GET /coord/fleet-policy?domain=image_generation&repo=<owner/name>`
+ * — Phase 12 step 3; no Studio build reads it yet), so
  * unlike the two dials above this one IS decided with a repo in hand — hence
  * the per-repo overrides. coord's no-row default is `on`; its PUT refuses any
  * level outside {@link IMAGE_GENERATION_LEVELS} (plus `inherit` on the repo

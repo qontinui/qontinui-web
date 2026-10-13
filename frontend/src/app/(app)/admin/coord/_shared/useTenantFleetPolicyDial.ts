@@ -129,6 +129,16 @@ export function useTenantFleetPolicyDial<L extends string>(
   }, [load]);
 
   /**
+   * A write to this domain LANDED outside this hook — a repo-band write whose
+   * effect shows up in this read (`repo_overrides`). Retires every read that
+   * began before it, exactly as a landed tenant write does; call it the moment
+   * the write lands, before re-reading, so the re-read is the one applied.
+   */
+  const noteWriteLanded = useCallback(() => {
+    writeGeneration.current += 1;
+  }, []);
+
+  /**
    * Write `level` at the tenant band.
    *
    * `master_enabled` is always `true`: coord resolves `effective_level = off`
@@ -198,5 +208,7 @@ export function useTenantFleetPolicyDial<L extends string>(
     /** Re-read; resolves `true` only when that read landed and is now shown. */
     reload: load,
     setLevel,
+    /** A write to this domain landed elsewhere: retire reads that began before it. */
+    noteWriteLanded,
   };
 }

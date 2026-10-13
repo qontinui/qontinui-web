@@ -50,12 +50,14 @@ import {
 export const UNKNOWN_DASH = "–";
 
 /** Operator words for a KNOWN level. */
-export const IMAGE_GENERATION_LEVEL_LABEL: Record<ImageGenerationLevel, string> =
-  {
-    on: "On",
-    local_only: "Local only",
-    off: "Off",
-  };
+export const IMAGE_GENERATION_LEVEL_LABEL: Record<
+  ImageGenerationLevel,
+  string
+> = {
+  on: "On",
+  local_only: "Local only",
+  off: "Off",
+};
 
 /** Operator words for what a repo-override control writes. */
 export const IMAGE_GENERATION_REPO_CHOICE_LABEL: Record<
