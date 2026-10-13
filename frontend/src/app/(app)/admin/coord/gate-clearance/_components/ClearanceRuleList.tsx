@@ -25,7 +25,7 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   AUTHORITY_LABELS,
   INERT_EXPLANATIONS,

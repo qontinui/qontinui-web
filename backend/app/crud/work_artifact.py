@@ -62,7 +62,7 @@ import asyncio
 import hashlib
 import re
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid5
@@ -74,6 +74,7 @@ from sqlalchemy import (
     Text,
     Uuid,
     cast,
+    exists,
     false,
     func,
     literal,
@@ -93,11 +94,13 @@ from app.core.bounded_read import KeysetPosition, SortKey
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
     NOTE_TRIM_CHARS,
+    OPEN_FOLLOWUP_SQL,
     SEARCH_TSVECTOR_SQL,
-    SPAWNED_FOLLOWUP_RELATION,
     TERMINAL_STATUSES,
+    UNCLAIMED_FOLLOWUP_SQL,
     WorkArtifact,
     WorkArtifactEdge,
+    WorkArtifactEdgeAnchor,
     WorkArtifactVersion,
 )
 from app.services.plan_difficulty import RUBRIC_VERSION, compute_difficulty
@@ -1452,12 +1455,23 @@ async def create_edge(
     relation: str,
     note: str | None,
     created_by: str | None,
+    on_write: Callable[[WorkArtifactEdge, bool], Awaitable[bool]] | None = None,
 ) -> tuple[WorkArtifactEdge, bool]:
     """Create one edge, or return the existing identical one.
 
     Returns ``(edge, created)``. Re-posting the same
     ``(from, to, relation)`` triple is idempotent rather than a 409 — the
     library is fed by repeatable scans.
+
+    ``on_write(edge, created)``, when given, runs INSIDE the same transaction,
+    after the new row is flushed (``created``) or the existing one found, and
+    before the commit — so what it adds commits or rolls back WITH the edge. It
+    returns whether it wrote anything; on an existing row nothing is committed
+    unless it did.
+    The follow-up door uses it to write a new follow-up's anchors and size
+    class atomically (``app.crud.work_artifact_followups.write_followup_facts``);
+    a crash between two commits would otherwise leave a follow-up whose
+    anchors were silently lost.
 
     ``to_artifact`` may be ``None`` for :data:`SPAWNED_FOLLOWUP_RELATION`, the
     ONE-ENDED edge that records work a plan surfaced but did not do
@@ -1497,7 +1511,7 @@ async def create_edge(
         )
     found = (await db.execute(stmt)).scalars().first()
     if found is not None:
-        return found, False
+        return await _settle_found_edge(db, found, on_write)
 
     edge = WorkArtifactEdge(
         from_id=from_artifact.id,
@@ -1508,15 +1522,33 @@ async def create_edge(
     )
     db.add(edge)
     try:
+        if on_write is not None:
+            await db.flush()
+            await on_write(edge, True)
         await db.commit()
     except IntegrityError:
         await db.rollback()
         found = (await db.execute(stmt)).scalars().first()
         if found is None:  # pragma: no cover — the row must exist now
             raise
-        return found, False
+        return await _settle_found_edge(db, found, on_write)
     await db.refresh(edge)
     return edge, True
+
+
+async def _settle_found_edge(
+    db: AsyncSession,
+    found: WorkArtifactEdge,
+    on_write: Callable[[WorkArtifactEdge, bool], Awaitable[bool]] | None,
+) -> tuple[WorkArtifactEdge, bool]:
+    """An idempotent re-post landed on ``found``: let ``on_write`` see it,
+    and commit only when it reports a write."""
+    if on_write is None:
+        return found, False
+    if await on_write(found, False):
+        await db.commit()
+        await db.refresh(found)
+    return found, False
 
 
 # ===========================================================================
@@ -1542,6 +1574,25 @@ class FollowupAlreadyClaimed(Exception):
         )
 
 
+class FollowupResolved(Exception):
+    """The follow-up was already closed by a resolution, so it cannot be claimed.
+
+    A resolved follow-up (``fixing`` — a PR holds it — or one of the resting
+    states) left the open queue through its resolution; pointing an artifact
+    at it as well would give it two ways out. Surfaced as a 409 naming the
+    resolution: reopen it first (``POST /plan-library/edges/{id}/resolution``
+    ``{"resolution": "open", ...}``) if an artifact should own it instead.
+    """
+
+    def __init__(self, *, edge_id: UUID, resolution: str) -> None:
+        self.edge_id = edge_id
+        self.resolution = resolution
+        super().__init__(
+            f"follow-up edge {edge_id} is resolved ({resolution}); "
+            "it cannot also be claimed"
+        )
+
+
 async def get_edge(
     db: AsyncSession, edge_id: UUID, *, org_id: UUID | None
 ) -> tuple[WorkArtifactEdge, WorkArtifact] | None:
@@ -1563,33 +1614,116 @@ async def get_edge(
     return row[0], row[1]
 
 
+#: ``GET /plan-library/followups?state=`` → the predicate it selects. Each is
+#: built on the LITERAL unclaimed / open predicate from the model, so the
+#: planner can prove a partial index from it (a bound ``relation = $1`` cannot
+#: be proven under a generic prepared plan): ``open`` walks
+#: ``ix_work_artifact_edges_open_followup_queue_created_id``, every other state
+#: ``ix_work_artifact_edges_open_followups_created_id``.
+FOLLOWUP_STATE_SQL: dict[str, str] = {
+    "open": OPEN_FOLLOWUP_SQL,
+    "fixing": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'fixing'",
+    "fixed": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'fixed'",
+    "already_fixed": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'already_fixed'",
+    "dismissed": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'dismissed'",
+    "resolved": (
+        f"{UNCLAIMED_FOLLOWUP_SQL} "
+        "AND resolution IN ('fixed', 'already_fixed', 'dismissed')"
+    ),
+}
+
+#: The ``size_class`` filter value that selects UNCLASSIFIED (NULL) rows.
+UNCLASSIFIED_SIZE_CLASS = "unclassified"
+
+
+def sql_predicate(sql: str) -> ColumnElement[bool]:
+    """A LITERAL SQL predicate (:data:`FOLLOWUP_STATE_SQL`'s, the model's
+    ``*_FOLLOWUP_SQL``) as a boolean WHERE term, rendered verbatim and
+    parenthesised.
+
+    Verbatim is the point: the planner proves a partial index's predicate
+    from the literals it sees, which a bound ``relation = $1`` would hide. The
+    cast states what ``text()`` is at runtime — a valid WHERE term — which its
+    static type (``TextClause``) does not say.
+    """
+    return typing.cast(ColumnElement[bool], text(f"({sql})"))
+
+
+def _followup_filters(
+    *,
+    org_id: UUID | None,
+    state: str,
+    repo: str | None,
+    size_class: str | None,
+    anchored: bool | None,
+) -> list[ColumnElement[bool]]:
+    """The WHERE of a ``/followups`` read, before its keyset cut.
+
+    ``repo`` keeps follow-ups with at least one anchor in that repo;
+    ``anchored`` keeps those with (``True``) or without (``False``) any anchor
+    at all; ``size_class`` keeps one class, or ``unclassified`` for NULL.
+    """
+    filters: list[ColumnElement[bool]] = [
+        _org_scope(org_id),
+        sql_predicate(FOLLOWUP_STATE_SQL[state]),
+    ]
+    if repo is not None:
+        filters.append(
+            exists().where(
+                WorkArtifactEdgeAnchor.edge_id == WorkArtifactEdge.id,
+                WorkArtifactEdgeAnchor.repo == repo,
+            )
+        )
+    if anchored is not None:
+        has_anchor = exists().where(
+            WorkArtifactEdgeAnchor.edge_id == WorkArtifactEdge.id
+        )
+        filters.append(has_anchor if anchored else ~has_anchor)
+    if size_class == UNCLASSIFIED_SIZE_CLASS:
+        filters.append(WorkArtifactEdge.size_class.is_(None))
+    elif size_class is not None:
+        filters.append(WorkArtifactEdge.size_class == size_class)
+    return filters
+
+
 async def list_open_followups(
     db: AsyncSession,
     *,
     org_id: UUID | None,
     after: KeysetPosition | None = None,
     limit: int = 50,
+    state: str = "open",
+    repo: str | None = None,
+    size_class: str | None = None,
+    anchored: bool | None = None,
 ) -> tuple[list[tuple[WorkArtifactEdge, WorkArtifact]], int]:
-    """Unclaimed ``spawned_followup`` edges + their originating artifact.
+    """Unowned ``spawned_followup`` edges in one state + their originating artifact.
 
-    "Open" is exactly ``to_id IS NULL``: work that was identified and has no
-    artifact owning it. A claimed follow-up is an ordinary two-ended
-    provenance edge and drops out of this read while staying visible on the
-    originating artifact's edge list — nothing is deleted by claiming.
+    **Open** — the default — is exactly :data:`OPEN_FOLLOWUP_SQL`: no artifact
+    owns it (``to_id IS NULL``) and nothing closed it (``resolution IS NULL``).
+    A claimed follow-up is an ordinary two-ended provenance edge and never
+    appears here (it stays on the originating artifact's edge list); a
+    resolved one appears only under its ``state`` (:data:`FOLLOWUP_STATE_SQL`).
+    Nothing is deleted by either.
+
+    ``repo`` / ``size_class`` / ``anchored`` narrow it further — see
+    :func:`_followup_filters`.
 
     Ordered OLDEST FIRST — a keyset walk over :data:`FOLLOWUP_SORT_KEY`,
     ``(created_at, id) ASC``, resumed strictly after ``after``. That is the
     useful default rather than an arbitrary one: an old unowned follow-up is
     work the fleet has known about and repeatedly not picked up, which is the
-    interesting row. Returns the page plus the exact count of open follow-ups
-    from the page's start position onward (the whole queue on the first page),
-    so a bounded page can never read as the whole queue.
+    interesting row. Returns the page plus the exact count of matching
+    follow-ups from the page's start position onward (the whole set on the
+    first page), so a bounded page can never read as the whole queue.
     """
-    filters: list[ColumnElement[bool]] = [
-        _org_scope(org_id),
-        WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
-        WorkArtifactEdge.to_id.is_(None),
-    ]
+    filters = _followup_filters(
+        org_id=org_id,
+        state=state,
+        repo=repo,
+        size_class=size_class,
+        anchored=anchored,
+    )
     if after is not None:
         filters.append(
             _keyset_cut(
@@ -1633,7 +1767,8 @@ async def claim_followup(
     updated, which is what keeps the claim traceable back to the plan that
     surfaced the work.
 
-    Raises :class:`FollowupAlreadyClaimed` when ``to_id`` is already set. The
+    Raises :class:`FollowupAlreadyClaimed` when ``to_id`` is already set, and
+    :class:`FollowupResolved` when a resolution already closed it. The
     check is made under a row lock rather than from the caller's earlier read:
     two agents claiming the same follow-up concurrently would otherwise both
     see ``to_id IS NULL``, both write, and the second would overwrite the first
@@ -1658,6 +1793,13 @@ async def claim_followup(
 
     if edge.to_id is not None:
         raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=edge.to_id)
+
+    if edge.resolution is not None:
+        # Claimed and resolved are two different ways out of the queue, and a
+        # row holds at most one (``ck_work_artifact_edges_resolution_unclaimed``).
+        # Checked here, under the lock, so the 409 names the resolution rather
+        # than surfacing the CHECK as an IntegrityError.
+        raise FollowupResolved(edge_id=edge_id, resolution=edge.resolution)
 
     edge.to_id = to_id
     try:

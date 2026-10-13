@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  * Resume point: when the pin reaches 0 the migration is done, and
  * `components/operations/utils.ts` exports no URL.
  */
-const PINNED_COUNT = 67;
+const PINNED_COUNT = 19;
 
 const SRC_ROOT = path.resolve(__dirname, "../../..");
 

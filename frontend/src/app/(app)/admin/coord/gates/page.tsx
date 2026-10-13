@@ -78,6 +78,7 @@ import {
 } from "@/services/admin-dev-service";
 import { SummaryCards } from "./_components/SummaryCards";
 import { GatesTable } from "./_components/GatesTable";
+import { GlossaryTerm } from "@/components/console";
 import { useClearanceRuleSet } from "../_shared/useClearanceRuleSet";
 import { RolloutPanel } from "./_components/RolloutPanel";
 import { ShadowReapGroups } from "./_components/ShadowReap";
@@ -401,7 +402,7 @@ export default function CoordGatesPage() {
               data-testid="gates-empty"
               data-content-id="gates-empty-state"
             >
-              No gates registered.
+              No <GlossaryTerm id="gate">gates</GlossaryTerm> registered.
             </div>
           ) : (
             <GatesTable

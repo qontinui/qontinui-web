@@ -19,10 +19,11 @@ import {
   targetKey,
   type RunnerTarget,
 } from "@/lib/runner/target";
-import type {
-  PinIneligibility,
-  ResolvedRunnerState,
-  ResolveWorkClass,
+import {
+  isNothingEligible,
+  type PinIneligibility,
+  type ResolvedRunnerState,
+  type ResolveWorkClass,
 } from "@/lib/runner/resolve";
 import { useResolvedRunner } from "@/lib/runner/use-resolved-runner";
 
@@ -229,8 +230,9 @@ function listedTarget(
  *   is the target (the only runner there is — not an order-based pick); with
  *   several, `pending` until coord answers.
  * - Coord answered without a device — UNKNOWN (`unavailable`,
- *   `drain_unreadable`) or "nothing eligible for new work" (`no_capable`,
- *   `all_drained`, `pin_ineligible`). Reads must not blank (plan risk; an
+ *   `drain_unreadable`, `unknown_outcome`) or "nothing eligible for new
+ *   work" (`isNothingEligible`: `no_capable`, `all_drained`, `all_offline`,
+ *   `all_at_capacity`, `all_role_closed`, `pin_ineligible`). Reads must not blank (plan risk; an
  *   own machine that is drained still serves its library and results), so
  *   the target falls back, in order, to: the LAST device coord resolved
  *   (while listed); a runner PROVEN on this machine by its identity probe;
@@ -299,10 +301,7 @@ export function resolveRunnerTarget({
   if (!runners.every((r) => localityById.has(r.id))) {
     return { activeRunner: null, target: pendingTarget() };
   }
-  const nothingEligible =
-    resolution.status === "no_capable" ||
-    resolution.status === "all_drained" ||
-    resolution.status === "pin_ineligible";
+  const nothingEligible = isNothingEligible(resolution);
   return {
     activeRunner: null,
     target: {
@@ -336,8 +335,12 @@ export type DispatchTargetReason =
   | "resolving"
   | "resolver_unavailable"
   | "drain_unreadable"
+  | "unknown_outcome"
   | "no_capable"
   | "all_drained"
+  | "all_offline"
+  | "all_at_capacity"
+  | "all_role_closed"
   | "pin_ineligible";
 
 /**
@@ -404,6 +407,9 @@ const PIN_REASON_PHRASE: Record<PinIneligibility, string> = {
   drained: "drained — taken out of service for new work",
   missing_capabilities: "missing a capability this work needs",
   not_a_paired_device: "no longer paired to your account",
+  role_closes_agent_lane:
+    "on a role (bench / CI node) that does not accept this work",
+  at_capacity: "at its limit on concurrent sessions",
 };
 
 /** A runner's display name: listed name, else the stored pin name, else a short id. */
@@ -418,10 +424,26 @@ export function runnerDisplayName(
   return `runner ${id.slice(0, 8)}`;
 }
 
-/** What the placeable refusals say (shared by both work classes). */
-function nothingEligibleRefusal(
-  resolution: ResolvedRunnerState
-): DispatchTarget | null {
+/** The coord answers that name no device and are refused the same way for
+ *  both work classes. */
+type NoDeviceAnswer = Extract<
+  ResolvedRunnerState,
+  {
+    status:
+      | "drain_unreadable"
+      | "unknown_outcome"
+      | "no_capable"
+      | "all_drained"
+      | "all_offline"
+      | "all_at_capacity"
+      | "all_role_closed";
+  }
+>;
+
+/** What the placeable refusals say (shared by both work classes). Exhaustive:
+ *  a new resolver state that names no device fails to compile until it has
+ *  its own copy here. */
+function nothingEligibleRefusal(resolution: NoDeviceAnswer): DispatchTarget {
   switch (resolution.status) {
     case "drain_unreadable":
       return refused(
@@ -438,8 +460,32 @@ function nothingEligibleRefusal(
         "all_drained",
         "All your runners are drained — taken out of service for new work."
       );
-    default:
-      return null;
+    case "all_offline":
+      return refused(
+        "all_offline",
+        resolution.capableOffline === 1
+          ? "The runner able to take this work is offline. Start it so it connects, then retry."
+          : "Every runner able to take this work is offline. Start one so it connects, then retry."
+      );
+    case "all_at_capacity":
+      return refused(
+        "all_at_capacity",
+        `Every runner able to take this work is at its limit on concurrent sessions. Retry when one finishes, or ${PICK_HINT}.`
+      );
+    case "all_role_closed":
+      return refused(
+        "all_role_closed",
+        "The runners able to take this work have a role (bench / CI node) that does not accept it. Change a runner's role to workhorse to run it there."
+      );
+    case "unknown_outcome":
+      return refused(
+        "unknown_outcome",
+        `Coord's device resolver answered “${resolution.rawOutcome}”, which this version of the app does not understand, so no runner is chosen automatically. Reload the page, or ${PICK_HINT}.`
+      );
+    default: {
+      const unhandled: never = resolution;
+      return unhandled;
+    }
   }
 }
 
@@ -520,7 +566,7 @@ export function dispatchTargetFrom({
       // Not a placeable answer; kept typed so nothing is ever dispatched on it.
       return refused("pin_ineligible", resolution.detail);
     default:
-      return nothingEligibleRefusal(resolution)!;
+      return nothingEligibleRefusal(resolution);
   }
 }
 
@@ -621,7 +667,7 @@ export function machineBoundDispatchFrom({
         `Coord did not answer whether ${name} can run this. Retry shortly.`
       );
     default:
-      return nothingEligibleRefusal(resolution)!;
+      return nothingEligibleRefusal(resolution);
   }
 }
 
@@ -955,6 +1001,9 @@ function unavailableReasonFor(
       return "list_unavailable";
     case "no_capable":
     case "all_drained":
+    case "all_offline":
+    case "all_at_capacity":
+    case "all_role_closed":
     case "pin_ineligible":
       return "no_eligible_runner";
     default:

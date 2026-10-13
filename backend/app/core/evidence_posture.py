@@ -202,6 +202,15 @@ STORES: Final[dict[str, Store]] = {
         states=("never_held", "held", "released"),
         terminal=("held", "released"),
     ),
+    # A plan-library follow-up's closure state (plan
+    # 2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down D1).
+    # ``open`` and ``fixing`` are not terminal: the reconcile moves ``fixing``
+    # on coord's land record, and ``open`` is where a follow-up waits. The
+    # three resolutions are — nothing automatic moves them.
+    "followup_resolutions": Store(
+        states=("open", "fixing", "fixed", "already_fixed", "dismissed"),
+        terminal=("fixed", "already_fixed", "dismissed"),
+    ),
 }
 
 
@@ -252,6 +261,13 @@ Posture = Read | Ephemeral | Evidence
 # ───────────────────────────── the table ─────────────────────────────
 
 _MEMORY_SUPERSEDE = f"POST {_V1}/memory/records/{{memory_id}}/supersede"
+#: Every follow-up state has an exit through this door — a resting one back to
+#: ``open``, with a reason — so it is the closure store's correction verb.
+_FOLLOWUP_RESOLUTION = f"POST {_V1}/plan-library/edges/{{edge_id}}/resolution"
+_FOLLOWUP_RESOLUTION_VERB = Verb(
+    verb=_FOLLOWUP_RESOLUTION,
+    admits=("open", "fixing", "fixed", "already_fixed", "dismissed"),
+)
 _MEMORY_DELETE = f"DELETE {_V1}/memory/records/{{memory_id}}"
 _TESTING = f"{_V1}/testing/runs"
 
@@ -288,7 +304,7 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         ),
     ),
     ("POST", f"{_V1}/plan-library/{{artifact_id}}/edges"): Evidence(
-        closed_fields=("relation",),
+        closed_fields=("relation", "size_class"),
         correction=Gap(
             tracked_by=EDGE_CORRECTION_PLAN,
             what=(
@@ -313,6 +329,38 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
                 "qontinui-web #1459"
             ),
         ),
+    ),
+    ("PUT", f"{_V1}/plan-library/edges/{{edge_id}}/anchors"): Evidence(
+        closed_fields=("size_class", "size_class_source"),
+        correction=SupersedeArg(
+            property="the edge_id in the path",
+            how=(
+                "a PUT replaces the follow-up's whole anchor set and its "
+                "unanchored_reason with the body, and size_class + "
+                "size_class_source, when supplied, replace the class — so a "
+                "wrong anchor set or class is corrected by PUTting the right one"
+            ),
+        ),
+    ),
+    ("POST", _FOLLOWUP_RESOLUTION.removeprefix("POST ")): Evidence(
+        closed_fields=("resolution",),
+        correction=_FOLLOWUP_RESOLUTION_VERB,
+        store="followup_resolutions",
+    ),
+    ("POST", f"{_V1}/plan-library/followups/match"): Read(
+        reason=(
+            "a query sent as POST because up to 500 repo-relative paths do not "
+            "fit a query string; it reads follow-ups and their anchors and "
+            "writes nothing"
+        )
+    ),
+    # The reconcile asserts nothing of its own: it applies coord's land record.
+    # A wrong move (coord read a PR as landed that did not fix the follow-up)
+    # is corrected through the resolution door like any other closure.
+    ("POST", f"{_V1}/plan-library/followups/reconcile"): Evidence(
+        closed_fields=(),
+        correction=_FOLLOWUP_RESOLUTION_VERB,
+        store="followup_resolutions",
     ),
     ("POST", f"{_V1}/plan-library/scan-roots"): Evidence(
         closed_fields=("censuses[].source", "state"),

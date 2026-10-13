@@ -40,7 +40,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import { ClearanceRuleEditorDialog } from "./_components/ClearanceRuleEditorDialog";
 import { ClearanceRuleList } from "./_components/ClearanceRuleList";
 import { EffectiveAuthorityMatrix } from "./_components/EffectiveAuthorityMatrix";

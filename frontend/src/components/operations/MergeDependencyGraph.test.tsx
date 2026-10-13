@@ -220,4 +220,16 @@ describe("graph proxy errors", () => {
     );
     expect(error.textContent).not.toContain("{");
   });
+
+  it("words a refusal whose body cannot be read through the guarded reader", async () => {
+    const unreadable = new Response("x", { status: 503 });
+    vi.spyOn(unreadable, "text").mockRejectedValue(new Error("stream broke"));
+    fetchMock.mockResolvedValue(unreadable);
+    render(<MergeDependencyGraph repo="o/r" pr={1} />);
+    const error = await screen.findByTestId("merge-dep-graph-error");
+    // `readJson` stands "Unknown error" in for the body it could not read,
+    // and the guarded reader renders that plain-text body as the sentence.
+    expect(error.textContent).toContain("Unknown error");
+    expect(error.textContent).not.toContain("stream broke");
+  });
 });

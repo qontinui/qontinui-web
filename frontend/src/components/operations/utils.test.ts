@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  coordEventsWsUrl,
   extractSymbol,
   formatBytes,
   percentFree,
@@ -311,28 +310,5 @@ describe("readingAgeMs", () => {
     const age = readingAgeMs(past);
     expect(age).not.toBeNull();
     expect(age!).toBeGreaterThanOrEqual(119_000);
-  });
-});
-
-describe("operations WS URL builders", () => {
-  // The coord-events bridge derives from OPERATIONS_API (http[s]:// →
-  // ws[s]://), carries the session token as `token=`, and adds the fixed
-  // subscription name that coord's closed set resolves server-side. The
-  // device- and CI-status bridges live in `lib/api/operations`.
-  it("coordEventsWsUrl targets the backend bridge with subscribe + token", () => {
-    const url = coordEventsWsUrl("merge", "a b+c");
-    expect(url).toMatch(/^wss?:\/\//);
-    expect(url).toContain("/api/v1/operations/coord-events/ws?");
-    expect(url).toContain("subscribe=merge");
-    // The token is URL-encoded; the subscription name never is (it is a
-    // closed-set literal).
-    expect(url).toContain(`token=${encodeURIComponent("a b+c")}`);
-    // Never coord's own socket, never a caller-chosen glob.
-    expect(url).not.toContain("pattern=");
-    expect(url).not.toContain("9870");
-  });
-
-  it("coordEventsWsUrl carries the merge name (coord maps it to events.merge.*)", () => {
-    expect(coordEventsWsUrl("merge", "t")).toContain("subscribe=merge&token=t");
   });
 });
