@@ -130,7 +130,7 @@ export interface TenantSettingsResponse {
    * `2026-10-13-coord-expedited-land-lever-for-agents` §6, Phase 1b), as
    * stored in `coord.tenant_merge_settings`.
    *   - ABSENT  → this coord build does not carry the dials (the PATCH would
-   *               400 on them, `deny_unknown_fields`) — see `expediteSupported`;
+   *               400 on them, `deny_unknown_fields`) — see `expediteReadState`;
    *   - `null`  → coord could NOT read them: UNKNOWN, never "inheriting";
    *   - object  → each field's `null` = column NULL = inheriting.
    */

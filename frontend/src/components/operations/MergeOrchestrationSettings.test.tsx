@@ -2133,6 +2133,34 @@ describe("<MergeOrchestrationSettings> expedited-land dials", () => {
     expect("expedite_review_arm" in body).toBe(false);
   });
 
+  it("never re-sends a saved expedite edit when the dials stay unreadable", async () => {
+    renderWith(null);
+    const land = (await screen.findByTestId(
+      "settings-expedited-land"
+    )) as HTMLSelectElement;
+    fireEvent.change(land, { target: { value: "off" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    expect(patchBodies()[0].body.expedited_land).toBe("off");
+    // The reload hands back the same `null`: the control is UNKNOWN again,
+    // not the value just typed.
+    await waitFor(() => expect(land.value).toBe("unknown"));
+
+    // An unrelated save must not carry the consumed edit.
+    fireEvent.change(el("settings-min-green-dwell"), {
+      target: { value: "90" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    await waitFor(() => expect(patchBodies()).toHaveLength(2));
+    const second = patchBodies()[1].body;
+    expect(second.min_green_dwell_secs).toBe(90);
+    for (const k of EXPEDITE_KEYS) expect(k in second).toBe(false);
+  });
+
   it("disables the dials, says why, and sends no key on an older coord build", async () => {
     renderWith("absent");
     const land = await screen.findByTestId("settings-expedited-land");

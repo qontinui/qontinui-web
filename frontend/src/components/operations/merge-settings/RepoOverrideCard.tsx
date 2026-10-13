@@ -229,7 +229,8 @@ export function RepoOverrideCard({
    */
   const seedExpedite = useCallback(
     (dials: ExpediteDials | null | undefined, keep: ReadonlySet<string>) => {
-      if (!dials) return;
+      // Unreadable: the fields not being kept go back to UNKNOWN, so a value
+      // the operator typed is never displayed as if coord had stored it.
       const f = expediteFieldsFrom(dials);
       setExpedite((prev) => {
         const next = { ...prev };
@@ -240,7 +241,7 @@ export function RepoOverrideCard({
         }
         return next;
       });
-      setExpediteSeeded(true);
+      setExpediteSeeded(Boolean(dials));
     },
     []
   );
@@ -407,7 +408,8 @@ export function RepoOverrideCard({
       onSaved();
     } catch (err) {
       log.warn("save repo profile failed", err);
-      setError(httpFailureText(err, { withBody: false }));
+      // A 422 is coord naming the refused dial (`dial_value_invalid`): show it.
+      setError(httpFailureText(err, { withBody: httpStatusOf(err) === 422 }));
     } finally {
       savingRef.current = false;
       editedDuringSaveRef.current = new Set();
