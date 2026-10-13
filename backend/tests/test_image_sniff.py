@@ -196,7 +196,9 @@ def test_the_accepted_formats_are_the_mime_types_the_table_allows() -> None:
 # ── orientation: the stored size is the DISPLAYED size ──────────────────
 
 
-def _with_orientation(fmt: str, size: tuple[int, int], orientation: int) -> bytes:
+def with_orientation(fmt: str, size: tuple[int, int], orientation: int) -> bytes:
+    """A real ``size`` image encoded as ``fmt`` whose EXIF declares
+    ``orientation`` (tag 0x0112)."""
     exif = Image.Exif()
     exif[0x0112] = orientation
     buf = io.BytesIO()
@@ -208,7 +210,7 @@ def _with_orientation(fmt: str, size: tuple[int, int], orientation: int) -> byte
 def test_a_quarter_turn_orientation_exchanges_width_and_height(fmt: str) -> None:
     """The review's case: a 40×20 JPEG tagged orientation 6 is shown 20×40
     by every browser, so 20×40 is what the store records."""
-    data = _with_orientation(fmt, (40, 20), 6)
+    data = with_orientation(fmt, (40, 20), 6)
     with Image.open(io.BytesIO(data)) as probe:
         shown = ImageOps.exif_transpose(probe).size
     sniffed = sniff_image(data)
@@ -232,7 +234,7 @@ def test_a_quarter_turn_orientation_exchanges_width_and_height(fmt: str) -> None
 def test_every_orientation_maps_to_its_displayed_size(
     orientation: int, size: tuple[int, int]
 ) -> None:
-    sniffed = sniff_image(_with_orientation("JPEG", (40, 20), orientation))
+    sniffed = sniff_image(with_orientation("JPEG", (40, 20), orientation))
     assert (sniffed.width, sniffed.height) == size
     assert sniffed.orientation == orientation
 
@@ -240,7 +242,7 @@ def test_every_orientation_maps_to_its_displayed_size(
 def test_no_orientation_and_an_impossible_one_are_both_none() -> None:
     plain = sniff_image(encode("JPEG", (40, 20)))
     assert plain.orientation is None and (plain.width, plain.height) == (40, 20)
-    bogus = sniff_image(_with_orientation("JPEG", (40, 20), 9))
+    bogus = sniff_image(with_orientation("JPEG", (40, 20), 9))
     assert bogus.orientation is None and (bogus.width, bogus.height) == (40, 20)
 
 
@@ -253,7 +255,7 @@ def test_reading_the_orientation_decodes_nothing(
 
     # Encoding the fixtures loads pixels; only the SNIFF must not.
     fixtures = {
-        fmt: _with_orientation(fmt, (40, 20), 6)
+        fmt: with_orientation(fmt, (40, 20), 6)
         for fmt in ("JPEG", "PNG", "WEBP", "AVIF")
     }
 
