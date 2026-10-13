@@ -501,6 +501,7 @@ class TestFiles:
         response = await _upload(admin, "big.pdf", PDF)
         assert response.status_code == 413
         assert response.json()["detail"]["error"] == "file_too_large"
+        assert response.json()["detail"]["max_bytes"] == 16
         assert (await admin.get(f"{API}/files")).json()["items"] == []
 
     async def test_the_project_quota_is_enforced(
@@ -513,6 +514,7 @@ class TestFiles:
         full = await _upload(admin, "two.pdf", PDF)
         assert full.status_code == 413
         assert full.json()["detail"]["error"] == "project_storage_full"
+        assert full.json()["detail"]["max_bytes"] == len(PDF) + 10
 
     async def test_a_path_in_the_filename_is_dropped(
         self, admin: httpx.AsyncClient

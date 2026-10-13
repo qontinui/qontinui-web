@@ -242,6 +242,34 @@ def image_upload_as_a_device(monkeypatch: pytest.MonkeyPatch) -> Iterator[FastAP
         app.dependency_overrides.update(saved)
 
 
+@pytest.mark.parametrize("refusal", ["_too_large", "_storage_full"])
+async def test_the_overview_uploads_own_413s_have_the_same_shape(refusal: str) -> None:
+    """The overview upload also refuses on its own — a file past the per-file
+    cap, a project past its storage — and the app's handler renders those
+    413s in the one shape, ``max_bytes`` included."""
+    from starlette.requests import Request
+
+    from app.middleware.error_handler import http_exception_handler
+    from app.overview import files
+
+    exc = getattr(files, refusal)()
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "http",
+            "server": ("test", 80),
+            "path": "/api/v1/overview/files",
+            "root_path": "",
+            "query_string": b"",
+            "headers": [],
+        }
+    )
+    response = await http_exception_handler(request, exc)
+    assert response.status_code == 413
+    assert set(json.loads(bytes(response.body))) == REFUSAL_KEYS
+
+
 async def test_the_routes_own_413_has_the_same_shape(
     image_upload_as_a_device: FastAPI,
 ) -> None:
