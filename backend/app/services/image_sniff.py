@@ -8,12 +8,18 @@ to that one format's parser, must then read the same format's header and its
 dimensions. A file whose signature claims a format its header does not bear
 out is refused as unreadable.
 
-Nothing here DECODES pixels: ``Image.open`` reads the header, the frame count
+Nothing here DECODES pixels: ``Image.open`` reads the header; the frame count
 comes from the container (a GIF's is counted by walking its frame headers,
-which skips the image data), and the EXIF orientation from the metadata the
-header carries. So a sniff costs about the same on a 1×1 image as on a
-9000×9000 one, and the pixel bound below is checked before any consumer
-decodes anything.
+which skips the image data); a GIF's frame extents come from those same
+headers, and a multi-picture JPEG's picture sizes from each picture's own
+header; the EXIF orientation comes from the metadata the header carries. So a
+sniff costs about the same on a 1×1 image as on a 9000×9000 one (it grows only
+with the number of frames a GIF or a multi-picture JPEG holds), and the pixel
+bound below is checked before any consumer decodes anything.
+
+A file that cannot be read this way is refused as ``image_unreadable``,
+whatever Pillow — or a codec beneath it — raises while opening it and walking
+its frames: a malformed upload is the client's 422, never a 500.
 
 Accepted: PNG, JPEG, GIF, WebP and AVIF — the raster formats the image
 pipeline produces (generated candidates, AVIF/WebP derivatives, captures) and
@@ -25,11 +31,12 @@ an embedding model can read, and no consumer of this store uploads one.
 from __future__ import annotations
 
 import io
+import struct
 import warnings
 from dataclasses import dataclass
 from typing import Final
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 
 @dataclass(frozen=True)
@@ -52,15 +59,25 @@ AVIF: Final = ImageFormat("AVIF", "image/avif", ".avif")
 #: ``tests/test_image_sniff.py`` holds the two equal.
 ACCEPTED_FORMATS: Final[tuple[ImageFormat, ...]] = (PNG, JPEG, GIF, WEBP, AVIF)
 
-#: The largest TOTAL pixel count accepted: width × height summed over every
-#: frame, because a reader that decodes an animated image decodes each frame.
-#: The value is Pillow's default decompression-bomb threshold
-#: (``Image.MAX_IMAGE_PIXELS``), so decoding every frame of an accepted image
-#: produces at most this many pixels, and no single frame of it can trip a
-#: default Pillow's DecompressionBombWarning. Neither the byte cap nor a
-#: per-frame bound is enough: a few hundred bytes of PNG can declare a
-#: 10 000 × 10 000 canvas, and a 150 KB animated WebP can declare 3 000 frames
-#: of 9 000 × 9 000 — 243 billion pixels, each frame under a per-frame bound.
+#: The largest number of pixels a decoder may have to produce: the CANVAS it
+#: decodes onto × the number of frames, because a reader that decodes an
+#: animation decodes every frame onto that canvas. The canvas is the declared
+#: image size, except where a frame can be larger:
+#:
+#: * a GIF frame may overhang the logical screen, and a decoder (Pillow, a
+#:   browser) grows its canvas to cover it — so a GIF's canvas is the screen
+#:   grown to the largest extent, ``max(left + width)`` × ``max(top +
+#:   height)``, over every frame;
+#: * each picture of a multi-picture JPEG has its own size — so its canvas is
+#:   the largest width × the largest height among them.
+#:
+#: (An APNG frame outside its canvas is refused by Pillow, and a WebP one by
+#: libwebp's demuxer, so theirs is the declared size.) The value is Pillow's
+#: default decompression-bomb threshold (``Image.MAX_IMAGE_PIXELS``). Neither
+#: the byte cap nor a per-frame bound is enough: a few hundred bytes of PNG can
+#: declare a 10 000 × 10 000 canvas; a 150 KB animated WebP can declare 3 000
+#: frames of 9 000 × 9 000 — 243 billion pixels, each frame under a per-frame
+#: bound; and a GIF with a 10 × 10 screen can carry a 12 000 × 12 000 frame.
 MAX_IMAGE_PIXELS: Final = 89_478_485
 
 #: Brands of an ISO-BMFF ``ftyp`` box that make the file AVIF (still or
@@ -170,13 +187,73 @@ def _orientation(image: Image.Image) -> int | None:
     return value if isinstance(value, int) and 1 <= value <= 8 else None
 
 
+def _gif_canvas(data: bytes) -> tuple[int, int]:
+    """The canvas a GIF decoder allocates: the logical screen, grown to cover
+    every frame's extent (left + width, top + height) — what Pillow does, and
+    what a browser does, when a frame overhangs the screen.
+
+    Read from the block structure the way Pillow walks it — an extension or a
+    frame's image data is skipped sub-block by sub-block, and any other byte
+    is skipped on its own — so nothing is decoded. ``ValueError`` when the
+    file cuts a frame's descriptor off.
+    """
+    if len(data) < 13:
+        raise ValueError("the GIF logical screen descriptor is cut off")
+    width, height, flags = struct.unpack_from("<HHB", data, 6)
+    end = len(data)
+    pos = 13 + ((3 << ((flags & 7) + 1)) if flags & 0x80 else 0)
+
+    def past_sub_blocks(at: int) -> int:
+        while at < end:
+            size = data[at]
+            at += 1 + size
+            if size == 0:
+                break
+        return at
+
+    while pos < end:
+        introducer = data[pos]
+        pos += 1
+        if introducer == 0x3B:  # trailer
+            break
+        if introducer == 0x21:  # extension: its label, then its sub-blocks
+            pos = past_sub_blocks(pos + 1)
+        elif introducer == 0x2C:  # a frame's image descriptor
+            if pos + 9 > end:
+                raise ValueError("a GIF image descriptor is cut off")
+            left, top, frame_w, frame_h, frame_flags = struct.unpack_from(
+                "<HHHHB", data, pos
+            )
+            width, height = max(width, left + frame_w), max(height, top + frame_h)
+            pos += 9
+            if frame_flags & 0x80:  # a local color table
+                pos += 3 << ((frame_flags & 7) + 1)
+            pos = past_sub_blocks(pos + 1)  # the LZW code size, then the data
+    return width, height
+
+
+def _largest_picture(
+    image: Image.Image, width: int, height: int, pictures: int
+) -> tuple[int, int]:
+    """The largest width and the largest height among a multi-picture JPEG's
+    pictures, each read from that picture's own header (Pillow's ``seek`` on
+    an MPO parses the picture's JPEG markers; it decodes nothing). Stops once
+    the bound is already exceeded."""
+    for index in range(1, pictures):
+        image.seek(index)
+        width, height = max(width, image.size[0]), max(height, image.size[1])
+        if width * height * pictures > MAX_IMAGE_PIXELS:
+            break
+    return width, height
+
+
 def sniff_image(data: bytes) -> SniffedImage:
     """Identify ``data`` as one accepted image, or raise :class:`ImageRefused`.
 
     Codes: ``image_empty``, ``image_unsupported_format`` (no accepted
     signature), ``image_unreadable`` (a signature its header does not bear
-    out), ``image_too_many_pixels`` (above :data:`MAX_IMAGE_PIXELS` across
-    all frames).
+    out, or a file that cannot be opened and its frames walked),
+    ``image_too_many_pixels`` (above :data:`MAX_IMAGE_PIXELS`: canvas × frames).
     """
     if not data:
         raise ImageRefused("image_empty", "The upload holds no bytes.")
@@ -195,21 +272,31 @@ def sniff_image(data: bytes) -> SniffedImage:
             # refusal; Pillow's own warning would only duplicate it.
             warnings.simplefilter("ignore", Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(data), formats=[fmt.pillow_name]) as image:
-                pillow_format = _PILLOW_FORMAT_ALIASES.get(
-                    image.format or "", image.format
-                )
+                raw_format = image.format or ""
+                pillow_format = _PILLOW_FORMAT_ALIASES.get(raw_format, raw_format)
                 width, height = image.size
                 frames = int(getattr(image, "n_frames", 1))
+                # Read before any seek below: it is the first picture's.
                 orientation = _orientation(image)
+                if raw_format == "GIF":
+                    canvas = _gif_canvas(data)
+                elif raw_format == "MPO" and frames > 1:
+                    canvas = _largest_picture(image, width, height, frames)
+                else:
+                    canvas = (width, height)
     except Image.DecompressionBombError as exc:
         raise ImageRefused(
             "image_too_many_pixels",
             f"The image declares more than {MAX_IMAGE_PIXELS} pixels.",
         ) from exc
-    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, EOFError) as exc:
-        # Pillow raises SyntaxError for some malformed headers (a PNG chunk
-        # it cannot parse), OSError / ValueError for truncated ones, and
-        # EOFError for a frame table that ends early.
+    except Exception as exc:
+        # Whatever else opening the file and walking its frames raises, the
+        # bytes are not a readable image of the format their signature claims.
+        # Pillow raises SyntaxError, OSError, ValueError and EOFError for the
+        # malformed headers it anticipates — and, for the ones it does not,
+        # whatever its parser hits: IndexError and struct.error from a GIF
+        # frame walk over a cut-off file, RuntimeError from libavif ("Not
+        # implemented"). None of that is a server fault.
         raise ImageRefused(
             "image_unreadable",
             f"The bytes carry a {fmt.mime_type} signature but no readable "
@@ -227,12 +314,16 @@ def sniff_image(data: bytes) -> SniffedImage:
             "image_unreadable",
             f"The header declares a {width}×{height} image of {frames} frame(s).",
         )
-    total = width * height * frames
+    canvas_w, canvas_h = canvas
+    total = canvas_w * canvas_h * frames
     if total > MAX_IMAGE_PIXELS:
+        shape = f"{width}×{height}"
+        if (canvas_w, canvas_h) != (width, height):
+            shape += f", decoded onto a {canvas_w}×{canvas_h} canvas,"
         raise ImageRefused(
             "image_too_many_pixels",
-            f"The image is {width}×{height} × {frames} frame(s) ({total} pixels "
-            f"to decode); at most {MAX_IMAGE_PIXELS} are accepted.",
+            f"The image is {shape} × {frames} frame(s) ({total} pixels to "
+            f"decode); at most {MAX_IMAGE_PIXELS} are accepted.",
         )
     if orientation in _QUARTER_TURN_ORIENTATIONS:
         width, height = height, width

@@ -326,3 +326,276 @@ def test_an_animation_within_the_bound_is_accepted() -> None:
         )
         sniffed = sniff_image(buf.getvalue())
         assert (sniffed.width, sniffed.height, sniffed.frames) == (64, 48, 5), fmt
+
+
+# ── a GIF is bounded by its largest frame extent, not its screen ────────
+
+
+def _lzw_one_pixel() -> bytes:
+    """A frame's image data: LZW code size 2, then one sub-block holding the
+    codes clear (4), 0, end (5) — one pixel, whatever size the frame claims."""
+    codes = 4 | (0 << 3) | (5 << 6)
+    return bytes([2, 2, codes & 0xFF, codes >> 8, 0])
+
+
+def gif_with_frames(
+    screen: tuple[int, int], frames: list[tuple[int, int, int, int]]
+) -> bytes:
+    """A GIF whose logical screen is ``screen`` and whose frames are
+    ``(left, top, width, height)`` — each frame's data one pixel, so a frame
+    can CLAIM any extent in a few bytes."""
+    out = bytearray(b"GIF89a" + struct.pack("<HHBBB", *screen, 0x80, 0, 0))
+    out += b"\x00\x00\x00\xff\xff\xff"  # a 2-color global color table
+    for left, top, width, height in frames:
+        out += b"\x21\xf9\x04\x00\x0a\x00\x00\x00"  # graphic control extension
+        out += b"\x2c" + struct.pack("<HHHHB", left, top, width, height, 0)
+        out += _lzw_one_pixel()
+    return bytes(out + b"\x3b")
+
+
+def test_a_gif_frame_larger_than_the_screen_counts_at_its_extent() -> None:
+    """The review's case: a 10×10 screen whose second frame is 12 000 ×
+    12 000. Pillow grows its canvas to that frame (and so does a browser),
+    so 2 × 144 M pixels are decoded; the screen alone would pass."""
+    data = gif_with_frames((10, 10), [(0, 0, 1, 1), (0, 0, 12000, 12000)])
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(data)
+    assert excinfo.value.code == "image_too_many_pixels"
+    assert "12000×12000 canvas" in excinfo.value.message
+    assert "2 frame" in excinfo.value.message
+
+
+def test_a_gif_frame_offset_past_the_screen_counts_too() -> None:
+    """The extent is left + width and top + height: a 10×10 frame placed at
+    (9 990, 9 990) makes a 10 000 × 10 000 canvas."""
+    data = gif_with_frames((10, 10), [(0, 0, 1, 1), (9990, 9990, 10, 10)])
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(data)
+    assert excinfo.value.code == "image_too_many_pixels"
+    assert "10000×10000 canvas" in excinfo.value.message
+
+
+def test_an_overhang_within_the_bound_is_accepted_at_its_screen_size() -> None:
+    """2 frames on a 6 000² canvas (72 M) pass, and the record keeps the size
+    Pillow opens the file at — the screen — not the canvas."""
+    data = gif_with_frames((10, 10), [(0, 0, 1, 1), (5990, 5990, 10, 10)])
+    sniffed = sniff_image(data)
+    assert (sniffed.width, sniffed.height, sniffed.frames) == (10, 10, 2)
+
+
+def test_the_gif_canvas_is_the_one_pillow_grows_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The walk agrees with the decoder it bounds: Pillow, decoding every
+    frame, ends on the canvas the walk computed. (Each frame here holds one
+    pixel of data for a larger claimed extent, so Pillow is told to decode
+    what is there.)"""
+    from app.services.image_sniff import _gif_canvas
+
+    monkeypatch.setattr(ImageFile, "LOAD_TRUNCATED_IMAGES", True)
+    data = gif_with_frames(
+        (10, 10), [(0, 0, 1, 1), (30, 2, 5, 5), (1, 40, 4, 3), (0, 0, 2, 2)]
+    )
+    with Image.open(io.BytesIO(data)) as image:
+        for index in range(image.n_frames):
+            image.seek(index)
+            image.load()
+        decoded = image.size
+    assert _gif_canvas(data) == decoded == (35, 43)
+
+
+# ── a multi-picture JPEG is bounded by its largest picture ──────────────
+
+
+def mpo_claiming(second: tuple[int, int]) -> bytes:
+    """A two-picture MPO whose first picture is 8×8 and whose second
+    picture's header CLAIMS ``second`` (its SOF0 rewritten in place; the
+    picture's data stays 8×8's)."""
+    pictures = [Image.new("RGB", (8, 8), (i * 90, 30, 60)) for i in range(2)]
+    buf = io.BytesIO()
+    pictures[0].save(buf, format="MPO", save_all=True, append_images=pictures[1:])
+    data = bytearray(buf.getvalue())
+    first_sof = data.find(b"\xff\xc0")
+    second_sof = data.find(b"\xff\xc0", first_sof + 2)
+    assert first_sof > 0 and second_sof > first_sof, "expected one SOF0 per picture"
+    width, height = second
+    data[second_sof + 5 : second_sof + 9] = struct.pack(">HH", height, width)
+    return bytes(data)
+
+
+def test_a_multi_picture_jpeg_counts_its_largest_picture() -> None:
+    """A browser shows the first picture, but a reader walking the frames
+    decodes every picture at its own size: an 8×8 picture in front of a
+    9 500 × 9 500 one (90 M pixels) is refused."""
+    with Image.open(io.BytesIO(mpo_claiming((9500, 9500)))) as probe:
+        probe.seek(1)
+        assert probe.size == (9500, 9500)  # the claim reaches the decoder
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(mpo_claiming((9500, 9500)))
+    assert excinfo.value.code == "image_too_many_pixels"
+    assert "9500×9500 canvas" in excinfo.value.message
+    accepted = sniff_image(mpo_claiming((6000, 6000)))  # 2 × 36 M = 72 M
+    assert (accepted.format, accepted.width, accepted.height) == (JPEG, 8, 8)
+    assert accepted.frames == 2
+
+
+def test_walking_frames_for_the_bound_decodes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixtures = {
+        "gif": gif_with_frames((10, 10), [(0, 0, 1, 1), (5990, 5990, 10, 10)]),
+        "mpo": mpo_claiming((6000, 6000)),
+    }
+
+    def refuse_decode(self: Image.Image) -> None:
+        raise AssertionError("the sniffer decoded pixels")
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", refuse_decode)
+    monkeypatch.setattr(Image.Image, "load", refuse_decode)
+    for name, data in fixtures.items():
+        assert sniff_image(data).frames == 2, name
+
+
+# ── a malformed file is unreadable, whatever Pillow raises ──────────────
+
+
+def _gif_animation(frames: int = 4) -> bytes:
+    images = [
+        Image.new("RGB", (16, 12), ((i * 40) % 256, 90, 160)) for i in range(frames)
+    ]
+    buf = io.BytesIO()
+    images[0].save(
+        buf, format="GIF", save_all=True, append_images=images[1:], duration=50, loop=0
+    )
+    return buf.getvalue()
+
+
+def _second_frame_descriptor(data: bytes) -> int:
+    """The offset of the second frame's image descriptor (its 0x2C byte),
+    found by walking the blocks of a well-formed GIF."""
+    flags = data[10]
+    pos = 13 + ((3 << ((flags & 7) + 1)) if flags & 0x80 else 0)
+    seen = 0
+    while True:
+        introducer = data[pos]
+        if introducer == 0x2C:
+            seen += 1
+            if seen == 2:
+                return pos
+            frame_flags = data[pos + 9]
+            pos += 10 + ((3 << ((frame_flags & 7) + 1)) if frame_flags & 0x80 else 0)
+            pos += 1  # LZW code size
+        else:  # an extension: introducer, label
+            pos += 2
+        while data[pos]:  # sub-blocks up to the terminator
+            pos += 1 + data[pos]
+        pos += 1
+
+
+def test_a_gif_cut_inside_a_later_frame_descriptor_is_unreadable() -> None:
+    """Pillow's own frame walk raises struct.error on this file — the round-2
+    review measured that escape as a 500. It is a malformed upload: 422."""
+    data = _gif_animation()
+    cut = data[: _second_frame_descriptor(data) + 4]
+    with Image.open(io.BytesIO(cut)) as image, pytest.raises(struct.error):
+        image.n_frames  # noqa: B018 — the property walks the frames
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(cut)
+    assert excinfo.value.code == "image_unreadable"
+
+
+def test_a_gif_cut_before_a_later_frames_code_size_is_unreadable() -> None:
+    """Here Pillow's walk raises IndexError — the other GIF escape."""
+    data = _gif_animation()
+    descriptor = _second_frame_descriptor(data)
+    frame_flags = data[descriptor + 9]
+    palette = (3 << ((frame_flags & 7) + 1)) if frame_flags & 0x80 else 0
+    cut = data[: descriptor + 10 + palette]
+    with Image.open(io.BytesIO(cut)) as image, pytest.raises(IndexError):
+        image.n_frames  # noqa: B018 — the property walks the frames
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(cut)
+    assert excinfo.value.code == "image_unreadable"
+
+
+def test_an_avif_libavif_will_not_open_is_unreadable() -> None:
+    """An AVIF whose ``pixi`` box gives its channels different bit depths:
+    libavif answers "Not implemented", which Pillow raises as RuntimeError —
+    the AVIF escape the round-2 review measured."""
+    data = bytearray(encode("AVIF", (16, 12)))
+    at = data.find(b"pixi")
+    assert at > 0, "this encoder wrote no pixi box"
+    # size(4) 'pixi'(4) | version+flags(4) | channel count(1) | depth per channel
+    channels = data[at + 8]
+    assert channels >= 2
+    data[at + 10] = data[at + 9] + 2
+    with pytest.raises(RuntimeError):
+        Image.open(io.BytesIO(bytes(data)), formats=["AVIF"])
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(bytes(data))
+    assert excinfo.value.code == "image_unreadable"
+
+
+def _damaged_corpus() -> dict[str, list[bytes]]:
+    """A small deterministic corpus in the review's construction: animations
+    in every multi-frame format, cut at many lengths and with a few bytes
+    overwritten (seeded)."""
+    import random
+
+    def animated(fmt: str, **params: object) -> bytes:
+        frames = [
+            Image.new("RGB", (16, 12), ((i * 40) % 256, 90, 160)) for i in range(4)
+        ]
+        buf = io.BytesIO()
+        frames[0].save(
+            buf, format=fmt, save_all=True, append_images=frames[1:], **params
+        )
+        return buf.getvalue()
+
+    seeds = {
+        "GIF": animated("GIF", duration=50, loop=0),
+        "APNG": animated("PNG", duration=50),
+        "WEBP": animated("WEBP", lossless=True, duration=50),
+        "MPO": animated("MPO"),
+        # test_this_pillow_build_reads_avif holds the build to AVIF support.
+        "AVIF": animated("AVIF", duration=50),
+    }
+    rng = random.Random(1234)
+    corpus: dict[str, list[bytes]] = {}
+    for name, data in seeds.items():
+        cases = [data[:cut] for cut in range(1, len(data), 3)]
+        for _ in range(250):
+            damaged = bytearray(data)
+            for _ in range(rng.randint(1, 4)):
+                damaged[rng.randrange(6, len(damaged))] = rng.randrange(256)
+            cases.append(bytes(damaged))
+        corpus[name] = cases
+    return corpus
+
+
+def test_a_damaged_file_is_refused_never_raised() -> None:
+    """Every case either sniffs or is refused by name — and the corpus is
+    not vacuous: Pillow itself raises outside the exceptions it documents
+    (SyntaxError / OSError / ValueError / EOFError) on some of the GIF cases,
+    exactly the inputs that escaped as 500s before."""
+    anticipated = (SyntaxError, OSError, ValueError, EOFError)
+    escapes: list[str] = []
+    pillow_raises_unanticipated = 0
+    for name, cases in _damaged_corpus().items():
+        for data in cases:
+            try:
+                sniff_image(data)
+            except ImageRefused:
+                pass
+            except Exception as exc:  # noqa: BLE001 — the assertion's subject
+                escapes.append(f"{name}: {type(exc).__name__}: {exc}")
+            if name == "GIF":
+                try:
+                    with Image.open(io.BytesIO(data), formats=["GIF"]) as image:
+                        image.n_frames  # noqa: B018
+                except anticipated:
+                    pass
+                except Exception:  # noqa: BLE001
+                    pillow_raises_unanticipated += 1
+    assert escapes == []
+    assert pillow_raises_unanticipated > 0
