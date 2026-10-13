@@ -663,9 +663,12 @@ export const GROUPS: NavGroup[] = [
         // the `command_safety_rewrite` fleet-policy dial runners read at
         // spawn (plan
         // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`),
-        // and the `account_selection_mode` dial runners force-apply unless the
+        // the `account_selection_mode` dial runners force-apply unless the
         // machine is pinned (plan
-        // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`).
+        // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),
+        // and the `image_generation` dial Studio reads before each image
+        // request, with per-repo overrides (plan
+        // `2026-10-13-image-generation-and-visual-judgment`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,

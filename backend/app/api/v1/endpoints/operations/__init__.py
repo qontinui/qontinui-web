@@ -10350,16 +10350,37 @@ _FLEET_POLICY_CONTROL_KEYS = (
 )
 
 
+class FleetPolicyRepoOverride(BaseModel):
+    """One repo-band row that overrides the tenant band for its repo.
+
+    Mirrors one entry of coord's ``repo_overrides``
+    (``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a
+    reader of that repo resolves from the row: ``level``, or ``off`` when the
+    row's ``master_enabled`` is false. ``level`` is opaque here, as it is on
+    the write: a level this console does not recognise is the page's to name,
+    never this proxy's to drop.
+    """
+
+    #: The row's ``scope_key`` as coord stored it (``owner/name`` for the
+    #: domains keyed that way).
+    repo: str
+    level: str
+    master_enabled: bool
+    effective_level: str
+
+
 class FleetPolicyView(BaseModel):
     """The requested domain's resolved policy — and ONLY that domain's.
 
     ``effective_level`` is what a device actually resolves, which is not the
     same as the level that was last written: coord folds ``master_enabled``
     in (a disabled master resolves ``off`` whatever ``level`` says), and a
-    tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
-    That last case is why ``resolved_scope`` is surfaced: "off because nobody
-    ever wrote a row" and "off because someone turned it off" are different
-    facts about the fleet and the operator is entitled to tell them apart.
+    tenant with no row at all resolves the domain's declared no-row default
+    with ``resolved_scope: "none"`` — ``off`` unless coord's
+    ``domain_default_level`` declares another for that domain. That last case
+    is why ``resolved_scope`` is surfaced: "set because nobody ever wrote a
+    row" and "set because someone chose it" are different facts about the
+    fleet and the operator is entitled to tell them apart.
     """
 
     domain: str
@@ -10385,6 +10406,13 @@ class FleetPolicyView(BaseModel):
     #: caller asked about ``fleet_resources`` itself, so they are its own.
     #: ``None`` when coord sent none.
     keys_not_shown_source: Literal["fleet_resources_row", "this_domain"] | None = None
+    #: Every repo-band row of THIS domain that overrides the tenant band —
+    #: coord's ``repo_overrides``, ordered by repo. An ``inherit`` row clears an
+    #: override and is not listed. ``None`` is UNKNOWN, never "no overrides":
+    #: coord sent no list (a coord predating it), or sent one this proxy could
+    #: not read whole — a list missing one entry would claim to be complete
+    #: while hiding an override that is in force.
+    repo_overrides: list[FleetPolicyRepoOverride] | None = None
 
 
 class FleetPolicyPut(BaseModel):
@@ -10499,6 +10527,41 @@ class FleetPolicyWriteResult(BaseModel):
     readback_error: str | None = None
 
 
+def _fleet_policy_repo_overrides(raw: Any) -> list[FleetPolicyRepoOverride] | None:
+    """Coord's ``repo_overrides``, or ``None`` (UNKNOWN) unless it reads WHOLE.
+
+    All or nothing: one malformed entry makes the whole list unknown. A list
+    with that entry dropped would read as "these are every override", while an
+    override the operator cannot see is still in force for its repo.
+    """
+    if not isinstance(raw, list):
+        return None
+    overrides: list[FleetPolicyRepoOverride] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        repo = entry.get("repo")
+        level = entry.get("level")
+        master = entry.get("master_enabled")
+        effective = entry.get("effective_level")
+        if not (
+            isinstance(repo, str)
+            and isinstance(level, str)
+            and isinstance(master, bool)
+            and isinstance(effective, str)
+        ):
+            return None
+        overrides.append(
+            FleetPolicyRepoOverride(
+                repo=repo,
+                level=level,
+                master_enabled=master,
+                effective_level=effective,
+            )
+        )
+    return overrides
+
+
 def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPolicyView:
     """Project coord's GET body onto the requested domain's OWN fields."""
     body = payload if isinstance(payload, dict) else {}
@@ -10529,6 +10592,7 @@ def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPol
         can_edit=can_edit,
         keys_not_shown=not_shown,
         keys_not_shown_source=source,
+        repo_overrides=_fleet_policy_repo_overrides(body.get("repo_overrides")),
     )
 
 

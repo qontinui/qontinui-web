@@ -221,6 +221,13 @@ import {
   MODEL_ACCESS_AUTHOR_GLYPH_KINDS,
   MODEL_ACCESS_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/ci/_lib/ciModelAccessStatus";
+// Image generation's per-repo overrides (tenant policy) — plan
+// `2026-10-13-image-generation-and-visual-judgment` Phase 12.
+import {
+  IMAGE_GENERATION_ATTENTION_BY_KIND,
+  IMAGE_GENERATION_AUTHOR_GLYPH_KINDS,
+  IMAGE_GENERATION_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus";
 // Per-repo follow-up dials (agent registry) — plan
 // `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
 import {
@@ -666,6 +673,19 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: MODEL_ACCESS_BADGE_CLASS,
       authorGlyphKinds: MODEL_ACCESS_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- image generation's per-repo overrides (tenant policy) -------------
+  {
+    // A level in effect (`off` included) is a setting somebody chose, so
+    // calm; only a level this console cannot read is amber.
+    surface: "image generation repo overrides (/admin/coord/tenant-policy)",
+    module: "app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus.ts",
+    attentionByKind: IMAGE_GENERATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: IMAGE_GENERATION_BADGE_CLASS,
+      authorGlyphKinds:
+        IMAGE_GENERATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- per-repo follow-up dials (agent registry) -------------------------

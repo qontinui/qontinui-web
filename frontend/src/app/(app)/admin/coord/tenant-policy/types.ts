@@ -1,8 +1,8 @@
 /**
  * Level vocabularies for the tenant-policy page's fleet-policy dials (the
- * command-safety rewrite and the account-selection mode). The wire shapes —
- * the fleet-policy view and the transcript-sync consent proxy — live with
- * their client in `@/lib/api/operations/tenantPolicy`.
+ * command-safety rewrite, the account-selection mode and image generation).
+ * The wire shapes — the fleet-policy view and the transcript-sync consent
+ * proxy — live with their client in `@/lib/api/operations/tenantPolicy`.
  */
 
 // ──────────────────────── command-safety rewrite dial ────────────────────────
@@ -82,4 +82,66 @@ export function parseAccountSelectionLevel(
   return (ACCOUNT_SELECTION_LEVELS as readonly string[]).includes(level)
     ? (level as AccountSelectionLevel)
     : null;
+}
+
+// ───────────────────────────── image generation dial ─────────────────────────────
+
+/**
+ * The fleet-policy domain that switches image generation per tenant, with a
+ * per-repo override. Plan `2026-10-13-image-generation-and-visual-judgment`
+ * Phase 12 (D1.7: it ships on, with off-switches at tenant and machine scope).
+ *
+ * Studio reads it before each image request, naming the repo it is generating
+ * for (`GET /coord/fleet-policy?domain=image_generation&repo=<owner/name>`), so
+ * unlike the two dials above this one IS decided with a repo in hand — hence
+ * the per-repo overrides. coord's no-row default is `on`; its PUT refuses any
+ * level outside {@link IMAGE_GENERATION_LEVELS} (plus `inherit` on the repo
+ * band) and any repo key that is not `owner/name`.
+ */
+export const IMAGE_GENERATION_DOMAIN = "image_generation";
+
+export const IMAGE_GENERATION_LEVELS = ["on", "local_only", "off"] as const;
+export type ImageGenerationLevel = (typeof IMAGE_GENERATION_LEVELS)[number];
+
+/** coord's no-row default for the domain: what "nobody chose" resolves. */
+export const IMAGE_GENERATION_DEFAULT_LEVEL: ImageGenerationLevel = "on";
+
+/**
+ * What a repo override can be set to. `inherit` clears it, so the repo
+ * follows the tenant setting again (coord has no DELETE for a policy row).
+ */
+export const IMAGE_GENERATION_REPO_CHOICES = [
+  "inherit",
+  ...IMAGE_GENERATION_LEVELS,
+] as const;
+export type ImageGenerationRepoChoice =
+  (typeof IMAGE_GENERATION_REPO_CHOICES)[number];
+
+/**
+ * A served level, matched EXACTLY — coord stores a canonical spelling or
+ * refuses the write — or `null`: UNKNOWN, never a guessed level. A spelling
+ * coord would refuse today can still be served by a row written before its
+ * vocabulary existed, and guessing which level it meant is how a console
+ * starts showing "on" for a repo studio treats as something else.
+ */
+export function parseImageGenerationLevel(
+  raw: string | null | undefined
+): ImageGenerationLevel | null {
+  return typeof raw === "string" &&
+    (IMAGE_GENERATION_LEVELS as readonly string[]).includes(raw)
+    ? (raw as ImageGenerationLevel)
+    : null;
+}
+
+/**
+ * coord's rule for a repo-band key of this domain (`is_owner_name` in
+ * qontinui-coord `ci_hosting_policy.rs`): no whitespace, exactly one `/`, a
+ * non-empty owner and name. Checked here only so the console can say why a
+ * write would be refused before sending it; coord is the authority.
+ */
+export function isOwnerName(key: string): boolean {
+  if (/\s/.test(key)) return false;
+  const slash = key.indexOf("/");
+  if (slash <= 0 || slash === key.length - 1) return false;
+  return !key.slice(slash + 1).includes("/");
 }

@@ -45,7 +45,10 @@ export function describeWriteRefusal(err: unknown): string | null {
  * says why: every domain bound to it is decided before a session is scoped to
  * a repo). `github_hosted_ci` is different — a CI run belongs to a repo, so
  * plan `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` D4/D7
- * gives it repo overrides, keyed `owner/name`, with `inherit` clearing one.
+ * gives it repo overrides, keyed `owner/name`, with `inherit` clearing one —
+ * and so is `image_generation`, which studio reads naming the repo it is
+ * generating for (plan `2026-10-13-image-generation-and-visual-judgment`
+ * Phase 12).
  *
  * The same honesty properties as the tenant dial, per repo:
  *

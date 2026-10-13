@@ -22,7 +22,8 @@ function capitalise(s: string): string {
  * level, then read it back. Shared by every tenant-band dial in the console
  * (`plan_capture` and `citation_scope_backfill_write` on the plan library;
  * `policy_write` and `policy_upstream` on prompt documents;
- * `command_safety_rewrite` and `account_selection_mode` on tenant policy). Each domain's
+ * `command_safety_rewrite`, `account_selection_mode` and `image_generation` on
+ * tenant policy; `github_hosted_ci` on Dev Ops ▸ CI). Each domain's
  * hook binds `domain` + `label` and layers its own level vocabulary on top
  * (a no-row default, a fail-closed parse), so the honesty properties below are
  * stated and tested once rather than drifting between copies — the four used
@@ -55,7 +56,11 @@ function capitalise(s: string): string {
  *    mode on a machine that is not repo-scoped. A `repo` band would
  *    have no resolvable `scope_key` at the moment any of those decisions is
  *    made, so the hook offers no per-repo write. It still SHOWS the resolved band, because the band that won tells
- *    the operator whether this tenant's row is the one in force.
+ *    the operator whether this tenant's row is the one in force. The two
+ *    domains that ARE decided with a repo in hand — `github_hosted_ci` (a CI
+ *    run belongs to a repo) and `image_generation` (studio names the repo it is
+ *    generating for) — bind this hook for their TENANT band only, and write
+ *    their repo band through the sibling `useRepoFleetPolicyWrite`.
  *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
@@ -89,23 +94,31 @@ export function useTenantFleetPolicyDial<L extends string>(
   // in flight beside it would be silently discarded.
   const writeGeneration = useRef(0);
 
-  const load = useCallback(async () => {
+  /**
+   * Read the resolved value. Resolves `true` only when THIS read landed and is
+   * now what is shown — `false` when it failed, or when a write landed while it
+   * was in flight and it was discarded — so a caller can tell a confirmed read
+   * from a refresh that confirmed nothing.
+   */
+  const load = useCallback(async (): Promise<boolean> => {
     const generation = writeGeneration.current;
     try {
       setLoading(true);
       const view = await fetchFleetPolicy(domain);
-      if (generation !== writeGeneration.current) return;
+      if (generation !== writeGeneration.current) return false;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure. The
       // banner it drives says "the value above may be stale" — leaving it up
       // beside a value we just confirmed would be the opposite of honest.
       setLastWrite(null);
+      return true;
     } catch (err) {
-      if (generation !== writeGeneration.current) return;
+      if (generation !== writeGeneration.current) return false;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, `Failed to read the ${label} dial`));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -182,6 +195,7 @@ export function useTenantFleetPolicyDial<L extends string>(
     /** Set only when the last write's read-back failed. UNKNOWN, not "off". */
     readbackError: lastWrite?.readback_error ?? null,
     lastWrite,
+    /** Re-read; resolves `true` only when that read landed and is now shown. */
     reload: load,
     setLevel,
   };

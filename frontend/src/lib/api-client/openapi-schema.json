@@ -25168,8 +25168,37 @@
         "title": "FleetPolicyPut",
         "type": "object"
       },
+      "FleetPolicyRepoOverride": {
+        "description": "One repo-band row that overrides the tenant band for its repo.\n\nMirrors one entry of coord's ``repo_overrides``\n(``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a\nreader of that repo resolves from the row: ``level``, or ``off`` when the\nrow's ``master_enabled`` is false. ``level`` is opaque here, as it is on\nthe write: a level this console does not recognise is the page's to name,\nnever this proxy's to drop.",
+        "properties": {
+          "effective_level": {
+            "title": "Effective Level",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "master_enabled": {
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "level",
+          "master_enabled",
+          "effective_level"
+        ],
+        "title": "FleetPolicyRepoOverride",
+        "type": "object"
+      },
       "FleetPolicyView": {
-        "description": "The requested domain's resolved policy \u2014 and ONLY that domain's.\n\n``effective_level`` is what a device actually resolves, which is not the\nsame as the level that was last written: coord folds ``master_enabled``\nin (a disabled master resolves ``off`` whatever ``level`` says), and a\ntenant with no row at all resolves ``off`` / ``resolved_scope: \"none\"``.\nThat last case is why ``resolved_scope`` is surfaced: \"off because nobody\never wrote a row\" and \"off because someone turned it off\" are different\nfacts about the fleet and the operator is entitled to tell them apart.",
+        "description": "The requested domain's resolved policy \u2014 and ONLY that domain's.\n\n``effective_level`` is what a device actually resolves, which is not the\nsame as the level that was last written: coord folds ``master_enabled``\nin (a disabled master resolves ``off`` whatever ``level`` says), and a\ntenant with no row at all resolves the domain's declared no-row default\nwith ``resolved_scope: \"none\"`` \u2014 ``off`` unless coord's\n``domain_default_level`` declares another for that domain. That last case\nis why ``resolved_scope`` is surfaced: \"set because nobody ever wrote a\nrow\" and \"set because someone chose it\" are different facts about the\nfleet and the operator is entitled to tell them apart.",
         "properties": {
           "can_edit": {
             "title": "Can Edit",
@@ -25208,6 +25237,20 @@
           "master_enabled": {
             "title": "Master Enabled",
             "type": "boolean"
+          },
+          "repo_overrides": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FleetPolicyRepoOverride"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Overrides"
           },
           "resolved_scope": {
             "title": "Resolved Scope",
