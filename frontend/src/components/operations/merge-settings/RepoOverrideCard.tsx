@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   fetchRepoProfile,
@@ -409,7 +410,11 @@ export function RepoOverrideCard({
     } catch (err) {
       log.warn("save repo profile failed", err);
       // A 422 is coord naming the refused dial (`dial_value_invalid`): show it.
-      setError(httpFailureText(err, { withBody: httpStatusOf(err) === 422 }));
+      setError(
+        httpStatusOf(err) === 422
+          ? operationsErrorMessage(err)
+          : httpFailureText(err, { withBody: false })
+      );
     } finally {
       savingRef.current = false;
       editedDuringSaveRef.current = new Set();

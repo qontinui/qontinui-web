@@ -2205,6 +2205,31 @@ describe("<MergeOrchestrationSettings> expedited-land dials", () => {
     expect(patchBodies()).toEqual([]);
   });
 
+  it("shows coord's 422 dial refusal by its message, naming the field", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        const coordBody = JSON.stringify({
+          error: "dial_value_invalid",
+          field: "expedited_land",
+          message: "`expedited_land` must be one of on, shadow, off",
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: coordBody }), { status: 422 })
+        );
+      }
+      return Promise.resolve(route(url, init, STORED_TENANT, "absent", false));
+    });
+    render(<MergeOrchestrationSettings />);
+    const land = await screen.findByTestId("settings-expedited-land");
+    fireEvent.change(land, { target: { value: "off" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    expect(
+      await screen.findByText(/expedited_land/, { selector: "p" })
+    ).toBeInTheDocument();
+  });
+
   it("disables the dials, says why, and sends no key on an older coord build", async () => {
     renderWith("absent");
     const land = await screen.findByTestId("settings-expedited-land");
