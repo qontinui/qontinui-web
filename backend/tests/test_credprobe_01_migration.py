@@ -198,6 +198,9 @@ def test_credential_probe_specs_schema_roundtrip() -> None:
             canary_parameter=None,
         )
 
+        # The longest SSM name the charset CHECK admits (2048 chars).
+        _spec(engine, _tenant(engine), canary_parameter="/" + "a" * 2047)
+
         bad_specs: tuple[dict[str, object], ...] = (
             # D1 token grammar
             {"token": "cred:aws-ssm:eu-central-1:extra"},  # 4 segments
@@ -229,6 +232,7 @@ def test_credential_probe_specs_schema_roundtrip() -> None:
             {"canary_parameter": "/aws/credential"},
             {"canary_parameter": "has space"},
             {"canary_parameter": ""},
+            {"canary_parameter": "/" + "a" * 2048},  # 2049 chars, past the SSM name limit
             # audit
             {"updated_by": "   "},
         )
