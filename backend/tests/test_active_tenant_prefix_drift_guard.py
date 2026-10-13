@@ -320,6 +320,19 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
             }
         ),
     ),
+    "app.api.v1.endpoints.plan_library_followups": (
+        "names _soft_tenant_id only for POST /followups/reconcile (which reads "
+        "coord's land record); the anchor, resolution and match routes are "
+        "organization-scoped web-DB reads and writes of follow-up edges and "
+        "resolve no coord tenant",
+        frozenset(
+            {
+                "/api/v1/plan-library/edges/{edge_id}/anchors",
+                "/api/v1/plan-library/edges/{edge_id}/resolution",
+                "/api/v1/plan-library/followups/match",
+            }
+        ),
+    ),
     "app.api.v1.endpoints.plan_library": (
         "organization-scoped web-DB plan bodies; only candidates, "
         "reconciliation and by-id add the coord overlay; /vocabulary is a "

@@ -69,9 +69,9 @@ import { PenLine, Send } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
-import { prDraftStateUrl } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { setPrDraftState } from "@/lib/api/operations/prMerge";
 
 const log = createLogger("PrDraftStateControl");
 
@@ -172,18 +172,20 @@ export function PrDraftStateControl({
       const [ownerName, repoName] = owner;
       setBusy(true);
       try {
-        const res = await httpClient.fetch(
-          prDraftStateUrl(ownerName, repoName, prNumber),
-          { method: "POST", body: JSON.stringify({ draft }) }
-        );
-        if (!res.ok) {
-          const text = await res.text();
-          log.warn("draft-state action failed", res.status, text);
+        try {
+          await setPrDraftState(ownerName, repoName, prNumber, draft);
+        } catch (err) {
+          // A status rejection is the server's answer; anything else (a
+          // network failure) falls through to the `threw` arm below.
+          const status = httpStatusOf(err);
+          if (status === null) throw err;
+          const text = httpBodyOf(err) ?? "";
+          log.warn("draft-state action failed", status, text);
           toast.error(
             draft
               ? `Couldn't convert #${prNumber} to draft`
               : `Couldn't release #${prNumber}`,
-            { description: describeDraftStateError(res.status, text) }
+            { description: describeDraftStateError(status, text) }
           );
           return;
         }

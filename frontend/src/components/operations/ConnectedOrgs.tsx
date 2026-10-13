@@ -52,80 +52,35 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, CheckCircle2 } from "lucide-react";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { absoluteTime } from "@/components/console/time";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  enrollInstallation,
+  fetchOnboardingAccounts,
+  restoreRepo,
+  type AccountRepo,
+  type ConnectedAccount,
+  type MergePosture,
+} from "@/lib/api/operations/prMergeOnboarding";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
-
-// Same relative base the OnboardingDoctor uses (Next.js proxies /api to the
-// web backend, which forwards to coord with the operator's bearer).
-const API = "/api/v1/operations";
 
 // Poll cadence after a 202 enroll-spawn: coord enrolls off-connection, so we
 // re-pull the accounts list until this row's repos appear. 3s × 20 ≈ 60s cap.
 const ENROLL_POLL_INTERVAL_MS = 3000;
 const ENROLL_POLL_MAX_ATTEMPTS = 20;
 
-// ----------------------------------------------------------------------------
-// Wire types — coord-owned contract (GET /coord/onboarding/github-accounts).
-// `repos` may be []. Fields marked "older coord" are absent/null on a coord
-// that predates plan 2026-09-05 P2/P3, and every reader here tolerates that.
-// ----------------------------------------------------------------------------
-
 /**
- * The tier that decided a repo's resolved merge posture, in coord's own
- * arm order (the onboarding doctor's): the tenant-wide pause dominates, then
- * the explicit per-repo pin, then an explicit `auto_merge_enabled = false`,
- * else the enabled default.
+ * Coord's error body from a rejected enroll/restore, as the card always read
+ * it: the JSON object, or `{}` when the body is not JSON.
  */
-export type MergePosture =
-  | "default"
-  | "pinned_on"
-  | "pinned_off"
-  | "tenant_paused"
-  | "auto_merge_off";
-
-interface AccountRepo {
-  repo: string;
-  /**
-   * `"enrolled"` — a live `tenant_repos` row. `"unenrolled"` — only the
-   * un-enrollment tombstone remains; the installation enroll skips this repo
-   * until it is restored. Absent on an older coord, which lists enrolled rows
-   * only, so absent reads as enrolled.
-   */
-  state?: "enrolled" | "unenrolled";
-  /**
-   * The RAW per-repo enablement pin: `true`/`false` = explicitly pinned,
-   * `null` = inheriting the enabled default. NOT the resolved verdict — the
-   * tenant-wide `merge_paused` pause dominates it and is not folded in here;
-   * `merge_enabled_resolved` is. Replaced `rollout_state` when plan
-   * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`
-   * Phase 5 dropped that column.
-   */
-  merge_enabled: boolean | null;
-  /**
-   * The RESOLVED verdict, computed coord-side by `resolve_merge_enabled`
-   * (pause → pin → default) AND-ed with the tenant's `auto_merge_enabled` —
-   * the same conjunction the doctor and `EffectiveProfile::merge_permitted`
-   * apply. `null` on an un-enrolled row or an older coord.
-   */
-  merge_enabled_resolved?: boolean | null;
-  /** The tier that decided `merge_enabled_resolved`. `null` = older coord. */
-  merge_posture?: MergePosture | null;
-  profile_source: string | null;
-  /** Tombstone fields — set only when `state === "unenrolled"`. */
-  unenrolled_at?: string | null;
-  unenrolled_by?: string | null;
-  unenroll_reason?: string | null;
-}
-
-interface ConnectedAccount {
-  account_login: string;
-  account_type: string;
-  installation_id: number;
-  repos: AccountRepo[];
-}
-
-interface AccountsResponse {
-  accounts: ConnectedAccount[];
+function rejectionBody(err: unknown): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(httpBodyOf(err) ?? "");
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 /** The always-present posture label per tier; `null`/absent = older coord. */
@@ -326,25 +281,20 @@ function AccountRow({
     setEnrollMsg("Enrolling repositories…");
 
     try {
-      const res = await httpClient.fetch(
-        `${API}/pr-merge/onboarding/installations/${account.installation_id}/enroll`,
-        { method: "POST", maxRetries: 0 }
-      );
-
-      if (res.status === 202 || res.ok) {
-        startPoll("enroll");
+      // A 2xx (coord answers 202) means the enroll was spawned.
+      await enrollInstallation(account.installation_id);
+      startPoll("enroll");
+    } catch (err) {
+      setEnrolling(false);
+      setEnrollMsg(null);
+      const status = httpStatusOf(err);
+      if (status === null) {
+        setEnrollError("Enrollment failed — please try again.");
         return;
       }
-
       // Non-ok: read coord's error code and map to copy.
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setEnrolling(false);
-      setEnrollMsg(null);
-      setEnrollError(enrollErrorMessage(res.status, body.error));
-    } catch {
-      setEnrolling(false);
-      setEnrollMsg(null);
-      setEnrollError("Enrollment failed — please try again.");
+      const body = rejectionBody(err) as { error?: string };
+      setEnrollError(enrollErrorMessage(status, body.error));
     }
   }, [
     account.installation_id,
@@ -365,28 +315,22 @@ function AccountRow({
       setEnrollMsg(`Re-enrolling ${repo}…`);
 
       try {
-        const res = await httpClient.fetch(
-          `${API}/pr-merge/onboarding/repos/${repo}/restore`,
-          { method: "POST", maxRetries: 0 }
-        );
-
-        if (res.status === 202 || res.ok) {
-          startPoll("restore");
+        await restoreRepo(repo);
+        startPoll("restore");
+      } catch (err) {
+        setRestoring(null);
+        setEnrollMsg(null);
+        const status = httpStatusOf(err);
+        if (status === null) {
+          setEnrollError("Re-enroll failed — please try again.");
           return;
         }
-
-        const body = (await res.json().catch(() => ({}))) as {
+        const body = rejectionBody(err) as {
           error?: string;
           owner?: string;
           restored?: boolean;
         };
-        setRestoring(null);
-        setEnrollMsg(null);
-        setEnrollError(restoreErrorMessage(res.status, body));
-      } catch {
-        setRestoring(null);
-        setEnrollMsg(null);
-        setEnrollError("Re-enroll failed — please try again.");
+        setEnrollError(restoreErrorMessage(status, body));
       }
     },
     [enrolling, restoring, enrolledRepos.length, clearPoll, startPoll]
@@ -557,8 +501,7 @@ export function ConnectedOrgs() {
 
   const refetch = useCallback(async (polled = false) => {
     try {
-      const body = await httpClient.get<AccountsResponse>(
-        `${API}/pr-merge/onboarding/accounts`,
+      const body = await fetchOnboardingAccounts(
         polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       setAccounts(body.accounts ?? []);

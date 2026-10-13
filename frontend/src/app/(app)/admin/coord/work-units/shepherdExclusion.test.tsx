@@ -23,6 +23,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
+/** Every `httpClient.fetch` call as sent — URL plus the full request init. */
+const fetchSpy = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
@@ -35,18 +37,33 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true }),
 }));
 
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
+vi.mock("@/services/service-factory", async () => {
+  // The plan reads go through `httpClient.fetch` (the typed /operations
+  // client); `fetchViaVerbMocks` routes them through the same `get` mock,
+  // and `fetchSpy` keeps the init the adapter drops.
+  const { fetchViaVerbMocks } = await import("@/test/verbFetch");
+  const verbs = {
     get: (...args: unknown[]) => get(...args),
     post: vi.fn(),
-  },
-}));
+  };
+  const viaVerbs = fetchViaVerbMocks(verbs);
+  return {
+    httpClient: {
+      ...verbs,
+      fetch: (url: string, init?: RequestInit) => {
+        fetchSpy(url, init);
+        return viaVerbs(url, init);
+      },
+    },
+  };
+});
 
 import CoordWorkUnitsListPage from "./page";
 import CoordSpawnPage from "../spawn/page";
 
 beforeEach(() => {
   get.mockReset();
+  fetchSpy.mockReset();
   get.mockResolvedValue({ work_units: [] });
 });
 
@@ -67,7 +84,7 @@ describe("/admin/coord/spawn excludes shepherd rows", () => {
     await waitFor(() => expect(get).toHaveBeenCalled());
     // The second argument is the dashboard poll's no-retry option
     // (`COORD_DASHBOARD_POLL_OPTIONS`), which this page now passes.
-    expect(get).toHaveBeenCalledWith(
+    expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining("exclude_slug_prefix=shepherd-"),
       expect.objectContaining({ maxRetries: 0 })
     );

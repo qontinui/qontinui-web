@@ -1,20 +1,22 @@
 /**
- * Runner releases service — the runner-publishing (GitHub Releases) surface of
+ * `/operations/releases` — the runner-publishing (GitHub Releases) surface of
  * coord's Ξ_Release sub-space, for the `/admin/coord/releases` dashboard.
  *
- * Thin client over the web backend proxy at
- * `GET /api/v1/operations/releases[/{tag}]`, which forwards the operator's
- * Cognito bearer to coord's `GET /coord/twin/release/history`. The frontend
- * never talks to coord directly.
+ * Part of the typed `/operations` client (plan
+ * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`,
+ * Phase 7 batch 6), moved here from `services/runner-releases-service.ts`.
+ * The handler is `get_releases` in
+ * `backend/app/api/v1/endpoints/operations/__init__.py`, which forwards the
+ * operator's bearer to coord's `GET /coord/twin/release/history`. The
+ * frontend never talks to coord directly.
  *
  * Types mirror the coord history contract verbatim (snake_case) — they are the
- * on-the-wire shape (Phase 1). Keep them in sync with coord's emitter.
+ * on-the-wire shape. Keep them in sync with coord's emitter.
  */
 
-import type { HttpOptions } from "./http-client";
-import { httpClient } from "./service-factory";
-
-const API = "/api/v1/operations";
+import type { HttpOptions } from "@/services/http-client";
+import { httpClient } from "@/services/service-factory";
+import { OPERATIONS_BASE, readJson } from "./base";
 
 /**
  * Surface-level drift descriptor. `token` is the surface's own class
@@ -73,56 +75,35 @@ export interface ReleaseHistoryResponse {
   /**
    * Present when the web proxy served a coord error (e.g. coord unreachable /
    * `release_history_read_failed`). Absent on a healthy fetch — the page keys
-   * its inline error banner on the thrown `httpClient` error today, but the
+   * its inline error banner on the thrown client error today, but the
    * field is typed so a future stale-while-revalidate proxy can set it.
    */
   coord_error?: string;
 }
 
-class RunnerReleasesService {
-  /**
-   * List runner release observations (newest-first) from coord via the web
-   * proxy. Throws on a non-2xx response (`httpClient.get` rejects with an
-   * Error embedding the status).
-   *
-   * `opts.repo` selects the observed surface (default coord's
-   * `qontinui/qontinui-runner`); `opts.limit` caps the history window (1–500).
-   * `httpOptions` is the per-request `httpClient` options; a polling caller
-   * passes `COORD_DASHBOARD_POLL_OPTIONS` so a 5xx costs one request.
-   */
-  async list(
-    opts?: {
-      repo?: string;
-      limit?: number;
-    },
-    httpOptions?: HttpOptions
-  ): Promise<ReleaseHistoryResponse> {
-    const p = new URLSearchParams();
-    if (opts?.repo) p.set("repo", opts.repo);
-    if (opts?.limit) p.set("limit", String(opts.limit));
-    const qs = p.toString();
-    return httpClient.get<ReleaseHistoryResponse>(
-      `${API}/releases${qs ? `?${qs}` : ""}`,
-      httpOptions
-    );
-  }
-
-  /**
-   * Fetch a single release observation by `tag`. Coord has no single-tag
-   * route; the web proxy filters the history list server-side and 404s
-   * (`release_tag_not_found`) when no entry matches.
-   */
-  async get(
-    tag: string,
-    opts?: { repo?: string }
-  ): Promise<ReleaseHistoryEntry> {
-    const p = new URLSearchParams();
-    if (opts?.repo) p.set("repo", opts.repo);
-    const qs = p.toString();
-    return httpClient.get<ReleaseHistoryEntry>(
-      `${API}/releases/${encodeURIComponent(tag)}${qs ? `?${qs}` : ""}`
-    );
-  }
+/**
+ * `GET /releases` — runner release observations, newest-first. Rejects on a
+ * non-2xx with `GET <url> failed: <status> - <body>`.
+ *
+ * `query.repo` selects the observed surface (default coord's
+ * `qontinui/qontinui-runner`); `query.limit` caps the history window (1–500).
+ * `options` is the per-request retry budget; a polling caller passes
+ * `COORD_DASHBOARD_POLL_OPTIONS` so a 5xx costs one request. With neither
+ * filter the URL carries no `?` at all.
+ */
+export async function fetchReleaseHistory(
+  query: { repo?: string; limit?: number } = {},
+  options: HttpOptions = {}
+): Promise<ReleaseHistoryResponse> {
+  const qs = new URLSearchParams();
+  if (query.repo) qs.set("repo", query.repo);
+  if (query.limit) qs.set("limit", String(query.limit));
+  let url = `${OPERATIONS_BASE}/releases`;
+  if (qs.toString()) url += `?${qs.toString()}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<ReleaseHistoryResponse>(res, `GET ${url}`);
 }
-
-export const runnerReleasesService = new RunnerReleasesService();

@@ -30,8 +30,13 @@ import {
   type CoordMemberRole,
   type OperatorRow,
 } from "@/lib/api/operations/coordMembers";
-import { operationsErrorMessage } from "@/lib/api/operations/base";
 import {
+  operationsErrorMessage,
+  operationsErrorReading,
+} from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
+import {
+  BackendErrorMessage,
   RecordDetail,
   StatCluster,
   StatusBadge,
@@ -56,7 +61,7 @@ export function MembersTable({
 }) {
   const [operators, setOperators] = useState<OperatorRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   // Pending role selection per operator (defaults to Administrator).
   const [pendingRole, setPendingRole] = useState<
     Record<string, CoordMemberRole>
@@ -95,7 +100,7 @@ export function MembersTable({
       setOperators(rows);
     } catch (err) {
       log.warn("load members failed", err);
-      setError(operationsErrorMessage(err));
+      setError(operationsErrorReading(err));
     } finally {
       setLoading(false);
     }
@@ -223,7 +228,8 @@ export function MembersTable({
         </div>
       ) : error ? (
         <p className="text-sm text-destructive flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4" /> {error}
+          <AlertTriangle className="h-4 w-4" />{" "}
+          <BackendErrorMessage error={error} />
         </p>
       ) : operators.length === 0 ? (
         <p className="text-sm text-muted-foreground">No members yet.</p>
