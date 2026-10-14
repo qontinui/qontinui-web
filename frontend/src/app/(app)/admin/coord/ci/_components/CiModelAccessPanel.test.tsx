@@ -323,6 +323,52 @@ describe("CiModelAccessPanel — inherit", () => {
     ).toBe(2);
   });
 
+  it("a reload in flight before a repo write cannot paint the pre-write value over its read-back", async () => {
+    // Mount read delivers WEB=on. A Refresh is issued and hangs; the write's
+    // read-back says off; then the hung reload answers with the OLD value.
+    let releaseReload!: (v: unknown) => void;
+    let listCalls = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/ci-hosting")) {
+        listCalls += 1;
+        if (listCalls === 2)
+          return new Promise((res) => {
+            releaseReload = res;
+          });
+        return Promise.resolve(hostingList([WEB, EVALS]));
+      }
+      if (u.includes("&repo=")) return Promise.resolve(policy("on", "none"));
+      return Promise.resolve(policy("on", "none"));
+    });
+    httpPut.mockResolvedValue({
+      ok: true,
+      domain: "ci_model_access",
+      written_level: "off",
+      effective: policy("off", "repo"),
+      readback_error: null,
+    });
+    render(<CiModelAccessPanel isAdmin />);
+    await waitFor(() => expect(statusOf(WEB)).toBe("on"));
+
+    fireEvent.click(screen.getByTestId("ci-model-access-refresh"));
+    await waitFor(() => expect(listCalls).toBe(2));
+
+    const row = await expand(WEB);
+    fireEvent.click(within(row).getByTestId("ci-model-access-repo-off"));
+    await waitFor(() => expect(statusOf(WEB)).toBe("off"));
+
+    releaseReload(hostingList([WEB, EVALS]));
+    // Let the stale reload's per-repo reads settle.
+    await waitFor(() =>
+      expect(
+        httpGet.mock.calls.filter((c) => String(c[0]).includes("&repo=")).length
+      ).toBe(4)
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(statusOf(WEB)).toBe("off");
+  });
+
   it("a failed read-back renders THAT repo UNKNOWN and highlights no choice", async () => {
     route({});
     httpPut.mockResolvedValue({

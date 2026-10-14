@@ -42,6 +42,8 @@ export function useCiModelAccessRepos() {
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const seq = useRef(createReadSequence());
+  // The rows on screen, for the write path's "is there anything to patch?".
+  const reposRef = useRef<ModelAccessRepoReading[] | null>(null);
 
   const reload = useCallback(async (): Promise<boolean> => {
     const ticket = seq.current.issue();
@@ -67,7 +69,10 @@ export function useCiModelAccessRepos() {
         )
       );
       const apply = seq.current.settle(ticket, true);
-      if (apply) setRepos(next);
+      if (apply) {
+        reposRef.current = next;
+        setRepos(next);
+      }
       const isStale = seq.current.isStale();
       setStale(isStale);
       if (!isStale) setError(null);
@@ -86,14 +91,27 @@ export function useCiModelAccessRepos() {
     }
   }, []);
 
-  /** Replace ONE repo's reading with a write's read-back. */
+  /**
+   * Replace ONE repo's reading with a write's read-back.
+   *
+   * The read-back takes a ticket of its own and settles it as a delivery that
+   * does not COUNT as a read (`counts = false`): a list reload issued before
+   * the write — and still in flight — then settles with an older ticket and
+   * loses, instead of painting the pre-write value back over the read-back.
+   * Not counting it means a write can un-stale the rows but never stale them.
+   */
   const applyWriteReadback = useCallback(
     (repo: string, reading: ModelAccessReading) => {
-      setRepos((prev) =>
-        prev
-          ? prev.map((r) => (r.repo === repo ? { repo, ...reading } : r))
-          : prev
+      const prev = reposRef.current;
+      if (prev === null) return; // nothing on screen to patch
+      const ticket = seq.current.issue();
+      if (!seq.current.settle(ticket, true, false)) return;
+      const next = prev.map((r) =>
+        r.repo === repo ? { repo, ...reading } : r
       );
+      reposRef.current = next;
+      setRepos(next);
+      setStale(seq.current.isStale());
     },
     []
   );

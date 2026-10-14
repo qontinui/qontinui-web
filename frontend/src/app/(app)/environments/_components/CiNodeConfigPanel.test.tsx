@@ -665,6 +665,11 @@ describe("CiNodeConfigPanel — model access", () => {
     const label = screen.getByTestId("ci-node-model-access-state");
     expect(label).toHaveAttribute("data-state", "machine");
     expect(label.textContent).toMatch(/sends nothing/);
+    // After an earlier explicit save the runner holds THAT value, so the copy
+    // must not promise "on unless changed on the machine".
+    expect(label.textContent).toMatch(
+      /keeps the last value it received, from here or set on the machine/
+    );
 
     fireEvent.click(screen.getByTestId("ci-node-enabled"));
     expect((await saveAndReadBody()).model_access ?? null).toBeNull();
@@ -740,6 +745,28 @@ describe("CiNodeConfigPanel — model access", () => {
       /does not carry the model-access choice/
     );
     expect(refusal).toHaveAttribute("data-fixable-here", "false");
+  });
+
+  it("an answer that could not confirm the value is UNKNOWN, not 'older coordinator'", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, model_access: false },
+          configured: true,
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "model_access_unconfirmed",
+          dispatch_detail:
+            "whether the model-access choice reached the machine is unknown",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(refusal.textContent).toMatch(
+      /did not confirm the model-access choice/
+    );
+    expect(refusal.textContent).not.toMatch(/does not carry/);
   });
 
   it("configsEqual treats a config predating the field as unset, not as a change", () => {

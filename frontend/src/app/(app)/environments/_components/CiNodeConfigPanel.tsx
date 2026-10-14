@@ -202,6 +202,16 @@ export function dispatchRefusalCopy(
       detail,
     };
   }
+  if (state.dispatch_error === MODEL_ACCESS_UNCONFIRMED) {
+    // Coord answered 2xx but did not say what it sent: unknown, not a refusal
+    // and not evidence of an older coordinator.
+    return {
+      headline:
+        "Sent, but the coordinator's answer did not confirm the model-access choice, so whether it reached the machine is unknown.",
+      fixableHere: false,
+      detail,
+    };
+  }
   if (status === 400 || status === 422) {
     return {
       headline: "Saved here, but these settings were not accepted.",
@@ -237,6 +247,8 @@ export function dispatchRefusalCopy(
 
 /** The backend's `dispatch_error` when coord did not echo `model_access` back. */
 export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
+/** The backend's `dispatch_error` when coord's answer could not confirm it. */
+export const MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed";
 
 /** Mirrors the server's `max_concurrent_builds` bounds (`ge=1, le=64`). */
 export const MAX_CONCURRENT_BUILDS_MIN = 1;
@@ -305,14 +317,16 @@ const MODEL_ACCESS_CHOICE_LABEL: Record<ModelAccessChoice, string> = {
 
 /**
  * What the current choice means. `null` is NEVER drawn as "on": qontinui.io
- * sends nothing for it, and the runner keeps whatever it holds — on by
- * default, but the owner may have switched it off on the machine itself.
+ * sends nothing for it, and the runner keeps the last value it received —
+ * which may be an explicit value an earlier save sent from here, or one the
+ * owner set on the machine itself. Only a runner that never received one is
+ * on by default.
  */
 export function modelAccessStateText(value: boolean | null): string {
   if (value === true) return "On: qontinui.io tells the machine to allow it.";
   if (value === false)
     return "Off: qontinui.io tells the machine to refuse it.";
-  return "Left as set on the machine: qontinui.io sends nothing for this, so the runner keeps its own setting (on, unless someone changed it on the machine).";
+  return "Left as set on the machine: qontinui.io sends nothing for this, so the runner keeps the last value it received, from here or set on the machine (on, if it never received one).";
 }
 
 /**
