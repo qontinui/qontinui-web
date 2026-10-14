@@ -445,10 +445,10 @@ Solutions to common issues with Qontinui's collaboration features.
    ```typescript
    useEffect(() => {
      const handler = (event) => {...};
-     ws.on('message', handler);
+     ws.updateHandlers({ onMessage: handler });
 
      return () => {
-       ws.off('message', handler); // Always cleanup!
+       ws.updateHandlers({ onMessage: undefined }); // Always cleanup!
      };
    }, []);
    ```

@@ -34,6 +34,11 @@
  * Parsing is textual (no TypeScript compiler); it is deliberately simple and
  * reports what it cannot settle as unresolved-shape rather than passing it.
  *
+ * What a 0 does NOT mean: the check is about NAMES, not accuracy. It does
+ * not check relative or package imports, members of destructured hook
+ * results, argument or property shapes, or prose outside docs/architecture.
+ * A doc can pass and still be wrong about how a real API behaves.
+ *
  * Exit: 0 nothing unresolved, 1 something unresolved, 2 internal error.
  * Run: `npm run check:doc-refs` from frontend/.
  */
@@ -239,7 +244,11 @@ function moduleExports(file, seen = new Set()) {
   seen.add(file);
   const text = code(file);
   const out = new Map();
-  for (const m of text.matchAll(DECL_RE)) out.set(m[1], { file, local: m[1] });
+  for (const m of text.matchAll(DECL_RE)) {
+    // `export default function X` exports "default", not a named `X`.
+    if (/\bdefault\b/.test(m[0])) continue;
+    out.set(m[1], { file, local: m[1] });
+  }
   if (/\bexport\s+default\b/.test(text)) {
     const d = text.match(
       /\bexport\s+default\s+(?:class|function\*?)?\s*([\w$]+)?/
@@ -625,6 +634,18 @@ function checkMemberCalls(file, fences, importedBindings, docsBindings) {
       declared.delete(m[1]);
     }
   }
+  // `const x = new X(...)` / `const x = X.getInstance()` where X is an
+  // imported (or src-exported) class: x is checked against X's members.
+  for (const m of allCode.matchAll(
+    /\b(?:const|let|var)\s+([\w$]+)\s*=\s*(?:await\s+)?(?:new\s+([\w$]+)\s*\(|([\w$]+)\.getInstance\s*\(\s*\))/g
+  )) {
+    const cls = m[2] || m[3];
+    const fn =
+      localBindings.get(cls) || docsBindings.get(cls) || srcBinding(cls);
+    if (!fn || fn.phantom || fn.namespace) continue;
+    localBindings.set(m[1], { ...fn });
+    declared.delete(m[1]);
+  }
   for (const fence of fences) {
     const body = fence.lines.join("\n");
     const seen = new Set();
@@ -666,6 +687,14 @@ function checkMemberCalls(file, fences, importedBindings, docsBindings) {
         "g"
       );
       for (const c of body.matchAll(callRe)) check(local, b, c[1], c.index);
+    }
+    // `X.getInstance().member(`: checked against X's members.
+    for (const c of body.matchAll(
+      /(?<![\w$.])([\w$]+)\.getInstance\s*\(\s*\)\s*\??\.\s*([\w$]+)\s*\(/g
+    )) {
+      const b =
+        localBindings.get(c[1]) || docsBindings.get(c[1]) || srcBinding(c[1]);
+      if (b && !b.phantom && !b.namespace) check(c[1], b, c[2], c.index + 1);
     }
     for (const c of body.matchAll(SINGLETON_RE)) {
       const local = c[1];

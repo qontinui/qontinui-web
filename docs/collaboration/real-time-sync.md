@@ -146,7 +146,7 @@ export function usePresence(projectId: number) {
       }
     };
 
-    ws.on('message', handlePresence);
+    ws.updateHandlers({ onMessage: handlePresence });
 
     // Update my status periodically
     const interval = setInterval(() => {
@@ -158,7 +158,7 @@ export function usePresence(projectId: number) {
     }, 30000); // Every 30 seconds
 
     return () => {
-      ws.off('message', handlePresence);
+      ws.updateHandlers({ onMessage: undefined });
       clearInterval(interval);
       ws.send({
         type: 'presence:leave',
@@ -323,8 +323,8 @@ export function ResourceLockIndicator({
       }
     };
 
-    ws.on('message', handleLockUpdate);
-    return () => ws.off('message', handleLockUpdate);
+    ws.updateHandlers({ onMessage: handleLockUpdate });
+    return () => ws.updateHandlers({ onMessage: undefined });
   }, [projectId, resourceType, resourceId]);
 
   const handleAcquireLock = async () => {
@@ -577,8 +577,8 @@ useEffect(() => {
     }
   };
 
-  ws.on('message', handleUpdate);
-  return () => ws.off('message', handleUpdate);
+  ws.updateHandlers({ onMessage: handleUpdate });
+  return () => ws.updateHandlers({ onMessage: undefined });
 }, []);
 ```
 
