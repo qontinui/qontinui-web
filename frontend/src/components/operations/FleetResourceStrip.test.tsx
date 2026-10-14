@@ -1083,11 +1083,14 @@ describe("§C1 — the coupled WSL figure carries its ceiling", () => {
 });
 
 describe("CPU temperature column — display only, never a fabricated zero", () => {
-  /** The Linux host fixture: no Windows commit charge. */
+  /**
+   * A Linux-shaped host row. The Linux runner publishes commit_total_bytes
+   * too (resource_sample.rs read_memory_status), so it is SET here.
+   */
   const linuxHost = (overrides: Partial<ResourceSampleRow> = {}) =>
     sample({
-      commit_total_bytes: null,
-      commit_available_bytes: null,
+      commit_total_bytes: 64 * GIB,
+      commit_available_bytes: 32 * GIB,
       ...overrides,
     });
 
@@ -1115,12 +1118,33 @@ describe("CPU temperature column — display only, never a fabricated zero", () 
     );
   });
 
-  it("says not measured on this host type for a Windows host row", () => {
-    // Heuristic: commit_total_bytes != null marks a Windows host (the base
-    // fixture carries it).
-    renderStrip({ latest: [sample({ cpu_temp_c: null })], history: [] });
+  it("renders a real 0 as 0 C, not unknown", () => {
+    renderStrip({ latest: [linuxHost({ cpu_temp_c: 0 })], history: [] });
     expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
-      "not measured on this host type"
+      "0 C"
     );
+  });
+
+  it("says not measured on this host type only for the wsl lane", () => {
+    renderStrip({
+      latest: [
+        sample({ cpu_temp_c: 55 }),
+        sample({
+          lane: "wsl",
+          mem_total_bytes: 16 * GIB,
+          mem_available_bytes: 9 * GIB,
+          commit_available_bytes: null,
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          pressure: { ratio: 0.75, basis: "swap" },
+          cpu_temp_c: null,
+        }),
+      ],
+      history: [],
+    });
+    const cells = screen
+      .getAllByTestId("fleet-resource-cpu-temp")
+      .map((c) => c.textContent);
+    expect(cells).toEqual(["55 C", "not measured on this host type"]);
   });
 });
