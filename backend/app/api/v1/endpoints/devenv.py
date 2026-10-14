@@ -1071,6 +1071,34 @@ def _coord_transport_detail(exc: HTTPException) -> str:
     )
 
 
+#: ``dispatch_error`` when coord accepted the directive but its ``applied``
+#: echo does not carry the ``model_access`` this save sent — a coord that
+#: predates ``CiNodeDirective.model_access`` drops the unknown key with a 2xx.
+CI_NODE_MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access"
+
+
+def _model_access_not_relayed(payload: CiNodeConfig, resp: httpx.Response) -> bool:
+    """True when this save SENT ``model_access`` and coord did not echo it back.
+
+    Coord's 2xx body echoes what it published as ``applied``. A coord that
+    predates the field deserializes the directive without it (serde ignores
+    unknown keys) and still answers 2xx, so the owner's explicit off would be
+    silently dropped. Only the echo can tell — an unparseable body or a missing
+    ``applied`` cannot confirm the value travelled either, so they count as
+    not relayed. A save that sent no value (``None``) has nothing to confirm.
+    """
+    if payload.model_access is None:
+        return False
+    try:
+        body = resp.json()
+    except ValueError:
+        return True
+    applied = body.get("applied") if isinstance(body, dict) else None
+    if not isinstance(applied, dict):
+        return True
+    return applied.get("model_access") is not payload.model_access
+
+
 def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
     """Turn coord's non-2xx answer into ``(machine code, human sentence)``.
 
@@ -1272,6 +1300,24 @@ async def set_ci_node_config(
     )
     await db.commit()
     await db.refresh(machine)
+    if _model_access_not_relayed(payload, resp):
+        # Coord accepted and published the directive — so the other settings
+        # were handed off and ``dispatched_at`` moves — but not the owner's
+        # model-access choice. Reporting that as delivered would hide exactly
+        # the switch this save was most likely made for.
+        return _ci_node_response(
+            machine,
+            reachability,
+            dispatched=False,
+            dispatch_status=resp.status_code,
+            dispatch_error=CI_NODE_MODEL_ACCESS_NOT_RELAYED,
+            dispatch_detail=(
+                "The coordinator accepted the other settings, but it does not "
+                "yet carry the model-access choice, so that choice did not "
+                "reach the machine. It is saved here; apply again once the "
+                "coordinator is updated."
+            ),
+        )
     return _ci_node_response(machine, reachability, dispatched=True)
 
 

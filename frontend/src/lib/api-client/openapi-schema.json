@@ -8858,6 +8858,17 @@
             "title": "Repos",
             "type": "array"
           },
+          "repos_unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repos Unknown Reason"
+          },
           "tenant_default": {
             "$ref": "#/components/schemas/CiHostingReading"
           }

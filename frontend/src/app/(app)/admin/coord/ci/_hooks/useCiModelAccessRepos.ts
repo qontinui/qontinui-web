@@ -1,18 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createReadSequence } from "@/components/console";
 import { fetchCiHosting } from "@/lib/api/operations/ciStatus";
 import { fetchFleetPolicy } from "@/lib/api/operations/tenantPolicy";
+import { errorMessage } from "../_lib/errorMessage";
 import {
   CI_MODEL_ACCESS_DOMAIN,
   readingFromPolicy,
   unreadReading,
+  type ModelAccessReading,
   type ModelAccessRepoReading,
 } from "../_lib/ciModelAccessStatus";
-
-function message(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback;
-}
 
 /**
  * What `ci_model_access` resolves for each of the tenant's repos.
@@ -20,32 +19,40 @@ function message(err: unknown, fallback: string): string {
  * **The repo list** is the hosted-CI read's (`GET /operations/ci-hosting`):
  * coord builds it from `coord.tenant_repos`, which is exactly the set a
  * repo-band fleet-policy write is accepted for (`repo_key_is_tenant_repo`) and
- * in the spelling that write stores. No other web read lists that set.
+ * in the spelling that write stores. A list coord could not read
+ * (`repos_unknown_reason`) is a FAILED read here, never an empty tenant.
  *
  * **Each repo's value** is the generic fleet-policy read with `?repo=`, so a
  * repo-band row for it can win — one read per repo, issued together. One that
  * fails makes THAT repo UNKNOWN with the reason; the others still answer.
+ * That is N+1 calls per refresh; a coord-side effective read for this domain
+ * (the `GET /coord/ci-hosting/effective` shape) would make it one.
  *
- * The honesty properties of `useCiHosting`, which this mirrors:
+ * **Ordering** is a `createReadSequence`, not a newest-issued guard: every
+ * read asks the same question, so an older read that SUCCEEDS after a newer
+ * one failed is still the best answer there is — it is shown, labelled stale
+ * — rather than discarded.
  *
- * 1. **A failed LATEST read keeps the last values, labelled stale** — never
- *    blanked (blank would read as "no repos").
- * 2. **Out-of-order replies cannot paint an older answer over a newer one** —
- *    each read takes a ticket and is applied only when no newer read has
- *    settled.
+ * **A repo write** updates only that repo, from the write's own read-back
+ * (`applyWriteReadback`), instead of re-reading every repo.
  */
 export function useCiModelAccessRepos() {
   const [repos, setRepos] = useState<ModelAccessRepoReading[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [inFlight, setInFlight] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const issued = useRef(0);
-  const settled = useRef(0);
+  const [stale, setStale] = useState(false);
+  const seq = useRef(createReadSequence());
 
   const reload = useCallback(async (): Promise<boolean> => {
-    const ticket = (issued.current += 1);
-    setLoading(true);
+    const ticket = seq.current.issue();
+    setInFlight((n) => n + 1);
     try {
       const list = await fetchCiHosting();
+      if (list.repos_unknown_reason) {
+        throw new Error(
+          `coord could not list this tenant's repos (${list.repos_unknown_reason})`
+        );
+      }
       // Each repo's read settles to a reading of its own, so one failure is
       // UNKNOWN for that repo alone and never rejects the whole list.
       const next: ModelAccessRepoReading[] = await Promise.all(
@@ -54,25 +61,42 @@ export function useCiModelAccessRepos() {
             (view) => ({ repo, ...readingFromPolicy(view) }),
             (err: unknown) => ({
               repo,
-              ...unreadReading(message(err, "the read failed")),
+              ...unreadReading(errorMessage(err, "the read failed")),
             })
           )
         )
       );
-      if (ticket < settled.current) return false;
-      settled.current = ticket;
-      setRepos(next);
-      setError(null);
-      return true;
+      const apply = seq.current.settle(ticket, true);
+      if (apply) setRepos(next);
+      const isStale = seq.current.isStale();
+      setStale(isStale);
+      if (!isStale) setError(null);
+      return apply && !isStale;
     } catch (err) {
-      if (ticket < settled.current) return false;
-      settled.current = ticket;
-      setError(message(err, "the repo list could not be read"));
+      seq.current.settle(ticket, false);
+      const isStale = seq.current.isStale();
+      setStale(isStale);
+      // A failure older than a delivered read says nothing new.
+      if (isStale || !seq.current.hasDelivered()) {
+        setError(errorMessage(err, "the repo list could not be read"));
+      }
       return false;
     } finally {
-      if (ticket === issued.current) setLoading(false);
+      setInFlight((n) => n - 1);
     }
   }, []);
+
+  /** Replace ONE repo's reading with a write's read-back. */
+  const applyWriteReadback = useCallback(
+    (repo: string, reading: ModelAccessReading) => {
+      setRepos((prev) =>
+        prev
+          ? prev.map((r) => (r.repo === repo ? { repo, ...reading } : r))
+          : prev
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     void reload();
@@ -80,10 +104,11 @@ export function useCiModelAccessRepos() {
 
   return {
     repos,
-    loading,
+    loading: inFlight > 0,
     error,
-    /** Values are on screen, and the newest read failed to replace them. */
-    stale: repos !== null && error !== null,
+    /** Values are on screen, and a newer read finished without replacing them. */
+    stale: repos !== null && stale,
     reload,
+    applyWriteReadback,
   };
 }
