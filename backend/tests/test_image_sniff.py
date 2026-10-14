@@ -2475,6 +2475,8 @@ def _avif(
     after: bytes = b"",
     large_meta: bool = False,
     meta_last: bool = False,
+    index_size: int = 0,
+    only_iinf: bool = False,
 ) -> bytes:
     """A still AVIF libavif accepts, built around :func:`_avif_parts`: item 1
     is the AV1 image; items 2..``items`` are opaque ``zzzz`` items of
@@ -2492,7 +2494,9 @@ def _avif(
     compatible brands (``avif`` stays the major brand); ``top_level`` goes
     between ``ftyp`` and ``meta``, ``meta_children`` inside ``meta``, and
     ``after`` past ``mdat``. ``large_meta`` writes ``meta``'s size as a
-    ``largesize``; ``meta_last`` puts it after ``mdat``, with size 0."""
+    ``largesize``; ``meta_last`` puts it after ``mdat``, with size 0.
+    ``index_size`` writes each extent's item reference index in that many
+    bytes; ``only_iinf`` names items 2.. in ``iinf`` alone."""
     ftyp, properties, av1 = _avif_parts()
     if brands:
         ftyp = _box(b"ftyp", b"avif\x00\x00\x00\x00" + b"".join(brands))
@@ -2514,7 +2518,8 @@ def _avif(
     essential = 0x80 if seven_bit else 0x8000
     index_format = ">B" if seven_bit else ">H"
     rows = []
-    ipma_ids = [primary] + extra + ([shared] if shared else [])
+    located = [] if only_iinf else extra
+    ipma_ids = [primary] + located + ([shared] if shared else [])
     if duplicate_in == "ipma":
         ipma_ids.append(primary)
     if unlisted == "ipma":
@@ -2587,11 +2592,12 @@ def _avif(
 
         def row(entry: int, spans: list[tuple[int, int]]) -> bytes:
             fields = item_id(entry) + b"\x00\x00" + struct.pack(">HH", 0, len(spans))
-            return fields + b"".join(struct.pack(">II", o, n) for o, n in spans)
+            index = b"\x00" * index_size
+            return fields + b"".join(index + struct.pack(">II", o, n) for o, n in spans)
 
         rows.append(row(primary, [(at, len(av1))]))
         at += len(av1)
-        for entry in extra:
+        for entry in located:
             rows.append(row(entry, [(at + k, 1) for k in range(extents)]))
             at += extents
         if shared:
@@ -2604,10 +2610,12 @@ def _avif(
             b"iloc",
             2 if wide else 1,
             0,
-            bytes([0x44, 0x00]) + struct.pack(count_format, len(rows)) + b"".join(rows),
+            bytes([0x44, index_size])
+            + struct.pack(count_format, len(rows))
+            + b"".join(rows),
         )
 
-    mdat_body = av1 + b"\x01" * (extents * len(extra))
+    mdat_body = av1 + b"\x01" * (extents * len(located))
 
     def meta(data_at: int) -> bytes:
         body = hdlr + pitm + iloc(data_at) + iinf + iref + iprp + meta_children
@@ -2723,6 +2731,36 @@ def test_items_up_to_the_cap_are_accepted_and_one_more_is_refused(
         _avif(items=MAX_AVIF_ITEMS, wide=wide),
         _avif(items=MAX_AVIF_ITEMS + 1, wide=wide),
         "image_avif_too_many_items",
+    )
+
+
+@pytest.mark.parametrize("wide", [False, True], ids=["iinf-0-infe-2", "iinf-1-infe-3"])
+def test_items_only_iinf_names_are_counted_in_either_field_width(
+    monkeypatch: pytest.MonkeyPatch, wide: bool
+) -> None:
+    """``iinf`` alone creates every item it names: its count is 16 bits at
+    version 0 and 32 at 1, an ``infe``'s item ID 16 bits at version 2 and 32
+    at 3."""
+    _at_cap_and_one_past(
+        monkeypatch,
+        _avif(items=MAX_AVIF_ITEMS, wide=wide, only_iinf=True),
+        _avif(items=MAX_AVIF_ITEMS + 1, wide=wide, only_iinf=True),
+        "image_avif_too_many_items",
+    )
+
+
+def test_an_extents_reference_index_is_read_past(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``iloc`` versions 1 and 2 may write each extent's item reference
+    index (``index_size`` bytes) before its offset and length."""
+    plain = _avif(shared_extent=1, index_size=4)
+    room = len(plain) - len(_avif_parts()[2])
+    _at_cap_and_one_past(
+        monkeypatch,
+        _avif(shared_extent=room, index_size=4),
+        _avif(shared_extent=room + 1, index_size=4),
+        "image_avif_item_data_reread",
     )
 
 
@@ -3268,3 +3306,38 @@ def test_a_resolution_pillow_decodes_must_be_one_value(
         assert sniff_image(data).frames == 1
     else:
         assert _refused(data) == code
+
+
+@pytest.mark.parametrize("kind", [b"stco", b"stsc"])
+def test_a_second_chunk_table_adds_to_the_first(
+    monkeypatch: pytest.MonkeyPatch, kind: bytes
+) -> None:
+    """libavif appends a second ``stco`` (or ``stsc``) box's entries to the
+    first's table: two of 600 entries are a table of 1200."""
+    data = _avif_sequence(chunks=600)
+    at = data.index(kind) - 4
+    (size,) = struct.unpack_from(">I", data, at)
+    patched = _insert_in_sample_table(data, at + size, data[at : at + size])
+    _forbid_libavif(monkeypatch)
+    assert _refused(patched) == "image_avif_sample_table_too_large"
+
+
+def test_a_tracks_own_meta_box_is_walked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A track may carry a ``meta`` box of its own, which libavif parses
+    like the file's: its items share the file's budget."""
+    infes = b"".join(
+        _full_box(b"infe", 2, 0, struct.pack(">HH4s", i, 0, b"zzzz") + b"\x00")
+        for i in range(1, MAX_AVIF_ITEMS + 2)
+    )
+    iinf = _full_box(b"iinf", 0, 0, struct.pack(">H", MAX_AVIF_ITEMS + 1) + infes)
+    hdlr = _full_box(b"hdlr", 0, 0, b"\x00" * 4 + b"pict" + b"\x00" * 13)
+    meta = _full_box(b"meta", 0, 0, hdlr + iinf)
+    data = _avif_sequence()
+    edts = data.index(b"edts") - 4
+    out = bytearray(data[:edts] + meta + data[edts:])
+    for kind in (b"trak", b"moov"):
+        where = bytes(out).rindex(kind, 0, edts) - 4
+        (box_size,) = struct.unpack_from(">I", out, where)
+        struct.pack_into(">I", out, where, box_size + len(meta))
+    _forbid_libavif(monkeypatch)
+    assert _refused(bytes(out)) == "image_avif_too_many_items"
