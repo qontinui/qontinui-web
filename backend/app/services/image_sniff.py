@@ -12,10 +12,18 @@ Nothing here DECODES pixels: ``Image.open`` reads the header; the frame count
 comes from the container (a GIF's from a walk of its block structure, which
 skips the image data); a GIF's frame extents come from that same walk, and a
 multi-picture JPEG's picture sizes from each picture's own header; the EXIF
-orientation comes from the metadata the header carries. So a sniff costs about
-the same on a 1×1 image as on a 9000×9000 one, the frame count is capped
-before anything walks past the cap, and the pixel bound below is checked
-before any consumer decodes anything.
+orientation comes from the metadata the header carries. So a sniff's cost
+does not grow with the pixels an image declares. It is bounded by the file's
+length and the caps below: the GIF walk visits each byte once, stops one
+frame past :data:`MAX_FRAMES` and at :data:`MAX_GIF_BLOCKS` blocks, and runs
+BEFORE Pillow opens the file, so Pillow's own walk to the first frame (which
+joins a frame's comments by repeated concatenation — quadratic in their
+pieces) only ever meets a structure the caps admit; a multi-picture JPEG
+holds at most :data:`MAX_PICTURES` pictures, whose byte ranges must be
+disjoint and inside the file, and each picture after the first has its
+header parsed from its own range alone, so together they parse at most the
+file's length again beyond Pillow's open of the first. The pixel bound below
+is checked before any consumer decodes anything.
 
 What Pillow — or a codec beneath it — raises while it READS the file is the
 file's fault: a refusal (``image_unreadable``), a 422, never a 500, and logged
@@ -34,16 +42,16 @@ an embedding model can read, and no consumer of this store uploads one.
 from __future__ import annotations
 
 import io
+import itertools
 import re
 import struct
-import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final
 
 import structlog
-from PIL import Image
+from PIL import Image, JpegImagePlugin, MpoImagePlugin
 
 logger = structlog.get_logger(__name__)
 
@@ -95,6 +103,35 @@ MAX_IMAGE_PIXELS: Final = 89_478_485
 #: seconds of CPU. A GIF's frames are counted by a walk that stops one frame
 #: past the cap, so the refusal costs no more than the cap does.
 MAX_FRAMES: Final = 1000
+
+#: The most extension blocks (graphic control, comment, application, …) a GIF
+#: may carry before one frame — or before its trailer. An encoder writes one
+#: graphic control block per frame, plus a loop block and perhaps a comment
+#: or an XMP packet before the first; 64 is far past any of them. Without a
+#: cap, 25 MB of empty three-byte comment blocks is 8.7 million blocks: 2.6 s
+#: for this walk, and — before the first frame, where Pillow's own walk joins
+#: the comments by concatenation — far longer for Pillow.
+MAX_GIF_EXTENSIONS_PER_FRAME: Final = 64
+
+#: The most blocks (extensions and image descriptors) the GIF walk visits in
+#: all. With the per-frame cap this bounds the walk's block count even across
+#: MAX_FRAMES frames: eight blocks per frame on average — a frame takes two
+#: (its graphic control block and its descriptor) — leaves room for comments.
+MAX_GIF_BLOCKS: Final = 8 * MAX_FRAMES
+
+#: The most data sub-blocks a GIF frame's comment extensions may hold
+#: together. Pillow joins them by ``bytes +=`` — each piece copies what came
+#: before — so its cost is quadratic in the pieces: one comment of 2 MB in
+#: one-byte sub-blocks took Pillow 8.6 s to open. 256 sub-blocks is up to
+#: 64 KB of comment text in the 255-byte sub-blocks an encoder writes.
+MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME: Final = 256
+
+#: The most pictures a multi-picture JPEG (CIPA MPO) may hold. Cameras write
+#: two (a stereo pair) or three (a primary picture and its preview
+#: thumbnails); eight leaves room past them. Each picture's header is parsed
+#: from its own byte range, so the cap bounds the per-picture work, and the
+#: ranges being disjoint bounds the bytes parsed.
+MAX_PICTURES: Final = 8
 
 #: What Pillow raises for the malformed files it anticipates. Anything else it
 #: raises while reading is still the file's refusal, but it is logged with its
@@ -214,7 +251,7 @@ def _reading(fmt: ImageFormat) -> Iterator[None]:
         yield
     except (MemoryError, RecursionError, ImageRefused):
         raise
-    except Image.DecompressionBombError as exc:
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
         raise ImageRefused(
             "image_too_many_pixels",
             f"The image declares more than {MAX_IMAGE_PIXELS} pixels.",
@@ -253,7 +290,13 @@ def _orientation(raw_exif: object, fmt: ImageFormat) -> int | None:
 
 class _GifStructureRefused(ValueError):
     """A GIF block structure the walk will not count: cut off, or malformed
-    where Pillow's own walk would raise or lose its place."""
+    where Pillow's own walk would raise or lose its place (``code``
+    ``image_unreadable``) — or past one of the walk's caps, refused by that
+    cap's own code."""
+
+    def __init__(self, message: str, code: str = "image_unreadable") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
@@ -273,7 +316,10 @@ def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
     block too short for the fields it reads) or would lose its place (an
     extension whose first sub-block is empty, after which Pillow reads the
     next block's first byte as a length), it raises
-    :class:`_GifStructureRefused` instead. Nothing is decoded.
+    :class:`_GifStructureRefused` instead. It is refused, by the cap's own
+    code, past :data:`MAX_GIF_EXTENSIONS_PER_FRAME`,
+    :data:`MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME` or :data:`MAX_GIF_BLOCKS`.
+    Nothing is decoded.
     """
     if len(data) < 13:
         raise _GifStructureRefused("the GIF logical screen descriptor is cut off")
@@ -281,15 +327,28 @@ def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
     end = len(data)
     pos = 13 + ((3 << ((flags & 7) + 1)) if flags & 0x80 else 0)
 
-    def past_sub_blocks(at: int) -> int:
+    def past_sub_blocks(at: int, budget: int | None = None) -> tuple[int, int]:
+        """Past the sub-blocks at ``at``, and how many held data; refused once
+        that count passes ``budget``."""
+        pieces = 0
         while at < end:
             size = data[at]
             at += 1 + size
             if size == 0:
                 break
-        return at
+            pieces += 1
+            if budget is not None and pieces > budget:
+                raise _GifStructureRefused(
+                    f"a GIF frame's comments hold more than "
+                    f"{MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME} sub-blocks",
+                    "image_too_many_comment_sub_blocks",
+                )
+        return at, pieces
 
     frames = 0
+    blocks = 0
+    extensions = 0  # before the next frame
+    comment_pieces = 0  # in this frame's comments
     while frames < stop_after:
         found = _GIF_BLOCK_START.search(data, pos)
         if found is None:
@@ -299,7 +358,20 @@ def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
         pos += 1
         if introducer == 0x3B:  # trailer
             break
+        blocks += 1
+        if blocks > MAX_GIF_BLOCKS:
+            raise _GifStructureRefused(
+                f"a GIF holds more than {MAX_GIF_BLOCKS} blocks",
+                "image_too_many_blocks",
+            )
         if introducer == 0x21:  # an extension: its label, then its sub-blocks
+            extensions += 1
+            if extensions > MAX_GIF_EXTENSIONS_PER_FRAME:
+                raise _GifStructureRefused(
+                    f"a GIF frame is preceded by more than "
+                    f"{MAX_GIF_EXTENSIONS_PER_FRAME} extension blocks",
+                    "image_too_many_extensions",
+                )
             if pos >= end:
                 raise _GifStructureRefused(
                     "a GIF extension is cut off before its label"
@@ -330,7 +402,13 @@ def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
                     # Pillow reads the next sub-block for the loop count; an
                     # empty one makes it lose its place, as above.
                     raise _GifStructureRefused("a GIF NETSCAPE2.0 block is cut short")
-            pos = past_sub_blocks(pos)
+            if label == 0xFE:  # comment: Pillow joins its pieces, see the cap
+                pos, pieces = past_sub_blocks(
+                    pos, MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME - comment_pieces
+                )
+                comment_pieces += pieces
+            else:
+                pos, _ = past_sub_blocks(pos)
         else:  # 0x2C: a frame's image descriptor
             if pos + 9 > end:
                 raise _GifStructureRefused("a GIF image descriptor is cut off")
@@ -339,6 +417,7 @@ def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
             )
             width, height = max(width, left + frame_w), max(height, top + frame_h)
             frames += 1
+            extensions = comment_pieces = 0
             pos += 9
             if frame_flags & 0x80:  # a local color table
                 pos += 3 << ((frame_flags & 7) + 1)
@@ -346,21 +425,68 @@ def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
                 raise _GifStructureRefused(
                     "a GIF frame is cut off before its LZW code size"
                 )
-            pos = past_sub_blocks(pos + 1)  # the code size, then the image data
+            pos, _ = past_sub_blocks(pos + 1)  # the code size, then the image data
     return frames, (width, height)
 
 
+def _picture_ranges(image: Image.Image, data_length: int) -> list[tuple[int, int]]:
+    """Each picture's byte range ``[offset, offset + size)`` in a
+    multi-picture JPEG, refused unless they are disjoint and inside the file.
+
+    The offsets are the ones Pillow's ``seek`` uses (its MP index entries'
+    ``DataOffset`` from the MP header, the first picture's forced to 0) — so
+    the ranges checked are the ones a decoder reads; the sizes are the
+    entries' ``Size``. Overlapping ranges are how a file makes every picture
+    re-parse the same bytes: fifty entries naming one padded picture cost a
+    reader fifty parses of it.
+    """
+    if not isinstance(image, MpoImagePlugin.MpoImageFile):
+        raise TypeError(f"expected Pillow's MPO reader, got {type(image).__name__}")
+    # Pillow keeps the absolute offsets private (and drops the MP header's
+    # position once it has computed them); they are what its seek reads.
+    offsets = getattr(image, "_MpoImageFile__mpoffsets")  # noqa: B009 — private
+    if image.mpinfo is None:  # Pillow refuses such a file at open
+        raise TypeError("Pillow's MPO reader holds no MP index")
+    entries = image.mpinfo[0xB002]
+    ranges = [
+        (int(offset), int(offset) + int(entry["Size"]))
+        for offset, entry in zip(offsets, entries, strict=True)
+    ]
+    for index, (start, end) in enumerate(ranges):
+        if end <= start or end > data_length:
+            raise ImageRefused(
+                "image_picture_index_invalid",
+                f"Picture {index + 1} of the multi-picture JPEG is declared at "
+                f"bytes {start}-{end}, outside the {data_length}-byte file.",
+            )
+    ordered = sorted(ranges)
+    for (_, end), (start, _) in itertools.pairwise(ordered):
+        if start < end:
+            raise ImageRefused(
+                "image_picture_index_invalid",
+                "Two pictures of the multi-picture JPEG are declared over the "
+                f"same bytes (one ends at {end}, the next starts at {start}).",
+            )
+    return ranges
+
+
 def _largest_picture(
-    image: Image.Image, fmt: ImageFormat, width: int, height: int, pictures: int
+    data: bytes,
+    fmt: ImageFormat,
+    ranges: list[tuple[int, int]],
+    width: int,
+    height: int,
 ) -> tuple[int, int]:
     """The largest width and the largest height among a multi-picture JPEG's
-    pictures, each read from that picture's own header (Pillow's ``seek`` on
-    an MPO parses the picture's JPEG markers; it decodes nothing). Stops once
-    the bound is already exceeded."""
-    for index in range(1, pictures):
+    pictures, each read from that picture's own header, parsed from its own
+    byte range alone (``ranges``, disjoint, from :func:`_picture_ranges`):
+    a header that runs past its range is unreadable. It decodes nothing, and
+    stops once the bound is already exceeded."""
+    pictures = len(ranges)
+    for start, end in ranges[1:]:
         with _reading(fmt):
-            image.seek(index)
-            picture_w, picture_h = image.size
+            with JpegImagePlugin.JpegImageFile(io.BytesIO(data[start:end])) as picture:
+                picture_w, picture_h = picture.size
         width, height = max(width, picture_w), max(height, picture_h)
         if width * height * pictures > MAX_IMAGE_PIXELS:
             break
@@ -374,8 +500,21 @@ def sniff_image(data: bytes) -> SniffedImage:
     signature), ``image_unreadable`` (a signature its header does not bear
     out, or a file that cannot be opened and its frames walked),
     ``image_too_many_frames`` (above :data:`MAX_FRAMES`),
-    ``image_too_many_pixels`` (above :data:`MAX_IMAGE_PIXELS`: canvas × frames).
+    ``image_too_many_pixels`` (above :data:`MAX_IMAGE_PIXELS`: canvas × frames);
+    for a GIF ``image_too_many_extensions``, ``image_too_many_comment_sub_blocks``
+    and ``image_too_many_blocks`` (the walk's caps); for a multi-picture JPEG
+    ``image_too_many_pictures`` (above :data:`MAX_PICTURES`) and
+    ``image_picture_index_invalid`` (pictures over the same bytes, or past the
+    file's end).
     Any other exception is a fault of this server, and propagates.
+
+    Pillow's ``DecompressionBombWarning`` (a header above
+    :data:`MAX_IMAGE_PIXELS`, below twice it) is not suppressed: a
+    ``warnings.catch_warnings`` block is not thread-safe, and sniffs run
+    concurrently in worker threads; a process-wide filter would silence it
+    for every other Pillow reader in this server. The refusal below is the
+    named answer; where warnings are raised as errors, the warning is that
+    same refusal.
     """
     if not data:
         raise ImageRefused("image_empty", "The upload holds no bytes.")
@@ -388,57 +527,62 @@ def sniff_image(data: bytes) -> SniffedImage:
             f"The bytes are not an accepted image format; accepted: {accepted}.",
         )
 
-    with warnings.catch_warnings():
-        # The pixel bound is decided below, from the header, with a named
-        # refusal; Pillow's own warning would only duplicate it.
-        warnings.simplefilter("ignore", Image.DecompressionBombWarning)
-        with _reading(fmt):
-            opened = Image.open(io.BytesIO(data), formats=[fmt.pillow_name])
-        with opened as image:
-            with _reading(fmt):
-                raw_format = image.format or ""
-                width, height = image.size
-                raw_exif = image.info.get("exif")
-            pillow_format = _PILLOW_FORMAT_ALIASES.get(raw_format, raw_format)
-            if pillow_format != fmt.pillow_name:
-                raise ImageRefused(
-                    "image_unreadable",
-                    f"The signature says {fmt.pillow_name} but the header reads as "
-                    f"{pillow_format}.",
-                )
+    if fmt is GIF:
+        # Before Pillow opens it: Pillow's walk to the first frame is the one
+        # the caps protect. Not Pillow's ``n_frames`` either: it walks EVERY
+        # frame before the cap could refuse; this walk stops one past the cap.
+        try:
+            frames, canvas = _gif_structure(data, stop_after=MAX_FRAMES + 1)
+        except _GifStructureRefused as exc:
+            _log_refused_read(exc.code, fmt, exc)
+            raise ImageRefused(
+                exc.code,
+                f"The bytes carry a {fmt.mime_type} signature but no "
+                f"readable {fmt.pillow_name} structure: {exc}."
+                if exc.code == "image_unreadable"
+                else f"The image is refused: {exc}.",
+            ) from exc
 
-            if raw_format == "GIF":
-                # Not Pillow's ``n_frames``: it walks EVERY frame before the
-                # cap could refuse. This walk stops one frame past the cap.
-                try:
-                    frames, canvas = _gif_structure(data, stop_after=MAX_FRAMES + 1)
-                except _GifStructureRefused as exc:
-                    _log_refused_read("image_unreadable", fmt, exc)
-                    raise ImageRefused(
-                        "image_unreadable",
-                        f"The bytes carry a {fmt.mime_type} signature but no "
-                        f"readable {fmt.pillow_name} structure: {exc}.",
-                    ) from exc
-            else:
-                with _reading(fmt):
-                    frames = int(getattr(image, "n_frames", 1))
-                canvas = (width, height)
-            if frames > MAX_FRAMES:
+    with _reading(fmt):
+        opened = Image.open(io.BytesIO(data), formats=[fmt.pillow_name])
+    with opened as image:
+        with _reading(fmt):
+            raw_format = image.format or ""
+            width, height = image.size
+            raw_exif = image.info.get("exif")
+        pillow_format = _PILLOW_FORMAT_ALIASES.get(raw_format, raw_format)
+        if pillow_format != fmt.pillow_name:
+            raise ImageRefused(
+                "image_unreadable",
+                f"The signature says {fmt.pillow_name} but the header reads as "
+                f"{pillow_format}.",
+            )
+
+        if fmt is not GIF:
+            with _reading(fmt):
+                frames = int(getattr(image, "n_frames", 1))
+            canvas = (width, height)
+        if frames > MAX_FRAMES:
+            raise ImageRefused(
+                "image_too_many_frames",
+                f"The image holds more than {MAX_FRAMES} frames; at most "
+                f"{MAX_FRAMES} are accepted.",
+            )
+        if width <= 0 or height <= 0 or frames < 1:
+            raise ImageRefused(
+                "image_unreadable",
+                f"The header declares a {width}×{height} image of {frames} frame(s).",
+            )
+        orientation = _orientation(raw_exif, fmt)
+        if raw_format == "MPO" and frames > 1:
+            if frames > MAX_PICTURES:
                 raise ImageRefused(
-                    "image_too_many_frames",
-                    f"The image holds more than {MAX_FRAMES} frames; at most "
-                    f"{MAX_FRAMES} are accepted.",
+                    "image_too_many_pictures",
+                    f"The multi-picture JPEG holds {frames} pictures; at most "
+                    f"{MAX_PICTURES} are accepted.",
                 )
-            if width <= 0 or height <= 0 or frames < 1:
-                raise ImageRefused(
-                    "image_unreadable",
-                    f"The header declares a {width}×{height} image of {frames} "
-                    "frame(s).",
-                )
-            # Read before any seek below: it is the first picture's.
-            orientation = _orientation(raw_exif, fmt)
-            if raw_format == "MPO" and frames > 1:
-                canvas = _largest_picture(image, fmt, width, height, frames)
+            ranges = _picture_ranges(image, len(data))
+            canvas = _largest_picture(data, fmt, ranges, width, height)
 
     canvas_w, canvas_h = max(canvas[0], width), max(canvas[1], height)
     total = canvas_w * canvas_h * frames
