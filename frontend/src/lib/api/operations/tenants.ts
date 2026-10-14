@@ -32,7 +32,10 @@ import type {
 } from "@/components/sessions/types";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE } from "./base";
-import { NON_IDEMPOTENT_POST_NO_RETRY_STATUSES, SessionsApiError } from "./sessions";
+import {
+  NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+  SessionsApiError,
+} from "./sessions";
 
 export async function listTenants(
   signal?: AbortSignal

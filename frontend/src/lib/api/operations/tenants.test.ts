@@ -33,7 +33,9 @@ describe("tenants client", () => {
   });
 
   it("listTenants GETs /tenants, declared idempotent", async () => {
-    fetchMock.mockResolvedValueOnce(json({ tenants: [], active_tenant_id: "t" }));
+    fetchMock.mockResolvedValueOnce(
+      json({ tenants: [], active_tenant_id: "t" })
+    );
     await listTenants();
     expect(fetchMock.mock.calls[0]).toEqual([
       "/api/v1/operations/tenants",

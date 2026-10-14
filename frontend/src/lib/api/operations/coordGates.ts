@@ -5,10 +5,11 @@
  *
  * Part of the typed `/operations` client (plan
  * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`,
- * D5, Phase 7 batch 1). These replace the `gate*Url` builders of
- * `components/operations/utils.ts` (whose caller was
- * `admin/coord/gates/_components/GateActions.tsx`) and the bare `fetch` gate
- * calls of `components/admin/agent-claims/AgentClaimsDashboard.tsx`. Every
+ * D5, Phase 7 batch 1). These replace the `gate*Url` builders that lived in
+ * `components/operations/utils.ts` until this batch deleted them (their
+ * caller was `admin/coord/gates/_components/GateActions.tsx`) and the bare
+ * `fetch` gate calls of
+ * `components/admin/agent-claims/AgentClaimsDashboard.tsx`. Every
  * function calls `httpClient.fetch` on the RELATIVE `OPERATIONS_BASE` (D6)
  * with its URL inline and states its retry policy; a non-2xx rejects through
  * `readJson` with `<METHOD> <url> failed: <status> - <body>`, which a caller
@@ -26,8 +27,7 @@
  * re-decides them. A 429 (nothing committed) still retries.
  *
  * Handlers mirrored (`backend/app/api/v1/endpoints/operations/__init__.py`):
- * `get_gates_list`, `approve_gate`, `reject_gate` (which also serves
- * `/reopen`), `mute_gate`, `unmute_gate`, `snooze_gate`, `force_clear_gate`,
+ * `get_gates_list`, `approve_gate`, `reject_gate`, `reopen_gate`, `mute_gate`, `unmute_gate`, `snooze_gate`, `force_clear_gate`,
  * `continuation_cancel_gate` and `set_gate_audience`. None declares a
  * `response_model`.
  */
@@ -94,7 +94,9 @@ export async function approveGate(gateId: string): Promise<unknown> {
 
 /**
  * `POST /gates/{gate_id}/reject` — mark an open `operator_approval` gate
- * failed. `body.reason` is optional; an empty body is sent without one.
+ * failed. `body.reason` is optional and travels in the JSON body, which
+ * `reject_gate` reads (its `GateRejectRequest`) and forwards to coord when
+ * non-empty; an empty body `{}` rejects without a reason.
  */
 export async function rejectGate(
   gateId: string,

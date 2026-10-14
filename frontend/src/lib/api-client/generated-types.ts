@@ -13291,6 +13291,10 @@ export interface paths {
          * Reject Gate
          * @description Reject an OperatorApproval gate (operator bearer forwarded —
          *     fleet-auth P2/D6).
+         *
+         *     The optional JSON body ``{"reason": ...}`` carries the reason. It is
+         *     forwarded to coord stripped, and only when non-blank; an absent body or a
+         *     blank reason forwards ``{}``.
          */
         post: operations["api_v1_operations_gates_gate_id_reject_post"];
         delete?: never;
@@ -37549,6 +37553,14 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /**
+         * GateRejectRequest
+         * @description Optional JSON body of ``POST /gates/{gate_id}/reject``.
+         */
+        GateRejectRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * GenerateDescriptionRequest
@@ -74382,16 +74394,18 @@ export interface operations {
     };
     api_v1_operations_gates_gate_id_reject_post: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 gate_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GateRejectRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

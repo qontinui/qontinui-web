@@ -6,12 +6,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * states. URLs are literal strings on purpose; importing `OPERATIONS_BASE`
  * into the expectation would let a base change pass unseen.
  *
- * The SSE readers keep their own streaming `fetch` (stubbed globally here);
- * what is pinned for them is the relative URL and the hand-built bearer.
+ * The SSE readers keep their own streaming `fetch` (stubbed globally here)
+ * and, unlike everything else, the ABSOLUTE base (`ApiConfig.getBaseUrl()`,
+ * stubbed to a sentinel host here): streaming through the external rewrite is
+ * unmeasured. What is pinned for them is that absolute URL, the hand-built
+ * bearer, and that the fetch is bound to the reader's own abort signal.
  */
 
 const fetchMock = vi.fn();
 const getAuthToken = vi.fn<() => string | null>(() => "tok-123");
+
+vi.mock("@/services/api-config", () => ({
+  ApiConfig: {
+    API_BASE_URL: "https://api.example.test",
+    getBaseUrl: () => "https://api.example.test",
+  },
+}));
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
@@ -84,7 +94,11 @@ describe("sessions client", () => {
 
   it("getSessionOutput GETs /sessions/{id}/output with tier, stream and limit", async () => {
     fetchMock.mockResolvedValueOnce(json({ chunks: [] }));
-    await getSessionOutput("s1", { tier: "cold", stream: "transcript", limit: 5 });
+    await getSessionOutput("s1", {
+      tier: "cold",
+      stream: "transcript",
+      limit: 5,
+    });
     expect(fetchMock.mock.calls[0]).toEqual([
       "/api/v1/operations/sessions/s1/output?tier=cold&stream=transcript&limit=5",
       { signal: undefined, idempotent: true },
@@ -157,7 +171,7 @@ describe("sessions client", () => {
     ["subscribeSessionEvents", subscribeSessionEvents],
     ["subscribeSessionOutput", subscribeSessionOutput],
   ] as const)(
-    "%s streams the relative /sessions/{id}/events with the bearer attached by hand",
+    "%s streams the absolute /sessions/{id}/events with the bearer attached by hand",
     async (_name, subscribe) => {
       const streamFetch = vi.fn(
         async () => new Response(": keepalive\n\n", { status: 200 })
@@ -170,13 +184,20 @@ describe("sessions client", () => {
         onClose,
       } as never);
       await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
-      stop();
       expect(fetchMock).not.toHaveBeenCalled();
       const [url, init] = streamFetch.mock.calls[0] as unknown as [
         string,
         RequestInit,
       ];
-      expect(url).toBe("/api/v1/operations/sessions/s%2F1/events");
+      // The fetch is bound to the reader's own controller: the signal it was
+      // handed is live until the returned unsubscribe aborts exactly it.
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect(init.signal?.aborted).toBe(false);
+      stop();
+      expect(init.signal?.aborted).toBe(true);
+      expect(url).toBe(
+        "https://api.example.test/api/v1/operations/sessions/s%2F1/events"
+      );
       expect(init.headers).toEqual({
         Accept: "text/event-stream",
         Authorization: "Bearer tok-123",
