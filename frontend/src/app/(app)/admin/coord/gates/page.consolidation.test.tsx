@@ -151,10 +151,12 @@ describe("exactly one gates LIST read remains", () => {
   /**
    * Source with comments removed.
    *
-   * `operations/utils.ts` NAMES both deleted symbols in a docblock explaining
-   * why they are gone and forbidding a second list read. That note is the
-   * point of the delete, not a violation of it — a grep that failed on it
-   * would push the next author to remove the explanation.
+   * A docblock may NAME the deleted symbols to explain why they are gone and
+   * to forbid a second list read (`operations/utils.ts` carried such a note
+   * until its gate builders moved to `lib/api/operations/coordGates.ts`).
+   * That kind of note is the point of the delete, not a violation of it — a
+   * grep that failed on it would push the next author to remove the
+   * explanation.
    */
   function code(path: string): string {
     return readFileSync(path, "utf8")

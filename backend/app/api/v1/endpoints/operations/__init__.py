@@ -3557,19 +3557,35 @@ async def reopen_gate(
     )
 
 
+class GateRejectRequest(BaseModel):
+    """Optional JSON body of ``POST /gates/{gate_id}/reject``."""
+
+    reason: str | None = None
+
+
+# ``reason`` was once a bare handler parameter, which FastAPI binds to the
+# QUERY string, so the reason the web client sends in the JSON body was
+# silently dropped and every rejection reached coord without one. It is now a
+# body model. The reason is stripped before forwarding because coord stores a
+# whitespace-only reason literally.
 @router.post("/gates/{gate_id}/reject")
 async def reject_gate(
     gate_id: str,
-    reason: str | None = None,
+    body: GateRejectRequest | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reject an OperatorApproval gate (operator bearer forwarded —
-    fleet-auth P2/D6)."""
-    body: dict[str, Any] = {}
+    fleet-auth P2/D6).
+
+    The optional JSON body ``{"reason": ...}`` carries the reason. It is
+    forwarded to coord stripped, and only when non-blank; an absent body or a
+    blank reason forwards ``{}``."""
+    reject_body: dict[str, Any] = {}
+    reason = body.reason.strip() if body is not None and body.reason else ""
     if reason:
-        body["reason"] = reason
+        reject_body["reason"] = reason
     return await _proxy_coord_post(
-        f"/coord/gates/{gate_id}/reject", body, tenant_id=tenant_id
+        f"/coord/gates/{gate_id}/reject", reject_body, tenant_id=tenant_id
     )
 
 

@@ -18,7 +18,10 @@
  * SSE streams keep their own streaming `fetch` and build the auth header from
  * `httpClient.getAuthToken()` themselves (httpClient.fetch's internal
  * AbortController would conflict with the caller's long-lived signal) — that
- * transport is unchanged by the move.
+ * transport is unchanged by the move. They also keep the ABSOLUTE base
+ * (`ApiConfig.getBaseUrl()`), not the relative `OPERATIONS_BASE`: D6 measured
+ * the external Vercel rewrite for short GETs only, and its buffering/timeout
+ * behaviour for a long-lived streaming body is unmeasured.
  *
  * Errors stay the typed {@link SessionsApiError} (status-carrying) rather
  * than `readJson`'s shape: `LiveTailPane`, `ResumePanel`, `TranscriptPane` and
@@ -47,6 +50,7 @@ import type {
   SessionRestoreRecordResponse,
   SessionRow,
 } from "@/components/sessions/types";
+import { ApiConfig } from "@/services/api-config";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE } from "./base";
 
@@ -432,7 +436,12 @@ export function subscribeSessionEvents(
   handlers: SessionEventStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(
+  // ABSOLUTE on purpose, unlike every other call in this client (D6 is the
+  // relative base). D6 measured the Vercel `/api/:path*` rewrite for short
+  // GETs only; whether that external rewrite buffers or times out a
+  // long-lived streaming body is unmeasured, so the SSE readers keep the
+  // pre-migration absolute base until it is.
+  const url = `${ApiConfig.getBaseUrl()}/api/v1/operations/sessions/${encodeURIComponent(
     sessionId
   )}/events`;
 
@@ -569,7 +578,9 @@ export function subscribeSessionOutput(
   handlers: SessionOutputStreamHandlers
 ): () => void {
   const controller = new AbortController();
-  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(
+  // ABSOLUTE on purpose — see subscribeSessionEvents (the rewrite is
+  // unmeasured for a long-lived streaming body).
+  const url = `${ApiConfig.getBaseUrl()}/api/v1/operations/sessions/${encodeURIComponent(
     sessionId
   )}/events`;
 
