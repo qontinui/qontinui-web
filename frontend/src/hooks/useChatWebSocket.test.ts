@@ -830,3 +830,355 @@ describe("toAiSessionState", () => {
     expect(toAiSessionState(3)).toBeNull();
   });
 });
+
+/**
+ * The relay does not replay frames, so whatever the runner said about this
+ * conversation while its socket was down is otherwise never seen — the page
+ * stayed on a stale `processing` (or `ready`) until reloaded.
+ */
+describe("useChatWebSocket reloads its run when the socket reopens", () => {
+  /** Drop the hook's socket and wait for the one its backoff reopens. */
+  async function reconnect(ws: FakeWebSocket): Promise<FakeWebSocket> {
+    act(() => {
+      ws.push({ type: "connected" }); // the relay admitted the first socket
+      ws.readyState = FakeWebSocket.CLOSED;
+      ws.onclose?.();
+    });
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2), {
+      timeout: 3000,
+    });
+    const next = FakeWebSocket.instances[1];
+    if (!next) throw new Error("the hook did not reconnect");
+    act(() => next.open());
+    return next;
+  }
+
+  it("a loaded conversation re-reads its state and transcript", async () => {
+    const { result, ws } = await connected();
+    act(() => result.current.loadSession("run-1"));
+
+    const next = await reconnect(ws);
+
+    expect(next.requests()).toEqual([
+      { type: "chat_session_state", params: { task_run_id: "run-1" } },
+      { type: "chat_get_output", params: { task_run_id: "run-1" } },
+    ]);
+  });
+
+  it("a created conversation re-reads its state, not its transcript", async () => {
+    // Its transcript is what the caller rendered (Ask the Twin shows the
+    // question without its preamble); the runner's log would replace it.
+    const { result, ws } = await connected();
+    act(() => {
+      result.current.createSession("Digital Twin question", "p", "q");
+    });
+    act(() => ws.push(created("run-1")));
+
+    const next = await reconnect(ws);
+
+    expect(next.requests()).toEqual([
+      { type: "chat_session_state", params: { task_run_id: "run-1" } },
+    ]);
+  });
+
+  it("a create still unanswered asks for nothing", async () => {
+    const { result, ws } = await connected();
+    act(() => {
+      result.current.createSession("Digital Twin question", "p", "q");
+    });
+
+    const next = await reconnect(ws);
+
+    expect(next.requests()).toEqual([]);
+  });
+
+  it("a load after a create re-reads the transcript; a create after a load does not", async () => {
+    const { result, ws } = await connected();
+    act(() => {
+      result.current.createSession("Digital Twin question", "p", "q");
+    });
+    act(() => ws.push(created("run-1")));
+    act(() => result.current.loadSession("run-2"));
+    act(() => {
+      result.current.createSession("Digital Twin question", "p", "q");
+    });
+    act(() => ws.push(created("run-3")));
+
+    const next = await reconnect(ws);
+
+    expect(next.requests()).toEqual([
+      { type: "chat_session_state", params: { task_run_id: "run-3" } },
+    ]);
+  });
+
+  it("a reload the relay could not forward does not fail the conversation", async () => {
+    // The backend is back but its runner is not yet: the probe this hook
+    // sent on its own is refused, and the conversation is still there.
+    const { result, ws } = await connected();
+    act(() => result.current.loadSession("run-1"));
+    const next = await reconnect(ws);
+
+    act(() => {
+      next.push({ type: "error", message: "Runner is not connected." });
+      next.push({ type: "error", message: "Runner is not connected." });
+    });
+    expect(result.current.sessionError).toBeNull();
+
+    // Once the probe is answered, a relay failure is reported again.
+    act(() =>
+      next.push({ type: "error", message: "Runner is not connected." })
+    );
+    expect(result.current.sessionError).toBe("Runner is not connected.");
+  });
+
+  it("a forwarded reload stops shielding later failures", async () => {
+    const { result, ws } = await connected();
+    act(() => result.current.loadSession("run-1"));
+    const next = await reconnect(ws);
+
+    act(() => {
+      next.push({ type: "chat_session_state_sent" });
+      next.push({ type: "chat_get_output_sent" });
+      next.push({ type: "error", message: "Runner is not connected." });
+    });
+
+    expect(result.current.sessionError).toBe("Runner is not connected.");
+  });
+
+  it("a first open's load still reports a relay failure", async () => {
+    const { result } = renderChat();
+    act(() => result.current.loadSession("run-1"));
+    const ws = await hookSocket();
+    act(() => ws.open());
+
+    act(() => ws.push({ type: "error", message: "Runner is not connected." }));
+
+    expect(result.current.sessionError).toBe("Runner is not connected.");
+  });
+
+  it("a workflow wait outlives the socket, and its result still ends it", async () => {
+    // The runner sends the result to whichever chat sockets are connected
+    // when it finishes — usually the reconnected one. Ending the wait at the
+    // drop would let the user start a second generation of the same run.
+    const { result, ws, onWorkflowGenerated } = await connected();
+    act(() => {
+      result.current.createSession("Digital Twin question", "p", "q");
+    });
+    act(() => ws.push(created("run-1")));
+    act(() => result.current.generateWorkflow("run-1"));
+
+    const next = await reconnect(ws);
+    expect(result.current.isGeneratingWorkflow).toBe(true);
+
+    act(() =>
+      next.push({
+        type: "chat_workflow_generated",
+        task_run_id: "run-1",
+        success: true,
+        workflow: { name: "w" },
+      })
+    );
+    expect(result.current.isGeneratingWorkflow).toBe(false);
+    expect(onWorkflowGenerated).toHaveBeenCalledTimes(1);
+  });
+
+  it("a runner's run-less error is not taken for the probe's answer", async () => {
+    // Another tab's bad request reaches every socket of the device; the
+    // probe's own refusal, arriving after it, must still be shielded.
+    const { result, ws } = await connected();
+    act(() => result.current.loadSession("run-1"));
+    const next = await reconnect(ws);
+
+    act(() => next.push({ type: "error", error: "Missing task_run_id" }));
+    expect(result.current.sessionError).toBe("Missing task_run_id");
+
+    act(() => {
+      next.push({ type: "error", message: "Runner is not connected." });
+      next.push({ type: "error", message: "Runner is not connected." });
+    });
+    expect(result.current.sessionError).toBe("Missing task_run_id");
+  });
+
+  it("a runner error spelled `message` is not taken for the probe's answer", async () => {
+    const { result, ws } = await connected();
+    act(() => result.current.loadSession("run-1"));
+    const next = await reconnect(ws);
+
+    act(() =>
+      next.push({
+        type: "error",
+        request_id: "r1",
+        code: "terminal_exited",
+        message: "terminal_exited",
+      })
+    );
+    expect(result.current.sessionError).toBe("terminal_exited");
+    act(() => {
+      next.push({ type: "error", message: "Runner is not connected." });
+      next.push({ type: "error", message: "Runner is not connected." });
+    });
+    expect(result.current.sessionError).toBe("terminal_exited");
+  });
+
+  it("a refused reload is retried until the relay forwards it", async () => {
+    const { result, ws } = await connected();
+    act(() => result.current.loadSession("run-1"));
+    const next = await reconnect(ws);
+    vi.useFakeTimers();
+    try {
+      const sentBefore = next.requests().length;
+      act(() => {
+        next.push({ type: "error", message: "Runner is not connected." });
+        next.push({ type: "error", message: "Runner is not connected." });
+      });
+      expect(next.requests()).toHaveLength(sentBefore);
+
+      act(() => vi.advanceTimersByTime(5000));
+      expect(next.requests().slice(sentBefore)).toEqual([
+        { type: "chat_session_state", params: { task_run_id: "run-1" } },
+        { type: "chat_get_output", params: { task_run_id: "run-1" } },
+      ]);
+
+      // Forwarded this time: no further retry.
+      act(() => {
+        next.push({ type: "chat_session_state_sent" });
+        next.push({ type: "chat_get_output_sent" });
+        vi.advanceTimersByTime(60000);
+      });
+      expect(next.requests()).toHaveLength(sentBefore + 2);
+      expect(result.current.sessionError).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a refused reload is retried a bounded number of times", async () => {
+    const { result, ws } = await connected();
+    act(() => result.current.loadSession("run-1"));
+    const next = await reconnect(ws);
+    vi.useFakeTimers();
+    try {
+      const refuse = () => {
+        next.push({ type: "error", message: "Runner is not connected." });
+        next.push({ type: "error", message: "Runner is not connected." });
+      };
+      act(refuse);
+      for (let i = 0; i < 12; i++) {
+        act(() => vi.advanceTimersByTime(5000));
+        act(refuse);
+      }
+      act(() => vi.advanceTimersByTime(60000));
+      // The first reload plus 12 retries, two requests each.
+      expect(next.requests()).toHaveLength(2 * 13);
+      expect(result.current.sessionError).toBe(
+        "Lost contact with your runner — this conversation may be out of date."
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a conversation with no run asks for nothing", async () => {
+    const { ws } = await connected();
+
+    const next = await reconnect(ws);
+
+    expect(next.requests()).toEqual([]);
+  });
+});
+
+describe("useChatWebSocket reports requests it could not send", () => {
+  it.each([
+    ["interrupt", "interruptSession"],
+    ["close", "closeSession"],
+  ] as const)("an unsent %s", async (what, method) => {
+    const { result } = renderChat();
+    await hookSocket(); // never opened
+
+    act(() => result.current[method]("run-1"));
+
+    expect(result.current.sessionError).toBe(
+      `Not connected to the chat relay — the ${what} was not sent.`
+    );
+  });
+
+  it("an unsent rename", async () => {
+    const { result } = renderChat();
+    await hookSocket();
+
+    act(() => result.current.renameSession("run-1", "name"));
+
+    expect(result.current.sessionError).toBe(
+      "Not connected to the chat relay — the rename was not sent."
+    );
+  });
+
+  it("an unsent workflow request is not waited on", async () => {
+    const { result } = renderChat();
+    await hookSocket();
+
+    act(() => result.current.generateWorkflow("run-1"));
+
+    expect(result.current.isGeneratingWorkflow).toBe(false);
+    expect(result.current.sessionError).toBe(
+      "Not connected to the chat relay — the workflow request was not sent."
+    );
+  });
+
+  it("an unsent resend leaves a running generation waited on", async () => {
+    const { result, ws } = await connected();
+    act(() => result.current.generateWorkflow("run-1"));
+    ws.readyState = FakeWebSocket.CLOSED; // closing, before onclose fires
+
+    act(() => result.current.generateWorkflow("run-1"));
+
+    expect(result.current.isGeneratingWorkflow).toBe(true);
+  });
+
+  it("a sent request reports nothing", async () => {
+    const { result } = await connected();
+
+    act(() => {
+      result.current.interruptSession("run-1");
+      result.current.renameSession("run-1", "name");
+    });
+
+    expect(result.current.sessionError).toBeNull();
+  });
+});
+
+describe("useChatWebSocket ends a workflow wait the relay failed", () => {
+  async function generating() {
+    const hook = await connected();
+    act(() => {
+      hook.result.current.createSession("Digital Twin question", "p", "q");
+    });
+    act(() => hook.ws.push(created("run-1")));
+    act(() => hook.result.current.generateWorkflow("run-1"));
+    expect(hook.result.current.isGeneratingWorkflow).toBe(true);
+    return hook;
+  }
+
+  it("the backend could not forward it", async () => {
+    const { result, ws } = await generating();
+
+    act(() => ws.push({ type: "error", message: "Runner is not connected." }));
+
+    expect(result.current.isGeneratingWorkflow).toBe(false);
+    expect(result.current.sessionError).toBe("Runner is not connected.");
+  });
+
+  it("an error answering another request of this run leaves it waiting", async () => {
+    const { result, ws } = await generating();
+
+    act(() =>
+      ws.push({
+        type: "error",
+        task_run_id: "run-1",
+        error: "Failed to rename session",
+      })
+    );
+
+    expect(result.current.isGeneratingWorkflow).toBe(true);
+  });
+});

@@ -34,16 +34,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { fetchFleetWorktreeSlots } from "@/lib/api/operations/coordFleet";
 import {
   COORD_DASHBOARD_POLL_OPTIONS,
   describeCoordPollError,
 } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import { RESOURCE_POLL_INTERVAL_MS } from "./useFleetResourceSamples";
-
-export const FLEET_WORKTREE_SLOTS_API = `${OPERATIONS_API}/fleet/worktree-slots`;
 
 /**
  * Friendly error text for the banner (`describeCoordPollError`, which reads
@@ -144,10 +141,7 @@ export function useFleetWorktreeSlots(): UseFleetWorktreeSlotsResult {
   // actual cadence that day is UNKNOWN.
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const body = await httpClient.get<WorktreeSlotsResponse>(
-        FLEET_WORKTREE_SLOTS_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
+      const body = await fetchFleetWorktreeSlots(COORD_DASHBOARD_POLL_OPTIONS);
       if (!isCurrent()) return;
       setData(body);
       // Stamped ONLY on success — a failed poll must not refresh the clock

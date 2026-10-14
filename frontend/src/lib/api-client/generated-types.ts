@@ -13291,6 +13291,10 @@ export interface paths {
          * Reject Gate
          * @description Reject an OperatorApproval gate (operator bearer forwarded —
          *     fleet-auth P2/D6).
+         *
+         *     The optional JSON body ``{"reason": ...}`` carries the reason. It is
+         *     forwarded to coord stripped, and only when non-blank; an absent body or a
+         *     blank reason forwards ``{}``.
          */
         post: operations["api_v1_operations_gates_gate_id_reject_post"];
         delete?: never;
@@ -17330,9 +17334,10 @@ export interface paths {
          *
          *     Plan ``2026-09-18-plan-library-difficulty-field``. The rating is computed
          *     from each plan's body by ``app.services.plan_difficulty`` — two axes,
-         *     conceptual and implementation, folded into a routing level (``high`` →
-         *     Fable 5.1, ``medium`` → Opus 5, ``low`` → a fast tier), with a plan's own
-         *     ``Difficulty:`` stamp overriding the computed level.
+         *     conceptual and implementation, folded into a routing level, with a plan's
+         *     own ``Difficulty:`` stamp overriding the computed level. Which model family
+         *     each level routes to is the caller's organization's map
+         *     (``GET/PUT /plan-library/model-routing``).
          *
          *     Before answering, plans rated under an older rubric (or none) are re-rated,
          *     up to a per-request cap, newest first — see
@@ -17675,6 +17680,59 @@ export interface paths {
          */
         post: operations["api_v1_plan_library_followups_reconcile_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-library/model-routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which model family each difficulty level routes to (this organization)
+         * @description The routing map ``GET /plan-library``, ``/candidates`` and
+         *     ``/difficulty`` serve this caller, with each level's provenance.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Same admission as those three reads (a Cognito user OR a coord device JWT):
+         *     the map is already on their envelopes, this adds only where each level came
+         *     from. ``can_edit`` says whether ``PUT`` would be accepted for this scope —
+         *     the NULL organization bucket can never be written — not whether the
+         *     caller's CREDENTIAL can write (a device JWT cannot; see the PUT).
+         */
+        get: operations["api_v1_plan_library_model_routing_get"];
+        /**
+         * Set the model family each difficulty level routes to (Cognito session only)
+         * @description Record the FULL ``{high, medium, low}`` → model-family map.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Families are the ``claude_code_agent_tool_v1`` selector vocabulary
+         *     (``fable | opus | sonnet | haiku``); the harness resolves each to that
+         *     family's latest model, so no version is ever stored. Every level is
+         *     required and every level's row is written, so a save is a whole map. Two
+         *     levels may share a family.
+         *
+         *     Scoped to the caller's personal organization — the scope the three serving
+         *     routes read. 409 for a principal with none: that is the shared NULL bucket.
+         *
+         *     Answers with the map as RE-READ after the commit, so what the console shows
+         *     after a save is what the serving routes now return.
+         */
+        put: operations["api_v1_plan_library_model_routing_put"];
+        post?: never;
+        /**
+         * Clear this organization's model routing back to the defaults (Cognito session only)
+         * @description Delete every stored level, so each serves the shipped default again.
+         *
+         *     Not the same as ``PUT``-ing a map equal to today's defaults: that stores a
+         *     copy, which stays pinned if the defaults move. After this every level's
+         *     ``source`` is ``default``. Idempotent; 409 for the NULL bucket, as ``PUT``.
+         */
+        delete: operations["api_v1_plan_library_model_routing_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -29084,11 +29142,17 @@ export interface components {
             domain: string;
             /** Repos */
             repos?: components["schemas"]["CiHostingRepoReading"][];
+            /** Repos Unknown Reason */
+            repos_unknown_reason?: string | null;
             tenant_default: components["schemas"]["CiHostingReading"];
         };
         /**
          * CiNodeConfig
-         * @description The four ``CiNodeSettings`` fields, with the runner's own defaults.
+         * @description The ``CiNodeSettings`` fields, with the runner's own defaults.
+         *
+         *     ``model_access`` is the exception: its default is ``None`` ("not set
+         *     here"), not the runner's ``True``, because an absent value must leave the
+         *     runner's stored consent alone rather than overwrite it.
          *
          *     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
          *     on purpose: a machine that has never been configured here must round-trip
@@ -29109,6 +29173,8 @@ export interface components {
              * @default 20
              */
             min_free_disk_gb: number;
+            /** Model Access */
+            model_access?: boolean | null;
             /** Repo Allowlist */
             repo_allowlist?: string[];
         };
@@ -37551,6 +37617,14 @@ export interface components {
             name: string;
         };
         /**
+         * GateRejectRequest
+         * @description Optional JSON body of ``POST /gates/{gate_id}/reject``.
+         */
+        GateRejectRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * GenerateDescriptionRequest
          * @description Request to generate LLM description for an element region.
          */
@@ -40940,6 +41014,80 @@ export interface components {
             tokens_output: number;
         };
         /**
+         * ModelFamilyOption
+         * @description One family the console offers, with the copy ``model_tiers`` serves for it.
+         */
+        ModelFamilyOption: {
+            /** Display */
+            display: string;
+            /** Family */
+            family: string;
+        };
+        /**
+         * ModelRoutingResponse
+         * @description The caller's organization's routing map, as STORED and as SERVED.
+         *
+         *     ``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are
+         *     exactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``
+         *     serve this caller. ``sources`` says, per level, whether a stored row or the
+         *     shipped default answered (``default_selectors``). ``can_edit`` is false for
+         *     a principal with no personal organization: that scope is the shared NULL
+         *     bucket, which reads the defaults and refuses a write (409).
+         */
+        ModelRoutingResponse: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Default Selectors */
+            default_selectors: {
+                [key: string]: string;
+            };
+            /** Families */
+            families: components["schemas"]["ModelFamilyOption"][];
+            /** Model Selector Vocabulary */
+            model_selector_vocabulary: string;
+            /** Model Selectors */
+            model_selectors: {
+                [key: string]: string;
+            };
+            /** Model Tiers */
+            model_tiers: {
+                [key: string]: string;
+            };
+            /** Sources */
+            sources: {
+                [key: string]: "stored" | "default";
+            };
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By User Id */
+            updated_by_user_id?: string | null;
+        };
+        /**
+         * ModelRoutingUpdate
+         * @description ``PUT /plan-library/model-routing`` — the FULL map, one family per level.
+         *
+         *     Every level is required and an unknown key is refused, so a save is always
+         *     a whole, explicit map: there is no partial write whose omitted levels mean
+         *     either "keep" or "reset" depending on who reads the code.
+         */
+        ModelRoutingUpdate: {
+            /**
+             * High
+             * @enum {string}
+             */
+            high: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Low
+             * @enum {string}
+             */
+            low: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Medium
+             * @enum {string}
+             */
+            medium: "fable" | "opus" | "sonnet" | "haiku";
+        };
+        /**
          * MonitorSettingsSchema
          * @description Monitor configuration settings schema.
          */
@@ -43474,7 +43622,11 @@ export interface components {
          *     row that is still unrated is left OUT of ``items`` — absent here means
          *     "no rating", which the console renders as unrated, never as "low".
          *     ``model_tiers`` maps each level to the model tier it routes to, served so
-         *     every consumer names the same models. It is DISPLAY COPY — never parse it.
+         *     every consumer names the same models. It is DISPLAY COPY — never parse it —
+         *     derived from ``model_selectors``, so the two always agree. Both are the
+         *     caller's organization's map as the operator set it on
+         *     ``PUT /plan-library/model-routing``, each level defaulting to the shipped
+         *     map when no row names it.
          *     ``model_selectors`` is the machine-readable twin: each level's harness
          *     selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
          *     Code Agent tool's ``model`` values). A consumer whose harness does not
@@ -74382,16 +74534,18 @@ export interface operations {
     };
     api_v1_operations_gates_gate_id_reject_post: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 gate_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GateRejectRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -79861,6 +80015,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FollowupReconcileResponse"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelRoutingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
                 };
             };
         };

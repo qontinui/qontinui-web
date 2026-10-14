@@ -632,7 +632,6 @@ User analyzes pattern similarity across 5 screenshots
 - [Authentication Architecture](./auth-architecture.md)
 - [Deployment Architecture](./deployment-architecture.md)
 - [API Reference](../api-reference/)
-- [Storage Service Guide](../implementation/S3_MINIO_SETUP.md)
 
 ---
 

@@ -32,6 +32,7 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     age_secs: 15,
     cpu_cores: 16,
     load_1m: null,
+    cpu_temp_c: null,
     mem_total_bytes: 32 * GIB,
     mem_available_bytes: 4 * GIB,
     commit_total_bytes: 64 * GIB,
@@ -1078,5 +1079,72 @@ describe("§C1 — the coupled WSL figure carries its ceiling", () => {
     expect(coupled.textContent).toMatch(/\//);
     expect(coupled.textContent).toMatch(/%/);
     expect(coupled.textContent).toMatch(/host-bound/);
+  });
+});
+
+describe("CPU temperature column — display only, never a fabricated zero", () => {
+  /**
+   * A Linux-shaped host row. The Linux runner publishes commit_total_bytes
+   * too (resource_sample.rs read_memory_status), so it is SET here.
+   */
+  const linuxHost = (overrides: Partial<ResourceSampleRow> = {}) =>
+    sample({
+      commit_total_bytes: 64 * GIB,
+      commit_available_bytes: 32 * GIB,
+      ...overrides,
+    });
+
+  it("renders a reading as a whole-degree value with the unit", () => {
+    renderStrip({ latest: [linuxHost({ cpu_temp_c: 71.5 })], history: [] });
+    expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
+      "72 C"
+    );
+    expect(screen.getByText("Temperature")).toBeTruthy();
+  });
+
+  it("renders null as unknown, never 0 C", () => {
+    renderStrip({ latest: [linuxHost({ cpu_temp_c: null })], history: [] });
+    const cell = screen.getByTestId("fleet-resource-cpu-temp");
+    expect(cell.textContent).toBe("unknown");
+    expect(cell.textContent).not.toMatch(/0 C/);
+  });
+
+  it("renders an ABSENT key (a coord predating the column) as unknown", () => {
+    const row = linuxHost();
+    delete row.cpu_temp_c;
+    renderStrip({ latest: [row], history: [] });
+    expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
+      "unknown"
+    );
+  });
+
+  it("renders a real 0 as 0 C, not unknown", () => {
+    renderStrip({ latest: [linuxHost({ cpu_temp_c: 0 })], history: [] });
+    expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
+      "0 C"
+    );
+  });
+
+  it("says not measured on this host type only for the wsl lane", () => {
+    renderStrip({
+      latest: [
+        sample({ cpu_temp_c: 55 }),
+        sample({
+          lane: "wsl",
+          mem_total_bytes: 16 * GIB,
+          mem_available_bytes: 9 * GIB,
+          commit_available_bytes: null,
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          pressure: { ratio: 0.75, basis: "swap" },
+          cpu_temp_c: null,
+        }),
+      ],
+      history: [],
+    });
+    const cells = screen
+      .getAllByTestId("fleet-resource-cpu-temp")
+      .map((c) => c.textContent);
+    expect(cells).toEqual(["55 C", "not measured on this host type"]);
   });
 });
