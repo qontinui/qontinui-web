@@ -1,7 +1,7 @@
 """Per-device worktree cap override — on the parent AND the versions table
 
 Revision ID: wtcap_01_max_worktrees_by_device
-Revises: coord_pdclaims_02_claim_lifecycle
+Revises: leader_worker_runs_01
 Create Date: 2026-09-30
 
 Amendment A3 / Phase 4 of plan
@@ -137,7 +137,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "wtcap_01_max_worktrees_by_device"
-down_revision: str | Sequence[str] | None = "coord_pdclaims_02_claim_lifecycle"
+down_revision: str | Sequence[str] | None = "leader_worker_runs_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
