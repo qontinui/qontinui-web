@@ -128,7 +128,7 @@ interface PresenceUser {
 ```typescript
 // Custom hook for presence management
 export function usePresence(projectId: number) {
-  const [activeUsers, setActiveUsers] = useState<PresenceUser[]>([]);
+  const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);
   const [myStatus, setMyStatus] = useState<UserStatus>('viewing');
   const ws = useWebSocket();
 
@@ -137,7 +137,9 @@ export function usePresence(projectId: number) {
     // MERGES into one handler per event, so clear yours on unmount.
     ws.registerHandlers({ onPresenceUpdate: setActiveUsers });
     return () => ws.registerHandlers({ onPresenceUpdate: undefined });
-  }, [ws, projectId]);
+    // Not [ws]: the provider builds a new context value every render, so
+    // depending on it re-registers on every render and never settles.
+  }, [projectId]);
 
   return { activeUsers, myStatus, setMyStatus };
 }
@@ -284,8 +286,12 @@ export function ResourceLockIndicator({
     // Subscribe to lock updates via WebSocket (const ws = useWebSocket()).
     // registerHandlers keeps ONE handler per event, so clear it on unmount.
     ws.registerHandlers({
+      // The event carries a `Lock` (@/types/collaboration), not this
+      // component's ResourceLock, so re-read the lock for this resource.
       onLockAcquired: (acquired) => {
-        if (acquired.resource_id === resourceId) setLock(acquired);
+        if (acquired.resource_id === resourceId) {
+          checkLock(projectId, resourceType, resourceId).then(setLock);
+        }
       },
       onLockReleased: (released) => {
         if (released.resource_id === resourceId) setLock(null);

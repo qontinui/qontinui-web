@@ -435,8 +435,8 @@ Solutions to common issues with Qontinui's collaboration features.
 
 1. **WebSocket Message Queue Growing**
    ```typescript
-   // Limit queue size
-   ws.updateConfig({
+   // Limit queue size on the ExecutionWebSocket instance
+   executionWs.updateConfig({
      maxQueueSize: 100 // Reduce from default
    });
    ```
@@ -451,7 +451,8 @@ Solutions to common issues with Qontinui's collaboration features.
        // Handlers are merged, one per event: clear yours on unmount.
        ws.registerHandlers({ onActivityUpdate: undefined });
      };
-   }, [ws]);
+     // Not [ws]: the context value is rebuilt every render.
+   }, []);
    ```
 
 3. **Memory Leak in Activity Log**
