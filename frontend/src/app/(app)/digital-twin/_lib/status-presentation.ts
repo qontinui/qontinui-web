@@ -19,7 +19,9 @@ export interface StatusStyle {
  * render as hollow rings and never reuse the green / amber live vocabulary.
  * Solid neutral zinc marks a row with no verdict to show: the roadmap
  * (`planned`, `not-built`), a probe still in flight (`probing`) and an access
- * refusal (`restricted`).
+ * refusal (`restricted`). `restricted` takes the far end of that scale
+ * (zinc-700, zinc-200 in dark mode) so a refused cell never reads as a
+ * roadmap row or an in-flight probe, which share zinc-400.
  */
 export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   implemented: {
@@ -70,10 +72,10 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   },
   restricted: {
     label: "Restricted",
-    dot: "bg-zinc-400",
-    border: "border-l-zinc-400",
+    dot: "bg-zinc-700 dark:bg-zinc-200",
+    border: "border-l-zinc-700 dark:border-l-zinc-200",
     meaning:
-      "Access restricted — the twin is limited to internal operators for this tenant.",
+      "coord refused this sub-space for this tenant — an access decision, not a silent or failed observer.",
   },
   error: {
     label: "Error",
@@ -89,6 +91,11 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     meaning: "Live probe in flight.",
   },
 };
+
+/** Tooltip for the matrix gauge's "· N restricted" count — the plural of
+ *  `STATUS_STYLES.restricted.meaning`. */
+export const RESTRICTED_COUNT_MEANING =
+  "coord refused these sub-spaces for this tenant — access decisions, not silent or failed observers. They are left out of the live denominator.";
 
 /**
  * `STATUS_STYLES.interactive` sends the reader to Ask the Twin. That is only
