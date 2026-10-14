@@ -1,7 +1,7 @@
 """coord.work_unit_citation_candidates — inferred PR references, never citations
 
 Revision ID: citecand_01
-Revises: plan_library_10_model_routes
+Revises: leader_worker_runs_01
 Create Date: 2026-09-29
 
 Phase 1 of plan
@@ -208,7 +208,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "citecand_01"
-down_revision: str | Sequence[str] | None = "plan_library_10_model_routes"
+down_revision: str | Sequence[str] | None = "leader_worker_runs_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
