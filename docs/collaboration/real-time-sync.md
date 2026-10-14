@@ -74,7 +74,7 @@ Real-time presence shows who's currently viewing or editing the project.
 
 ```typescript
 // Subscribe to presence updates
-import { usePresence } from '@/hooks/use-presence';
+import { usePresence } from '@/hooks/usePresence';
 
 export function ProjectPresence({ projectId }: { projectId: number }) {
   const { activeUsers, myStatus } = usePresence(projectId);
@@ -538,8 +538,7 @@ const broadcastUpdate = async (
 
 // Example: Broadcasting workflow update
 const saveWorkflow = async (workflow: Workflow) => {
-  // Save to backend
-  await workflowService.update(workflow.id, workflow);
+  // Save to backend first (your application's persistence call)
 
   // Broadcast to collaborators
   await broadcastUpdate(
