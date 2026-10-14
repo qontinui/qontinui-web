@@ -65,6 +65,13 @@ export interface ModelAccessReading {
   /** `"repo" | "tenant" | "system" | "none"`, or `null` when not read. */
   resolved_scope: string | null;
   unknown_reason: string | null;
+  /**
+   * `true` when THIS PAGE could not read the value (the request failed), as
+   * opposed to coord answering something that is not a level. A failed read
+   * here says nothing about whether coord can read it, so it is never
+   * presented as coord refusing.
+   */
+  read_failed?: boolean;
 }
 
 export interface ModelAccessRepoReading extends ModelAccessReading {
@@ -101,7 +108,12 @@ export function readingFromPolicy(view: FleetPolicyView): ModelAccessReading {
 
 /** A reading for a read that did not land. */
 export function unreadReading(reason: string): ModelAccessReading {
-  return { level: null, resolved_scope: null, unknown_reason: reason };
+  return {
+    level: null,
+    resolved_scope: null,
+    unknown_reason: reason,
+    read_failed: true,
+  };
 }
 
 /**
@@ -154,8 +166,14 @@ export function modelAccessKind(reading: ModelAccessReading): ModelAccessKind {
   return reading.level ?? "unknown";
 }
 
-/** Operator words for an `unknown_reason`. The wire string stays in a title. */
-export function modelAccessUnknownText(reason: string | null): string {
+/** Operator words for an UNKNOWN reading. The wire string rides along. */
+export function modelAccessUnknownText(reading: ModelAccessReading): string {
+  const reason = reading.unknown_reason;
+  if (reading.read_failed) {
+    return reason
+      ? `the value could not be read here (${reason})`
+      : "the value could not be read here";
+  }
   if (reason === OFF_WITHOUT_ROW) {
     return "coord answered off with no setting behind it, but this setting defaults to on — this coord build may not know it yet";
   }
@@ -213,7 +231,7 @@ export function modelAccessRepoStatus(
     return {
       kind,
       label: MODEL_ACCESS_UNKNOWN_DASH,
-      reason: modelAccessUnknownText(reading.unknown_reason) + staleNote,
+      reason: modelAccessUnknownText(reading) + staleNote,
       attention: MODEL_ACCESS_ATTENTION_BY_KIND.unknown,
     };
   }

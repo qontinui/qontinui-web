@@ -165,6 +165,7 @@ describe("CiModelAccessPanel — copy", () => {
     expect(copy).toHaveTextContent(/on by default/);
     expect(copy).toHaveTextContent(/steps still run/);
     expect(copy).toHaveTextContent(/rows read UNKNOWN/);
+    expect(copy).toHaveTextContent(/may belong to other members/);
   });
 });
 
@@ -281,7 +282,7 @@ describe("CiModelAccessPanel — off", () => {
 });
 
 describe("CiModelAccessPanel — inherit", () => {
-  it("Inherit writes the repo band with the owner/name key, then re-reads", async () => {
+  it("Inherit writes the repo band, then updates ONLY that repo from the read-back", async () => {
     route({
       repos: { [WEB]: policy("off", "repo"), [EVALS]: policy("on", "none") },
     });
@@ -310,12 +311,16 @@ describe("CiModelAccessPanel — inherit", () => {
       level: "inherit",
       master_enabled: true,
     });
-    await waitFor(() =>
-      expect(
-        httpGet.mock.calls.filter((c) => String(c[0]).includes("/ci-hosting"))
-          .length
-      ).toBeGreaterThanOrEqual(2)
-    );
+    // The row takes the write's read-back (on, from the default)…
+    await waitFor(() => expect(statusOf(WEB)).toBe("on"));
+    // …without re-reading the list or any repo.
+    expect(
+      httpGet.mock.calls.filter((c) => String(c[0]).includes("/ci-hosting"))
+        .length
+    ).toBe(1);
+    expect(
+      httpGet.mock.calls.filter((c) => String(c[0]).includes("&repo=")).length
+    ).toBe(2);
   });
 
   it("a failed read-back renders THAT repo UNKNOWN and highlights no choice", async () => {
@@ -350,6 +355,10 @@ describe("CiModelAccessPanel — unknown", () => {
     render(<CiModelAccessPanel isAdmin />);
     const unknown = await screen.findByTestId("ci-model-access-tenant-unknown");
     expect(unknown).toHaveTextContent(/503/);
+    // A failed read HERE is not coord refusing: coord's word is named only as
+    // what it would do if it could not read the value either.
+    expect(unknown).toHaveTextContent(/could not be read here/);
+    expect(unknown).toHaveTextContent(/If coord cannot read it either/);
     expect(unknown).toHaveTextContent("preference_unknown");
     const value = screen.getByTestId("ci-model-access-tenant-effective");
     expect(value.textContent).toBe("–");
@@ -391,12 +400,59 @@ describe("CiModelAccessPanel — unknown", () => {
       within(row).getByTestId("ci-model-access-refusal")
     ).toHaveTextContent("preference_unknown");
     expect(row).toHaveTextContent(/500/);
+    expect(row).toHaveTextContent(/could not be read here/);
+    expect(row).toHaveTextContent(/If coord cannot read it either/);
+    expect(row).not.toHaveTextContent(/Coord refuses model access/);
     // UNKNOWN highlights no choice.
     for (const c of ["inherit", "on", "off"]) {
       expect(
         within(row).getByTestId(`ci-model-access-repo-${c}`)
       ).toBeEnabled();
     }
+  });
+
+  it("a repo list coord could not read is UNKNOWN with its reason, not 'no repos'", async () => {
+    route({
+      list: {
+        ...hostingList([]),
+        repos_unknown_reason: "schema_object_missing:tenant_repos",
+      },
+    });
+    render(<CiModelAccessPanel isAdmin />);
+    const err = await screen.findByTestId("ci-model-access-repos-error");
+    expect(err).toHaveTextContent("schema_object_missing:tenant_repos");
+    expect(screen.queryByTestId("ci-model-access-repos-empty")).toBeNull();
+  });
+
+  it("an older read that succeeds after a newer one failed is still shown, labelled stale", async () => {
+    // Read 1 (mount) hangs; read 2 (Refresh) fails; then read 1 answers. A
+    // newest-issued guard would throw read 1's real answer away.
+    let releaseFirst!: (v: unknown) => void;
+    let listCalls = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/ci-hosting")) {
+        listCalls += 1;
+        if (listCalls === 1)
+          return new Promise((res) => {
+            releaseFirst = res;
+          });
+        return Promise.reject(new Error("GET ci-hosting failed: 503"));
+      }
+      if (u.includes("&repo=")) return Promise.resolve(policy("off", "repo"));
+      return Promise.resolve(policy("on", "none"));
+    });
+    render(<CiModelAccessPanel isAdmin />);
+    await waitFor(() => expect(listCalls).toBe(1));
+    fireEvent.click(screen.getByTestId("ci-model-access-refresh"));
+    await screen.findByTestId("ci-model-access-repos-error");
+
+    releaseFirst(hostingList([WEB]));
+    await waitFor(() => expect(statusOf(WEB)).toBe("off"));
+    // Shown, but marked as not re-confirmed by the newest read.
+    expect(
+      screen.getByTestId("ci-model-access-summary-repos").textContent
+    ).toContain("(stale)");
   });
 
   it("an unreadable repo list is UNKNOWN, not an empty list", async () => {
@@ -432,6 +488,40 @@ describe("CiModelAccessPanel — coord's named write refusals", () => {
     );
     expect(err).toHaveTextContent(words);
     expect(err).toHaveTextContent(/coord refused/);
+  });
+});
+
+describe("CiModelAccessPanel — pinning the tenant value", () => {
+  it("an On that comes from the no-row default can be pinned explicitly", async () => {
+    route({});
+    httpPut.mockResolvedValue({
+      ok: true,
+      domain: "ci_model_access",
+      written_level: "on",
+      effective: policy("on", "tenant"),
+      readback_error: null,
+    });
+    render(<CiModelAccessPanel isAdmin />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("ci-model-access-tenant-source")
+      ).toHaveTextContent("default (on)")
+    );
+    const on = screen.getByTestId("ci-model-access-tenant-on");
+    expect(on).toBeEnabled();
+    fireEvent.click(on);
+    await waitFor(() => expect(httpPut).toHaveBeenCalledTimes(1));
+    expect(httpPut.mock.calls[0][1]).toMatchObject({
+      scope_band: "tenant",
+      level: "on",
+    });
+    // Once the tenant row holds it, writing it again is not offered.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("ci-model-access-tenant-source")
+      ).toHaveTextContent("tenant setting")
+    );
+    expect(screen.getByTestId("ci-model-access-tenant-on")).toBeDisabled();
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import {
   CollapsiblePanel,
   RecordDetail,
@@ -13,9 +13,11 @@ import {
 } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 import { useRepoFleetPolicyWrite } from "../../_shared/useRepoFleetPolicyWrite";
 import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
 import { useCiModelAccessRepos } from "../_hooks/useCiModelAccessRepos";
+import { Notice } from "./Notice";
 import {
   CI_MODEL_ACCESS_DOMAIN,
   MODEL_ACCESS_LEVELS,
@@ -69,12 +71,19 @@ export function CiModelAccessPanel({ isAdmin }: { isAdmin: boolean }) {
     "coord"
   );
   const repoRead = useCiModelAccessRepos();
-  const { reload: reloadRepos } = repoRead;
+  const { reload: reloadRepos, applyWriteReadback } = repoRead;
   const { reload: reloadTenant, setLevel } = tenant;
+  // A repo write changes only that repo: update it from the write's own
+  // read-back instead of re-reading every repo.
+  const onRepoConfirmed = useCallback(
+    (repo: string, effective: FleetPolicyView) =>
+      applyWriteReadback(repo, readingFromPolicy(effective)),
+    [applyWriteReadback]
+  );
   const repoWrite = useRepoFleetPolicyWrite<ModelAccessRepoChoice>(
     CI_MODEL_ACCESS_DOMAIN,
     WRITE_LABEL,
-    reloadRepos
+    onRepoConfirmed
   );
   const { clearReadbackErrors } = repoWrite;
   const [tenantPending, setTenantPending] = useState<ModelAccessLevel | null>(
@@ -169,8 +178,9 @@ export function CiModelAccessPanel({ isAdmin }: { isAdmin: boolean }) {
             Whether CI steps may call a model. It governs only the steps of
             repos whose CI manifest declares <code>[model]</code> — and, of
             those, only the steps marked <code>model = true</code>. Calls run
-            through coord-dispatched CI on your own machines, within the budget
-            the manifest declares.
+            through coord-dispatched CI on the tenant&apos;s CI-node machines
+            (which may belong to other members), on those machines&apos; Claude
+            accounts, within the budget the manifest declares.
           </p>
           <p className="m-0">
             It is <strong>on by default</strong>. Turn it off for the tenant or
@@ -193,7 +203,15 @@ export function CiModelAccessPanel({ isAdmin }: { isAdmin: boolean }) {
                 key={level}
                 size="sm"
                 variant={tenantLevel === level ? "default" : "outline"}
-                disabled={!canEdit || tenant.saving || tenantLevel === level}
+                // Disabled only when the TENANT row already holds this level:
+                // an `on` that comes from the no-row default can still be
+                // pinned, so a later change to the default cannot move it.
+                disabled={
+                  !canEdit ||
+                  tenant.saving ||
+                  (tenantLevel === level &&
+                    tenantReading?.resolved_scope === "tenant")
+                }
                 onClick={() => void writeTenant(level)}
                 data-testid={`ci-model-access-tenant-${level}`}
               >
@@ -211,7 +229,7 @@ export function CiModelAccessPanel({ isAdmin }: { isAdmin: boolean }) {
               data-level={tenantLevel ?? "unknown"}
               title={
                 tenantReading && tenantLevel === null
-                  ? modelAccessUnknownText(tenantReading.unknown_reason)
+                  ? modelAccessUnknownText(tenantReading)
                   : undefined
               }
             >
@@ -237,9 +255,20 @@ export function CiModelAccessPanel({ isAdmin }: { isAdmin: boolean }) {
               data-testid="ci-model-access-tenant-unknown"
             >
               The tenant value is unknown:{" "}
-              {modelAccessUnknownText(tenantReading.unknown_reason)}. Coord
-              refuses model access with <code>preference_unknown</code> unless
-              it holds a reading from the last 24 hours.
+              {modelAccessUnknownText(tenantReading)}.{" "}
+              {tenantReading.read_failed ? (
+                <>
+                  If coord cannot read it either, it refuses model access with{" "}
+                  <code>preference_unknown</code> unless it holds a reading from
+                  the last 24 hours.
+                </>
+              ) : (
+                <>
+                  Coord refuses model access with{" "}
+                  <code>preference_unknown</code> unless it holds a reading from
+                  the last 24 hours.
+                </>
+              )}
             </p>
           )}
           {tenantStale && (
@@ -305,18 +334,6 @@ export function CiModelAccessPanel({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function Notice({ testId, children }: { testId: string; children: ReactNode }) {
-  return (
-    <div
-      className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
-      data-testid={testId}
-    >
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-      <p className="text-xs text-amber-800 dark:text-amber-200">{children}</p>
-    </div>
-  );
-}
-
 /** What a dispatch of this repo reads, in operator words plus coord's word. */
 function dispatchEffect(reading: ModelAccessRepoReading): ReactNode {
   const refusal = refusalFor(reading);
@@ -326,6 +343,17 @@ function dispatchEffect(reading: ModelAccessRepoReading): ReactNode {
         Model access is allowed for this repo; each dispatch is still granted
         only when coord trusts it (a same-repo branch, a main push or a
         schedule).
+      </>
+    );
+  }
+  if (refusal === "preference_unknown" && reading.read_failed) {
+    // THIS PAGE could not read it — that is not coord refusing anything.
+    return (
+      <>
+        The value could not be read here. If coord cannot read it either, it
+        refuses model access with{" "}
+        <code data-testid="ci-model-access-refusal">{refusal}</code> unless it
+        holds a reading from the last 24 hours; {OFF_EFFECT_TEXT}.
       </>
     );
   }

@@ -10558,6 +10558,9 @@ class CiHostingView(BaseModel):
     domain: str = "github_hosted_ci"
     tenant_default: CiHostingReading
     repos: list[CiHostingRepoReading] = Field(default_factory=list)
+    #: Set when coord could not LIST the tenant's repos (or sent no list): the
+    #: empty ``repos`` is then UNKNOWN, never "this tenant has no repos".
+    repos_unknown_reason: str | None = None
     #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
     can_edit: bool
 
@@ -10601,11 +10604,19 @@ def _ci_hosting_view(payload: Any, *, can_edit: bool) -> CiHostingView:
                     **_ci_hosting_reading(entry),
                 )
             )
+    raw_reason = body.get("repos_unknown_reason")
+    repos_unknown_reason = (
+        raw_reason if isinstance(raw_reason, str) and raw_reason else None
+    )
+    if repos_unknown_reason is None and not isinstance(repos_raw, list):
+        # No list at all is not an empty list.
+        repos_unknown_reason = "no_repos_reported"
     return CiHostingView(
         tenant_default=CiHostingReading(
             **_ci_hosting_reading(body.get("tenant_default"))
         ),
         repos=repos,
+        repos_unknown_reason=repos_unknown_reason,
         can_edit=can_edit,
     )
 

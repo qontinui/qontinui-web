@@ -29088,6 +29088,8 @@ export interface components {
             domain: string;
             /** Repos */
             repos?: components["schemas"]["CiHostingRepoReading"][];
+            /** Repos Unknown Reason */
+            repos_unknown_reason?: string | null;
             tenant_default: components["schemas"]["CiHostingReading"];
         };
         /**
