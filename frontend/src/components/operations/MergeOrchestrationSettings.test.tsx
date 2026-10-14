@@ -2305,6 +2305,9 @@ describe("<MergeOrchestrationSettings> expedited-land dials", () => {
     expect(
       screen.getByTestId(`repo-expedite-unsupported-${REPO}`)
     ).toBeInTheDocument();
+  });
+});
+
 // Plan `2026-08-27-operator-touch-read-and-surface` C3: the SLO Dashboard's
 // tenant-level operator-touch line, and the two dead neighbours labelled so a
 // reader can tell which numbers are live.
