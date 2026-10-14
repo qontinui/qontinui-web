@@ -3076,7 +3076,7 @@ async def get_pr_merge_slo(
 
 
 async def _proxy_coord_passthrough(
-    method: Literal["GET", "POST"],
+    method: str,
     path: str,
     *,
     tenant_id: UUID,

@@ -288,8 +288,11 @@ def _redis_unavailable_response() -> JSONResponse:
 
 #: The ``next_action.target`` for a paired device whose runner has never
 #: opened the relay. ``Refusal::render`` reads: Set the "<target>" setting,
-#: then try again.
-_RELAY_SETTING_TARGET = "Cloud relay, in the runner on that device"
+#: then try again. "Web Integration" is the runner's own Settings section
+#: and toggle (``WebIntegrationSettings.tsx``); the relay starts at runner
+#: boot once it is on and the runner is signed in. The runner has no
+#: separate cloud-relay toggle any more.
+_RELAY_SETTING_TARGET = "Web Integration"
 
 #: The refusal sentence for the same case. The top-level ``detail`` keeps its
 #: prior value ("runner not connected") for older mobile builds.
