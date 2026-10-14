@@ -243,4 +243,3 @@ ls -la .automation-results/latest/
 - [Workflow Builder Overview](./README.md)
 - [Best Practices](./best-practices.md)
 - [Testing Workflows](./testing.md)
-- [Troubleshooting](./troubleshooting.md)
