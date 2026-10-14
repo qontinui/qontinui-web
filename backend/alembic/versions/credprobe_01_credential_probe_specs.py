@@ -1,7 +1,7 @@
 """coord.credential_probe_specs — the tenant's regional credential-probe catalogue
 
 Revision ID: credprobe_01
-Revises: coord_smhist_01_success_metric_history
+Revises: provfacets_01
 Create Date: 2026-10-09
 
 Phase 3 (qontinui-web half) of plan
@@ -97,7 +97,7 @@ that reads ``coord.credential_probe_specs`` deploys (served policy
 =================
 
 The single head on qontinui-web ``origin/main`` at the last re-point
-(``coord_smhist_01_success_metric_history``). If another revision lands first,
+(``provfacets_01``). If another revision lands first,
 re-point the token below AND the ``Revises:`` line above at the merged head. Do
 not author an ``alembic merge`` revision.
 
@@ -112,7 +112,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "credprobe_01"
-down_revision: str | Sequence[str] | None = "coord_smhist_01_success_metric_history"
+down_revision: str | Sequence[str] | None = "provfacets_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
