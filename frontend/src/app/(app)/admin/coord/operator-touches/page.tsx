@@ -49,7 +49,7 @@ import {
   readIsUnknown,
   type FilterTab,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
+import { fetchOperatorTouches } from "@/lib/api/operations/operatorTouches";
 import { OperatorTouchRow } from "./_components/OperatorTouchRow";
 import {
   deriveTouchesHealth,
@@ -65,7 +65,6 @@ import {
   type TouchWindowDays,
 } from "./_lib/operatorTouchStatus";
 
-const API = "/api/v1/operations";
 /** Page size asked of coord (coord's own default; it clamps to 1..200). */
 const PAGE_SIZE = 50;
 
@@ -116,9 +115,7 @@ export default function CoordOperatorTouchesPage() {
     setFirstLoading(true);
     try {
       const body = readTouchesBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/operator-touches?${buildQuery({ windowDays, disposition })}`
-        )
+        await fetchOperatorTouches(buildQuery({ windowDays, disposition }))
       );
       if (reqRef.current !== req) return;
       // Only a page 1 that LANDS replaces the list, so only then is an older
@@ -169,8 +166,8 @@ export default function CoordOperatorTouchesPage() {
     setLoadingOlder(true);
     try {
       const body = readTouchesBody(
-        await httpClient.get<unknown>(
-          `${API}/coord/operator-touches?${buildQuery({ windowDays, disposition, before: cursor })}`
+        await fetchOperatorTouches(
+          buildQuery({ windowDays, disposition, before: cursor })
         )
       );
       if (!current()) return;

@@ -13,9 +13,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+// The page reads through the typed client; its request shape is pinned in
+// `lib/api/operations/operatorTouches.test.ts`. Here the mock is handed the
+// full URL so the assertions below can read the query the page built.
 const httpGet = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+vi.mock("@/lib/api/operations/operatorTouches", () => ({
+  fetchOperatorTouches: (query: string) =>
+    httpGet(`/api/v1/operations/coord/operator-touches?${query}`),
 }));
 
 import CoordOperatorTouchesPage from "./page";
