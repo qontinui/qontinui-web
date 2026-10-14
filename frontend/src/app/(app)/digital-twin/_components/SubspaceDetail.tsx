@@ -12,11 +12,18 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Code2, Loader2, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Code2,
+  Loader2,
+  MessageSquare,
+  Sparkles,
+} from "lucide-react";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
+import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
 import type { ResolvedSubspace } from "../_lib/types";
 
 interface SubspaceDetailProps {
@@ -59,6 +66,24 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
     label: "Toggle the raw DriftVerdict JSON in the sub-space drawer",
     type: "button",
   });
+  const { ref: askRef } = useUIElement({
+    id: "digital-twin-drawer-ask",
+    label: "Ask the Twin about this sub-space (opens the Completeness tab)",
+    type: "button",
+  });
+  const { ref: openDeliveryRef } = useUIElement({
+    id: "digital-twin-drawer-open-delivery",
+    label: "Open the Delivery tab from the sub-space drawer",
+    type: "button",
+  });
+  const navigation = useTwinNavigation();
+  // Close the drawer, then go. (The drawer has no DialogTrigger, so Radix
+  // returns focus nowhere on close and the destination keeps it.)
+  const navigate = (go: (nav: NonNullable<typeof navigation>) => void) => {
+    if (!navigation) return;
+    onOpenChange(false);
+    go(navigation);
+  };
 
   if (!row) return null;
   const style = presentStatus(row);
@@ -118,6 +143,42 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
               query_kind reads `parameterized` even for a tool coord's own
               catalog lists as kind `snapshot`. */}
           <Field label="On this page" value={pageAccessLabel(row)} />
+          {/* Act on that answer: the drawer closes and the page goes there.
+              Only where the row really is askable — `not-on-this-page` and
+              claim-only rows get no button. */}
+          {navigation &&
+            row.query_kind === "parameterized" &&
+            (row.ask_via === "ask-the-twin" ||
+              row.ask_via === "delivery-tab") && (
+              <div className="flex justify-end pb-1">
+                {row.ask_via === "ask-the-twin" && (
+                  <Button
+                    ref={askRef}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={() =>
+                      navigate((nav) => nav.askTheTwin(askTheTwinQuestion(row)))
+                    }
+                  >
+                    <MessageSquare aria-hidden="true" className="size-3.5" />
+                    Ask the Twin about this
+                  </Button>
+                )}
+                {row.ask_via === "delivery-tab" && (
+                  <Button
+                    ref={openDeliveryRef}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={() => navigate((nav) => nav.openTab("delivery"))}
+                  >
+                    Open the Delivery tab
+                    <ArrowRight aria-hidden="true" className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            )}
 
           {summary && (
             <>

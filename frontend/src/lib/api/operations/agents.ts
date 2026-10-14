@@ -1,6 +1,9 @@
 /**
  * The spawn modal's `/operations` routes: the per-device Claude account
- * roster (`GET /claude-accounts`) and the spawn itself (`POST /agents/spawn`).
+ * roster (`GET /claude-accounts`) and the spawn itself (`POST /agents/spawn`);
+ * and the runners page's agent-session routes, the per-device census
+ * (`GET /sessions/fleet`) and the session control write
+ * (`POST /sessions/{session_id}/control`).
  *
  * Part of the typed `/operations` client (plan
  * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`
@@ -17,6 +20,7 @@
  * resolve.
  */
 
+import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE, readJson } from "./base";
 
@@ -114,5 +118,70 @@ export function spawnAgent(body: Record<string, unknown>): Promise<Response> {
     body: JSON.stringify(body),
     idempotent: false,
     maxRetries: 0,
+  });
+}
+
+/**
+ * `GET /sessions/fleet?device_id=&limit=` (`get_coord_sessions_fleet`) — coord's
+ * per-device agent-session census, interpreted by `parseFleetSessions`
+ * (`components/operations/runnerStatus.ts`). Returned `unknown`: the handler
+ * passes coord's body through, and that parser is what decides it is usable.
+ * Coord clamps `limit` to its own `MAX_LIMIT`.
+ */
+export async function fetchDeviceFleetSessions(
+  deviceId: string,
+  limit: number,
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/sessions/fleet?device_id=${encodeURIComponent(deviceId)}&limit=${limit}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** `POST /sessions/{session_id}/control` body — `SessionControlRequestBody`. */
+export interface SessionControlRequest {
+  action: string;
+  reason?: string;
+}
+
+/**
+ * `POST /sessions/{session_id}/control` acknowledgement — coord's `202`
+ * `{event_id, session_id, device_id, action}`, echoed by
+ * `post_coord_session_control`; `{}` when coord's 2xx body was not JSON.
+ */
+export interface SessionControlAck {
+  event_id?: unknown;
+  session_id?: unknown;
+  device_id?: unknown;
+  action?: unknown;
+}
+
+/**
+ * `POST /sessions/{session_id}/control` (`post_coord_session_control`) — ask
+ * the runner holding a session to finish-and-close it, or to stop it at its
+ * next boundary.
+ *
+ * `idempotent: false`: coord records every accepted request as a durable
+ * `control_request` session event and publishes it to the device, so a 5xx
+ * re-issued after coord had already accepted the first would publish it
+ * twice. A 2xx whose body does not parse resolves `null` — the request was
+ * still recorded.
+ */
+export async function postSessionControl(
+  sessionId: string,
+  body: SessionControlRequest
+): Promise<SessionControlAck | null> {
+  const url = `${OPERATIONS_BASE}/sessions/${encodeURIComponent(sessionId)}/control`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<SessionControlAck>(res, `POST ${url}`, {
+    unparseable: "null",
   });
 }

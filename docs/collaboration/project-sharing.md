@@ -36,20 +36,6 @@ Project sharing in Qontinui enables you to collaborate with team members by gran
    - They can immediately access the project
    - Project appears in their project list
 
-### Quick Share Example
-
-```typescript
-import { projectSharingService } from '@/services/project-sharing-service';
-
-// Share project with a user
-await projectSharingService.shareWithUser({
-  projectId: 123,
-  email: 'colleague@example.com',
-  permissionLevel: 'edit',
-  notifyUser: true
-});
-```
-
 ## Permission Levels
 
 ### Available Permission Levels
@@ -316,45 +302,6 @@ const shareWithOrganization = async (
 - External collaborators outside your organization
 - Temporary collaboration
 - Different permission levels for different users
-
-### Organization Sharing Example
-
-```typescript
-import { useOrganizations } from '@/hooks/use-organizations';
-
-export function ShareWithOrganization({ projectId }: { projectId: number }) {
-  const { organizations } = useOrganizations();
-  const [selectedOrg, setSelectedOrg] = useState<string>('');
-  const [permission, setPermission] = useState<'edit'>('edit');
-
-  const handleShare = async () => {
-    await shareWithOrganization(projectId, selectedOrg, permission);
-    toast.success('Project shared with organization');
-  };
-
-  return (
-    <div className="space-y-4">
-      <Select value={selectedOrg} onChange={setSelectedOrg}>
-        <option value="">Select organization...</option>
-        {organizations.map(org => (
-          <option key={org.id} value={org.id}>
-            {org.name}
-          </option>
-        ))}
-      </Select>
-      <Select value={permission} onChange={setPermission}>
-        <option value="admin">Admin</option>
-        <option value="edit">Edit</option>
-        <option value="comment">Comment</option>
-        <option value="view">View</option>
-      </Select>
-      <Button onClick={handleShare} disabled={!selectedOrg}>
-        Share with Organization
-      </Button>
-    </div>
-  );
-}
-```
 
 ## Managing Collaborators
 

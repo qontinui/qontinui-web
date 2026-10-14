@@ -125,6 +125,49 @@ export interface EffectiveProfile {
 export interface TenantSettingsResponse {
   tenant_id: string;
   profile: EffectiveProfile;
+  /**
+   * The RAW tenant-tier expedited-land dials (plan
+   * `2026-10-13-coord-expedited-land-lever-for-agents` §6, Phase 1b), as
+   * stored in `coord.tenant_merge_settings`.
+   *   - ABSENT  → this coord build does not carry the dials (the PATCH would
+   *               400 on them, `deny_unknown_fields`) — see `expediteReadState`;
+   *   - `null`  → coord could NOT read them: UNKNOWN, never "inheriting";
+   *   - object  → each field's `null` = column NULL = inheriting.
+   */
+  expedite_tenant?: ExpediteDials | null;
+}
+
+/** The closed set coord accepts for `expedited_land` (column CHECK + PATCH 422). */
+export type ExpeditedLandMode = "on" | "shadow" | "off";
+
+/**
+ * The four expedited-land dials as stored at ONE tier — mirrors
+ * `ExpediteDials` in `qontinui-coord/crates/coord/src/pr_merge/settings_wire.rs`.
+ * `null` on a field = inheriting the lower tier.
+ *
+ * `expedited_land` is the lever's off-switch and a KILL SWITCH coord-side: no
+ * agent can write it over any door; only this operator page does. The sizes
+ * are the S11 overrides (positive integers) and `expedite_review_arm` is the
+ * S13 independence-review arm's off-switch — both operator-only too.
+ */
+export interface ExpediteDials {
+  expedited_land: ExpeditedLandMode | null;
+  expedite_max_files: number | null;
+  expedite_max_changed_lines: number | null;
+  expedite_review_arm: boolean | null;
+}
+
+/**
+ * The expedite keys of either settings PATCH. An ABSENT key is left unchanged,
+ * a value sets it, `null` clears it back to inherit. Sent only when edited:
+ * re-sending a loaded value would silently revert another operator's change to
+ * an off-switch.
+ */
+export interface ExpeditePatch {
+  expedited_land?: ExpeditedLandMode | null;
+  expedite_max_files?: number | null;
+  expedite_max_changed_lines?: number | null;
+  expedite_review_arm?: boolean | null;
 }
 
 export interface RepoProfileResponse {
@@ -155,6 +198,13 @@ export interface RepoProfileResponse {
    * card falls back to write-only editing with a notice.
    */
   raw_override?: RawRepoOverride;
+  /**
+   * The RAW per-repo expedited-land dials (`coord.tenant_repo_profiles`), read
+   * best-effort coord-side and so carried apart from `raw_override`:
+   * ABSENT = an older coord build; `null` = UNKNOWN (unreadable); an object =
+   * stored values, each `null` field inheriting the tenant tier.
+   */
+  expedite_override?: ExpediteDials | null;
 }
 
 export interface RawRepoOverride {
@@ -228,7 +278,7 @@ export interface SloResponse {
  * The body of `PATCH /pr-merge/settings` (`PatchTenantSettings`, which is
  * `deny_unknown_fields` coord-side — an unknown key 400s the whole save).
  */
-export interface TenantSettingsPatch {
+export interface TenantSettingsPatch extends ExpeditePatch {
   min_green_dwell_secs: number;
   confidence_threshold: number;
   auto_merge_enabled: boolean;
@@ -244,7 +294,7 @@ export interface TenantSettingsPatch {
  * also `deny_unknown_fields`). An ABSENT key leaves the column unchanged; a
  * value sets it; `null` clears it back to inherit.
  */
-export interface RepoProfilePatch {
+export interface RepoProfilePatch extends ExpeditePatch {
   confidence_threshold_override?: number | null;
   escalate_paths_extra?: string[];
   auto_merge_label_budget?: number | null;
