@@ -1,7 +1,7 @@
 """coord.worktree_census_latest + coord.worktree_census_history — census presence/history split
 
 Revision ID: wtcensus_split_01_latest_and_history
-Revises: overview_02_authoring_core
+Revises: provfacets_01
 Create Date: 2026-09-25
 
 Phase B of plan
@@ -135,7 +135,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "wtcensus_split_01_latest_and_history"
-down_revision: str | Sequence[str] | None = "overview_02_authoring_core"
+down_revision: str | Sequence[str] | None = "provfacets_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
