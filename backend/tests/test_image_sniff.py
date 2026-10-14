@@ -24,8 +24,13 @@ from app.services.image_sniff import (
     MAX_GIF_BLOCKS,
     MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME,
     MAX_GIF_EXTENSIONS_PER_FRAME,
+    MAX_GIF_STRAY_BYTES_BEFORE_FIRST_FRAME,
+    MAX_GIF_SUB_BLOCKS,
     MAX_IMAGE_PIXELS,
+    MAX_JPEG_SEGMENTS,
+    MAX_JPEG_STRAY_BYTES,
     MAX_PICTURES,
+    MAX_PNG_CHUNKS_BEFORE_IMAGE_DATA,
     PNG,
     WEBP,
     ImageFormat,
@@ -1026,11 +1031,12 @@ def test_pictures_sharing_one_padded_picture_are_refused_unparsed(
 def test_the_honest_padded_layout_parses_each_picture_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The same padded picture named once: accepted, and parsed once — the
-    open parses the first picture, one more parse reads the second."""
+    """The same padded picture named once — padded to just inside the
+    segment cap: accepted, and parsed once — the open parses the first
+    picture, one more parse reads the second."""
     from PIL import JpegImagePlugin
 
-    data = _mpo([_jpeg((1, 1)), _padded_picture(400_000)])
+    data = _mpo([_jpeg((1, 1)), _padded_picture(4 * (MAX_JPEG_SEGMENTS - 16))])
     parses = 0
     real_open = JpegImagePlugin.JpegImageFile._open
 
@@ -1074,6 +1080,478 @@ def test_a_picture_whose_header_runs_past_its_range_is_unreadable() -> None:
     pictures, entries = _pictures_and_entries()
     entries[1] = (4, entries[1][1])
     assert _refused(_mpo(pictures, entries)) == "image_unreadable"
+
+
+def test_a_pillow_written_mpo_of_three_pictures_is_refused_as_its_index_reads() -> None:
+    """Pillow's MPO writer records the third picture's ``Size`` wrong (it
+    subtracts the previous entry's size where it means its offset), so its
+    range runs past the file: refused by name — as the index declares, not
+    misread. A Pillow-written PAIR is exact, and accepted."""
+    images = [Image.new("RGB", (8, 8), (i * 60, 0, 0)) for i in range(3)]
+    buf = io.BytesIO()
+    images[0].save(buf, format="MPO", save_all=True, append_images=images[1:])
+    data = buf.getvalue()
+    with Image.open(io.BytesIO(data)) as probe:  # the premise
+        offsets = getattr(probe, "_MpoImageFile__mpoffsets")  # noqa: B009
+        size = probe.mpinfo[0xB002][2]["Size"]
+    assert offsets[2] + size > len(data)
+    assert _refused(data) == "image_picture_index_invalid"
+    buf = io.BytesIO()
+    images[0].save(buf, format="MPO", save_all=True, append_images=images[1:2])
+    assert sniff_image(buf.getvalue()).frames == 2
+
+
+def _first_picture_ending_at_its_mp_header(second: bytes) -> bytes:
+    """An MPO whose first entry declares picture 1 as just SOI and the APP2
+    holding the index — no frame header, no scan — and whose second entry is
+    ``second``, right after. Pillow's open of picture 1 parses on, past that
+    range, through ``second``'s segments to ``second``'s SOS."""
+    probe = _mpo([b"\xff\xd8", second], [(1, 0), (1, 1)])
+    first_length = len(probe) - len(second)
+    return _mpo(
+        [b"\xff\xd8", second],
+        [(first_length, 0), (len(second), first_length - _MP_HEADER_AT)],
+    )
+
+
+def test_a_first_picture_whose_header_runs_past_its_range_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review's case: picture 1 declared as SOI + APP2 only, picture 2
+    holding 25 MiB of empty segments — Pillow's open of picture 1 parsed on
+    through picture 2's bytes to its SOS, and then picture 2 was parsed
+    again (8.8 s, accepted). The segment cap now refuses that flood before
+    Pillow opens it; within the caps, a first picture whose header ends past
+    its declared range is refused by name, and no later picture is parsed."""
+    from PIL import JpegImagePlugin
+
+    data = _first_picture_ending_at_its_mp_header(_jpeg((4, 4)))
+    with Image.open(io.BytesIO(data)) as probe:  # the premise: Pillow reads it
+        assert probe.format == "MPO" and probe.n_frames == 2
+    parses = 0
+    real_open = JpegImagePlugin.JpegImageFile._open
+
+    def counting_open(self: JpegImagePlugin.JpegImageFile) -> None:
+        nonlocal parses
+        parses += 1
+        real_open(self)
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "_open", counting_open)
+    assert _refused(data) == "image_picture_index_invalid"
+    assert parses == 1
+
+    flood = b"\xff\xd8" + b"\xff\xef\x00\x02" * (_UPLOAD_CAP // 4 - 1000)
+    flooded = _first_picture_ending_at_its_mp_header(flood + _jpeg((1, 1))[2:])
+    _forbid_pillow(monkeypatch)
+    assert _refused(flooded) == "image_too_many_segments"
+
+
+def test_a_later_picture_past_the_segment_cap_is_refused_before_pillow_parses_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review's construction: seven later pictures of ~3 MB of empty
+    segments each, honestly indexed (3.7 s, accepted). Each later picture's
+    header is walked from its own range before Pillow parses it."""
+    from PIL import JpegImagePlugin
+
+    padded = _padded_picture(4 * (MAX_JPEG_SEGMENTS + 1))
+    data = _mpo([_jpeg((1, 1)), padded])
+    parses = 0
+    real_open = JpegImagePlugin.JpegImageFile._open
+
+    def counting_open(self: JpegImagePlugin.JpegImageFile) -> None:
+        nonlocal parses
+        parses += 1
+        real_open(self)
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "_open", counting_open)
+    assert _refused(data) == "image_too_many_segments"
+    assert parses == 1  # the open, of picture 1 only
+
+
+def _camera_jpeg(size: tuple[int, int], orientation: int = 1) -> bytes:
+    """A JPEG carrying what a camera or an editor writes: EXIF (with an
+    orientation), an ICC profile, an XMP packet and a comment."""
+    from PIL import ImageCms
+
+    exif = Image.Exif()
+    exif[0x0112] = orientation
+    exif[0x010F] = "Camera Maker"
+    icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    xmp = b'<x:xmpmeta xmlns:x="adobe:ns:meta/">' + b" " * 4000 + b"</x:xmpmeta>"
+    buf = io.BytesIO()
+    Image.new("RGB", size, (90, 120, 30)).save(
+        buf,
+        format="JPEG",
+        exif=exif.tobytes(),
+        icc_profile=icc,
+        xmp=xmp,
+        comment=b"edited",
+        progressive=True,
+    )
+    return buf.getvalue()
+
+
+def test_real_world_jpegs_and_a_camera_mpo_are_accepted() -> None:
+    """Typical metadata stays well inside the caps: EXIF, ICC and XMP; a
+    large ICC profile split across many APP2 segments; an extended-XMP
+    style run of 300 full 64 KiB APP1 segments (a depth map beside the
+    photo); and a camera-shaped MPO whose two pictures each carry EXIF and
+    an MP index."""
+    plain = _camera_jpeg((40, 30), orientation=6)
+    assert (sniff_image(plain).width, sniff_image(plain).height) == (30, 40)
+
+    buf = io.BytesIO()
+    Image.new("RGB", (12, 9)).save(buf, format="JPEG", icc_profile=b"\x00" * 700_000)
+    big_icc = buf.getvalue()
+    assert big_icc.count(b"ICC_PROFILE") == 11  # the premise: split, not one
+    assert sniff_image(big_icc).width == 12
+
+    extended = b"\xff\xe1\xff\xff" + b"http://ns.adobe.com/xmp/extension/\x00"
+    extended += b"a" * (65533 - len(extended) + 4)
+    many = plain[:2] + extended * 300 + plain[2:]
+    assert sniff_image(many).frames == 1
+
+    camera = _mpo([_camera_jpeg((64, 48)), _camera_jpeg((160, 120))])
+    with Image.open(io.BytesIO(camera)) as probe:
+        assert probe.format == "MPO" and probe.n_frames == 2
+    accepted = sniff_image(camera)
+    assert (accepted.format, accepted.frames) == (JPEG, 2)
+    assert (accepted.width, accepted.height) == (64, 48)
+
+
+# ── Pillow parses a header one step per segment, chunk or stray byte ─────
+
+
+def _forbid_pillow(monkeypatch: pytest.MonkeyPatch) -> None:
+    def pillow_opened(*args: object, **kwargs: object) -> object:
+        raise AssertionError("Pillow opened the file before the walk refused it")
+
+    monkeypatch.setattr(Image, "open", pillow_opened)
+
+
+def _jpeg_with(after_soi: bytes) -> bytes:
+    """An 8×8 JPEG with ``after_soi`` inserted right after its SOI."""
+    data = _jpeg((8, 8))
+    return data[:2] + after_soi + data[2:]
+
+
+def _encoder_markers() -> int:
+    """How many markers the 8×8 JPEG's encoder writes up to and with SOS."""
+    from app.services.image_sniff import _jpeg_header_end
+
+    data = _jpeg((8, 8))
+    end = _jpeg_header_end(data, 0, len(data))
+    assert end is not None
+    return sum(
+        1 for at in range(2, end - 1) if data[at] == 0xFF and data[at + 1] >= 0xC0
+    )
+
+
+_EMPTY_APP15 = b"\xff\xef\x00\x02"
+
+
+def test_jpeg_markers_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    room = MAX_JPEG_SEGMENTS - _encoder_markers()
+    assert sniff_image(_jpeg_with(_EMPTY_APP15 * room)).frames == 1
+    over = _jpeg_with(_EMPTY_APP15 * (room + 1))
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_too_many_segments"
+
+
+def test_markers_with_no_length_count_too() -> None:
+    """RSTn (and SOI, EOI, JPGn) carry no length; Pillow takes each alone,
+    one step — so each is a marker for the cap."""
+    room = MAX_JPEG_SEGMENTS - _encoder_markers()
+    assert sniff_image(_jpeg_with(b"\xff\xd0" * room)).frames == 1
+    assert _refused(_jpeg_with(b"\xff\xd0" * (room + 1))) == "image_too_many_segments"
+
+
+@pytest.mark.parametrize(
+    "stray",
+    [
+        pytest.param(b"\xff", id="fill"),
+        pytest.param(b"\x00", id="stray-byte"),
+    ],
+)
+def test_jpeg_stray_bytes_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch, stray: bytes
+) -> None:
+    """Fill (0xFF before a marker) and stray bytes between segments — what
+    Pillow steps over one at a time. Placed after the encoder's first
+    segment, so a fill run ends on a marker and a stray run starts after one."""
+    data = _jpeg((8, 8))
+    first_end = 4 + int.from_bytes(data[4:6], "big")  # past SOI and APP0
+
+    def with_stray(count: int) -> bytes:
+        return data[:first_end] + stray * count + data[first_end:]
+
+    assert sniff_image(with_stray(MAX_JPEG_STRAY_BYTES)).frames == 1
+    _forbid_pillow(monkeypatch)
+    assert _refused(with_stray(MAX_JPEG_STRAY_BYTES + 1)) == (
+        "image_too_many_stray_bytes"
+    )
+
+
+def test_the_jpeg_stray_skip_never_scans_past_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The walk's own cost is capped too: a 25 MiB run of fill is matched
+    in a window one byte past the cap, never to the end of the file."""
+    import re
+
+    from app.services import image_sniff
+
+    real = image_sniff._JPEG_SKIPPED
+    widest = 0
+
+    class Recording:
+        def match(self, data: bytes, pos: int, endpos: int) -> re.Match[bytes] | None:
+            nonlocal widest
+            widest = max(widest, endpos - pos)
+            return real.match(data, pos, endpos)
+
+    monkeypatch.setattr(image_sniff, "_JPEG_SKIPPED", Recording())
+    flood = _jpeg_with(b"\xff" * (_UPLOAD_CAP - 1024))
+    assert _refused(flood) == "image_too_many_stray_bytes"
+    assert 0 < widest <= MAX_JPEG_STRAY_BYTES + 1
+
+
+def test_stuffed_ff00_pairs_are_stray_bytes_too() -> None:
+    data = _jpeg((8, 8))
+    first_end = 4 + int.from_bytes(data[4:6], "big")
+    pairs = MAX_JPEG_STRAY_BYTES // 2
+    ok = data[:first_end] + b"\xff\x00" * pairs + data[first_end:]
+    assert sniff_image(ok).frames == 1
+    over = data[:first_end] + b"\xff\x00" * pairs + b"\x00" + data[first_end:]
+    assert _refused(over) == "image_too_many_stray_bytes"
+
+
+@pytest.mark.parametrize(
+    ("flood", "code"),
+    [
+        pytest.param(
+            _EMPTY_APP15 * (_UPLOAD_CAP // 4 - 256),
+            "image_too_many_segments",
+            id="empty-app15-segments",
+        ),
+        pytest.param(
+            b"\xff\xfe\x00\x02" * (_UPLOAD_CAP // 4 - 256),
+            "image_too_many_segments",
+            id="empty-comment-segments",
+        ),
+        pytest.param(
+            b"\xff" * (_UPLOAD_CAP - 1024), "image_too_many_stray_bytes", id="fill"
+        ),
+    ],
+)
+def test_the_reviews_jpeg_floods_are_refused_before_pillow_reads_them(
+    monkeypatch: pytest.MonkeyPatch, flood: bytes, code: str
+) -> None:
+    """The review's measurements, all accepted: 25 MiB of empty APP15
+    segments took Pillow 4.2 s, of empty comments 2.8 s, of fill 4.0 s."""
+    data = _jpeg_with(flood)
+    assert len(data) <= _UPLOAD_CAP
+    _forbid_pillow(monkeypatch)
+    assert _refused(data) == code
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param(_jpeg((8, 8)), id="baseline"),
+        pytest.param(_camera_jpeg((40, 30)), id="camera-metadata"),
+        pytest.param(_jpeg_with(b"\xff\xd0" * 5 + b"\x00\x01\xff\x00"), id="odd"),
+        pytest.param(
+            (lambda d: d[:20] + b"\xff\xff\xff" + d[20:])(_jpeg((8, 8))),
+            id="fill-before-a-marker",
+        ),
+    ],
+)
+def test_the_jpeg_walk_ends_where_pillows_header_parse_ends(data: bytes) -> None:
+    """Parity: the walk stops exactly where Pillow's parser leaves the file —
+    just past the SOS segment — so what it counts is what Pillow parses."""
+    from app.services.image_sniff import _jpeg_header_end
+
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.fp is not None
+        pillow_end = image.fp.tell()
+    assert _jpeg_header_end(data, 0, len(data)) == pillow_end
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param(b"\xff\xd8\xff", id="cut-after-signature"),
+        pytest.param(_jpeg((8, 8))[:30], id="cut-in-a-segment"),
+        pytest.param(b"\xff\xd8\xff\x01\x00\x00", id="no-marker"),
+    ],
+)
+def test_where_pillow_raises_the_walk_finds_no_header_end(data: bytes) -> None:
+    from app.services.image_sniff import _jpeg_header_end
+
+    with pytest.raises((SyntaxError, OSError, struct.error, IndexError)):
+        Image.open(io.BytesIO(data), formats=["JPEG"]).load()
+    assert _jpeg_header_end(data, 0, len(data)) is None
+    assert _refused(data) == "image_unreadable"
+
+
+def _png_chunk(kind: bytes, body: bytes = b"") -> bytes:
+    crc = zlib.crc32(kind + body) & 0xFFFFFFFF
+    return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", crc)
+
+
+def _png_with_chunks_before_idat(chunks: bytes) -> bytes:
+    data = encode("PNG", (4, 4))
+    ihdr_end = 8 + 25
+    return data[:ihdr_end] + chunks + data[ihdr_end:]
+
+
+def _png_chunks_before_idat(data: bytes) -> int:
+    count, at = 0, 8
+    while data[at + 4 : at + 8] != b"IDAT":
+        count += 1
+        at += 12 + int.from_bytes(data[at : at + 4], "big")
+    return count
+
+
+def test_png_chunks_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    room = MAX_PNG_CHUNKS_BEFORE_IMAGE_DATA - _png_chunks_before_idat(
+        encode("PNG", (4, 4))
+    )
+    private = _png_chunk(b"prVt")
+    assert sniff_image(_png_with_chunks_before_idat(private * room)).frames == 1
+    over = _png_with_chunks_before_idat(private * (room + 1))
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_too_many_chunks"
+
+
+@pytest.mark.parametrize(
+    "chunk",
+    [
+        pytest.param(_png_chunk(b"prVt"), id="empty-private-chunks"),
+        pytest.param(_png_chunk(b"tEXt", b"a\x00b"), id="tiny-text-chunks"),
+    ],
+)
+def test_the_reviews_png_floods_are_refused_before_pillow_reads_them(
+    monkeypatch: pytest.MonkeyPatch, chunk: bytes
+) -> None:
+    """The review's measurements, both accepted: 25 MiB of empty private
+    chunks took Pillow 3.5 s, of tiny text chunks 2.4 s."""
+    data = _png_with_chunks_before_idat(chunk * (_UPLOAD_CAP // len(chunk) - 64))
+    assert len(data) <= _UPLOAD_CAP
+    _forbid_pillow(monkeypatch)
+    assert _refused(data) == "image_too_many_chunks"
+
+
+def test_a_png_with_normal_metadata_is_accepted() -> None:
+    """Text, compressed and international text, an ICC profile, EXIF and a
+    physical size — written by Pillow's own encoder."""
+    from PIL import ImageCms, PngImagePlugin
+
+    meta = PngImagePlugin.PngInfo()
+    for i in range(20):
+        meta.add_text(f"key{i}", "value " * 50)
+    meta.add_text("workflow", "{}" * 5000, zip=True)
+    meta.add_itxt("Description", "texte", lang="fr", tkey="Description")
+    exif = Image.Exif()
+    exif[0x0112] = 1
+    buf = io.BytesIO()
+    Image.new("RGB", (9, 7)).save(
+        buf,
+        format="PNG",
+        pnginfo=meta,
+        icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes(),
+        exif=exif.tobytes(),
+        dpi=(300, 300),
+    )
+    data = buf.getvalue()
+    assert _png_chunks_before_idat(data) > 20  # the premise
+    assert sniff_image(data).width == 9
+
+
+def test_gif_sub_blocks_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Counted across the walk: here all in one frame's image data, of
+    one-byte sub-blocks. ``gif_with_frames``' one frame already holds two:
+    its graphic control block's and its image data's."""
+    one = gif_with_frames((1, 1), [(0, 0, 1, 1)])
+
+    def data_of(sub_blocks: int) -> bytes:
+        image = b"\x2c" + struct.pack("<HHHHB", 0, 0, 1, 1, 0) + b"\x02"
+        image += b"\x01\x4c" * sub_blocks + b"\x00"
+        return one[:-1] + image + b"\x3b"
+
+    assert sniff_image(data_of(MAX_GIF_SUB_BLOCKS - 2)).frames == 2
+    _forbid_pillow(monkeypatch)
+    assert _refused(data_of(MAX_GIF_SUB_BLOCKS - 1)) == "image_too_many_sub_blocks"
+
+
+@pytest.mark.parametrize(
+    "flood",
+    [
+        pytest.param(
+            b"\x2c"
+            + struct.pack("<HHHHB", 0, 0, 1, 1, 0)
+            + b"\x02"
+            + b"\x01\x4c" * (_UPLOAD_CAP // 2 - 64)
+            + b"\x00",
+            id="frame-data",
+        ),
+        pytest.param(
+            b"\x21\xff\x0bXMP DataXMP" + b"\x01a" * (_UPLOAD_CAP // 2 - 64) + b"\x00",
+            id="application-extension",
+        ),
+        pytest.param(
+            b"\x21\x01\x0c"
+            + b"\x00" * 12
+            + b"\x01a" * (_UPLOAD_CAP // 2 - 64)
+            + b"\x00",
+            id="plain-text-extension",
+        ),
+    ],
+)
+def test_the_reviews_sub_block_floods_are_refused_before_pillow_reads_them(
+    monkeypatch: pytest.MonkeyPatch, flood: bytes
+) -> None:
+    """The review's measurements, all accepted: 25 MiB of one-byte
+    sub-blocks took 1.1 s in a frame's image data, and — before the first
+    frame, where Pillow's walk reads them one by one too — 3.0 s in an
+    application extension and 4.0 s in a plain-text one."""
+    one = gif_with_frames((1, 1), [(0, 0, 1, 1)])
+    data = one[:_GIF_HEADER] + flood + one[_GIF_HEADER:]
+    assert len(data) <= _UPLOAD_CAP
+    _forbid_pillow(monkeypatch)
+    assert _refused(data) == "image_too_many_sub_blocks"
+
+
+@pytest.mark.parametrize("filler", [b"\x00", b"\x7f"])
+def test_stray_bytes_before_the_first_gif_frame_are_capped(
+    monkeypatch: pytest.MonkeyPatch, filler: bytes
+) -> None:
+    """Pillow steps over each one on its walk to the first frame (25 MiB of
+    them took 2.0 s, accepted). Up to the cap they are skipped as Pillow
+    skips them; one more is refused — and so is a flood with no frame after
+    it, which Pillow would still have stepped through to the end."""
+    one = gif_with_frames((1, 1), [(0, 0, 1, 1)])
+    cap = MAX_GIF_STRAY_BYTES_BEFORE_FIRST_FRAME
+
+    def with_stray(count: int) -> bytes:
+        return one[:_GIF_HEADER] + filler * count + one[_GIF_HEADER:]
+
+    with Image.open(io.BytesIO(with_stray(cap))) as image:  # Pillow's reading
+        assert image.n_frames == 1
+    assert sniff_image(with_stray(cap)).frames == 1
+    _forbid_pillow(monkeypatch)
+    assert _refused(with_stray(cap + 1)) == "image_too_many_stray_bytes"
+    assert _refused(with_stray(_UPLOAD_CAP - 1024)) == "image_too_many_stray_bytes"
+    frameless = one[:_GIF_HEADER] + filler * (cap + 1)
+    assert _refused(frameless) == "image_too_many_stray_bytes"
 
 
 # ── Pillow's bomb warning is left alone ─────────────────────────────────
@@ -1125,6 +1603,8 @@ class _RecordingLogger:
         pytest.param(
             "_largest_picture", mpo_claiming((16, 16)), id="multi-picture-jpeg"
         ),
+        pytest.param("_jpeg_header_end", encode("JPEG"), id="jpeg-walk"),
+        pytest.param("_png_walk_to_image_data", encode("PNG"), id="png-walk"),
     ],
 )
 def test_a_defect_in_a_helper_is_a_fault_not_a_refusal(
@@ -1186,8 +1666,8 @@ def test_a_corrupt_file_is_still_refused_and_its_cause_logged(
     assert "Not implemented" in str(logged["RuntimeError"]["error"])
     assert set(logged) == {
         "RuntimeError",
-        "_GifStructureRefused",
+        "_StructureRefused",
         "UnidentifiedImageError",
     }
-    assert logged["_GifStructureRefused"]["exc_info"] is None
+    assert logged["_StructureRefused"]["exc_info"] is None
     assert logged["UnidentifiedImageError"]["exc_info"] is None
