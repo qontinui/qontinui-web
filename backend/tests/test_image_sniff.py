@@ -2769,12 +2769,12 @@ def test_an_item_only_another_box_names_is_counted(
     monkeypatch: pytest.MonkeyPatch, box: str
 ) -> None:
     """libavif creates an item for an ID it first meets in ``iloc``,
-    ``ipma`` or a reference (the item it is from, or a ``dimg`` target)."""
+    ``ipma`` or a reference (the item it is from, or a ``dimg`` target).
+    Items 2.. are named in ``iinf`` alone, so that box holds the one entry
+    past the cap and no box holds more than MAX_AVIF_ITEMS entries."""
+    data = _avif(items=MAX_AVIF_ITEMS, unlisted=box, references=1, only_iinf=True)
     _forbid_libavif(monkeypatch)
-    assert (
-        _refused(_avif(items=MAX_AVIF_ITEMS, unlisted=box, references=1))
-        == "image_avif_too_many_items"
-    )
+    assert _refused(data) == "image_avif_too_many_items"
 
 
 @pytest.mark.parametrize("box", ["iinf", "iloc", "ipma"])
