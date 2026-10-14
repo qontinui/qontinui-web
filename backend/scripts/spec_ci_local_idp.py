@@ -2,14 +2,17 @@
 
 Spec CI (.github/workflows/spec-ci.yml) runs against a backend booted
 inside the CI job — no prod API, no real Cognito. The backend's Cognito
-verifier (app/services/cognito_jwks.py) is configuration-driven: it
-trusts whatever ``COGNITO_ISSUER`` is set to and fetches that issuer's
-JWKS from ``<issuer>/.well-known/jwks.json``. This script is the local
+verifier (app/services/oidc_jwks.py) is configuration-driven: it
+trusts whatever ``COGNITO_ISSUER`` is set to, reads that issuer's OpenID
+discovery document at ``<issuer>/.well-known/openid-configuration`` and
+fetches the JWKS its ``jwks_uri`` names. This script is the local
 "issuer": it
 
 1. generates an ephemeral RSA-2048 keypair (lives only for this run),
-2. writes ``<out-dir>/.well-known/jwks.json`` with the public JWK
-   (served by a throwaway ``python -m http.server`` in the workflow),
+2. writes ``<out-dir>/.well-known/jwks.json`` with the public JWK and
+   ``<out-dir>/.well-known/openid-configuration`` naming the issuer and that
+   JWKS (both served by a throwaway ``python -m http.server`` in the
+   workflow),
 3. mints a ci-bot **id token** signed with the private key, carrying the
    claims the backend's provision-on-first-login path requires
    (``sub``, ``email``, ``email_verified``, ``name`` — see
@@ -42,6 +45,22 @@ from jwt.algorithms import RSAAlgorithm
 KID = "spec-ci-local"
 
 
+def discovery_document(issuer: str) -> dict[str, object]:
+    """The OpenID discovery document a local issuer at ``issuer`` serves.
+
+    ``issuer`` must equal the token's ``iss`` and the backend's configured
+    issuer: the verifier refuses a document naming any other issuer.
+    """
+    base = issuer.rstrip("/")
+    return {
+        "issuer": base,
+        "jwks_uri": f"{base}/.well-known/jwks.json",
+        "response_types_supported": ["code"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"],
+    }
+
+
 def mint_token(
     *,
     issuer: str,
@@ -55,8 +74,8 @@ def mint_token(
 
     This is the reusable core shared by the Spec-CI CLI (``main`` below) and the
     dev-local-auth wrapper (``scripts/dev_local_idp.py``). It writes
-    ``<out_dir>/.well-known/jwks.json`` (served by a throwaway HTTP server as the
-    issuer) and returns a signed RS256 id token carrying the claims the backend's
+    ``<out_dir>/.well-known/jwks.json`` and ``.well-known/openid-configuration``
+    (served by a throwaway HTTP server as the issuer) and returns a signed RS256 id token carrying the claims the backend's
     provision-on-first-login path requires. No backend code path is stubbed; only
     the issuer is local. See the module docstring for the full contract.
     """
@@ -72,6 +91,9 @@ def mint_token(
     jwks_path = well_known / "jwks.json"
     jwks_path.write_text(json.dumps({"keys": [jwk]}), encoding="utf-8")
     print(f"[spec-ci-local-idp] wrote {jwks_path}", file=sys.stderr)
+    discovery_path = well_known / "openid-configuration"
+    discovery_path.write_text(json.dumps(discovery_document(issuer)), encoding="utf-8")
+    print(f"[spec-ci-local-idp] wrote {discovery_path}", file=sys.stderr)
 
     now = int(time.time())
     claims = {
@@ -134,7 +156,7 @@ def main() -> int:
     parser.add_argument(
         "--out-dir",
         required=True,
-        help="Directory to write .well-known/jwks.json under (the dir "
+        help="Directory to write .well-known/{jwks.json,openid-configuration} under (the dir "
         "python -m http.server serves as the issuer)",
     )
     parser.add_argument(

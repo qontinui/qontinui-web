@@ -38,13 +38,17 @@ export class AuthService {
    * state WITHOUT navigating every tab to the hosted-UI logout.
    */
   async logout(redirectToCognito: boolean = true): Promise<void> {
+    // The bearer is the ID token; a generic OIDC issuer's end-session endpoint
+    // may want it back as `id_token_hint`, so read it before clearing.
+    const idTokenHint = this.tokenManager.getAccessToken();
+
     // Clear authentication state from localStorage / memory.
     this.tokenManager.clearTokens();
     log.debug("Local auth state cleared");
 
-    // Revoke the Cognito hosted-UI session (full-page redirect; never returns).
+    // Revoke the issuer's SSO session (full-page redirect; never returns).
     if (redirectToCognito && typeof window !== "undefined") {
-      startCognitoLogout();
+      await startCognitoLogout(idTokenHint);
     }
   }
 

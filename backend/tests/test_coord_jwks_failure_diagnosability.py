@@ -127,17 +127,19 @@ def test_client_exposes_the_resolved_coord_url() -> None:
 
 # The two JWKS doors this backend verifies tokens against, each with its own
 # unavailable-error class and its own shared log-field helper. One walk, both
-# doors: the Cognito client is a hand-copy of the coord one, and it carried
-# the pre-fix shape (``error=str(exc)`` alone, a raise naming no URL) for as
+# doors: the OIDC client (once the Cognito-only one) is a hand-copy of the
+# coord one, and it carried the pre-fix shape (``error=str(exc)`` alone, a raise naming no URL) for as
 # long as this guard knew only the coord class. A third door added tomorrow
 # is one more row here, not a third copy of the walk.
 _JWKS_DOORS = [
     pytest.param("CoordJWKSUnavailableError", "jwks_failure_log_fields", 4, id="coord"),
     pytest.param(
-        "CognitoJWKSUnavailableError",
-        "cognito_jwks_failure_log_fields",
-        2,
-        id="cognito",
+        "OIDCJWKSUnavailableError",
+        "oidc_jwks_failure_log_fields",
+        # cognito_user's bearer handler, identities' link handler, and the
+        # client's own serve-stale-on-refresh-failure handler.
+        3,
+        id="oidc",
     ),
 ]
 
@@ -154,7 +156,7 @@ def _terminating_jwks_handlers(error_class: str) -> list[tuple[str, str]]:
     outer handler owns the log line — so it is excluded.
 
     Shapes this walk does NOT see, none present today: a catch through an
-    attribute (``except cognito_jwks.CognitoJWKSUnavailableError`` is an
+    attribute (``except oidc_jwks.OIDCJWKSUnavailableError`` is an
     ``ast.Attribute``, not an ``ast.Name``), an aliased import (``import …
     as X``), and a handler that ends the error through a base class
     (``except RuntimeError`` around ``verify_token``). Any of those would

@@ -39,11 +39,11 @@ from app.schemas.identity import (
 )
 from app.services import cognito_admin
 from app.services.cognito_admin import CognitoAdminError
-from app.services.cognito_jwks import (
-    CognitoJWKSUnavailableError,
-    CognitoTokenInvalidError,
-    cognito_jwks_client,
-    cognito_jwks_failure_log_fields,
+from app.services.oidc_jwks import (
+    OIDCJWKSUnavailableError,
+    OIDCTokenInvalidError,
+    oidc_jwks_failure_log_fields,
+    oidc_verifier,
 )
 
 logger = structlog.get_logger(__name__)
@@ -292,21 +292,29 @@ async def link_identity(
       5. Link the federated identity into the canonical account.
       6. Audit + return the refreshed identity list.
     """
-    # 1. Verify the presented token.
+    # 1. Verify the presented token — against the Cognito pool ONLY: linking
+    #    is Cognito-native (the federated identity is linked inside the pool),
+    #    so a token from any other accepted issuer has nothing to link.
+    cognito_client = oidc_verifier.cognito_client
+    if cognito_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Identity linking requires a Cognito user pool.",
+        )
     try:
-        claims = await cognito_jwks_client.verify_token(body.id_token)
-    except CognitoJWKSUnavailableError as exc:
+        claims = await cognito_client.verify_token(body.id_token)
+    except OIDCJWKSUnavailableError as exc:
         # The 503 detail below is deliberately vague, so this line is the
-        # whole diagnostic surface — the shared field set names the JWKS URL
+        # whole diagnostic surface — the shared field set names the URL
         # dialled, the setting that produced it, and the transport class.
         logger.error(
-            "identities_link_jwks_unavailable", **cognito_jwks_failure_log_fields(exc)
+            "identities_link_jwks_unavailable", **oidc_jwks_failure_log_fields(exc)
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Identity verification temporarily unavailable.",
         ) from exc
-    except CognitoTokenInvalidError as exc:
+    except OIDCTokenInvalidError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Presented token is invalid or expired.",

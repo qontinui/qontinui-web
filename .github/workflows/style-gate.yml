@@ -828,13 +828,13 @@ jobs:
           echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
           (cd /tmp/style-gate-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
           for i in $(seq 1 15); do
-            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
+            if curl -fsS http://127.0.0.1:8770/.well-known/openid-configuration > /dev/null && curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
               echo "local JWKS up after ${i}s"
               break
             fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
+          curl -fsS http://127.0.0.1:8770/.well-known/openid-configuration > /dev/null && curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
 
       # Run the Phase 1 capture. The config's `webServer` boots `npm run dev` on
       # :3001 (PLAYWRIGHT_WEB_SERVER=dev below; the config's own default is a

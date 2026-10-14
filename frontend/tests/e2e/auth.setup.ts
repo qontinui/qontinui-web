@@ -207,7 +207,8 @@ setup("authenticate", async ({ page, context }) => {
         "rejected it (probe /api/v1/auth/users/me non-2xx). The hermetic stack " +
         "is misconfigured: check that COGNITO_ISSUER points at the run-local " +
         "JWKS server, COGNITO_ALLOWED_AUDIENCES matches the token's `aud`, and " +
-        "the JWKS server is serving .well-known/jwks.json. NOT falling back to " +
+        "the issuer server is serving .well-known/openid-configuration and " +
+        ".well-known/jwks.json. NOT falling back to " +
         "real Cognito — that would mask a broken hermetic auth wiring.",
     );
   }

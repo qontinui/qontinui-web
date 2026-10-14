@@ -217,7 +217,7 @@ def _called_name(call: ast.Call, aliases: dict[str, str]) -> str | None:
 def _is_coord_verify_token(call: ast.Call, aliases: dict[str, str]) -> bool:
     """``coord_jwks_client.verify_token(...)`` under any receiver path
     (``coord_jwks.coord_jwks_client.verify_token(...)`` included) and under
-    an import alias — and NOT ``cognito_jwks_client.verify_token``, which
+    an import alias — and NOT ``oidc_verifier.verify_token``, which
     verifies a different token."""
     func = call.func
     if not (isinstance(func, ast.Attribute) and func.attr == "verify_token"):

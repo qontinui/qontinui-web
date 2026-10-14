@@ -20,6 +20,10 @@
  * Cognito hosted UI, the callback POSTs the federated id_token to the link
  * endpoint using the canonical session, then redirects back here with a
  * `?connect=success|error` marker that this component turns into a toast.
+ *
+ * Linking is Cognito-native. When sign-in goes to a generic OIDC issuer
+ * (`NEXT_PUBLIC_OIDC_ISSUER`) the issuer owns the user's sign-in methods, so
+ * the section says so instead of offering links the backend cannot make.
  */
 
 import { useEffect, useState } from "react";
@@ -54,6 +58,8 @@ import {
   type LinkedIdentity,
 } from "@/lib/api/identities";
 import {
+  isGenericOidc,
+  OIDC_DISPLAY_NAME,
   startCognitoLink,
   type CognitoProvider,
 } from "@/services/auth/cognito-oauth";
@@ -101,6 +107,32 @@ function isNative(identity: LinkedIdentity): boolean {
 }
 
 export function ConnectedAccounts() {
+  return isGenericOidc() ? <IssuerManagedAccounts /> : <CognitoConnectedAccounts />;
+}
+
+/** Generic-OIDC mode: sign-in methods are managed at the issuer. */
+function IssuerManagedAccounts() {
+  return (
+    <div
+      className="rounded-lg border border-border"
+      data-content-role="section"
+      data-content-label="connected accounts"
+    >
+      <div className="px-4 py-3 border-b border-border bg-muted/50">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <Link2 className="size-4" />
+          Connected accounts
+        </h3>
+      </div>
+      <p className="p-4 text-sm text-muted-foreground">
+        You sign in through {OIDC_DISPLAY_NAME}. Your sign-in methods are
+        managed there, not in Qontinui.
+      </p>
+    </div>
+  );
+}
+
+function CognitoConnectedAccounts() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data, isLoading, error, refetch, unlink, unlinkingKey } =

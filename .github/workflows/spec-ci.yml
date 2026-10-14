@@ -151,7 +151,8 @@ jobs:
       REDIS_ENABLED: "true"
       # Run-local token issuer (hermetic auth). The backend's Cognito
       # verifier trusts whatever issuer is configured and fetches
-      # <issuer>/.well-known/jwks.json — both run on this VM. The
+      # the JWKS its <issuer>/.well-known/openid-configuration names — both
+      # run on this VM. The
       # spec_ci_local_idp.py step below mints QONTINUI_TEST_ID_TOKEN
       # against this issuer; run-spec-ci.ts seeds it as the auth cookie.
       COGNITO_USER_POOL_ID: spec-ci-local-pool
@@ -301,13 +302,13 @@ jobs:
           echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
           (cd /tmp/spec-ci-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
           for i in $(seq 1 15); do
-            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
+            if curl -fsS http://127.0.0.1:8770/.well-known/openid-configuration > /dev/null && curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
               echo "local JWKS up after ${i}s"
               break
             fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
+          curl -fsS http://127.0.0.1:8770/.well-known/openid-configuration > /dev/null && curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
 
       - name: Start backend (uvicorn)
         working-directory: ./backend

@@ -193,3 +193,28 @@ describe("TokenManager.getAccessTokenExpiry", () => {
     expect(manager.getRefreshToken()).toBe("rt");
   });
 });
+
+describe("TokenManager.replaceRefreshToken", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it("swaps only the refresh token, leaving the bearer and its expiry", () => {
+    const manager = makeManager();
+    const bearer = jwtExpiringAt(Date.now() + HOUR_MS);
+    manager.setTokens({
+      access_token: bearer,
+      refresh_token: "old-rt",
+      token_type: "bearer",
+      expires_in: 3600,
+    });
+    const expiry = manager.getAccessTokenExpiry();
+
+    manager.replaceRefreshToken("rotated-rt");
+
+    expect(manager.getRefreshToken()).toBe("rotated-rt");
+    expect(manager.getAccessToken()).toBe(bearer);
+    expect(manager.getAccessTokenExpiry()).toBe(expiry);
+  });
+});

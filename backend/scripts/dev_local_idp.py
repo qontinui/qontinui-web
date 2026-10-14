@@ -8,20 +8,22 @@ reimplemented) that:
    ``http://127.0.0.1:8770``, audience ``qontinui-web-local``, dev email
    ``dev-local@no-reply.qontinui.io``), writing the token to ``--token-out``
    (OUTSIDE the served directory — see the security note below),
-2. serves ONLY ``/.well-known/jwks.json`` over HTTP bound to ``0.0.0.0`` so a
+2. serves ONLY ``/.well-known/openid-configuration`` and
+   ``/.well-known/jwks.json`` over HTTP bound to ``0.0.0.0`` so a
    container'd backend can reach it via ``host.docker.internal`` (Spec CI binds
    127.0.0.1; the dev flow must reach across the container boundary), and
 3. stays alive (``serve_forever``) for the life of the dev session so the
-   backend's Cognito verifier can fetch the JWKS whenever it validates the token.
+   backend's verifier can fetch the discovery document and JWKS whenever it
+   validates the token.
 
 **Security note.** The bind is ``0.0.0.0`` (LAN-reachable), so the server MUST
-expose only the public JWKS — never the minted token. A ``SimpleHTTPRequestHandler``
+expose only the public discovery document and JWKS — never the minted token. A ``SimpleHTTPRequestHandler``
 serving the whole directory (with dir-listing) would leak the token to anyone on
-the subnet. Hence the custom handler below serves the single JWKS path and 404s
+the subnet. Hence the custom handler below serves the two public paths and 404s
 everything else, and the token is written outside the served tree.
 
 The backend accepts the resulting token through its REAL Cognito verifier
-(``app/services/cognito_jwks.py``) with ZERO code change — it is issuer-driven —
+(``app/services/oidc_jwks.py``) with ZERO code change — it is issuer-driven —
 provided it is booted with the env vars this script prints on startup AND the
 ``QONTINUI_DEV_LOCAL_AUTH=1`` master flag (which the prod guardrail in
 ``app/core/config.py`` forbids under a production posture).
@@ -60,24 +62,27 @@ DEV_BIND_HOST = "0.0.0.0"  # noqa: S104 - intentional: container reaches host Id
 DEV_PORT = 8770
 
 _JWKS_PATH = "/.well-known/jwks.json"
+_DISCOVERY_PATH = "/.well-known/openid-configuration"
 
 
 class _JwksOnlyHandler(BaseHTTPRequestHandler):
-    """Serves ONLY the public JWKS. Everything else (esp. the token) is 404.
+    """Serves ONLY the public discovery document and JWKS. Everything else
+    (esp. the token) is 404.
 
-    Subclassed per-run with ``jwks_bytes`` bound so the bind-``0.0.0.0`` server
+    Subclassed per-run with ``documents`` bound so the bind-``0.0.0.0`` server
     can never leak the minted token to the LAN.
     """
 
-    jwks_bytes: bytes = b""
+    documents: dict[str, bytes] = {}
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler contract
-        if self.path.split("?", 1)[0] == _JWKS_PATH:
+        body = self.documents.get(self.path.split("?", 1)[0])
+        if body is not None:
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(self.jwks_bytes)))
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(self.jwks_bytes)
+            self.wfile.write(body)
         else:
             self.send_error(404, "Not Found")
 
@@ -93,7 +98,7 @@ def _print_banner(
     issuer_port = urlparse(issuer).port or bind_port
     lines = [
         "[dev-local-idp] hermetic dev IdP is up.",
-        f"[dev-local-idp]   JWKS   : {issuer}{_JWKS_PATH} "
+        f"[dev-local-idp]   OIDC   : {issuer}{_DISCOVERY_PATH} -> {issuer}{_JWKS_PATH} "
         f"(bound {DEV_BIND_HOST}:{bind_port})",
         f"[dev-local-idp]   token  : {token_path}  (NOT served over HTTP)",
         "[dev-local-idp] Boot the web backend with:",
@@ -110,7 +115,7 @@ def _print_banner(
         lines.insert(
             1,
             f"[dev-local-idp]   WARNING: issuer port {issuer_port} != bind port "
-            f"{bind_port} — the backend's JWKS fetch will target {issuer_port}.",
+            f"{bind_port} — the backend's discovery fetch will target {issuer_port}.",
         )
     print("\n".join(lines), file=sys.stderr, flush=True)
 
@@ -128,7 +133,7 @@ def main() -> int:
     parser.add_argument(
         "--out-dir",
         default=None,
-        help="Directory to write .well-known/jwks.json under. "
+        help="Directory to write the .well-known documents under. "
         "Defaults to a fresh temp dir. Not exposed over HTTP (only the "
         "JWKS content is served).",
     )
@@ -182,9 +187,13 @@ def main() -> int:
     )
     token_path.write_text(token, encoding="utf-8")
 
-    jwks_bytes = (out_dir / ".well-known" / "jwks.json").read_bytes()
+    well_known = out_dir / ".well-known"
+    documents = {
+        _JWKS_PATH: (well_known / "jwks.json").read_bytes(),
+        _DISCOVERY_PATH: (well_known / "openid-configuration").read_bytes(),
+    }
     handler_cls = type(
-        "_BoundJwksHandler", (_JwksOnlyHandler,), {"jwks_bytes": jwks_bytes}
+        "_BoundJwksHandler", (_JwksOnlyHandler,), {"documents": documents}
     )
 
     _print_banner(

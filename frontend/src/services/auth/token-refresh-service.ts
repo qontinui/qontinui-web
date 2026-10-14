@@ -236,10 +236,12 @@ export class TokenRefreshService {
       // token (aud == client_id), and only it carries `email`/`name`/`sub`.
       // Cognito returns no refresh token on this grant, so the existing one is
       // written straight back — it stays valid until its own, much longer,
-      // expiry. `setTokens` re-derives the bearer expiry from the JWT `exp`.
+      // expiry. A rotating generic OIDC issuer returns a new one and has just
+      // invalidated the old, so a returned token replaces it. `setTokens`
+      // re-derives the bearer expiry from the JWT `exp`.
       this.tokenManager.setTokens({
         access_token: tokens.id_token,
-        refresh_token: refreshToken,
+        refresh_token: tokens.refresh_token || refreshToken,
         token_type: "bearer",
         expires_in: tokens.expires_in,
         // Omitted deliberately (0 => falsy => not persisted): the refresh
@@ -255,6 +257,12 @@ export class TokenRefreshService {
       this.sessionExpiryDispatched = false;
       return "refreshed";
     } catch (error) {
+      if (error instanceof CognitoRefreshError && error.rotatedRefreshToken) {
+        // The issuer rotated the refresh token before the attempt failed;
+        // the old one may already be invalid, so keep the new one for the
+        // retry. The bearer itself is left exactly as it was.
+        this.tokenManager.replaceRefreshToken(error.rotatedRefreshToken);
+      }
       if (
         error instanceof CognitoRefreshError &&
         error.kind === "authoritative"

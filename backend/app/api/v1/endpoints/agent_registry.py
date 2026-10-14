@@ -118,8 +118,8 @@ async def get_registry_user(request: Request) -> User:
             user = await verify_cognito_token_and_resolve_user(token, db)
         except CognitoAuthError as exc:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token.",
+                status_code=exc.status_code,
+                detail=exc.public_detail,
             ) from exc
         if not user.is_active:
             raise HTTPException(

@@ -100,8 +100,8 @@ async def get_current_user_from_ws(token: str) -> User:
         except CognitoAuthError as exc:
             logger.warning("ws_cognito_auth_failed", error=str(exc))
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
+                status_code=exc.status_code,
+                detail=exc.public_detail,
             ) from exc
 
         if not user.is_active:
