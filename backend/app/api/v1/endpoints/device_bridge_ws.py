@@ -286,6 +286,20 @@ def _redis_unavailable_response() -> JSONResponse:
     )
 
 
+#: The ``next_action.target`` for a paired device whose runner has never
+#: opened the relay. ``Refusal::render`` reads: Set the "<target>" setting,
+#: then try again.
+_RELAY_SETTING_TARGET = "Cloud relay, in the runner on that device"
+
+#: The refusal sentence for the same case. The top-level ``detail`` keeps its
+#: prior value ("runner not connected") for older mobile builds.
+_NEVER_REGISTERED_SENTENCE = (
+    "this device is paired, but its runner has never connected to the cloud "
+    "relay: start the runner on that device, sign it in, and turn its cloud "
+    "relay on, then try again"
+)
+
+
 # ---------------------------------------------------------------------------
 # A. Device WebSocket — mobile device connects here
 # ---------------------------------------------------------------------------
@@ -1243,26 +1257,37 @@ async def _runner_proxy_relay(
             if liveness.known
             else {}
         )
-        # A runner the relay has NEVER seen needs pairing; one that has
-        # connected before is expected back, so the same request later is the
-        # next step. An unknown liveness is not "never registered" — it takes
-        # the retry arm, the one that is right for every runner seen before.
+        # Both arms are reached only for a device row this caller OWNS, so the
+        # device is already paired; pairing it again is a finished step and
+        # cannot help. What differs is the runner on it:
+        #
+        # * never registered (``ws_connected_at`` is null): its runner has
+        #   never opened the relay WebSocket. Waiting will not change that.
+        #   Someone has to start the runner on that device, sign it in, and
+        #   turn its cloud relay on, so the next action is that setting, and
+        #   the sentence says the rest.
+        # * connected before: it is expected back, so the same request later
+        #   is the next step. An unknown liveness is not "never registered"
+        #   either. It takes the retry arm, which is right for every runner
+        #   seen before.
         never_registered = liveness.known and liveness.ws_connected_at is None
-        refusal = build_refusal(
-            RefusalCode.device_not_connected,
-            (
-                NextActionKind.pair_device
-                if never_registered
-                else NextActionKind.retry_later
-            ),
-            "runner not connected",
-            discriminator=(
-                "runner_never_registered"
-                if never_registered
-                else "runner_not_connected"
-            ),
-            glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
-        )
+        if never_registered:
+            refusal = build_refusal(
+                RefusalCode.device_not_connected,
+                NextActionKind.set_setting,
+                _NEVER_REGISTERED_SENTENCE,
+                discriminator="runner_never_registered",
+                target=_RELAY_SETTING_TARGET,
+                glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
+            )
+        else:
+            refusal = build_refusal(
+                RefusalCode.device_not_connected,
+                NextActionKind.retry_later,
+                "runner not connected",
+                discriminator="runner_not_connected",
+                glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
+            )
         content: dict[str, object] = {
             "detail": "runner not connected",
             "device_id": str(device_uuid),

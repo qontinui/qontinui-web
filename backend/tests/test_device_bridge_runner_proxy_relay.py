@@ -692,9 +692,22 @@ async def test_relay_503_ws_connected_at_null_means_never_registered(monkeypatch
     body = _body(response)
     assert body["ws_connected_at"] is None
     assert body["last_seen_at"] == "2026-08-27T09:15:00+00:00"
-    # Never registered: the runner has to be paired, not waited for.
-    assert body["refusal"]["discriminator"] == "runner_never_registered"
-    assert body["refusal"]["next_action"] == {"kind": "pair_device"}
+    # Never registered. The device IS paired (this arm needs an owned row),
+    # so re-pairing is a finished step and the next action is not
+    # pair_device. Its runner has never opened the relay, and waiting will
+    # not open it. Someone has to start that runner, sign it in, and turn
+    # its cloud relay on.
+    refusal = body["refusal"]
+    assert refusal["discriminator"] == "runner_never_registered"
+    assert refusal["next_action"] == {
+        "kind": "set_setting",
+        "target": device_bridge_ws._RELAY_SETTING_TARGET,
+    }
+    assert refusal["next_action"]["kind"] != "pair_device"
+    assert "start the runner on that device" in refusal["detail"]
+    assert "sign it in" in refusal["detail"]
+    # The pre-existing key keeps its exact value for older mobile builds.
+    assert body["detail"] == "runner not connected"
 
 
 @pytest.mark.asyncio
