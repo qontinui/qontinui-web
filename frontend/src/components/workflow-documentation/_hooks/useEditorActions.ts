@@ -95,7 +95,7 @@ export function useEditorActions(
     },
     complexityMetrics: () => {
       const docService = WorkflowDocumentationService.getInstance();
-      const metrics = docService.generateDependenciesList(workflow);
+      const metrics = docService.generateComplexityMetrics(workflow);
       insertAtCursor(`\n${metrics}\n`);
     },
     dependencies: () => {

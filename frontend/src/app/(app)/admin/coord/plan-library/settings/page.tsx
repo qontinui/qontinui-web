@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * /admin/coord/plan-library/settings — the plan library's two policy dials.
+ * /admin/coord/plan-library/settings — the plan library's policy dials and
+ * its model routing.
  *
  * Plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next` Phase 1
  * and Design decision 4b. Split from the browsing page by MUTATION FREQUENCY,
@@ -18,6 +19,11 @@
  *   `dry_run` | `live`): whether an AGENT may run the delivery-scope citation
  *   backfill write (plan
  *   `2026-09-23-delivery-scope-backfill-write-is-operator-only-so-a-mechanical-reconcile-needs-a-human`).
+ * - `ModelRoutingPanel` — which model family each plan difficulty level
+ *   routes to (`/vet-imp-sweep --route-by-difficulty` reads it). Unlike the
+ *   two dials it is stored by this backend, per personal organization, and is
+ *   operator-only by credential rather than by tenant role (plan
+ *   `2026-10-08-operator-editable-model-family-per-plan-difficulty`).
  *
  * R9: no page-level card and no `<h1>` — the coord layout owns both.
  */
@@ -26,6 +32,7 @@ import Link from "next/link";
 import { Settings2 } from "lucide-react";
 import { CapturePolicyPanel } from "../_components/CapturePolicyPanel";
 import { CitationBackfillPolicyPanel } from "../_components/CitationBackfillPolicyPanel";
+import { ModelRoutingPanel } from "../_components/ModelRoutingPanel";
 
 export default function PlanLibrarySettingsPage() {
   return (
@@ -63,6 +70,7 @@ export default function PlanLibrarySettingsPage() {
 
       <CapturePolicyPanel />
       <CitationBackfillPolicyPanel />
+      <ModelRoutingPanel />
     </div>
   );
 }

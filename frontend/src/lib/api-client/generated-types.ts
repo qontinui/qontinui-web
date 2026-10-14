@@ -2289,6 +2289,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/build-records/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Build Record Products
+         * @description The tenant's product definitions (``{products: [...]}``), from coord.
+         */
+        get: operations["api_v1_build_records_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/products/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Build Record Product
+         * @description Create or replace one product definition. Tenant admins only: this is
+         *     the switch that makes a product publishable (``is_public``).
+         *
+         *     ``is_public: false`` — or a ``repos`` list that no longer covers every repo
+         *     the live snapshot names — retracts this tenant's live public snapshot of
+         *     the slug FIRST and commits, then calls coord — so whatever coord answers, the
+         *     page is not left public under a product that was just made private. The
+         *     ``X-Build-Record-Retracted`` header says whether this request retracted.
+         */
+        put: operations["api_v1_build_records_products_slug_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Build Records
+         * @description Retract every live public build record of this tenant whose coord
+         *     product is gone, private or another tenant's — now, with the caller's own
+         *     coord credential — or whose snapshot names a repo the product no longer
+         *     includes. GitHub visibility is NOT re-checked here: that spends the shared
+         *     anonymous GitHub budget and runs only as the scheduled
+         *     ``build_record_visibility_recheck`` task. The same reconcile also runs on the in-process scheduler
+         *     every 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for
+         *     the launch kit and the operator notice, which should not wait for a tick.
+         *
+         *     A coord read that fails is a refusal (coord's status), never an empty
+         *     listing — an unanswered question retracts nothing.
+         */
+        post: operations["api_v1_build_records_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record
+         * @description The live ``build-record/1`` document for one product, from coord.
+         *
+         *     coord's 404 ``{"error": "build_record_product_not_found"}`` passes through
+         *     as a structured detail.
+         */
+        get: operations["api_v1_build_records_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record Publication
+         * @description The caller's tenant's publication state for ``slug`` (any member):
+         *     whether it owns the public address, whether it is currently unpublished,
+         *     and the latest snapshot's version and digest. Read-only; no coord call.
+         */
+        get: operations["api_v1_build_records_slug_publication_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Build Record
+         * @description Freeze the product's current build record as its next public version.
+         *
+         *     Refuses (nothing stored) when:
+         *
+         *     * another tenant already owns this public slug → 409
+         *       ``public_slug_owned_by_another_tenant``;
+         *     * the slug is retracted and the body does not say ``reactivate: true`` →
+         *       409 ``build_record_retracted``;
+         *     * the product does not exist in the caller's tenant → 404;
+         *     * coord's product row names a different tenant → 409
+         *       ``build_record_tenant_mismatch``;
+         *     * the product's ``is_public`` is not ``true`` → 409 (D3: nothing is public
+         *       by default);
+         *
+         *     — and in those three cases a LIVE snapshot this tenant owns is retracted
+         *     on the spot (``retracted`` in the refusal says whether it was);
+         *
+         *     * coord's document fails the D3 allowlist, names another product, or lists
+         *       a repo outside the product definition → 502 (coord sent something it
+         *       must not; the violations are listed);
+         *     * coord's ``generated_at`` is outside [now − 15 min, now + 5 min] → 502
+         *       ``build_record_generated_at_out_of_window``;
+         *     * GitHub, asked anonymously, does not confirm a listed repo is public →
+         *       502 ``build_record_repo_not_public`` (it said private / absent) or
+         *       ``build_record_repo_visibility_unknown`` (no answer, rate limit, error);
+         *       refused without asking when the product has more than 50 repos (409
+         *       ``build_record_too_many_repos``) or the shared GitHub budget is at its
+         *       publish reserve (502 ``build_record_repo_visibility_budget_reserved``);
+         *     * the slug was retracted or re-activated while coord was being asked → 409
+         *       ``build_record_retraction_changed``;
+         *     * the document is older than the latest snapshot → 409
+         *       ``build_record_stale``.
+         *
+         *     After storing, the product is read from coord once more; if it went
+         *     private (or the read fails) in the meantime, the new version is retracted
+         *     at once and the answer is 409 ``build_record_product_not_public`` /
+         *     502 ``build_record_post_publish_check_unanswered`` with ``retracted``.
+         */
+        post: operations["api_v1_build_records_slug_publish_post"];
+        /**
+         * Unpublish Build Record
+         * @description D7's one-step unpublish: retract the public address immediately.
+         *
+         *     ``GET /api/v1/public/build-records/{slug}`` answers 404 from the moment
+         *     this commits. Every snapshot row is kept as history and the tenant keeps
+         *     the slug; ``POST /{slug}/publish`` with ``{"reactivate": true}``
+         *     re-activates it as the next version. Idempotent: unpublishing a retracted
+         *     slug keeps its first retraction time.
+         *
+         *     Refuses with the publish route's own answers: 404
+         *     ``build_record_not_published`` when nothing was ever published under the
+         *     slug, 409 ``public_slug_owned_by_another_tenant`` when another tenant owns
+         *     it. coord is not consulted — retraction must work while coord is down.
+         */
+        delete: operations["api_v1_build_records_slug_publish_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/capture/actions/batch": {
         parameters: {
             query?: never;
@@ -9010,6 +9203,24 @@ export interface paths {
          *
          *     ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
          *     Gaps tab can list pre-answered (non-blocking) gap reports.
+         *
+         *     ``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME
+         *     ``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both
+         *     reach it — but only if they are declared HERE. Until they were, this
+         *     handler declared ``limit`` and ``gap`` alone and **FastAPI dropped the
+         *     rest on the floor**: a caller asking for ``?offset=50&audience=operator``
+         *     reached coord with neither, and got page 1 of every audience with a 200
+         *     in front of it. That is the exact failure the pending docstring above
+         *     describes in its own words, still live one handler down — no visible
+         *     defect only because nothing pages the answered tab yet, which makes the
+         *     next answered pager a silent no-op its author cannot observe. Validated
+         *     identically to the pending handler (``limit`` ``ge=1, le=500``,
+         *     ``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than
+         *     with a second convention.
+         *
+         *     The envelope is coord's, verbatim, with the same absence contract the
+         *     pending docstring sets out: ``total``/``truncated`` are OMITTED when coord
+         *     could not observe the count, and an absent key is UNKNOWN, never zero.
          */
         get: operations["api_v1_operations_agent_questions_answered_get"];
         put?: never;
@@ -9059,6 +9270,58 @@ export interface paths {
          *     when set, forwarded to coord as the POLICY_GAP filter —
          *     ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
          *     Backs the Gaps tab on the questions inbox.
+         *
+         *     ``limit`` / ``offset`` / ``audience`` (plan
+         *     2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).
+         *     Until these were declared here the proxy took ``gap`` alone, and FastAPI
+         *     drops an undeclared query param on the floor — so a caller asking for
+         *     ``?limit=500&audience=operator`` reached coord with NEITHER, and any
+         *     frontend-side limit change was a **no-op it could not observe**. Declaring
+         *     them is the whole fix on this side; the forwarding below is mechanical.
+         *
+         *     Why it mattered: measured 2026-09-12, ``coord.agent_questions`` held
+         *     ~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``
+         *     and only ~442 with ``audience='operator'``. Coord's default page is 100
+         *     rows newest-first, so a correctly-escalated operator question sank out of
+         *     reach behind the agent tier's volume and was unanswerable for 10 days.
+         *     ``audience=operator`` is what makes the operator's own 442 addressable;
+         *     ``limit``/``offset`` are what make the rest of them reachable.
+         *
+         *     ``limit`` is validated exactly as the ANSWERED proxy below validates its
+         *     own (``ge=1, le=500``) rather than with a second convention. ``offset`` is
+         *     ``ge=0`` — the answered proxy has no offset to copy, and the work-units
+         *     proxy's ``offset: int | None = Query(default=None, ge=0)`` is the house
+         *     form.
+         *
+         *     ``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates
+         *     the sibling change**, and "deployed" is the load-bearing word. Coord's
+         *     source on ``main`` now DOES parse both — ``PendingQuery``
+         *     (``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,
+         *     ``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in
+         *     this same change set — so a grep of that source is not grounds for deleting
+         *     the degrade path here: what governs is the build answering this box, and it
+         *     lags ``main``. The struct is plain serde with no ``deny_unknown_fields``,
+         *     so on an older build an unknown query key is dropped rather than refused.
+         *     Forwarding them is therefore safe in both directions, but a 200 is never
+         *     proof the filter was applied — the frontend reads the echoed ``limit`` and
+         *     ``offset`` back and says which parameter went nowhere. ``limit`` coord has
+         *     always honoured (default 100, hard max 500), which is the bound the defect
+         *     below ran into.
+         *
+         *     The response envelope is **unchanged** and deliberately untranslated:
+         *     :func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord
+         *     already ships ``{questions, count, limit, shown, offset}`` plus ``total``
+         *     and ``truncated`` — so the paging metadata the frontend needs arrives
+         *     without a re-wrap here.
+         *
+         *     ⚠️ **``total`` and ``truncated`` are OMITTED — the key absent — when coord
+         *     could not observe the count**, which is precisely why nothing here
+         *     re-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the
+         *     returned rows, so an ``offset`` past the end of the match set returns zero
+         *     rows and no count with them; a ``0`` in its place would be a fabrication,
+         *     and the operator console turns a pending ``0`` into "No agent is waiting on
+         *     an answer". Any future re-wrap here MUST preserve the absence — a
+         *     ``body.get("total", 0)`` anywhere in this path recreates the defect.
          */
         get: operations["api_v1_operations_agent_questions_pending_get"];
         put?: never;
@@ -13098,6 +13361,10 @@ export interface paths {
          * Reject Gate
          * @description Reject an OperatorApproval gate (operator bearer forwarded —
          *     fleet-auth P2/D6).
+         *
+         *     The optional JSON body ``{"reason": ...}`` carries the reason. It is
+         *     forwarded to coord stripped, and only when non-blank; an absent body or a
+         *     blank reason forwards ``{}``.
          */
         post: operations["api_v1_operations_gates_gate_id_reject_post"];
         delete?: never;
@@ -17137,9 +17404,10 @@ export interface paths {
          *
          *     Plan ``2026-09-18-plan-library-difficulty-field``. The rating is computed
          *     from each plan's body by ``app.services.plan_difficulty`` — two axes,
-         *     conceptual and implementation, folded into a routing level (``high`` →
-         *     Fable 5.1, ``medium`` → Opus 5, ``low`` → a fast tier), with a plan's own
-         *     ``Difficulty:`` stamp overriding the computed level.
+         *     conceptual and implementation, folded into a routing level, with a plan's
+         *     own ``Difficulty:`` stamp overriding the computed level. Which model family
+         *     each level routes to is the caller's organization's map
+         *     (``GET/PUT /plan-library/model-routing``).
          *
          *     Before answering, plans rated under an older rubric (or none) are re-rated,
          *     up to a per-request cap, newest first — see
@@ -17482,6 +17750,59 @@ export interface paths {
          */
         post: operations["api_v1_plan_library_followups_reconcile_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-library/model-routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which model family each difficulty level routes to (this organization)
+         * @description The routing map ``GET /plan-library``, ``/candidates`` and
+         *     ``/difficulty`` serve this caller, with each level's provenance.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Same admission as those three reads (a Cognito user OR a coord device JWT):
+         *     the map is already on their envelopes, this adds only where each level came
+         *     from. ``can_edit`` says whether ``PUT`` would be accepted for this scope —
+         *     the NULL organization bucket can never be written — not whether the
+         *     caller's CREDENTIAL can write (a device JWT cannot; see the PUT).
+         */
+        get: operations["api_v1_plan_library_model_routing_get"];
+        /**
+         * Set the model family each difficulty level routes to (Cognito session only)
+         * @description Record the FULL ``{high, medium, low}`` → model-family map.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Families are the ``claude_code_agent_tool_v1`` selector vocabulary
+         *     (``fable | opus | sonnet | haiku``); the harness resolves each to that
+         *     family's latest model, so no version is ever stored. Every level is
+         *     required and every level's row is written, so a save is a whole map. Two
+         *     levels may share a family.
+         *
+         *     Scoped to the caller's personal organization — the scope the three serving
+         *     routes read. 409 for a principal with none: that is the shared NULL bucket.
+         *
+         *     Answers with the map as RE-READ after the commit, so what the console shows
+         *     after a save is what the serving routes now return.
+         */
+        put: operations["api_v1_plan_library_model_routing_put"];
+        post?: never;
+        /**
+         * Clear this organization's model routing back to the defaults (Cognito session only)
+         * @description Delete every stored level, so each serves the shipped default again.
+         *
+         *     Not the same as ``PUT``-ing a map equal to today's defaults: that stores a
+         *     copy, which stays pinned if the defaults move. After this every level's
+         *     ``source`` is ``default``. Idempotent; 409 for the NULL bucket, as ``PUT``.
+         */
+        delete: operations["api_v1_plan_library_model_routing_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -20375,6 +20696,45 @@ export interface paths {
          *     Requires EDIT permission on the project.
          */
         post: operations["api_v1_projects_project_id_versions_version_number_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Public Build Record
+         * @description The latest published snapshot of a product's build record, without
+         *     authentication.
+         *
+         *     Serves ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,
+         *     which refuses a product that is not opted in (``is_public``) and
+         *     re-validates the D3 allowlist before storing. It never proxies to coord,
+         *     so the authed export is never reachable from here. 404 when nothing has
+         *     been published under ``slug``, or when its owner has unpublished it
+         *     (``DELETE /api/v1/build-records/{slug}/publish``).
+         *
+         *     A snapshot validated under an older allowlist version is re-validated
+         *     against the current one (once per process, cached, off the event loop
+         *     under a dedicated limiter) and 404s if it fails; one validated under the
+         *     current version is served on its stored verdict. Rate-limited per peer
+         *     (:data:`PUBLIC_BUILD_RECORD_RATE_LIMIT`). Every answer carries
+         *     ``Cache-Control: no-store`` so an unpublish is not outlived by a cached
+         *     copy.
+         *
+         *     ``content_sha256`` is the SHA-256 of ``document`` serialized with sorted
+         *     keys and no insignificant whitespace, so a reader can verify it.
+         */
+        get: operations["api_v1_public_build_records_slug_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -27727,6 +28087,87 @@ export interface components {
             target_element_id: string | null;
         };
         /**
+         * BuildRecordProductWrite
+         * @description Body of ``PUT /products/{slug}`` — the coord contract's product fields.
+         */
+        BuildRecordProductWrite: {
+            /**
+             * Is Public
+             * @default false
+             */
+            is_public: boolean;
+            /** Repos */
+            repos?: string[];
+            /** Title */
+            title: string;
+            /** Window End */
+            window_end?: string | null;
+            /** Window Start */
+            window_start?: string | null;
+        };
+        /**
+         * BuildRecordPublication
+         * @description What ``GET /{slug}/publication`` returns, for the CALLER's tenant.
+         */
+        BuildRecordPublication: {
+            /** Content Sha256 */
+            content_sha256: string | null;
+            /** Owned By Caller Tenant */
+            owned_by_caller_tenant: boolean;
+            /** Public Slug */
+            public_slug: string;
+            /** Unpublished */
+            unpublished: boolean;
+            /** Version */
+            version: number | null;
+        };
+        /**
+         * BuildRecordPublishRequest
+         * @description Optional body of ``POST /{slug}/publish``.
+         */
+        BuildRecordPublishRequest: {
+            /**
+             * Reactivate
+             * @default false
+             */
+            reactivate: boolean;
+        };
+        /**
+         * BuildRecordPublishResult
+         * @description What ``POST /{slug}/publish`` returns.
+         */
+        BuildRecordPublishResult: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Public Slug */
+            public_slug: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * BuildRecordReconcileResult
+         * @description What ``POST /reconcile`` returns.
+         */
+        BuildRecordReconcileResult: {
+            /** Retracted */
+            retracted: string[];
+        };
+        /**
+         * BuildRecordUnpublishResult
+         * @description What ``DELETE /{slug}/publish`` returns.
+         */
+        BuildRecordUnpublishResult: {
+            /** Latest Version */
+            latest_version: number | null;
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Unpublished At
+             * Format: date-time
+             */
+            unpublished_at: string;
+        };
+        /**
          * BulkAnnotationError
          * @description Schema for bulk operation error
          */
@@ -28771,11 +29212,17 @@ export interface components {
             domain: string;
             /** Repos */
             repos?: components["schemas"]["CiHostingRepoReading"][];
+            /** Repos Unknown Reason */
+            repos_unknown_reason?: string | null;
             tenant_default: components["schemas"]["CiHostingReading"];
         };
         /**
          * CiNodeConfig
-         * @description The four ``CiNodeSettings`` fields, with the runner's own defaults.
+         * @description The ``CiNodeSettings`` fields, with the runner's own defaults.
+         *
+         *     ``model_access`` is the exception: its default is ``None`` ("not set
+         *     here"), not the runner's ``True``, because an absent value must leave the
+         *     runner's stored consent alone rather than overwrite it.
          *
          *     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
          *     on purpose: a machine that has never been configured here must round-trip
@@ -28796,6 +29243,8 @@ export interface components {
              * @default 20
              */
             min_free_disk_gb: number;
+            /** Model Access */
+            model_access?: boolean | null;
             /** Repo Allowlist */
             repo_allowlist?: string[];
         };
@@ -37238,6 +37687,14 @@ export interface components {
             name: string;
         };
         /**
+         * GateRejectRequest
+         * @description Optional JSON body of ``POST /gates/{gate_id}/reject``.
+         */
+        GateRejectRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * GenerateDescriptionRequest
          * @description Request to generate LLM description for an element region.
          */
@@ -40627,6 +41084,80 @@ export interface components {
             tokens_output: number;
         };
         /**
+         * ModelFamilyOption
+         * @description One family the console offers, with the copy ``model_tiers`` serves for it.
+         */
+        ModelFamilyOption: {
+            /** Display */
+            display: string;
+            /** Family */
+            family: string;
+        };
+        /**
+         * ModelRoutingResponse
+         * @description The caller's organization's routing map, as STORED and as SERVED.
+         *
+         *     ``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are
+         *     exactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``
+         *     serve this caller. ``sources`` says, per level, whether a stored row or the
+         *     shipped default answered (``default_selectors``). ``can_edit`` is false for
+         *     a principal with no personal organization: that scope is the shared NULL
+         *     bucket, which reads the defaults and refuses a write (409).
+         */
+        ModelRoutingResponse: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Default Selectors */
+            default_selectors: {
+                [key: string]: string;
+            };
+            /** Families */
+            families: components["schemas"]["ModelFamilyOption"][];
+            /** Model Selector Vocabulary */
+            model_selector_vocabulary: string;
+            /** Model Selectors */
+            model_selectors: {
+                [key: string]: string;
+            };
+            /** Model Tiers */
+            model_tiers: {
+                [key: string]: string;
+            };
+            /** Sources */
+            sources: {
+                [key: string]: "stored" | "default";
+            };
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By User Id */
+            updated_by_user_id?: string | null;
+        };
+        /**
+         * ModelRoutingUpdate
+         * @description ``PUT /plan-library/model-routing`` — the FULL map, one family per level.
+         *
+         *     Every level is required and an unknown key is refused, so a save is always
+         *     a whole, explicit map: there is no partial write whose omitted levels mean
+         *     either "keep" or "reset" depending on who reads the code.
+         */
+        ModelRoutingUpdate: {
+            /**
+             * High
+             * @enum {string}
+             */
+            high: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Low
+             * @enum {string}
+             */
+            low: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Medium
+             * @enum {string}
+             */
+            medium: "fable" | "opus" | "sonnet" | "haiku";
+        };
+        /**
          * MonitorSettingsSchema
          * @description Monitor configuration settings schema.
          */
@@ -43161,7 +43692,11 @@ export interface components {
          *     row that is still unrated is left OUT of ``items`` — absent here means
          *     "no rating", which the console renders as unrated, never as "low".
          *     ``model_tiers`` maps each level to the model tier it routes to, served so
-         *     every consumer names the same models. It is DISPLAY COPY — never parse it.
+         *     every consumer names the same models. It is DISPLAY COPY — never parse it —
+         *     derived from ``model_selectors``, so the two always agree. Both are the
+         *     caller's organization's map as the operator set it on
+         *     ``PUT /plan-library/model-routing``, each level defaulting to the shipped
+         *     map when no row names it.
          *     ``model_selectors`` is the machine-readable twin: each level's harness
          *     selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
          *     Code Agent tool's ``model`` values). A consumer whose harness does not
@@ -44226,6 +44761,27 @@ export interface components {
              * @description Sequential version number
              */
             version_number: number;
+        };
+        /**
+         * PublicBuildRecord
+         * @description The latest frozen version of a published build record.
+         */
+        PublicBuildRecord: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Document */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Version */
+            version: number;
         };
         /**
          * PushDeviceRegister
@@ -58375,6 +58931,209 @@ export interface operations {
             };
         };
     };
+    api_v1_build_records_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_build_records_products_slug_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordProductWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordReconcileResult"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publication_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublication"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordPublishRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublishResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordUnpublishResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_capture_actions_batch_post: {
         parameters: {
             query?: never;
@@ -69543,7 +70302,10 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number | null;
+                offset?: number | null;
                 gap?: boolean | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
@@ -69606,6 +70368,10 @@ export interface operations {
         parameters: {
             query?: {
                 gap?: boolean | null;
+                limit?: number | null;
+                offset?: number | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
@@ -73845,16 +74611,18 @@ export interface operations {
     };
     api_v1_operations_gates_gate_id_reject_post: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 gate_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GateRejectRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -79328,6 +80096,79 @@ export interface operations {
             };
         };
     };
+    api_v1_plan_library_model_routing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelRoutingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+        };
+    };
     api_v1_plan_library_reconciliation_get: {
         parameters: {
             query?: {
@@ -84407,6 +85248,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionRestoreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_public_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicBuildRecord"];
                 };
             };
             /** @description Validation Error */

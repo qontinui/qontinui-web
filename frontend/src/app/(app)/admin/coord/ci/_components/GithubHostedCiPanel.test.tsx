@@ -557,6 +557,22 @@ describe("GithubHostedCiPanel — repo rows", () => {
 });
 
 describe("GithubHostedCiPanel — read-only and read failures", () => {
+  it("an unreadable repo list is UNKNOWN with coord's reason, never 'no repos'", async () => {
+    route({
+      ci: ciView("on", "none", {
+        repos: [],
+        repos_unknown_reason: "schema_object_missing:tenant_repos",
+      }),
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    const notice = await screen.findByTestId("github-hosted-ci-repos-unlisted");
+    expect(notice).toHaveTextContent("schema_object_missing:tenant_repos");
+    expect(screen.queryByTestId("github-hosted-ci-repos-empty")).toBeNull();
+    expect(
+      screen.getByTestId("github-hosted-ci-summary-repos").textContent
+    ).toContain("repos –");
+  });
+
   it("is read-only for a non-admin of the active tenant", async () => {
     route({});
     render(<GithubHostedCiPanel isAdmin={false} />);

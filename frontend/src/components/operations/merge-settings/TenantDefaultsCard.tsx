@@ -9,12 +9,23 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   patchTenantSettings,
   type EffectiveProfile,
+  type ExpediteDials,
   type TenantSettingsPatch,
 } from "@/lib/api/operations/prMerge";
 import { TenantMergePauseControl } from "./TenantMergePauseControl";
+import {
+  ExpediteDialsSection,
+  expediteFieldsFrom,
+  expeditePatchFrom,
+  expediteReadState,
+  type ExpediteFields,
+  type ExpediteKey,
+} from "./ExpediteDialsSection";
 import {
   ffLandHeadSyncSupported,
   httpFailureText,
@@ -30,9 +41,15 @@ const log = createLogger("MergeOrchestrationSettings");
 
 export function TenantDefaultsCard({
   profile,
+  expediteTenant,
   onSaved,
 }: {
   profile: EffectiveProfile;
+  /**
+   * The tenant settings read's RAW `expedite_tenant`: `undefined` = this coord
+   * build does not serve the dials, `null` = coord could not read them.
+   */
+  expediteTenant: ExpediteDials | null | undefined;
   onSaved: () => void;
 }) {
   const [minDwell, setMinDwell] = useState<string>(
@@ -60,6 +77,27 @@ export function TenantDefaultsCard({
   );
   const [shadowFloor, setShadowFloor] = useState<string>(
     String(profile.audit_confidence_shadow_floor)
+  );
+  // The expedited-land dials. Unlike every field above, these are sent ONLY
+  // when edited: this card re-sends the rest on every save, and a re-sent
+  // stale `expedited_land` would silently undo another operator's switch-off.
+  const expediteState = expediteReadState(expediteTenant);
+  const [expedite, setExpedite] = useState<ExpediteFields>(() =>
+    expediteFieldsFrom(expediteTenant)
+  );
+  const [expediteEdited, setExpediteEdited] = useState<Set<string>>(
+    () => new Set()
+  );
+  useEffect(() => {
+    setExpedite(expediteFieldsFrom(expediteTenant));
+    setExpediteEdited(new Set());
+  }, [expediteTenant]);
+  const onExpediteChange = useCallback(
+    <K extends ExpediteKey>(key: K, value: ExpediteFields[K]) => {
+      setExpedite((prev) => ({ ...prev, [key]: value }));
+      setExpediteEdited((prev) => new Set(prev).add(key));
+    },
+    []
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,11 +152,28 @@ export function TenantDefaultsCard({
       if (ffLandHeadSyncSupported(profile)) {
         body.ff_land_head_sync_enabled = ffLandHeadSync;
       }
+      // Same `deny_unknown_fields` reason, plus the edited-only rule above.
+      if (expediteState !== "unsupported") {
+        Object.assign(body, expeditePatchFrom(expedite, expediteEdited));
+      }
       await patchTenantSettings(body);
+      // The save consumed the expedite edits. Clear them HERE, not only in the
+      // re-seed effect: when the dials are unreadable every reload hands back
+      // the same `null`, the effect never re-runs, and a stale edited key
+      // would be re-sent by the next unrelated save — reverting another
+      // operator's switch-off. The fields are NOT re-seeded from the
+      // pre-save read: after a 2xx they hold exactly what coord now stores,
+      // and the reload's effect replaces them with a fresh read.
+      setExpediteEdited(new Set());
       onSaved();
     } catch (err) {
       log.warn("save tenant settings failed", err);
-      setError(httpFailureText(err, { withBody: false }));
+      // A 422 is coord naming the refused dial (`dial_value_invalid`): show it.
+      setError(
+        httpStatusOf(err) === 422
+          ? operationsErrorMessage(err)
+          : httpFailureText(err, { withBody: false })
+      );
     } finally {
       setSaving(false);
     }
@@ -131,6 +186,9 @@ export function TenantDefaultsCard({
     profile,
     shadowFloor,
     escalatePathsText,
+    expediteState,
+    expedite,
+    expediteEdited,
     onSaved,
   ]);
 
@@ -274,6 +332,16 @@ export function TenantDefaultsCard({
             data-testid="settings-ff-land-head-sync"
           />
         </div>
+        <ExpediteDialsSection
+          tier="tenant"
+          fields={expedite}
+          readState={expediteState}
+          onChange={onExpediteChange}
+          testIdPrefix="settings"
+          // No edits while a save is in flight: the save clears the edited
+          // set when it lands, which would silently drop a mid-save edit.
+          busy={saving}
+        />
         <div className="space-y-1">
           <Label htmlFor="escalate-paths">Escalate paths (one per line)</Label>
           <Textarea

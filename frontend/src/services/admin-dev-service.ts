@@ -267,6 +267,14 @@ export type GateVerdict =
 export type PrMergeStatus =
   | "draft"
   | "ci-failed"
+  // CI red, but the PR's base is stale — the red may be main's fault. coord's
+  // remedy is its own BEHIND freshen; not author work.
+  | "ci-failed-stale-base"
+  // CI red where every failing check run was a self-hosted runner kill (zero
+  // failed steps). Remedy: re-run the failed jobs once the runner is healthy —
+  // infra/operator-side, not the author's code. Added by qontinui-coord#2723;
+  // mapped here ahead of coord emitting it.
+  | "ci-failed-infra-kill"
   | "ci-pending"
   | "conflicts"
   | "behind-base"

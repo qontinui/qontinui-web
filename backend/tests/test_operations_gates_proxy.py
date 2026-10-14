@@ -183,6 +183,65 @@ class TestGateActionsHappyPath:
         called_url = instance.post.call_args.args[0]
         assert called_url.endswith(f"/coord/gates/{self.GATE_ID}/approve")
 
+    def test_reject_forwards_body_reason(self, auth_client: TestClient):
+        """The web client sends ``{"reason": ...}`` as a JSON body; the proxy
+        must forward it upstream. (It was once a bare param that FastAPI bound
+        to the query string, so the body's reason was silently dropped.)"""
+        mock_resp = _mock_response(
+            json_data={"gate_id": self.GATE_ID, "verdict": "rejected"}
+        )
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.post(
+                f"{API_PREFIX}/gates/{self.GATE_ID}/reject",
+                json={"reason": "not this plan"},
+            )
+        assert resp.status_code == 200
+        called_url = instance.post.call_args.args[0]
+        assert called_url.endswith(f"/coord/gates/{self.GATE_ID}/reject")
+        assert instance.post.call_args.kwargs.get("json") == {"reason": "not this plan"}
+
+    @pytest.mark.parametrize(
+        "body",
+        [None, {}, {"reason": ""}, {"reason": "  "}],
+        ids=["no-body", "empty-object", "empty-reason", "blank-reason"],
+    )
+    def test_reject_without_a_reason_forwards_empty(
+        self, auth_client: TestClient, body
+    ):
+        mock_resp = _mock_response(
+            json_data={"gate_id": self.GATE_ID, "verdict": "rejected"}
+        )
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            url = f"{API_PREFIX}/gates/{self.GATE_ID}/reject"
+            resp = (
+                auth_client.post(url)
+                if body is None
+                else auth_client.post(url, json=body)
+            )
+        assert resp.status_code == 200
+        assert instance.post.call_args.kwargs.get("json") == {}
+
+    def test_reject_strips_the_reason(self, auth_client: TestClient):
+        mock_resp = _mock_response(
+            json_data={"gate_id": self.GATE_ID, "verdict": "rejected"}
+        )
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.post(
+                f"{API_PREFIX}/gates/{self.GATE_ID}/reject",
+                json={"reason": "  not this plan \n"},
+            )
+        assert resp.status_code == 200
+        assert instance.post.call_args.kwargs.get("json") == {"reason": "not this plan"}
+
     def test_mute_proxies(self, auth_client: TestClient):
         mock_resp = _mock_response(json_data={"gate_id": self.GATE_ID, "muted": True})
         with _patch_httpx() as MockClient:
