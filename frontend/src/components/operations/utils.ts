@@ -2,11 +2,6 @@
 // Operations Page Utility Helpers
 // ============================================================================
 
-import { ApiConfig } from "@/services/api-config";
-
-/** API base for the operations endpoints (Phase 2 unified surface). */
-export const OPERATIONS_API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
-
 /**
  * Polling fallback interval (ms) when the CI-status WS is offline.
  * Matches `DEVICE_STATUS_POLL_FALLBACK_MS` — CI status changes at
