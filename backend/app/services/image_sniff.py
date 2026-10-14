@@ -51,13 +51,30 @@ up to more than the block that holds them, behind at most
 re-encode the whole block — IFD0 and the Exif, GPS and Interoperability
 directories, every value joined on by ``+=`` — so an AVIF's block is at most
 :data:`MAX_AVIF_EXIF_BYTES`, and all four directories share the one budget.
+Of a JPEG's IFD0, Pillow's open decodes ResolutionUnit and XResolution
+value by value, so each must be one value, as EXIF writes it.
+
+An AVIF's header is not parsed by Pillow but by libavif, in C — twice per
+sniff, once for the EXIF block and once in Pillow's open — and libavif's
+cost grows with what the container DECLARES: a linear search per item
+entry (quadratic in the items), a record per property, a copy per
+property association, a sample per declared sample. So before either
+parse, a walk of the boxes libavif reads (:func:`_avif_container`) holds
+them to the AVIF caps — top-level boxes and the boxes of each container it
+descends into, the ``ftyp`` box's brands, the ``meta`` and ``moov`` boxes'
+sizes, items, extents (whose lengths may add up to at most the file),
+references, properties, associations and the property bytes they copy,
+tracks, sample descriptions and sample-table entries — and an image
+sequence's samples to :data:`MAX_FRAMES`.
 
 So, for each of at most MAX_PICTURES pictures, Pillow's header parse visits
 at most the caps' worth of structure, does at most the caps' worth of Python
 work inside it, and reads from a metadata block at most that block's own
-length, plus a byte search over the file; its other reads are bulk copies of
-at most the file. What is left grows with the file's length alone. The
-pixel bound below is checked before any consumer decodes anything.
+length, plus a byte search over the file; libavif's parse of an AVIF meets
+at most the AVIF caps' worth of container; their other reads are bulk
+copies of at most the file. What is left grows with the file's length
+alone. The pixel bound below is checked before any consumer decodes
+anything.
 
 What Pillow — or a codec beneath it — raises while it READS the file is the
 file's fault: a refusal (``image_unreadable``), a 422, never a 500, and logged
@@ -246,6 +263,72 @@ MAX_TIFF_ENTRIES: Final = 512
 #: a few hundred MB.
 MAX_AVIF_EXIF_BYTES: Final = 128 * 1024
 
+# An AVIF's container (ISO-BMFF) is parsed by libavif, in C, before Pillow
+# sees a pixel — twice per sniff: once to hand this module the EXIF block,
+# once in Pillow's open. That parse is not linear in what the file declares:
+# every item entry (``infe``, ``iloc``, ``ipma``, an ``iref`` reference) looks
+# its item up by a linear search of the items so far, creating it when it is
+# new (80 000 ``infe`` entries in a 1.8 MB file took 11 s); every property
+# allocates a ~170-byte record (3.3 million empty ones: 567 MB); an
+# association COPIES an unrecognised property's payload; and a sample table
+# turns 12 bytes into 2^32 samples. So :func:`_avif_container` walks the
+# boxes libavif parses, before either parse, and refuses by the caps below.
+
+#: The most compatible brands an AVIF's ``ftyp`` box may list. An encoder
+#: lists 3-6 (``avif``, ``mif1``, ``miaf``, a profile, ``MA1B``…); every
+#: brand is read on each look at the box, in Python here and in C by libavif.
+MAX_AVIF_BRANDS: Final = 64
+
+#: The most boxes in one container the walk descends into — the top level
+#: (where it stops once libavif has what it needs), a ``meta`` box, ``iprp``,
+#: ``moov``, ``trak``, ``mdia``, ``minf``, ``stbl``. An encoder writes under a
+#: dozen in any of them; libavif's own walk over junk is C, but this one is
+#: Python, so it is held to 64.
+MAX_AVIF_BOXES_PER_CONTAINER: Final = 64
+
+#: The largest ``meta`` box (and ``moov`` box) libavif may parse. Item
+#: entries, property records and sample tables are capped by count below, so
+#: this cap only bounds what libavif reads in bulk — an ICC profile, an
+#: ``idat``, a sample table's arrays: 1 MiB admits the largest ICC profiles a
+#: camera or editor embeds (a few hundred KiB), where a 64 KiB cap would not.
+MAX_AVIF_META_BYTES: Final = 1024 * 1024
+MAX_AVIF_MOVIE_BYTES: Final = MAX_AVIF_META_BYTES
+
+#: The most items an AVIF may name (distinct item IDs across ``iinf``,
+#: ``iloc``, ``ipma`` and the ``dimg`` references that create them), and the
+#: most entries any one of those boxes may hold. A still is 1-4 items
+#: (colour, alpha, EXIF, XMP); a grid image adds one per tile, and a
+#: 2048-tile grid with an alpha grid is 4098. libavif's quadratic item lookup
+#: at 4096 items costs it about 10 ms.
+MAX_AVIF_ITEMS: Final = 4096
+
+#: The most extents an AVIF's items may hold, in all. An encoder writes one
+#: per item; ``iloc`` can declare 65 535 an item at zero bytes each, and
+#: libavif allocates every one.
+MAX_AVIF_EXTENTS: Final = 2 * MAX_AVIF_ITEMS
+
+#: The most item references (``iref`` boxes and the item IDs they list). A
+#: grid lists each tile once; alpha, EXIF and XMP add one each.
+MAX_AVIF_REFERENCES: Final = 2 * MAX_AVIF_ITEMS
+
+#: The most item properties (``ipco``, and the properties of a sequence's
+#: sample descriptions). libavif deduplicates its own (a still has 5-10); an
+#: encoder that writes them per tile writes about four.
+MAX_AVIF_PROPERTIES: Final = 4 * MAX_AVIF_ITEMS
+
+#: The most property associations ``ipma`` may make, in all — each a copied
+#: ~170-byte record. An item has 3-8.
+MAX_AVIF_ASSOCIATIONS: Final = 8 * MAX_AVIF_ITEMS
+
+#: The most tracks (``trak``) an image sequence may hold: colour and alpha,
+#: and room past them. Each is an allocated track with its own item table.
+MAX_AVIF_TRACKS: Final = 8
+
+#: The most sample descriptions (``stsd`` entries) one track may hold. An
+#: encoder writes one; libavif allocates each a 16-property array — 100 000
+#: empty 8-byte entries took it 66 MB.
+MAX_AVIF_SAMPLE_DESCRIPTIONS: Final = 4
+
 #: How many ``Exif\0\0`` headers may precede an EXIF block's TIFF structure.
 #: Pillow strips them one slice (a copy of the rest) at a time, so 25 MiB of
 #: them is quadratic. A JPEG's block carries one; a PNG ``eXIf`` chunk written
@@ -331,6 +414,10 @@ _PILLOW_FORMAT_ALIASES: Final = {"MPO": "JPEG"}
 _EXIF_ORIENTATION_TAG: Final = 0x0112
 _QUARTER_TURN_ORIENTATIONS: Final = frozenset({5, 6, 7, 8})
 
+#: The IFD0 entries Pillow's JPEG open decodes (for the dpi, when the JFIF
+#: header carries none): ResolutionUnit and XResolution.
+_PILLOW_JPEG_DECODED_TAGS: Final = frozenset({0x0128, 0x011A})
+
 
 class ImageRefused(Exception):
     """The bytes are not an image this store accepts.
@@ -370,22 +457,33 @@ class SniffedImage:
         return self.format.extension
 
 
-def _is_avif(data: bytes) -> bool:
-    """An ISO-BMFF file whose ``ftyp`` box names an AVIF brand.
+def _ftyp(data: bytes) -> tuple[int, frozenset[bytes]] | None:
+    """How many compatible brands the ``ftyp`` box at the start of ``data``
+    lists, and its major brand with the first :data:`MAX_AVIF_BRANDS` of
+    them — None where the file starts with no ``ftyp`` box.
 
     The box is ``size(4) 'ftyp' major_brand(4) minor_version(4)
-    compatible_brands(4×n)``; the major brand OR any compatible brand may
-    carry ``avif`` / ``avis`` (a ``mif1``-major file listing ``avif`` is
-    AVIF).
-    """
+    compatible_brands(4×n)``. Only the first brands are read: a 25 MiB box
+    is 6.5 million of them, a second of Python to collect (and
+    :func:`_avif_container` refuses more than the cap by name)."""
     if len(data) < 16 or data[4:8] != b"ftyp":
-        return False
+        return None
     box_size = int.from_bytes(data[0:4], "big")
     if box_size < 16 or box_size > len(data):
-        return False
+        return None
+    listed = (box_size - 16) // 4
+    read = min(listed, MAX_AVIF_BRANDS)
     brands = {data[8:12]}
-    brands.update(data[i : i + 4] for i in range(16, box_size - 3, 4))
-    return bool(brands & _AVIF_BRANDS)
+    brands.update(data[16 + 4 * i : 20 + 4 * i] for i in range(read))
+    return listed, frozenset(brands)
+
+
+def _is_avif(data: bytes) -> bool:
+    """An ISO-BMFF file whose ``ftyp`` box names an AVIF brand: the major
+    brand OR one of its first :data:`MAX_AVIF_BRANDS` compatible brands is
+    ``avif`` / ``avis`` (a ``mif1``-major file listing ``avif`` is AVIF)."""
+    ftyp = _ftyp(data)
+    return ftyp is not None and bool(ftyp[1] & _AVIF_BRANDS)
 
 
 def format_from_signature(data: bytes) -> ImageFormat | None:
@@ -709,6 +807,514 @@ def _avif_exif(data: bytes) -> bytes:
     return exif if isinstance(exif, bytes) else b""
 
 
+#: The item properties libavif parses into a record of its own; any other
+#: property is "opaque", and each association with it copies its payload. In
+#: a sequence's sample description, ``auxi`` takes ``auxC``'s place.
+_AVIF_PARSED_PROPERTIES: Final = frozenset(
+    {
+        b"ispe",
+        b"colr",
+        b"av1C",
+        b"pasp",
+        b"clap",
+        b"irot",
+        b"imir",
+        b"pixi",
+        b"a1op",
+        b"lsel",
+        b"a1lx",
+        b"clli",
+    }
+)
+
+#: The bytes of a sample entry before its properties (libavif's
+#: ``VISUALSAMPLEENTRY_SIZE``), and the sample entry whose properties libavif
+#: parses.
+_AVIF_VISUAL_SAMPLE_ENTRY: Final = 78
+_AVIF_AV1_SAMPLE_ENTRY: Final = b"av01"
+
+
+@dataclass(frozen=True)
+class _Box:
+    """An ISO-BMFF box: its type and its body ``[start, end)``."""
+
+    kind: bytes
+    start: int
+    end: int
+
+
+def _avif_boxes(data: bytes, start: int, end: int, top_level: bool) -> Iterator[_Box]:
+    """The boxes in ``data[start:end]``, read as libavif reads a box header:
+    a 32-bit size, or 1 and a 64-bit ``largesize``; 16 more bytes for a
+    ``uuid``; a size of 0 runs to the end of the file, at the top level only.
+    It stops at a header libavif refuses (a size smaller than the header, or
+    of 0 inside a box), at a box that runs past its container — libavif
+    refuses it, or at the top level finds nothing after it — or where the
+    bytes run out: libavif then parses no further."""
+    pos = start
+    while end - pos >= 8:
+        size, kind = struct.unpack_from(">I4s", data, pos)
+        header = 8
+        if size == 1:
+            if end - pos < 16:
+                return
+            (size,) = struct.unpack_from(">Q", data, pos + 8)
+            header = 16
+        if kind == b"uuid":
+            header += 16
+        if size == 0 and top_level:
+            size = end - pos
+        if size < header or pos + size > end:
+            return
+        yield _Box(kind, pos + header, pos + size)
+        pos += size
+
+
+class _AvifContainer:
+    """What libavif's parse of an AVIF's container allocates and searches,
+    counted against the caps as the walk meets it (:func:`_avif_container`).
+    One budget per file: a sequence's per-track ``meta`` boxes share it."""
+
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.items: set[int] = set()
+        self.extents = 0
+        self.extent_bytes = 0
+        self.references = 0
+        self.properties = 0
+        self.associations = 0
+        self.copied_bytes = 0
+        self.tracks = 0
+        self.tone_map_item = False
+
+    # ── helpers ──────────────────────────────────────────────────────────
+
+    def children(self, box: _Box, skip: int = 0) -> Iterator[_Box]:
+        """The boxes inside ``box`` (past ``skip`` bytes of its own fields),
+        refused past :data:`MAX_AVIF_BOXES_PER_CONTAINER`."""
+        boxes = _avif_boxes(self.data, box.start + skip, box.end, top_level=False)
+        for count, child in enumerate(boxes, start=1):
+            if count > MAX_AVIF_BOXES_PER_CONTAINER:
+                raise _StructureRefused(
+                    f"an AVIF '{box.kind.decode('latin-1')}' box holds more than "
+                    f"{MAX_AVIF_BOXES_PER_CONTAINER} boxes",
+                    "image_avif_too_many_boxes",
+                )
+            yield child
+
+    def item(self, item_id: int) -> None:
+        """An item libavif finds or creates for ``item_id`` (0 it refuses)."""
+        if item_id == 0:
+            return
+        self.items.add(item_id)
+        if len(self.items) > MAX_AVIF_ITEMS:
+            raise _StructureRefused(
+                f"an AVIF names more than {MAX_AVIF_ITEMS} items",
+                "image_avif_too_many_items",
+            )
+
+    @staticmethod
+    def entries(count: int, kind: str) -> None:
+        """One more entry of a box whose every entry is an item lookup."""
+        if count > MAX_AVIF_ITEMS:
+            raise _StructureRefused(
+                f"an AVIF '{kind}' box holds more than {MAX_AVIF_ITEMS} entries",
+                "image_avif_too_many_items",
+            )
+
+    # ── meta ─────────────────────────────────────────────────────────────
+
+    def meta(self, box: _Box) -> None:
+        """A ``meta`` box: its item boxes, as libavif parses them."""
+        if box.end - box.start > MAX_AVIF_META_BYTES:
+            raise _StructureRefused(
+                f"an AVIF 'meta' box is over {MAX_AVIF_META_BYTES} bytes",
+                "image_avif_meta_too_large",
+            )
+        for child in self.children(box, skip=4):  # version and flags
+            if child.kind == b"iinf":
+                self.item_info(child)
+            elif child.kind == b"iloc":
+                self.item_locations(child)
+            elif child.kind == b"iprp":
+                self.item_properties(child)
+            elif child.kind == b"iref":
+                self.item_references(child)
+
+    def item_info(self, box: _Box) -> None:
+        """``iinf``: version 0 counts its entries in 16 bits, 1 in 32; each
+        ``infe`` entry names its item in 16 bits (versions 0-2) or 32 (3).
+        libavif reads entries of version 2 and 3 only, and refuses others."""
+        data, pos = self.data, box.start
+        if box.end - pos < 6 or data[pos] > 1:
+            return
+        if data[pos] == 0:
+            (declared,) = struct.unpack_from(">H", data, pos + 4)
+            pos += 6
+        elif box.end - pos < 8:
+            return
+        else:
+            (declared,) = struct.unpack_from(">I", data, pos + 4)
+            pos += 8
+        entries = _avif_boxes(data, pos, box.end, top_level=False)
+        for count, entry in enumerate(itertools.islice(entries, declared), start=1):
+            self.entries(count, "iinf")
+            if entry.kind != b"infe" or entry.end - entry.start < 12:
+                return
+            version = data[entry.start]
+            if version not in (2, 3):
+                return
+            if version == 2:
+                (item_id,) = struct.unpack_from(">H", data, entry.start + 4)
+                item_type = data[entry.start + 8 : entry.start + 12]
+            else:
+                if entry.end - entry.start < 14:
+                    return
+                (item_id,) = struct.unpack_from(">I", data, entry.start + 4)
+                item_type = data[entry.start + 10 : entry.start + 14]
+            self.item(item_id)
+            if item_type == b"tmap":
+                self.tone_map_item = True
+
+    def item_locations(self, box: _Box) -> None:
+        """``iloc``, versions 0-2: each item's extents, refused past
+        :data:`MAX_AVIF_EXTENTS` — or once their lengths, over every item,
+        add up to more than the file (``image_avif_item_data_reread``):
+        libavif joins a multi-extent item's extents into a buffer of their
+        total length, and items stored apart fit in the file side by side."""
+        data, pos, end = self.data, box.start, box.end
+        if end - pos < 8 or data[pos] > 2:
+            return
+        version = data[pos]
+        offset_size, length_size = data[pos + 4] >> 4, data[pos + 4] & 15
+        base_size = data[pos + 5] >> 4
+        index_size = data[pos + 5] & 15 if version else 0
+        if any(
+            n not in (0, 4, 8)
+            for n in (offset_size, length_size, base_size, index_size)
+        ):
+            return
+        id_format = ">H" if version < 2 else ">I"
+        id_size = struct.calcsize(id_format)
+        (declared,) = struct.unpack_from(id_format, data, pos + 6)
+        pos += 6 + id_size
+        per_extent = index_size + offset_size + length_size
+        for count in range(1, declared + 1):
+            self.entries(count, "iloc")
+            fields = id_size + (2 if version else 0) + 2 + base_size + 2
+            if end - pos < fields:
+                return
+            (item_id,) = struct.unpack_from(id_format, data, pos)
+            self.item(item_id)
+            pos += fields
+            (extents,) = struct.unpack_from(">H", data, pos - 2)
+            for _ in range(extents):
+                self.extents += 1
+                if self.extents > MAX_AVIF_EXTENTS:
+                    raise _StructureRefused(
+                        f"an AVIF's items hold more than {MAX_AVIF_EXTENTS} extents",
+                        "image_avif_too_many_extents",
+                    )
+                if end - pos < per_extent:
+                    return
+                at = pos + index_size + offset_size
+                self.extent_bytes += int.from_bytes(data[at : at + length_size], "big")
+                if self.extent_bytes > len(data):
+                    raise _StructureRefused(
+                        "an AVIF's item extents add up to more than the "
+                        f"{len(data)}-byte file",
+                        "image_avif_item_data_reread",
+                    )
+                pos += per_extent
+
+    def property_list(self, box: _Box, skip: int, track: bool) -> list[int]:
+        """The properties in ``box`` (an ``ipco``, or a sample entry past its
+        fixed fields), counted against :data:`MAX_AVIF_PROPERTIES`: for each,
+        the payload bytes an association copies — 0 for one libavif parses."""
+        parsed = _AVIF_PARSED_PROPERTIES | ({b"auxi"} if track else {b"auxC"})
+        copied: list[int] = []
+        boxes = _avif_boxes(self.data, box.start + skip, box.end, top_level=False)
+        for prop in boxes:
+            self.properties += 1
+            if self.properties > MAX_AVIF_PROPERTIES:
+                raise _StructureRefused(
+                    f"an AVIF holds more than {MAX_AVIF_PROPERTIES} item properties",
+                    "image_avif_too_many_properties",
+                )
+            copied.append(0 if prop.kind in parsed else prop.end - prop.start)
+        return copied
+
+    def item_properties(self, box: _Box) -> None:
+        """``iprp``: its ``ipco``, then its ``ipma`` boxes, as libavif
+        requires them."""
+        children = self.children(box)
+        container = next(children, None)
+        if container is None or container.kind != b"ipco":
+            return
+        copied = self.property_list(container, 0, track=False)
+        for child in children:
+            if child.kind != b"ipma":
+                return
+            self.property_associations(child, copied)
+
+    def property_associations(self, box: _Box, copied: list[int]) -> None:
+        """``ipma``: an entry per item (its ID in 16 bits at version 0, 32
+        above), each with up to 255 associations (a 7-bit property index, or
+        15-bit with flag 1). Refused past :data:`MAX_AVIF_ASSOCIATIONS`, or
+        once the payloads the associations copy add up to more than
+        :data:`MAX_AVIF_META_BYTES` (``image_avif_property_data_recopied``) —
+        a property associated once is copied once."""
+        data, pos, end = self.data, box.start, box.end
+        if end - pos < 8:
+            return
+        id_format = ">H" if data[pos] == 0 else ">I"
+        wide = data[pos + 3] & 1
+        (declared,) = struct.unpack_from(">I", data, pos + 4)
+        pos += 8
+        for count in range(1, declared + 1):
+            self.entries(count, "ipma")
+            if end - pos < struct.calcsize(id_format) + 1:
+                return
+            (item_id,) = struct.unpack_from(id_format, data, pos)
+            self.item(item_id)
+            pos += struct.calcsize(id_format)
+            associations = data[pos]
+            pos += 1
+            width = 2 if wide else 1
+            if end - pos < associations * width:
+                return
+            self.associations += associations
+            if self.associations > MAX_AVIF_ASSOCIATIONS:
+                raise _StructureRefused(
+                    "an AVIF makes more than "
+                    f"{MAX_AVIF_ASSOCIATIONS} property associations",
+                    "image_avif_too_many_associations",
+                )
+            mask = 0x7FFF if wide else 0x7F
+            for k in range(associations):
+                index = int.from_bytes(
+                    data[pos + k * width : pos + (k + 1) * width], "big"
+                )
+                index &= mask
+                if 0 < index <= len(copied):
+                    self.copied_bytes += copied[index - 1]
+            if self.copied_bytes > MAX_AVIF_META_BYTES:
+                raise _StructureRefused(
+                    "an AVIF's property associations copy more than "
+                    f"{MAX_AVIF_META_BYTES} bytes of property data",
+                    "image_avif_property_data_recopied",
+                )
+            pos += associations * width
+
+    def item_references(self, box: _Box) -> None:
+        """``iref``, version 0 (16-bit item IDs) or 1 (32-bit): each
+        reference box, and each item it lists, refused past
+        :data:`MAX_AVIF_REFERENCES`. A ``dimg`` reference creates the items
+        it lists; every reference creates the item it is from."""
+        data = self.data
+        if box.end - box.start < 4 or data[box.start] > 1:
+            return
+        id_size = 2 if data[box.start] == 0 else 4
+        for reference in _avif_boxes(data, box.start + 4, box.end, top_level=False):
+            if reference.end - reference.start < id_size + 2:
+                self.count_references(1)
+                return
+            from_id = int.from_bytes(
+                data[reference.start : reference.start + id_size], "big"
+            )
+            (declared,) = struct.unpack_from(">H", data, reference.start + id_size)
+            first = reference.start + id_size + 2
+            listed = min(declared, (reference.end - first) // id_size)
+            self.count_references(1 + listed)
+            self.item(from_id)
+            if reference.kind == b"dimg":
+                ids = struct.unpack_from(
+                    f">{listed}{'H' if id_size == 2 else 'I'}", data, first
+                )
+                for to_id in ids:
+                    self.item(to_id)
+
+    def count_references(self, more: int) -> None:
+        self.references += more
+        if self.references > MAX_AVIF_REFERENCES:
+            raise _StructureRefused(
+                f"an AVIF holds more than {MAX_AVIF_REFERENCES} item references",
+                "image_avif_too_many_references",
+            )
+
+    # ── moov: an image sequence ──────────────────────────────────────────
+
+    def movie(self, box: _Box) -> None:
+        """A ``moov`` box: its tracks, as libavif parses them."""
+        if box.end - box.start > MAX_AVIF_MOVIE_BYTES:
+            raise _StructureRefused(
+                f"an AVIF 'moov' box is over {MAX_AVIF_MOVIE_BYTES} bytes",
+                "image_avif_movie_too_large",
+            )
+        for child in self.children(box):
+            if child.kind != b"trak":
+                continue
+            self.tracks += 1
+            if self.tracks > MAX_AVIF_TRACKS:
+                raise _StructureRefused(
+                    f"an AVIF holds more than {MAX_AVIF_TRACKS} tracks",
+                    "image_avif_too_many_tracks",
+                )
+            for part in self.children(child):
+                if part.kind == b"meta":
+                    self.meta(part)
+                elif part.kind == b"mdia":
+                    for media in self.children(part):
+                        if media.kind != b"minf":
+                            continue
+                        for information in self.children(media):
+                            if information.kind == b"stbl":
+                                self.sample_table(information)
+
+    @staticmethod
+    def table_entries(
+        box: _Box, declared: int, size: int, fields: int, before: int = 0
+    ) -> int:
+        """How many of ``declared`` entries of ``size`` bytes, after
+        ``fields`` bytes of the box's own, the box holds — refused once they
+        and the ``before`` entries already in the same table pass
+        :data:`MAX_FRAMES` (``image_avif_sample_table_too_large``): a table
+        of more entries describes more frames than are accepted."""
+        present = min(declared, max(0, box.end - box.start - fields) // size)
+        if before + present > MAX_FRAMES:
+            raise _StructureRefused(
+                f"an AVIF '{box.kind.decode('latin-1')}' sample table holds more "
+                f"than {MAX_FRAMES} entries",
+                "image_avif_sample_table_too_large",
+            )
+        return present
+
+    def sample_table(self, box: _Box) -> None:
+        """``stbl``: its sample descriptions, and the samples its chunk
+        tables declare — refused past :data:`MAX_FRAMES` samples
+        (``image_too_many_frames``) before libavif allocates one per sample:
+        ``stsc`` gives each chunk up to 2^32 of them in 12 bytes."""
+        data = self.data
+        chunks = 0
+        runs: list[tuple[int, int]] = []
+        for table in self.children(box):
+            if table.end - table.start < 8:
+                continue
+            (declared,) = struct.unpack_from(">I", data, table.start + 4)
+            # libavif appends every chunk-offset and sample-to-chunk box to
+            # one table each, so their entries are counted together.
+            if table.kind in (b"stco", b"co64"):
+                size = 4 if table.kind == b"stco" else 8
+                chunks += self.table_entries(table, declared, size, 8, chunks)
+            elif table.kind == b"stsc":
+                present = self.table_entries(table, declared, 12, 8, len(runs))
+                runs.extend(
+                    (first, per_chunk)
+                    for first, per_chunk, _ in struct.iter_unpack(
+                        ">III", data[table.start + 8 : table.start + 8 + 12 * present]
+                    )
+                )
+            elif table.kind == b"stsz":
+                if table.end - table.start < 12:
+                    continue
+                sample_size, count = struct.unpack_from(">II", data, table.start + 4)
+                if sample_size == 0:
+                    self.table_entries(table, count, 4, 12)
+            elif table.kind == b"stts":
+                self.table_entries(table, declared, 8, 8)
+            elif table.kind == b"stss":
+                self.table_entries(table, declared, 4, 8)
+            elif table.kind == b"stsd":
+                self.sample_descriptions(table, declared)
+        if _avif_samples(chunks, runs) > MAX_FRAMES:
+            raise _StructureRefused(
+                f"an AVIF track holds more than {MAX_FRAMES} frames",
+                "image_too_many_frames",
+            )
+
+    def sample_descriptions(self, box: _Box, declared: int) -> None:
+        """``stsd``: its entries, refused past
+        :data:`MAX_AVIF_SAMPLE_DESCRIPTIONS`; an AV1 entry's properties count
+        against :data:`MAX_AVIF_PROPERTIES`."""
+        entries = _avif_boxes(self.data, box.start + 8, box.end, top_level=False)
+        for count, entry in enumerate(itertools.islice(entries, declared), start=1):
+            if count > MAX_AVIF_SAMPLE_DESCRIPTIONS:
+                raise _StructureRefused(
+                    "an AVIF track holds more than "
+                    f"{MAX_AVIF_SAMPLE_DESCRIPTIONS} sample descriptions",
+                    "image_avif_too_many_sample_descriptions",
+                )
+            if (
+                entry.kind == _AVIF_AV1_SAMPLE_ENTRY
+                and entry.end - entry.start >= _AVIF_VISUAL_SAMPLE_ENTRY
+            ):
+                self.property_list(entry, _AVIF_VISUAL_SAMPLE_ENTRY, track=True)
+
+
+def _avif_samples(chunks: int, runs: list[tuple[int, int]]) -> int:
+    """How many samples libavif makes of ``chunks`` chunks and the
+    sample-to-chunk ``runs`` ``(first_chunk, samples_per_chunk)``: chunk
+    ``c`` (from 1) holds the samples of the LAST run in the table whose
+    first chunk is at most ``c``. Stops counting once past
+    :data:`MAX_FRAMES`."""
+    by_first = sorted(range(len(runs)), key=lambda run: runs[run][0])
+    samples, latest, taken = 0, -1, 0
+    for chunk in range(1, chunks + 1):
+        while taken < len(by_first) and runs[by_first[taken]][0] <= chunk:
+            latest = max(latest, by_first[taken])
+            taken += 1
+        if latest >= 0:
+            samples += runs[latest][1]
+            if samples > MAX_FRAMES:
+                break
+    return samples
+
+
+def _avif_container(data: bytes) -> None:
+    """Walk an AVIF's container the way libavif's parse does, before it
+    parses it — top-level boxes until it has what its brands require (a
+    ``meta`` for ``avif`` or ``tmap``, a ``moov`` for ``avis``, an item of
+    type ``tmap`` for ``tmap``), then into each ``meta`` and ``moov`` — and
+    raise :class:`_StructureRefused` past a cap (:class:`_AvifContainer`).
+    Each step of the walk is one of those the caps count, so its own cost is
+    bounded by them."""
+    ftyp = _ftyp(data)
+    if ftyp is None:  # the signature check found one
+        raise TypeError("an AVIF without an 'ftyp' box at its start")
+    listed, brands = ftyp
+    if listed > MAX_AVIF_BRANDS:
+        raise _StructureRefused(
+            f"an AVIF's 'ftyp' box lists more than {MAX_AVIF_BRANDS} brands",
+            "image_avif_too_many_brands",
+        )
+    needs_meta = bool(brands & {b"avif", b"tmap"})
+    needs_movie = b"avis" in brands
+    needs_tone_map = b"tmap" in brands
+    walk = _AvifContainer(data)
+    meta_seen = movie_seen = False
+    for count, box in enumerate(
+        _avif_boxes(data, 0, len(data), top_level=True), start=1
+    ):
+        if count > MAX_AVIF_BOXES_PER_CONTAINER:
+            raise _StructureRefused(
+                f"an AVIF holds more than {MAX_AVIF_BOXES_PER_CONTAINER} "
+                "top-level boxes before what libavif reads",
+                "image_avif_too_many_boxes",
+            )
+        if box.kind == b"meta":
+            walk.meta(box)
+            meta_seen = True
+        elif box.kind == b"moov":
+            walk.movie(box)
+            movie_seen = True
+        if (
+            (meta_seen or not needs_meta)
+            and (movie_seen or not needs_movie)
+            and (walk.tone_map_item or not needs_tone_map)
+        ):
+            return
+
+
 class _JpegHeaderSegments:
     """What Pillow's JPEG header parse does INSIDE the segments it parses in
     Python, held to the per-kind caps as :func:`_jpeg_header_end` meets each
@@ -783,9 +1389,25 @@ class _JpegHeaderSegments:
                 self.mp_index = data[start + 4 : stop]  # Pillow keeps the last
 
     def finish(self) -> None:
-        """At the SOS: the blocks Pillow's open reads with its TIFF reader."""
+        """At the SOS: the blocks Pillow's open reads with its TIFF reader.
+
+        Of IFD0, Pillow's JPEG open DECODES two entries — ResolutionUnit and
+        XResolution, for the dpi — into a Python object per value: an
+        XResolution of 65 000 rationals was 60 ms and 8 MB, per picture of
+        a multi-picture JPEG. The EXIF standard writes each as one value, so
+        an entry of either with any other count is refused
+        (``image_exif_resolution_invalid``)."""
         if self.exif:
-            _exif_directory(b"".join(self.exif))
+            directory = _exif_directory(b"".join(self.exif))
+            entries = directory[1] if directory is not None else []
+            if any(
+                entry.tag in _PILLOW_JPEG_DECODED_TAGS and entry.count != 1
+                for entry in entries
+            ):
+                raise _StructureRefused(
+                    "its EXIF resolution is not one value",
+                    "image_exif_resolution_invalid",
+                )
         if self.mp_index is not None:
             _tiff_first_directory(
                 self.mp_index, "multi-picture index", "image_mp_index"
@@ -1142,8 +1764,18 @@ def sniff_image(data: bytes) -> SniffedImage:
     for a PNG ``image_too_many_chunks`` and
     ``image_too_many_compressed_chunks``; for EXIF in any format
     ``image_exif_header_repeated``, ``image_exif_too_many_entries`` and
-    ``image_exif_values_reread``, and for an AVIF's
-    ``image_avif_exif_too_large``; for a GIF ``image_too_many_extensions``,
+    ``image_exif_values_reread``, for a JPEG's
+    ``image_exif_resolution_invalid``, and for an AVIF's
+    ``image_avif_exif_too_large``; for an AVIF's container
+    ``image_avif_too_many_brands``, ``image_avif_too_many_boxes``,
+    ``image_avif_meta_too_large``, ``image_avif_movie_too_large``,
+    ``image_avif_too_many_items``, ``image_avif_too_many_extents``,
+    ``image_avif_item_data_reread``, ``image_avif_too_many_references``,
+    ``image_avif_too_many_properties``, ``image_avif_too_many_associations``,
+    ``image_avif_property_data_recopied``, ``image_avif_too_many_tracks``,
+    ``image_avif_too_many_sample_descriptions``,
+    ``image_avif_sample_table_too_large`` and — for an image sequence's
+    samples — ``image_too_many_frames``; for a GIF ``image_too_many_extensions``,
     ``image_too_many_comment_sub_blocks``, ``image_too_many_blocks``,
     ``image_too_many_sub_blocks`` and ``image_too_many_stray_bytes``; for a
     multi-picture JPEG
@@ -1174,11 +1806,15 @@ def sniff_image(data: bytes) -> SniffedImage:
     # Before Pillow opens it: Pillow's header parse is the one the walks'
     # caps protect. For a GIF, not Pillow's ``n_frames`` either: it walks
     # EVERY frame before the cap could refuse; this walk stops one past it.
-    # An AVIF's EXIF is read by Pillow's open with Pillow's EXIF reader, so it
-    # is walked first; WebP's and PNG's are read by :func:`_orientation` alone.
+    # An AVIF's container is parsed by libavif to read its EXIF and again in
+    # Pillow's open, so it is walked before both; its EXIF is read by Pillow's
+    # open with Pillow's EXIF reader, so it is walked before that open.
+    # WebP's and PNG's EXIF are read by :func:`_orientation` alone.
     jpeg_header_end: int | None = None
     avif_exif = b""
     if fmt is AVIF:
+        with _walking(fmt):
+            _avif_container(data)
         with _reading(fmt):
             avif_exif = _avif_exif(data)
     with _walking(fmt):
