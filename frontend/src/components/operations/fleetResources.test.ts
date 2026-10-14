@@ -994,49 +994,44 @@ describe("the saturation axis renders unknown, never green", () => {
 });
 
 describe("cpuTempReading — temperature is measured or it is not, never zero", () => {
-  const linux = { lane: "host", commit_total_bytes: null };
-  const windows = { lane: "host", commit_total_bytes: 64 * GIB };
+  const host = { lane: "host" };
 
   it("rounds a reading to a whole degree with the unit", () => {
-    const r = cpuTempReading({ ...linux, cpu_temp_c: 71.5 });
-    expect(r).toEqual({ kind: "value", celsius: 71.5, text: "72 C" });
+    expect(cpuTempReading({ ...host, cpu_temp_c: 71.5 })).toEqual({
+      kind: "value",
+      celsius: 71.5,
+      text: "72 C",
+    });
   });
 
   it("keeps a real 0 as a reading, distinct from null", () => {
-    expect(cpuTempReading({ ...linux, cpu_temp_c: 0 })).toMatchObject({
+    expect(cpuTempReading({ ...host, cpu_temp_c: 0 })).toMatchObject({
       kind: "value",
       text: "0 C",
     });
   });
 
   it("treats null and an absent key as unknown, never 0 C", () => {
-    expect(cpuTempReading({ ...linux, cpu_temp_c: null })).toEqual({
+    expect(cpuTempReading({ ...host, cpu_temp_c: null })).toEqual({
       kind: "unknown",
     });
-    expect(cpuTempReading({ ...linux })).toEqual({ kind: "unknown" });
+    expect(cpuTempReading({ ...host })).toEqual({ kind: "unknown" });
   });
 
-  it("says a Windows host (commit_total_bytes != null) is not measurable", () => {
-    expect(cpuTempReading({ ...windows, cpu_temp_c: null })).toEqual({
-      kind: "not_measurable_host",
-    });
-    expect(cpuTempReading({ ...windows })).toEqual({
-      kind: "not_measurable_host",
-    });
+  it("does not infer a Windows host from commit_total_bytes", () => {
+    // The Linux runner publishes commit_total_bytes too, so it is no OS signal.
+    const row = { lane: "host", commit_total_bytes: 64 * GIB, cpu_temp_c: null };
+    expect(cpuTempReading(row)).toEqual({ kind: "unknown" });
   });
 
   it("says a wsl lane is not measurable", () => {
-    expect(
-      cpuTempReading({
-        lane: "wsl",
-        commit_total_bytes: null,
-        cpu_temp_c: null,
-      })
-    ).toEqual({ kind: "not_measurable_host" });
+    expect(cpuTempReading({ lane: "wsl", cpu_temp_c: null })).toEqual({
+      kind: "not_measurable_host",
+    });
   });
 
-  it("lets a present reading win over the host-type inference", () => {
-    expect(cpuTempReading({ ...windows, cpu_temp_c: 64 })).toMatchObject({
+  it("lets a present reading win on a wsl lane", () => {
+    expect(cpuTempReading({ lane: "wsl", cpu_temp_c: 64 })).toMatchObject({
       kind: "value",
       text: "64 C",
     });

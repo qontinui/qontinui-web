@@ -1083,31 +1083,34 @@ describe("§C1 — the coupled WSL figure carries its ceiling", () => {
 });
 
 describe("CPU temperature column — display only, never a fabricated zero", () => {
-  /** The Linux host fixture: no Windows commit charge. */
-  const linuxHost = (overrides: Partial<ResourceSampleRow> = {}) =>
-    sample({
-      commit_total_bytes: null,
-      commit_available_bytes: null,
-      ...overrides,
-    });
-
+  // Linux-shaped host row: the runner publishes commit_total_bytes on Linux
+  // too, so the base fixture's commit figures are KEPT (they are no OS signal).
   it("renders a reading as a whole-degree value with the unit", () => {
-    renderStrip({ latest: [linuxHost({ cpu_temp_c: 71.5 })], history: [] });
+    renderStrip({ latest: [sample({ cpu_temp_c: 71.5 })], history: [] });
     expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
       "72 C"
     );
     expect(screen.getByText("Temperature")).toBeTruthy();
   });
 
-  it("renders null as unknown, never 0 C", () => {
-    renderStrip({ latest: [linuxHost({ cpu_temp_c: null })], history: [] });
+  it("renders a real 0 as 0 C, not unknown", () => {
+    renderStrip({ latest: [sample({ cpu_temp_c: 0 })], history: [] });
+    expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
+      "0 C"
+    );
+  });
+
+  it("renders null as unknown even when commit_total_bytes is set", () => {
+    const row = sample({ cpu_temp_c: null });
+    expect(row.commit_total_bytes).not.toBeNull();
+    renderStrip({ latest: [row], history: [] });
     const cell = screen.getByTestId("fleet-resource-cpu-temp");
     expect(cell.textContent).toBe("unknown");
-    expect(cell.textContent).not.toMatch(/0 C/);
+    expect(cell.textContent).not.toMatch(/0 C|not measured/);
   });
 
   it("renders an ABSENT key (a coord predating the column) as unknown", () => {
-    const row = linuxHost();
+    const row = sample();
     delete row.cpu_temp_c;
     renderStrip({ latest: [row], history: [] });
     expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
@@ -1115,10 +1118,11 @@ describe("CPU temperature column — display only, never a fabricated zero", () 
     );
   });
 
-  it("says not measured on this host type for a Windows host row", () => {
-    // Heuristic: commit_total_bytes != null marks a Windows host (the base
-    // fixture carries it).
-    renderStrip({ latest: [sample({ cpu_temp_c: null })], history: [] });
+  it("says not measured on this host type for the wsl lane", () => {
+    renderStrip({
+      latest: [sample({ lane: "wsl", cpu_temp_c: null })],
+      history: [],
+    });
     expect(screen.getByTestId("fleet-resource-cpu-temp").textContent).toBe(
       "not measured on this host type"
     );

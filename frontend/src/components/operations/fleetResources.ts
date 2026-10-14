@@ -1617,20 +1617,24 @@ export type CpuTempReading =
  *
  * - a finite reading wins: whole-degree text `71 C` (0 is a legal reading);
  * - null / absent key is `unknown`, never `0 C`;
- * - a host type that cannot measure it is `not_measurable_host`. The wire row
- *   has no OS field, so a Windows host is recognised by the strip's existing
- *   heuristic: `commit_total_bytes != null` (Windows commit charge is the only
- *   source of that column; Linux hosts publish null). A `wsl` lane runs on that
- *   Windows host and has no `/sys/class/thermal` either.
+ * - only the `wsl` lane is `not_measurable_host`: WSL2 exposes no thermal
+ *   zones, so it never measures.
+ *
+ * There is deliberately NO Windows-host inference. The wire row carries no
+ * OS/platform field, and `commit_total_bytes` is NOT a Windows signal (the
+ * Linux runner publishes it too), so a Linux host whose sensor read fails
+ * must render `unknown`, not "not measured on this host type". A Windows host
+ * publishes NULL and therefore also shows `unknown` (supersedes plan D3's
+ * "not measured on this host type" wording for Windows).
  */
 export function cpuTempReading(
-  s: Pick<ResourceSampleRow, "cpu_temp_c" | "commit_total_bytes" | "lane">
+  s: Pick<ResourceSampleRow, "cpu_temp_c" | "lane">
 ): CpuTempReading {
   const t = s.cpu_temp_c;
   if (typeof t === "number" && Number.isFinite(t)) {
     return { kind: "value", celsius: t, text: `${Math.round(t)} C` };
   }
-  if (s.commit_total_bytes != null || s.lane === "wsl") {
+  if (s.lane === "wsl") {
     return { kind: "not_measurable_host" };
   }
   return { kind: "unknown" };
