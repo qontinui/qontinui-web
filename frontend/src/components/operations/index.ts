@@ -48,11 +48,10 @@ export type {
   CoordCiRunnersPayload,
 } from "./ciRunnerMirror";
 export {
-  CI_RUNNER_MIRROR_API,
   CI_RUNNER_MIRROR_POLL_MS,
   useCiRunnerMirror,
 } from "./useCiRunnerMirror";
-export { OPERATOR_AUDIT_API, OperatorAuditPanel } from "./OperatorAuditPanel";
+export { OperatorAuditPanel } from "./OperatorAuditPanel";
 export {
   AUDIT_FILTERS,
   DEFAULT_AUDIT_FILTER_ID,
@@ -106,13 +105,7 @@ export type {
   DrainTarget,
   FleetDrainRead,
 } from "./fleetDrain";
-export {
-  FLEET_DRAIN_API,
-  FLEET_UNDRAIN_API,
-  postDrain,
-  postUndrain,
-  useFleetDrain,
-} from "./useFleetDrain";
+export { postDrain, postUndrain, useFleetDrain } from "./useFleetDrain";
 export type { UseFleetDrainResult } from "./useFleetDrain";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";
@@ -138,10 +131,7 @@ export {
   FleetWorktreeSlotsSection,
 } from "./FleetWorktreeSlotsSection";
 export { FleetRolesSection } from "./FleetRolesSection";
-export {
-  FLEET_WORKTREE_SLOTS_API,
-  useFleetWorktreeSlots,
-} from "./useFleetWorktreeSlots";
+export { useFleetWorktreeSlots } from "./useFleetWorktreeSlots";
 export type {
   UseFleetWorktreeSlotsResult,
   WorktreeSlotDevice,

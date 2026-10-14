@@ -26530,6 +26530,24 @@
         "title": "GateRef",
         "type": "object"
       },
+      "GateRejectRequest": {
+        "description": "Optional JSON body of ``POST /gates/{gate_id}/reject``.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "GateRejectRequest",
+        "type": "object"
+      },
       "GenerateDescriptionRequest": {
         "description": "Request to generate LLM description for an element region.",
         "properties": {
@@ -99599,7 +99617,7 @@
     },
     "/api/v1/operations/gates/{gate_id}/reject": {
       "post": {
-        "description": "Reject an OperatorApproval gate (operator bearer forwarded \u2014\nfleet-auth P2/D6).",
+        "description": "Reject an OperatorApproval gate (operator bearer forwarded \u2014\nfleet-auth P2/D6).\n\nThe optional JSON body ``{\"reason\": ...}`` carries the reason. It is\nforwarded to coord stripped, and only when non-blank; an absent body or a\nblank reason forwards ``{}``.",
         "operationId": "api_v1_operations_gates_gate_id_reject_post",
         "parameters": [
           {
@@ -99610,24 +99628,25 @@
               "title": "Gate Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "reason",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Reason"
-            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GateRejectRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
