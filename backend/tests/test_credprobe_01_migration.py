@@ -232,7 +232,9 @@ def test_credential_probe_specs_schema_roundtrip() -> None:
             {"canary_parameter": "/aws/credential"},
             {"canary_parameter": "has space"},
             {"canary_parameter": ""},
-            {"canary_parameter": "/" + "a" * 2048},  # 2049 chars, past the SSM name limit
+            {
+                "canary_parameter": "/" + "a" * 2048
+            },  # 2049 chars, past the SSM name limit
             # audit
             {"updated_by": "   "},
         )
