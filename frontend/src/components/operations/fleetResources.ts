@@ -242,8 +242,8 @@ export interface ResourceSampleRow {
    * 2026-10-13-cpu-temperature-in-fleet-resource-telemetry). DISPLAY ONLY: it
    * feeds no pressure, saturation or headroom figure.
    *
-   * `null` = **not measured** (Windows/WSL host in v1, no sensor, a publisher
-   * that predates the field), never zero. Optional on the wire because a coord
+   * `null` = **not measured** (no reading reported: sensor absent, a Windows
+   * host in v1, or a publisher that predates the field), never zero. Optional on the wire because a coord
    * that predates the column sends no such key at all.
    */
   cpu_temp_c?: number | null;
@@ -1617,20 +1617,24 @@ export type CpuTempReading =
  *
  * - a finite reading wins: whole-degree text `71 C` (0 is a legal reading);
  * - null / absent key is `unknown`, never `0 C`;
- * - a host type that cannot measure it is `not_measurable_host`. The wire row
- *   has no OS field, so a Windows host is recognised by the strip's existing
- *   heuristic: `commit_total_bytes != null` (Windows commit charge is the only
- *   source of that column; Linux hosts publish null). A `wsl` lane runs on that
- *   Windows host and has no `/sys/class/thermal` either.
+ * - a `wsl` lane is `not_measurable_host`: WSL2 exposes no
+ *   `/sys/class/thermal` (plan D3), and the lane is a wire fact, not an
+ *   inference;
+ * - everything else with no reading is `unknown`. The wire row has NO OS
+ *   field, and `commit_total_bytes` is NOT a Windows signal (the Linux runner
+ *   publishes it too, `resource_sample.rs` `read_memory_status`), so a
+ *   missing reading on a `host` row can be a dead sensor, a collector that
+ *   predates the field, or a host that cannot measure it: it is never
+ *   relabelled as an expected limitation.
  */
 export function cpuTempReading(
-  s: Pick<ResourceSampleRow, "cpu_temp_c" | "commit_total_bytes" | "lane">
+  s: Pick<ResourceSampleRow, "cpu_temp_c" | "lane">
 ): CpuTempReading {
   const t = s.cpu_temp_c;
   if (typeof t === "number" && Number.isFinite(t)) {
     return { kind: "value", celsius: t, text: `${Math.round(t)} C` };
   }
-  if (s.commit_total_bytes != null || s.lane === "wsl") {
+  if (s.lane === "wsl") {
     return { kind: "not_measurable_host" };
   }
   return { kind: "unknown" };
