@@ -26,8 +26,11 @@
  *   (browser-required route, no relay client), which this bucket was
  *   previously conflated with. Notable paths in this bucket (iter 2 +
  *   iter 4): `/ai/find` aliases, `/ai/forms` (forms live at
- *   `GET /control/forms`), `/control/page-health`, `/control/tabs`,
- *   `/sdk/*`, `/control/network/*` stub routes.
+ *   `GET /control/forms`), `/control/tabs`, `/sdk/*`,
+ *   `/control/network/*` stub routes. (`POST /control/page-health` is
+ *   NOT in this bucket — it has been in the SDK manifest since 0.8.1 and
+ *   forwards to the SDK; it is also deliberately not browser-required,
+ *   because the SDK answers a typed `unknown` Observation itself.)
  *
  *   The proxy auto-tracks the SDK contract: when the SDK adds a route to
  *   `UI_BRIDGE_ROUTES`, the proxy stops 404-ing it and forwards instead —
