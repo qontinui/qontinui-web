@@ -72,6 +72,11 @@ Verify after deploy (must read ``indisvalid = true``)::
       FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
      WHERE c.relname = 'ix_policy_rule_resolutions_ctx_head_sha';
 
+Then run ``ANALYZE coord.policy_rule_resolutions`` if autovacuum has not yet
+collected statistics for the new expression (the migration cannot, as coord's
+classifier admits only additive DDL), and confirm the plan with EXPLAIN ANALYZE
+on a live tuple (plan Phase 2).
+
 A killed build leaves an INVALID index that ``IF NOT EXISTS`` skips. Recovery is
 a follow-up revision doing ``DROP INDEX CONCURRENTLY IF EXISTS`` then this CREATE
 again, never a re-run.

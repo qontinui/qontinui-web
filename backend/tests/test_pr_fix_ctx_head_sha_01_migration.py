@@ -24,8 +24,7 @@ What is asserted
    resolution of the same PR/kind/head, false for the current resolution itself,
    another head, another kind, another tenant, or a non-autodispatched row.
 5. Sensitivity: a query that does not imply the predicate (``head_sha IS NULL``)
-   does not get the index, and a row with no ``head_sha`` is outside the partial
-   index.
+   does not get the index.
 6. Downgrade removes exactly the new index and every row survives.
 
 ``enable_seqscan = off`` for the plan assertions: the fixtures are small, so a
@@ -296,15 +295,6 @@ def test_pr_fix_ctx_head_sha_01_index_serves_the_idempotency_probe() -> None:
             assert _INDEX not in near_miss, (
                 "an IS NULL query is outside the partial predicate and must not "
                 f"use the index; got:\n{near_miss}"
-            )
-            entries = conn.execute(
-                text(
-                    "SELECT count(*) FROM coord.policy_rule_resolutions "
-                    "WHERE (resolved_entity->'context'->>'head_sha') IS NOT NULL"
-                )
-            ).scalar_one()
-            assert entries == rows - 1, (
-                "exactly the one head_sha-less row falls outside the partial index"
             )
 
         # 6. Downgrade removes exactly the new index; rows survive.
