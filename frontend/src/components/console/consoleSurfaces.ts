@@ -216,6 +216,11 @@ import {
   HOSTED_CI_AUTHOR_GLYPH_KINDS,
   HOSTED_CI_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/ci/_lib/hostedCiStatus";
+import {
+  MODEL_ACCESS_ATTENTION_BY_KIND,
+  MODEL_ACCESS_AUTHOR_GLYPH_KINDS,
+  MODEL_ACCESS_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ci/_lib/ciModelAccessStatus";
 // Per-repo follow-up dials (agent registry) — plan
 // `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
 import {
@@ -649,6 +654,18 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: HOSTED_CI_BADGE_CLASS,
       authorGlyphKinds: HOSTED_CI_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- model access for CI steps (Dev Ops) -------------------------------
+  {
+    // On and off are both a setting in effect, so calm; only an unreadable
+    // (or row-less `off`) value is amber — never painted as the `on` default.
+    surface: "model access for CI steps (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/ciModelAccessStatus.ts",
+    attentionByKind: MODEL_ACCESS_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: MODEL_ACCESS_BADGE_CLASS,
+      authorGlyphKinds: MODEL_ACCESS_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- per-repo follow-up dials (agent registry) -------------------------

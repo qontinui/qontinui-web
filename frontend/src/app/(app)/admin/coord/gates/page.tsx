@@ -24,8 +24,9 @@
  * `components/operations/GatesPanel` — the second gate UI, mounted in the
  * pipeline page's `System details` drawer — is DELETED, and this page did not
  * have to grow anything to absorb it. The two never had different action sets:
- * both already mutated through the same helpers in
- * `components/operations/utils.ts` onto the same
+ * both already mutated through the same helpers (then the `gate*Url`
+ * builders of `components/operations/utils.ts`, now the typed client
+ * `lib/api/operations/coordGates.ts`) onto the same
  * `/api/v1/operations/gates/{id}/*` routes, and this page held a strict
  * SUPERSET — it alone has reject, force-clear, continuation-cancel and
  * change-clearance-audience (`git grep -c force GatesPanel.tsx` was 0). What
@@ -64,14 +65,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Archive,
-  Pause,
-  Play,
-  RefreshCw,
-  Skull,
-  Wrench,
-} from "lucide-react";
+import { Archive, Pause, Play, RefreshCw, Skull, Wrench } from "lucide-react";
 import {
   adminDevService,
   type DevOverview,

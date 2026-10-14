@@ -5,6 +5,8 @@ on:
     branches: [main, develop]
     paths:
       - "frontend/**"
+      # The docs reference check (npm run check:doc-refs) reads docs/ too.
+      - "docs/**"
       - ".github/workflows/frontend-ci.yml"
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
@@ -13,6 +15,8 @@ on:
     branches: [main, develop]
     paths:
       - "frontend/**"
+      # The docs reference check (npm run check:doc-refs) reads docs/ too.
+      - "docs/**"
       - ".github/workflows/frontend-ci.yml"
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
@@ -75,6 +79,14 @@ jobs:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
+
+      # Docs must not teach imports, methods, components or anchors that do
+      # not exist. Plain Node with no dependencies, so it runs before
+      # `npm ci` and fails fast. Scans docs/, frontend/docs/ and
+      # frontend/public/docs/ against frontend/src.
+      - name: Docs code references resolve
+        working-directory: ./frontend
+        run: npm run check:doc-refs
 
       - name: Install dependencies
         working-directory: ./frontend

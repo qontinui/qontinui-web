@@ -23,6 +23,12 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.bridge_audit_log import BridgeAuditLog
+from app.models.build_record import (
+    BuildRecordPendingNotPublic,
+    BuildRecordPublicSlug,
+    BuildRecordSnapshot,
+    GithubRateBudget,
+)
 from app.models.capture import (
     CaptureAction,
     CaptureDetectedElement,
@@ -109,6 +115,7 @@ from app.models.overview import (
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
+from app.models.plan_model_route import PlanDifficultyModelRoute
 from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
@@ -306,6 +313,12 @@ __all__ = [
     "AuditLog",
     # UI Bridge co-pilot audit (§4.8)
     "BridgeAuditLog",
+    # Public build-record snapshots (web.build_record_*), Phase 1 of
+    # 2026-10-09-factory-built-product-portfolio-and-launch-kit
+    "BuildRecordPublicSlug",
+    "BuildRecordSnapshot",
+    "BuildRecordPendingNotPublic",
+    "GithubRateBudget",
     # Analytics
     "AnalyticsEvent",
     # Detected Issues
@@ -539,6 +552,9 @@ __all__ = [
     "PlanScanRootObservation",
     # Per-device refused scan-source reports (agent.plan_scan_root_refusals)
     "PlanScanRootRefusal",
+    # Operator-chosen model family per plan difficulty
+    # (agent.plan_difficulty_model_routes)
+    "PlanDifficultyModelRoute",
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",

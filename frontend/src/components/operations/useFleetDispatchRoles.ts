@@ -16,18 +16,20 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchFleetDispatchRoles,
+  putFleetDispatchRole,
+  type DispatchRoleRequest,
+  type FleetWriteAck,
+} from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import {
   parseDispatchRoles,
   type DispatchRole,
   type DispatchRolesRead,
 } from "./fleetDispatchRoles";
-
-export const FLEET_DISPATCH_ROLES_API = `${OPERATIONS_API}/fleet/dispatch-roles`;
-export const FLEET_DISPATCH_ROLE_API = `${OPERATIONS_API}/fleet/dispatch-role`;
 
 export const FLEET_DISPATCH_ROLES_POLL_MS = 30_000;
 
@@ -44,11 +46,12 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: DispatchRolesRead;
     try {
-      const res = await httpClient.fetch(
-        FLEET_DISPATCH_ROLES_API,
-        COORD_DASHBOARD_POLL_OPTIONS
+      next = parseDispatchRoles(
+        await fetchFleetDispatchRoles(COORD_DASHBOARD_POLL_OPTIONS)
       );
-      if (res.status === 404) {
+    } catch (err) {
+      const status = httpStatusOf(err);
+      if (status === 404) {
         next = {
           state: "unknown",
           reason:
@@ -57,33 +60,25 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
             "be set — this build cannot ask. Expected while coord is a deploy " +
             "behind this console.",
         };
-      } else if (!res.ok) {
+      } else if (status !== null) {
         next = {
           state: "unknown",
           reason:
-            `The dispatch-role read returned HTTP ${res.status}, so no ` +
+            `The dispatch-role read returned HTTP ${status}, so no ` +
             "machine's role could be determined from it.",
         };
       } else {
-        let parsed: unknown;
-        try {
-          parsed = await res.json();
-        } catch (err) {
-          throw new Error(
-            `the dispatch-role read did not return valid JSON: ${
-              err instanceof Error ? err.message : "parse error"
-            }`
-          );
-        }
-        next = parseDispatchRoles(parsed);
+        const message =
+          err instanceof SyntaxError
+            ? `the dispatch-role read did not return valid JSON: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        next = {
+          state: "unknown",
+          reason: `Coord's dispatch roles could not be read — ${message}`,
+        };
       }
-    } catch (err) {
-      next = {
-        state: "unknown",
-        reason: `Coord's dispatch roles could not be read — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      };
     }
     if (isCurrent()) setRead(next);
   }, []);
@@ -113,48 +108,39 @@ export async function putDispatchRole(input: {
   reason: string;
   force: boolean;
 }): Promise<RoleWriteResult> {
-  const body: Record<string, unknown> = {
+  const body: DispatchRoleRequest = {
     dispatch_role: input.role,
     reason: input.reason,
     force: input.force,
   };
   if (input.deviceId) body.device_id = input.deviceId;
   else body.ci_host_name = input.ciHostName;
+  // Never auto-retried (`putFleetDispatchRole`: `maxRetries: 0`) — a retry
+  // after a lost-but-committed first attempt would report "nothing changed"
+  // for a change this operator just made. A 5xx reaches here, and the caller
+  // re-reads instead.
+  let payload: FleetWriteAck | null;
   try {
-    const res = await httpClient.fetch(FLEET_DISPATCH_ROLE_API, {
-      method: "PUT",
-      body: JSON.stringify(body),
-      // Never auto-retry: coord answers a repeated PUT with `changed: false`,
-      // so a retry after a lost-but-committed first attempt would report
-      // "nothing changed" for a change this operator just made. A 5xx must
-      // reach the caller, which re-reads instead. `maxRetries: 0` disables the
-      // whole chain (PUT is otherwise retried as idempotent on any 5xx).
-      maxRetries: 0,
-    });
-    if (!res.ok) {
-      return { ok: false, status: res.status, body: await res.text() };
-    }
-    // A success with an unreadable body still succeeded; `changed` stays
-    // true, the reading that does not claim a no-op happened.
-    let changed = true;
-    let liveSessions: number | null = null;
-    try {
-      const payload: unknown = await res.json();
-      if (typeof payload === "object" && payload !== null) {
-        const p = payload as Record<string, unknown>;
-        if (typeof p.changed === "boolean") changed = p.changed;
-        if (typeof p.live_sessions_on_machine === "number")
-          liveSessions = p.live_sessions_on_machine;
-      }
-    } catch {
-      // see above
-    }
-    return { ok: true, changed, liveSessions };
+    payload = await putFleetDispatchRole(body);
   } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
+      return { ok: false, status, body: httpBodyOf(err) ?? "" };
+    }
     return {
       ok: false,
       status: null,
       body: err instanceof Error ? err.message : String(err),
     };
   }
+  // A success with an unreadable body (`null`) still succeeded; `changed`
+  // stays true, the reading that does not claim a no-op happened.
+  let changed = true;
+  let liveSessions: number | null = null;
+  if (payload !== null && typeof payload === "object") {
+    if (typeof payload.changed === "boolean") changed = payload.changed;
+    if (typeof payload.live_sessions_on_machine === "number")
+      liveSessions = payload.live_sessions_on_machine;
+  }
+  return { ok: true, changed, liveSessions };
 }

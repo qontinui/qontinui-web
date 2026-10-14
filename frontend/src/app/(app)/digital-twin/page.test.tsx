@@ -44,6 +44,8 @@ const state = vi.hoisted(() => ({
   registry: new Map<string, HTMLElement>(),
   /** Ids registered by two mounted elements at once. */
   duplicates: [] as string[],
+  /** Every draft the page handed the (mocked) Ask the Twin panel. */
+  askDrafts: [] as string[],
 }));
 
 vi.mock("./_hooks/useDigitalTwinSubspaces", () => ({
@@ -85,7 +87,12 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 // and the runner-only Ask the Twin and UI Bridge panels (Spec CI runs with no
 // connected runner).
 vi.mock("./_components/TwinCatalog", () => ({ TwinCatalog: () => null }));
-vi.mock("./_components/AskTheTwin", () => ({ AskTheTwin: () => null }));
+vi.mock("./_components/AskTheTwin", () => ({
+  AskTheTwin: ({ draft }: { draft?: string | null }) => {
+    if (draft) state.askDrafts.push(draft);
+    return null;
+  },
+}));
 vi.mock("./_components/UiBridgePanel", () => ({ UiBridgePanel: () => null }));
 
 import DigitalTwinPage from "./page";
@@ -178,6 +185,7 @@ beforeEach(() => {
   state.delivery = stubBody("**/api/v1/digital-twin/delivery/verdict**");
   state.registry.clear();
   state.duplicates = [];
+  state.askDrafts = [];
 });
 
 describe("DigitalTwinPage tabs", () => {
@@ -238,5 +246,60 @@ describe("DigitalTwinPage tabs", () => {
       expect(scoped.length, row).toBeGreaterThan(0);
     }
     expect(state.duplicates).toEqual([]);
+  });
+});
+
+describe("DigitalTwinPage drawer navigation", () => {
+  it("opens Completeness with a question for an Ask-the-Twin row, from the Lifecycle tab", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+
+    await user.click(registered("digital-twin-tab-lifecycle"));
+    const gatesCell = await waitFor(() => {
+      const id = Array.from(state.registry.keys()).find((key) =>
+        /^digital-twin-stage-[a-z]+-cell-gates$/.test(key)
+      );
+      expect(id).toBeDefined();
+      return registered(id!);
+    });
+    await user.click(gatesCell);
+    await user.click(registered("digital-twin-drawer-ask"));
+
+    // The drawer closed, the matrix is back, and the question was handed over.
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
+    expect(isMounted("digital-twin-drawer-ask")).toBe(false);
+    expect(state.askDrafts.at(-1)).toMatch(/gates sub-space/);
+    expect(state.askDrafts.at(-1)).toMatch(/coord_/);
+    expect(state.duplicates).toEqual([]);
+  });
+
+  it("opens the Delivery tab for the delivery row", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+
+    await user.click(registered("digital-twin-cell-delivery"));
+    expect(isMounted("digital-twin-drawer-ask")).toBe(false);
+    await user.click(registered("digital-twin-drawer-open-delivery"));
+
+    await waitFor(() =>
+      expect(isMounted("digital-twin-delivery-input")).toBe(true)
+    );
+    expect(state.askDrafts).toEqual([]);
+  });
+
+  it("offers no action for a row this page cannot ask, or a live-probed one", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+
+    for (const id of ["ast", "schema"]) {
+      await user.click(registered(`digital-twin-cell-${id}`));
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+      expect(isMounted("digital-twin-drawer-ask"), id).toBe(false);
+      expect(isMounted("digital-twin-drawer-open-delivery"), id).toBe(false);
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    }
   });
 });
