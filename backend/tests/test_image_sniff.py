@@ -12,7 +12,7 @@ import struct
 import zlib
 
 import pytest
-from PIL import Image, ImageFile, ImageOps, features
+from PIL import Image, ImageFile, ImageOps, UnidentifiedImageError, features
 
 from app.models.image_asset import IMAGE_MIME_TYPES
 from app.services.image_sniff import (
@@ -21,7 +21,11 @@ from app.services.image_sniff import (
     GIF,
     JPEG,
     MAX_FRAMES,
+    MAX_GIF_BLOCKS,
+    MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME,
+    MAX_GIF_EXTENSIONS_PER_FRAME,
     MAX_IMAGE_PIXELS,
+    MAX_PICTURES,
     PNG,
     WEBP,
     ImageFormat,
@@ -339,6 +343,11 @@ def _lzw_one_pixel() -> bytes:
     codes clear (4), 0, end (5) — one pixel, whatever size the frame claims."""
     codes = 4 | (0 << 3) | (5 << 6)
     return bytes([2, 2, codes & 0xFF, codes >> 8, 0])
+
+
+#: The bytes before ``gif_with_frames``' first block: the 13-byte header and
+#: logical screen descriptor, then its 2-color global color table.
+_GIF_HEADER = 13 + 6
 
 
 def gif_with_frames(
@@ -687,26 +696,409 @@ def test_bytes_between_gif_blocks_are_skipped_as_pillow_skips_them() -> None:
     assert sniff_image(data).frames == counted == 2
 
 
+#: Where a damaged block goes: in place of the trailer, or between the global
+#: color table and the first frame (Pillow reads a NETSCAPE2.0 loop count only
+#: there — before frame 0).
+_AT_THE_END, _BEFORE_THE_FIRST_FRAME = "end", "start"
+
+
+def _netscape_hiding_a_frame() -> bytes:
+    """A NETSCAPE2.0 block whose loop-count sub-block is empty, then a
+    comment. Pillow, having read the empty sub-block as the loop count,
+    skips the block's sub-blocks from the NEXT byte — the comment's ``!``,
+    read as a length of 33 — and lands inside the comment's 64-byte text, on
+    a 9000×9000 frame descriptor the comment holds. A walk that read the
+    comment as a comment would never see that frame."""
+    hidden = b"\x2c" + struct.pack("<HHHHB", 0, 0, 9000, 9000, 0) + _lzw_one_pixel()
+    text = bytearray(64)
+    text[32 : 32 + len(hidden)] = hidden  # text[31] = 0 ends Pillow's skip
+    return b"\x21\xff\x0bNETSCAPE2.0\x00" + b"\x21\xfe\x40" + bytes(text) + b"\x00"
+
+
 @pytest.mark.parametrize(
-    ("damage", "why"),
+    ("damage", "at", "why"),
     [
-        (b"\x21\xf9\x00\x3b", "an extension whose first sub-block is empty"),
-        (b"\x21\xf9\x02\x00\x00\x00\x3b", "a graphic control block too short"),
-        (b"\x21", "an extension cut off before its label"),
+        (
+            b"\x21\xf9\x00\x3b",
+            _AT_THE_END,
+            "an extension whose first sub-block is empty",
+        ),
+        (
+            b"\x21\xf9\x02\x00\x00\x00\x3b",
+            _AT_THE_END,
+            "a graphic control block too short",
+        ),
+        (
+            b"\x21\xf9\x03\x01\x00\x00\x00\x3b",
+            _AT_THE_END,
+            "a graphic control block whose transparency flag is set but which "
+            "is too short to hold the transparent index",
+        ),
+        (b"\x21", _AT_THE_END, "an extension cut off before its label"),
+        (
+            b"\x21\xff\x0bNETSCAPE2.0\x00",
+            _BEFORE_THE_FIRST_FRAME,
+            "a NETSCAPE2.0 block whose loop-count sub-block is empty",
+        ),
+        (
+            _netscape_hiding_a_frame(),
+            _BEFORE_THE_FIRST_FRAME,
+            "an empty NETSCAPE2.0 loop count that hides a frame from the walk",
+        ),
+    ],
+    ids=[
+        "empty-first-sub-block",
+        "short-control-block",
+        "short-transparent-control-block",
+        "cut-before-label",
+        "empty-netscape-loop-count",
+        "netscape-hiding-a-frame",
     ],
 )
 def test_a_gif_structure_pillow_would_lose_its_place_in_is_unreadable(
-    damage: bytes, why: str
+    damage: bytes, at: str, why: str
 ) -> None:
     """Where Pillow's own walk would raise, or read the next block's first
     byte as a length and parse a different file from there, the walk refuses
     instead — so a frame cannot be hidden from the bound by a structure the
     two read differently."""
     frames = gif_with_frames((10, 10), [(0, 0, 1, 1), (0, 0, 2, 2)])
-    data = frames[:-1] + damage  # in place of the trailer
+    if at == _AT_THE_END:
+        data = frames[:-1] + damage  # in place of the trailer
+    else:
+        data = frames[:_GIF_HEADER] + damage + frames[_GIF_HEADER:]
     with pytest.raises(ImageRefused) as excinfo:
         sniff_image(data)
     assert excinfo.value.code == "image_unreadable", why
+
+
+def test_the_damaged_blocks_are_ones_pillow_misreads() -> None:
+    """The two Pillow-parity refusals the walk adds beyond a cut-off file:
+    Pillow raises on a short transparent graphic control block when it
+    reaches that frame, and loses its place after an empty NETSCAPE2.0
+    loop-count sub-block — reading the next block's ``!`` as a length, it
+    cannot identify the file at all."""
+    frames = gif_with_frames((10, 10), [(0, 0, 1, 1), (0, 0, 2, 2)])
+    control = b"\x21\xf9\x04\x00\x0a\x00\x00\x00"
+    second = frames.index(control, _GIF_HEADER + 1)
+    short_control = (
+        frames[:second]
+        + b"\x21\xf9\x03\x01\x0a\x00\x00"
+        + frames[second + len(control) :]
+    )
+    with Image.open(io.BytesIO(short_control)) as image:
+        with pytest.raises(IndexError):
+            image.seek(1)
+    netscape = (
+        frames[:_GIF_HEADER] + b"\x21\xff\x0bNETSCAPE2.0\x00" + frames[_GIF_HEADER:]
+    )
+    with pytest.raises(UnidentifiedImageError):  # it lost its place
+        Image.open(io.BytesIO(netscape))
+    hiding = frames[:_GIF_HEADER] + _netscape_hiding_a_frame() + frames[_GIF_HEADER:]
+    with Image.open(io.BytesIO(hiding)) as image:  # a frame no walk would see
+        assert (image.size, image.n_frames) == ((9000, 9000), 3)
+
+
+# ── a GIF's walk is bounded by its blocks, not only its frames ──────────
+
+#: The upload cap the review measured at (the route's MAX_IMAGE_BYTES).
+_UPLOAD_CAP = 25 * 1024 * 1024
+
+
+def _gif_with_blocks_before_each_frame(frames: int, blocks: bytes) -> bytes:
+    """``frames`` 1×1 frames, each preceded by ``blocks``."""
+    one = gif_with_frames((1, 1), [(0, 0, 1, 1)])
+    frame = one[_GIF_HEADER:-1]  # its control block, descriptor and data
+    return one[:_GIF_HEADER] + (blocks + frame) * frames + b"\x3b"
+
+
+def _refused(data: bytes) -> str:
+    with pytest.raises(ImageRefused) as excinfo:
+        sniff_image(data)
+    return excinfo.value.code
+
+
+_EMPTY_COMMENT = b"\x21\xfe\x00"
+
+
+def test_extensions_up_to_the_per_frame_cap_are_accepted() -> None:
+    """Each frame of ``gif_with_frames`` already carries one graphic control
+    block, so 63 more extensions make exactly the cap."""
+    cap = MAX_GIF_EXTENSIONS_PER_FRAME
+    data = _gif_with_blocks_before_each_frame(2, _EMPTY_COMMENT * (cap - 1))
+    assert sniff_image(data).frames == 2
+    tail = gif_with_frames((1, 1), [(0, 0, 1, 1)])[:-1] + _EMPTY_COMMENT * cap
+    assert sniff_image(tail + b"\x3b").frames == 1  # before the trailer too
+
+
+@pytest.mark.parametrize("where", ["before a frame", "before the trailer"])
+def test_one_extension_past_the_per_frame_cap_is_refused(where: str) -> None:
+    cap = MAX_GIF_EXTENSIONS_PER_FRAME
+    if where == "before a frame":
+        data = _gif_with_blocks_before_each_frame(2, _EMPTY_COMMENT * cap)
+    else:
+        one = gif_with_frames((1, 1), [(0, 0, 1, 1)])
+        data = one[:-1] + _EMPTY_COMMENT * (cap + 1) + b"\x3b"
+    assert _refused(data) == "image_too_many_extensions"
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        pytest.param(
+            _EMPTY_COMMENT * (_UPLOAD_CAP // 3),
+            "image_too_many_extensions",
+            id="empty-comments",
+        ),
+        pytest.param(
+            b"\x21\xfe\x00\x00" * (_UPLOAD_CAP // 4),
+            "image_too_many_extensions",
+            id="comment-and-stray-byte-cycles",
+        ),
+        pytest.param(
+            b"\x21\xfe" + b"\x01a" * (_UPLOAD_CAP // 2),
+            "image_too_many_comment_sub_blocks",
+            id="one-comment-of-one-byte-sub-blocks",
+        ),
+    ],
+)
+@pytest.mark.parametrize("where", ["after the first frame", "before it"])
+def test_the_reviews_block_floods_are_refused_before_pillow_reads_them(
+    monkeypatch: pytest.MonkeyPatch, body: bytes, code: str, where: str
+) -> None:
+    """The review's measurements: 25 MiB of empty comment blocks took the
+    walk 2.6 s and was accepted (comment / stray-byte cycles 1.9 s). Placed
+    BEFORE the first frame they are worse: Pillow's own walk to that frame
+    joins the comments by concatenation — quadratic — and did not finish in
+    ten minutes. Each is now refused by a cap, and Pillow never opens it."""
+
+    def pillow_opened(*args: object, **kwargs: object) -> object:
+        raise AssertionError("Pillow opened the file before the walk refused it")
+
+    one = gif_with_frames((1, 1), [(0, 0, 1, 1)])
+    if where == "before it":
+        data = (one[:_GIF_HEADER] + body)[: _UPLOAD_CAP - len(one)] + one[_GIF_HEADER:]
+    else:
+        data = (one[:-1] + body)[: _UPLOAD_CAP - 1] + b"\x3b"
+    monkeypatch.setattr(Image, "open", pillow_opened)
+    assert _refused(data) == code
+
+
+def test_comment_sub_blocks_up_to_the_per_frame_cap_are_accepted() -> None:
+    """The cap counts every comment sub-block that holds data in one frame —
+    across that frame's comments, since Pillow joins them all."""
+    cap = MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME
+    half = b"\x21\xfe" + b"\x01a" * (cap // 2) + b"\x00"
+    assert sniff_image(_gif_with_blocks_before_each_frame(3, half * 2)).frames == 3
+    over = b"\x21\xfe" + b"\x01a" * (cap // 2 + 1) + b"\x00"
+    data = _gif_with_blocks_before_each_frame(1, half + over)
+    assert _refused(data) == "image_too_many_comment_sub_blocks"
+
+
+def test_blocks_up_to_the_total_cap_are_accepted_and_one_more_is_refused() -> None:
+    """MAX_FRAMES frames of eight blocks each (six comments, the graphic
+    control block, the descriptor) is exactly MAX_GIF_BLOCKS; one comment
+    more, before the trailer, is past it — with every frame and every
+    frame's extensions inside their own caps."""
+    per_frame = MAX_GIF_BLOCKS // MAX_FRAMES - 2
+    assert per_frame + 1 <= MAX_GIF_EXTENSIONS_PER_FRAME
+    data = _gif_with_blocks_before_each_frame(MAX_FRAMES, _EMPTY_COMMENT * per_frame)
+    assert sniff_image(data).frames == MAX_FRAMES
+    assert _refused(data[:-1] + _EMPTY_COMMENT + b"\x3b") == "image_too_many_blocks"
+
+
+# ── a multi-picture JPEG parses each picture once, from its own bytes ───
+
+
+def _jpeg(size: tuple[int, int]) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, (40, 80, 120)).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+#: The MP header's position in a file ``_mpo`` builds: SOI (2), the APP2
+#: marker and length (4), ``MPF\0`` (4). DataOffset counts from here.
+_MP_HEADER_AT = 10
+
+
+def _mpo(
+    pictures: list[bytes],
+    entries: list[tuple[int, int]] | None = None,
+) -> bytes:
+    """A CIPA multi-picture JPEG of ``pictures``, the first carrying the MP
+    index. Each entry is ``(Size, DataOffset)``; by default the true ones —
+    the first picture's own length at 0, the others where they follow it —
+    and as many entries as there are pictures. Given ``entries``, the index
+    holds exactly those, whatever bytes they name."""
+    count = len(entries) if entries is not None else len(pictures)
+    first_rest = pictures[0][2:]  # past its SOI
+
+    def app2(table: list[tuple[int, int]]) -> bytes:
+        index_at = 50  # header 8 + count 2 + three 12-byte tags + next-IFD 4
+        tiff = b"II*\x00" + struct.pack("<L", 8) + struct.pack("<H", 3)
+        tiff += struct.pack("<HHL4s", 0xB000, 7, 4, b"0100")
+        tiff += struct.pack("<HHLL", 0xB001, 4, 1, count)
+        tiff += struct.pack("<HHLL", 0xB002, 7, 16 * count, index_at)
+        tiff += struct.pack("<L", 0)
+        assert len(tiff) == index_at
+        rows = b"".join(
+            struct.pack("<LLLHH", 0x030000 if i == 0 else 0x020001, size, at, 0, 0)
+            for i, (size, at) in enumerate(table)
+        )
+        payload = b"MPF\x00" + tiff + rows
+        return b"\xff\xe2" + struct.pack(">H", len(payload) + 2) + payload
+
+    first_length = 2 + len(app2([(0, 0)] * count)) + len(first_rest)
+    if entries is None:
+        entries = [(first_length, 0)]
+        at = first_length
+        for picture in pictures[1:]:
+            entries.append((len(picture), at - _MP_HEADER_AT))
+            at += len(picture)
+    return b"\xff\xd8" + app2(entries) + first_rest + b"".join(pictures[1:])
+
+
+def _true_entries(pictures: list[bytes]) -> list[tuple[int, int]]:
+    data = _mpo(pictures)
+    with Image.open(io.BytesIO(data)) as image:
+        return [(e["Size"], e["DataOffset"]) for e in image.mpinfo[0xB002]]
+
+
+def test_a_camera_layout_of_up_to_max_pictures_is_accepted() -> None:
+    """Disjoint pictures inside the file, each read at its own size: the
+    canvas is the largest of them."""
+    pictures = [_jpeg((8, 6)), _jpeg((40, 30)), _jpeg((16, 64))]
+    data = _mpo(pictures)
+    with Image.open(io.BytesIO(data)) as probe:
+        assert probe.format == "MPO" and probe.n_frames == 3
+    accepted = sniff_image(data)
+    assert (accepted.format, accepted.width, accepted.height) == (JPEG, 8, 6)
+    assert accepted.frames == 3
+    many = _mpo([_jpeg((4, 4))] * MAX_PICTURES)
+    assert sniff_image(many).frames == MAX_PICTURES
+
+
+def test_more_than_max_pictures_is_refused_by_name() -> None:
+    data = _mpo([_jpeg((4, 4))] * (MAX_PICTURES + 1))
+    assert _refused(data) == "image_too_many_pictures"
+
+
+def _padded_picture(padding: int) -> bytes:
+    """A 1×1 JPEG behind ``padding`` bytes of empty comment markers — the
+    review's construction: cheap to store, slow to parse."""
+    picture = _jpeg((1, 1))
+    return b"\xff\xd8" + b"\xff\xfe\x00\x02" * (padding // 4) + picture[2:]
+
+
+def test_pictures_sharing_one_padded_picture_are_refused_unparsed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review's case: every MP index entry names one padded picture, so a
+    reader seeking each picture re-parses it — 50 pictures over 4 MB took
+    20.8 s and were accepted. Overlapping ranges are refused before any
+    picture past the first is parsed: the JPEG parser runs exactly once (the
+    open), and no seek happens."""
+    from PIL import JpegImagePlugin, MpoImagePlugin
+
+    padded = _padded_picture(4_000_000)
+    first = _jpeg((1, 1))
+    honest = _true_entries([first, padded])
+    shared = [honest[0]] + [honest[1]] * (MAX_PICTURES - 1)
+    data = _mpo([first, padded], shared)
+
+    parses = 0
+    real_open = JpegImagePlugin.JpegImageFile._open
+
+    def counting_open(self: JpegImagePlugin.JpegImageFile) -> None:
+        nonlocal parses
+        parses += 1
+        real_open(self)
+
+    def seek(self: object, frame: int) -> None:
+        raise AssertionError("the sniffer seeked a picture")
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "_open", counting_open)
+    monkeypatch.setattr(MpoImagePlugin.MpoImageFile, "seek", seek)
+    assert _refused(data) == "image_picture_index_invalid"
+    assert parses == 1
+
+
+def test_the_honest_padded_layout_parses_each_picture_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same padded picture named once: accepted, and parsed once — the
+    open parses the first picture, one more parse reads the second."""
+    from PIL import JpegImagePlugin
+
+    data = _mpo([_jpeg((1, 1)), _padded_picture(400_000)])
+    parses = 0
+    real_open = JpegImagePlugin.JpegImageFile._open
+
+    def counting_open(self: JpegImagePlugin.JpegImageFile) -> None:
+        nonlocal parses
+        parses += 1
+        real_open(self)
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "_open", counting_open)
+    assert sniff_image(data).frames == 2
+    assert parses == 2
+
+
+def _pictures_and_entries() -> tuple[list[bytes], list[tuple[int, int]]]:
+    pictures = [_jpeg((8, 6)), _jpeg((12, 10)), _jpeg((20, 4))]
+    return pictures, _true_entries(pictures)
+
+
+def test_a_picture_inside_the_first_one_is_refused() -> None:
+    pictures, entries = _pictures_and_entries()
+    entries[2] = (entries[2][0], 0)  # at the MP header — inside picture 1
+    assert _refused(_mpo(pictures, entries)) == "image_picture_index_invalid"
+
+
+def test_two_overlapping_later_pictures_are_refused() -> None:
+    pictures, entries = _pictures_and_entries()
+    entries[2] = (entries[2][0], entries[1][1] + entries[1][0] - 1)
+    assert _refused(_mpo(pictures, entries)) == "image_picture_index_invalid"
+
+
+def test_a_picture_past_the_end_of_the_file_is_refused() -> None:
+    pictures, entries = _pictures_and_entries()
+    entries[2] = (entries[2][0] + 1, entries[2][1])
+    assert _refused(_mpo(pictures, entries)) == "image_picture_index_invalid"
+
+
+def test_a_picture_whose_header_runs_past_its_range_is_unreadable() -> None:
+    """Each picture's header is parsed from its own range alone: a range too
+    short to hold the header is a malformed index, not a reason to read on
+    into the bytes after it."""
+    pictures, entries = _pictures_and_entries()
+    entries[1] = (4, entries[1][1])
+    assert _refused(_mpo(pictures, entries)) == "image_unreadable"
+
+
+# ── Pillow's bomb warning is left alone ─────────────────────────────────
+
+
+def test_the_sniffer_leaves_the_warning_filters_alone() -> None:
+    """``warnings.catch_warnings`` is not thread-safe, and sniffs run
+    concurrently: the sniffer no longer installs a filter. Pillow's warning
+    for a header above the bound reaches the caller's filters, and the sniff
+    still refuses by name."""
+    import warnings
+
+    data = png_header_only(10_000, 10_000)
+    before = list(warnings.filters)
+    with pytest.warns(Image.DecompressionBombWarning):
+        assert _refused(data) == "image_too_many_pixels"
+    assert warnings.filters == before
+
+
+def test_the_bomb_warning_raised_as_an_error_is_the_same_refusal() -> None:
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        assert _refused(png_header_only(10_000, 10_000)) == "image_too_many_pixels"
 
 
 # ── a fault of this server is not a refusal ─────────────────────────────
