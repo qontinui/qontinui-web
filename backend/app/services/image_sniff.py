@@ -47,7 +47,10 @@ AVIF's before Pillow's open, a PNG's or WebP's in place of Pillow's EXIF
 reader): at most :data:`MAX_TIFF_ENTRIES` entries, whose values may not add
 up to more than the block that holds them, behind at most
 :data:`MAX_EXIF_HEADERS` ``Exif`` headers, in at most
-:data:`MAX_JPEG_EXIF_SEGMENTS` JPEG segments.
+:data:`MAX_JPEG_EXIF_SEGMENTS` JPEG segments. Pillow's AVIF open may
+re-encode the whole block — IFD0 and the Exif, GPS and Interoperability
+directories, every value joined on by ``+=`` — so an AVIF's block is at most
+:data:`MAX_AVIF_EXIF_BYTES`, and all four directories share the one budget.
 
 So, for each of at most MAX_PICTURES pictures, Pillow's header parse visits
 at most the caps' worth of structure, does at most the caps' worth of Python
@@ -232,6 +235,16 @@ MAX_JPEG_EXIF_SEGMENTS: Final = 8
 #: 3-5. 512 is far past both; without a cap 65 535 entries are a quarter of a
 #: second of Python per block.
 MAX_TIFF_ENTRIES: Final = 512
+
+#: The largest EXIF block an AVIF may carry. Pillow's AVIF open re-encodes the
+#: block whenever the container's orientation (``irot``/``imir``) differs
+#: from the block's own, joining every value onto the result by ``+=``: a
+#: copy per value of all before it, across up to four directories of
+#: :data:`MAX_TIFF_ENTRIES` entries. A 25 MiB block took it 0.5 s. A JPEG's
+#: EXIF is at most 64 KiB, and a camera's or phone's AVIF/HEIF EXIF is the
+#: same block; 128 KiB is twice that, and bounds the re-encode's copying at
+#: a few hundred MB.
+MAX_AVIF_EXIF_BYTES: Final = 128 * 1024
 
 #: How many ``Exif\0\0`` headers may precede an EXIF block's TIFF structure.
 #: Pillow strips them one slice (a copy of the rest) at a time, so 25 MiB of
@@ -464,33 +477,39 @@ class _TiffEntry:
     value: bytes
 
 
-def _tiff_first_directory(
-    block: bytes, name: str, code: str
-) -> tuple[str, list[_TiffEntry]] | None:
-    """The entries Pillow's TIFF reader reads from the first directory (IFD0)
-    of the TIFF structure ``block`` — an EXIF block, or a JPEG's multi-picture
-    index — and their byte order (``">"`` or ``"<"``). None where Pillow reads
-    no directory: a header it does not accept, a directory offset past the
-    block, or BigTIFF (whose directory offset Pillow reads from bytes past
-    the eight-byte header it is handed, and raises).
-
-    Pillow reads every entry at open, and each value too big for its entry
-    (over four bytes) with a read of its own, from wherever the entry points:
-    N entries pointing at one S-byte value cost it N×S — 20 000 entries at
-    23 MB took it 65 s, 60 at 20 MB took 2.5 GB. So the walk reads the entries
-    the way Pillow does — an entry of a type Pillow skips is skipped, a read
-    that comes up short ends the directory — and raises
-    :class:`_StructureRefused` past :data:`MAX_TIFF_ENTRIES` entries
-    (``<code>_too_many_entries``), or once the values it reads add up to more
-    than the block (``<code>_values_reread``): some byte is then read twice.
-    Distinct values fit in the block side by side, so an honest directory
-    never trips it, and what Pillow reads is at most the block's own size."""
+def _tiff_header(block: bytes) -> tuple[str, int] | None:
+    """The byte order (``">"`` or ``"<"``) and first-directory offset of the
+    TIFF structure ``block`` — or None where Pillow's TIFF reader accepts no
+    header and reads no entry: a header it does not know, or BigTIFF (whose
+    directory offset Pillow reads from bytes past the eight-byte header it is
+    handed, and raises)."""
     if len(block) < 8 or not block.startswith(_TIFF_PREFIXES) or block[2] == 0x2B:
         return None
     endian = ">" if block.startswith(b"MM") else "<"
     (offset,) = struct.unpack_from(endian + "L", block, 4)
+    return endian, offset
+
+
+def _tiff_directory(
+    block: bytes, endian: str, offset: int, name: str, code: str, read: int
+) -> tuple[list[_TiffEntry], int]:
+    """The entries Pillow's TIFF reader reads from the directory at ``offset``
+    of the TIFF structure ``block`` — none where the offset leaves no room for
+    its count — and ``read`` plus the bytes of value it reads for them.
+
+    Pillow reads every entry, and each value too big for its entry (over four
+    bytes) with a read of its own, from wherever the entry points: N entries
+    pointing at one S-byte value cost it N×S — 20 000 entries at 23 MB took
+    it 65 s, 60 at 20 MB took 2.5 GB. So the walk reads the entries the way
+    Pillow does — an entry of a type Pillow skips is skipped, a read that
+    comes up short ends the directory — and raises :class:`_StructureRefused`
+    past :data:`MAX_TIFF_ENTRIES` entries (``<code>_too_many_entries``), or
+    once the values read add up to more than the block
+    (``<code>_values_reread``): some byte is then read twice. Distinct values
+    fit in the block side by side, so an honest structure never trips it, and
+    what Pillow reads is at most the block's own size."""
     if offset + 2 > len(block):
-        return None
+        return [], read
     (declared,) = struct.unpack_from(endian + "H", block, offset)
     pos = offset + 2
     present = min(declared, (len(block) - pos) // 12)
@@ -500,7 +519,6 @@ def _tiff_first_directory(
             f"{code}_too_many_entries",
         )
     entries: list[_TiffEntry] = []
-    read = 0
     for _ in range(present):
         tag, entry_type, count, value = struct.unpack_from(endian + "HHL4s", block, pos)
         pos += 12
@@ -513,20 +531,35 @@ def _tiff_first_directory(
             read += max(0, min(size, len(block) - at))
             if read > len(block):
                 raise _StructureRefused(
-                    f"its {name} directory's values add up to more than the "
+                    f"its {name} directories' values add up to more than the "
                     f"{len(block)}-byte block that holds them",
                     f"{code}_values_reread",
                 )
             if at + size > len(block):
                 break  # Pillow's read comes up short, and it reads no further
         entries.append(_TiffEntry(tag, entry_type, count, value))
+    return entries, read
+
+
+def _tiff_first_directory(
+    block: bytes, name: str, code: str
+) -> tuple[str, list[_TiffEntry]] | None:
+    """The byte order and the entries of the first directory (IFD0) of the
+    TIFF structure ``block`` — an EXIF block, or a JPEG's multi-picture index
+    — as Pillow's TIFF reader reads them (:func:`_tiff_directory`, which
+    raises past the caps); None where it reads no directory
+    (:func:`_tiff_header`)."""
+    header = _tiff_header(block)
+    if header is None:
+        return None
+    endian, offset = header
+    entries, _ = _tiff_directory(block, endian, offset, name, code, 0)
     return endian, entries
 
 
-def _exif_directory(raw: bytes) -> tuple[str, list[_TiffEntry]] | None:
-    """The first directory of the EXIF block ``raw``, past its ``Exif\\0\\0``
-    headers as Pillow's EXIF reader strips them (:func:`_tiff_first_directory`
-    for what it reads). Refused (``image_exif_header_repeated``) past
+def _exif_tiff(raw: bytes) -> bytes:
+    """The EXIF block ``raw`` past its ``Exif\\0\\0`` headers, as Pillow's
+    EXIF reader strips them. Refused (``image_exif_header_repeated``) past
     :data:`MAX_EXIF_HEADERS` headers — Pillow strips each with a copy of the
     rest."""
     start = 0
@@ -537,7 +570,85 @@ def _exif_directory(raw: bytes) -> tuple[str, list[_TiffEntry]] | None:
                 f"its EXIF block repeats its header more than {MAX_EXIF_HEADERS} times",
                 "image_exif_header_repeated",
             )
-    return _tiff_first_directory(raw[start:], "EXIF", "image_exif")
+    return raw[start:]
+
+
+def _exif_directory(raw: bytes) -> tuple[str, list[_TiffEntry]] | None:
+    """The first directory of the EXIF block ``raw`` (:func:`_exif_tiff`,
+    :func:`_tiff_first_directory`)."""
+    return _tiff_first_directory(_exif_tiff(raw), "EXIF", "image_exif")
+
+
+#: The entry types Pillow reads as an integer, and the format of one value of
+#: each; a tag Pillow knows to hold one value takes the first of its values.
+_INTEGER_TYPES: Final = {3: "H", 4: "L", 6: "b", 8: "h", 9: "l", 13: "L", 16: "Q"}
+
+#: The directories an EXIF block points at that Pillow's EXIF re-encoder
+#: loads besides IFD0: the Exif and GPS directories, and the Exif
+#: directory's Interoperability directory.
+_EXIF_SUB_DIRECTORY: Final = 0x8769
+_GPS_SUB_DIRECTORY: Final = 0x8825
+_INTEROP_SUB_DIRECTORY: Final = 0xA005
+
+
+def _directory_pointer(
+    block: bytes, endian: str, entries: list[_TiffEntry], tag: int
+) -> int | None:
+    """Where the last ``tag`` entry of ``entries`` points, read as Pillow
+    reads it (the first value of an integer type) — None where Pillow reads
+    no offset there (no such entry, or a type that is not an integer)."""
+    pointer: int | None = None
+    for entry in entries:
+        if entry.tag != tag:
+            continue
+        unpack = _INTEGER_TYPES.get(entry.entry_type)
+        pointer = None
+        if unpack is None or entry.count < 1:
+            continue
+        width = _TIFF_TYPE_SIZES[entry.entry_type]
+        if entry.count * width <= 4:
+            pointer = struct.unpack_from(endian + unpack, entry.value)[0]
+        else:  # the walk kept the entry, so its value lies inside the block
+            (at,) = struct.unpack_from(endian + "L", entry.value)
+            pointer = struct.unpack_from(endian + unpack, block, at)[0]
+    return pointer if pointer is not None and pointer >= 0 else None
+
+
+def _avif_exif_directories(raw: bytes) -> None:
+    """Walk what Pillow's AVIF open reads of the EXIF block ``raw``.
+
+    When libavif's ``irot``/``imir`` orientation differs from the block's
+    own, Pillow's open RE-ENCODES the block: it loads IFD0 and the Exif, GPS
+    and Interoperability directories, decodes every value, and joins each one
+    onto the result by ``+=`` — a copy of all before it, per value. So the
+    block is held to :data:`MAX_AVIF_EXIF_BYTES` (``image_avif_exif_too_large``)
+    and every directory Pillow loads is walked (:func:`_tiff_directory`) with
+    one read budget, the block's length, across them all."""
+    if len(raw) > MAX_AVIF_EXIF_BYTES:
+        raise _StructureRefused(
+            f"its EXIF block is over {MAX_AVIF_EXIF_BYTES} bytes",
+            "image_avif_exif_too_large",
+        )
+    block = _exif_tiff(raw)
+    header = _tiff_header(block)
+    if header is None:
+        return
+    endian, offset = header
+    entries, read = _tiff_directory(block, endian, offset, "EXIF", "image_exif", 0)
+    for tag in (_EXIF_SUB_DIRECTORY, _GPS_SUB_DIRECTORY):
+        at = _directory_pointer(block, endian, entries, tag)
+        if at is None:
+            continue
+        sub, read = _tiff_directory(block, endian, at, "EXIF", "image_exif", read)
+        interop = (
+            _directory_pointer(block, endian, sub, _INTEROP_SUB_DIRECTORY)
+            if tag == _EXIF_SUB_DIRECTORY
+            else None
+        )
+        if interop is not None:
+            _, read = _tiff_directory(
+                block, endian, interop, "EXIF", "image_exif", read
+            )
 
 
 #: The entry types an orientation is written as — SHORT, as the EXIF standard
@@ -1031,7 +1142,8 @@ def sniff_image(data: bytes) -> SniffedImage:
     for a PNG ``image_too_many_chunks`` and
     ``image_too_many_compressed_chunks``; for EXIF in any format
     ``image_exif_header_repeated``, ``image_exif_too_many_entries`` and
-    ``image_exif_values_reread``; for a GIF ``image_too_many_extensions``,
+    ``image_exif_values_reread``, and for an AVIF's
+    ``image_avif_exif_too_large``; for a GIF ``image_too_many_extensions``,
     ``image_too_many_comment_sub_blocks``, ``image_too_many_blocks``,
     ``image_too_many_sub_blocks`` and ``image_too_many_stray_bytes``; for a
     multi-picture JPEG
@@ -1077,7 +1189,7 @@ def sniff_image(data: bytes) -> SniffedImage:
         elif fmt is PNG:
             _png_walk_to_image_data(data)
         elif avif_exif:
-            _exif_directory(avif_exif)
+            _avif_exif_directories(avif_exif)
 
     with _reading(fmt):
         opened = Image.open(io.BytesIO(data), formats=[fmt.pillow_name])

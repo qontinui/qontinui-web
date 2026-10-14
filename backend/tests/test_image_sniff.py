@@ -14,7 +14,14 @@ import zlib
 from collections.abc import Sequence
 
 import pytest
-from PIL import Image, ImageFile, ImageOps, UnidentifiedImageError, features
+from PIL import (
+    Image,
+    ImageFile,
+    ImageOps,
+    TiffImagePlugin,
+    UnidentifiedImageError,
+    features,
+)
 
 from app.models.image_asset import IMAGE_MIME_TYPES
 from app.services.image_sniff import (
@@ -22,6 +29,7 @@ from app.services.image_sniff import (
     AVIF,
     GIF,
     JPEG,
+    MAX_AVIF_EXIF_BYTES,
     MAX_EXIF_HEADERS,
     MAX_FRAMES,
     MAX_GIF_BLOCKS,
@@ -1760,11 +1768,11 @@ def test_exif_values_read_more_than_once_are_refused_unread(
 ) -> None:
     """The review's measurement: Pillow reads each entry's value afresh, so
     20 000 entries pointing at one 23 MB value were accepted in 65 s, and 60
-    at 20 MB took 2.46 GB. Sixty entries at one 200 KB value read 12 MB from
-    a 200 KB block: refused before Pillow's EXIF reader sees it — before
+    at 20 MB took 2.46 GB. Sixty entries at one 2 KB value read 120 KB from
+    a 2 KB block: refused before Pillow's EXIF reader sees it — before
     Pillow opens a JPEG (whose open reads it) or an AVIF (likewise), and in
     place of the reader for a PNG or WebP."""
-    data = _with_exif(fmt, _reread(60, 200_000))
+    data = _with_exif(fmt, _reread(60, 2000))
     if fmt in ("JPEG", "AVIF"):
         _forbid_pillow(monkeypatch)
     _forbid_pillows_exif_reader(monkeypatch)
@@ -2252,3 +2260,134 @@ def test_a_directory_pillow_never_reads_is_not_walked(block: bytes) -> None:
         ).orientation
         is None
     )
+
+
+# ── an AVIF's EXIF: Pillow's open may re-encode all of it ────────────────
+
+
+def _sub_directory_exif(
+    kind: int = 4, count: int = 1, tag: int = 0x8769, interop: bool = False
+) -> bytes:
+    """An EXIF block whose IFD0 points (``tag``, an entry of ``kind`` and
+    ``count``) at a directory of 100 entries rereading one 400-byte value —
+    or, with ``interop``, at an Exif directory pointing at such a one."""
+    sub_at = 64
+    rows = b"".join(
+        struct.pack(">HHLL", 0x9000 + i, 7, 400, sub_at + 2 + 1200 + 4)
+        for i in range(100)
+    )
+    rereading = struct.pack(">H", 100) + rows + b"\x00" * 4 + b"\x00" * 400
+    if interop:
+        exif_at, sub_at = sub_at, sub_at + 32
+        rows = b"".join(
+            struct.pack(">HHLL", 0x9000 + i, 7, 400, sub_at + 2 + 1200 + 4)
+            for i in range(100)
+        )
+        rereading = struct.pack(">H", 100) + rows + b"\x00" * 4 + b"\x00" * 400
+        exif_directory = struct.pack(">HHHLL", 1, 0xA005, 4, 1, sub_at) + b"\x00" * 4
+        target = exif_at
+    else:
+        exif_directory = b""
+        target = sub_at
+    width = {3: 2, 4: 4, 13: 4, 16: 8, 5: 8}[kind]
+    if count * width <= 4:
+        value = struct.pack(">H" if kind == 3 else ">L", target).ljust(4, b"\x00")
+        pool = b""
+    else:  # the value lies out of line, at offset 32
+        value = struct.pack(">L", 32)
+        first = struct.pack(">Q" if kind == 16 else ">L", target)
+        pool = first.ljust(width * count, b"\x00")
+    ifd0 = struct.pack(">H", 1) + struct.pack(">HHL", tag, kind, count) + value
+    block = b"MM\x00\x2a" + struct.pack(">L", 8) + ifd0 + b"\x00" * 4
+    block = block.ljust(32, b"\x00") + pool
+    block = block.ljust(exif_at if interop else sub_at, b"\x00")
+    if interop:
+        block = (block + exif_directory).ljust(sub_at, b"\x00")
+    return block + rereading
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        pytest.param(_sub_directory_exif(), id="exif-directory"),
+        pytest.param(_sub_directory_exif(tag=0x8825), id="gps-directory"),
+        pytest.param(_sub_directory_exif(interop=True), id="interop-directory"),
+        pytest.param(_sub_directory_exif(kind=3), id="pointer-as-short"),
+        pytest.param(_sub_directory_exif(kind=13), id="pointer-as-ifd"),
+        pytest.param(_sub_directory_exif(kind=16), id="pointer-as-long8"),
+        pytest.param(_sub_directory_exif(count=2), id="pointer-of-two-longs"),
+    ],
+)
+def test_an_avif_exif_directory_pillows_reencoder_loads_is_walked(
+    monkeypatch: pytest.MonkeyPatch, block: bytes
+) -> None:
+    """Pillow's re-encoder loads the Exif, GPS and Interoperability
+    directories (``get_ifd``) and decodes every value: each is walked, before
+    Pillow's open, under the same read budget."""
+    pillows = Image.Exif()
+    pillows.load(block)
+    loaded: list[int] = []
+    real_load = TiffImagePlugin.ImageFileDirectory_v2.load
+
+    def counting(self: TiffImagePlugin.ImageFileDirectory_v2, fp: object) -> None:
+        loaded.append(1)
+        real_load(self, fp)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(TiffImagePlugin.ImageFileDirectory_v2, "load", counting)
+    pillows.tobytes()
+    assert loaded  # the premise: the re-encode loads a directory past IFD0
+    monkeypatch.undo()
+    data = encode("AVIF", (8, 8), exif=block)
+    _forbid_pillow(monkeypatch)
+    assert _refused(data) == "image_exif_values_reread"
+
+
+def test_a_pointer_pillow_reads_no_offset_from_is_not_followed() -> None:
+    """A RATIONAL is no offset to Pillow (its ``get_ifd`` finds nothing), so
+    the rereading directory behind it is never loaded."""
+    block = _sub_directory_exif(kind=5)
+    pillows = Image.Exif()
+    pillows.load(block)
+    assert pillows.get_ifd(0x8769) == {}
+    assert sniff_image(encode("AVIF", (8, 8), exif=block)).frames == 1
+
+
+def test_an_avif_read_budget_is_shared_across_its_directories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """IFD0 reads 60 % of the block and the Exif directory the same 60 %:
+    each alone fits; together they read a byte twice."""
+    size = 600
+    ifd0_at, sub_at = 8, 64
+    values_at = sub_at + 2 + 12 + 4
+    ifd0 = struct.pack(">H", 2)
+    ifd0 += struct.pack(">HHLL", 0x010E, 7, size, values_at)
+    ifd0 += struct.pack(">HHLL", 0x8769, 4, 1, sub_at) + b"\x00" * 4
+    sub = struct.pack(">H", 1) + struct.pack(">HHLL", 0x9286, 7, size, values_at)
+    block = (b"MM\x00\x2a" + struct.pack(">L", ifd0_at) + ifd0).ljust(sub_at, b"\x00")
+    block += sub + b"\x00" * 4 + b"\x00" * size
+    block = block.ljust(1000, b"\x00")
+    assert 2 * size > len(block) > size  # the premise
+    _forbid_pillow(monkeypatch)
+    assert _refused(encode("AVIF", (8, 8), exif=block)) == "image_exif_values_reread"
+
+
+def test_an_avif_exif_block_up_to_the_cap_is_accepted_and_one_byte_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pillow's re-encode joins every value by ``+=``; a 25 MiB block took
+    its open 0.5 s. (A block with no orientation tag is stored as given:
+    Pillow's AVIF encoder re-encodes only one that carries an orientation.)"""
+    from app.services.image_sniff import _avif_exif
+
+    def avif(size: int) -> bytes:
+        block = _tiff([(0x9286, 7, size, _tail_at(1))], b"\x00" * size)
+        block = block.ljust(MAX_AVIF_EXIF_BYTES, b"\x00")
+        return encode("AVIF", (8, 8), exif=block)
+
+    at_cap = avif(1000)
+    assert len(_avif_exif(at_cap)) == MAX_AVIF_EXIF_BYTES  # the premise
+    assert sniff_image(at_cap).frames == 1
+    over = encode("AVIF", (8, 8), exif=bytes(_avif_exif(at_cap)) + b"\x00")
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_avif_exif_too_large"
