@@ -31,15 +31,36 @@ most :data:`MAX_PICTURES` pictures, whose DECLARED byte ranges must be
 disjoint and inside the file. Pillow parses the first picture's header from
 the start of the file, not of its range, so it must end inside that range;
 each later picture's header is walked and parsed from its own range alone.
-So a sniff parses at most the caps' worth of structure for each of at most
-MAX_PICTURES pictures, plus a byte search over the file. The pixel bound
-below is checked before any consumer decodes anything.
+
+Nor does it grow with what one piece of structure claims. Inside a JPEG
+segment Pillow loops in Python over a frame header's components, a
+quantization segment's tables and a Photoshop segment's resources, so each
+of those is held to its standard length or a byte budget
+(:data:`MAX_JPEG_FRAME_HEADERS`, :data:`MAX_JPEG_QUANTIZATION_SEGMENTS`,
+:data:`MAX_JPEG_PHOTOSHOP_BYTES`); a PNG's compressed chunks before its image
+data, each inflated to up to 1 MiB, are capped
+(:data:`MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA`). EXIF and a JPEG's
+multi-picture index are TIFF directories, whose entries each point at a
+value Pillow reads afresh — many entries at one large value multiply it — so
+a directory is walked before Pillow reads it (a JPEG's in the header walk, an
+AVIF's before Pillow's open, a PNG's or WebP's in place of Pillow's EXIF
+reader): at most :data:`MAX_TIFF_ENTRIES` entries, whose values may not add
+up to more than the block that holds them, behind at most
+:data:`MAX_EXIF_HEADERS` ``Exif`` headers, in at most
+:data:`MAX_JPEG_EXIF_SEGMENTS` JPEG segments.
+
+So, for each of at most MAX_PICTURES pictures, Pillow's header parse visits
+at most the caps' worth of structure, does at most the caps' worth of Python
+work inside it, and reads from a metadata block at most that block's own
+length, plus a byte search over the file; its other reads are bulk copies of
+at most the file. What is left grows with the file's length alone. The
+pixel bound below is checked before any consumer decodes anything.
 
 What Pillow — or a codec beneath it — raises while it READS the file is the
 file's fault: a refusal (``image_unreadable``), a 422, never a 500, and logged
 so it can be counted. What this module's own code raises is not: only the
-failure a helper documents (a GIF structure the walk refuses, an EXIF block
-Pillow cannot parse) is caught, narrowly, and ``MemoryError`` /
+failure a helper documents (a structure a walk refuses, by its cap's code or
+as unreadable) is caught, narrowly, and ``MemoryError`` /
 ``RecursionError`` always propagate — a server fault stays a 5xx.
 
 Accepted: PNG, JPEG, GIF, WebP and AVIF — the raster formats the image
@@ -61,7 +82,13 @@ from dataclasses import dataclass
 from typing import Final
 
 import structlog
-from PIL import Image, JpegImagePlugin, MpoImagePlugin
+from PIL import (
+    AvifImagePlugin,
+    Image,
+    JpegImagePlugin,
+    MpoImagePlugin,
+    TiffImagePlugin,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -160,9 +187,57 @@ MAX_GIF_STRAY_BYTES_BEFORE_FIRST_FRAME: Final = 256
 #: — EXIF, XMP, ICC and MPF —, DQT, SOF, DHT, DRI); a long ICC profile or an
 #: extended-XMP packet (a depth map, an original kept beside an edit) is split
 #: across 64 KiB segments, and the 25 MiB upload cap holds at most ~400 full
-#: ones. 1024 admits any of those; Pillow parses it in about a millisecond.
-#: Without a cap, 25 MiB of empty segments took it 3-9 s.
+#: ones. 1024 admits any of those. Without a cap, 25 MiB of empty segments
+#: took Pillow 3-9 s. This cap bounds Pillow's STEPS from segment to segment;
+#: what it does INSIDE a segment is bounded by the per-kind caps below — SOF,
+#: DQT, APP13 Photoshop, APP1 EXIF and APP2 MPF are the segments it parses in
+#: Python; every other kind it takes with one bulk read and keeps whole.
 MAX_JPEG_SEGMENTS: Final = 1024
+
+#: The most frame headers (SOFn, and DHP, which Pillow parses the same way) a
+#: JPEG's header may hold before its first SOS. An encoder writes one; a
+#: hierarchical JPEG's further frames follow scans, past where Pillow stops.
+#: Each is also held to its exact standard length (:func:`_jpeg_header_end`):
+#: Pillow loops over a frame header's bytes three at a time, so without that
+#: rule 399 maximum-length ones (8.7 million component triplets) were
+#: accepted at 1.7 s and 830 MB.
+MAX_JPEG_FRAME_HEADERS: Final = 4
+
+#: The most quantization-table segments (DQT) before the first SOS. An encoder
+#: writes one to four (a table per component, or all in one segment). Each is
+#: also held to at most four tables of 16-bit precision, ``2 + 4·129`` bytes:
+#: Pillow builds a 64-entry list per table in Python, and 25 MiB of tables
+#: took it 0.75 s.
+MAX_JPEG_QUANTIZATION_SEGMENTS: Final = 8
+_MAX_DQT_LENGTH: Final = 2 + 4 * (1 + 2 * 64)
+
+#: The most bytes of Photoshop resource blocks (APP13 ``Photoshop 3.0``) a
+#: JPEG's header may hold. Pillow walks every 8BIM resource in Python — 25 MiB
+#: of empty ones took it 0.74 s; 256 KiB (four full segments, far past the
+#: IPTC, resolution and thumbnail resources an editor writes) costs it under
+#: about 30 ms.
+MAX_JPEG_PHOTOSHOP_BYTES: Final = 256 * 1024
+
+#: The most APP1 EXIF segments a JPEG's header may hold. The EXIF standard
+#: puts the whole block in ONE segment of at most 64 KiB; Pillow joins every
+#: one it meets by ``+=`` (a copy of all before it, each time), and a writer
+#: that repeats the block is the known defect. 8 bounds the joined block at
+#: 512 KiB.
+MAX_JPEG_EXIF_SEGMENTS: Final = 8
+
+#: The most entries the first directory of a TIFF-structured metadata block
+#: (EXIF, a JPEG's multi-picture index) may hold. Pillow reads every entry of
+#: it, in Python, at open: IFD0 of a camera's EXIF holds 10-30 (the camera's
+#: own tags live in sub-directories Pillow does not read at open), an MP index
+#: 3-5. 512 is far past both; without a cap 65 535 entries are a quarter of a
+#: second of Python per block.
+MAX_TIFF_ENTRIES: Final = 512
+
+#: How many ``Exif\0\0`` headers may precede an EXIF block's TIFF structure.
+#: Pillow strips them one slice (a copy of the rest) at a time, so 25 MiB of
+#: them is quadratic. A JPEG's block carries one; a PNG ``eXIf`` chunk written
+#: with the header inside it carries two once Pillow adds its own.
+MAX_EXIF_HEADERS: Final = 2
 
 #: The most bytes a JPEG's header may hold before its first SOS that are not
 #: a segment: fill (0xFF repeated before a marker, which the standard
@@ -177,6 +252,13 @@ MAX_JPEG_STRAY_BYTES: Final = 64 * 1024
 #: the first fcTL); a chunk holds up to 2 GiB, so no amount of metadata needs
 #: many. Without a cap, 25 MiB of empty chunks took Pillow 2.4-3.5 s.
 MAX_PNG_CHUNKS_BEFORE_IMAGE_DATA: Final = 256
+
+#: The most compressed chunks (iCCP, zTXt, and iTXt with its compression flag
+#: set) a PNG may hold before its image data. Pillow inflates each at open, up
+#: to 1 MiB apiece: 254 of them took it 0.57 s. An encoder writes one ICC
+#: profile and a few compressed text chunks — ImageMagick's raw EXIF, IPTC,
+#: XMP and 8BIM profiles are five; 16 costs Pillow about 40 ms.
+MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA: Final = 16
 
 #: The most pictures a multi-picture JPEG (CIPA MPO) may hold. The files this
 #: store expects carry two — a stereo pair from a 3D camera, or a primary
@@ -206,6 +288,21 @@ _JPEG_SOS: Final = 0xFFDA
 
 #: The PNG chunks Pillow's header parse stops at.
 _PNG_IMAGE_DATA: Final = frozenset({b"IDAT", b"fdAT", b"IEND"})
+
+#: The PNG chunks Pillow always inflates at open (iTXt only when flagged).
+_PNG_COMPRESSED: Final = frozenset({b"iCCP", b"zTXt"})
+
+#: The headers Pillow's TIFF reader accepts, and the size of one value of
+#: each entry type it reads (an entry of any other type it skips unread) —
+#: Pillow's own tables, so the walk reads what Pillow reads.
+_TIFF_PREFIXES: Final = tuple(TiffImagePlugin.PREFIXES)
+_TIFF_TYPE_SIZES: Final = {
+    entry_type: loader[0]
+    for entry_type, loader in TiffImagePlugin.ImageFileDirectory_v2._load_dispatch.items()
+}
+
+#: An EXIF block's own header, before its TIFF structure.
+_EXIF_HEADER: Final = b"Exif\x00\x00"
 
 #: Brands of an ISO-BMFF ``ftyp`` box that make the file AVIF (still or
 #: sequence). HEIC shares the container and carries none of them.
@@ -329,29 +426,6 @@ def _reading(fmt: ImageFormat) -> Iterator[None]:
         ) from exc
 
 
-def _orientation(raw_exif: object, fmt: ImageFormat) -> int | None:
-    """The EXIF orientation the file declares, from the metadata the header
-    carried (``info["exif"]``) — never by loading the image, which a PNG's
-    ``getexif()`` would do for an eXIf chunk after its pixel data. Pillow's
-    AVIF reader folds the ``irot``/``imir`` transforms into this same value.
-    None when there is no EXIF, it does not parse, or the value is not one of
-    the eight orientations."""
-    if not isinstance(raw_exif, bytes) or not raw_exif:
-        return None
-    exif = Image.Exif()
-    try:
-        exif.load(raw_exif)
-        value = exif.get(_EXIF_ORIENTATION_TAG)
-    except (struct.error, *_ANTICIPATED_READ_ERRORS) as exc:
-        # Pillow's EXIF parser raises SyntaxError for a block that is not a
-        # TIFF structure and struct.error for a value cut short (it handles
-        # the rest itself). No orientation is known — not a refusal: the
-        # image itself read fine.
-        _log_refused_read("image_exif_unreadable", fmt, exc)
-        return None
-    return value if isinstance(value, int) and 1 <= value <= 8 else None
-
-
 class _StructureRefused(ValueError):
     """A structure a pre-Pillow walk refuses: past one of its caps, refused
     by that cap's own code — or, for a GIF, cut off or malformed where
@@ -379,6 +453,234 @@ def _walking(fmt: ImageFormat) -> Iterator[None]:
         ) from exc
 
 
+@dataclass(frozen=True)
+class _TiffEntry:
+    """One entry of a TIFF directory: its tag, type and value count, and its
+    four-byte value field — the value itself when it fits there."""
+
+    tag: int
+    entry_type: int
+    count: int
+    value: bytes
+
+
+def _tiff_first_directory(
+    block: bytes, name: str, code: str
+) -> tuple[str, list[_TiffEntry]] | None:
+    """The entries Pillow's TIFF reader reads from the first directory (IFD0)
+    of the TIFF structure ``block`` — an EXIF block, or a JPEG's multi-picture
+    index — and their byte order (``">"`` or ``"<"``). None where Pillow reads
+    no directory: a header it does not accept, a directory offset past the
+    block, or BigTIFF (whose directory offset Pillow reads from bytes past
+    the eight-byte header it is handed, and raises).
+
+    Pillow reads every entry at open, and each value too big for its entry
+    (over four bytes) with a read of its own, from wherever the entry points:
+    N entries pointing at one S-byte value cost it N×S — 20 000 entries at
+    23 MB took it 65 s, 60 at 20 MB took 2.5 GB. So the walk reads the entries
+    the way Pillow does — an entry of a type Pillow skips is skipped, a read
+    that comes up short ends the directory — and raises
+    :class:`_StructureRefused` past :data:`MAX_TIFF_ENTRIES` entries
+    (``<code>_too_many_entries``), or once the values it reads add up to more
+    than the block (``<code>_values_reread``): some byte is then read twice.
+    Distinct values fit in the block side by side, so an honest directory
+    never trips it, and what Pillow reads is at most the block's own size."""
+    if len(block) < 8 or not block.startswith(_TIFF_PREFIXES) or block[2] == 0x2B:
+        return None
+    endian = ">" if block.startswith(b"MM") else "<"
+    (offset,) = struct.unpack_from(endian + "L", block, 4)
+    if offset + 2 > len(block):
+        return None
+    (declared,) = struct.unpack_from(endian + "H", block, offset)
+    pos = offset + 2
+    present = min(declared, (len(block) - pos) // 12)
+    if present > MAX_TIFF_ENTRIES:
+        raise _StructureRefused(
+            f"its {name} directory holds more than {MAX_TIFF_ENTRIES} entries",
+            f"{code}_too_many_entries",
+        )
+    entries: list[_TiffEntry] = []
+    read = 0
+    for _ in range(present):
+        tag, entry_type, count, value = struct.unpack_from(endian + "HHL4s", block, pos)
+        pos += 12
+        unit = _TIFF_TYPE_SIZES.get(entry_type)
+        if unit is None:
+            continue
+        size = count * unit
+        if size > 4:
+            (at,) = struct.unpack_from(endian + "L", value)
+            read += max(0, min(size, len(block) - at))
+            if read > len(block):
+                raise _StructureRefused(
+                    f"its {name} directory's values add up to more than the "
+                    f"{len(block)}-byte block that holds them",
+                    f"{code}_values_reread",
+                )
+            if at + size > len(block):
+                break  # Pillow's read comes up short, and it reads no further
+        entries.append(_TiffEntry(tag, entry_type, count, value))
+    return endian, entries
+
+
+def _exif_directory(raw: bytes) -> tuple[str, list[_TiffEntry]] | None:
+    """The first directory of the EXIF block ``raw``, past its ``Exif\\0\\0``
+    headers as Pillow's EXIF reader strips them (:func:`_tiff_first_directory`
+    for what it reads). Refused (``image_exif_header_repeated``) past
+    :data:`MAX_EXIF_HEADERS` headers — Pillow strips each with a copy of the
+    rest."""
+    start = 0
+    while raw.startswith(_EXIF_HEADER, start):
+        start += len(_EXIF_HEADER)
+        if start > MAX_EXIF_HEADERS * len(_EXIF_HEADER):
+            raise _StructureRefused(
+                f"its EXIF block repeats its header more than {MAX_EXIF_HEADERS} times",
+                "image_exif_header_repeated",
+            )
+    return _tiff_first_directory(raw[start:], "EXIF", "image_exif")
+
+
+#: The entry types an orientation is written as — SHORT, as the EXIF standard
+#: writes it, or LONG — and the format of one value of each.
+_ORIENTATION_TYPES: Final = {3: "H", 4: "L"}
+
+
+def _orientation(raw_exif: object) -> int | None:
+    """The EXIF orientation the file declares, from the metadata the header
+    carried (``info["exif"]``) — never by loading the image, which a PNG's
+    ``getexif()`` would do for an eXIf chunk after its pixel data, and never
+    with Pillow's EXIF reader, which reads every entry's value: tag 0x0112 is
+    read from its own entry's value field. As in Pillow, the last such entry
+    wins and its first value is the orientation; unlike Pillow, a value held
+    outside the entry (three or more SHORTs — never written for a single
+    number) is not read, and is no orientation. Pillow's AVIF reader folds
+    the ``irot``/``imir`` transforms into this same block. None when there is
+    no EXIF, no directory Pillow would read, or a value that is not one of
+    the eight orientations.
+
+    Raises :class:`_StructureRefused` where :func:`_exif_directory` does."""
+    if not isinstance(raw_exif, bytes) or not raw_exif:
+        return None
+    directory = _exif_directory(raw_exif)
+    if directory is None:
+        return None
+    endian, entries = directory
+    value: int | None = None
+    for entry in entries:
+        if entry.tag == _EXIF_ORIENTATION_TAG:
+            unpack = _ORIENTATION_TYPES.get(entry.entry_type)
+            inline = (
+                unpack is not None
+                and 1 <= entry.count
+                and entry.count * _TIFF_TYPE_SIZES[entry.entry_type] <= 4
+            )
+            value = (
+                struct.unpack_from(endian + unpack, entry.value)[0]
+                if inline and unpack is not None
+                else None
+            )
+    return value if value is not None and 1 <= value <= 8 else None
+
+
+def _avif_exif(data: bytes) -> bytes:
+    """The EXIF block of the AVIF ``data``, as libavif hands it to Pillow's
+    AVIF reader — which loads it with Pillow's EXIF reader at open, and
+    re-encodes every entry when an ``irot``/``imir`` transform changes the
+    orientation. Read the same way Pillow's open reads it (libavif's parse of
+    the container, which decodes no pixels), so it can be walked first. Empty
+    where this Pillow has no AVIF support: its open then refuses the file."""
+    if not AvifImagePlugin.SUPPORTED:
+        return b""
+    decoder = AvifImagePlugin._avif.AvifDecoder(
+        data, AvifImagePlugin.DECODE_CODEC_CHOICE, 1
+    )
+    exif = decoder.get_info()[4]
+    return exif if isinstance(exif, bytes) else b""
+
+
+class _JpegHeaderSegments:
+    """What Pillow's JPEG header parse does INSIDE the segments it parses in
+    Python, held to the per-kind caps as :func:`_jpeg_header_end` meets each
+    segment, and — at the SOS, where the parse ends — the EXIF and
+    multi-picture index blocks Pillow's open then reads
+    (:func:`_tiff_first_directory`). Every other segment Pillow takes with one
+    bulk read."""
+
+    def __init__(self) -> None:
+        self.frame_headers = 0
+        self.quantization_segments = 0
+        self.photoshop_bytes = 0
+        self.exif: list[bytes] = []
+        self.mp_index: bytes | None = None
+
+    def segment(
+        self, marker: int, length: int, data: bytes, start: int, stop: int
+    ) -> None:
+        """The segment ``marker`` whose length field reads ``length`` and
+        whose body Pillow reads as ``data[start:stop]``."""
+        handler = JpegImagePlugin.MARKER[marker][2]
+        if handler is JpegImagePlugin.SOF:
+            self.frame_headers += 1
+            if self.frame_headers > MAX_JPEG_FRAME_HEADERS:
+                raise _StructureRefused(
+                    f"a JPEG header holds more than {MAX_JPEG_FRAME_HEADERS} "
+                    "frame headers before its image data",
+                    "image_too_many_frame_headers",
+                )
+            components = data[start + 5] if stop - start > 5 else 0
+            if components not in (1, 3, 4) or length != 8 + 3 * components:
+                raise _StructureRefused(
+                    "a JPEG frame header is not 8 + 3 bytes per component long, "
+                    "for 1, 3 or 4 components",
+                    "image_frame_header_invalid",
+                )
+        elif handler is JpegImagePlugin.DQT:
+            self.quantization_segments += 1
+            if self.quantization_segments > MAX_JPEG_QUANTIZATION_SEGMENTS:
+                raise _StructureRefused(
+                    "a JPEG header holds more than "
+                    f"{MAX_JPEG_QUANTIZATION_SEGMENTS} quantization-table segments",
+                    "image_too_many_quantization_segments",
+                )
+            if length > _MAX_DQT_LENGTH:
+                raise _StructureRefused(
+                    "a JPEG quantization-table segment holds more than four tables",
+                    "image_quantization_segment_too_long",
+                )
+        elif handler is JpegImagePlugin.APP:
+            if marker == 0xFFE1 and data.startswith(_EXIF_HEADER, start, stop):
+                if len(self.exif) == MAX_JPEG_EXIF_SEGMENTS:
+                    raise _StructureRefused(
+                        f"a JPEG header holds more than {MAX_JPEG_EXIF_SEGMENTS} "
+                        "EXIF segments",
+                        "image_too_many_exif_segments",
+                    )
+                # Pillow keeps the first whole and joins each later one's body.
+                skip = len(_EXIF_HEADER) if self.exif else 0
+                self.exif.append(data[start + skip : stop])
+            elif marker == 0xFFED and data.startswith(
+                b"Photoshop 3.0\x00", start, stop
+            ):
+                self.photoshop_bytes += stop - start
+                if self.photoshop_bytes > MAX_JPEG_PHOTOSHOP_BYTES:
+                    raise _StructureRefused(
+                        f"a JPEG header holds more than {MAX_JPEG_PHOTOSHOP_BYTES} "
+                        "bytes of Photoshop resources",
+                        "image_too_much_photoshop_metadata",
+                    )
+            elif marker == 0xFFE2 and data.startswith(b"MPF\x00", start, stop):
+                self.mp_index = data[start + 4 : stop]  # Pillow keeps the last
+
+    def finish(self) -> None:
+        """At the SOS: the blocks Pillow's open reads with its TIFF reader."""
+        if self.exif:
+            _exif_directory(b"".join(self.exif))
+        if self.mp_index is not None:
+            _tiff_first_directory(
+                self.mp_index, "multi-picture index", "image_mp_index"
+            )
+
+
 def _jpeg_header_end(data: bytes, start: int, end: int) -> int | None:
     """Where Pillow's header parse of the JPEG at ``data[start:end]`` ends:
     just past its first SOS segment — or None where Pillow raises before it
@@ -390,10 +692,14 @@ def _jpeg_header_end(data: bytes, start: int, end: int) -> int | None:
     :class:`_StructureRefused` past :data:`MAX_JPEG_SEGMENTS` markers or
     :data:`MAX_JPEG_STRAY_BYTES` skipped bytes, before Pillow parses them.
     Skipped bytes are matched in one bounded regex call, not a Python step
-    each."""
+    each. Each segment's body is held to its kind's caps
+    (:class:`_JpegHeaderSegments`) — and, on reaching the SOS, the EXIF and
+    multi-picture index blocks Pillow's open goes on to read — refused by the
+    cap's own code."""
     pos = start + 2  # past SOI; the signature puts an 0xFF at start + 2
     segments = 0
     skipped = 0
+    parsed = _JpegHeaderSegments()
     while True:
         window = min(end, pos + MAX_JPEG_STRAY_BYTES - skipped + 1)
         run = _JPEG_SKIPPED.match(data, pos, window)
@@ -425,20 +731,26 @@ def _jpeg_header_end(data: bytes, start: int, end: int) -> int | None:
         if JpegImagePlugin.MARKER[marker][2] is not None:  # a segment: a length
             if pos + 2 > end:
                 return None
-            pos += 2 + max(0, int.from_bytes(data[pos : pos + 2], "big") - 2)
+            length = int.from_bytes(data[pos : pos + 2], "big")
+            body = pos + 2
+            pos = body + max(0, length - 2)
             if pos > end:
                 return None
+            parsed.segment(marker, length, data, body, pos)
         if marker == _JPEG_SOS:
+            parsed.finish()
             return pos
 
 
 def _png_walk_to_image_data(data: bytes) -> None:
     """Count a PNG's chunks up to its image data the way Pillow's header
     parse reads them — each skipped by its length — and raise
-    :class:`_StructureRefused` past :data:`MAX_PNG_CHUNKS_BEFORE_IMAGE_DATA`.
-    A cut-off or malformed chunk ends the walk; Pillow then refuses it."""
+    :class:`_StructureRefused` past :data:`MAX_PNG_CHUNKS_BEFORE_IMAGE_DATA`,
+    or past :data:`MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA` chunks Pillow
+    inflates. A cut-off or malformed chunk ends the walk; Pillow then refuses
+    it."""
     pos, end = 8, len(data)
-    chunks = 0
+    chunks = compressed = 0
     while pos + 8 <= end and data[pos + 4 : pos + 8] not in _PNG_IMAGE_DATA:
         chunks += 1
         if chunks > MAX_PNG_CHUNKS_BEFORE_IMAGE_DATA:
@@ -447,7 +759,28 @@ def _png_walk_to_image_data(data: bytes) -> None:
                 "before its image data",
                 "image_too_many_chunks",
             )
-        pos += 12 + int.from_bytes(data[pos : pos + 4], "big")
+        kind = data[pos + 4 : pos + 8]
+        length = int.from_bytes(data[pos : pos + 4], "big")
+        if kind in _PNG_COMPRESSED or (
+            kind == b"iTXt" and _itxt_is_compressed(data, pos + 8, pos + 8 + length)
+        ):
+            compressed += 1
+            if compressed > MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA:
+                raise _StructureRefused(
+                    "a PNG holds more than "
+                    f"{MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA} compressed "
+                    "chunks before its image data",
+                    "image_too_many_compressed_chunks",
+                )
+        pos += 12 + length
+
+
+def _itxt_is_compressed(data: bytes, start: int, stop: int) -> bool:
+    """Whether the iTXt chunk body ``data[start:stop]`` sets its compression
+    flag — the byte after its keyword's NUL, followed by the method byte
+    Pillow also reads before it inflates."""
+    keyword_end = data.find(b"\x00", start, stop)
+    return 0 <= keyword_end and keyword_end + 2 < stop and data[keyword_end + 1] != 0
 
 
 def _gif_structure(data: bytes, stop_after: int) -> tuple[int, tuple[int, int]]:
@@ -689,11 +1022,19 @@ def sniff_image(data: bytes) -> SniffedImage:
     out, or a file that cannot be opened and its frames walked),
     ``image_too_many_frames`` (above :data:`MAX_FRAMES`),
     ``image_too_many_pixels`` (above :data:`MAX_IMAGE_PIXELS`: canvas × frames);
-    the pre-Pillow walks' caps: for a JPEG ``image_too_many_segments`` and
-    ``image_too_many_stray_bytes``, for a PNG ``image_too_many_chunks``, for a
-    GIF ``image_too_many_extensions``, ``image_too_many_comment_sub_blocks``,
-    ``image_too_many_blocks``, ``image_too_many_sub_blocks`` and
-    ``image_too_many_stray_bytes``; for a multi-picture JPEG
+    the pre-Pillow walks' caps: for a JPEG ``image_too_many_segments``,
+    ``image_too_many_stray_bytes``, ``image_too_many_frame_headers``,
+    ``image_frame_header_invalid``, ``image_too_many_quantization_segments``,
+    ``image_quantization_segment_too_long``,
+    ``image_too_much_photoshop_metadata``, ``image_too_many_exif_segments``,
+    ``image_mp_index_too_many_entries`` and ``image_mp_index_values_reread``;
+    for a PNG ``image_too_many_chunks`` and
+    ``image_too_many_compressed_chunks``; for EXIF in any format
+    ``image_exif_header_repeated``, ``image_exif_too_many_entries`` and
+    ``image_exif_values_reread``; for a GIF ``image_too_many_extensions``,
+    ``image_too_many_comment_sub_blocks``, ``image_too_many_blocks``,
+    ``image_too_many_sub_blocks`` and ``image_too_many_stray_bytes``; for a
+    multi-picture JPEG
     ``image_too_many_pictures`` (above :data:`MAX_PICTURES`) and
     ``image_picture_index_invalid`` (pictures over the same bytes, past the
     file's end, or a first picture whose header runs past its range).
@@ -721,7 +1062,13 @@ def sniff_image(data: bytes) -> SniffedImage:
     # Before Pillow opens it: Pillow's header parse is the one the walks'
     # caps protect. For a GIF, not Pillow's ``n_frames`` either: it walks
     # EVERY frame before the cap could refuse; this walk stops one past it.
+    # An AVIF's EXIF is read by Pillow's open with Pillow's EXIF reader, so it
+    # is walked first; WebP's and PNG's are read by :func:`_orientation` alone.
     jpeg_header_end: int | None = None
+    avif_exif = b""
+    if fmt is AVIF:
+        with _reading(fmt):
+            avif_exif = _avif_exif(data)
     with _walking(fmt):
         if fmt is GIF:
             frames, canvas = _gif_structure(data, stop_after=MAX_FRAMES + 1)
@@ -729,6 +1076,8 @@ def sniff_image(data: bytes) -> SniffedImage:
             jpeg_header_end = _jpeg_header_end(data, 0, len(data))
         elif fmt is PNG:
             _png_walk_to_image_data(data)
+        elif avif_exif:
+            _exif_directory(avif_exif)
 
     with _reading(fmt):
         opened = Image.open(io.BytesIO(data), formats=[fmt.pillow_name])
@@ -760,7 +1109,8 @@ def sniff_image(data: bytes) -> SniffedImage:
                 "image_unreadable",
                 f"The header declares a {width}×{height} image of {frames} frame(s).",
             )
-        orientation = _orientation(raw_exif, fmt)
+        with _walking(fmt):
+            orientation = _orientation(raw_exif)
         if raw_format == "MPO" and frames > 1:
             if frames > MAX_PICTURES:
                 raise ImageRefused(
