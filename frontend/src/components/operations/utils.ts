@@ -163,17 +163,6 @@ export const DEV_ACTIONS_POLL_MS = 10_000;
  */
 export const MIGRATIONS_QUEUE_POLL_MS = 15_000;
 
-/**
- * PATCH endpoint to set (or clear) a machine's operator-friendly display name.
- * Body `{ name: string }`: a non-empty name sets the alias; an empty string
- * clears it (reverts to the raw hostname). Tenant/user scoped server-side via
- * the operator bearer; the caller never passes a user_id.
- * Response: `{ hostname: string, name: string | null }`.
- */
-export function machineRenameUrl(hostname: string): string {
-  return `${OPERATIONS_API}/fleet/machines/${encodeURIComponent(hostname)}`;
-}
-
 /** Polling interval in milliseconds. */
 export const POLL_INTERVAL_MS = 5_000;
 
@@ -264,28 +253,10 @@ export function formatStallAge(secs: number | null | undefined): string {
 // Volume free space (disk monitoring, Phase 1)
 // ---------------------------------------------------------------------------
 //
-// Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1. Reads
-// coord's `worktree_volume` head through the web proxy — no alembic migration
-// ships with this phase, and web never touches coord's Postgres schema.
-
-/**
- * GET the latest volume snapshot for every device in the caller's tenant.
- * Tenant-scoped server-side via the operator bearer; the caller passes no
- * tenant_id. A device with no telemetry is ABSENT from the payload — that is
- * UNKNOWN, never zero (plan D10).
- */
-export const FLEET_VOLUMES_API = `${OPERATIONS_API}/fleet/volumes`;
-
-/**
- * GET one device's latest volume snapshot (per-device sibling of the above).
- *
- * NOTE: intentionally unwired in Phase 1 — the fleet read covers every card, so
- * nothing calls this yet. Phase 2 (per-device drill-down) is its first
- * consumer; it is not accidentally-dead code.
- */
-export function deviceVolumesUrl(deviceId: string): string {
-  return `${OPERATIONS_API}/devices/${encodeURIComponent(deviceId)}/volumes`;
-}
+// Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1. The reads
+// of coord's `worktree_volume` head are `fetchFleetVolumes` /
+// `fetchDeviceVolumes` (`lib/api/operations/coordFleet.ts`); what follows is
+// how a reading is presented.
 
 /**
  * Age at which a volume reading stops being presented as current.

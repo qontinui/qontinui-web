@@ -12,8 +12,8 @@
  * Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create`, D3.
  *
  * The stack underneath is NOT new: `/admin/coord/gate-clearance` already
- * authors v2 rows through `_shared/useCoordPolicies` +
- * `_shared/coordPolicyApi`. This is that surface for a different domain
+ * authors v2 rows through `_shared/useCoordPolicies` + the
+ * `coordPolicies` client. This is that surface for a different domain
  * family, and it inherits gate-clearance's two hard coord facts —
  * see [`DecisionPolicyUpdate`] (no `payload`, no `enabled`).
  *
@@ -48,7 +48,7 @@
  * [`CREATE_IS_INERT`].
  */
 
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 // ---------------------------------------------------------------------------
 // Domains

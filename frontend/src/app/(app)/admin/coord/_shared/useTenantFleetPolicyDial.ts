@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
 import {
-  FLEET_POLICY_API,
+  fetchFleetPolicy,
+  putFleetPolicy,
   type FleetPolicyView,
   type FleetPolicyWriteResult,
-} from "./fleetPolicy";
+} from "@/lib/api/operations/tenantPolicy";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -93,9 +93,7 @@ export function useTenantFleetPolicyDial<L extends string>(
     const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view = await httpClient.get<FleetPolicyView>(
-        `${FLEET_POLICY_API}?domain=${encodeURIComponent(domain)}`
-      );
+      const view = await fetchFleetPolicy(domain);
       if (generation !== writeGeneration.current) return;
       setPolicy(view);
       setError(null);
@@ -129,18 +127,15 @@ export function useTenantFleetPolicyDial<L extends string>(
     async (level: L, changeNote?: string): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await httpClient.put<FleetPolicyWriteResult>(
-          FLEET_POLICY_API,
-          {
-            domain,
-            scope_band: "tenant",
-            scope_key: null,
-            level,
-            master_enabled: true,
-            change_note:
-              changeNote ?? `Set ${label} to "${level}" from the console`,
-          }
-        );
+        const result = await putFleetPolicy({
+          domain,
+          scope_band: "tenant",
+          scope_key: null,
+          level,
+          master_enabled: true,
+          change_note:
+            changeNote ?? `Set ${label} to "${level}" from the console`,
+        });
         writeGeneration.current += 1;
         setLastWrite(result);
 

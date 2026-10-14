@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { runnerProxyGet } from "../_lib/runner-relay";
 import {
   isValidAppId,
+  type AppListResponse,
   type SpecGraphResponse,
   type SpecListResponse,
   type UiBridgeSnapshot,
@@ -31,6 +32,26 @@ function specPath(appId: string, leaf: "list" | "graph"): string {
     throw new Error(`"${appId}" is not a valid app id.`);
   }
   return `apps/${appId}/spec/${leaf}`;
+}
+
+/**
+ * The runner's registered apps (`GET /apps`) — what the App field suggests.
+ * A runner whose relay allowlist predates this route answers 403; that, like
+ * any other failure, is an error state here and the panel falls back to its
+ * static suggestions.
+ */
+export function useRunnerApps(deviceId: string | null) {
+  return useQuery({
+    queryKey: ["digital-twin", "apps", deviceId],
+    queryFn: () =>
+      runnerProxyGet<AppListResponse>(deviceId as string, "apps", {
+        timeoutMs: 8000,
+      }),
+    enabled: !!deviceId,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
 }
 
 /** CACHED: the runner's discovered spec pages for `appId`. */

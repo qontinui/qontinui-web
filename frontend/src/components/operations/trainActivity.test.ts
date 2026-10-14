@@ -516,6 +516,60 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(dead!.detail).toContain("re-anchor the label");
   });
 
+  it("gives ci-failed-infra-kill and ci-failed-stale-base their own reasons, never ci-failed's author copy or the unknown-token row", () => {
+    // Both are reds coord exonerates the author from: an infra-kill (every
+    // failing check run was a self-hosted runner kill with zero failed steps,
+    // qontinui-coord#2723) and a red on a stale base (coord's BEHIND freshen
+    // is the remedy). Unmapped they fell into `unrecognized-status`; folded
+    // into `ci-failed` they would read as "red CI, the author's move".
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({
+          pr_number: 41,
+          merge_status: "ci-failed-infra-kill",
+          failing_contexts: ["build (self-hosted)"],
+        }),
+        pr({ pr_number: 42, merge_status: "ci-failed-stale-base" }),
+        pr({ pr_number: 43, merge_status: "ci-pending" }),
+      ],
+      null,
+      NOW
+    );
+    const row = rows[0]!;
+    const codes = row.reasons.map((r) => r.code);
+    expect(codes).not.toContain("unrecognized-status");
+    expect(codes).not.toContain("ci-failed");
+
+    const kill = row.reasons.find((r) => r.code === "ci-failed-infra-kill");
+    expect(kill).toBeDefined();
+    expect(kill!.label).toBe("CI red: runner killed");
+    // `blocking` is this axis's "operator action needed" grade: nothing
+    // re-runs a killed job on a timer yet.
+    expect(kill!.severity).toBe("blocking");
+    expect(kill!.prNumbers).toEqual([41]);
+    expect(kill!.detail).toContain("not the author's code");
+    expect(kill!.detail).toContain("(build (self-hosted))");
+    expect(kill!.detail).toContain("once the runner is healthy");
+
+    const stale = row.reasons.find((r) => r.code === "ci-failed-stale-base");
+    expect(stale).toBeDefined();
+    expect(stale!.label).toBe("CI red on a stale base");
+    expect(stale!.severity).toBe("waiting");
+    expect(stale!.prNumbers).toEqual([42]);
+    expect(stale!.detail).toContain("not the author's move");
+
+    // The infra kill blocks the train; the stale-base red waits on coord's
+    // freshen, with `behind-base`; both outrank a plain running CI.
+    expect(codes.indexOf("ci-failed-infra-kill")).toBeLessThan(
+      codes.indexOf("ci-failed-stale-base")
+    );
+    expect(codes.indexOf("ci-failed-stale-base")).toBeLessThan(
+      codes.indexOf("ci-pending")
+    );
+    expect(row.severity).toBe("blocking");
+  });
+
   it("exonerates a terminal-proposal-held PR from coord's ready_unmerged stall list", () => {
     // coord's health `ready_unmerged` reads frozen CLEAN/green signals and
     // carries no verdict, so a held PR may still be listed there. It must not

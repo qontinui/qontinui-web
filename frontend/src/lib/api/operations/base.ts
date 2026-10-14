@@ -38,8 +38,12 @@
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { ApiConfig } from "@/services/api-config";
 import {
+  BackendError,
+  type BackendErrorReading,
+  isBackendErrorReading,
   MAX_SENTENCE_LENGTH,
   messageFromErrorBody,
+  readErrorBody,
 } from "@/lib/errors/backend-error-message";
 
 export const OPERATIONS_BASE = "/api/v1/operations";
@@ -161,6 +165,31 @@ export function operationsErrorMessage(
     return messageFromErrorBody(httpBodyOf(err) ?? "", status, limit);
   }
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * {@link operationsErrorMessage} as a classified reading: the same sentence,
+ * plus the refusal envelope when the rejected body carried one (plan
+ * `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists`
+ * D3). A surface that keeps this in state hands it to `BackendErrorMessage`,
+ * which renders the typed next action and stamps `data-refusal`. Anything that
+ * is not a {@link readJson} status rejection reads `unstructured`, its own
+ * `message` unchanged.
+ */
+export function operationsErrorReading(
+  err: unknown,
+  limit: number = MAX_SENTENCE_LENGTH
+): BackendErrorReading {
+  if (isBackendErrorReading(err)) return err;
+  if (err instanceof BackendError) return err.reading;
+  const status = httpStatusOf(err);
+  if (status !== null) {
+    return readErrorBody(httpBodyOf(err) ?? "", status, limit);
+  }
+  return {
+    kind: "unstructured",
+    sentence: err instanceof Error ? err.message : String(err),
+  };
 }
 
 /**
