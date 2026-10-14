@@ -10606,6 +10606,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/operator-touches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operator Touches
+         * @description Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched —
+         *     ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+         *     ``aggregate_included`` (``false`` on a ``before`` page, where every
+         *     aggregate field and ``constraint_verdict`` are ``null``),
+         *     ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+         *     ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+         *     ``touches``, ``next_cursor`` and ``constraint_verdict``.
+         *
+         *     Every parameter is declared as a STRING and forwarded unchanged. coord
+         *     clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+         *     ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+         *     an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+         *     passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+         *     Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+         *     which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+         *     answer, not a failure; coord's 400/503 bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_operator_touches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/operator-touches/constraint-verdict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operator Touch Constraint Verdict
+         * @description Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+         *
+         *     The standalone form of the ``constraint_verdict`` object the touch read
+         *     carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+         *     reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+         *     verdict, never a default. Error bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_operator_touches_constraint_verdict_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/policies": {
         parameters: {
             query?: never;
@@ -15365,6 +15427,14 @@ export interface paths {
          *     ``2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch``
          *     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
          *     the last two existed to justify exiting.
+         *
+         *     Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+         *     fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+         *     — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+         *     ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+         *     with no live writer (``operator_override_rate``, ``escalation_rate``).
+         *     This proxy returns coord's JSON as-is (no response model reshapes it), so
+         *     both reach the frontend without a change here.
          *
          *     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
          */
@@ -71788,6 +71858,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_operator_touches_get: {
+        parameters: {
+            query?: {
+                window_days?: string | null;
+                disposition?: string | null;
+                open_only?: string | null;
+                actionable_only?: string | null;
+                limit?: string | null;
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_operator_touches_constraint_verdict_get: {
+        parameters: {
+            query?: {
+                window_days?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
