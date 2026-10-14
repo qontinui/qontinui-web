@@ -37,7 +37,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "sessresume_01"
-_PARENT_REVISION_ID = "leader_worker_runs_01"
+_PARENT_REVISION_ID = "provfacets_01"
 _REVISION_FILENAME = "sessresume_01_session_unfinished_resume_columns.py"
 
 # (table, column, data_type, is_nullable)

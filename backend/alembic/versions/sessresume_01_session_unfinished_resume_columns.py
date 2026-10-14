@@ -1,7 +1,7 @@
 """coord.sessions resume bookkeeping columns + tenant resume_unfinished_enabled
 
 Revision ID: sessresume_01
-Revises: leader_worker_runs_01
+Revises: provfacets_01
 Create Date: 2026-10-06
 
 Phase 0 (schema only) of plan
@@ -26,7 +26,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "sessresume_01"
-down_revision: str | Sequence[str] | None = "leader_worker_runs_01"
+down_revision: str | Sequence[str] | None = "provfacets_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
