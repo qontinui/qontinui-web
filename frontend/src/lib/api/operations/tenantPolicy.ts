@@ -91,8 +91,8 @@ export async function fetchFleetPolicy(
   domain: string,
   repo?: string
 ): Promise<FleetPolicyView> {
-  const repoParam = repo ? `&repo=${encodeURIComponent(repo)}` : "";
-  const url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}${repoParam}`;
+  let url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}`;
+  if (repo) url += `&repo=${encodeURIComponent(repo)}`;
   const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
   return readJson<FleetPolicyView>(res, `GET ${url}`);
 }
