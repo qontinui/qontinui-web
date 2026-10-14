@@ -28,7 +28,7 @@ import { describe, expect, it } from "vitest";
  * (`ApiConfig.getBaseUrl()`) until the Vercel rewrite is measured for
  * long-lived streaming bodies.
  */
-const PINNED_COUNT = 1;
+const PINNED_COUNT = 0;
 
 const SRC_ROOT = path.resolve(__dirname, "../../..");
 
