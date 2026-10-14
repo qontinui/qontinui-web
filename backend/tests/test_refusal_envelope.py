@@ -48,6 +48,7 @@ from app.core.refusal import (
     refusal_payload,
 )
 from app.middleware.error_handler import http_exception_handler
+from tests._ops_patch import patch_ops
 
 # --- the helper -------------------------------------------------------------
 
@@ -486,7 +487,18 @@ class _Raising:
     async def _raise(self, *args: object, **kwargs: object) -> None:
         raise self._exc
 
-    get = post = put = patch = delete = _raise
+    get = post = put = patch = delete = request = _raise
+
+    def stream(self, *args: object, **kwargs: object) -> Any:
+        """``client.stream(...)`` is entered with ``async with``."""
+        exc = self._exc
+
+        @asynccontextmanager
+        async def _cm() -> Any:
+            raise exc
+            yield  # pragma: no cover - makes this a generator
+
+        return _cm()
 
 
 #: ``operations.httpx`` is the global ``httpx`` module, so this one string
@@ -631,3 +643,160 @@ async def test_coord_read_timeout_carries_no_reread_target() -> None:
     with _client_raising(timeout), pytest.raises(HTTPException) as info:
         await operations._proxy_coord_get("/x")
     assert info.value.refusal.next_action.target is None
+
+
+# ---------------------------------------------------------------------------
+# Every remaining converted operations site: its kind, discriminator and
+# target, for a connect failure and a timeout.
+# ---------------------------------------------------------------------------
+
+_TENANT = uuid4()
+
+#: (name, call, decides) where ``decides`` is True for a write (a timeout
+#: may have applied it) and False for a read.
+_OPERATIONS_SITES: list[tuple[str, Any, bool]] = [
+    (
+        "post_github_clone_credential",
+        lambda: operations.post_github_clone_credential(
+            operations.CloneCredentialRequest(repo="o/r"), tenant_id=_TENANT
+        ),
+        True,
+    ),
+    (
+        "_proxy_coord_verbatim_post",
+        lambda: operations._proxy_coord_verbatim("POST", "/x", tenant_id=_TENANT),
+        True,
+    ),
+    (
+        "_proxy_coord_verbatim_get",
+        lambda: operations._proxy_coord_verbatim("GET", "/x", tenant_id=_TENANT),
+        False,
+    ),
+    (
+        "post_pr_merge_onboarding_connect_state",
+        lambda: operations.post_pr_merge_onboarding_connect_state(
+            operations.OnboardingConnectStateRequest(flow="connect"),
+            tenant_id=_TENANT,
+        ),
+        True,
+    ),
+    (
+        "post_pr_merge_onboarding_claim",
+        lambda: operations.post_pr_merge_onboarding_claim(
+            operations.OnboardingClaimRequest(code="c"), tenant_id=_TENANT
+        ),
+        True,
+    ),
+    (
+        "post_pr_merge_onboarding_enroll",
+        lambda: operations.post_pr_merge_onboarding_enroll(7, tenant_id=_TENANT),
+        True,
+    ),
+    (
+        "post_pr_merge_onboarding_restore_repo",
+        lambda: operations.post_pr_merge_onboarding_restore_repo(
+            "o/r", tenant_id=_TENANT
+        ),
+        True,
+    ),
+    (
+        "_proxy_coord_passthrough_post",
+        lambda: operations._proxy_coord_passthrough("POST", "/x", tenant_id=_TENANT),
+        True,
+    ),
+    (
+        "_proxy_coord_passthrough_get",
+        lambda: operations._proxy_coord_passthrough("GET", "/x", tenant_id=_TENANT),
+        False,
+    ),
+    (
+        "get_coord_session_restore_record",
+        lambda: operations.get_coord_session_restore_record(uuid4(), tenant_id=_TENANT),
+        False,
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("call", "write"),
+    [pytest.param(c, w, id=n) for n, c, w in _OPERATIONS_SITES],
+)
+async def test_every_converted_operations_site_names_its_next_action(
+    call: Any, write: bool
+) -> None:
+    connect = httpx.ConnectError("refused", request=_REQ)
+    with _client_raising(connect), pytest.raises(HTTPException) as info:
+        await call()
+    assert info.value.status_code == 502
+    assert _kind(info.value) == (
+        "upstream_unavailable",
+        "retry_later",
+        "coord_unreachable",
+    )
+    # Nothing was sent, so there is nothing to re-check first.
+    assert info.value.refusal.next_action.target is None
+
+    timeout = httpx.ReadTimeout("slow", request=_REQ)
+    with _client_raising(timeout), pytest.raises(HTTPException) as info:
+        await call()
+    assert info.value.status_code == 504
+    # A write's timeout names the re-check; a read's does not. Flipping a
+    # site's `write=` turns one of these red.
+    assert _kind(info.value) == (
+        "upstream_timeout",
+        "retry_later",
+        "coord_write_timeout" if write else "coord_timeout",
+    )
+    assert info.value.refusal.next_action.target == (
+        operations._REREAD_BEFORE_RETRY if write else None
+    )
+    assert info.value.detail == operations.COORD_TIMEOUT_DETAIL
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    [
+        (
+            httpx.ConnectError("refused", request=_REQ),
+            ("upstream_unavailable", "retry_later", "coord_unreachable"),
+        ),
+        (
+            httpx.ReadTimeout("slow", request=_REQ),
+            ("upstream_timeout", "retry_later", "coord_timeout"),
+        ),
+    ],
+)
+async def test_device_status_transport_failures_are_read_refusals(
+    raised: Exception, expected: tuple
+) -> None:
+    with (
+        patch_ops("fetch_device_status", side_effect=raised),
+        pytest.raises(HTTPException) as info,
+    ):
+        await operations.get_device_status(since=None, tenant_id=_TENANT)
+    assert _kind(info.value) == expected
+    assert info.value.refusal.next_action.target is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper", ["verbatim", "passthrough"])
+async def test_method_decided_helpers_read_a_lower_case_verb_the_same_way(
+    helper: str,
+) -> None:
+    """Both method-decided helpers normalise the verb, so ``"get"`` is a read
+    and ``"post"`` a write exactly as their upper-case spellings are."""
+    fn = (
+        operations._proxy_coord_verbatim
+        if helper == "verbatim"
+        else operations._proxy_coord_passthrough
+    )
+    timeout = httpx.ReadTimeout("slow", request=_REQ)
+    for verb, discriminator in (
+        ("get", "coord_timeout"),
+        ("post", "coord_write_timeout"),
+    ):
+        with _client_raising(timeout), pytest.raises(HTTPException) as info:
+            await fn(verb, "/x", tenant_id=_TENANT)
+        assert _kind(info.value)[2] == discriminator, verb

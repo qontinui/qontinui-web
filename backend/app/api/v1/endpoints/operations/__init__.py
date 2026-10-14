@@ -3103,16 +3103,19 @@ async def _proxy_coord_passthrough(
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id)
+    # One normalised verb decides both the call made and whether a timeout
+    # may have written, so the two can never disagree.
+    is_get = method.upper() == "GET"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            if method == "GET":
+            if is_get:
                 resp = await client.get(url, headers=headers)
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout(write=method != "GET")
+            raise _coord_timeout(write=not is_get)
     try:
         payload: Any = resp.json()
     except ValueError:
