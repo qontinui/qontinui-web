@@ -2289,6 +2289,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/build-records/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Build Record Products
+         * @description The tenant's product definitions (``{products: [...]}``), from coord.
+         */
+        get: operations["api_v1_build_records_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/products/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Build Record Product
+         * @description Create or replace one product definition. Tenant admins only: this is
+         *     the switch that makes a product publishable (``is_public``).
+         *
+         *     ``is_public: false`` — or a ``repos`` list that no longer covers every repo
+         *     the live snapshot names — retracts this tenant's live public snapshot of
+         *     the slug FIRST and commits, then calls coord — so whatever coord answers, the
+         *     page is not left public under a product that was just made private. The
+         *     ``X-Build-Record-Retracted`` header says whether this request retracted.
+         */
+        put: operations["api_v1_build_records_products_slug_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Build Records
+         * @description Retract every live public build record of this tenant whose coord
+         *     product is gone, private or another tenant's — now, with the caller's own
+         *     coord credential — or whose snapshot names a repo the product no longer
+         *     includes. GitHub visibility is NOT re-checked here: that spends the shared
+         *     anonymous GitHub budget and runs only as the scheduled
+         *     ``build_record_visibility_recheck`` task. The same reconcile also runs on the in-process scheduler
+         *     every 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for
+         *     the launch kit and the operator notice, which should not wait for a tick.
+         *
+         *     A coord read that fails is a refusal (coord's status), never an empty
+         *     listing — an unanswered question retracts nothing.
+         */
+        post: operations["api_v1_build_records_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record
+         * @description The live ``build-record/1`` document for one product, from coord.
+         *
+         *     coord's 404 ``{"error": "build_record_product_not_found"}`` passes through
+         *     as a structured detail.
+         */
+        get: operations["api_v1_build_records_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record Publication
+         * @description The caller's tenant's publication state for ``slug`` (any member):
+         *     whether it owns the public address, whether it is currently unpublished,
+         *     and the latest snapshot's version and digest. Read-only; no coord call.
+         */
+        get: operations["api_v1_build_records_slug_publication_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Build Record
+         * @description Freeze the product's current build record as its next public version.
+         *
+         *     Refuses (nothing stored) when:
+         *
+         *     * another tenant already owns this public slug → 409
+         *       ``public_slug_owned_by_another_tenant``;
+         *     * the slug is retracted and the body does not say ``reactivate: true`` →
+         *       409 ``build_record_retracted``;
+         *     * the product does not exist in the caller's tenant → 404;
+         *     * coord's product row names a different tenant → 409
+         *       ``build_record_tenant_mismatch``;
+         *     * the product's ``is_public`` is not ``true`` → 409 (D3: nothing is public
+         *       by default);
+         *
+         *     — and in those three cases a LIVE snapshot this tenant owns is retracted
+         *     on the spot (``retracted`` in the refusal says whether it was);
+         *
+         *     * coord's document fails the D3 allowlist, names another product, or lists
+         *       a repo outside the product definition → 502 (coord sent something it
+         *       must not; the violations are listed);
+         *     * coord's ``generated_at`` is outside [now − 15 min, now + 5 min] → 502
+         *       ``build_record_generated_at_out_of_window``;
+         *     * GitHub, asked anonymously, does not confirm a listed repo is public →
+         *       502 ``build_record_repo_not_public`` (it said private / absent) or
+         *       ``build_record_repo_visibility_unknown`` (no answer, rate limit, error);
+         *       refused without asking when the product has more than 50 repos (409
+         *       ``build_record_too_many_repos``) or the shared GitHub budget is at its
+         *       publish reserve (502 ``build_record_repo_visibility_budget_reserved``);
+         *     * the slug was retracted or re-activated while coord was being asked → 409
+         *       ``build_record_retraction_changed``;
+         *     * the document is older than the latest snapshot → 409
+         *       ``build_record_stale``.
+         *
+         *     After storing, the product is read from coord once more; if it went
+         *     private (or the read fails) in the meantime, the new version is retracted
+         *     at once and the answer is 409 ``build_record_product_not_public`` /
+         *     502 ``build_record_post_publish_check_unanswered`` with ``retracted``.
+         */
+        post: operations["api_v1_build_records_slug_publish_post"];
+        /**
+         * Unpublish Build Record
+         * @description D7's one-step unpublish: retract the public address immediately.
+         *
+         *     ``GET /api/v1/public/build-records/{slug}`` answers 404 from the moment
+         *     this commits. Every snapshot row is kept as history and the tenant keeps
+         *     the slug; ``POST /{slug}/publish`` with ``{"reactivate": true}``
+         *     re-activates it as the next version. Idempotent: unpublishing a retracted
+         *     slug keeps its first retraction time.
+         *
+         *     Refuses with the publish route's own answers: 404
+         *     ``build_record_not_published`` when nothing was ever published under the
+         *     slug, 409 ``public_slug_owned_by_another_tenant`` when another tenant owns
+         *     it. coord is not consulted — retraction must work while coord is down.
+         */
+        delete: operations["api_v1_build_records_slug_publish_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/capture/actions/batch": {
         parameters: {
             query?: never;
@@ -7815,6 +8008,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/internal/coord-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Coord Push
+         * @description Push one notification to every active device of the named users.
+         *
+         *     ``devices: 0`` is an answer, not an error: coord maps it to the item's
+         *     ``no_devices`` state. Expo failures are counted, not raised, so the
+         *     response is always the counts — a non-2xx from this route means the call
+         *     itself was refused (401 secret, 422 body), never that Expo failed.
+         */
+        post: operations["api_v1_internal_coord_push_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/issues": {
         parameters: {
             query?: never;
@@ -8838,6 +9056,61 @@ export interface paths {
          */
         put: operations["api_v1_notifications_notification_id_read_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/action-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Operator Action Items
+         * @description Return the tenant's operator action items.
+         *
+         *     Response envelope mirrors coord:
+         *     ``{"items": [...], "next_cursor": str|null,
+         *     "counts": {"open": N, "done": N, "dismissed": N}}``. ``counts`` are
+         *     server-computed over the whole tenant, not the page — consumers read them
+         *     rather than counting ``items``.
+         *
+         *     Every param is forwarded **verbatim** and only when the caller set it;
+         *     bounds live in coord (one clamp, one place). Tenant-scoped and
+         *     operator-bearer-forwarding, same posture as ``/operations/notifications``.
+         */
+        get: operations["api_v1_operations_action_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/action-items/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Operator Action Items Resolve
+         * @description Resolve an action item as ``done`` or ``dismissed``.
+         *
+         *     Coord answers ``{"item": {...}}``; ``resolved_by`` is the principal coord
+         *     derives from the forwarded bearer, never a body field. Coord's 404 (an item
+         *     outside the caller's tenant) and 409 ``already_resolved`` pass through with
+         *     coord's status.
+         */
+        post: operations["api_v1_operations_action_items_resolve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13018,6 +13291,10 @@ export interface paths {
          * Reject Gate
          * @description Reject an OperatorApproval gate (operator bearer forwarded —
          *     fleet-auth P2/D6).
+         *
+         *     The optional JSON body ``{"reason": ...}`` carries the reason. It is
+         *     forwarded to coord stripped, and only when non-blank; an absent body or a
+         *     blank reason forwards ``{}``.
          */
         post: operations["api_v1_operations_gates_gate_id_reject_post"];
         delete?: never;
@@ -20301,6 +20578,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Public Build Record
+         * @description The latest published snapshot of a product's build record, without
+         *     authentication.
+         *
+         *     Serves ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,
+         *     which refuses a product that is not opted in (``is_public``) and
+         *     re-validates the D3 allowlist before storing. It never proxies to coord,
+         *     so the authed export is never reachable from here. 404 when nothing has
+         *     been published under ``slug``, or when its owner has unpublished it
+         *     (``DELETE /api/v1/build-records/{slug}/publish``).
+         *
+         *     A snapshot validated under an older allowlist version is re-validated
+         *     against the current one (once per process, cached, off the event loop
+         *     under a dedicated limiter) and 404s if it fails; one validated under the
+         *     current version is served on its stored verdict. Rate-limited per peer
+         *     (:data:`PUBLIC_BUILD_RECORD_RATE_LIMIT`). Every answer carries
+         *     ``Cache-Control: no-store`` so an unpublish is not outlived by a cached
+         *     copy.
+         *
+         *     ``content_sha256`` is the SHA-256 of ``document`` serialized with sorted
+         *     keys and no insignificant whitespace, so a reader can verify it.
+         */
+        get: operations["api_v1_public_build_records_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/projects": {
         parameters: {
             query?: never;
@@ -25084,6 +25400,34 @@ export interface components {
             to_state?: string | null;
         };
         /**
+         * ActionItemResolveBody
+         * @description Body for ``POST /operations/action-items/resolve``.
+         *
+         *     Mirrors coord's resolve request. **Coord remains the authority** — this is
+         *     defence in depth at the boundary and must never accept something coord
+         *     rejects. ``extra="forbid"`` makes a misspelled field a loud 422 here
+         *     instead of a silently dropped key.
+         */
+        ActionItemResolveBody: {
+            /**
+             * Item Id
+             * Format: uuid
+             * @description The action item to resolve.
+             */
+            item_id: string;
+            /**
+             * Note
+             * @description Optional resolution note, at most 1000 characters.
+             */
+            note?: string | null;
+            /**
+             * Status
+             * @description Terminal status. Re-sending the same one is idempotent; a different one answers coord's 409 `already_resolved`.
+             * @enum {string}
+             */
+            status: "done" | "dismissed";
+        };
+        /**
          * ActionReliabilityStats
          * @description Reliability statistics for an action type.
          */
@@ -25984,6 +26328,24 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * AllCapableAtCapacityOutcome
+         * @description Capable, undrained online devices exist and every one is at its
+         *     ``max_concurrent_agents`` cap.
+         */
+        AllCapableAtCapacityOutcome: {
+            /** Capable Devices */
+            capable_devices: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_at_capacity";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
         /** AllCapableDrainedOutcome */
         AllCapableDrainedOutcome: {
             /**
@@ -25994,7 +26356,41 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableOfflineOutcome
+         * @description No ONLINE device is capable, but a capable one was seen recently —
+         *     bring it up rather than look for another.
+         */
+        AllCapableOfflineOutcome: {
+            /** Capable Offline */
+            capable_offline: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_offline";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableRoleClosedOutcome
+         * @description Every capable device (online, or offline but seen recently) is closed by
+         *     its DISPATCH ROLE (bench / ci_node) — only a role change helps.
+         */
+        AllCapableRoleClosedOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_role_closed";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
         };
         /** AllocationRead */
         AllocationRead: {
@@ -27567,6 +27963,87 @@ export interface components {
             target_element_id: string | null;
         };
         /**
+         * BuildRecordProductWrite
+         * @description Body of ``PUT /products/{slug}`` — the coord contract's product fields.
+         */
+        BuildRecordProductWrite: {
+            /**
+             * Is Public
+             * @default false
+             */
+            is_public: boolean;
+            /** Repos */
+            repos?: string[];
+            /** Title */
+            title: string;
+            /** Window End */
+            window_end?: string | null;
+            /** Window Start */
+            window_start?: string | null;
+        };
+        /**
+         * BuildRecordPublication
+         * @description What ``GET /{slug}/publication`` returns, for the CALLER's tenant.
+         */
+        BuildRecordPublication: {
+            /** Content Sha256 */
+            content_sha256: string | null;
+            /** Owned By Caller Tenant */
+            owned_by_caller_tenant: boolean;
+            /** Public Slug */
+            public_slug: string;
+            /** Unpublished */
+            unpublished: boolean;
+            /** Version */
+            version: number | null;
+        };
+        /**
+         * BuildRecordPublishRequest
+         * @description Optional body of ``POST /{slug}/publish``.
+         */
+        BuildRecordPublishRequest: {
+            /**
+             * Reactivate
+             * @default false
+             */
+            reactivate: boolean;
+        };
+        /**
+         * BuildRecordPublishResult
+         * @description What ``POST /{slug}/publish`` returns.
+         */
+        BuildRecordPublishResult: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Public Slug */
+            public_slug: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * BuildRecordReconcileResult
+         * @description What ``POST /reconcile`` returns.
+         */
+        BuildRecordReconcileResult: {
+            /** Retracted */
+            retracted: string[];
+        };
+        /**
+         * BuildRecordUnpublishResult
+         * @description What ``DELETE /{slug}/publish`` returns.
+         */
+        BuildRecordUnpublishResult: {
+            /** Latest Version */
+            latest_version: number | null;
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Unpublished At
+             * Format: date-time
+             */
+            unpublished_at: string;
+        };
+        /**
          * BulkAnnotationError
          * @description Schema for bulk operation error
          */
@@ -28611,11 +29088,17 @@ export interface components {
             domain: string;
             /** Repos */
             repos?: components["schemas"]["CiHostingRepoReading"][];
+            /** Repos Unknown Reason */
+            repos_unknown_reason?: string | null;
             tenant_default: components["schemas"]["CiHostingReading"];
         };
         /**
          * CiNodeConfig
-         * @description The four ``CiNodeSettings`` fields, with the runner's own defaults.
+         * @description The ``CiNodeSettings`` fields, with the runner's own defaults.
+         *
+         *     ``model_access`` is the exception: its default is ``None`` ("not set
+         *     here"), not the runner's ``True``, because an absent value must leave the
+         *     runner's stored consent alone rather than overwrite it.
          *
          *     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
          *     on purpose: a machine that has never been configured here must round-trip
@@ -28636,6 +29119,8 @@ export interface components {
              * @default 20
              */
             min_free_disk_gb: number;
+            /** Model Access */
+            model_access?: boolean | null;
             /** Repo Allowlist */
             repo_allowlist?: string[];
         };
@@ -30012,6 +30497,85 @@ export interface components {
              * @enum {string}
              */
             written_mode: "in_session_with_spawn_fallback" | "spawn_always" | "notify_only";
+        };
+        /**
+         * CoordPushRequest
+         * @description Body coord sends to ``POST /internal/coord-push``.
+         *
+         *     Deliberately carries NO ``category`` / ``channel_id`` (plan D7): a push
+         *     naming an Android channel the device has not created is not displayed
+         *     while Expo still returns an ``ok`` ticket, which would turn ``accepted``
+         *     into an invisible failure.
+         */
+        CoordPushRequest: {
+            /**
+             * Body
+             * @description Notification body, at most 1000 UTF-8 bytes. Coord sends at most 180 characters.
+             */
+            body: string;
+            /**
+             * Collapse Id
+             * @description Newer pushes with the same id replace older ones on the device.
+             */
+            collapse_id?: string | null;
+            /**
+             * Data
+             * @description Opaque payload delivered to the app (e.g. the deep link). At most 1024 bytes as serialized JSON.
+             */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "high" | "default";
+            /**
+             * Title
+             * @description At most 200 characters and 600 UTF-8 bytes.
+             */
+            title: string;
+            /**
+             * User Ids
+             * @description Web user ids (auth.users.id) to push to. 1-50.
+             */
+            user_ids: string[];
+        };
+        /**
+         * CoordPushResponse
+         * @description Per-request counts coord records as the item's push state.
+         */
+        CoordPushResponse: {
+            /**
+             * Accepted
+             * @description Tickets Expo answered with status ok.
+             */
+            accepted: number;
+            /**
+             * Deactivated
+             * @description Tokens deactivated because their ticket said DeviceNotRegistered.
+             */
+            deactivated: number;
+            /**
+             * Devices
+             * @description Active push devices the batch was sent to.
+             */
+            devices: number;
+            /**
+             * Errors
+             * @description At most 3 error messages, first seen first.
+             */
+            errors: string[];
+            /**
+             * Failed
+             * @description Messages without an ok ticket.
+             */
+            failed: number;
+            /**
+             * Users
+             * @description Distinct requested users with >= 1 active device.
+             */
+            users: number;
         };
         /**
          * CoordSignal
@@ -31993,7 +32557,7 @@ export interface components {
          * DeviceResolveResponse
          * @description ``POST /api/v1/devices/resolve`` — always 200, switch on ``outcome``.
          */
-        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"];
+        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableOfflineOutcome"] | components["schemas"]["AllCapableAtCapacityOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["AllCapableRoleClosedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"] | components["schemas"]["UnknownOutcome"];
         /**
          * DeviceResponse
          * @description Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.
@@ -36999,6 +37563,14 @@ export interface components {
             name: string;
         };
         /**
+         * GateRejectRequest
+         * @description Optional JSON body of ``POST /gates/{gate_id}/reject``.
+         */
+        GateRejectRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * GenerateDescriptionRequest
          * @description Request to generate LLM description for an element region.
          */
@@ -40439,7 +41011,19 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            /**
+             * Stale Capable
+             * @description Capable devices last seen before coord's offline window (reported, never waited for). 0 from a coord that predates the field.
+             * @default 0
+             */
+            stale_capable: number;
+            /**
+             * Unprobed Online Devices
+             * @description Online devices that have not run the cred probes while a cred: token is required. 0 from a coord that predates the field.
+             * @default 0
+             */
+            unprobed_online_devices: number;
         };
         /**
          * NodeMetadata
@@ -42541,7 +43125,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained";
+            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity";
         };
         /**
          * PlanCandidate
@@ -43977,6 +44561,27 @@ export interface components {
             version_number: number;
         };
         /**
+         * PublicBuildRecord
+         * @description The latest frozen version of a published build record.
+         */
+        PublicBuildRecord: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Document */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
          * PushDeviceRegister
          * @description Schema for registering a push device token.
          */
@@ -45369,7 +45974,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
             /**
              * Via
              * @enum {string}
@@ -52031,6 +52636,26 @@ export interface components {
             package_id: number;
         };
         /**
+         * UnknownOutcome
+         * @description Coord answered a 200 with an ``outcome`` tag this build does not know.
+         *
+         *     Not ``malformed_response``: coord spoke the contract's envelope, it just
+         *     has an arm this build predates. ``raw_outcome`` is coord's tag verbatim so
+         *     the gap is named, not swallowed. Names no device — never a pick.
+         */
+        UnknownOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "unknown_outcome";
+            /**
+             * Raw Outcome
+             * @description Coord's outcome tag, verbatim.
+             */
+            raw_outcome: string;
+        };
+        /**
          * UnreadCountResponse
          * @description Schema for unread notification count response.
          */
@@ -58091,6 +58716,209 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_build_records_products_slug_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordProductWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordReconcileResult"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publication_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublication"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordPublishRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublishResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordUnpublishResult"];
                 };
             };
             /** @description Validation Error */
@@ -66882,6 +67710,41 @@ export interface operations {
             };
         };
     };
+    api_v1_internal_coord_push_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Coord-Service-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoordPushRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoordPushResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_issues_get: {
         parameters: {
             query?: {
@@ -69047,6 +69910,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_action_items_get: {
+        parameters: {
+            query?: {
+                /** @description `open` (coord's default) | `done` | `dismissed` | `all`. Forwarded verbatim — coord owns the vocabulary and answers 400 otherwise. */
+                status?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description Opaque keyset cursor from a prior response's ``next_cursor``. */
+                cursor?: string | null;
+                /** @description Return at most this one item (any status). */
+                item_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_action_items_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionItemResolveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -73468,16 +74402,18 @@ export interface operations {
     };
     api_v1_operations_gates_gate_id_reject_post: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 gate_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GateRejectRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -84030,6 +84966,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionRestoreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_public_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicBuildRecord"];
                 };
             };
             /** @description Validation Error */

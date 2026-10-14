@@ -79,10 +79,11 @@ function errorText(...candidates: unknown[]): string | null {
  * (`chat_session_state`, `chat_message_ack`, `error`, `chat_output`, …). Its
  * `chat_response` broadcast carries an `AiOutputEvent` under `data`, which
  * spells it `taskRunId` (qontinui-runner `mcp/shared.rs`). A relay chat
- * session's own output names no run: the runner spawns it without a session
- * context (`backend_relay.rs` `handle_chat_create`). The backend's own frames
- * name none either. (The runner would rewrap a `session-state` broadcast the
- * same way, under `data`, but nothing on the runner produces one.)
+ * session's output names its run on a runner that spawns it with a session
+ * context (`backend_relay.rs` `handle_chat_create`); an older runner spawned it
+ * without one, so its output names no run. The runner's `session-state`
+ * broadcast arrives as `chat_session_state` with the same `data.taskRunId`.
+ * The backend's own frames name none.
  */
 function frameRunId(msg: Record<string, unknown>): string | null {
   if (typeof msg.task_run_id === "string" && msg.task_run_id) {
@@ -95,6 +96,47 @@ function frameRunId(msg: Record<string, unknown>): string | null {
   }
   return null;
 }
+
+/** Every state `AiSessionState` admits. */
+const KNOWN_SESSION_STATES: ReadonlySet<string> = new Set<AiSessionState>([
+  "connecting",
+  "initializing",
+  "ready",
+  "processing",
+  "interrupting",
+  "closed",
+  "disconnected",
+  "error",
+  "not_found",
+  "restoring",
+]);
+
+/**
+ * The runner's own state word, read as an `AiSessionState`, or `null` when it
+ * names none this page models. The runner's `SessionState::as_event_str` also
+ * says `created`, `promoting` and `closing` (qontinui-runner
+ * `claude_session/state.rs`), which its `session-state` broadcast now sends on
+ * every transition; they map to the nearest state rather than leaking through
+ * as values the UI does not know.
+ */
+export function toAiSessionState(raw: unknown): AiSessionState | null {
+  if (typeof raw !== "string") return null;
+  switch (raw) {
+    case "created":
+      return "initializing";
+    case "promoting":
+      return "processing";
+    case "closing":
+      return "closed";
+    default:
+      return KNOWN_SESSION_STATES.has(raw) ? (raw as AiSessionState) : null;
+  }
+}
+
+/** How long a reconnect waits before retrying a reload the relay refused. */
+const RELOAD_RETRY_MS = 5000;
+/** Retries of a refused reload per socket — about a minute of a runner away. */
+const RELOAD_MAX_RETRIES = 12;
 
 /** The requests that load a session: its live state, then its transcript. */
 function sessionLoadRequests(taskRunId: string): Record<string, unknown>[] {
@@ -134,10 +176,90 @@ export function useChatWebSocket({
    * has answered; `null` when none is outstanding.
    */
   const pendingCreateTaskNameRef = useRef<string | null>(null);
-  /** A run `loadSession` named before the socket could carry its requests. */
-  const pendingLoadRef = useRef<string | null>(null);
+  /**
+   * The run `loadSession` named — a conversation that already existed when
+   * this page opened, so its transcript is the runner's to supply. `null` for
+   * a conversation this hook created (its transcript is what it rendered).
+   */
+  const loadedTaskRunIdRef = useRef<string | null>(null);
+  /**
+   * How many requests a reconnect's reload sent that the relay has not yet
+   * answered with `<type>_sent` or its own `error`. The relay answers each
+   * request on this socket in order, so while this is non-zero an `error`
+   * of the relay's is its failure to forward one of them.
+   */
+  const reloadForwardsPendingRef = useRef(0);
+  /** Whether the relay refused to forward any request of the current reload. */
+  const reloadRefusedRef = useRef(false);
+  /** Retries of a refused reload on the current socket. */
+  const reloadRetriesRef = useRef(0);
+  const reloadRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  /**
+   * Whether a socket of this hook has been admitted by the relay (its
+   * `connected` frame) — an open after that is a reconnect. Set on the frame
+   * rather than on open, so an orphaned StrictMode socket that opens first
+   * does not make the real first open read as a reconnect.
+   */
+  const hasConnectedRef = useRef(false);
   const streamingBufferRef = useRef("");
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  /**
+   * Ask the runner for this conversation's run again: its state, and its
+   * transcript too when the conversation was loaded rather than created (a
+   * created one's transcript is what this hook rendered — a caller may show
+   * different text than the prompt it sent, e.g. Ask the Twin's question
+   * without its preamble — and the runner's log would replace it).
+   *
+   * A `probe` is a reload the page did not ask for (a reconnect's): if the
+   * relay cannot forward it — its runner has not reconnected yet — the
+   * conversation has not failed, so that is not reported (it would end Ask
+   * the Twin's session and toast the chat page on every blip); the reload is
+   * retried instead, because nothing else tells this page when the runner
+   * is back.
+   */
+  const sendReload = useCallback((probe: boolean) => {
+    const ws = wsRef.current;
+    const activeRun = activeTaskRunIdRef.current;
+    reloadForwardsPendingRef.current = 0;
+    reloadRefusedRef.current = false;
+    if (!ws || ws.readyState !== WebSocket.OPEN || activeRun === null) return;
+    const requests =
+      activeRun === loadedTaskRunIdRef.current
+        ? sessionLoadRequests(activeRun)
+        : sessionLoadRequests(activeRun).slice(0, 1);
+    for (const request of requests) {
+      ws.send(JSON.stringify(request));
+    }
+    if (probe) reloadForwardsPendingRef.current = requests.length;
+  }, []);
+
+  /** One reload request was answered; retry the reload if it was refused. */
+  const settleReloadForward = useCallback(
+    (refused: boolean) => {
+      reloadForwardsPendingRef.current--;
+      if (refused) reloadRefusedRef.current = true;
+      if (reloadForwardsPendingRef.current > 0 || !reloadRefusedRef.current) {
+        return;
+      }
+      if (reloadRetriesRef.current >= RELOAD_MAX_RETRIES) {
+        // The runner has been away for about a minute: say that what this
+        // page shows may be out of date rather than leave it there silently.
+        setSessionError(
+          "Lost contact with your runner — this conversation may be out of date."
+        );
+        return;
+      }
+      const ws = wsRef.current;
+      reloadRetryTimeoutRef.current = setTimeout(() => {
+        reloadRetryTimeoutRef.current = null;
+        if (wsRef.current !== ws) return;
+        reloadRetriesRef.current++;
+        sendReload(true);
+      }, RELOAD_RETRY_MS);
+    },
+    [sendReload]
+  );
 
   // Build WebSocket URL for the chat endpoint
   const connectWebSocket = useCallback(async () => {
@@ -177,18 +299,14 @@ export function useChatWebSocket({
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
 
-        // Send the load a page asked for before this socket was open — if it
-        // is still about this conversation's run (see `loadSession`).
-        const pendingLoad = pendingLoadRef.current;
-        pendingLoadRef.current = null;
-        if (
-          pendingLoad !== null &&
-          pendingLoad === activeTaskRunIdRef.current
-        ) {
-          for (const request of sessionLoadRequests(pendingLoad)) {
-            ws.send(JSON.stringify(request));
-          }
-        }
+        // (Re)learn this conversation's run on every open. On the first one
+        // that is the load a page asked for before the socket could carry it
+        // (see `loadSession`). On a reconnect it is what the gap missed: the
+        // relay does not replay frames, so a state change or the end of an
+        // answer that happened while this socket was down is otherwise never
+        // seen, and the page stays on a stale `processing` or `ready`.
+        reloadRetriesRef.current = 0;
+        sendReload(hasConnectedRef.current);
 
         // Start ping interval
         pingIntervalRef.current = setInterval(() => {
@@ -204,6 +322,10 @@ export function useChatWebSocket({
         if (wsRef.current !== ws) return;
         setIsConnected(false);
         wsRef.current = null;
+        if (reloadRetryTimeoutRef.current) {
+          clearTimeout(reloadRetryTimeoutRef.current);
+          reloadRetryTimeoutRef.current = null;
+        }
 
         if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
@@ -281,7 +403,8 @@ export function useChatWebSocket({
 
       switch (type) {
         case "connected":
-          // Connection established
+          // The relay admitted this socket: a later open is a reconnect.
+          hasConnectedRef.current = true;
           break;
 
         case "pong":
@@ -365,7 +488,8 @@ export function useChatWebSocket({
             (msg.state as string) ||
             ((msg.data as Record<string, unknown>)?.state as string) ||
             "not_found";
-          const state = rawState;
+          const state = toAiSessionState(rawState);
+          if (state === null) break;
           const canSend = msg.can_send as boolean;
           const canInterrupt = msg.can_interrupt as boolean;
 
@@ -392,7 +516,7 @@ export function useChatWebSocket({
             ]);
           }
 
-          setSessionState(state as AiSessionState);
+          setSessionState(state);
 
           // Also use can_send/can_interrupt for more precise state
           if (canSend && state !== "closed") {
@@ -413,9 +537,9 @@ export function useChatWebSocket({
               errorText(msg.error) ?? "The runner did not accept the message."
             );
           }
-          const ackState = msg.state as string;
+          const ackState = toAiSessionState(msg.state);
           if (ackState) {
-            setSessionState(ackState as AiSessionState);
+            setSessionState(ackState);
           }
           break;
         }
@@ -467,6 +591,13 @@ export function useChatWebSocket({
           // Session renamed - handled externally via callback
           break;
 
+        case "chat_session_state_sent":
+        case "chat_get_output_sent":
+          // The relay forwarded a request; one a reconnect sent is no longer
+          // a probe that can fail (see `reloadForwardsPendingRef`).
+          if (reloadForwardsPendingRef.current > 0) settleReloadForward(false);
+          break;
+
         case "chat_sent":
         case "chat_create_sent":
           // Acknowledgments that messages were forwarded
@@ -481,8 +612,29 @@ export function useChatWebSocket({
           // connected." when it could not forward a request); the runner
           // spells it `error`. Either way the request it answers failed.
           const text = errorText(msg.error, msg.message);
+          // The relay's own errors carry only `message` (no `error`, and no
+          // `request_id` / `code` as the runner's message-spelled errors do);
+          // a runner's run-less error (another tab's bad request reaches
+          // every socket of the device) is not an answer to the probe.
+          if (
+            reloadForwardsPendingRef.current > 0 &&
+            run === null &&
+            msg.error === undefined &&
+            msg.request_id === undefined &&
+            msg.code === undefined
+          ) {
+            log.debug("A reconnect's reload was not forwarded:", text);
+            settleReloadForward(true);
+            break;
+          }
           console.error("[useChatWebSocket] Error:", text);
           setSessionError(text ?? "The relay reported an error.");
+          // One that names no run is the relay's own failure to forward a
+          // request ("Runner is not connected.") or the runner refusing one
+          // it could not read: a generation it was asked for is not coming,
+          // so the wait for it ends. One naming this run answers a specific
+          // request (an interrupt, a rename) and leaves a generation alone.
+          if (run === null) setIsGeneratingWorkflow(false);
           break;
         }
 
@@ -494,7 +646,7 @@ export function useChatWebSocket({
           log.debug("Unhandled message type:", type);
       }
     },
-    [onSessionCreated, onWorkflowGenerated]
+    [onSessionCreated, onWorkflowGenerated, settleReloadForward]
   );
 
   const sendWs = useCallback((data: Record<string, unknown>): boolean => {
@@ -526,6 +678,7 @@ export function useChatWebSocket({
       setSessionError(null);
       setSessionState("disconnected");
       activeTaskRunIdRef.current = null;
+      loadedTaskRunIdRef.current = null;
       if (displayText) {
         setMessages((prev) => [
           ...prev,
@@ -587,24 +740,42 @@ export function useChatWebSocket({
     [sendWs]
   );
 
-  const interruptSession = useCallback(
-    (taskRunId: string) => {
-      sendWs({
-        type: "chat_interrupt",
-        params: { task_run_id: taskRunId },
-      });
+  /**
+   * Send a request about this conversation, reporting one the socket could
+   * not carry: dropped silently, a page went on waiting for an answer that
+   * was never asked for.
+   */
+  const sendRequest = useCallback(
+    (data: Record<string, unknown>, what: string): boolean => {
+      const sent = sendWs(data);
+      if (!sent) {
+        setSessionError(
+          `Not connected to the chat relay — the ${what} was not sent.`
+        );
+      }
+      return sent;
     },
     [sendWs]
   );
 
+  const interruptSession = useCallback(
+    (taskRunId: string) => {
+      sendRequest(
+        { type: "chat_interrupt", params: { task_run_id: taskRunId } },
+        "interrupt"
+      );
+    },
+    [sendRequest]
+  );
+
   const closeSession = useCallback(
     (taskRunId: string) => {
-      sendWs({
-        type: "chat_close",
-        params: { task_run_id: taskRunId },
-      });
+      sendRequest(
+        { type: "chat_close", params: { task_run_id: taskRunId } },
+        "close"
+      );
     },
-    [sendWs]
+    [sendRequest]
   );
 
   const generateWorkflow = useCallback(
@@ -612,18 +783,25 @@ export function useChatWebSocket({
       taskRunId: string,
       options?: { description?: string; includeUIBridge?: boolean }
     ) => {
-      setIsGeneratingWorkflow(true);
-      sendWs({
-        type: "chat_generate_workflow",
-        params: {
-          task_run_id: taskRunId,
-          description:
-            options?.description || "Generate workflow from chat conversation",
-          include_ui_bridge_instructions: options?.includeUIBridge ?? true,
+      // Waiting only for a request that went out: one the socket could not
+      // carry has no answer coming, and "Generating…" would never end.
+      const sent = sendRequest(
+        {
+          type: "chat_generate_workflow",
+          params: {
+            task_run_id: taskRunId,
+            description:
+              options?.description ||
+              "Generate workflow from chat conversation",
+            include_ui_bridge_instructions: options?.includeUIBridge ?? true,
+          },
         },
-      });
+        "workflow request"
+      );
+      // A failed resend leaves a generation already running waited on.
+      if (sent) setIsGeneratingWorkflow(true);
     },
-    [sendWs]
+    [sendRequest]
   );
 
   const getOutput = useCallback(
@@ -638,32 +816,37 @@ export function useChatWebSocket({
 
   const renameSession = useCallback(
     (taskRunId: string, name: string) => {
-      sendWs({
-        type: "chat_rename",
-        params: { task_run_id: taskRunId, name },
-      });
+      sendRequest(
+        { type: "chat_rename", params: { task_run_id: taskRunId, name } },
+        "rename"
+      );
     },
-    [sendWs]
+    [sendRequest]
   );
 
   const loadSession = useCallback(
     (taskRunId: string) => {
       activeTaskRunIdRef.current = taskRunId;
+      loadedTaskRunIdRef.current = taskRunId;
       // Request session state and output. A page loads its session when it
       // mounts, which is before this socket is open (`connectWebSocket`
       // awaits a token first), so these usually cannot go yet: the open
-      // handler sends them then. Dropped instead, the page never learned its
-      // session's state — so it could never send — nor its transcript.
-      const sent = sessionLoadRequests(taskRunId)
-        .map((request) => sendWs(request))
-        .every(Boolean);
-      pendingLoadRef.current = sent ? null : taskRunId;
+      // handler sends them then (it reloads this run on every open).
+      // Dropped instead, the page never learned its session's state — so it
+      // could never send — nor its transcript.
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        for (const request of sessionLoadRequests(taskRunId)) {
+          sendWs(request);
+        }
+      }
     },
     [sendWs]
   );
 
   // Connect on mount
   useEffect(() => {
+    // A socket to a different runner is a first open, not a reconnect.
+    hasConnectedRef.current = false;
     if (runnerId) {
       connectWebSocket();
     }
@@ -678,6 +861,10 @@ export function useChatWebSocket({
       }
       if (pingIntervalRef.current) {
         clearInterval(pingIntervalRef.current);
+      }
+      if (reloadRetryTimeoutRef.current) {
+        clearTimeout(reloadRetryTimeoutRef.current);
+        reloadRetryTimeoutRef.current = null;
       }
     };
   }, [connectWebSocket, runnerId]);

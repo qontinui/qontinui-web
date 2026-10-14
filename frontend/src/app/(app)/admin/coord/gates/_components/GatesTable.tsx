@@ -74,7 +74,7 @@ import type {
 import { summarizeClearanceProvenance } from "@/components/operations/utils";
 import { summarizeContinuation } from "@/components/operations/gatesPredicate";
 import type { ContinuationSpawn } from "@/components/operations/types";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   clearanceBandIndex,
   lookupClearanceBand,

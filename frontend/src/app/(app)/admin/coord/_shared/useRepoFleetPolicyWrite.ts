@@ -2,8 +2,10 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
-import { FLEET_POLICY_API, type FleetPolicyWriteResult } from "./fleetPolicy";
+import {
+  putFleetPolicy,
+  type FleetPolicyView,
+} from "@/lib/api/operations/tenantPolicy";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -61,15 +63,16 @@ export function describeWriteRefusal(err: unknown): string | null {
  *
  * @param domain the fleet-policy domain.
  * @param label  lower-case human name for toasts and the default change note.
- * @param onConfirmed called after a write whose read-back succeeded, so the
- *                    caller can re-read what every repo now resolves (a
- *                    write to one repo cannot change another's, but the
- *                    caller's aggregate is the one source of display).
+ * @param onConfirmed called after a write whose read-back succeeded, with the
+ *                    repo and that read-back. A write to one repo cannot
+ *                    change another's, so a caller may update just that repo
+ *                    from the read-back, or re-read its own aggregate when
+ *                    that is its one source of display.
  */
 export function useRepoFleetPolicyWrite<L extends string>(
   domain: string,
   label: string,
-  onConfirmed?: () => void
+  onConfirmed?: (repo: string, effective: FleetPolicyView) => void
 ) {
   /** The repo whose write is in flight, so only its control spins. */
   const [savingRepo, setSavingRepo] = useState<string | null>(null);
@@ -91,19 +94,16 @@ export function useRepoFleetPolicyWrite<L extends string>(
           delete next[repo];
           return next;
         });
-        const result = await httpClient.put<FleetPolicyWriteResult>(
-          FLEET_POLICY_API,
-          {
-            domain,
-            scope_band: "repo",
-            scope_key: repo,
-            level,
-            master_enabled: true,
-            change_note:
-              changeNote ??
-              `Set ${label} for ${repo} to "${level}" from the console`,
-          }
-        );
+        const result = await putFleetPolicy({
+          domain,
+          scope_band: "repo",
+          scope_key: repo,
+          level,
+          master_enabled: true,
+          change_note:
+            changeNote ??
+            `Set ${label} for ${repo} to "${level}" from the console`,
+        });
         if (result.effective) {
           setReadbackErrors((prev) => {
             if (!(repo in prev)) return prev;
@@ -116,7 +116,7 @@ export function useRepoFleetPolicyWrite<L extends string>(
               ? `${repo}: override cleared — the tenant setting applies.`
               : `${repo}: wrote "${level}".`
           );
-          onConfirmed?.();
+          onConfirmed?.(repo, result.effective);
         } else {
           // Written, but unconfirmed. Do NOT paint the written level.
           const reason = result.readback_error ?? "read-back returned nothing";

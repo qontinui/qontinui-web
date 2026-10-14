@@ -111,6 +111,7 @@ import {
   HEADROOM_LABEL,
   HEADROOM_MEANING,
   hostIsBindingConstraint,
+  cpuTempReading,
   laneShowsSwap,
   pressureAxisIsSwap,
   pressureAxisLabel,
@@ -890,6 +891,43 @@ function Aged({
   return <>{children}</>;
 }
 
+/**
+ * CPU package temperature, display only. No colour ramp: no threshold is
+ * declared (plan D1), so a reading is neutral text. The three states and the
+ * Windows-host rule live in `cpuTempReading`.
+ */
+function TemperatureCell({ row }: { row: StripRow }) {
+  const s = row.sample;
+  if (!s || row.freshness === "unknown") {
+    return <span className="text-muted-foreground">unknown</span>;
+  }
+  const reading = cpuTempReading(s);
+  if (reading.kind === "value") {
+    return (
+      <Aged freshness={row.freshness}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span data-testid="fleet-resource-cpu-temp">{reading.text}</span>
+          </TooltipTrigger>
+          <TooltipContent className="text-[11px]">
+            package temperature, display only
+          </TooltipContent>
+        </Tooltip>
+      </Aged>
+    );
+  }
+  return (
+    <span
+      className="text-muted-foreground"
+      data-testid="fleet-resource-cpu-temp"
+    >
+      {reading.kind === "not_measurable_host"
+        ? "not measured on this host type"
+        : "unknown"}
+    </span>
+  );
+}
+
 /** Free/total memory for the lane, plus the COUPLED figure on a WSL row. */
 function MemoryCell({ row }: { row: StripRow }) {
   const s = row.sample;
@@ -1393,6 +1431,7 @@ export function FleetResourceStrip({
                       </TooltipContent>
                     </Tooltip>
                   </th>
+                  <th className="py-1 pr-3 font-medium">Temperature</th>
                   <th className="py-1 pr-3 font-medium">Memory (per lane)</th>
                   <th className="py-1 pr-3 font-medium">Sample</th>
                 </tr>
@@ -1585,6 +1624,9 @@ export function FleetResourceStrip({
                               unknown
                             </span>
                           )}
+                        </td>
+                        <td className="py-1.5 pr-3 tabular-nums text-[11px]">
+                          <TemperatureCell row={row} />
                         </td>
                         <td className="py-1.5 pr-3">
                           <MemoryCell row={row} />

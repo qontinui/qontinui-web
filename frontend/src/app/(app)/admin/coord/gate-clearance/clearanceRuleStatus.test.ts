@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console/attention";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   CLEARANCE_ATTENTION_BY_KIND,
   CLEARANCE_AUTHOR_GLYPH_KINDS,

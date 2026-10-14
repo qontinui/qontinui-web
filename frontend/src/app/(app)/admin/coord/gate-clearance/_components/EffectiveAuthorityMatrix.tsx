@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { GlossaryTerm, RecordDetail } from "@/components/console";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   authorityForAudience,
   AUTHORITY_LABELS,

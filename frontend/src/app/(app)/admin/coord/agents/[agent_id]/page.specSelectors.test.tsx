@@ -44,11 +44,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
-const get = vi.fn();
+const fetchMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
+    fetch: (...args: unknown[]) => fetchMock(...args),
     post: vi.fn(),
   },
 }));
@@ -106,12 +106,15 @@ const STUB_LOGS = SPEC.metadata?.routeStubs?.[0]?.body?.logs ?? [];
 import CoordAgentLogPage from "./page";
 
 beforeEach(() => {
-  get.mockReset();
-  get.mockImplementation(async (url: string) => {
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(async (url: string) => {
     if (url.includes("/agent-logs/by-agent/")) {
-      return { agent_id: SENTINEL_AGENT, logs: STUB_LOGS };
+      return new Response(
+        JSON.stringify({ agent_id: SENTINEL_AGENT, logs: STUB_LOGS }),
+        { status: 200 }
+      );
     }
-    return {};
+    return new Response("{}", { status: 200 });
   });
 });
 

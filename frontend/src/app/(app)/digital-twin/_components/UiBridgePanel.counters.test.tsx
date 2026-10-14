@@ -154,6 +154,10 @@ function runner(url: string): Promise<Response> {
   if (path === "apps/qontinui-runner/spec/graph") {
     return Promise.resolve(json(200, SPEC_GRAPH));
   }
+  if (path === "apps") {
+    // A published runner whose relay allowlist predates `GET /apps`.
+    return Promise.resolve(json(403, { detail: "path not allowed" }));
+  }
   if (path === "ui-bridge/control/snapshot") {
     return Promise.resolve(json(200, snapshotBody));
   }

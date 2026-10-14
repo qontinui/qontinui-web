@@ -237,6 +237,16 @@ export interface ResourceSampleRow {
   age_secs: number;
   cpu_cores: number | null;
   load_1m: number | null;
+  /**
+   * CPU package temperature in degrees Celsius (plan
+   * 2026-10-13-cpu-temperature-in-fleet-resource-telemetry). DISPLAY ONLY: it
+   * feeds no pressure, saturation or headroom figure.
+   *
+   * `null` = **not measured** (Windows/WSL host in v1, no sensor, a publisher
+   * that predates the field), never zero. Optional on the wire because a coord
+   * that predates the column sends no such key at all.
+   */
+  cpu_temp_c?: number | null;
   mem_total_bytes: number | null;
   mem_available_bytes: number | null;
   commit_total_bytes: number | null;
@@ -1594,4 +1604,34 @@ export function describePressureFloor(
       Number.isFinite(floor.reject_ratio) &&
       floor.reject_ratio >= floor.ratio,
   };
+}
+
+/** What the temperature cell should say for one sample. */
+export type CpuTempReading =
+  | { kind: "value"; celsius: number; text: string }
+  | { kind: "not_measurable_host" }
+  | { kind: "unknown" };
+
+/**
+ * Decide the temperature cell for one sample (display only; no colour ramp).
+ *
+ * - a finite reading wins: whole-degree text `71 C` (0 is a legal reading);
+ * - null / absent key is `unknown`, never `0 C`;
+ * - a host type that cannot measure it is `not_measurable_host`. The wire row
+ *   has no OS field, so a Windows host is recognised by the strip's existing
+ *   heuristic: `commit_total_bytes != null` (Windows commit charge is the only
+ *   source of that column; Linux hosts publish null). A `wsl` lane runs on that
+ *   Windows host and has no `/sys/class/thermal` either.
+ */
+export function cpuTempReading(
+  s: Pick<ResourceSampleRow, "cpu_temp_c" | "commit_total_bytes" | "lane">
+): CpuTempReading {
+  const t = s.cpu_temp_c;
+  if (typeof t === "number" && Number.isFinite(t)) {
+    return { kind: "value", celsius: t, text: `${Math.round(t)} C` };
+  }
+  if (s.commit_total_bytes != null || s.lane === "wsl") {
+    return { kind: "not_measurable_host" };
+  }
+  return { kind: "unknown" };
 }

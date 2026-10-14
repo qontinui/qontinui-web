@@ -37,11 +37,17 @@ vi.mock("@/services/service-factory", () => ({
     // The typed /operations client reads over `httpClient.fetch` (plan
     // 2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls
     // Phase 7): route it through the same GET table. A rejection passes
-    // through unchanged, so error-path tests see the identical Error. Only
-    // a GET may take this route: any other method throws, so a future
-    // write cannot silently be answered from the GET table.
+    // through unchanged, so error-path tests see the identical Error. A PUT
+    // (the fleet-policy dial's write) goes to `httpPut` with its parsed
+    // body; any other non-GET throws, so a future write cannot silently be
+    // answered from the GET table.
     fetch: async (...a: unknown[]) => {
-      const method = (a[1] as RequestInit | undefined)?.method;
+      const init = a[1] as RequestInit | undefined;
+      const method = init?.method;
+      if (method?.toUpperCase() === "PUT") {
+        const out = await httpPut(a[0], JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify(out ?? null), { status: 200 });
+      }
       if (method !== undefined && method.toUpperCase() !== "GET") {
         throw new Error(
           `httpClient.fetch mock serves GET only; got ${method} ${String(a[0])}`
@@ -551,6 +557,22 @@ describe("GithubHostedCiPanel — repo rows", () => {
 });
 
 describe("GithubHostedCiPanel — read-only and read failures", () => {
+  it("an unreadable repo list is UNKNOWN with coord's reason, never 'no repos'", async () => {
+    route({
+      ci: ciView("on", "none", {
+        repos: [],
+        repos_unknown_reason: "schema_object_missing:tenant_repos",
+      }),
+    });
+    render(<GithubHostedCiPanel isAdmin />);
+    const notice = await screen.findByTestId("github-hosted-ci-repos-unlisted");
+    expect(notice).toHaveTextContent("schema_object_missing:tenant_repos");
+    expect(screen.queryByTestId("github-hosted-ci-repos-empty")).toBeNull();
+    expect(
+      screen.getByTestId("github-hosted-ci-summary-repos").textContent
+    ).toContain("repos –");
+  });
+
   it("is read-only for a non-admin of the active tenant", async () => {
     route({});
     render(<GithubHostedCiPanel isAdmin={false} />);

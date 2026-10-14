@@ -3557,19 +3557,35 @@ async def reopen_gate(
     )
 
 
+class GateRejectRequest(BaseModel):
+    """Optional JSON body of ``POST /gates/{gate_id}/reject``."""
+
+    reason: str | None = None
+
+
+# ``reason`` was once a bare handler parameter, which FastAPI binds to the
+# QUERY string, so the reason the web client sends in the JSON body was
+# silently dropped and every rejection reached coord without one. It is now a
+# body model. The reason is stripped before forwarding because coord stores a
+# whitespace-only reason literally.
 @router.post("/gates/{gate_id}/reject")
 async def reject_gate(
     gate_id: str,
-    reason: str | None = None,
+    body: GateRejectRequest | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reject an OperatorApproval gate (operator bearer forwarded —
-    fleet-auth P2/D6)."""
-    body: dict[str, Any] = {}
+    fleet-auth P2/D6).
+
+    The optional JSON body ``{"reason": ...}`` carries the reason. It is
+    forwarded to coord stripped, and only when non-blank; an absent body or a
+    blank reason forwards ``{}``."""
+    reject_body: dict[str, Any] = {}
+    reason = body.reason.strip() if body is not None and body.reason else ""
     if reason:
-        body["reason"] = reason
+        reject_body["reason"] = reason
     return await _proxy_coord_post(
-        f"/coord/gates/{gate_id}/reject", body, tenant_id=tenant_id
+        f"/coord/gates/{gate_id}/reject", reject_body, tenant_id=tenant_id
     )
 
 
@@ -4685,6 +4701,123 @@ async def post_coord_notifications_mark_read(
         "/coord/notifications/mark-read",
         body.model_dump(mode="json", exclude_none=True),
         tenant_id=tenant_id,
+    )
+
+
+# ---- Operator action items (owed operator to-dos; pushed to the phone) ---
+#
+# Plan ``2026-10-12-operator-action-items-pushed-to-the-phone`` Phase 3.
+#
+# `coord.operator_action_items` holds a to-do the OPERATOR owes — created when
+# a gate with a `notify_operator` continuation clears, or when an agent posts
+# one — with an `open -> done | dismissed` lifecycle and a push-delivery state
+# coord records on the row. It is neither a notification (append-only, no
+# lifecycle) nor an agent question (a decision with a blocked asker).
+#
+# - `/operations/action-items`         -> coord `GET  /coord/operator-action-items`
+# - `/operations/action-items/resolve` -> coord `POST /coord/operator-action-items/resolve`
+#
+# Both back `/admin/coord/action-items`. Until the `coord.operator_action_items`
+# alembic revision deploys, coord answers ``503 {"error":
+# "schema_migration_pending"}``; that passes through verbatim and the page
+# reads it as "nothing to show yet", never as an error.
+#
+# Both proxies pass ``structured_errors=True`` so coord's typed refusal
+# (``schema_migration_pending``, ``already_resolved``) reaches the browser as
+# the envelope's top-level ``error`` rather than as JSON text inside
+# ``message`` — the page branches on that code, never on a substring.
+
+
+@router.get("/action-items")
+async def get_coord_operator_action_items(
+    status: str | None = Query(
+        default=None,
+        description="`open` (coord's default) | `done` | `dismissed` | `all`. "
+        "Forwarded verbatim — coord owns the vocabulary and answers 400 otherwise.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        description="Page size. Forwarded verbatim — coord owns the default and the clamp.",
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description="Opaque keyset cursor from a prior response's ``next_cursor``.",
+    ),
+    item_id: str | None = Query(
+        default=None,
+        description="Return at most this one item (any status).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the tenant's operator action items.
+
+    Response envelope mirrors coord:
+    ``{"items": [...], "next_cursor": str|null,
+    "counts": {"open": N, "done": N, "dismissed": N}}``. ``counts`` are
+    server-computed over the whole tenant, not the page — consumers read them
+    rather than counting ``items``.
+
+    Every param is forwarded **verbatim** and only when the caller set it;
+    bounds live in coord (one clamp, one place). Tenant-scoped and
+    operator-bearer-forwarding, same posture as ``/operations/notifications``.
+    """
+    params: dict[str, Any] = {}
+    if status is not None:
+        params["status"] = status
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    if item_id is not None:
+        params["item_id"] = item_id
+    return await _proxy_coord_get(
+        "/coord/operator-action-items",
+        params=params or None,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+class ActionItemResolveBody(BaseModel):
+    """Body for ``POST /operations/action-items/resolve``.
+
+    Mirrors coord's resolve request. **Coord remains the authority** — this is
+    defence in depth at the boundary and must never accept something coord
+    rejects. ``extra="forbid"`` makes a misspelled field a loud 422 here
+    instead of a silently dropped key.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: UUID = Field(description="The action item to resolve.")
+    status: Literal["done", "dismissed"] = Field(
+        description="Terminal status. Re-sending the same one is idempotent; "
+        "a different one answers coord's 409 `already_resolved`."
+    )
+    note: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Optional resolution note, at most 1000 characters.",
+    )
+
+
+@router.post("/action-items/resolve")
+async def post_coord_operator_action_items_resolve(
+    body: ActionItemResolveBody,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Resolve an action item as ``done`` or ``dismissed``.
+
+    Coord answers ``{"item": {...}}``; ``resolved_by`` is the principal coord
+    derives from the forwarded bearer, never a body field. Coord's 404 (an item
+    outside the caller's tenant) and 409 ``already_resolved`` pass through with
+    coord's status.
+    """
+    return await _proxy_coord_post(
+        "/coord/operator-action-items/resolve",
+        body.model_dump(mode="json", exclude_none=True),
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -10425,6 +10558,9 @@ class CiHostingView(BaseModel):
     domain: str = "github_hosted_ci"
     tenant_default: CiHostingReading
     repos: list[CiHostingRepoReading] = Field(default_factory=list)
+    #: Set when coord could not LIST the tenant's repos (or sent no list): the
+    #: empty ``repos`` is then UNKNOWN, never "this tenant has no repos".
+    repos_unknown_reason: str | None = None
     #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
     can_edit: bool
 
@@ -10468,11 +10604,19 @@ def _ci_hosting_view(payload: Any, *, can_edit: bool) -> CiHostingView:
                     **_ci_hosting_reading(entry),
                 )
             )
+    raw_reason = body.get("repos_unknown_reason")
+    repos_unknown_reason = (
+        raw_reason if isinstance(raw_reason, str) and raw_reason else None
+    )
+    if repos_unknown_reason is None and not isinstance(repos_raw, list):
+        # No list at all is not an empty list.
+        repos_unknown_reason = "no_repos_reported"
     return CiHostingView(
         tenant_default=CiHostingReading(
             **_ci_hosting_reading(body.get("tenant_default"))
         ),
         repos=repos,
+        repos_unknown_reason=repos_unknown_reason,
         can_edit=can_edit,
     )
 

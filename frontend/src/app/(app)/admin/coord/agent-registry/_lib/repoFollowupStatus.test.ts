@@ -17,9 +17,9 @@ import {
   scopeStatus,
   summarizeScopes,
   EMPTY_READING,
-  type PostMergeFollowupScopeView,
   type RepoDialReading,
 } from "./repoFollowupStatus";
+import type { PostMergeFollowupScopeView } from "@/lib/api/operations/repoFollowupDials";
 
 function view(
   overrides: Partial<PostMergeFollowupScopeView> = {}

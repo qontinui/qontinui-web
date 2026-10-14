@@ -34,10 +34,7 @@
  */
 
 import type { AttentionMap, AuditablePalette } from "./attention";
-import {
-  AUTHOR_GLYPH_KINDS,
-  STATUS_BADGE_CLASS,
-} from "./statusRow";
+import { AUTHOR_GLYPH_KINDS, STATUS_BADGE_CLASS } from "./statusRow";
 import { ATTENTION_BY_KIND as PIPELINE_ATTENTION } from "@/components/operations/prPipeline";
 // Wave 1 surfaces.
 import {
@@ -219,6 +216,11 @@ import {
   HOSTED_CI_AUTHOR_GLYPH_KINDS,
   HOSTED_CI_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/ci/_lib/hostedCiStatus";
+import {
+  MODEL_ACCESS_ATTENTION_BY_KIND,
+  MODEL_ACCESS_AUTHOR_GLYPH_KINDS,
+  MODEL_ACCESS_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ci/_lib/ciModelAccessStatus";
 // Per-repo follow-up dials (agent registry) — plan
 // `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
 import {
@@ -249,6 +251,13 @@ import {
   DOMAIN_COST_VERDICT_AUTHOR_GLYPH_KINDS,
   DOMAIN_COST_VERDICT_BADGE_CLASS,
 } from "@/components/operations/domainCostStatus";
+// Operator action items — plan
+// `2026-10-12-operator-action-items-pushed-to-the-phone` Phase 3.
+import {
+  ACTION_ITEM_ATTENTION_BY_KIND,
+  ACTION_ITEM_AUTHOR_GLYPH_KINDS,
+  ACTION_ITEM_BADGE_CLASS,
+} from "@/components/admin/coord/actionItemStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -290,7 +299,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   },
   // --- Phase 3 Wave 1 -------------------------------------------------------
   {
-    surface: "work units (/admin/coord/work-units, /admin/coord/spawn, /history)",
+    surface:
+      "work units (/admin/coord/work-units, /admin/coord/spawn, /history)",
     module: "components/admin/coord/planStatus.ts",
     attentionByKind: PLAN_ATTENTION_BY_TONE,
     palette: {
@@ -386,7 +396,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     attentionByKind: POLICY_PROPOSAL_ATTENTION_BY_KIND,
     palette: {
       badgeClass: POLICY_PROPOSAL_KIND_CLASS,
-      authorGlyphKinds: POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      authorGlyphKinds:
+        POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
@@ -404,7 +415,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     attentionByKind: DECISION_POLICY_ATTENTION_BY_KIND,
     palette: {
       badgeClass: DECISION_POLICY_CLASS,
-      authorGlyphKinds: DECISION_POLICY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      authorGlyphKinds:
+        DECISION_POLICY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- Phase 3 Wave 4 — Family C, the tables --------------------------------
@@ -625,7 +637,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     },
   },
   {
-    surface: "computers — watched services (/admin/coord/computers/[computerId])",
+    surface:
+      "computers — watched services (/admin/coord/computers/[computerId])",
     module: "app/(app)/admin/coord/computers/_lib/computerStatus.ts",
     attentionByKind: SERVICE_ATTENTION_BY_KIND,
     palette: {
@@ -643,6 +656,18 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       authorGlyphKinds: HOSTED_CI_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
+  // --- model access for CI steps (Dev Ops) -------------------------------
+  {
+    // On and off are both a setting in effect, so calm; only an unreadable
+    // (or row-less `off`) value is amber — never painted as the `on` default.
+    surface: "model access for CI steps (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/ciModelAccessStatus.ts",
+    attentionByKind: MODEL_ACCESS_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: MODEL_ACCESS_BADGE_CLASS,
+      authorGlyphKinds: MODEL_ACCESS_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   // --- per-repo follow-up dials (agent registry) -------------------------
   {
     // A configured scope (even `none`) is a setting in effect, so calm; only
@@ -652,7 +677,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     attentionByKind: FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
     palette: {
       badgeClass: FOLLOWUP_SCOPE_BADGE_CLASS,
-      authorGlyphKinds: FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      authorGlyphKinds:
+        FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the CI dashboard ------------------------------------------------------
@@ -675,6 +701,15 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: CI_REPO_BADGE_CLASS,
       authorGlyphKinds: CI_REPO_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "action items (/admin/coord/action-items)",
+    module: "components/admin/coord/actionItemStatus.ts",
+    attentionByKind: ACTION_ITEM_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: ACTION_ITEM_BADGE_CLASS,
+      authorGlyphKinds: ACTION_ITEM_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];
