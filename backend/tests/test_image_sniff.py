@@ -7,9 +7,11 @@ bytes it hands the sniffer.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import struct
 import zlib
+from collections.abc import Sequence
 
 import pytest
 from PIL import Image, ImageFile, ImageOps, UnidentifiedImageError, features
@@ -20,6 +22,7 @@ from app.services.image_sniff import (
     AVIF,
     GIF,
     JPEG,
+    MAX_EXIF_HEADERS,
     MAX_FRAMES,
     MAX_GIF_BLOCKS,
     MAX_GIF_COMMENT_SUB_BLOCKS_PER_FRAME,
@@ -27,10 +30,16 @@ from app.services.image_sniff import (
     MAX_GIF_STRAY_BYTES_BEFORE_FIRST_FRAME,
     MAX_GIF_SUB_BLOCKS,
     MAX_IMAGE_PIXELS,
+    MAX_JPEG_EXIF_SEGMENTS,
+    MAX_JPEG_FRAME_HEADERS,
+    MAX_JPEG_PHOTOSHOP_BYTES,
+    MAX_JPEG_QUANTIZATION_SEGMENTS,
     MAX_JPEG_SEGMENTS,
     MAX_JPEG_STRAY_BYTES,
     MAX_PICTURES,
     MAX_PNG_CHUNKS_BEFORE_IMAGE_DATA,
+    MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA,
+    MAX_TIFF_ENTRIES,
     PNG,
     WEBP,
     ImageFormat,
@@ -1386,7 +1395,15 @@ def test_the_jpeg_walk_ends_where_pillows_header_parse_ends(data: bytes) -> None
     [
         pytest.param(b"\xff\xd8\xff", id="cut-after-signature"),
         pytest.param(_jpeg((8, 8))[:30], id="cut-in-a-segment"),
-        pytest.param(b"\xff\xd8\xff\x01\x00\x00", id="no-marker"),
+        # A byte after 0xFF that names no marker, then a whole valid header —
+        # its segments and its SOS — that a walk going on past it would reach;
+        # and the same with more markers than the cap after it, which such a
+        # walk would refuse by the cap's code instead.
+        pytest.param(_jpeg_with(b"\xff\x01"), id="no-marker"),
+        pytest.param(
+            _jpeg_with(b"\xff\x01" + _EMPTY_APP15 * (MAX_JPEG_SEGMENTS + 1)),
+            id="no-marker-then-a-flood",
+        ),
     ],
 )
 def test_where_pillow_raises_the_walk_finds_no_header_end(data: bytes) -> None:
@@ -1671,3 +1688,567 @@ def test_a_corrupt_file_is_still_refused_and_its_cause_logged(
     }
     assert logged["_StructureRefused"]["exc_info"] is None
     assert logged["UnidentifiedImageError"]["exc_info"] is None
+
+
+# ── what Pillow parses INSIDE one structure: TIFF directories ────────────
+
+
+def _tiff(
+    entries: Sequence[tuple[int, int, int, bytes | int]], tail: bytes = b""
+) -> bytes:
+    """A big-endian TIFF block: IFD0 of ``(tag, type, count, value)`` entries
+    at offset 8 (``value`` the four raw bytes, or an int: an offset or a
+    LONG), then ``tail`` — whose first byte is at :func:`_tail_at`."""
+    body = struct.pack(">H", len(entries))
+    for tag, kind, count, value in entries:
+        raw = value if isinstance(value, bytes) else struct.pack(">L", value)
+        body += struct.pack(">HHL", tag, kind, count) + raw
+    return b"MM\x00\x2a" + struct.pack(">L", 8) + body + b"\x00" * 4 + tail
+
+
+def _tail_at(entries: int) -> int:
+    return 8 + 2 + 12 * entries + 4
+
+
+def _reread(entries: int, size: int) -> bytes:
+    """``entries`` UNDEFINED values of ``size`` bytes, every one pointing at
+    the same ``size`` bytes — the review's amplification."""
+    at = _tail_at(entries)
+    return _tiff([(0x9000 + i, 7, size, at) for i in range(entries)], b"\x00" * size)
+
+
+def _inline(entries: int) -> bytes:
+    """``entries`` SHORT values held in their own entries: nothing to read."""
+    return _tiff([(0x9000 + i, 3, 1, b"\x00\x01\x00\x00") for i in range(entries)])
+
+
+def _segment(marker: int, body: bytes) -> bytes:
+    return struct.pack(">HH", marker, len(body) + 2) + body
+
+
+def _jpeg_exif(block: bytes) -> bytes:
+    """An 8×8 JPEG whose EXIF is ``block``, over as many APP1 segments as it
+    takes (Pillow joins them)."""
+    piece = 65533 - 6
+    segments = b"".join(
+        _segment(0xFFE1, b"Exif\x00\x00" + block[at : at + piece])
+        for at in range(0, len(block), piece)
+    )
+    return _jpeg_with(segments)
+
+
+def _with_exif(fmt: str, block: bytes) -> bytes:
+    if fmt == "JPEG":
+        return _jpeg_exif(block)
+    if fmt == "PNG":
+        return _png_with_chunks_before_idat(_png_chunk(b"eXIf", block))
+    if fmt == "WEBP":
+        return encode("WEBP", (8, 8), exif=b"Exif\x00\x00" + block)
+    return encode("AVIF", (8, 8), exif=block)
+
+
+def _forbid_pillows_exif_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    def read(self: Image.Exif, data: bytes) -> None:
+        raise AssertionError("Pillow's EXIF reader read the block")
+
+    monkeypatch.setattr(Image.Exif, "load", read)
+
+
+@pytest.mark.parametrize("fmt", ["JPEG", "PNG", "WEBP", "AVIF"])
+def test_exif_values_read_more_than_once_are_refused_unread(
+    monkeypatch: pytest.MonkeyPatch, fmt: str
+) -> None:
+    """The review's measurement: Pillow reads each entry's value afresh, so
+    20 000 entries pointing at one 23 MB value were accepted in 65 s, and 60
+    at 20 MB took 2.46 GB. Sixty entries at one 200 KB value read 12 MB from
+    a 200 KB block: refused before Pillow's EXIF reader sees it — before
+    Pillow opens a JPEG (whose open reads it) or an AVIF (likewise), and in
+    place of the reader for a PNG or WebP."""
+    data = _with_exif(fmt, _reread(60, 200_000))
+    if fmt in ("JPEG", "AVIF"):
+        _forbid_pillow(monkeypatch)
+    _forbid_pillows_exif_reader(monkeypatch)
+    assert _refused(data) == "image_exif_values_reread"
+
+
+def test_values_adding_up_to_the_block_are_accepted_and_one_byte_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bound is the block's own length: two 100-byte values over the same
+    bytes of a 200-byte block are what the block could hold side by side."""
+    at = _tail_at(2)
+
+    def two_values(size: int) -> bytes:
+        block = _tiff([(0x9000, 7, size, at), (0x9001, 7, size, at)], b"\x00" * 162)
+        assert len(block) == 200
+        return _jpeg_exif(block)
+
+    assert sniff_image(two_values(100)).frames == 1
+    _forbid_pillow(monkeypatch)
+    assert _refused(two_values(101)) == "image_exif_values_reread"
+
+
+def test_a_value_cut_short_ends_the_directory_as_it_ends_pillows() -> None:
+    """A value running past the block makes Pillow's read come up short, and
+    it reads no further entry — so neither does the walk: the rereading
+    entries after it cost Pillow nothing."""
+    at = _tail_at(101)
+    block = _tiff(
+        [(0x9000, 7, 10**6, at)] + [(0x9001 + i, 7, 400, at) for i in range(100)],
+        b"\x00" * 400,
+    )
+    with pytest.warns(UserWarning):
+        pillows = Image.Exif()
+        pillows.load(block)
+    assert len(pillows) == 0  # the premise: Pillow stopped at the first entry
+    assert sniff_image(_jpeg_exif(block)).frames == 1
+
+
+def test_exif_entries_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert sniff_image(_jpeg_exif(_inline(MAX_TIFF_ENTRIES))).frames == 1
+    over = _jpeg_exif(_inline(MAX_TIFF_ENTRIES + 1))
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_exif_too_many_entries"
+
+
+def test_entries_a_directory_declares_but_does_not_hold_are_not_counted() -> None:
+    """Pillow reads the entries that are there, then stops; a count of 65 535
+    over three entries costs it three."""
+    block = bytearray(_inline(3))
+    block[8:10] = struct.pack(">H", 0xFFFF)
+    assert sniff_image(_jpeg_exif(bytes(block))).frames == 1
+
+
+@pytest.mark.parametrize(
+    ("data", "code"),
+    [
+        pytest.param(
+            _jpeg_exif(_reread(20_000, 1150)),
+            "image_exif_too_many_entries",
+            id="jpeg-20000-entries-one-value",
+        ),
+        pytest.param(
+            _jpeg_exif(_reread(MAX_TIFF_ENTRIES, 4000)),
+            "image_exif_values_reread",
+            id="jpeg-cap-entries-one-value",
+        ),
+        pytest.param(
+            _png_with_chunks_before_idat(_png_chunk(b"eXIf", _reread(3000, 500_000))),
+            "image_exif_too_many_entries",
+            id="png-3000-entries-one-value",
+        ),
+        pytest.param(
+            _jpeg_with(_segment(0xFFE1, b"Exif\x00\x00" + b"\x00" * 10) * 400),
+            "image_too_many_exif_segments",
+            id="jpeg-400-exif-segments",
+        ),
+    ],
+)
+def test_the_reviews_exif_shapes_are_refused_by_name(
+    monkeypatch: pytest.MonkeyPatch, data: bytes, code: str
+) -> None:
+    _forbid_pillows_exif_reader(monkeypatch)
+    assert _refused(data) == code
+
+
+def test_exif_headers_up_to_the_cap_are_accepted_and_one_more_is_refused() -> None:
+    """Pillow strips each ``Exif\\0\\0`` with a copy of the rest. A PNG eXIf
+    chunk written with the header inside it holds two once Pillow adds its
+    own — accepted, orientation read; one more is refused."""
+    block = _tiff([(0x0112, 3, 1, b"\x00\x06\x00\x00")])
+    inside = b"Exif\x00\x00" * (MAX_EXIF_HEADERS - 1)
+    ok = _png_with_chunks_before_idat(_png_chunk(b"eXIf", inside + block))
+    assert sniff_image(ok).orientation == 6
+    over = _png_with_chunks_before_idat(
+        _png_chunk(b"eXIf", inside + b"Exif\x00\x00" + block)
+    )
+    assert _refused(over) == "image_exif_header_repeated"
+
+
+def test_exif_segments_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pillow joins every APP1 EXIF segment's body by ``+=``."""
+    first = _segment(
+        0xFFE1, b"Exif\x00\x00" + _tiff([(0x0112, 3, 1, b"\x00\x06\x00\x00")])
+    )
+    later = _segment(0xFFE1, b"Exif\x00\x00" + b"\x00" * 64)
+    ok = _jpeg_with(first + later * (MAX_JPEG_EXIF_SEGMENTS - 1))
+    assert sniff_image(ok).orientation == 6
+    over = _jpeg_with(first + later * MAX_JPEG_EXIF_SEGMENTS)
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_too_many_exif_segments"
+
+
+@pytest.mark.parametrize(
+    ("index", "code"),
+    [
+        pytest.param(_reread(100, 400), "image_mp_index_values_reread", id="reread"),
+        pytest.param(
+            _inline(MAX_TIFF_ENTRIES + 1),
+            "image_mp_index_too_many_entries",
+            id="too-many-entries",
+        ),
+    ],
+)
+def test_a_multi_picture_index_pillow_would_reread_is_refused_unread(
+    monkeypatch: pytest.MonkeyPatch, index: bytes, code: str
+) -> None:
+    """Pillow's open of ANY JPEG reads an APP2 ``MPF`` index with the same
+    TIFF reader, decoding every entry."""
+    data = _jpeg_with(_segment(0xFFE2, b"MPF\x00" + index))
+    _forbid_pillow(monkeypatch)
+    assert _refused(data) == code
+
+
+@pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        pytest.param([(0x0112, 3, 1, b"\x00\x06\x00\x00")], 6, id="short"),
+        pytest.param([(0x0112, 4, 1, b"\x00\x00\x00\x06")], 6, id="long"),
+        pytest.param(
+            [(0x0112, 3, 1, b"\x00\x03\x00\x00"), (0x0112, 3, 1, b"\x00\x08\x00\x00")],
+            8,
+            id="the-last-entry-wins",
+        ),
+        pytest.param(
+            [(0x0112, 3, 1, b"\x00\x06\x00\x00"), (0x0112, 99, 1, b"\x00\x03\x00\x00")],
+            6,
+            id="an-entry-of-a-type-pillow-skips",
+        ),
+        pytest.param([(0x0112, 3, 2, b"\x00\x06\x00\x03")], 6, id="two-values-first"),
+        pytest.param([(0x0112, 1, 1, b"\x06\x00\x00\x00")], None, id="a-byte"),
+        pytest.param([(0x0112, 3, 1, b"\x00\x09\x00\x00")], None, id="out-of-range"),
+    ],
+)
+def test_the_orientation_is_read_from_its_own_entry(
+    monkeypatch: pytest.MonkeyPatch,
+    entries: list[tuple[int, int, int, bytes | int]],
+    expected: int | None,
+) -> None:
+    """Never by Pillow's EXIF reader, and agreeing with it wherever it yields
+    an orientation of 1-8."""
+    block = _tiff(entries)
+    pillows = Image.Exif()
+    pillows.load(block)
+    value = pillows.get(0x0112)
+    assert (value if isinstance(value, int) and 1 <= value <= 8 else None) == expected
+    data = _png_with_chunks_before_idat(_png_chunk(b"eXIf", block))
+    _forbid_pillows_exif_reader(monkeypatch)
+    assert sniff_image(data).orientation == expected
+
+
+def test_an_orientation_held_outside_its_entry_is_not_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three SHORTs do not fit in the entry, so their value would be a read of
+    its own — which Pillow makes, and this walk does not: no orientation."""
+    block = _tiff([(0x0112, 3, 3, _tail_at(1))], b"\x00\x06\x00\x06\x00\x06")
+    pillows = Image.Exif()
+    pillows.load(block)
+    assert pillows.get(0x0112) == 6  # the premise: Pillow reads its first value
+    data = _png_with_chunks_before_idat(_png_chunk(b"eXIf", block))
+    _forbid_pillows_exif_reader(monkeypatch)
+    assert sniff_image(data).orientation is None
+
+
+def test_a_little_endian_orientation_is_read_too() -> None:
+    block = b"II\x2a\x00" + struct.pack("<LH", 8, 1)
+    block += struct.pack("<HHL", 0x0112, 3, 1) + b"\x05\x00\x00\x00" + b"\x00" * 4
+    data = _png_with_chunks_before_idat(_png_chunk(b"eXIf", block))
+    assert sniff_image(data).orientation == 5
+
+
+def test_a_camera_exif_with_sub_directories_and_a_maker_note_is_accepted() -> None:
+    """What a camera writes: IFD0 tags with their own values (strings,
+    rationals), pointers to the Exif and GPS directories, and in the Exif
+    directory a large maker note — all side by side, nothing read twice."""
+    exif = Image.Exif()
+    exif[0x010F] = "Camera Maker"
+    exif[0x0110] = "Model X100 with a long model name"
+    exif[0x0112] = 8
+    exif[0x011A] = 300.0
+    exif[0x011B] = 300.0
+    exif[0x0128] = 2
+    exif[0x0131] = "Firmware 1.2.3"
+    exif[0x0132] = "2026:10:14 12:00:00"
+    exif[0x013B] = "A Photographer"
+    exif[0x8298] = "(c) 2026 A Photographer"
+    sub = exif.get_ifd(0x8769)
+    sub[0x829A] = 1 / 250
+    sub[0x829D] = 2.8
+    sub[0x8827] = 400
+    sub[0x9003] = "2026:10:14 12:00:00"
+    sub[0x927C] = b"\x01" * 30_000  # maker note
+    sub[0x9286] = b"ASCII\x00\x00\x00" + b"a comment " * 100
+    gps = exif.get_ifd(0x8825)
+    gps[0x0001] = "N"
+    gps[0x0002] = (52.0, 31.0, 12.5)
+    data = _camera_jpeg((40, 30))
+    rich = encode("JPEG", (40, 30), exif=exif.tobytes(), progressive=True)
+    assert len(rich) > 30_000  # the premise: the maker note is in it
+    with Image.open(io.BytesIO(rich)) as probe:
+        assert probe.getexif().get(0x0112) == 8
+    sniffed = sniff_image(rich)
+    assert (sniffed.width, sniffed.height, sniffed.orientation) == (30, 40, 8)
+    assert sniff_image(data).frames == 1
+
+
+# ── what Pillow parses INSIDE one JPEG segment ───────────────────────────
+
+
+def _frame_header(components: int, extra: bytes = b"") -> bytes:
+    body = bytes([8]) + struct.pack(">HH", 8, 8) + bytes([components])
+    return _segment(0xFFC0, body + b"\x01\x11\x00" * components + extra)
+
+
+def _header_markers(marker: int) -> int:
+    """How many ``marker`` segments the 8×8 JPEG's encoder writes before SOS."""
+    from app.services.image_sniff import _jpeg_header_end
+
+    data = _jpeg((8, 8))
+    end = _jpeg_header_end(data, 0, len(data))
+    assert end is not None
+    return data[:end].count(struct.pack(">H", marker))
+
+
+@pytest.mark.parametrize("components", [1, 3, 4])
+def test_frame_headers_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch, components: int
+) -> None:
+    room = MAX_JPEG_FRAME_HEADERS - _header_markers(0xFFC0)
+    assert sniff_image(_jpeg_with(_frame_header(components) * room)).frames == 1
+    over = _jpeg_with(_frame_header(components) * (room + 1))
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_too_many_frame_headers"
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        pytest.param(_frame_header(3, b"\x00"), id="one-byte-longer"),
+        pytest.param(_frame_header(2), id="two-components"),
+        pytest.param(_segment(0xFFC0, b"\x08\x00\x08"), id="cut-before-its-count"),
+        pytest.param(
+            _frame_header(3, b"\x01\x11\x00" * ((65533 - 15) // 3)),
+            id="the-reviews-maximum-length",
+        ),
+    ],
+)
+def test_a_frame_header_must_be_its_standard_length(
+    monkeypatch: pytest.MonkeyPatch, header: bytes
+) -> None:
+    """``8 + 3·Nf`` bytes for Nf of 1, 3 or 4: Pillow loops over the bytes
+    three at a time, so the review's 399 maximum-length frame headers (8.7
+    million component triplets) were accepted at 1.7 s and 830 MB."""
+    _forbid_pillow(monkeypatch)
+    assert _refused(_jpeg_with(header)) == "image_frame_header_invalid"
+
+
+def _quantization(tables: int, precision16: bool = True) -> bytes:
+    unit = b"\x00\x01" * 64 if precision16 else b"\x01" * 64
+    flag = 0x10 if precision16 else 0x00
+    return _segment(
+        0xFFDB, b"".join(bytes([flag | i % 4]) + unit for i in range(tables))
+    )
+
+
+def test_quantization_segments_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    room = MAX_JPEG_QUANTIZATION_SEGMENTS - _header_markers(0xFFDB)
+    assert sniff_image(_jpeg_with(_quantization(4) * room)).frames == 1
+    over = _jpeg_with(_quantization(4) * (room + 1))
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_too_many_quantization_segments"
+
+
+def test_a_quantization_segment_holds_at_most_four_full_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Four 16-bit tables — ``2 + 4·129`` bytes — are accepted; a segment any
+    longer (here five 16-bit tables, or the review's 1 008 8-bit ones) is
+    refused: Pillow builds a 64-entry list per table in Python."""
+    assert sniff_image(_jpeg_with(_quantization(4))).frames == 1
+    _forbid_pillow(monkeypatch)
+    for segment in (_quantization(5), _quantization(1008, precision16=False)):
+        assert _refused(_jpeg_with(segment)) == "image_quantization_segment_too_long"
+
+
+def _photoshop(size: int) -> bytes:
+    """An APP13 Photoshop segment whose body is ``size`` bytes: one resource."""
+    data = b"\x00" * (size - 26)
+    body = b"Photoshop 3.0\x00" + b"8BIM\x04\x04\x00\x00" + struct.pack(">L", len(data))
+    return _segment(0xFFED, body + data)
+
+
+def test_photoshop_resources_up_to_the_budget_are_accepted_and_one_byte_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    full = 60_000
+    last = MAX_JPEG_PHOTOSHOP_BYTES - 4 * full
+    assert sniff_image(_jpeg_with(_photoshop(full) * 4 + _photoshop(last))).frames == 1
+    over = _jpeg_with(_photoshop(full) * 4 + _photoshop(last + 1))
+    _forbid_pillow(monkeypatch)
+    assert _refused(over) == "image_too_much_photoshop_metadata"
+
+
+@pytest.mark.parametrize(
+    ("segment", "code"),
+    [
+        pytest.param(
+            _frame_header(3, b"\x01\x11\x00" * ((65533 - 15) // 3)),
+            "image_frame_header_invalid",
+            id="maximum-length-frame-headers",
+        ),
+        pytest.param(
+            _quantization(1008, precision16=False),
+            "image_quantization_segment_too_long",
+            id="quantization-tables",
+        ),
+        pytest.param(
+            _segment(
+                0xFFED,
+                b"Photoshop 3.0\x00"
+                + b"8BIM\x04\x04\x00\x00\x00\x00\x00\x00" * ((65533 - 14) // 12),
+            ),
+            "image_too_much_photoshop_metadata",
+            id="photoshop-resources",
+        ),
+    ],
+)
+def test_the_reviews_in_segment_floods_are_refused_before_pillow_reads_them(
+    monkeypatch: pytest.MonkeyPatch, segment: bytes, code: str
+) -> None:
+    """The review's 25 MiB measurements, all accepted: 399 maximum-length
+    frame headers 1.71 s at 830 MB, quantization tables 0.75 s, Photoshop
+    resources 0.74 s."""
+    data = _jpeg_with(segment * ((_UPLOAD_CAP - 1024) // len(segment)))
+    assert len(data) <= _UPLOAD_CAP
+    _forbid_pillow(monkeypatch)
+    assert _refused(data) == code
+
+
+# ── PNG chunks Pillow inflates at open ───────────────────────────────────
+
+
+_INFLATES_TO_A_MEBIBYTE = zlib.compress(b"\x00" * (1 << 20), 9)
+
+
+@pytest.mark.parametrize(
+    "chunk",
+    [
+        pytest.param(
+            _png_chunk(b"iCCP", b"icc\x00\x00" + _INFLATES_TO_A_MEBIBYTE), id="iCCP"
+        ),
+        pytest.param(
+            _png_chunk(b"zTXt", b"k\x00\x00" + _INFLATES_TO_A_MEBIBYTE), id="zTXt"
+        ),
+        pytest.param(
+            _png_chunk(b"zTXt", b"\x00\x00" + _INFLATES_TO_A_MEBIBYTE), id="zTXt-no-key"
+        ),
+        pytest.param(
+            _png_chunk(b"iTXt", b"k\x00\x01\x00\x00\x00" + _INFLATES_TO_A_MEBIBYTE),
+            id="iTXt-compressed",
+        ),
+    ],
+)
+def test_compressed_png_chunks_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch, chunk: bytes
+) -> None:
+    """Pillow inflates each, up to 1 MiB, at open: the review's 254 iCCP or
+    empty-key zTXt bombs were accepted in 0.57 s."""
+    cap = MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA
+    assert sniff_image(_png_with_chunks_before_idat(chunk * cap)).frames == 1
+    _forbid_pillow(monkeypatch)
+    for count in (cap + 1, 254):
+        refused = _refused(_png_with_chunks_before_idat(chunk * count))
+        assert refused == "image_too_many_compressed_chunks"
+
+
+def test_uncompressed_international_text_is_not_counted() -> None:
+    plain = _png_chunk(b"iTXt", b"k\x00\x00\x00\x00\x00" + b"text " * 1000)
+    data = _png_with_chunks_before_idat(
+        plain * (MAX_PNG_COMPRESSED_CHUNKS_BEFORE_IMAGE_DATA + 1)
+    )
+    assert sniff_image(data).frames == 1
+
+
+def test_the_walk_joins_exif_segments_exactly_as_pillow_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The block walked is byte for byte the ``info["exif"]`` Pillow's open
+    builds: the first segment whole, each later one past its header."""
+    from app.services import image_sniff
+
+    block = _tiff([(0x0112, 3, 1, b"\x00\x06\x00\x00")], bytes(range(256)) * 600)
+    data = _jpeg_exif(block)
+    assert data.count(b"Exif\x00\x00") == 3  # the premise: three segments
+    walked: list[bytes] = []
+    real = image_sniff._exif_directory
+
+    def recording(raw: bytes) -> object:
+        walked.append(raw)
+        return real(raw)
+
+    monkeypatch.setattr(image_sniff, "_exif_directory", recording)
+    with Image.open(io.BytesIO(data)) as image:
+        joined = image.info["exif"]
+    assert sniff_image(data).orientation == 6
+    assert walked[0] == joined
+
+
+def test_the_last_multi_picture_index_is_the_one_walked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pillow keeps the last APP2 ``MPF`` segment it meets."""
+    benign = _segment(0xFFE2, b"MPF\x00" + _inline(3))
+    rereading = _segment(0xFFE2, b"MPF\x00" + _reread(100, 400))
+    _forbid_pillow(monkeypatch)
+    assert _refused(_jpeg_with(benign + rereading)) == "image_mp_index_values_reread"
+
+
+def _reread_le(entries: int, size: int) -> bytes:
+    """:func:`_reread` in little-endian byte order, under a classic header —
+    whose last two header bytes a test may replace."""
+    at = _tail_at(entries)
+    rows = b"".join(
+        struct.pack("<HHLL", 0x9000 + i, 7, size, at) for i in range(entries)
+    )
+    body = struct.pack("<H", entries) + rows + b"\x00" * 4
+    return b"II\x2a\x00" + struct.pack("<L", 8) + body + b"\x00" * size
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        pytest.param(b"II\x2b\x00" + _reread_le(100, 400)[4:], id="bigtiff"),
+        pytest.param(b"XX\x2a\x00" + _reread_le(100, 400)[4:], id="not-a-tiff-header"),
+        pytest.param(
+            b"MM\x00\x2a" + struct.pack(">L", 10**6) + _reread(100, 400)[8:],
+            id="directory-past-the-block",
+        ),
+    ],
+)
+def test_a_directory_pillow_never_reads_is_not_walked(block: bytes) -> None:
+    """Pillow raises on such a header, or finds no directory, and reads no
+    entry — so the rereading entries after it cost nothing and are no
+    refusal (the image itself reads fine). The same bytes under a header
+    Pillow does read are refused — so it is the header that spares them."""
+    for classic in (_reread(100, 400), _reread_le(100, 400)):
+        assert _refused(_jpeg_exif(classic)) == "image_exif_values_reread"
+    with (
+        pytest.raises((SyntaxError, struct.error))
+        if block[:2] != b"MM"
+        else contextlib.nullcontext()
+    ):
+        Image.Exif().load(block)
+    assert sniff_image(_jpeg_exif(block)).frames == 1
+    assert (
+        sniff_image(
+            _png_with_chunks_before_idat(_png_chunk(b"eXIf", block))
+        ).orientation
+        is None
+    )
