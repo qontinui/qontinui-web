@@ -3,15 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isNotFoundError } from "@/components/console";
 import { fetchCiHosting } from "@/lib/api/operations/ciStatus";
+import { errorMessage } from "../_lib/errorMessage";
 import type { CiHostingView } from "../_lib/hostedCiStatus";
 
 /** What the panel says when the read route is not there to answer. */
 export const CI_HOSTING_NOT_SERVED =
   "this coord build does not serve the hosted-CI read yet";
-
-function message(err: unknown): string {
-  return err instanceof Error ? err.message : "the hosted-CI read failed";
-}
 
 /**
  * The GitHub-hosted CI read — tenant default plus one reading per repo.
@@ -73,7 +70,7 @@ export function useCiHosting() {
         setError(CI_HOSTING_NOT_SERVED);
       } else {
         setNotServed(false);
-        setError(message(err));
+        setError(errorMessage(err, "the hosted-CI read failed"));
       }
       return false;
     } finally {

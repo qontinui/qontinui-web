@@ -66,6 +66,7 @@ import {
   type WorkUnitOverview,
 } from "@/lib/api/operations/coordPlans";
 import type { SortKey } from "./planSort";
+import { operationsErrorReading } from "@/lib/api/operations/base";
 
 /** coord's page clamp (`work_unit_registry.rs` `list_work_units`). */
 export const WALK_PAGE_LIMIT = 500;
@@ -132,7 +133,8 @@ export type WalkOutcome =
       kind: "partial";
       pages: number;
       reason: PartialReason;
-      /** The failing read's message, for `reason: "error"`. */
+      /** The failing read's sentence (`operationsErrorReading`), for
+       *  `reason: "error"`. */
       error?: string;
     } & WalkCommon)
   | ({
@@ -158,8 +160,11 @@ export type FetchPlansPage = (
   query: URLSearchParams
 ) => Promise<PlansListResponse>;
 
+/** The failing read in words: the shared reader's sentence, so a refused
+ * page names coord's refusal instead of dumping
+ * `GET <url> failed: <status> - <raw body>` into the INCOMPLETE banner. */
 function message(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
+  return operationsErrorReading(e).sentence;
 }
 
 /**

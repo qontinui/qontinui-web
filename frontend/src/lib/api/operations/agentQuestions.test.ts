@@ -30,31 +30,48 @@ describe("agentQuestions", () => {
     fetchMock.mockReset();
   });
 
-  it("fetchPendingAgentQuestions GETs /agent-questions/pending with the caller's retry budget", async () => {
+  it("fetchPendingAgentQuestions GETs /agent-questions/pending with the limit and the caller's retry budget", async () => {
     answer({ questions: [] });
-    await expect(fetchPendingAgentQuestions(POLL)).resolves.toEqual({
-      questions: [],
-    });
+    await expect(
+      fetchPendingAgentQuestions({ limit: 100 }, POLL)
+    ).resolves.toEqual({ questions: [] });
     expect(fetchMock.mock.calls[0]).toEqual([
-      "/api/v1/operations/agent-questions/pending",
+      "/api/v1/operations/agent-questions/pending?limit=100",
       { maxRetries: 0, method: "GET", idempotent: true },
     ]);
   });
 
   it("fetchPendingAgentQuestions keeps the client's default retries with no options", async () => {
     answer({ questions: [] });
-    await fetchPendingAgentQuestions();
+    await fetchPendingAgentQuestions({ limit: 100 });
     expect(fetchMock.mock.calls[0]).toEqual([
-      "/api/v1/operations/agent-questions/pending",
+      "/api/v1/operations/agent-questions/pending?limit=100",
       { method: "GET", idempotent: true },
     ]);
   });
 
-  it("fetchPendingPolicyGapQuestions GETs the pending inbox with the gap hint", async () => {
+  it("fetchPendingAgentQuestions sends offset and audience when set, and omits a zero offset", async () => {
     answer({ questions: [] });
-    await fetchPendingPolicyGapQuestions(POLL);
+    await fetchPendingAgentQuestions({
+      limit: 100,
+      offset: 200,
+      audience: "operator",
+    });
+    answer({ questions: [] });
+    await fetchPendingAgentQuestions({ limit: 100, offset: 0, audience: null });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/operations/agent-questions/pending?limit=100&offset=200&audience=operator"
+    );
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "/api/v1/operations/agent-questions/pending?limit=100"
+    );
+  });
+
+  it("fetchPendingPolicyGapQuestions GETs the pending inbox with the gap hint and limit", async () => {
+    answer({ questions: [] });
+    await fetchPendingPolicyGapQuestions(200, POLL);
     expect(fetchMock.mock.calls[0]).toEqual([
-      "/api/v1/operations/agent-questions/pending?gap=true",
+      "/api/v1/operations/agent-questions/pending?gap=true&limit=200",
       { maxRetries: 0, method: "GET", idempotent: true },
     ]);
   });

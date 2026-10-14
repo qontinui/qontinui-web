@@ -16,10 +16,9 @@ The Workflow Builder is a powerful automation tool that enables you to create, o
 
 ### Key Benefits
 
-- **Organized**: Hierarchical folder structure with tags and search capabilities
-- **Reliable**: Comprehensive testing framework with assertions and test suites
-- **Reusable**: Component library for creating modular, parameterized subflows
-- **Insightful**: Analytics dashboard with execution metrics and performance trends
+- **Organized**: Hierarchical folder structure
+- **Reliable**: Testing framework with assertions and test suites
+- **Insightful**: Execution metrics and complexity analysis
 - **Documented**: Auto-generated documentation with markdown support
 - **Scalable**: Dependency analysis and circular dependency detection
 
@@ -27,12 +26,11 @@ The Workflow Builder is a powerful automation tool that enables you to create, o
 
 ### 1. Organization & Folder Management
 
-Organize workflows in hierarchical folders with tagging, search, and bulk operations.
+Organize workflows in hierarchical folders.
 
 - Create nested folder structures
-- Tag workflows for easy categorization
-- Search and filter across all workflows
-- Bulk move, copy, and delete operations
+- Move workflows and folders within the tree
+- Search folders by name and description
 - Export/import folder structures
 
 **Documentation**: [Organization Guide](./organization.md)
@@ -49,129 +47,88 @@ Understand workflow relationships and prevent circular dependencies.
 
 **Documentation**: [Dependencies Guide](./dependencies.md)
 
-### 3. Reusable Components
+### 3. Testing Framework
 
-Create modular, parameterized workflow components for code reuse.
-
-- Build component library
-- Parameterize components
-- Version component templates
-- Share components across workflows
-- Built-in component catalog
-
-**Documentation**: [Components Guide](./components.md)
-
-### 4. Testing Framework
-
-Comprehensive testing with test cases, assertions, and automated suites.
+Test cases with assertions, grouped into suites. Execution is simulated.
 
 - Create test cases with multiple assertions
 - Organize tests into suites
-- Mock execution environment
-- Assertion types: equals, contains, exists, regex, custom
-- Test result tracking and reporting
+- Assertion types: equals, contains, exists, comparisons, regex, custom
+- Test result history, statistics and action coverage
 
 **Documentation**: [Testing Guide](./testing.md)
 
-### 5. Analytics & Metrics
+### 4. Analytics & Metrics
 
-Track workflow performance with detailed metrics and trends.
+Track workflow executions and derive metrics from them.
 
 - Execution count and success rates
-- Average duration and performance trends
-- Success/failure analysis
-- Custom metrics and dashboards
+- Average, minimum and maximum duration
+- Most-used, slowest and most error-prone workflows
 - Export analytics reports
 
 **Documentation**: [Analytics Guide](./analytics.md)
 
-### 6. Documentation System
+### 5. Documentation System
 
 Auto-generate and maintain workflow documentation.
 
-- Markdown-based documentation
+- Markdown-based documentation with version history
 - Auto-generate from workflow structure
-- Custom documentation templates
-- Export to multiple formats
+- Built-in documentation templates
+- Export to Markdown or HTML
 
 **Documentation**: [Documentation Guide](./documentation.md)
 
-### 7. Complexity Analysis
+### 6. Complexity Analysis
 
-Analyze and track workflow complexity metrics.
+Analyze workflow structure.
 
 - Cyclomatic complexity
-- Cognitive complexity
-- Nesting depth analysis
-- Maintainability index
-- Code smell detection
+- Depth and branching factor
+- Complexity score and rating
+- Simplification suggestions
 
-**Documentation**: [Best Practices - Complexity](./best-practices.md#managing-complexity)
+**Documentation**: [Analytics Guide - Complexity](./analytics.md#complexity-analysis)
 
 ## Quick Start
-
-### Setting Up Your First Workflow
-
-```typescript
-import { WorkflowBuilder } from '@/services/workflow-builder';
-
-// Create a new workflow
-const workflow = WorkflowBuilder.create({
-  name: 'My First Workflow',
-  description: 'Automates login process'
-});
-
-// Add actions
-workflow.addAction({
-  type: 'FIND',
-  name: 'Find Login Button',
-  config: { /* ... */ }
-});
-
-// Save the workflow
-workflow.save();
-```
 
 ### Organizing Workflows
 
 ```typescript
 import { workflowFolderManager } from '@/services/workflow-folder-manager';
 
-// Create folder structure
-const folder = workflowFolderManager.createFolder({
+// Create a top-level folder
+const { folder } = workflowFolderManager.createFolder({
   name: 'Authentication',
-  parentPath: '/Workflows'
+  parentId: null
 });
 
-// Move workflow to folder
-workflowFolderManager.moveWorkflow(workflowId, '/Workflows/Authentication');
-
-// Add tags
-workflowFolderManager.addTag(workflowId, 'login');
-workflowFolderManager.addTag(workflowId, 'critical');
+// Move a workflow into it
+if (folder) {
+  workflowFolderManager.moveWorkflow(workflowId, folder.id);
+}
 ```
 
 ### Creating a Test
 
 ```typescript
-import { workflowTestingService } from '@/services/workflow-testing-service';
+import { getWorkflowTestingService } from '@/services/workflow-testing-service';
+
+const testing = getWorkflowTestingService();
 
 // Create test case
-const testCase = workflowTestingService.createTestCase({
-  name: 'Verify login success',
-  workflowId: workflow.id,
-  assertions: [
-    {
-      type: 'equals',
-      actual: '{{loginResult}}',
-      expected: 'success',
-      message: 'Login should succeed'
-    }
-  ]
-});
+const testCase = testing.createTestCase(
+  workflow.id,
+  {
+    inputs: { loginResult: 'success' },
+    assertions: [{ id: 'login', type: 'equals', path: 'loginResult', expected: 'success' }]
+  },
+  { name: 'Verify login success' }
+);
 
-// Run test
-const result = await workflowTestingService.runTestCase(testCase.id);
+// Run test (simulated execution)
+const result = await testing.runTestCase(testCase.id);
 console.log(result.passed ? 'Test passed' : 'Test failed');
 ```
 
@@ -192,7 +149,6 @@ The Workflow Builder uses a service-oriented architecture with singleton service
 ├─────────────────────────────────────────────────────────────┤
 │  • WorkflowFolderManager         (Organization)             │
 │  • WorkflowDependencyAnalyzer     (Dependencies)            │
-│  • WorkflowComponentsService      (Reusable Components)     │
 │  • WorkflowTestingService         (Testing)                 │
 │  • WorkflowAnalyticsService       (Metrics & Analytics)     │
 │  • WorkflowComplexityAnalyzer     (Complexity)              │
@@ -228,11 +184,9 @@ WorkflowBuilder
     │
     ├──> TestingService ──> LocalStorage
     │         │
-    │         └──> Mock Execution
+    │         └──> Simulated Execution
     │
     ├──> AnalyticsService ──> LocalStorage
-    │
-    ├──> ComponentsService ──> LocalStorage
     │
     └──> DocumentationService
               │
@@ -245,31 +199,21 @@ WorkflowBuilder
 
 - [Organization & Folders](./organization.md) - Manage workflow hierarchy
 - [Dependencies](./dependencies.md) - Analyze workflow relationships
-- [Reusable Components](./components.md) - Build component libraries
 - [Testing Framework](./testing.md) - Test workflows comprehensively
 - [Analytics & Metrics](./analytics.md) - Track execution metrics and complexity
 - [Documentation](./documentation.md) - Auto-generate documentation
 
-### Reference Documentation
-
-- [API Reference](./api-reference.md) - Complete API documentation
-- [Data Models](./data-models.md) - Type definitions and schemas
-- [Examples](./examples.md) - Complete working examples
-
 ### Guides
 
-- [Migration Guide](./migration-guide.md) - Migrate from legacy system
 - [Best Practices](./best-practices.md) - Design patterns and strategies
-- [Troubleshooting](./troubleshooting.md) - Common issues and solutions
 
 ## Getting Help
 
 If you need assistance:
 
-1. Check the [Troubleshooting Guide](./troubleshooting.md)
-2. Review [Examples](./examples.md) for reference implementations
-3. Consult the [API Reference](./api-reference.md) for detailed method signatures
-4. Read [Best Practices](./best-practices.md) for recommended patterns
+1. Read the feature guide for the service you are using (linked above)
+2. Read [Best Practices](./best-practices.md) for recommended patterns
+3. The services themselves live in `frontend/src/services/` and are the authoritative API reference
 
 ## Contributing
 
@@ -287,7 +231,6 @@ When extending the Workflow Builder:
 - **v1.0.0** - Initial release with all major features
   - Organization & Folder Management
   - Dependency Analysis
-  - Reusable Components
   - Testing Framework
   - Analytics & Metrics
   - Documentation System
