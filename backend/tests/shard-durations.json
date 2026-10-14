@@ -40,6 +40,8 @@
   "tests/test_aws_region_default.py": 2.6,
   "tests/test_backfill_github_identities.py": 0.0,
   "tests/test_blane_01_blocking_lanes_on_resource_sample_migration.py": 22.5,
+  "tests/test_build_records.py": 68.5,
+  "tests/test_build_records_01_export_migration.py": 20.6,
   "tests/test_ci_job_mem_01_memory_headroom_columns_migration.py": 29.1,
   "tests/test_ci_node_config_schema.py": 0.0,
   "tests/test_ci_timeout_marker.py": 26.8,
@@ -85,6 +87,7 @@
   "tests/test_coord_jwks_failure_diagnosability.py": 0.2,
   "tests/test_coord_maintenance_windows_01_migration.py": 20.0,
   "tests/test_coord_obs_idx_01_migration.py": 6.8,
+  "tests/test_coord_pdclaims_02_claim_lifecycle_migration.py": 33.1,
   "tests/test_coord_pgss_ext_01_migration.py": 7.2,
   "tests/test_coord_plan_pr_citations_3a_backfill_migration.py": 12.5,
   "tests/test_coord_pr_files_head_sha_01_migration.py": 9.0,
@@ -100,6 +103,7 @@
   "tests/test_coord_session_substrate_migration.py": 5.5,
   "tests/test_coord_sessions_fleet_idx_01_migration.py": 20.0,
   "tests/test_coord_smckpt_01_success_metric_checkpoint_results_migration.py": 20.0,
+  "tests/test_coord_smhist_01_success_metric_history_migration.py": 21.3,
   "tests/test_coord_system_tenant_rename_qontinui_migration.py": 107.0,
   "tests/test_coord_tenant_warm_bytes_01_migration.py": 15.1,
   "tests/test_coord_test_results_heads_01_migration.py": 8.7,
@@ -354,5 +358,7 @@
   "tests/test_web_boundary_gate.py": 0.8,
   "tests/test_wf_resume_fingerprint_01_migration.py": 28.9,
   "tests/test_worker_hb_body_started_01_migration.py": 16.6,
-  "tests/test_workflow_event_telemetry.py": 5.0
+  "tests/test_workflow_event_telemetry.py": 5.0,
+  "tests/test_wuverif_01_tenant_verification_settings_migration.py": 80.0,
+  "tests/test_wuverif_01_work_unit_verifications_migration.py": 118.0
 }

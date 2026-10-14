@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import { EffectiveAuthorityMatrix } from "./EffectiveAuthorityMatrix";
 
 let seq = 0;

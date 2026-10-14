@@ -6,7 +6,8 @@ Plan ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 3.
   ``POST /coord/devices/resolve`` AS the caller: the caller's bearer is
   forwarded, and **no ``user_id`` ever leaves** — not in the body (coord
   refuses one 400), not as ``x-qontinui-user-id`` (coord ignores it here).
-* Each of coord's five outcomes is passed through typed; every way of NOT
+* Each of coord's outcomes is passed through typed (an unknown tag is a
+  named ``unknown_outcome``); every way of NOT
   getting coord's answer is ``unavailable`` (UNKNOWN), never a pick.
 * The dispatcher's ``target="auto"`` delegates to the resolver, keeps the
   deploy-state join only as a post-filter over coord's eligibility, and has
@@ -31,11 +32,17 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.device_resolve import (
+    KNOWN_COORD_OUTCOMES,
+    AllCapableAtCapacityOutcome,
+    AllCapableOfflineOutcome,
+    AllCapableRoleClosedOutcome,
     DeviceResolveRequest,
+    DeviceResolveResult,
     NoCapableDeviceOutcome,
     PinIneligibleOutcome,
     ResolvedOutcome,
     UnavailableOutcome,
+    UnknownOutcome,
 )
 from app.services import coord_device_resolve, workflow_dispatcher
 from app.services.coord_device_resolve import NO_CALLER, CoordCaller, resolve_device
@@ -195,6 +202,20 @@ async def test_an_absent_pin_is_absent_not_null(
             "outcome": "no_capable_device",
             "missing": ["os:windows"],
             "online_devices": 2,
+            "stale_capable": 1,
+            "unprobed_online_devices": 0,
+            "pin_released_reason": None,
+            "pin_released_detail": None,
+        },
+        {
+            "outcome": "all_capable_offline",
+            "capable_offline": 2,
+            "pin_released_reason": "offline",
+            "pin_released_detail": "device … has not sent a heartbeat",
+        },
+        {
+            "outcome": "all_capable_at_capacity",
+            "capable_devices": 1,
             "pin_released_reason": None,
             "pin_released_detail": None,
         },
@@ -202,6 +223,18 @@ async def test_an_absent_pin_is_absent_not_null(
             "outcome": "all_capable_drained",
             "pin_released_reason": None,
             "pin_released_detail": None,
+        },
+        {
+            "outcome": "all_capable_role_closed",
+            "pin_released_reason": "role_closes_agent_lane",
+            "pin_released_detail": "device …'s dispatch role takes no runner work",
+        },
+        {
+            "outcome": "pin_ineligible",
+            "device_id": str(DEVICE_A),
+            "reason": "role_closes_agent_lane",
+            "detail": "device …'s dispatch role (bench / ci_node) takes no runner work",
+            "missing_capabilities": [],
         },
         {"outcome": "drain_unreadable"},
     ],
@@ -213,6 +246,56 @@ async def test_each_coord_outcome_passes_through_typed(
     _Coord(body=body).install(monkeypatch)
     out = await resolve_device(_placeable(), CALLER)
     assert out.model_dump(mode="json") == body
+
+
+async def test_a_no_capable_device_from_an_older_coord_defaults_the_new_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A coord predating ``stale_capable`` / ``unprobed_online_devices``."""
+    _Coord(
+        body={"outcome": "no_capable_device", "missing": [], "online_devices": 0}
+    ).install(monkeypatch)
+    out = await resolve_device(_placeable(), CALLER)
+    assert isinstance(out, NoCapableDeviceOutcome)
+    assert out.stale_capable == 0 and out.unprobed_online_devices == 0
+
+
+async def test_an_unknown_outcome_tag_is_named_not_malformed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Coord adding an arm reads as "this build is behind", not "coord broke"."""
+    _Coord(body={"outcome": "all_capable_teleported", "extra": 1}).install(monkeypatch)
+    out = await resolve_device(_placeable(), CALLER)
+    assert out == UnknownOutcome(raw_outcome="all_capable_teleported")
+    assert out.model_dump(mode="json") == {
+        "outcome": "unknown_outcome",
+        "raw_outcome": "all_capable_teleported",
+    }
+
+
+async def test_a_known_tag_with_a_broken_body_is_still_malformed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _Coord(body={"outcome": "all_capable_offline"}).install(monkeypatch)
+    out = await resolve_device(_placeable(), CALLER)
+    assert out == UnavailableOutcome(reason="malformed_response", status=200)
+
+
+def test_known_outcomes_cover_coords_arms() -> None:
+    """Every arm coord's ``ResolveOutcome`` (``device_resolve.rs``) has had or
+    is adding. A superset is safe: an arm coord stops sending (its resolve door
+    may drop ``all_capable_at_capacity``) is simply never seen, and an arm this
+    list lacks is a named ``unknown_outcome``, not a failure."""
+    assert KNOWN_COORD_OUTCOMES == {
+        "resolved",
+        "pin_ineligible",
+        "no_capable_device",
+        "all_capable_offline",
+        "all_capable_at_capacity",
+        "all_capable_drained",
+        "all_capable_role_closed",
+        "drain_unreadable",
+    }
 
 
 async def test_no_bearer_is_unavailable_and_coord_is_not_asked(
@@ -257,7 +340,12 @@ async def test_no_bearer_is_unavailable_and_coord_is_not_asked(
             400,
             "user_id_not_accepted",
         ),
-        (_Coord(200, {"outcome": "teleported"}), "malformed_response", 200, None),
+        # No string tag at all is not the contract (an unknown STRING tag is
+        # ``unknown_outcome`` — see its own test).
+        (_Coord(200, {"outcome": 7}), "malformed_response", 200, None),
+        (_Coord(200, {"outcome": ""}), "malformed_response", 200, None),
+        (_Coord(200, {"device_id": "x"}), "malformed_response", 200, None),
+        (_Coord(200, ["resolved"]), "malformed_response", 200, None),
         (_Coord(200, text="not json"), "malformed_response", 200, None),
     ],
     ids=[
@@ -269,7 +357,10 @@ async def test_no_bearer_is_unavailable_and_coord_is_not_asked(
         "503_html",
         "403",
         "400",
-        "unknown_outcome",
+        "non_string_outcome",
+        "empty_outcome",
+        "no_outcome",
+        "non_object",
         "non_json",
     ],
 )
@@ -586,6 +677,52 @@ async def test_auto_pick_maps_no_capable_device(
     )
     assert isinstance(picked, AutoPickRefusal)
     assert picked.code == "no_healthy_runner"
+
+
+@pytest.mark.parametrize(
+    ("answer", "code", "says"),
+    [
+        (
+            AllCapableOfflineOutcome(capable_offline=2),
+            "all_capable_runners_offline",
+            "offline (2 seen recently)",
+        ),
+        (
+            AllCapableRoleClosedOutcome(),
+            "all_capable_runners_role_closed",
+            "does not accept this work",
+        ),
+        (
+            AllCapableAtCapacityOutcome(capable_devices=1),
+            "all_capable_runners_at_capacity",
+            "limit on concurrent sessions",
+        ),
+        (
+            UnknownOutcome(raw_outcome="all_capable_teleported"),
+            "device_resolver_unknown_outcome",
+            "'all_capable_teleported'",
+        ),
+    ],
+    ids=["offline", "role_closed", "at_capacity", "unknown_outcome"],
+)
+async def test_auto_pick_maps_each_new_outcome_to_its_own_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+    answer: DeviceResolveResult,
+    code: str,
+    says: str,
+) -> None:
+    _install(monkeypatch, _Resolver(answer), {})
+    picked = await _pick_auto_runner(
+        cast(AsyncSession, _RefusingDb()),
+        USER,
+        CALLER,
+        required_capabilities=[],
+    )
+    assert isinstance(picked, AutoPickRefusal)
+    assert picked.code == code
+    assert says in picked.message
+    err = picked.to_dispatch_error()
+    assert err.detail["resolver_outcome"] == answer.model_dump(mode="json")
 
 
 async def test_fresh_host_post_filters_deploy_state_through_coord_eligibility(

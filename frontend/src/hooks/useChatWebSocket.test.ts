@@ -22,7 +22,7 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { getWebSocketToken: async () => "test-token" },
 }));
 
-import { useChatWebSocket } from "./useChatWebSocket";
+import { toAiSessionState, useChatWebSocket } from "./useChatWebSocket";
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -812,5 +812,21 @@ describe("useChatWebSocket loadSession", () => {
       { type: "chat_session_state", params: { task_run_id: "run-1" } },
       { type: "chat_get_output", params: { task_run_id: "run-1" } },
     ]);
+  });
+});
+
+describe("toAiSessionState", () => {
+  it("maps the runner's extra state words onto modelled states", () => {
+    expect(toAiSessionState("created")).toBe("initializing");
+    expect(toAiSessionState("promoting")).toBe("processing");
+    expect(toAiSessionState("closing")).toBe("closed");
+  });
+
+  it("passes modelled states through and drops unknown ones", () => {
+    expect(toAiSessionState("ready")).toBe("ready");
+    expect(toAiSessionState("not_found")).toBe("not_found");
+    expect(toAiSessionState("something-new")).toBeNull();
+    expect(toAiSessionState(undefined)).toBeNull();
+    expect(toAiSessionState(3)).toBeNull();
   });
 });

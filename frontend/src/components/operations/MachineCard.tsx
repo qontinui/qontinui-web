@@ -21,10 +21,10 @@ import {
   HelpCircle,
 } from "lucide-react";
 import type { Runner } from "@qontinui/shared-types";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { renameMachine } from "@/lib/api/operations/coordFleet";
 import {
   formatBytes,
-  machineRenameUrl,
   percentFree,
   readingAgeMs,
   relativeTime,
@@ -451,25 +451,22 @@ export function MachineCard({
     setRenameError(null);
 
     try {
-      const res = await httpClient.fetch(machineRenameUrl(hostname), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: next }),
-        // Safe to re-issue: `rename_machine` UPSERTs the (user, hostname) row
-        // (DELETEs it for an empty name) — pure assignment, repeat is a no-op.
-        idempotent: true,
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      // Safe to re-issue (`renameMachine` is `idempotent`): `rename_machine`
+      // UPSERTs the (user, hostname) row — pure assignment.
+      await renameMachine(hostname, next);
       // Re-fetch the fleet so the authoritative name lands; the
       // `displayName`-keyed effect then drops the optimistic override.
       onRenamed?.();
     } catch (err) {
       // Revert the optimistic name and surface a subtle inline error.
       setOptimisticName(null);
+      const status = httpStatusOf(err);
       setRenameError(
-        err instanceof Error ? err.message : "Failed to rename machine"
+        status !== null
+          ? `HTTP ${status}`
+          : err instanceof Error
+            ? err.message
+            : "Failed to rename machine"
       );
     } finally {
       setSaving(false);

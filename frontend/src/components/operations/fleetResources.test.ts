@@ -10,6 +10,7 @@
 import { describe, it, expect } from "vitest";
 import {
   anchorKey,
+  cpuTempReading,
   AXIS_DIRECTION,
   pressureAxisIsSwap,
   pressureAxisLabel,
@@ -96,6 +97,7 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     age_secs: 10,
     cpu_cores: 16,
     load_1m: null,
+    cpu_temp_c: null,
     mem_total_bytes: 32 * GIB,
     mem_available_bytes: 4 * GIB,
     commit_total_bytes: 64 * GIB,
@@ -988,5 +990,55 @@ describe("the saturation axis renders unknown, never green", () => {
     // silently folded into one of the known three.
     expect(saturationSourceLabel("psi")).toMatch(/psi/);
     expect(saturationSourceLabel("psi")).toMatch(/unknown/i);
+  });
+});
+
+describe("cpuTempReading — temperature is measured or it is not, never zero", () => {
+  const linux = { lane: "host", commit_total_bytes: null };
+  const windows = { lane: "host", commit_total_bytes: 64 * GIB };
+
+  it("rounds a reading to a whole degree with the unit", () => {
+    const r = cpuTempReading({ ...linux, cpu_temp_c: 71.5 });
+    expect(r).toEqual({ kind: "value", celsius: 71.5, text: "72 C" });
+  });
+
+  it("keeps a real 0 as a reading, distinct from null", () => {
+    expect(cpuTempReading({ ...linux, cpu_temp_c: 0 })).toMatchObject({
+      kind: "value",
+      text: "0 C",
+    });
+  });
+
+  it("treats null and an absent key as unknown, never 0 C", () => {
+    expect(cpuTempReading({ ...linux, cpu_temp_c: null })).toEqual({
+      kind: "unknown",
+    });
+    expect(cpuTempReading({ ...linux })).toEqual({ kind: "unknown" });
+  });
+
+  it("says a Windows host (commit_total_bytes != null) is not measurable", () => {
+    expect(cpuTempReading({ ...windows, cpu_temp_c: null })).toEqual({
+      kind: "not_measurable_host",
+    });
+    expect(cpuTempReading({ ...windows })).toEqual({
+      kind: "not_measurable_host",
+    });
+  });
+
+  it("says a wsl lane is not measurable", () => {
+    expect(
+      cpuTempReading({
+        lane: "wsl",
+        commit_total_bytes: null,
+        cpu_temp_c: null,
+      })
+    ).toEqual({ kind: "not_measurable_host" });
+  });
+
+  it("lets a present reading win over the host-type inference", () => {
+    expect(cpuTempReading({ ...windows, cpu_temp_c: 64 })).toMatchObject({
+      kind: "value",
+      text: "64 C",
+    });
   });
 });

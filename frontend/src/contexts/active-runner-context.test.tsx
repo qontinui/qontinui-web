@@ -1143,6 +1143,19 @@ describe("dispatchTargetFrom — where NEW placeable work goes", () => {
       "no_capable",
     ],
     [{ status: "all_drained", pinReleased: null }, "all_drained"],
+    [
+      { status: "all_offline", capableOffline: 1, pinReleased: null },
+      "all_offline",
+    ],
+    [
+      { status: "all_at_capacity", capableDevices: 2, pinReleased: null },
+      "all_at_capacity",
+    ],
+    [{ status: "all_role_closed", pinReleased: null }, "all_role_closed"],
+    [
+      { status: "unknown_outcome", rawOutcome: "all_capable_teleported" },
+      "unknown_outcome",
+    ],
   ] as const)(
     "%o names NO runner (reason %s), even with one listed",
     (res, reason) => {

@@ -37,10 +37,12 @@ import {
   rolloutHeadline,
   scopeStatus,
   summarizeScopes,
-  type DeliveryMode,
-  type FollowupScope,
   type RepoDialReading,
 } from "../_lib/repoFollowupStatus";
+import type {
+  DeliveryMode,
+  FollowupScope,
+} from "@/lib/api/operations/repoFollowupDials";
 
 const LABEL = "Post-merge follow-ups";
 
