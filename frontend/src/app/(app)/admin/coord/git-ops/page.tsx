@@ -67,7 +67,10 @@ import {
   StatusBadge,
   type Stat,
   GlossaryTerm,
+  BackendErrorMessage,
 } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import { deriveGitOpStatus, GIT_OP_STATUS_PALETTE } from "./gitOpStatus";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -298,7 +301,7 @@ export default function CoordGitOpsPage() {
   const [ops, setOps] = useState<GitOpRecord[]>([]);
   const [branches, setBranches] = useState<DeviceBranchSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
   // R5 — one row open at a time, the same model `<RecordList>` holds for a row
   // list, spelled out here because a `<tbody>` cannot host that primitive.
@@ -332,7 +335,7 @@ export default function CoordGitOpsPage() {
         setError(null);
       } catch (e) {
         if (!isCurrent()) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(operationsErrorReading(e));
       } finally {
         if (isCurrent()) setLoading(false);
       }
@@ -404,7 +407,12 @@ export default function CoordGitOpsPage() {
 
       {/* Error */}
       {error && (
-        <p className="text-sm text-destructive">Failed to load: {error}</p>
+        <p
+          className="text-sm text-destructive"
+          data-testid="coord-git-ops-error"
+        >
+          Failed to load: <BackendErrorMessage error={error} />
+        </p>
       )}
 
       {/* Summary tiles */}
