@@ -3894,6 +3894,46 @@ class TestCiNodeModelAccessRoundTrip:
         assert body["requested"]["model_access"] is False
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            httpx.Response(200, content=b"<html>proxy page</html>"),
+            httpx.Response(200, json={"dispatched": True}),
+        ],
+        ids=["unparseable_body", "no_applied_object"],
+    )
+    async def test_an_answer_that_cannot_confirm_is_unconfirmed_not_older_coord(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        monkeypatch,
+        answer: httpx.Response,
+    ) -> None:
+        """Only an ``applied`` object lacking the key proves an older coord; an
+        unreadable body or a missing ``applied`` is UNKNOWN, said as such."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            if "ci_node" not in json_body:  # the enroll dispatch
+                return httpx.Response(200, json={"dispatched": True})
+            return answer
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "unconfirmed-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": False},
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_error"] == "model_access_unconfirmed"
+        assert "unknown" in body["dispatch_detail"]
+
+    @pytest.mark.asyncio
     async def test_a_save_without_the_value_needs_no_echo(
         self, async_db_session: AsyncSession, test_user, monkeypatch
     ) -> None:
