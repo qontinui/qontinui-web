@@ -215,8 +215,8 @@ Solutions to common issues with Qontinui's collaboration features.
 1. **Check WebSocket Connection**
    ```typescript
    const ws = useWebSocket();
-   console.log('Connection state:', ws.getState());
-   // Should be 'connected'
+   console.log('Connected:', ws.isConnected);
+   // Should be true
    ```
 
 2. **Network Issues**
@@ -443,14 +443,15 @@ Solutions to common issues with Qontinui's collaboration features.
 
 2. **Event Listeners Not Cleaned Up**
    ```typescript
+   const ws = useWebSocket();
    useEffect(() => {
-     const handler = (event) => {...};
-     ws.updateHandlers({ onMessage: handler });
+     ws.registerHandlers({ onActivityUpdate: handleActivity });
 
      return () => {
-       ws.updateHandlers({ onMessage: undefined }); // Always cleanup!
+       // Handlers are merged, one per event: clear yours on unmount.
+       ws.registerHandlers({ onActivityUpdate: undefined });
      };
-   }, []);
+   }, [ws]);
    ```
 
 3. **Memory Leak in Activity Log**

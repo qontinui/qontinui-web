@@ -36,8 +36,12 @@
  *
  * What a 0 does NOT mean: the check is about NAMES, not accuracy. It does
  * not check relative or package imports, members of destructured hook
- * results, argument or property shapes, or prose outside docs/architecture.
- * A doc can pass and still be wrong about how a real API behaves.
+ * results, argument or property shapes, or prose outside the two
+ * architecture dirs. A local binding is checked only when its type can be
+ * read (an import, `new X(...)`, `X.getInstance()`, or a `getX()` whose
+ * declared return type resolves); any other local, and any undeclared name
+ * not spelled `xService` / `xManager` / `xAnalyzer`, is not checked. A doc can
+ * pass and still be wrong about how a real API behaves.
  *
  * Exit: 0 nothing unresolved, 1 something unresolved, 2 internal error.
  * Run: `npm run check:doc-refs` from frontend/.
@@ -618,36 +622,49 @@ function checkMemberCalls(file, fences, importedBindings, docsBindings) {
       (m) => m[1]
     )
   );
-  // `const x = getX()` where getX is an imported (or src-exported) function:
-  // x is checked against the type getX is declared to return.
+  // Bindings declared IN the docs (`const x = getX()`, `new X(...)`,
+  // `X.getInstance()`) are scoped: they take effect from the fence that
+  // declares them until the name is declared again, so two unrelated `ws`
+  // in different fences are never confused.
   const localBindings = new Map(importedBindings);
-  for (const m of allCode.matchAll(
-    /\b(?:const|let|var)\s+([\w$]+)\s*=\s*(?:await\s+)?([\w$]+)\s*\(\s*\)/g
-  )) {
-    const fn =
-      localBindings.get(m[2]) || docsBindings.get(m[2]) || srcBinding(m[2]);
-    if (!fn || fn.phantom || fn.namespace || fn.called) continue;
-    const derived = { ...fn, called: true };
-    // A derived binding is a bonus check: bind it only when its shape resolves.
-    if (bindingMembers(derived)) {
-      localBindings.set(m[1], derived);
-      declared.delete(m[1]);
+  const resolveName = (name) =>
+    localBindings.get(name) || docsBindings.get(name) || srcBinding(name);
+  /** The binding a declaration's initialiser yields, or null if unknown. */
+  const deriveBinding = (init) => {
+    let m = init.match(/^(?:await\s+)?([\w$]+)\s*\(\s*\)/);
+    if (m) {
+      // `getX()`: checked against the type getX is declared to return, and
+      // only when that shape resolves (a derived binding is a bonus check).
+      const fn = resolveName(m[1]);
+      if (!fn || fn.phantom || fn.namespace || fn.called) return null;
+      const derived = { ...fn, called: true };
+      return bindingMembers(derived) ? derived : null;
     }
-  }
-  // `const x = new X(...)` / `const x = X.getInstance()` where X is an
-  // imported (or src-exported) class: x is checked against X's members.
-  for (const m of allCode.matchAll(
-    /\b(?:const|let|var)\s+([\w$]+)\s*=\s*(?:await\s+)?(?:new\s+([\w$]+)\s*\(|([\w$]+)\.getInstance\s*\(\s*\))/g
-  )) {
-    const cls = m[2] || m[3];
-    const fn =
-      localBindings.get(cls) || docsBindings.get(cls) || srcBinding(cls);
-    if (!fn || fn.phantom || fn.namespace) continue;
-    localBindings.set(m[1], { ...fn });
-    declared.delete(m[1]);
-  }
+    m =
+      init.match(/^(?:await\s+)?new\s+([\w$]+)\s*\(/) ||
+      init.match(/^(?:await\s+)?([\w$]+)\.getInstance\s*\(\s*\)/);
+    if (m) {
+      // An instance of an imported (or src-exported) class.
+      const cls = resolveName(m[1]);
+      if (!cls || cls.phantom || cls.namespace) return null;
+      return bindingMembers(cls) ? { ...cls } : null;
+    }
+    return null;
+  };
   for (const fence of fences) {
     const body = fence.lines.join("\n");
+    for (const d of body.matchAll(
+      /\b(?:const|let|var)\s+([\w$]+)\s*=\s*([^\n;]*)/g
+    )) {
+      const derived = deriveBinding(d[2].trim());
+      if (derived) {
+        localBindings.set(d[1], derived);
+        declared.delete(d[1]);
+      } else {
+        // Re-declared as something we cannot type: stop checking the name.
+        localBindings.delete(d[1]);
+      }
+    }
     const seen = new Set();
     const check = (local, b, member, index) => {
       if (seen.has(index)) return;

@@ -133,39 +133,11 @@ export function usePresence(projectId: number) {
   const ws = useWebSocket();
 
   useEffect(() => {
-    // Join presence channel
-    ws.send({
-      type: 'presence:join',
-      project_id: projectId
-    });
-
-    // Listen for presence updates
-    const handlePresence = (event: any) => {
-      if (event.type === 'presence:update') {
-        setActiveUsers(event.users);
-      }
-    };
-
-    ws.updateHandlers({ onMessage: handlePresence });
-
-    // Update my status periodically
-    const interval = setInterval(() => {
-      ws.send({
-        type: 'presence:update',
-        project_id: projectId,
-        status: myStatus
-      });
-    }, 30000); // Every 30 seconds
-
-    return () => {
-      ws.updateHandlers({ onMessage: undefined });
-      clearInterval(interval);
-      ws.send({
-        type: 'presence:leave',
-        project_id: projectId
-      });
-    };
-  }, [projectId, myStatus]);
+    // WebSocketProvider holds the connection for the project. registerHandlers
+    // MERGES into one handler per event, so clear yours on unmount.
+    ws.registerHandlers({ onPresenceUpdate: setActiveUsers });
+    return () => ws.registerHandlers({ onPresenceUpdate: undefined });
+  }, [ws, projectId]);
 
   return { activeUsers, myStatus, setMyStatus };
 }
@@ -301,6 +273,7 @@ export function ResourceLockIndicator({
   onLockAcquired: () => void;
   onLockReleased: () => void;
 }) {
+  const ws = useWebSocket();
   const [lock, setLock] = useState<ResourceLock | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -308,23 +281,18 @@ export function ResourceLockIndicator({
     // Check for existing lock
     checkLock(projectId, resourceType, resourceId).then(setLock);
 
-    // Subscribe to lock updates via WebSocket
-    const handleLockUpdate = (event: any) => {
-      if (
-        event.type === 'lock:acquired' &&
-        event.resource_id === resourceId
-      ) {
-        setLock(event.lock);
-      } else if (
-        event.type === 'lock:released' &&
-        event.resource_id === resourceId
-      ) {
-        setLock(null);
-      }
-    };
-
-    ws.updateHandlers({ onMessage: handleLockUpdate });
-    return () => ws.updateHandlers({ onMessage: undefined });
+    // Subscribe to lock updates via WebSocket (const ws = useWebSocket()).
+    // registerHandlers keeps ONE handler per event, so clear it on unmount.
+    ws.registerHandlers({
+      onLockAcquired: (acquired) => {
+        if (acquired.resource_id === resourceId) setLock(acquired);
+      },
+      onLockReleased: (released) => {
+        if (released.resource_id === resourceId) setLock(null);
+      },
+    });
+    return () =>
+      ws.registerHandlers({ onLockAcquired: undefined, onLockReleased: undefined });
   }, [projectId, resourceType, resourceId]);
 
   const handleAcquireLock = async () => {
@@ -556,31 +524,10 @@ const saveWorkflow = async (workflow: Workflow) => {
 
 ### Receiving Updates
 
-```typescript
-// Listen for resource updates
-useEffect(() => {
-  const handleUpdate = (event: UpdateEvent) => {
-    if (event.resource_type === 'workflow') {
-      // Merge changes into local state
-      setWorkflows(prev =>
-        prev.map(w =>
-          w.id === event.resource_id
-            ? { ...w, ...event.changes }
-            : w
-        )
-      );
-
-      // Show notification
-      toast.info(
-        `${event.user.username} updated ${event.changes.name || 'workflow'}`
-      );
-    }
-  };
-
-  ws.updateHandlers({ onMessage: handleUpdate });
-  return () => ws.updateHandlers({ onMessage: undefined });
-}, []);
-```
+Remote changes arrive as activity events. Subscribe with
+`useWebSocket().registerHandlers({ onActivityUpdate })` and clear the handler
+(`onActivityUpdate: undefined`) on unmount — the provider keeps one handler per
+event, so a second subscriber replaces the first.
 
 ## Conflict Prevention
 
