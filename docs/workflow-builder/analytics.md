@@ -35,7 +35,7 @@ const metrics = workflowAnalyticsService.getWorkflowMetrics(workflowId);
 
 if (metrics) {
   console.log(`Executions: ${metrics.totalExecutions}`);
-  console.log(`Success Rate: ${metrics.successRate}%`);
+  console.log(`Success Rate: ${(metrics.successRate * 100).toFixed(1)}%`);
   console.log(`Average Duration: ${metrics.avgDuration}ms`);
 }
 ```
@@ -103,8 +103,8 @@ function monitorWorkflowPerformance(workflowId: string) {
   const metrics = workflowAnalyticsService.getWorkflowMetrics(workflowId);
   if (!metrics) return;
 
-  if (metrics.successRate < 90) {
-    console.warn(`Success rate dropped to ${metrics.successRate}%`);
+  if (metrics.successRate < 0.9) {
+    console.warn(`Success rate dropped to ${(metrics.successRate * 100).toFixed(1)}%`);
   }
   if (metrics.avgDuration > 5000) {
     console.warn(`Average duration increased to ${metrics.avgDuration}ms`);
