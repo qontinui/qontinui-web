@@ -36,7 +36,7 @@ export type CalibrationBatchResult = Schemas["CalibrationBatchResult"];
 export type TasteSettingsOut = Schemas["TasteSettingsOut"];
 export type ImageAssetUploadResponse = Schemas["ImageAssetUploadResponse"];
 
-async function json<T>(res: Response): Promise<T> {
+async function readTasteJson<T>(res: Response): Promise<T> {
   if (!res.ok) throw await backendError(res);
   return (await res.json()) as T;
 }
@@ -54,7 +54,7 @@ export async function fetchTasteInbox(options: {
   const res = await httpClient.fetch(`${TASTE_BASE}/inbox?${query}`, {
     method: "GET",
   });
-  return json<TasteInbox>(res);
+  return readTasteJson<TasteInbox>(res);
 }
 
 export async function labelTastePair(
@@ -65,21 +65,21 @@ export async function labelTastePair(
     method: "PUT",
     body: JSON.stringify(body),
   });
-  return json<TastePair>(res);
+  return readTasteJson<TastePair>(res);
 }
 
 export async function undoTasteLabel(pairId: string): Promise<TastePair> {
   const res = await httpClient.fetch(`${TASTE_BASE}/pairs/${pairId}/label`, {
     method: "DELETE",
   });
-  return json<TastePair>(res);
+  return readTasteJson<TastePair>(res);
 }
 
 export async function skipTastePair(pairId: string): Promise<TastePair> {
   const res = await httpClient.fetch(`${TASTE_BASE}/pairs/${pairId}/skip`, {
     method: "POST",
   });
-  return json<TastePair>(res);
+  return readTasteJson<TastePair>(res);
 }
 
 export async function buildCalibrationBatch(
@@ -89,7 +89,7 @@ export async function buildCalibrationBatch(
     method: "POST",
     body: JSON.stringify({ size }),
   });
-  return json<CalibrationBatchResult>(res);
+  return readTasteJson<CalibrationBatchResult>(res);
 }
 
 export async function writeTasteBudget(
@@ -99,7 +99,7 @@ export async function writeTasteBudget(
     method: "PUT",
     body: JSON.stringify({ weekly_budget: weeklyBudget }),
   });
-  return json<TasteSettingsOut>(res);
+  return readTasteJson<TasteSettingsOut>(res);
 }
 
 /**
@@ -121,7 +121,7 @@ export async function uploadReferenceImage(
     method: "POST",
     body: form,
   });
-  return json<ImageAssetUploadResponse>(res);
+  return readTasteJson<ImageAssetUploadResponse>(res);
 }
 
 /** One stored image's bytes, through the tenant-checked content route. */
