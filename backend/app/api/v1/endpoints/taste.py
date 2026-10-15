@@ -176,7 +176,7 @@ def _image(asset: ImageAsset) -> TasteImage:
     )
 
 
-async def _render(
+async def _render_pairs(
     db: AsyncSession, tenant_id: UUID, pairs: list[TastePair]
 ) -> list[TastePairOut]:
     assets = await crud.get_assets(
@@ -260,7 +260,7 @@ async def _budget(
     response_model=TasteInbox,
     summary="Read the taste inbox: the queue head, the budget, recent labels",
 )
-async def read_inbox(
+async def read_taste_inbox(
     limit: Annotated[
         int,
         Query(ge=1, le=MAX_QUEUE_LIMIT, description="How many queued pairs to return."),
@@ -284,7 +284,7 @@ async def read_inbox(
     recent = list(
         await crud.list_recent_labels(db, tenant_id=tenant_id, limit=RECENT_LABELS)
     )
-    rendered = await _render(db, tenant_id, queue + recent)
+    rendered = await _render_pairs(db, tenant_id, queue + recent)
     pool = await crud.calibration_pool(db, tenant_id=tenant_id)
     return TasteInbox(
         budget=budget,
@@ -350,7 +350,7 @@ async def _require_assets(
     },
     summary="Queue one pairwise taste question",
 )
-async def push_pair(
+async def queue_taste_pair(
     payload: TastePairPush,
     response: Response,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
@@ -381,7 +381,7 @@ async def push_pair(
         created=created,
     )
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    [out] = await _render(db, principal.tenant_id, [pair])
+    [out] = await _render_pairs(db, principal.tenant_id, [pair])
     return TastePairPushResponse(pair=out, created=created)
 
 
@@ -394,7 +394,7 @@ async def push_pair(
     },
     summary="Withdraw an unanswered pair",
 )
-async def withdraw_pair(
+async def withdraw_taste_pair(
     pair_id: Annotated[UUID, Path()],
     principal: MemoryPrincipal = Depends(get_memory_tenant),
     db: AsyncSession = Depends(get_async_db),
@@ -429,7 +429,7 @@ async def withdraw_pair(
     },
     summary="Label one pair: A, B or both bad, with reasons, a comment and an edit",
 )
-async def label_pair(
+async def label_taste_pair(
     pair_id: Annotated[UUID, Path()],
     payload: TasteLabelWrite,
     labeller: Labeller = Depends(get_labeller),
@@ -463,7 +463,7 @@ async def label_pair(
         existing = await crud.get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
         if existing is None:
             raise _pair_not_found()
-        [current] = await _render(db, tenant_id, [existing])
+        [current] = await _render_pairs(db, tenant_id, [existing])
         raise _refusal(
             status.HTTP_409_CONFLICT,
             "pair_already_labelled",
@@ -479,7 +479,7 @@ async def label_pair(
         reasons=len(payload.reasons),
         relabel=payload.relabel,
     )
-    [out] = await _render(db, tenant_id, [pair])
+    [out] = await _render_pairs(db, tenant_id, [pair])
     return out
 
 
@@ -492,7 +492,7 @@ async def label_pair(
     },
     summary="Undo a label: the pair returns to the queue",
 )
-async def unlabel_pair(
+async def unlabel_taste_pair(
     pair_id: Annotated[UUID, Path()],
     labeller: Labeller = Depends(get_labeller),
     db: AsyncSession = Depends(get_async_db),
@@ -510,7 +510,7 @@ async def unlabel_pair(
             "This pair has no label to undo.",
         )
     await db.commit()
-    [out] = await _render(db, labeller.tenant_id, [pair])
+    [out] = await _render_pairs(db, labeller.tenant_id, [pair])
     return out
 
 
@@ -523,7 +523,7 @@ async def unlabel_pair(
     },
     summary="Skip an unanswered pair: it moves to the back of the queue",
 )
-async def skip_pair(
+async def skip_taste_pair(
     pair_id: Annotated[UUID, Path()],
     labeller: Labeller = Depends(get_labeller),
     db: AsyncSession = Depends(get_async_db),
@@ -541,7 +541,7 @@ async def skip_pair(
             "This pair is already labelled; there is nothing to skip.",
         )
     await db.commit()
-    [out] = await _render(db, labeller.tenant_id, [pair])
+    [out] = await _render_pairs(db, labeller.tenant_id, [pair])
     return out
 
 
@@ -553,7 +553,7 @@ async def skip_pair(
     response_model=CalibrationBatchResult,
     summary="Queue the calibration batch: pairs across the tenant's directions",
 )
-async def build_calibration_batch(
+async def build_taste_calibration_batch(
     payload: CalibrationBatchRequest,
     labeller: Labeller = Depends(get_labeller),
     db: AsyncSession = Depends(get_async_db),
@@ -611,7 +611,7 @@ async def build_calibration_batch(
     response_model=TasteSettingsOut,
     summary="Set the weekly labelling budget",
 )
-async def write_settings(
+async def write_taste_settings(
     payload: TasteSettingsWrite,
     labeller: Labeller = Depends(get_labeller),
     db: AsyncSession = Depends(get_async_db),
@@ -639,7 +639,7 @@ async def write_settings(
     responses={422: {"description": "A malformed cursor."}},
     summary="List labelled pairs, oldest label first, a page at a time",
 )
-async def list_labels(
+async def read_taste_labels(
     limit: Annotated[int, Query(ge=1, le=MAX_LABEL_PAGE)] = DEFAULT_LABEL_PAGE,
     after: Annotated[
         str | None,
@@ -664,5 +664,5 @@ async def list_labels(
         next_cursor=crud.encode_label_cursor(pairs[-1])
         if truncated and pairs
         else None,
-        labels=await _render(db, principal.tenant_id, pairs),
+        labels=await _render_pairs(db, principal.tenant_id, pairs),
     )
