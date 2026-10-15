@@ -417,23 +417,28 @@ export interface ElementMedia {
   in_viewport?: boolean;
 }
 
+// Both tables are Maps, never object literals: their keys come from the page
+// (a tag name, an SDK string), and an object lookup would answer for inherited
+// prototype keys too — `<constructor role="img">` would read `kind` as a
+// function, JSON would drop it, and serde would reject the whole snapshot.
+
 /** SDK `mediaType` -> `MediaKind`, for every type the tag does not refine. */
-const MEDIA_TYPE_KINDS: Readonly<Record<string, MediaKind>> = {
-  picture: "picture",
-  svg: "svg",
-  video: "video",
-  canvas: "canvas",
-  "background-image": "css_background",
-};
+const MEDIA_TYPE_KINDS: ReadonlyMap<string, MediaKind> = new Map<string, MediaKind>([
+  ["picture", "picture"],
+  ["svg", "svg"],
+  ["video", "video"],
+  ["canvas", "canvas"],
+  ["background-image", "css_background"],
+]);
 
 /** Tags whose kind is unambiguous even when the facts are unreadable. */
-const TAG_KINDS: Readonly<Record<string, MediaKind>> = {
-  img: "img",
-  picture: "picture",
-  svg: "svg",
-  video: "video",
-  canvas: "canvas",
-};
+const TAG_KINDS: ReadonlyMap<string, MediaKind> = new Map<string, MediaKind>([
+  ["img", "img"],
+  ["picture", "picture"],
+  ["svg", "svg"],
+  ["video", "video"],
+  ["canvas", "canvas"],
+]);
 
 /**
  * Kinds whose text content is never PAINTED: an `<img>` has none, a video's
@@ -566,10 +571,10 @@ function mediaKind(
     if (tag !== undefined) return tag === "img" ? "img" : "role_img";
     return facts && nonEmpty(facts.src) ? "img" : "role_img";
   }
-  if (typeof mediaType === "string" && mediaType in MEDIA_TYPE_KINDS) {
-    return MEDIA_TYPE_KINDS[mediaType] ?? null;
+  if (typeof mediaType === "string" && MEDIA_TYPE_KINDS.has(mediaType)) {
+    return MEDIA_TYPE_KINDS.get(mediaType) ?? null;
   }
-  return tag !== undefined ? (TAG_KINDS[tag] ?? null) : null;
+  return tag !== undefined ? (TAG_KINDS.get(tag) ?? null) : null;
 }
 
 /**
@@ -767,7 +772,7 @@ export function enrichElement(el: Record<string, unknown>): void {
   const tag = lowerTag(el);
   const kind =
     (typeof mediaRec?.kind === "string" ? mediaRec.kind : undefined) ??
-    (tag !== undefined ? TAG_KINDS[tag] : undefined);
+    (tag !== undefined ? TAG_KINDS.get(tag) : undefined);
 
   // text — PAINTED text only: visible text, then state.textContent. Omit
   // empty. A media kind whose content is never painted carries no text at all
