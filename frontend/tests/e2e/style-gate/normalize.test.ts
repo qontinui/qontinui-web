@@ -1064,6 +1064,27 @@ describe("M1: natural_px is source pixels, never a density-corrected reading", (
     );
     expect(media.natural_px).toEqual({ w: 1280, h: 720 });
   });
+
+  // When no srcset candidate resolves, the producer lists the natural size
+  // unmeasured. It stays absent here, and `effective_resolution` (computed
+  // from it) goes with it even if a value rode along — absent is absent.
+  it.each([[["naturalWidth", "naturalHeight"]], [["naturalWidth"]], [["naturalHeight"]]])(
+    "omits natural_px and effective_resolution when %j is unmeasured",
+    (dims) => {
+      const media = mediaOf(
+        mediaRow(measured({ ...IMAGE_FACTS, srcset: "/a-640.jpg 640w, /a-1280.jpg 1280w" }, dims))
+      );
+      expect(media.natural_px).toBeUndefined();
+      expect(media.effective_resolution).toBeUndefined();
+      expect(media.rendered_px).toEqual({ w: 100, h: 50 });
+    }
+  );
+
+  it("omits effective_resolution when the natural size is absent", () => {
+    const { naturalWidth: _w, naturalHeight: _h, ...rest } = IMAGE_FACTS;
+    expect(mediaOf(mediaRow(measured(rest))).effective_resolution).toBeUndefined();
+    expect(mediaOf(mediaRow(measured(IMAGE_FACTS))).effective_resolution).toBe(2);
+  });
 });
 
 describe("m3: enriched rows carry no raw media URLs", () => {
