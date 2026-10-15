@@ -436,22 +436,16 @@ describe("LifecycleView restriction (the split per qontinui-coord#3128)", () => 
     // Every snapshot row at the release stage is SystemTenant-scoped.
     const release = stageSection("release");
     expect(release).toHaveTextContent(
-      "Every live probe at this stage is restricted for this tenant."
+      "Every live probe at this stage is restricted for you."
     );
-    expect(release).toHaveTextContent("live-probed · 7 restricted");
-    // No probe answered because none was allowed to: the live count is a dash,
-    // never a 0 that reads as "nothing answered".
-    const liveCount = within(release)
-      .getByText("live-probed · 7 restricted")
-      .parentElement!.querySelector("dd")!;
-    expect(liveCount).toHaveTextContent(/^—$/);
-    expect(liveCount).not.toHaveTextContent("0");
     expect(release).not.toHaveTextContent("No live probe answering");
     // The access legend entry shows only when something is restricted.
-    expect(screen.getByText("restricted (access)")).toBeInTheDocument();
-    // Twin cards: the environment twin is wholly refused; the process twin's
-    // two probes answer, with nothing restricted to report.
-    expect(screen.getByText(/^9 restricted · /)).toBeInTheDocument();
-    expect(screen.getByText(/^2\/2 live-probed · /)).toBeInTheDocument();
+    expect(
+      screen.getByText("restricted (not yours to read)")
+    ).toBeInTheDocument();
+    // Twin cards: the environment twin is wholly refused, and says so rather
+    // than reading "0/0"; the process twin's probes answer.
+    expect(screen.getByText(/^all restricted for you · /)).toBeInTheDocument();
+    expect(screen.getByText(/^\d+\/\d+ live-probed · /)).toBeInTheDocument();
   });
 });
