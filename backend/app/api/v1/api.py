@@ -129,6 +129,7 @@ from app.api.v1.endpoints import (
     state_discovery_results,
     state_machine_configs,
     task_runs,
+    taste,
     template_capture,
     training,
     training_datasets,
@@ -488,6 +489,11 @@ api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
 api_router.include_router(
     image_assets.router, prefix="/image-assets", tags=["image-assets"]
 )
+# The taste inbox — web.taste_pairs + web.taste_settings: pairwise image labels
+# over the image store, read and pushed under the same device-JWT tenant,
+# labelled by coord-tenant admins (plan
+# 2026-10-13-image-generation-and-visual-judgment, Phase 23).
+api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
 # Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries

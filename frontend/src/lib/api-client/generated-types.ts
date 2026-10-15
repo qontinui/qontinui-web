@@ -22948,6 +22948,147 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/taste/calibration-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue the calibration batch: pairs across the tenant's directions
+         * @description Idempotent: a pair already queued is never queued twice, so building
+         *     again only adds pairs the pool's growth makes possible.
+         */
+        post: operations["api_v1_taste_calibration_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the taste inbox: the queue head, the budget, recent labels */
+        get: operations["api_v1_taste_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List labelled pairs, oldest label first, a page at a time */
+        get: operations["api_v1_taste_labels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue one pairwise taste question */
+        post: operations["api_v1_taste_pairs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Withdraw an unanswered pair */
+        delete: operations["api_v1_taste_pairs_pair_id_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Label one pair: A, B or both bad, with reasons, a comment and an edit */
+        put: operations["api_v1_taste_pairs_pair_id_label_put"];
+        post?: never;
+        /** Undo a label: the pair returns to the queue */
+        delete: operations["api_v1_taste_pairs_pair_id_label_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip an unanswered pair: it moves to the back of the queue */
+        post: operations["api_v1_taste_pairs_pair_id_skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the weekly labelling budget */
+        put: operations["api_v1_taste_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/template-capture/candidates": {
         parameters: {
             query?: never;
@@ -28417,6 +28558,41 @@ export interface components {
              * Format: date
              */
             start_date: string;
+        };
+        /**
+         * CalibrationBatchRequest
+         * @description ``POST /api/v1/taste/calibration-batch``.
+         */
+        CalibrationBatchRequest: {
+            /**
+             * Size
+             * @default 20
+             */
+            size: number;
+        };
+        /**
+         * CalibrationBatchResult
+         * @description What a calibration build did.
+         *
+         *     ``created`` new pairs were queued; ``already_queued`` were pairs the
+         *     builder chose that the queue already held. ``shortfall`` names why fewer
+         *     than ``requested`` were created: ``pool_too_small`` (fewer than two images
+         *     to pair), ``pool_exhausted`` (every pairing the pool allows is queued),
+         *     ``concurrent_build`` (another build queued some of this one's pairs
+         *     first).
+         */
+        CalibrationBatchResult: {
+            /** Already Queued */
+            already_queued: number;
+            /** Created */
+            created: number;
+            /** Pair Ids */
+            pair_ids: string[];
+            pool: components["schemas"]["TastePool"];
+            /** Requested */
+            requested: number;
+            /** Shortfall */
+            shortfall: ("pool_too_small" | "pool_exhausted" | "concurrent_build") | null;
         };
         /**
          * CancelProposalBody
@@ -50759,6 +50935,269 @@ export interface components {
          * @enum {string}
          */
         TaskType: "task" | "automation" | "scheduled";
+        /**
+         * TasteBudget
+         * @description The weekly labelling budget and how much of it this week has used.
+         *
+         *     A week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``
+         *     was written for this tenant (``setting``) or is the declared default
+         *     (``default``).
+         */
+        TasteBudget: {
+            /** Labelled This Week */
+            labelled_this_week: number;
+            /** Remaining */
+            remaining: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "setting" | "default";
+            /**
+             * Week Starts At
+             * Format: date-time
+             */
+            week_starts_at: string;
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
+        /** TasteDirection */
+        TasteDirection: {
+            /** Direction */
+            direction: string;
+            /** Images */
+            images: number;
+        };
+        /**
+         * TasteImage
+         * @description One image of a pair, as the store holds it.
+         */
+        TasteImage: {
+            /** Byte Size */
+            byte_size: number;
+            /** Direction */
+            direction: string | null;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * TasteInbox
+         * @description ``GET /api/v1/taste/inbox`` — everything the inbox page renders, in
+         *     one read.
+         *
+         *     ``pairs`` is the head of the queue in the order it is asked: never-skipped
+         *     pairs first (most uncertain, then oldest), then skipped ones (least
+         *     recently skipped first). While the week's budget is spent it is empty
+         *     unless ``over_budget`` was asked for — the queue itself is untouched, and
+         *     ``pending_total`` still counts it.
+         */
+        TasteInbox: {
+            budget: components["schemas"]["TasteBudget"];
+            /** Can Label */
+            can_label: boolean;
+            /** Labelled Total */
+            labelled_total: number;
+            /** Over Budget */
+            over_budget: boolean;
+            /** Pairs */
+            pairs: components["schemas"]["TastePairOut"][];
+            /** Pending Total */
+            pending_total: number;
+            pool: components["schemas"]["TastePool"];
+            /** Reason Vocabulary */
+            reason_vocabulary: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            /** Recent */
+            recent: components["schemas"]["TastePairOut"][];
+        };
+        /**
+         * TasteLabelPage
+         * @description ``GET /api/v1/taste/labels`` — labelled pairs, oldest label first, for
+         *     the taste twin (Phase 24). ``next_cursor`` is set exactly when more exist.
+         */
+        TasteLabelPage: {
+            /** Labels */
+            labels: components["schemas"]["TastePairOut"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * TasteLabelWrite
+         * @description ``PUT /api/v1/taste/pairs/{id}/label`` — answer one pair.
+         *
+         *     A pair someone has already labelled is refused (409
+         *     ``pair_already_labelled``) unless ``relabel`` is true, so two labellers
+         *     working the queue at once never silently overwrite each other.
+         */
+        TasteLabelWrite: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "a" | "b" | "both_bad";
+            /** Comment */
+            comment?: string | null;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256?: string | null;
+            /** Edit Note */
+            edit_note?: string | null;
+            /** Reasons */
+            reasons?: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            /**
+             * Relabel
+             * @default false
+             */
+            relabel: boolean;
+        };
+        /** TastePairOut */
+        TastePairOut: {
+            asset_a: components["schemas"]["TasteImage"];
+            asset_b: components["schemas"]["TasteImage"];
+            /** Capture A Sha256 */
+            capture_a_sha256: string | null;
+            /** Capture B Sha256 */
+            capture_b_sha256: string | null;
+            /** Comment */
+            comment: string | null;
+            /** Context */
+            context: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256: string | null;
+            /** Edit Note */
+            edit_note: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** In Situ */
+            in_situ: boolean;
+            /** Label */
+            label: ("a" | "b" | "both_bad") | null;
+            /** Labelled At */
+            labelled_at: string | null;
+            /** Labeller Name */
+            labeller_name: string | null;
+            /** Labeller User Id */
+            labeller_user_id: string | null;
+            /** Pushed By */
+            pushed_by: string;
+            /** Reasons */
+            reasons: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            /** Repo */
+            repo: string | null;
+            /** Skip Count */
+            skip_count: number;
+            /** Skipped At */
+            skipped_at: string | null;
+            /** Slot Id */
+            slot_id: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "calibration" | "active_learning" | "post_hoc";
+            /** Uncertainty */
+            uncertainty: number | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * TastePairPush
+         * @description ``POST /api/v1/taste/pairs`` — put one pairwise question in the queue.
+         *
+         *     Studio's door (Phase 20 onward: where the judge panel disagrees or the
+         *     taste head is least certain, plus post-hoc samples of landed images).
+         *     Identity is the slot plus the UNORDERED pair of images: a push of a pair
+         *     already queued answers with that row (``created: false``) and changes
+         *     nothing.
+         */
+        TastePairPush: {
+            /** Asset A Sha256 */
+            asset_a_sha256: string;
+            /** Asset B Sha256 */
+            asset_b_sha256: string;
+            /** Capture A Sha256 */
+            capture_a_sha256?: string | null;
+            /** Capture B Sha256 */
+            capture_b_sha256?: string | null;
+            /** Context */
+            context?: {
+                [key: string]: unknown;
+            };
+            /** Repo */
+            repo?: string | null;
+            /** Slot Id */
+            slot_id?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "calibration" | "active_learning" | "post_hoc";
+            /** Uncertainty */
+            uncertainty?: number | null;
+        };
+        /** TastePairPushResponse */
+        TastePairPushResponse: {
+            /** Created */
+            created: boolean;
+            pair: components["schemas"]["TastePairOut"];
+        };
+        /**
+         * TastePool
+         * @description The images a calibration batch can draw from: every ``candidate`` and
+         *     ``exemplar`` the tenant holds, grouped by direction.
+         */
+        TastePool: {
+            /** Directions */
+            directions: components["schemas"]["TasteDirection"][];
+            /** Images */
+            images: number;
+        };
+        /** TasteSettingsOut */
+        TasteSettingsOut: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "setting" | "default";
+            /** Updated At */
+            updated_at: string | null;
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
+        /**
+         * TasteSettingsWrite
+         * @description ``PUT /api/v1/taste/settings``.
+         */
+        TasteSettingsWrite: {
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
         /**
          * TeamMemberCreate
          * @description Schema for adding a team member.
@@ -89784,6 +90223,366 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VerificationResultResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_calibration_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationBatchResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_inbox_get: {
+        parameters: {
+            query?: {
+                /** @description How many queued pairs to return. */
+                limit?: number;
+                /** @description Return queued pairs even when this week's budget is spent (the operator chose to keep going). */
+                over_budget?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteInbox"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_labels_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description The previous page's next_cursor. */
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteLabelPage"];
+                };
+            };
+            /** @description A malformed cursor. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_taste_pairs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TastePairPush"];
+            };
+        };
+        responses: {
+            /** @description The pair was already queued (in either order); nothing changed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairPushResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairPushResponse"];
+                };
+            };
+            /** @description This tenant holds no image with a named sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A malformed field, or a capture that is not one. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is labelled; a label is never withdrawn here. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_label_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TasteLabelWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair, or no such edited image, for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Someone already labelled this pair (send relabel: true to replace it). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_label_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is not labelled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is already labelled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TasteSettingsWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteSettingsOut"];
                 };
             };
             /** @description Validation Error */

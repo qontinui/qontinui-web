@@ -6286,6 +6286,75 @@
         "title": "CalendarBreakWrite",
         "type": "object"
       },
+      "CalibrationBatchRequest": {
+        "additionalProperties": false,
+        "description": "``POST /api/v1/taste/calibration-batch``.",
+        "properties": {
+          "size": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "title": "CalibrationBatchRequest",
+        "type": "object"
+      },
+      "CalibrationBatchResult": {
+        "description": "What a calibration build did.\n\n``created`` new pairs were queued; ``already_queued`` were pairs the\nbuilder chose that the queue already held. ``shortfall`` names why fewer\nthan ``requested`` were created: ``pool_too_small`` (fewer than two images\nto pair), ``pool_exhausted`` (every pairing the pool allows is queued),\n``concurrent_build`` (another build queued some of this one's pairs\nfirst).",
+        "properties": {
+          "already_queued": {
+            "title": "Already Queued",
+            "type": "integer"
+          },
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "pair_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Pair Ids",
+            "type": "array"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/TastePool"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "integer"
+          },
+          "shortfall": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pool_too_small",
+                  "pool_exhausted",
+                  "concurrent_build"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortfall"
+          }
+        },
+        "required": [
+          "requested",
+          "created",
+          "already_queued",
+          "pool",
+          "shortfall",
+          "pair_ids"
+        ],
+        "title": "CalibrationBatchResult",
+        "type": "object"
+      },
       "CancelProposalBody": {
         "additionalProperties": false,
         "description": "Body for ``POST /pr-merge/proposals/{proposal_id}/cancel``.\n\nMirrors coord's ``CancelProposalRequest`` exactly. ``unblock`` is the whole\npoint of the pair and is NOT a modifier on one action \u2014 it selects between\ntwo actions that do opposite things:\n\n- ``unblock=False`` (default) \u2014 **STOP.** The proposal flips to\n  ``cancelled`` and STAYS on record at this head, which is itself what\n  blocks coord re-enqueueing the PR at the same commit.\n- ``unblock=True`` \u2014 **RETRY.** Clears the stuck attempt and lets coord\n  queue a fresh one at the same commit.\n\nThe web surface renders these as two separately-labelled buttons for that\nreason; they must never be collapsed into one \"Cancel\".",
@@ -55160,6 +55229,755 @@
         ],
         "title": "TaskType",
         "type": "string"
+      },
+      "TasteBudget": {
+        "description": "The weekly labelling budget and how much of it this week has used.\n\nA week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``\nwas written for this tenant (``setting``) or is the declared default\n(``default``).",
+        "properties": {
+          "labelled_this_week": {
+            "title": "Labelled This Week",
+            "type": "integer"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "setting",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "week_starts_at": {
+            "format": "date-time",
+            "title": "Week Starts At",
+            "type": "string"
+          },
+          "weekly_budget": {
+            "title": "Weekly Budget",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weekly_budget",
+          "source",
+          "week_starts_at",
+          "labelled_this_week",
+          "remaining"
+        ],
+        "title": "TasteBudget",
+        "type": "object"
+      },
+      "TasteDirection": {
+        "properties": {
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "images": {
+            "title": "Images",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "direction",
+          "images"
+        ],
+        "title": "TasteDirection",
+        "type": "object"
+      },
+      "TasteImage": {
+        "description": "One image of a pair, as the store holds it.",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "kind",
+          "mime_type",
+          "width",
+          "height",
+          "byte_size",
+          "direction"
+        ],
+        "title": "TasteImage",
+        "type": "object"
+      },
+      "TasteInbox": {
+        "description": "``GET /api/v1/taste/inbox`` \u2014 everything the inbox page renders, in\none read.\n\n``pairs`` is the head of the queue in the order it is asked: never-skipped\npairs first (most uncertain, then oldest), then skipped ones (least\nrecently skipped first). While the week's budget is spent it is empty\nunless ``over_budget`` was asked for \u2014 the queue itself is untouched, and\n``pending_total`` still counts it.",
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/TasteBudget"
+          },
+          "can_label": {
+            "title": "Can Label",
+            "type": "boolean"
+          },
+          "labelled_total": {
+            "title": "Labelled Total",
+            "type": "integer"
+          },
+          "over_budget": {
+            "title": "Over Budget",
+            "type": "boolean"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/TastePairOut"
+            },
+            "title": "Pairs",
+            "type": "array"
+          },
+          "pending_total": {
+            "title": "Pending Total",
+            "type": "integer"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/TastePool"
+          },
+          "reason_vocabulary": {
+            "items": {
+              "enum": [
+                "on_style",
+                "off_style",
+                "off_palette",
+                "composition",
+                "cropping",
+                "wrong_subject",
+                "too_busy",
+                "text_in_image",
+                "artifacts",
+                "low_quality"
+              ],
+              "type": "string"
+            },
+            "title": "Reason Vocabulary",
+            "type": "array"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/TastePairOut"
+            },
+            "title": "Recent",
+            "type": "array"
+          }
+        },
+        "required": [
+          "budget",
+          "pending_total",
+          "labelled_total",
+          "over_budget",
+          "pairs",
+          "recent",
+          "pool",
+          "can_label",
+          "reason_vocabulary"
+        ],
+        "title": "TasteInbox",
+        "type": "object"
+      },
+      "TasteLabelPage": {
+        "description": "``GET /api/v1/taste/labels`` \u2014 labelled pairs, oldest label first, for\nthe taste twin (Phase 24). ``next_cursor`` is set exactly when more exist.",
+        "properties": {
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/TastePairOut"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "limit",
+          "truncated",
+          "next_cursor",
+          "labels"
+        ],
+        "title": "TasteLabelPage",
+        "type": "object"
+      },
+      "TasteLabelWrite": {
+        "additionalProperties": false,
+        "description": "``PUT /api/v1/taste/pairs/{id}/label`` \u2014 answer one pair.\n\nA pair someone has already labelled is refused (409\n``pair_already_labelled``) unless ``relabel`` is true, so two labellers\nworking the queue at once never silently overwrite each other.",
+        "properties": {
+          "choice": {
+            "enum": [
+              "a",
+              "b",
+              "both_bad"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "edit_asset_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Asset Sha256"
+          },
+          "edit_note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Note"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "on_style",
+                "off_style",
+                "off_palette",
+                "composition",
+                "cropping",
+                "wrong_subject",
+                "too_busy",
+                "text_in_image",
+                "artifacts",
+                "low_quality"
+              ],
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Reasons",
+            "type": "array"
+          },
+          "relabel": {
+            "default": false,
+            "title": "Relabel",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "choice"
+        ],
+        "title": "TasteLabelWrite",
+        "type": "object"
+      },
+      "TastePairOut": {
+        "properties": {
+          "asset_a": {
+            "$ref": "#/components/schemas/TasteImage"
+          },
+          "asset_b": {
+            "$ref": "#/components/schemas/TasteImage"
+          },
+          "capture_a_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture A Sha256"
+          },
+          "capture_b_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture B Sha256"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "edit_asset_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Asset Sha256"
+          },
+          "edit_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Note"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "in_situ": {
+            "title": "In Situ",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "a",
+                  "b",
+                  "both_bad"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "labelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labelled At"
+          },
+          "labeller_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labeller Name"
+          },
+          "labeller_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labeller User Id"
+          },
+          "pushed_by": {
+            "title": "Pushed By",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "on_style",
+                "off_style",
+                "off_palette",
+                "composition",
+                "cropping",
+                "wrong_subject",
+                "too_busy",
+                "text_in_image",
+                "artifacts",
+                "low_quality"
+              ],
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "skip_count": {
+            "title": "Skip Count",
+            "type": "integer"
+          },
+          "skipped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped At"
+          },
+          "slot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot Id"
+          },
+          "source": {
+            "enum": [
+              "calibration",
+              "active_learning",
+              "post_hoc"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "uncertainty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uncertainty"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "repo",
+          "slot_id",
+          "source",
+          "uncertainty",
+          "context",
+          "asset_a",
+          "asset_b",
+          "capture_a_sha256",
+          "capture_b_sha256",
+          "in_situ",
+          "pushed_by",
+          "skipped_at",
+          "skip_count",
+          "label",
+          "reasons",
+          "comment",
+          "edit_note",
+          "edit_asset_sha256",
+          "labeller_user_id",
+          "labeller_name",
+          "labelled_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TastePairOut",
+        "type": "object"
+      },
+      "TastePairPush": {
+        "additionalProperties": false,
+        "description": "``POST /api/v1/taste/pairs`` \u2014 put one pairwise question in the queue.\n\nStudio's door (Phase 20 onward: where the judge panel disagrees or the\ntaste head is least certain, plus post-hoc samples of landed images).\nIdentity is the slot plus the UNORDERED pair of images: a push of a pair\nalready queued answers with that row (``created: false``) and changes\nnothing.",
+        "properties": {
+          "asset_a_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Asset A Sha256",
+            "type": "string"
+          },
+          "asset_b_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Asset B Sha256",
+            "type": "string"
+          },
+          "capture_a_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture A Sha256"
+          },
+          "capture_b_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture B Sha256"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "slot_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot Id"
+          },
+          "source": {
+            "enum": [
+              "calibration",
+              "active_learning",
+              "post_hoc"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "uncertainty": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uncertainty"
+          }
+        },
+        "required": [
+          "asset_a_sha256",
+          "asset_b_sha256",
+          "source"
+        ],
+        "title": "TastePairPush",
+        "type": "object"
+      },
+      "TastePairPushResponse": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "pair": {
+            "$ref": "#/components/schemas/TastePairOut"
+          }
+        },
+        "required": [
+          "pair",
+          "created"
+        ],
+        "title": "TastePairPushResponse",
+        "type": "object"
+      },
+      "TastePool": {
+        "description": "The images a calibration batch can draw from: every ``candidate`` and\n``exemplar`` the tenant holds, grouped by direction.",
+        "properties": {
+          "directions": {
+            "items": {
+              "$ref": "#/components/schemas/TasteDirection"
+            },
+            "title": "Directions",
+            "type": "array"
+          },
+          "images": {
+            "title": "Images",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "images",
+          "directions"
+        ],
+        "title": "TastePool",
+        "type": "object"
+      },
+      "TasteSettingsOut": {
+        "properties": {
+          "source": {
+            "enum": [
+              "setting",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "weekly_budget": {
+            "title": "Weekly Budget",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weekly_budget",
+          "source",
+          "updated_at"
+        ],
+        "title": "TasteSettingsOut",
+        "type": "object"
+      },
+      "TasteSettingsWrite": {
+        "additionalProperties": false,
+        "description": "``PUT /api/v1/taste/settings``.",
+        "properties": {
+          "weekly_budget": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Weekly Budget",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weekly_budget"
+        ],
+        "title": "TasteSettingsWrite",
+        "type": "object"
       },
       "TeamMemberCreate": {
         "description": "Schema for adding a team member.",
@@ -124667,6 +125485,506 @@
         "summary": "Batch upsert verification results",
         "tags": [
           "task-runs"
+        ]
+      }
+    },
+    "/api/v1/taste/calibration-batch": {
+      "post": {
+        "description": "Idempotent: a pair already queued is never queued twice, so building\nagain only adds pairs the pool's growth makes possible.",
+        "operationId": "api_v1_taste_calibration_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationBatchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Queue the calibration batch: pairs across the tenant's directions",
+        "tags": [
+          "taste"
+        ]
+      }
+    },
+    "/api/v1/taste/inbox": {
+      "get": {
+        "operationId": "api_v1_taste_inbox_get",
+        "parameters": [
+          {
+            "description": "How many queued pairs to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "description": "How many queued pairs to return.",
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Return queued pairs even when this week's budget is spent (the operator chose to keep going).",
+            "in": "query",
+            "name": "over_budget",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Return queued pairs even when this week's budget is spent (the operator chose to keep going).",
+              "title": "Over Budget",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasteInbox"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read the taste inbox: the queue head, the budget, recent labels",
+        "tags": [
+          "taste"
+        ]
+      }
+    },
+    "/api/v1/taste/labels": {
+      "get": {
+        "operationId": "api_v1_taste_labels_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The previous page's next_cursor.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous page's next_cursor.",
+              "title": "After"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasteLabelPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "A malformed cursor."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List labelled pairs, oldest label first, a page at a time",
+        "tags": [
+          "taste"
+        ]
+      }
+    },
+    "/api/v1/taste/pairs": {
+      "post": {
+        "operationId": "api_v1_taste_pairs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TastePairPush"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TastePairPushResponse"
+                }
+              }
+            },
+            "description": "The pair was already queued (in either order); nothing changed."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TastePairPushResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "This tenant holds no image with a named sha256."
+          },
+          "422": {
+            "description": "A malformed field, or a capture that is not one."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Queue one pairwise taste question",
+        "tags": [
+          "taste"
+        ]
+      }
+    },
+    "/api/v1/taste/pairs/{pair_id}": {
+      "delete": {
+        "operationId": "api_v1_taste_pairs_pair_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pair_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pair Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such pair for this tenant."
+          },
+          "409": {
+            "description": "The pair is labelled; a label is never withdrawn here."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Withdraw an unanswered pair",
+        "tags": [
+          "taste"
+        ]
+      }
+    },
+    "/api/v1/taste/pairs/{pair_id}/label": {
+      "delete": {
+        "operationId": "api_v1_taste_pairs_pair_id_label_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pair_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pair Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TastePairOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such pair for this tenant."
+          },
+          "409": {
+            "description": "The pair is not labelled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Undo a label: the pair returns to the queue",
+        "tags": [
+          "taste"
+        ]
+      },
+      "put": {
+        "operationId": "api_v1_taste_pairs_pair_id_label_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pair_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pair Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TasteLabelWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TastePairOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such pair, or no such edited image, for this tenant."
+          },
+          "409": {
+            "description": "Someone already labelled this pair (send relabel: true to replace it)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Label one pair: A, B or both bad, with reasons, a comment and an edit",
+        "tags": [
+          "taste"
+        ]
+      }
+    },
+    "/api/v1/taste/pairs/{pair_id}/skip": {
+      "post": {
+        "operationId": "api_v1_taste_pairs_pair_id_skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pair_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pair Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TastePairOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such pair for this tenant."
+          },
+          "409": {
+            "description": "The pair is already labelled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Skip an unanswered pair: it moves to the back of the queue",
+        "tags": [
+          "taste"
+        ]
+      }
+    },
+    "/api/v1/taste/settings": {
+      "put": {
+        "operationId": "api_v1_taste_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TasteSettingsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasteSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set the weekly labelling budget",
+        "tags": [
+          "taste"
         ]
       }
     },

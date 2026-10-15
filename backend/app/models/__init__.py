@@ -184,6 +184,7 @@ from app.models.task_run import (  # New unified names; Backward compatibility a
     TaskType,
 )
 from app.models.task_run_verification_result import TaskRunVerificationResult
+from app.models.taste import TastePair, TasteSettings
 from app.models.template_candidate import TemplateCandidate
 from app.models.test_deficiency import (
     DeficiencySeverity,
@@ -329,6 +330,9 @@ __all__ = [
     # Content-addressed image store (web.image_assets / web.image_slot_candidates)
     "ImageAsset",
     "ImageSlotCandidate",
+    # Taste inbox (web.taste_pairs / web.taste_settings)
+    "TastePair",
+    "TasteSettings",
     # Design/UX Policies
     "DesignPolicy",
     # Discoveries
