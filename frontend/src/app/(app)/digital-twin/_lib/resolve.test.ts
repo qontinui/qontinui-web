@@ -244,20 +244,22 @@ describe("summarize", () => {
 
   it("excludes restricted observers from the responding denominator and counts them apart", () => {
     // The split per qontinui-coord#3128 for a non-system tenant: the nine
-    // SystemTenant sub-spaces are refused, worktree and memory answer. The
-    // gauge must read 2/2 responding · 9 restricted, never 2/11.
-    const probes: SubspaceProbe[] = manifest.subspaces
+    // SystemTenant sub-spaces are refused and every other snapshot row
+    // answers. A refused row is never "not responding": the graded
+    // denominator excludes it.
+    const snapshotIds = manifest.subspaces
       .filter((s) => s.query_kind === "snapshot")
-      .map((s) => ({
-        id: s.id,
-        status: SYSTEM_TENANT_SUBSPACES.has(s.id)
-          ? "restricted"
-          : "implemented",
-      }));
+      .map((s) => s.id);
+    const probes: SubspaceProbe[] = snapshotIds.map((id) => ({
+      id,
+      status: SYSTEM_TENANT_SUBSPACES.has(id) ? "restricted" : "implemented",
+    }));
+    const answering = snapshotIds.length - SYSTEM_TENANT_SUBSPACES.size;
     const s = summarize(resolveSubspaces(probes, false));
-    expect(s.responding).toBe(2);
-    expect(s.snapshotTotal).toBe(2);
-    expect(s.restricted).toBe(9);
+    expect(s.responding).toBe(answering);
+    expect(s.graded).toBe(answering);
+    expect(s.snapshotTotal).toBe(snapshotIds.length);
+    expect(s.restricted).toBe(SYSTEM_TENANT_SUBSPACES.size);
     expect(s.pending).toBe(0);
   });
 
