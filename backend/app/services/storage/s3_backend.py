@@ -2,6 +2,7 @@
 
 import mimetypes
 from typing import BinaryIO
+from urllib.parse import unquote, urlsplit
 
 import boto3
 import structlog
@@ -28,6 +29,7 @@ class S3Backend(StorageBackend):
     ):
         self.bucket_name = bucket_name
         self.region = region
+        self.endpoint_url = endpoint_url
 
         # Configure boto3 client
         s3_addressing_style = "path" if endpoint_url else "auto"
@@ -182,6 +184,27 @@ class S3Backend(StorageBackend):
         except ClientError as e:
             logger.error("delete_failed", key=key, error=str(e))
             return False
+
+    def key_from_object_url(self, url: str) -> str | None:
+        """Invert a virtual-hosted AWS URL, or a path-style one on ``endpoint_url``."""
+        parts = urlsplit(url)
+        path = unquote(parts.path)
+        virtual_hosts = {
+            f"{self.bucket_name}.s3.{self.region}.amazonaws.com",
+            f"{self.bucket_name}.s3.amazonaws.com",
+        }
+        if parts.scheme == "https" and parts.netloc in virtual_hosts and len(path) > 1:
+            return path[1:]
+        if self.endpoint_url:
+            endpoint = urlsplit(self.endpoint_url)
+            prefix = f"/{self.bucket_name}/"
+            if (
+                (parts.scheme, parts.netloc) == (endpoint.scheme, endpoint.netloc)
+                and path.startswith(prefix)
+                and len(path) > len(prefix)
+            ):
+                return path[len(prefix) :]
+        return None
 
     def get_cdn_url(self, key: str) -> str:
         """Get CDN URL for accessing an image."""

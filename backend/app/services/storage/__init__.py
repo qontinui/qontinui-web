@@ -10,7 +10,7 @@ Provides a unified interface for file storage supporting:
 import io
 import uuid
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, overload
 
 import structlog
 from botocore.exceptions import ClientError
@@ -109,6 +109,71 @@ class ObjectStorageService:
     def generate_presigned_url(self, key: str, expiration: int = 3600) -> str:
         """Generate temporary URL for file access."""
         return self.backend.generate_presigned_url(key, expiration)
+
+    @overload
+    def presign_stored_url(
+        self,
+        stored_url: str,
+        expiration: int = 3600,
+        *,
+        key_prefix: str | None = None,
+    ) -> str: ...
+
+    @overload
+    def presign_stored_url(
+        self,
+        stored_url: None,
+        expiration: int = 3600,
+        *,
+        key_prefix: str | None = None,
+    ) -> None: ...
+
+    def presign_stored_url(
+        self,
+        stored_url: str | None,
+        expiration: int = 3600,
+        *,
+        key_prefix: str | None = None,
+    ) -> str | None:
+        """A readable URL for an object whose row stored ``upload_file``'s URL.
+
+        ``upload_file`` returns the object's bare address, which neither a
+        private bucket nor the local backend will serve, so a row that stored
+        it must be presigned on read. The key is recovered with the backend's
+        ``key_from_object_url``. Returned UNCHANGED, never raised:
+
+        - a URL this backend did not mint (an external link, a ``data:`` URL,
+          another host's address);
+        - a key outside ``key_prefix``, when given - for URLs a client
+          supplied, so naming another object's address cannot get it signed;
+        - a presign that fails (say the local signer is disabled): one
+          unreadable URL is logged and degrades that field alone, rather than
+          failing a whole list response.
+        """
+        if not stored_url:
+            return stored_url
+        key = self.backend.key_from_object_url(stored_url)
+        if key is None:
+            return stored_url
+        if key_prefix is not None and not key.startswith(key_prefix):
+            logger.warning(
+                "presign_stored_url_outside_prefix", key=key, key_prefix=key_prefix
+            )
+            return stored_url
+        return self.presign_key(key, fallback=stored_url, expiration=expiration)
+
+    def presign_key(self, key: str, *, fallback: str, expiration: int = 3600) -> str:
+        """Presign a known storage key; on failure log and return ``fallback``.
+
+        For rows that store the authoritative key. Like
+        :meth:`presign_stored_url`, a failure degrades this one field rather
+        than raising out of a list response.
+        """
+        try:
+            return self.backend.generate_presigned_url(key, expiration)
+        except Exception as exc:
+            logger.error("presign_key_failed", key=key, error=str(exc))
+            return fallback
 
     def file_exists(self, key: str) -> bool:
         """Check if file exists."""

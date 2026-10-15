@@ -52,8 +52,18 @@ def model_to_screenshot_response(
             if hasattr(screenshot.screenshot_type, "value")
             else screenshot.screenshot_type
         ),
-        image_url=screenshot.image_url,
-        thumbnail_url=screenshot.thumbnail_url,
+        # Presigned on every read: the stored URLs are bare object addresses
+        # that a private bucket (and the local backend) refuse. The image is
+        # signed from the authoritative ``storage_path`` key, so it works even
+        # when ``image_url`` was written under another origin.
+        image_url=(
+            object_storage.presign_key(
+                screenshot.storage_path, fallback=screenshot.image_url
+            )
+            if screenshot.storage_path
+            else object_storage.presign_stored_url(screenshot.image_url)
+        ),
+        thumbnail_url=object_storage.presign_stored_url(screenshot.thumbnail_url),
         state_name=screenshot.state_name,
         captured_at=screenshot.captured_at,
         file_size_bytes=screenshot.file_size_bytes,

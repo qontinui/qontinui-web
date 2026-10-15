@@ -27,7 +27,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import current_active_user, get_async_db
 from app.models.project import Project
-from app.models.snapshot import SnapshotRun
+from app.models.snapshot import Screenshot, SnapshotRun
 from app.models.user import User
 from app.services.object_storage import object_storage
 from app.services.reports import PDFReportOptions, generate_pdf_report
@@ -478,7 +478,9 @@ async def get_state_screenshots(
     from uuid import UUID
 
     try:
-        rid = UUID(run_id)
+        # Shape check only: run_id is stored exactly as the client wrote it
+        # (VARCHAR), so the query compares the caller's own string.
+        UUID(run_id)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -488,7 +490,7 @@ async def get_state_screenshots(
     result = await db.execute(
         select(SnapshotRun)
         .options(selectinload(SnapshotRun.screenshots))
-        .where(SnapshotRun.run_id == rid)
+        .where(SnapshotRun.run_id == run_id)
     )
     snapshot_run = result.scalar_one_or_none()
 
@@ -571,14 +573,16 @@ async def get_screenshot(
     from uuid import UUID
 
     try:
-        rid = UUID(run_id)
+        # Shape check only: run_id is stored exactly as the client wrote it
+        # (VARCHAR), so the query compares the caller's own string.
+        UUID(run_id)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid run ID format",
         )
 
-    result = await db.execute(select(SnapshotRun).where(SnapshotRun.run_id == rid))
+    result = await db.execute(select(SnapshotRun).where(SnapshotRun.run_id == run_id))
     snapshot_run = result.scalar_one_or_none()
 
     if not snapshot_run:
@@ -590,20 +594,31 @@ async def get_screenshot(
     # Verify project access
     await verify_project_access(db, str(snapshot_run.project_id), current_user.id)
 
-    # Try to get from object storage
+    # Only a path recorded as one of THIS run's screenshots may be signed.
+    # `screenshot_path` comes from the URL, so without this check a user with
+    # access to any run could presign any key in the store (another tenant's
+    # included) by naming it.
+    owned = await db.execute(
+        select(Screenshot.id).where(
+            Screenshot.snapshot_run_id == snapshot_run.id,
+            Screenshot.screenshot_path == screenshot_path,
+        )
+    )
+    if owned.first() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Screenshot not found",
+        )
+
     try:
-        # Generate presigned URL or download file
         url = object_storage.generate_presigned_url(screenshot_path)
-        if url:
-            # Redirect to presigned URL
-            return RedirectResponse(url=url)
     except Exception as e:
         logger.warning(f"Failed to get screenshot from storage: {e}")
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Screenshot not found",
-    )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Screenshot not found",
+        )
+    return RedirectResponse(url=url)
 
 
 # Helper function for snapshot lookup
@@ -629,7 +644,7 @@ async def _get_screenshots_from_snapshot_ids(
 
     for snapshot_id in snapshot_ids:
         try:
-            sid = UUID(snapshot_id)
+            UUID(snapshot_id)  # shape check; compared as written (VARCHAR)
         except ValueError:
             logger.warning(f"Invalid snapshot ID: {snapshot_id}")
             continue
@@ -638,7 +653,7 @@ async def _get_screenshots_from_snapshot_ids(
         result = await db.execute(
             select(SnapshotRun)
             .options(selectinload(SnapshotRun.screenshots))
-            .where(SnapshotRun.run_id == sid)
+            .where(SnapshotRun.run_id == snapshot_id)
         )
         snapshot_run = result.scalar_one_or_none()
 
