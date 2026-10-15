@@ -1162,3 +1162,43 @@ describe("m7: alt text loses ASCII whitespace; an alt that strips to nothing is 
     expect(mediaOf(mediaRow(legacyImage({ altText: "   " }))).alt).toEqual({ decorative: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Second review round: kind lookups never answer for inherited prototype keys
+// ---------------------------------------------------------------------------
+
+describe("r2: media kinds come from own table entries only", () => {
+  const unknownEnvelope = {
+    status: "unknown",
+    unknown: { code: "producer_failed", detail: "media capture threw TypeError" },
+    provenance: measured({}).provenance,
+  };
+  const protoKeys = ["constructor", "toString", "__proto__", "hasOwnProperty"];
+
+  it.each(protoKeys)("a <%s> tag with an unknown envelope names no kind", (tagName) => {
+    const row = mediaRow(unknownEnvelope, { tagName, role: "img" });
+    expect(projectMedia(row)).toBeNull();
+    enrichElement(row);
+    expect(row.media).toBeUndefined();
+  });
+
+  it.each(protoKeys)("a mediaType of %j names no kind", (mediaType) => {
+    const row = mediaRow(
+      measured({ mediaType, isDecorative: false, renderedWidth: 1, renderedHeight: 1 }),
+      { tagName: "div", state: { textContent: "painted" } }
+    );
+    expect(projectMedia(row)).toBeNull();
+    enrichElement(row);
+    expect(row.media).toBeUndefined();
+    expect(row.text).toBe("painted"); // a non-media kind keeps its painted text
+  });
+
+  it("a prototype-key tag never yields a non-string kind through JSON", () => {
+    for (const tagName of protoKeys) {
+      const row = mediaRow(measured(IMAGE_FACTS), { tagName });
+      enrichElement(row);
+      const kind = (JSON.parse(JSON.stringify(row)).media as Record<string, unknown>).kind;
+      expect(kind).toBe("role_img"); // an `image` on a non-img tag
+    }
+  });
+});
