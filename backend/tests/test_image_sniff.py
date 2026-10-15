@@ -35,6 +35,7 @@ from app.services.image_sniff import (
     MAX_AVIF_BRANDS,
     MAX_AVIF_EXIF_BYTES,
     MAX_AVIF_EXTENTS,
+    MAX_AVIF_GROUPED_ENTITIES,
     MAX_AVIF_ITEMS,
     MAX_AVIF_META_BYTES,
     MAX_AVIF_MOVIE_BYTES,
@@ -2695,6 +2696,11 @@ def test_the_avif_builder_is_accepted_as_written() -> None:
             "image_avif_too_many_boxes",
             id="top-level-boxes",
         ),
+        pytest.param(
+            lambda: _avif(meta_children=_grpl(226_000)),
+            "image_avif_too_many_grouped_entities",
+            id="altr-group-of-226000",
+        ),
     ],
 )
 def test_the_reviews_avif_container_floods_are_refused_before_libavif(
@@ -2702,7 +2708,9 @@ def test_the_reviews_avif_container_floods_are_refused_before_libavif(
 ) -> None:
     """The review's measurements: 80 000 ``infe`` items in 1.8 MB were
     accepted in 11.3 s (libavif's item lookup is quadratic); 3.27 million
-    empty properties took 567 MB. Refused before libavif parses a byte."""
+    empty properties took 567 MB; 4095 ``sato`` items against one 226 000-ID
+    ``altr`` group, 0.83 s (libavif scans the group once per ``sato`` item).
+    Refused before libavif parses a byte."""
     assert callable(data)
     built = data()
     _forbid_libavif(monkeypatch)
@@ -2925,6 +2933,80 @@ def test_references_up_to_the_cap_are_accepted_and_one_more_is_refused(
         _avif(items=3, references=boxes),
         _avif(items=3, references=boxes + 1),
         "image_avif_too_many_references",
+    )
+
+
+def _grpl(*groups: int, first_spans_the_rest: bool = False) -> bytes:
+    """A ``grpl`` box of ``altr`` groups listing that many entity IDs each.
+    ``first_spans_the_rest`` declares the first group's size as the whole
+    ``grpl`` body: libavif reads the next group on from where the first
+    one's IDs end all the same."""
+    bodies = [
+        b"\x00" * 4
+        + struct.pack(">II", 0x7FFF0000 + n, count)
+        + b"".join(struct.pack(">I", 0x10000000 + k) for k in range(count))
+        for n, count in enumerate(groups)
+    ]
+    boxes = [_box(b"altr", body) for body in bodies]
+    if first_spans_the_rest and boxes:
+        span = sum(len(b) for b in boxes)
+        boxes[0] = struct.pack(">I4s", span, b"altr") + bodies[0]
+    return _box(b"grpl", b"".join(boxes))
+
+
+@pytest.mark.parametrize(
+    "split",
+    [
+        pytest.param((MAX_AVIF_GROUPED_ENTITIES,), id="one-group"),
+        pytest.param((MAX_AVIF_GROUPED_ENTITIES - 1, 1), id="two-groups"),
+    ],
+)
+def test_grouped_entities_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch, split: tuple[int, ...]
+) -> None:
+    """libavif scans every ``altr`` group's IDs once per ``sato`` item: the
+    IDs over every group count, and one more than the cap is refused —
+    in a second group as in the first."""
+    past = (*split[:-1], split[-1] + 1)
+    _at_cap_and_one_past(
+        monkeypatch,
+        _avif(meta_children=_grpl(*split)),
+        _avif(meta_children=_grpl(*past)),
+        "image_avif_too_many_grouped_entities",
+    )
+
+
+def test_entity_groups_up_to_the_cap_are_accepted_and_one_more_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each group is an allocated record libavif scans per ``sato`` item,
+    however few IDs it lists."""
+    groups = MAX_AVIF_BOXES_PER_CONTAINER
+    _at_cap_and_one_past(
+        monkeypatch,
+        _avif(meta_children=_grpl(*[0] * groups)),
+        _avif(meta_children=_grpl(*[0] * (groups + 1))),
+        "image_avif_too_many_boxes",
+    )
+
+
+def test_an_entity_group_is_read_on_from_where_its_ids_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A group whose declared size covers the groups after it does not hide
+    them: libavif reads each group's fields in turn, never skipping to the
+    declared end."""
+    _at_cap_and_one_past(
+        monkeypatch,
+        _avif(
+            meta_children=_grpl(0, MAX_AVIF_GROUPED_ENTITIES, first_spans_the_rest=True)
+        ),
+        _avif(
+            meta_children=_grpl(
+                0, MAX_AVIF_GROUPED_ENTITIES + 1, first_spans_the_rest=True
+            )
+        ),
+        "image_avif_too_many_grouped_entities",
     )
 
 

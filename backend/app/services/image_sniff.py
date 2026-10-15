@@ -63,8 +63,8 @@ parse, a walk of the boxes libavif reads (:func:`_avif_container`) holds
 them to the AVIF caps — top-level boxes and the boxes of each container it
 descends into, the ``ftyp`` box's brands, the ``meta`` and ``moov`` boxes'
 sizes, items, extents (whose lengths may add up to at most the file),
-references, properties, associations and the property bytes they copy,
-tracks, sample descriptions and sample-table entries — and an image
+references, entity groups and the entity IDs they list, properties,
+associations and the property bytes they copy, tracks, sample descriptions and sample-table entries — and an image
 sequence's samples to :data:`MAX_FRAMES`.
 
 So, for each of at most MAX_PICTURES pictures, Pillow's header parse visits
@@ -310,6 +310,14 @@ MAX_AVIF_EXTENTS: Final = 2 * MAX_AVIF_ITEMS
 #: The most item references (``iref`` boxes and the item IDs they list). A
 #: grid lists each tile once; alpha, EXIF and XMP add one each.
 MAX_AVIF_REFERENCES: Final = 2 * MAX_AVIF_ITEMS
+
+#: The most entity IDs an AVIF's entity groups (``grpl``) may list, in all.
+#: libavif decides whether a ``sato`` item is preferred to the primary item
+#: by scanning every ``altr`` group's IDs, once per ``sato`` item — quadratic
+#: in the two (4095 ``sato`` items against one 226 000-ID ``altr`` group were
+#: accepted in 0.83 s). An encoder writes one ``altr`` group of 2-3 IDs; the
+#: groups themselves are boxes, held to :data:`MAX_AVIF_BOXES_PER_CONTAINER`.
+MAX_AVIF_GROUPED_ENTITIES: Final = MAX_AVIF_ITEMS
 
 #: The most item properties (``ipco``, and the properties of a sequence's
 #: sample descriptions). libavif deduplicates its own (a still has 5-10); an
@@ -881,6 +889,7 @@ class _AvifContainer:
         self.extents = 0
         self.extent_bytes = 0
         self.references = 0
+        self.grouped_entities = 0
         self.properties = 0
         self.associations = 0
         self.copied_bytes = 0
@@ -940,6 +949,8 @@ class _AvifContainer:
                 self.item_properties(child)
             elif child.kind == b"iref":
                 self.item_references(child)
+            elif child.kind == b"grpl":
+                self.entity_groups(child)
 
     def item_info(self, box: _Box) -> None:
         """``iinf``: version 0 counts its entries in 16 bits, 1 in 32; each
@@ -1133,6 +1144,46 @@ class _AvifContainer:
                 )
                 for to_id in ids:
                     self.item(to_id)
+
+    def entity_groups(self, box: _Box) -> None:
+        """``grpl``: its entity groups, read as libavif reads them — each a
+        box header, a version and flags, a 32-bit group ID, a 32-bit count
+        and that many 32-bit entity IDs, the next group read on from where
+        the last one's IDs end (libavif never skips to a group's declared
+        end). Refused past :data:`MAX_AVIF_BOXES_PER_CONTAINER` groups
+        (``image_avif_too_many_boxes``) or :data:`MAX_AVIF_GROUPED_ENTITIES`
+        entity IDs over every group (``image_avif_too_many_grouped_entities``).
+        The walk stops where libavif's parse fails: a header it refuses, a
+        group whose fields or IDs run past the ``grpl`` box."""
+        data, pos, end = self.data, box.start, box.end
+        groups = 0
+        while True:
+            group = next(_avif_boxes(data, pos, end, top_level=False), None)
+            if group is None:
+                return
+            groups += 1
+            if groups > MAX_AVIF_BOXES_PER_CONTAINER:
+                raise _StructureRefused(
+                    "an AVIF 'grpl' box holds more than "
+                    f"{MAX_AVIF_BOXES_PER_CONTAINER} boxes",
+                    "image_avif_too_many_boxes",
+                )
+            pos = group.start
+            if end - pos < 12:  # version and flags, group ID, count
+                return
+            (declared,) = struct.unpack_from(">I", data, pos + 8)
+            pos += 12
+            listed = min(declared, (end - pos) // 4)
+            self.grouped_entities += listed
+            if self.grouped_entities > MAX_AVIF_GROUPED_ENTITIES:
+                raise _StructureRefused(
+                    "an AVIF's entity groups list more than "
+                    f"{MAX_AVIF_GROUPED_ENTITIES} entity IDs",
+                    "image_avif_too_many_grouped_entities",
+                )
+            if listed < declared:
+                return
+            pos += 4 * listed
 
     def count_references(self, more: int) -> None:
         self.references += more
@@ -1771,6 +1822,7 @@ def sniff_image(data: bytes) -> SniffedImage:
     ``image_avif_meta_too_large``, ``image_avif_movie_too_large``,
     ``image_avif_too_many_items``, ``image_avif_too_many_extents``,
     ``image_avif_item_data_reread``, ``image_avif_too_many_references``,
+    ``image_avif_too_many_grouped_entities``,
     ``image_avif_too_many_properties``, ``image_avif_too_many_associations``,
     ``image_avif_property_data_recopied``, ``image_avif_too_many_tracks``,
     ``image_avif_too_many_sample_descriptions``,
