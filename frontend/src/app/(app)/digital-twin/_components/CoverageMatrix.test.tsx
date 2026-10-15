@@ -56,18 +56,6 @@ import { CoverageMatrix } from "./CoverageMatrix";
 const SNAPSHOT_IDS = manifest.subspaces
   .filter((s) => s.query_kind === "snapshot")
   .map((s) => s.id);
-/** The snapshot sub-spaces coord refuses to a non-system tenant (per qontinui-coord#3128). */
-const SYSTEM_TENANT_SUBSPACES = new Set([
-  "release",
-  "schema",
-  "infra",
-  "infra_health",
-  "config",
-  "health",
-  "deps",
-  "route_serving",
-  "client_telemetry",
-]);
 
 const CLAIMED_BUILT = manifest.subspaces.filter(
   (s) => s.research_status === "implemented" || s.research_status === "partial"
