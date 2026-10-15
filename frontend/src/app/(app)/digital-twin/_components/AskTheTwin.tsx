@@ -66,7 +66,17 @@ function busyHint(
   return "Connecting to your runner…";
 }
 
-export function AskTheTwin() {
+interface AskTheTwinProps {
+  /**
+   * A question handed over from elsewhere on the page (the sub-space drawer's
+   * "Ask the Twin about this"). It is typed into the box, NOT asked: the
+   * operator reviews and submits it. `onDraftApplied` fires once it is in.
+   */
+  draft?: string | null;
+  onDraftApplied?: () => void;
+}
+
+export function AskTheTwin({ draft, onDraftApplied }: AskTheTwinProps = {}) {
   // Asking starts a NEW AI session, so it goes only where new work may go:
   // the user's explicit choice or coord's resolved pick — never a read
   // fallback. Otherwise coord's outcome is shown.
@@ -76,6 +86,22 @@ export function AskTheTwin() {
   const [input, setInput] = useState("");
   const [queued, setQueued] = useState<string | null>(null);
   const hasSessionRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Set when a handed-over draft is typed in; the effect after that commit
+  // focuses the box if it is mounted, and either way clears it — so focus
+  // never jumps here later (e.g. when a runner connects minutes after).
+  const [focusDraft, setFocusDraft] = useState(false);
+  // Read through a ref so a parent passing a fresh callback each render does
+  // not re-run the effect and retype the draft over the operator's edits.
+  const onDraftAppliedRef = useRef(onDraftApplied);
+  onDraftAppliedRef.current = onDraftApplied;
+
+  useEffect(() => {
+    if (!draft) return;
+    setInput(draft);
+    setFocusDraft(true);
+    onDraftAppliedRef.current?.();
+  }, [draft]);
   const sentCountRef = useRef(0);
 
   const {
@@ -181,6 +207,23 @@ export function AskTheTwin() {
     label: "Digital Twin question input",
     type: "input",
   });
+  const setTextarea = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      textareaRef.current = el;
+      inputRef(el);
+    },
+    [inputRef]
+  );
+
+  useEffect(() => {
+    if (!focusDraft) return;
+    const el = textareaRef.current;
+    if (el) {
+      el.focus();
+      el.scrollIntoView?.({ block: "center" });
+    }
+    setFocusDraft(false);
+  }, [focusDraft]);
   const { ref: submitRef } = useUIElement({
     id: "ask-the-twin-submit",
     label: "Ask the Twin — submit question",
@@ -197,6 +240,17 @@ export function AskTheTwin() {
           <WifiOff className="size-4" /> No runner can take a new question right
           now.
         </p>
+        {/* Whatever is in the box — typed, or handed over by the drawer — is
+            kept and shown while no runner can take it (for as long as this
+            tab stays mounted), so a handed-over question is not lost unseen. */}
+        {input.trim() && (
+          <p
+            data-testid="ask-the-twin-kept-question"
+            className="mt-1 text-xs text-muted-foreground"
+          >
+            Your question is kept for when one can: “{input.trim()}”
+          </p>
+        )}
         {dispatchTarget.message && (
           <p
             data-testid="ask-the-twin-outcome"
@@ -289,7 +343,7 @@ export function AskTheTwin() {
 
       <div className="flex items-end gap-2">
         <textarea
-          ref={inputRef}
+          ref={setTextarea}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

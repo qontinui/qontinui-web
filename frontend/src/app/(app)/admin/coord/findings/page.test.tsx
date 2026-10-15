@@ -1407,6 +1407,41 @@ describe("CoordFindingsPage", () => {
       );
     });
 
+    it("renders a refused cursor's refusal envelope structured, not as a JSON dump", async () => {
+      const body = JSON.stringify({
+        error: "workspace_root_unresolved",
+        refusal: {
+          code: "workspace_root_unresolved",
+          next_action: { kind: "set_setting", target: "workspace_root" },
+          glossary_terms: [],
+          observed_at: "2026-09-29T00:00:00Z",
+          source: "web_backend",
+        },
+      });
+      httpGet.mockImplementation((url: string) =>
+        String(url).includes("cursor=")
+          ? Promise.reject(
+              new Error(
+                `GET /api/v1/operations/coord/findings failed: 409 - ${body}`
+              )
+            )
+          : Promise.resolve(page(rowsFrom(0, 2), more("c1")))
+      );
+      render(<CoordFindingsPage />);
+      await userEvent.click(
+        await screen.findByTestId("coord-findings-load-older")
+      );
+
+      const err = await screen.findByTestId("coord-findings-paging-error");
+      const refusal = err.querySelector('[data-refusal="structured"]');
+      expect(refusal?.getAttribute("data-refusal-code")).toBe(
+        "workspace_root_unresolved"
+      );
+      expect(err).toHaveTextContent(/No workspace folder could be found/);
+      expect(err.textContent).not.toContain('"refusal"');
+      expect(screen.getAllByTestId("coord-finding-row")).toHaveLength(2);
+    });
+
     it("on a refused cursor keeps the rows, shows coord's message, and restarts on request", async () => {
       httpGet.mockImplementation((url: string) =>
         String(url).includes("cursor=")

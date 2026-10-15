@@ -28,7 +28,7 @@ import {
   getRecentCommits,
   getSessionCommits,
   isSchemaMigrationPending,
-} from "./api";
+} from "./lineage";
 import type { LineageRow, LineageStats } from "./types";
 
 const BASE = "/api/v1/operations/lineage";

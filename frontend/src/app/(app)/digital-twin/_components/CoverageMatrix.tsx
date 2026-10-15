@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
 import { resolveSubspaces, summarize } from "../_lib/resolve";
-import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
+import {
+  COUNT_FILLS,
+  RESTRICTED_COUNT_MEANING,
+} from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
@@ -60,7 +63,7 @@ function Gauge({
           <span
             data-slot="gauge-restricted"
             className="text-sm text-muted-foreground"
-            title={STATUS_STYLES.restricted.meaning}
+            title={RESTRICTED_COUNT_MEANING}
           >
             · {restricted} restricted
           </span>

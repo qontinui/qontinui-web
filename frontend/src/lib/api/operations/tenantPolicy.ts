@@ -28,6 +28,20 @@ import { OPERATIONS_BASE, readJson } from "./base";
 
 // ───────────────────────────────── fleet policy ─────────────────────────────────
 
+/**
+ * Mirrors `FleetPolicyRepoOverride`: one repo-band row that overrides the
+ * tenant band for its repo (coord's `repo_overrides` entry).
+ */
+export interface FleetPolicyRepoOverride {
+  /** The row's key as coord stored it — `owner/name` for the domains keyed that way. */
+  repo: string;
+  /** The level the row carries. Opaque: a level a page does not know is the page's to name. */
+  level: string;
+  master_enabled: boolean;
+  /** What a reader of that repo resolves from the row: `level`, or `off` under a disabled master. */
+  effective_level: string;
+}
+
 /** Mirrors `FleetPolicyView` (`get_fleet_policy`, proxying coord's `GET /coord/fleet-policy`). */
 export interface FleetPolicyView {
   domain: string;
@@ -55,6 +69,13 @@ export interface FleetPolicyView {
    * about `fleet_resources` itself. `null` — coord sent none.
    */
   keys_not_shown_source: "fleet_resources_row" | "this_domain" | null;
+  /**
+   * Every repo-band row of this domain that overrides the tenant band, ordered
+   * by repo; an `inherit` row clears an override and is not listed. Absent or
+   * `null` is UNKNOWN — the coord answering sends no list, or sent one the
+   * backend could not read whole — never "no overrides".
+   */
+  repo_overrides?: FleetPolicyRepoOverride[] | null;
 }
 
 /** Mirrors `FleetPolicyWriteResult` (`put_fleet_policy`). */
@@ -82,11 +103,17 @@ export interface FleetPolicyWrite {
   change_note: string;
 }
 
-/** `GET /fleet-policy?domain=` (`get_fleet_policy`) — what one domain resolves. */
+/**
+ * `GET /fleet-policy?domain=[&repo=]` (`get_fleet_policy`) — what one domain
+ * resolves. With `repo`, coord resolves as that repo would, so a repo-band row
+ * for it can win; without it, repo-band rows never match.
+ */
 export async function fetchFleetPolicy(
-  domain: string
+  domain: string,
+  repo?: string
 ): Promise<FleetPolicyView> {
-  const url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}`;
+  let url = `${OPERATIONS_BASE}/fleet-policy?domain=${encodeURIComponent(domain)}`;
+  if (repo) url += `&repo=${encodeURIComponent(repo)}`;
   const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
   return readJson<FleetPolicyView>(res, `GET ${url}`);
 }

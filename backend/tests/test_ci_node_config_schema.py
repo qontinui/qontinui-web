@@ -114,7 +114,10 @@ def test_coord_payload_omits_an_unset_concurrency() -> None:
 def test_coord_payload_carries_an_explicit_concurrency() -> None:
     body = CiNodeConfig(max_concurrent_builds=4).coord_payload()
     assert body["max_concurrent_builds"] == 4
-    assert body == CiNodeConfig(max_concurrent_builds=4).model_dump(mode="json")
+    expected = CiNodeConfig(max_concurrent_builds=4).model_dump(mode="json")
+    # An unset ``model_access`` is omitted too — see its own tests below.
+    expected.pop("model_access")
+    assert body == expected
 
 
 def test_round_trips_through_the_stored_json_envelope() -> None:
@@ -145,3 +148,56 @@ def test_an_unknown_stored_key_does_not_break_the_read() -> None:
         }
     )
     assert cfg.enabled is True
+
+
+# ---------------------------------------------------------------------------
+# model_access — the device-scope off-switch (plan
+# ``2026-10-13-ci-node-runs-model-dependent-eval-steps`` D6 / Phase 4)
+# ---------------------------------------------------------------------------
+
+
+def test_model_access_defaults_to_not_set_here() -> None:
+    """``None`` is "this surface never spoke", NOT the runner's ``True``: an
+    absent value must leave the runner's stored consent alone."""
+    assert CiNodeConfig().model_access is None
+
+
+def test_coord_payload_omits_an_unset_model_access() -> None:
+    """An absent key is "no change" on the runner, so a save that never touched
+    the switch cannot re-enable a device its owner switched off there."""
+    body = CiNodeConfig(enabled=True).coord_payload()
+    assert "model_access" not in body
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_coord_payload_carries_an_explicit_model_access(value: bool) -> None:
+    body = CiNodeConfig(model_access=value).coord_payload()
+    assert body["model_access"] is value
+
+
+@pytest.mark.parametrize("value", [True, False, None])
+def test_model_access_round_trips_through_the_stored_json_envelope(
+    value: bool | None,
+) -> None:
+    original = CiNodeConfig(enabled=True, model_access=value)
+    stored = original.model_dump(mode="json")
+    assert stored["model_access"] is value
+    assert CiNodeConfig.model_validate(stored) == original
+
+
+def test_a_row_saved_before_the_switch_reads_as_not_set() -> None:
+    """A JSONB envelope written before the field existed has no such key."""
+    cfg = CiNodeConfig.model_validate(
+        {
+            "enabled": True,
+            "repo_allowlist": [],
+            "min_free_disk_gb": 20,
+        }
+    )
+    assert cfg.model_access is None
+    assert "model_access" not in cfg.coord_payload()
+
+
+def test_model_access_is_not_coerced_from_a_string() -> None:
+    with pytest.raises(ValidationError):
+        CiNodeConfig(model_access="sometimes")  # type: ignore[arg-type]

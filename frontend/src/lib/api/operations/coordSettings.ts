@@ -34,6 +34,13 @@ export interface NextStepDomain {
   description: string;
   autonomy_level: AutonomyLevel;
   default_autonomy_level: AutonomyLevel;
+  /**
+   * Where `default_autonomy_level` came from: `system_row` when coord's
+   * system-band policy row resolved (the resolver acts on it, and a tenant or
+   * repo row outranks it), `code_fallback` when there is no such row and the
+   * level is coord's display constant only. Absent on an older coord.
+   */
+  default_source?: "system_row" | "code_fallback";
   mode: string;
   resolved_from: "system" | "tenant" | "repo";
   /**
@@ -43,6 +50,14 @@ export interface NextStepDomain {
    */
   autonomy_level_source?: "policy_row" | "code_fallback";
   requires_master: boolean;
+  /**
+   * The env var NAME this domain's autodispatch is gated by (`null` for a
+   * domain with no fleet-arming step). Each master domain has its OWN flag —
+   * there is no platform-wide switch. Absent on an older coord.
+   */
+  master_flag?: string | null;
+  /** That flag's actual value. Absent on an older coord. */
+  master_flag_enabled?: boolean | null;
   effective: boolean;
   /**
    * coord's three-valued verdict. `effective` is only its `effective` arm, so a

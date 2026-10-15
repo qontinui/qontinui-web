@@ -12,7 +12,11 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => getMock(...args),
     post: vi.fn(),
-    fetch: vi.fn(),
+    // The feed is read through `httpClient.fetch` (the typed client's
+    // `fetchCoordAuditRecent`). It answers from `getMock`'s parsed body as a
+    // 200 Response, and a rejection passes through exactly as `get`'s did.
+    fetch: async (url: string, init?: unknown) =>
+      new Response(JSON.stringify(await getMock(url, init)), { status: 200 }),
   },
 }));
 

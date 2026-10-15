@@ -74,7 +74,7 @@ Real-time presence shows who's currently viewing or editing the project.
 
 ```typescript
 // Subscribe to presence updates
-import { usePresence } from '@/hooks/use-presence';
+import { usePresence } from '@/hooks/usePresence';
 
 export function ProjectPresence({ projectId }: { projectId: number }) {
   const { activeUsers, myStatus } = usePresence(projectId);
@@ -128,44 +128,18 @@ interface PresenceUser {
 ```typescript
 // Custom hook for presence management
 export function usePresence(projectId: number) {
-  const [activeUsers, setActiveUsers] = useState<PresenceUser[]>([]);
+  const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);
   const [myStatus, setMyStatus] = useState<UserStatus>('viewing');
   const ws = useWebSocket();
 
   useEffect(() => {
-    // Join presence channel
-    ws.send({
-      type: 'presence:join',
-      project_id: projectId
-    });
-
-    // Listen for presence updates
-    const handlePresence = (event: any) => {
-      if (event.type === 'presence:update') {
-        setActiveUsers(event.users);
-      }
-    };
-
-    ws.on('message', handlePresence);
-
-    // Update my status periodically
-    const interval = setInterval(() => {
-      ws.send({
-        type: 'presence:update',
-        project_id: projectId,
-        status: myStatus
-      });
-    }, 30000); // Every 30 seconds
-
-    return () => {
-      ws.off('message', handlePresence);
-      clearInterval(interval);
-      ws.send({
-        type: 'presence:leave',
-        project_id: projectId
-      });
-    };
-  }, [projectId, myStatus]);
+    // WebSocketProvider holds the connection for the project. registerHandlers
+    // MERGES into one handler per event, so clear yours on unmount.
+    ws.registerHandlers({ onPresenceUpdate: setActiveUsers });
+    return () => ws.registerHandlers({ onPresenceUpdate: undefined });
+    // Not [ws]: the provider builds a new context value every render, so
+    // depending on it re-registers on every render and never settles.
+  }, [projectId]);
 
   return { activeUsers, myStatus, setMyStatus };
 }
@@ -301,6 +275,7 @@ export function ResourceLockIndicator({
   onLockAcquired: () => void;
   onLockReleased: () => void;
 }) {
+  const ws = useWebSocket();
   const [lock, setLock] = useState<ResourceLock | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -308,23 +283,22 @@ export function ResourceLockIndicator({
     // Check for existing lock
     checkLock(projectId, resourceType, resourceId).then(setLock);
 
-    // Subscribe to lock updates via WebSocket
-    const handleLockUpdate = (event: any) => {
-      if (
-        event.type === 'lock:acquired' &&
-        event.resource_id === resourceId
-      ) {
-        setLock(event.lock);
-      } else if (
-        event.type === 'lock:released' &&
-        event.resource_id === resourceId
-      ) {
-        setLock(null);
-      }
-    };
-
-    ws.on('message', handleLockUpdate);
-    return () => ws.off('message', handleLockUpdate);
+    // Subscribe to lock updates via WebSocket (const ws = useWebSocket()).
+    // registerHandlers keeps ONE handler per event, so clear it on unmount.
+    ws.registerHandlers({
+      // The event carries a `Lock` (@/types/collaboration), not this
+      // component's ResourceLock, so re-read the lock for this resource.
+      onLockAcquired: (acquired) => {
+        if (acquired.resource_id === resourceId) {
+          checkLock(projectId, resourceType, resourceId).then(setLock);
+        }
+      },
+      onLockReleased: (released) => {
+        if (released.resource_id === resourceId) setLock(null);
+      },
+    });
+    return () =>
+      ws.registerHandlers({ onLockAcquired: undefined, onLockReleased: undefined });
   }, [projectId, resourceType, resourceId]);
 
   const handleAcquireLock = async () => {
@@ -538,8 +512,7 @@ const broadcastUpdate = async (
 
 // Example: Broadcasting workflow update
 const saveWorkflow = async (workflow: Workflow) => {
-  // Save to backend
-  await workflowService.update(workflow.id, workflow);
+  // Save to backend first (your application's persistence call)
 
   // Broadcast to collaborators
   await broadcastUpdate(
@@ -557,31 +530,10 @@ const saveWorkflow = async (workflow: Workflow) => {
 
 ### Receiving Updates
 
-```typescript
-// Listen for resource updates
-useEffect(() => {
-  const handleUpdate = (event: UpdateEvent) => {
-    if (event.resource_type === 'workflow') {
-      // Merge changes into local state
-      setWorkflows(prev =>
-        prev.map(w =>
-          w.id === event.resource_id
-            ? { ...w, ...event.changes }
-            : w
-        )
-      );
-
-      // Show notification
-      toast.info(
-        `${event.user.username} updated ${event.changes.name || 'workflow'}`
-      );
-    }
-  };
-
-  ws.on('message', handleUpdate);
-  return () => ws.off('message', handleUpdate);
-}, []);
-```
+Remote changes arrive as activity events. Subscribe with
+`useWebSocket().registerHandlers({ onActivityUpdate })` and clear the handler
+(`onActivityUpdate: undefined`) on unmount — the provider keeps one handler per
+event, so a second subscriber replaces the first.
 
 ## Conflict Prevention
 
