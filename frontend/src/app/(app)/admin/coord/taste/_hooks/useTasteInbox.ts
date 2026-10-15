@@ -1,0 +1,197 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  buildCalibrationBatch,
+  fetchTasteInbox,
+  labelTastePair,
+  skipTastePair,
+  undoTasteLabel,
+  uploadReferenceImage,
+  writeTasteBudget,
+  type CalibrationBatchResult,
+  type TasteInbox,
+  type TasteLabelWrite,
+} from "@/lib/api/taste";
+import { BackendError } from "@/lib/errors/backend-error-message";
+
+/** How many queued pairs one read asks for: the card shows the first, and
+ *  the rest tell the operator what is next without another round trip. */
+export const QUEUE_HEAD = 5;
+
+function message(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
+function statusOf(err: unknown): number | null {
+  return err instanceof BackendError ? err.status : null;
+}
+
+/**
+ * The taste inbox's state: the one read, and every write followed by a
+ * re-read.
+ *
+ * What the page shows always comes from a READ, never from what a write asked
+ * for — so after "label, skip, both bad, refresh" the queue on screen is the
+ * queue the server holds, and nothing is dropped or shown twice by a local
+ * guess. A read that started before a write is discarded when it resolves
+ * (the write's own re-read supersedes it), so a slow refresh cannot repaint a
+ * pair the operator just answered. A failed read keeps the last good inbox on
+ * screen and says the read failed, rather than blanking the queue into
+ * something that looks empty.
+ */
+export function useTasteInbox() {
+  const [inbox, setInbox] = useState<TasteInbox | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [overBudget, setOverBudget] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const generation = useRef(0);
+
+  const load = useCallback(async (keepGoing: boolean) => {
+    const mine = ++generation.current;
+    try {
+      const next = await fetchTasteInbox({
+        limit: QUEUE_HEAD,
+        overBudget: keepGoing,
+      });
+      if (mine !== generation.current) return;
+      setInbox(next);
+      setReadError(null);
+    } catch (err) {
+      if (mine !== generation.current) return;
+      setReadError(message(err, "The taste inbox could not be read."));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load(overBudget);
+  }, [load, overBudget]);
+
+  const refresh = useCallback(() => load(overBudget), [load, overBudget]);
+
+  /** Run one write, then re-read. Returns whether the write landed. */
+  const write = useCallback(
+    async <T>(
+      run: () => Promise<T>,
+      describe: { failed: string; conflict?: string }
+    ): Promise<T | null> => {
+      setBusy(true);
+      try {
+        const result = await run();
+        return result;
+      } catch (err) {
+        if (statusOf(err) === 409 && describe.conflict) {
+          toast.info(describe.conflict);
+        } else {
+          toast.error(message(err, describe.failed));
+        }
+        return null;
+      } finally {
+        // Re-read whether or not the write landed: a 409 means the server
+        // moved on without us, and the screen should show where it is now.
+        await load(overBudget);
+        setBusy(false);
+      }
+    },
+    [load, overBudget]
+  );
+
+  const label = useCallback(
+    (pairId: string, body: TasteLabelWrite) =>
+      write(() => labelTastePair(pairId, body), {
+        failed: "The label was not saved.",
+        conflict:
+          "Someone else answered that pair first — the inbox now shows theirs.",
+      }),
+    [write]
+  );
+
+  const skip = useCallback(
+    (pairId: string) =>
+      write(() => skipTastePair(pairId), {
+        failed: "The pair was not skipped.",
+        conflict: "That pair was answered meanwhile.",
+      }),
+    [write]
+  );
+
+  const undo = useCallback(
+    (pairId: string) =>
+      write(() => undoTasteLabel(pairId), {
+        failed: "The label was not undone.",
+        conflict: "That label was already undone.",
+      }),
+    [write]
+  );
+
+  const buildBatch = useCallback(
+    async (size: number): Promise<CalibrationBatchResult | null> => {
+      const result = await write(() => buildCalibrationBatch(size), {
+        failed: "The calibration batch was not built.",
+      });
+      if (result) {
+        if (result.shortfall === "pool_too_small") {
+          toast.info(
+            "A calibration batch needs at least two of this project's images — upload references or generate candidates first."
+          );
+        } else {
+          toast.success(
+            `Queued ${result.created} calibration ${result.created === 1 ? "pair" : "pairs"}` +
+              (result.already_queued
+                ? ` (${result.already_queued} already queued).`
+                : ".")
+          );
+        }
+      }
+      return result;
+    },
+    [write]
+  );
+
+  const setBudget = useCallback(
+    async (weekly: number) => {
+      const result = await write(() => writeTasteBudget(weekly), {
+        failed: "The weekly budget was not saved.",
+      });
+      if (result)
+        toast.success(`Weekly budget set to ${result.weekly_budget}.`);
+      return result;
+    },
+    [write]
+  );
+
+  const uploadReferences = useCallback(
+    async (files: File[]) => {
+      let stored = 0;
+      for (const file of files) {
+        const result = await write(() => uploadReferenceImage(file), {
+          failed: `${file.name} was not uploaded.`,
+        });
+        if (result) stored += 1;
+      }
+      if (stored) {
+        toast.success(
+          `${stored} reference ${stored === 1 ? "image" : "images"} added to the calibration pool.`
+        );
+      }
+      return stored;
+    },
+    [write]
+  );
+
+  return {
+    inbox,
+    readError,
+    busy,
+    overBudget,
+    setOverBudget,
+    refresh,
+    label,
+    skip,
+    undo,
+    buildBatch,
+    setBudget,
+    uploadReferences,
+  };
+}

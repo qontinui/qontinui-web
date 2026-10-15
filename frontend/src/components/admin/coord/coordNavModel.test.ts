@@ -107,6 +107,7 @@ describe("coordNavModel", () => {
       "Policies",
       "Decision Policies",
       "Policy Edit Review",
+      "Taste Inbox",
     ]);
   });
 

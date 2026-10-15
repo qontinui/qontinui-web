@@ -19,7 +19,7 @@
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
- *             Policy Edit Review
+ *             Policy Edit Review / Taste Inbox
  *   Dev Ops ▸ Overview / CI / Trees° / Spawn° / Runner Drain° / Test Targets° /
  *             Migrations° / Deploys° / Releases° / Git Ops° / Federation° /
  *             Memory° / Onboarding° / Onboarding Status°
@@ -59,6 +59,7 @@ import {
   Hand,
   HardDrive,
   History as HistoryIcon,
+  Images,
   Inbox,
   KeyRound,
   Layers,
@@ -492,6 +493,19 @@ export const GROUPS: NavGroup[] = [
         label: "Policy Edit Review",
         icon: Gavel,
         testId: "coord-nav-prompt-document-proposals",
+      },
+      {
+        // The taste inbox (plan `2026-10-13-image-generation-and-visual-judgment`
+        // Phase 23): the operator's pairwise image labels, from which the
+        // taste twin learns what "better" means for this tenant's imagery.
+        // Intent rather than Work: it declares the tenant's taste — what the
+        // factory should build toward — the way the prompt documents above
+        // declare its direction in prose. Member-visible; label writes gate
+        // on coord-tenant admin in the backend and on `can_label` in the page.
+        href: "/admin/coord/taste",
+        label: "Taste Inbox",
+        icon: Images,
+        testId: "coord-nav-taste",
       },
     ],
   },
