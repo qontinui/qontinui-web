@@ -1812,6 +1812,31 @@ describe("merged rows", () => {
     expect(status.reason).toContain("GitHub has not closed the PR yet");
   });
 
+  it("coord's ci-failed-stale-base reads as needs-rebase, not the author's red", () => {
+    // The GitHub fields say red; coord says the red sits on a stale base and
+    // its own freshen is the remedy. Without the override /fleet asked the
+    // author to "push a fix" for main's failure.
+    const stale = pr({
+      pr_state: "open",
+      merge_state_status: "BLOCKED",
+      ci_lifecycle: "complete",
+      ci_conclusion: "failure",
+      failing_contexts: ["test"],
+      merge_status: "ci-failed-stale-base",
+    });
+    const status = buildPipelineRows([stale], [])[0].status;
+    expect(status.kind).toBe("needs-rebase");
+    expect(status.attention).toBe("waiting");
+    expect(status.reason).toContain("stale base");
+    // The same red WITHOUT the token is still the author's.
+    const plain = buildPipelineRows(
+      [pr({ ...stale, merge_status: "ci-failed" })],
+      []
+    )[0].status;
+    expect(plain.kind).toBe("checks-failing");
+    expect(plain.attention).toBe("author");
+  });
+
   it("isMergedPr: any other merge_status on an open row is NOT merged", () => {
     expect(
       isMergedPr(pr({ pr_state: "open", merge_status: "ready-but-unlanded" }))

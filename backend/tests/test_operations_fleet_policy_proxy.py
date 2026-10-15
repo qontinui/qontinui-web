@@ -675,3 +675,157 @@ class TestPutFleetPolicy:
 
         assert resp.status_code == 422
         instance.put.assert_not_awaited()
+
+
+#: Coord's ``repo_overrides`` for a domain with two repo-band rows (plan
+#: ``2026-10-13-image-generation-and-visual-judgment`` Phase 12). The second is
+#: a master-off row, which a reader of that repo resolves to ``off``.
+COORD_REPO_OVERRIDES = [
+    {
+        "repo": "acme/site",
+        "level": "local_only",
+        "master_enabled": True,
+        "effective_level": "local_only",
+    },
+    {
+        "repo": "acme/web",
+        "level": "on",
+        "master_enabled": False,
+        "effective_level": "off",
+    },
+]
+
+
+def _get_view(client: TestClient, coord_body: dict) -> dict:
+    instance = MagicMock()
+    instance.get = AsyncMock(return_value=_mock_response(200, coord_body))
+    patcher = _patch_httpx(instance)
+    try:
+        with _patch_identity():
+            resp = client.get(f"{API_PREFIX}/fleet-policy?domain=image_generation")
+    finally:
+        patcher.stop()
+    assert resp.status_code == 200
+    return resp.json()
+
+
+class TestRepoOverrides:
+    """``repo_overrides`` — which repos carry their own row for the domain.
+
+    The list is what lets the console show (and clear) every override rather
+    than only the repo it happened to ask about. Its one honesty property: a
+    list the proxy cannot read WHOLE is UNKNOWN (``null``), never ``[]`` and
+    never a partial list, because either would tell the operator an override
+    that is in force does not exist.
+    """
+
+    BASE = {
+        "domain": "image_generation",
+        "effective_level": "on",
+        "master_enabled": True,
+        "resolved_scope": "tenant",
+    }
+
+    def test_passes_coords_list_through_verbatim(self, client: TestClient):
+        body = _get_view(client, {**self.BASE, "repo_overrides": COORD_REPO_OVERRIDES})
+        assert body["repo_overrides"] == COORD_REPO_OVERRIDES
+        # It is this domain's own data, not a stripped foreign block.
+        assert "repo_overrides" not in body["keys_not_shown"]
+
+    def test_an_empty_list_is_no_overrides(self, client: TestClient):
+        body = _get_view(client, {**self.BASE, "repo_overrides": []})
+        assert body["repo_overrides"] == []
+
+    def test_a_coord_that_sends_no_list_is_unknown_not_empty(self, client: TestClient):
+        body = _get_view(client, dict(self.BASE))
+        assert body["repo_overrides"] is None
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "acme/site",
+            {"acme/site": "off"},
+            [{"repo": "acme/site", "level": "off", "master_enabled": True}],
+            [{**COORD_REPO_OVERRIDES[0], "master_enabled": "true"}],
+            [{**COORD_REPO_OVERRIDES[0], "repo": None}],
+            [COORD_REPO_OVERRIDES[0], "acme/web"],
+        ],
+    )
+    def test_a_list_that_does_not_read_whole_is_unknown(self, client: TestClient, bad):
+        """One bad entry voids the list: dropping it would hide a live override."""
+        body = _get_view(client, {**self.BASE, "repo_overrides": bad})
+        assert body["repo_overrides"] is None
+
+    def test_the_put_read_back_carries_the_list(self, client: TestClient):
+        """A repo-band write's read-back re-reads the overrides, so the console
+        can show the row it just wrote (or just cleared) without a third call."""
+        instance = MagicMock()
+        instance.put = AsyncMock(
+            return_value=_mock_response(
+                200,
+                {
+                    "ok": True,
+                    "domain": "image_generation",
+                    "versioned": True,
+                    "version": 2,
+                },
+            )
+        )
+        instance.get = AsyncMock(
+            return_value=_mock_response(
+                200,
+                {
+                    **self.BASE,
+                    "effective_level": "local_only",
+                    "resolved_scope": "repo",
+                    "repo_overrides": COORD_REPO_OVERRIDES,
+                },
+            )
+        )
+        patcher = _patch_httpx(instance)
+        try:
+            resp = client.put(
+                f"{API_PREFIX}/fleet-policy",
+                json={
+                    "domain": "image_generation",
+                    "scope_band": "repo",
+                    "scope_key": "acme/site",
+                    "level": "local_only",
+                    "master_enabled": True,
+                },
+            )
+        finally:
+            patcher.stop()
+
+        body = resp.json()
+        assert instance.get.call_args.kwargs["params"] == {
+            "domain": "image_generation",
+            "repo": "acme/site",
+        }
+        assert body["effective"]["resolved_scope"] == "repo"
+        assert body["effective"]["repo_overrides"] == COORD_REPO_OVERRIDES
+
+
+def test_the_view_projection_delivers_coords_repo_overrides():
+    """ARMING (`_fleet_policy_repo_overrides`): the projection BOTH proxy
+    routes call -- the GET, and the PUT's read-back -- delivers coord's
+    `repo_overrides` whole, and a list it cannot read whole as UNKNOWN (None),
+    never a partial one. Without the change the view has no such field, and
+    the console has no list of overrides to render or clear.
+    """
+    from app.api.v1.endpoints.operations import _fleet_policy_view
+
+    coord_body = {
+        "domain": "image_generation",
+        "effective_level": "on",
+        "master_enabled": True,
+        "resolved_scope": "tenant",
+        "repo_overrides": COORD_REPO_OVERRIDES,
+    }
+    view = _fleet_policy_view(coord_body, domain="image_generation", can_edit=True)
+    assert view.model_dump().get("repo_overrides") == COORD_REPO_OVERRIDES
+
+    torn = dict(coord_body, repo_overrides=[COORD_REPO_OVERRIDES[0], "acme/web"])
+    torn_view = _fleet_policy_view(torn, domain="image_generation", can_edit=True)
+    assert "repo_overrides" in torn_view.model_dump()
+    assert torn_view.model_dump()["repo_overrides"] is None

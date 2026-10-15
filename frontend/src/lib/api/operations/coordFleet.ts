@@ -33,6 +33,12 @@
  */
 
 import type { DeviceCredentialDark } from "@/components/operations/coordCredentialStatus";
+import type { ResourceSamplesResponse } from "@/components/operations/fleetResources";
+import type {
+  AggregatedTaskRuns,
+  FleetStatus,
+} from "@/components/operations/types";
+import type { WorktreeSlotsResponse } from "@/components/operations/useFleetWorktreeSlots";
 import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE, readJson } from "./base";
@@ -369,4 +375,398 @@ export async function fetchFleetHealth(
     idempotent: true,
   });
   return readJson<FleetHealthPayload>(res, `GET ${url}`);
+}
+
+// ---------------------------------------------------------------------------
+// The rest of `/operations/fleet/*`, and the device/computer reads beside it
+// ---------------------------------------------------------------------------
+//
+// Every function below calls `httpClient.fetch` on the RELATIVE
+// `OPERATIONS_BASE` with its URL inline, and parses through `readJson`, so a
+// non-2xx rejects as `<METHOD> <url> failed: <status> - <body>` — the shape
+// `httpStatusOf` / `httpBodyOf` / `describeCoordPollError` read. A caller that
+// branches on a status (a 404 that means "coord predates this route") reads it
+// back with `httpStatusOf`; nothing here interprets a status itself.
+//
+// Reads whose caller validates the body field by field before trusting it
+// (`parseFleetDrain`, `parseFleetWorktreeCap`, `parseDispatchRoles`,
+// `parseCiRunnersPayload`, `volumesFetchFromPayload`, `parseDeviceVolumes`,
+// `resolveReadiness`, `isSchemaPendingBody`) return `unknown`: the handler
+// passes coord's body through verbatim (`_proxy_coord_passthrough`), and a
+// declared shape here would claim a check nobody made.
+
+/**
+ * `GET /fleet` (`get_fleet_status`) — the web-local runner registry, typed by
+ * `FleetStatus` (`components/operations/types.ts`). Not a coord proxy, so it
+ * keeps `httpClient`'s default retry budget.
+ */
+export async function fetchFleetStatus(): Promise<FleetStatus> {
+  const url = `${OPERATIONS_BASE}/fleet`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<FleetStatus>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/tasks` (`get_all_tasks`, `response_model=AggregatedTaskRuns`) —
+ * the in-process beacon's task runs across every runner. Default retries.
+ */
+export async function fetchFleetTasks(): Promise<AggregatedTaskRuns> {
+  const url = `${OPERATIONS_BASE}/fleet/tasks`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<AggregatedTaskRuns>(res, `GET ${url}`);
+}
+
+/**
+ * The body of `GET /fleet/runners/{runner_id}/output` (`get_runner_task_output`)
+ * — the runner's own, which carries the text as `output` or `text` depending on
+ * the runner build.
+ */
+export interface RunnerTaskOutput {
+  output?: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `GET /fleet/runners/{runner_id}/output?task_run_id=&tail_chars=8000`
+ * (`get_runner_task_output`) — the tail of one task run's AI output, proxied
+ * from the runner.
+ */
+export async function fetchRunnerTaskOutput(
+  runnerId: string,
+  taskRunId: string,
+  options: HttpOptions = {}
+): Promise<RunnerTaskOutput> {
+  const url = `${OPERATIONS_BASE}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<RunnerTaskOutput>(res, `GET ${url}`);
+}
+
+/** `PATCH /fleet/machines/{hostname}` response — `rename_machine`. */
+export interface MachineRenameResponse {
+  hostname: string;
+  name: string | null;
+}
+
+/**
+ * `PATCH /fleet/machines/{hostname}` (`rename_machine`) — set a machine's
+ * display name; `""` clears it back to the hostname.
+ *
+ * `idempotent: true`: `rename_machine` UPSERTs the (user, hostname) row
+ * (DELETEs it for an empty name) — pure assignment, so a repeat is a no-op.
+ * No caller needs the body (they re-read the fleet), so an unparseable 2xx
+ * resolves `null` rather than turning a landed rename into a failure.
+ */
+export async function renameMachine(
+  hostname: string,
+  name: string
+): Promise<MachineRenameResponse | null> {
+  const url = `${OPERATIONS_BASE}/fleet/machines/${encodeURIComponent(hostname)}`;
+  const res = await httpClient.fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+    idempotent: true,
+  });
+  return readJson<MachineRenameResponse>(res, `PATCH ${url}`, {
+    unparseable: "null",
+  });
+}
+
+/** `GET /fleet/drain` (`get_fleet_drain`) — coord's drain map, validated by `parseFleetDrain`. */
+export async function fetchFleetDrain(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/drain`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** `POST /fleet/drain` body — coord's `DrainRequest` (`deny_unknown_fields`). */
+export interface FleetDrainRequest {
+  device_id: string;
+  until: string;
+  reason: string;
+}
+
+/** `POST /fleet/undrain` body — coord's undrain request. */
+export interface FleetUndrainRequest {
+  device_id: string;
+  reason: string;
+}
+
+/**
+ * A fleet write's acknowledgement (`post_fleet_drain`, `post_fleet_undrain`,
+ * `post_fleet_worktree_cap*`, `put_fleet_dispatch_role`). Coord reports
+ * `changed: false` for a write that altered nothing; the other fields are the
+ * route's own. The writers resolve `null` for a 2xx whose body did not parse —
+ * the write still landed.
+ */
+export interface FleetWriteAck {
+  changed?: unknown;
+  live_sessions_on_machine?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * `POST /fleet/drain` (`post_fleet_drain`). `idempotent: false`: a 5xx is not
+ * re-issued, because a drain coord recorded before the proxy gave up would be
+ * written (and audited) twice.
+ */
+export async function postFleetDrain(
+  body: FleetDrainRequest
+): Promise<FleetWriteAck | null> {
+  const url = `${OPERATIONS_BASE}/fleet/drain`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<FleetWriteAck>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `POST /fleet/undrain` (`post_fleet_undrain`). Never re-issued on a 5xx. */
+export async function postFleetUndrain(
+  body: FleetUndrainRequest
+): Promise<FleetWriteAck | null> {
+  const url = `${OPERATIONS_BASE}/fleet/undrain`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<FleetWriteAck>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `GET /fleet/worktree-cap` (`get_fleet_worktree_cap`), validated by `parseFleetWorktreeCap`. */
+export async function fetchFleetWorktreeCap(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-cap`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** `POST /fleet/worktree-cap` body — coord's request struct (`deny_unknown_fields`). */
+export interface WorktreeCapRequest {
+  device_id: string;
+  max_worktrees: number;
+  reason: string;
+}
+
+/** `POST /fleet/worktree-cap/clear` body. */
+export interface WorktreeCapClearRequest {
+  device_id: string;
+  reason: string;
+}
+
+/** `POST /fleet/worktree-cap` (`post_fleet_worktree_cap`). Never re-issued on a 5xx. */
+export async function postFleetWorktreeCap(
+  body: WorktreeCapRequest
+): Promise<FleetWriteAck | null> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-cap`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<FleetWriteAck>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `POST /fleet/worktree-cap/clear` (`post_fleet_worktree_cap_clear`). Never re-issued on a 5xx. */
+export async function postFleetWorktreeCapClear(
+  body: WorktreeCapClearRequest
+): Promise<FleetWriteAck | null> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-cap/clear`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+  });
+  return readJson<FleetWriteAck>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/** `GET /fleet/dispatch-roles` (`get_fleet_dispatch_roles`), validated by `parseDispatchRoles`. */
+export async function fetchFleetDispatchRoles(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/dispatch-roles`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `PUT /fleet/dispatch-role` body. Exactly one of `device_id` /
+ * `ci_host_name` names the machine; no author field — coord stamps it.
+ */
+export interface DispatchRoleRequest {
+  dispatch_role: string;
+  reason: string;
+  force: boolean;
+  device_id?: string;
+  ci_host_name?: string | null;
+}
+
+/**
+ * `PUT /fleet/dispatch-role` (`put_fleet_dispatch_role`).
+ *
+ * `idempotent: false` and `maxRetries: 0`: coord answers a repeated PUT with
+ * `changed: false`, so a retry after a lost-but-committed first attempt would
+ * report "nothing changed" for a change this operator just made. A 5xx must
+ * reach the caller, which re-reads instead.
+ */
+export async function putFleetDispatchRole(
+  body: DispatchRoleRequest
+): Promise<FleetWriteAck | null> {
+  const url = `${OPERATIONS_BASE}/fleet/dispatch-role`;
+  const res = await httpClient.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify(body),
+    idempotent: false,
+    maxRetries: 0,
+  });
+  return readJson<FleetWriteAck>(res, `PUT ${url}`, { unparseable: "null" });
+}
+
+/**
+ * `GET /fleet/resource-samples?window_secs=` (`get_fleet_resource_samples`) —
+ * every device's latest sample plus `window_secs` of history.
+ */
+export async function fetchFleetResourceSamples(
+  windowSecs: number,
+  options: HttpOptions = {}
+): Promise<ResourceSamplesResponse> {
+  const url = `${OPERATIONS_BASE}/fleet/resource-samples?window_secs=${encodeURIComponent(String(windowSecs))}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<ResourceSamplesResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/resource-samples?device_id=&history=false` — the same handler
+ * narrowed to one device's latest sample (the runner readiness verdict),
+ * interpreted by `resolveReadiness`.
+ */
+export async function fetchDeviceResourceSample(
+  deviceId: string,
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/resource-samples?device_id=${encodeURIComponent(deviceId)}&history=false`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/worktree-slots` (`get_fleet_worktree_slots`) — coord's
+ * `BudgetOccupancy` per device, typed by `WorktreeSlotsResponse`.
+ */
+export async function fetchFleetWorktreeSlots(
+  options: HttpOptions = {}
+): Promise<WorktreeSlotsResponse> {
+  const url = `${OPERATIONS_BASE}/fleet/worktree-slots`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<WorktreeSlotsResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/ci-runners` (`get_fleet_ci_runners`) — coord's mirror of the
+ * self-hosted GitHub runners, validated by `parseCiRunnersPayload`.
+ */
+export async function fetchFleetCiRunners(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/ci-runners`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /fleet/volumes` (`get_fleet_volumes`) — the latest volume snapshot for
+ * every device in the tenant, validated by `volumesFetchFromPayload`. A device
+ * with no telemetry is ABSENT from the payload — UNKNOWN, never zero.
+ */
+export async function fetchFleetVolumes(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/volumes`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /devices/{device_id}/volumes` (`get_device_volumes`) — one device's
+ * latest volume snapshot, validated by `parseDeviceVolumes`. Default retries:
+ * an explicit read of the settings page, not a poll.
+ */
+export async function fetchDeviceVolumes(deviceId: string): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/devices/${encodeURIComponent(deviceId)}/volumes`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /computers` (`get_computers`) — coord's computer list, passed through
+ * verbatim. The wire shapes (`ComputersListWire`, `ComputerDetailWire`) and
+ * the schema-pending check live with their one reader,
+ * `admin/coord/computers/_lib/computerStatus.ts`, so this returns `unknown`.
+ */
+export async function fetchComputers(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/computers`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
+/** `GET /computers/{computer_id}` (`get_computer`) — one computer, verbatim. */
+export async function fetchComputer(
+  computerId: string,
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/computers/${encodeURIComponent(computerId)}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
 }
