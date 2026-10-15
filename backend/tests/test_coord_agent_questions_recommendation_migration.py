@@ -39,7 +39,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_agent_questions_recommendation"
-_PARENT_REVISION_ID = "devcred_01_credential_deny_and_bound_pair_codes"
+_PARENT_REVISION_ID = "credprobe_01"
 _REVISION_FILENAME = "coord_agent_questions_recommendation.py"
 
 _TABLE = "agent_questions"
