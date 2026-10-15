@@ -1,7 +1,13 @@
 /**
- * Canvas Store Tests
+ * Canvas slice tests
  *
- * Demonstrates testing individual slices independently
+ * Tests the slice creators in isolation: each `describe` builds a fresh
+ * zustand store from only the slice creators it needs, so a failure here
+ * points at one slice rather than at how `index.ts` composes them.
+ *
+ * The composed `useCanvasStore` is tested in `store-contract.test.ts`, its
+ * persistence in `persist-contract.test.ts`. Behaviour that the composed
+ * suite already asserts identically is not repeated here.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -55,16 +61,6 @@ describe("WorkflowSlice", () => {
       })) as unknown
     );
 
-  it("should set workflow", () => {
-    const useStore = makeStore();
-    const workflow = createMockWorkflow();
-
-    useStore.getState().setWorkflow(workflow);
-
-    expect(useStore.getState().workflow).toEqual(workflow);
-    expect(useStore.getState().isDirty).toBe(false);
-  });
-
   it("should clear workflow", () => {
     const useStore = makeStore();
     const workflow = createMockWorkflow();
@@ -108,16 +104,6 @@ describe("ActionSlice", () => {
 
     const workflow = createMockWorkflow();
     useStore.getState().setWorkflow(workflow);
-  });
-
-  it("should add action", () => {
-    const action = createMockAction("action-1");
-
-    useStore.getState().addAction(action);
-
-    expect(useStore.getState().workflow?.actions).toHaveLength(1);
-    expect(useStore.getState().workflow?.actions[0]).toEqual(action);
-    expect(useStore.getState().isDirty).toBe(true);
   });
 
   it("should update action", () => {
@@ -329,20 +315,6 @@ describe("ViewportSlice", () => {
 
   beforeEach(() => {
     useStore = create(immer(createViewportSlice as unknown));
-  });
-
-  it("should set viewport", () => {
-    useStore.getState().setViewport({ x: 100, y: 200, zoom: 1.5 });
-
-    expect(useStore.getState().viewport).toEqual({ x: 100, y: 200, zoom: 1.5 });
-  });
-
-  it("should zoom in", () => {
-    const initialZoom = useStore.getState().viewport.zoom;
-
-    useStore.getState().zoomIn();
-
-    expect(useStore.getState().viewport.zoom).toBeGreaterThan(initialZoom);
   });
 
   it("should zoom out", () => {

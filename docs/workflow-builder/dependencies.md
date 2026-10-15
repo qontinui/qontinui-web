@@ -127,35 +127,15 @@ Circular dependencies occur when workflows call each other in a cycle, which can
 ### Detect Circular Dependencies
 
 ```typescript
-// Detect all circular dependencies
-const circular = workflowDependencyAnalyzer.detectCircularDependencies(workflows);
+// Each cycle is the list of workflow IDs that form it
+const cycles = workflowDependencyAnalyzer.findCircularDependencies(workflows);
 
-if (circular.length > 0) {
-  console.error(`Found ${circular.length} circular dependencies!`);
+if (cycles.length > 0) {
+  console.error(`Found ${cycles.length} circular dependencies!`);
 
-  circular.forEach(cycle => {
-    console.error('Circular dependency detected:');
-    console.error(`Path: ${cycle.path.join(' -> ')}`);
-    console.error(`Cycle: ${cycle.cycle.join(' -> ')}`);
+  cycles.forEach(cycle => {
+    console.error(`Cycle: ${cycle.join(' -> ')}`);
   });
-}
-```
-
-### Circular Dependency Structure
-
-```typescript
-interface CircularDependency {
-  // Cycle path (workflow IDs forming the cycle)
-  cycle: string[];
-
-  // Full path from root to cycle
-  path: string[];
-
-  // Severity (based on cycle length)
-  severity: 'low' | 'medium' | 'high';
-
-  // Description
-  description: string;
 }
 ```
 
@@ -170,20 +150,6 @@ Workflow A -> Workflow B -> Workflow A
 
 Workflow A -> Workflow B -> Workflow C -> Workflow D -> Workflow B
 (Cycle in middle of chain)
-```
-
-### Check Single Workflow
-
-```typescript
-// Check if a specific workflow has circular dependencies
-const hasCircular = workflowDependencyAnalyzer.hasCircularDependency(
-  workflowId,
-  workflows
-);
-
-if (hasCircular) {
-  console.error('Warning: This workflow is part of a circular dependency!');
-}
 ```
 
 ## Impact Analysis
@@ -334,26 +300,6 @@ graph TD
     E --> F[Initialize Dashboard]
 ```
 
-### Generate Mermaid Diagram
-
-```typescript
-// Generate Mermaid diagram code
-const mermaidCode = workflowDependencyAnalyzer.generateMermaidDiagram(
-  workflowId,
-  workflows
-);
-
-console.log(mermaidCode);
-```
-
-Output:
-```
-graph TD
-    wf-1[Login Workflow] --> wf-2[Validate User]
-    wf-1 --> wf-3[Setup Session]
-    wf-2 --> wf-4[Check Credentials]
-```
-
 ## Unused Workflows
 
 ### Find Unused Workflows
@@ -370,36 +316,6 @@ unused.forEach(wfId => {
 });
 ```
 
-### Categorize Unused Workflows
-
-```typescript
-// Categorize unused workflows
-const categorized = {
-  entryPoints: [] as string[],    // Meant to be run directly
-  candidates: [] as string[],      // Potentially unused
-  deprecated: [] as string[]       // Marked as deprecated
-};
-
-unused.forEach(wfId => {
-  const workflow = workflows.find(wf => wf.id === wfId);
-  const tags = workflowFolderManager.getTags(wfId);
-
-  if (tags.includes('entry-point') || tags.includes('standalone')) {
-    categorized.entryPoints.push(wfId);
-  } else if (tags.includes('deprecated')) {
-    categorized.deprecated.push(wfId);
-  } else {
-    categorized.candidates.push(wfId);
-  }
-});
-
-console.log('Unused workflows that might be candidates for removal:');
-categorized.candidates.forEach(wfId => {
-  const workflow = workflows.find(wf => wf.id === wfId);
-  console.log(`- ${workflow?.name}`);
-});
-```
-
 ## Best Practices
 
 ### Prevent Circular Dependencies
@@ -412,33 +328,15 @@ function saveWorkflowSafely(workflow: Workflow, allWorkflows: Workflow[]): boole
   tempWorkflows.push(workflow);
 
   // Check for circular dependencies
-  const circular = workflowDependencyAnalyzer.detectCircularDependencies(tempWorkflows);
+  const cycles = workflowDependencyAnalyzer.findCircularDependencies(tempWorkflows);
 
-  if (circular.length > 0) {
+  if (cycles.length > 0) {
     alert('Cannot save: This change would create a circular dependency!');
     return false;
   }
 
   // Safe to save
   return saveWorkflow(workflow);
-}
-```
-
-### Dependency Depth Limits
-
-```typescript
-// Limit dependency depth to prevent deep nesting
-const MAX_DEPENDENCY_DEPTH = 5;
-
-function checkDependencyDepth(workflowId: string, workflows: Workflow[]): boolean {
-  const depth = workflowDependencyAnalyzer.getMaxDependencyDepth(workflowId, workflows);
-
-  if (depth > MAX_DEPENDENCY_DEPTH) {
-    console.warn(`Warning: Dependency depth (${depth}) exceeds recommended limit (${MAX_DEPENDENCY_DEPTH})`);
-    return false;
-  }
-
-  return true;
 }
 ```
 
@@ -582,54 +480,6 @@ if (!validation.valid) {
 }
 ```
 
-## Common Patterns
-
-### Layered Architecture
-
-```
-Entry Points (User-facing workflows)
-    ↓
-Business Logic Layer (Reusable workflows)
-    ↓
-Utility Layer (Helper workflows)
-    ↓
-Core Actions (Atomic operations)
-```
-
-```typescript
-// Enforce layered architecture
-function validateLayeredArchitecture(workflow: Workflow, workflows: Workflow[]): boolean {
-  const layer = getWorkflowLayer(workflow);
-  const dependencies = workflowDependencyAnalyzer.getDependencies(workflow.id);
-
-  for (const dep of dependencies) {
-    const depWorkflow = workflows.find(wf => wf.id === dep.targetWorkflowId);
-    if (!depWorkflow) continue;
-
-    const depLayer = getWorkflowLayer(depWorkflow);
-
-    // Can only depend on same level or lower levels
-    if (depLayer > layer) {
-      console.error(
-        `Architecture violation: ${workflow.name} (layer ${layer}) ` +
-        `depends on ${depWorkflow.name} (layer ${depLayer})`
-      );
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function getWorkflowLayer(workflow: Workflow): number {
-  const tags = workflowFolderManager.getTags(workflow.id);
-  if (tags.includes('entry-point')) return 3;
-  if (tags.includes('business-logic')) return 2;
-  if (tags.includes('utility')) return 1;
-  return 0; // Core
-}
-```
-
 ## Troubleshooting
 
 ### Broken Dependencies
@@ -671,4 +521,3 @@ function getCachedAnalysis(workflows: Workflow[]): DependencyAnalysis {
 
 - [Organization Guide](./organization.md) - Manage workflow hierarchy
 - [Best Practices](./best-practices.md) - Recommended patterns
-- [API Reference](./api-reference.md) - Complete API documentation

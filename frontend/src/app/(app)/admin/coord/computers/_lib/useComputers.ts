@@ -22,10 +22,9 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
-import { OPERATIONS_API } from "@/components/operations/utils";
+import { fetchComputer, fetchComputers } from "@/lib/api/operations/coordFleet";
 import {
   classifyComputersError,
   isSchemaPendingBody,
@@ -33,12 +32,6 @@ import {
   type ComputersListWire,
   type ComputersReadIssue,
 } from "./computerStatus";
-
-export const COMPUTERS_API = `${OPERATIONS_API}/computers`;
-
-export function computerApi(computerId: string): string {
-  return `${COMPUTERS_API}/${encodeURIComponent(computerId)}`;
-}
 
 /** Matches the 30 s sample cadence: polling faster reads the same sample twice. */
 export const COMPUTERS_POLL_MS = 30_000;
@@ -53,7 +46,16 @@ export interface ComputersRead<T> {
   refresh: () => Promise<void> | void;
 }
 
-function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
+/**
+ * One read of a computer route. `computerId === null` is the list
+ * (`fetchComputers`); otherwise the one computer (`fetchComputer`). The wire
+ * type is asserted, not checked, exactly as the `httpClient.get<T>` this
+ * replaced asserted it — `isSchemaPendingBody` is the one check made.
+ */
+function useComputersRead<T>(
+  computerId: string | null,
+  detail: boolean
+): ComputersRead<T> {
   const [data, setData] = useState<T | null>(null);
   const [issue, setIssue] = useState<ComputersReadIssue | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,9 @@ function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
   const poll = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const body = await httpClient.get<T>(url, COORD_DASHBOARD_POLL_OPTIONS);
+        const body = (await (computerId === null
+          ? fetchComputers(COORD_DASHBOARD_POLL_OPTIONS)
+          : fetchComputer(computerId, COORD_DASHBOARD_POLL_OPTIONS))) as T;
         if (!isCurrent()) return;
         // A 2xx that SAYS the schema is pending is not a body to render: an
         // empty `computers` beside it would read as a measured empty fleet.
@@ -94,7 +98,7 @@ function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
         if (isCurrent()) setLoading(false);
       }
     },
-    [url, detail]
+    [computerId, detail]
   );
 
   const { refresh } = useSingleFlightPoll(poll, COMPUTERS_POLL_MS);
@@ -102,11 +106,11 @@ function useComputersRead<T>(url: string, detail: boolean): ComputersRead<T> {
 }
 
 export function useComputers(): ComputersRead<ComputersListWire> {
-  return useComputersRead<ComputersListWire>(COMPUTERS_API, false);
+  return useComputersRead<ComputersListWire>(null, false);
 }
 
 export function useComputer(
   computerId: string
 ): ComputersRead<ComputerDetailWire> {
-  return useComputersRead<ComputerDetailWire>(computerApi(computerId), true);
+  return useComputersRead<ComputerDetailWire>(computerId, true);
 }

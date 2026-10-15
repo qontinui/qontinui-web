@@ -2,11 +2,6 @@
 // Operations Page Utility Helpers
 // ============================================================================
 
-import { ApiConfig } from "@/services/api-config";
-
-/** API base for the operations endpoints (Phase 2 unified surface). */
-export const OPERATIONS_API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
-
 /**
  * Polling fallback interval (ms) when the CI-status WS is offline.
  * Matches `DEVICE_STATUS_POLL_FALLBACK_MS` — CI status changes at
@@ -40,72 +35,6 @@ export const STUCK_PR_MAX_CARDS = 6;
  * repo with 30 wedged PRs turn one poll into 30 reads.
  */
 export const STUCK_PR_MAX_VERDICT_READS = STUCK_PR_MAX_CARDS + 4;
-
-/**
- * Gate ACTION endpoints (plan
- * `2026-06-05-plan-gate-web-surface-and-productization` Phase 2). All
- * tenant-scoped server-side via the operator → tenant_id resolver (coord
- * derives the tenant from the forwarded bearer); the caller never passes a
- * tenant_id.
- *
- * **There is no gates LIST url here any more.** `GATES_LIST_API` /
- * `gatesListUrl` backed `GatesPanel`'s own read of
- * `GET /operations/gates/list`; Phase 4 of
- * `2026-08-25-coord-console-intent-and-devops-sections` deleted that panel, so
- * the console has exactly ONE gates list read left —
- * `/admin/coord/gates` → `adminDevService.getOverview()` →
- * `/api/v1/admin-dev/overview` → coord `GET /coord/dev-overview`. Do not
- * reintroduce a second one; two list reads over two backends is what that
- * phase removed.
- *
- * These builders are shared by `/admin/coord/gates` (`GateActions.tsx`) and
- * by any future gate surface — the action layer was already unified on them
- * before the panel was deleted, which is why the delete cost no capability.
- *
- * - `gateApproveUrl(id)`     — POST clear an `operator_approval` gate.
- * - `gateReopenUrl(id)`      — POST clone a cleared/failed gate into a new
- *                              open gate (undo-by-reopen).
- * - `gateAudienceUrl(id)`    — PATCH a gate's `clearance_audience`
- *                              (operator re-classification).
- * - `gateMuteUrl(id)` / `gateUnmuteUrl(id)` — POST reversible mute toggle.
- * - `gateSnoozeUrl(id)`      — POST snooze until `{until: <rfc3339>}`.
- */
-export function gateApproveUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/approve`;
-}
-export function gateReopenUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/reopen`;
-}
-export function gateAudienceUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/audience`;
-}
-export function gateMuteUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/mute`;
-}
-export function gateUnmuteUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/unmute`;
-}
-export function gateSnoozeUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/snooze`;
-}
-/** POST reject an OPEN `operator_approval` gate. Body `{reason?}`. */
-export function gateRejectUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/reject`;
-}
-/**
- * POST force-clear a gate regardless of its predicate (DESTRUCTIVE — clears an
- * open gate that has not met its condition). Body `{reason}` REQUIRED.
- */
-export function gateForceClearUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/force-clear`;
-}
-/**
- * POST cancel a gate's armed/dispatched continuation so clearing it no longer
- * spawns the follow-up session. Body `{cancelled_by, reason}`.
- */
-export function gateContinuationCancelUrl(gateId: string): string {
-  return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/continuation-cancel`;
-}
 
 /**
  * Polling interval for `useSymbolClaimsStream` in milliseconds.
@@ -162,17 +91,6 @@ export const DEV_ACTIONS_POLL_MS = 10_000;
  * the gates-panel cadence.
  */
 export const MIGRATIONS_QUEUE_POLL_MS = 15_000;
-
-/**
- * PATCH endpoint to set (or clear) a machine's operator-friendly display name.
- * Body `{ name: string }`: a non-empty name sets the alias; an empty string
- * clears it (reverts to the raw hostname). Tenant/user scoped server-side via
- * the operator bearer; the caller never passes a user_id.
- * Response: `{ hostname: string, name: string | null }`.
- */
-export function machineRenameUrl(hostname: string): string {
-  return `${OPERATIONS_API}/fleet/machines/${encodeURIComponent(hostname)}`;
-}
 
 /** Polling interval in milliseconds. */
 export const POLL_INTERVAL_MS = 5_000;
@@ -264,28 +182,10 @@ export function formatStallAge(secs: number | null | undefined): string {
 // Volume free space (disk monitoring, Phase 1)
 // ---------------------------------------------------------------------------
 //
-// Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1. Reads
-// coord's `worktree_volume` head through the web proxy — no alembic migration
-// ships with this phase, and web never touches coord's Postgres schema.
-
-/**
- * GET the latest volume snapshot for every device in the caller's tenant.
- * Tenant-scoped server-side via the operator bearer; the caller passes no
- * tenant_id. A device with no telemetry is ABSENT from the payload — that is
- * UNKNOWN, never zero (plan D10).
- */
-export const FLEET_VOLUMES_API = `${OPERATIONS_API}/fleet/volumes`;
-
-/**
- * GET one device's latest volume snapshot (per-device sibling of the above).
- *
- * NOTE: intentionally unwired in Phase 1 — the fleet read covers every card, so
- * nothing calls this yet. Phase 2 (per-device drill-down) is its first
- * consumer; it is not accidentally-dead code.
- */
-export function deviceVolumesUrl(deviceId: string): string {
-  return `${OPERATIONS_API}/devices/${encodeURIComponent(deviceId)}/volumes`;
-}
+// Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1. The reads
+// of coord's `worktree_volume` head are `fetchFleetVolumes` /
+// `fetchDeviceVolumes` (`lib/api/operations/coordFleet.ts`); what follows is
+// how a reading is presented.
 
 /**
  * Age at which a volume reading stops being presented as current.

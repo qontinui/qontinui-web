@@ -36,6 +36,15 @@ describe("tenantPolicy", () => {
     ]);
   });
 
+  it("fetchFleetPolicy resolves as a repo would when given one", async () => {
+    fetchMock.mockResolvedValueOnce(json({ domain: "ci_model_access" }));
+    await fetchFleetPolicy("ci_model_access", "qontinui/qontinui-web");
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/fleet-policy?domain=ci_model_access&repo=qontinui%2Fqontinui-web",
+      { method: "GET", idempotent: true },
+    ]);
+  });
+
   it("putFleetPolicy PUTs the write body, declared non-idempotent", async () => {
     const write = {
       domain: "plan_capture",
