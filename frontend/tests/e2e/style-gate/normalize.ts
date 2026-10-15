@@ -623,7 +623,11 @@ export function projectMedia(el: Record<string, unknown>): ElementMedia | null {
   // and a legacy SDK reads it raw without saying which candidate it matched —
   // so a legacy row with a `srcset` or `<picture>` sources carries no natural
   // size worth trusting, and it is omitted. An enveloped row's producer
-  // de-corrects it by the matched candidate (or omits it), so it passes.
+  // de-corrects it by the matched candidate, or lists `naturalWidth` /
+  // `naturalHeight` in `coverage.unmeasured` when no candidate resolves; the
+  // value passes as given (never re-corrected here) and an unmeasured one is
+  // omitted. `effective_resolution` is computed FROM that size, so it is
+  // projected only beside a projected `natural_px` (below).
   const natural = mediaSize(fact("naturalWidth"), fact("naturalHeight"), true);
   const sources = fact("sources");
   const densityCorrected =
@@ -672,7 +676,7 @@ export function projectMedia(el: Record<string, unknown>): ElementMedia | null {
   }
 
   const effective = finiteNumber(fact("effectiveResolution"));
-  if (effective !== null && effective > 0) media.effective_resolution = effective;
+  if (effective !== null && effective > 0 && media.natural_px) media.effective_resolution = effective;
   const objectFit = keyword(fact("objectFit"), OBJECT_FITS);
   if (objectFit) media.object_fit = objectFit;
   const position = nonEmpty(fact("objectPosition"));
