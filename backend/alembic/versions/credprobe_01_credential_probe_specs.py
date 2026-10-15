@@ -1,7 +1,7 @@
 """coord.credential_probe_specs — the tenant's regional credential-probe catalogue
 
 Revision ID: credprobe_01
-Revises: provfacets_01
+Revises: wtcensus_split_01_latest_and_history
 Create Date: 2026-10-09
 
 Phase 3 (qontinui-web half) of plan
@@ -112,7 +112,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "credprobe_01"
-down_revision: str | Sequence[str] | None = "provfacets_01"
+down_revision: str | Sequence[str] | None = "wtcensus_split_01_latest_and_history"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
