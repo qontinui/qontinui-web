@@ -80,6 +80,7 @@ describe("coordNavModel", () => {
       "Plan Follow-ups",
       "Questions",
       "Findings",
+      "Operator Touches",
       "Agents",
       "Unfinished Sessions",
       "Agent Commands",

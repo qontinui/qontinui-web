@@ -73,7 +73,7 @@ import { AlertTriangle, Layers, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatCluster } from "@/components/console";
+import { StatCluster, share } from "@/components/console";
 import { usePlanCoverage } from "../_hooks/usePlanLibrary";
 // The rounding rule in `shortDuration` is load-bearing — it floors the unit
 // and appends `+` so an age is never rendered as fresher than it is — and a
@@ -163,32 +163,6 @@ function uncapitalise(prose: string): string {
 /** `n` rendered with its noun pluralised. */
 function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
-}
-
-/**
- * A share, to one decimal, that NEVER rounds into a claim it cannot make —
- * used ONLY by [`denominatorSentence`].
- *
- * A bare `toFixed(1)` is wrong in both directions at the ends of the range,
- * and both errors are the exact class this feature exists to delete:
- *
- * * **9999 of 10000 rounds to `100.0%`**, printed inside the same sentence
- *   that asserts the share cannot exceed 100% and directly above a missing
- *   count of 1. Full coverage, rendered for an incomplete corpus.
- * * **1 of 10000 rounds to `0.0%`**, which reads as "the corpus holds none of
- *   it" when it holds some — absence-is-not-zero, one level down.
- *
- * So the two ends are reserved for the EXACT cases and everything between
- * them is hedged with `>` or `<`, the same shape `shortDuration`'s `+` gives
- * an age. `100%` and `0%` are then load-bearing: they mean exactly that.
- */
-function share(numerator: number, denominator: number): string {
-  if (numerator === denominator) return "100%";
-  if (numerator === 0) return "0%";
-  const rounded = ((numerator / denominator) * 100).toFixed(1);
-  if (rounded === "100.0") return ">99.9%";
-  if (rounded === "0.0") return "<0.1%";
-  return `${rounded}%`;
 }
 
 /**
