@@ -157,8 +157,8 @@ PREVIOUS_SELECT = """
 VIEW_COMMENT = (
     "Latest version of each memory per (tenant_id, name); a name whose latest "
     "version is a tombstone is absent. Defined by qontinui-web alembic revision "
-    "coordmem_01. security_invoker, so row-level security on coord.memories "
-    "filters a coord_tenant reader."
+    "coordmem_01. security_invoker: the reader's own privileges, and any "
+    "row-level security later enabled on coord.memories, apply."
 )
 
 

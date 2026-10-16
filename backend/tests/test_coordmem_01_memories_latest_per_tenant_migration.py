@@ -278,6 +278,54 @@ def test_the_revision_restores_the_previous_definition_verbatim() -> None:
     assert [name for name, _type in _COLUMNS] == list(module.COLUMNS)
 
 
+_OFFLINE_URL = "postgresql://nobody:nothing@127.0.0.1:1/coordmem_01_offline"
+
+
+def test_each_direction_replaces_the_view_in_its_own_bounded_transaction() -> None:
+    """The replace holds its ``AccessExclusiveLock`` for one short transaction.
+
+    ``alembic/env.py`` runs a deploy batch in ONE transaction, so a lock taken
+    inside it would last until the whole batch commits. Rendered offline
+    (``--sql``, no database), an ``autocommit_block`` is a bare ``COMMIT;``
+    before its statements and a ``BEGIN;`` after. The re-definition must sit in
+    that gap as its own ``BEGIN; SET LOCAL lock_timeout = '3s'; ...; COMMIT;``,
+    in both directions, so a reader holding the view fails the run fast instead
+    of queueing every other reader behind the lock.
+    """
+    module = _revision_module("offline")
+    comments = {
+        "upgrade": "'" + module.VIEW_COMMENT.replace("'", "''") + "'",
+        "downgrade": "NULL",
+    }
+    for direction, (start, end) in (
+        ("upgrade", (_PARENT_REVISION_ID, _REVISION_ID)),
+        ("downgrade", (_REVISION_ID, _PARENT_REVISION_ID)),
+    ):
+        sql = run_alembic(
+            backend_root(), _OFFLINE_URL, direction, f"{start}:{end}", "--sql"
+        ).stdout
+        lines = [line.strip() for line in sql.splitlines() if line.strip()]
+        opening = (
+            "BEGIN; SET LOCAL lock_timeout = '3s'; CREATE OR REPLACE VIEW "
+            "coord.memories_latest WITH (security_invoker = true) AS"
+        )
+        starts = [i for i, line in enumerate(lines) if line.startswith(opening)]
+        assert len(starts) == 1, f"{direction}: no single `{opening}` in:\n{sql}"
+        at = starts[0]
+        # The autocommit block's batch commit comes right before it ...
+        assert lines[at - 1] == "COMMIT;", f"{direction}: preceded by {lines[at - 1]!r}"
+        # ... and the statement closes its own transaction, comment included,
+        # before the block's BEGIN reopens the batch.
+        closing = (
+            f"; COMMENT ON VIEW coord.memories_latest IS {comments[direction]}; COMMIT;"
+        )
+        ends = [i for i in range(at, len(lines)) if lines[i] == closing]
+        assert ends, f"{direction}: no `{closing}` after the replace in:\n{sql}"
+        assert lines[ends[0] + 1] == "BEGIN;", (
+            f"{direction}: followed by {lines[ends[0] + 1]!r}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # One seeded clone at the parent, then upgraded: the read-only tests share it.
 # ---------------------------------------------------------------------------
