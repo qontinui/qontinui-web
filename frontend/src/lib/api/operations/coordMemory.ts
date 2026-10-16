@@ -125,11 +125,12 @@ export async function fetchMemoryVersion(
  * Every version of a memory, read one at a time through
  * {@link fetchMemoryVersion} from v1 upward, stopping at the first 404.
  *
- * This is how the page of a DELETED memory finds its versions: coord's
- * `GET /memory/{name}` 404s once the latest version is a tombstone (plan
- * `2026-10-16-coord-memories-latest-view-crosses-tenants`), so there is no
- * history array to read, while `GET /memory/{name}/version/{n}` still serves
- * every version, the tombstone included.
+ * This is how the page of a DELETED memory finds its versions: once
+ * qontinui-web revision `coordmem_01` is applied (plan
+ * `2026-10-16-coord-memories-latest-view-crosses-tenants`), coord's
+ * `GET /memory/{name}` 404s a memory whose latest version is a tombstone, so
+ * there is no history array to read, while `GET /memory/{name}/version/{n}`
+ * still serves every version, the tombstone included.
  *
  * Stopping at the first 404 is sound because coord numbers a tenant's versions
  * 1, 2, 3, … with no gaps: every writer appends `MAX(version) + 1` for its own
