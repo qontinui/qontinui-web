@@ -55,7 +55,11 @@ function isHoldObject(v: unknown): v is PrHold {
   return (
     typeof r.held_by === "string" &&
     typeof r.reason === "string" &&
-    typeof r.kind === "string"
+    typeof r.kind === "string" &&
+    // coord always serializes `since` (an RFC3339 string, or null for a hold
+    // it has no placement time for); anything else is a shape this build
+    // cannot read, so it is UNKNOWN rather than a guessed value.
+    (typeof r.since === "string" || r.since === null)
   );
 }
 
@@ -87,7 +91,7 @@ export function holdViewOf(row: PrHoldFields): HoldView {
   }
   return {
     state: "held",
-    hold: { ...row.hold, since: row.hold.since ?? null },
+    hold: row.hold,
     foreign: row.hold.held_by === ANOTHER_TENANT,
   };
 }
