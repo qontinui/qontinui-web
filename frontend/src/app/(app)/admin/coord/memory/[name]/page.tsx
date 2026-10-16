@@ -187,12 +187,15 @@ export default function CoordMemoryDetailPage() {
     try {
       await deleteMemory(name);
       toast.success("Memory tombstoned (recoverable via restore)");
-      // Stay here and re-read: coord now 404s the name, so the not-found
-      // branch renders the memory's version trail -- the restore links the
-      // toast just promised. Pushing to the list hid them, because a deleted
-      // memory is not listed. `memory` is nulled first (the read's catch never
-      // clears it, so the old content would otherwise stay on screen) and the
-      // skeleton shows until the re-read settles, as on a route change.
+      // Stay here and re-read. Once qontinui-web revision coordmem_01 is
+      // applied, coord 404s a deleted name, so the not-found branch renders the
+      // memory's version trail -- the restore links the toast just promised
+      // (pushing to the list hid them: a deleted memory is not listed there).
+      // Before coordmem_01 is applied, coord's view still serves the previous
+      // live version, and the re-read shows that version unchanged. `memory`
+      // is nulled first (the read's catch never clears it, so the old content
+      // would otherwise stay on screen) and the skeleton shows until the
+      // re-read settles, as on a route change.
       setMemory(null);
       setLoading(true);
       await fetchMemory();
@@ -254,7 +257,7 @@ export default function CoordMemoryDetailPage() {
         <span className="font-mono text-sm">{name}</span>
       </div>
 
-      {error && (
+      {error && !notFound && (
         <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
@@ -601,8 +604,9 @@ type TrailState =
 /**
  * The not-found branch's version trail.
  *
- * Coord's `GET /memory/{name}` 404s once a memory's latest version is a
- * tombstone (plan `2026-10-16-coord-memories-latest-view-crosses-tenants`), but
+ * From qontinui-web revision `coordmem_01` on (plan
+ * `2026-10-16-coord-memories-latest-view-crosses-tenants`), coord's
+ * `GET /memory/{name}` 404s a memory whose latest version is a tombstone, but
  * every version stays readable by number. So this reads them
  * (`fetchMemoryVersionTrail`) and links each one to its `/version/<n>` page,
  * which is where "Restore this version" lives. Without it, the delete toast's
@@ -669,10 +673,15 @@ function MemoryVersionTrail({ name }: { name: string }) {
   const { latest } = state;
   return (
     <div className="space-y-2" data-testid="coord-memory-version-trail">
-      <p className="text-sm text-muted-foreground">
-        {latest.is_tombstone
-          ? `Memory ${name} was deleted at v${latest.version}. Every version is kept; open one to restore it.`
-          : `Memory ${name} not found. Its versions are kept; open one to restore it.`}
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="coord-memory-version-trail-headline"
+      >
+        {state.truncated
+          ? `Memory ${name} not found. It has more versions than the ${state.versions.length} read here, so its latest version is not named.`
+          : latest.is_tombstone
+            ? `Memory ${name} was deleted at v${latest.version}. Every version is kept; open one to restore it.`
+            : `Memory ${name} not found. Its versions are kept; open one to restore it.`}
       </p>
       <ul className="space-y-1 text-sm">
         {state.versions.map((v) => (
@@ -680,6 +689,7 @@ function MemoryVersionTrail({ name }: { name: string }) {
             <Link
               href={`/admin/coord/memory/${encodeURIComponent(name)}/version/${v.version}`}
               className="font-mono underline"
+              aria-label={`Open version ${v.version} of ${name}`}
               data-testid={`coord-memory-version-trail-link-${v.version}`}
             >
               v{v.version}

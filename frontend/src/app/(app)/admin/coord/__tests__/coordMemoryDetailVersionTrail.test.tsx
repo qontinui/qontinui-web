@@ -14,8 +14,11 @@
  *   sending them to a list the deleted memory no longer appears in;
  * - the removed `tombstoned` badge stays removed.
  *
- * `fetch` is stubbed below `httpClient.fetch`, so the page's real client code
- * builds every URL.
+ * `httpClient` is replaced by a stub whose `fetch` is the mock below, so the
+ * page's real client functions (`lib/api/operations/coordMemory.ts`) build
+ * every URL and parse every response. The real `HttpClient` is not used: it
+ * retries a 5xx on a GET with 1s + 2s + 4s of backoff, which would make the
+ * failure arm slow, and its retry policy is not what this file tests.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,6 +136,14 @@ describe("CoordMemoryDetailPage version trail", () => {
     expect(
       screen.getByTestId("coord-memory-detail-missing").contains(trail)
     ).toBe(true);
+    // Each link names what it opens, not just "v1".
+    expect(
+      screen
+        .getByTestId("coord-memory-version-trail-link-1")
+        .getAttribute("aria-label")
+    ).toBe("Open version 1 of proj_notes");
+    // Coord's own 404 is the not-found branch's claim, not a load failure.
+    expect(screen.queryByText(/Failed to load/)).toBeNull();
   });
 
   it("says a name with no versions has none", async () => {
@@ -189,6 +200,65 @@ describe("CoordMemoryDetailPage version trail", () => {
     expect(push).not.toHaveBeenCalledWith("/admin/coord/memory");
     // The deleted memory's old content is no longer on screen.
     expect(screen.queryByText("first body")).toBeNull();
+    // ... and no red load failure sits under the green delete toast.
+    expect(screen.queryByText(/Failed to load/)).toBeNull();
+  });
+
+  it("says a not-found memory's versions are kept when its latest is live", async () => {
+    routes({
+      [`GET ${BASE}`]: NOT_FOUND,
+      [`GET ${BASE}/version/1`]: { status: 200, body: LIVE_V1 },
+      [`GET ${BASE}/version/2`]: {
+        status: 200,
+        body: { ...LIVE_V1, version: 2, content: "second body" },
+      },
+      [`GET ${BASE}/version/3`]: { status: 404, body: "no version 3" },
+    });
+    render(<CoordMemoryDetailPage />);
+
+    const headline = await screen.findByTestId(
+      "coord-memory-version-trail-headline"
+    );
+    expect(headline.textContent).toBe(
+      "Memory proj_notes not found. Its versions are kept; open one to restore it."
+    );
+    expect(
+      screen.queryByTestId("coord-memory-version-trail-truncated")
+    ).toBeNull();
+  });
+
+  it("does not name the latest version of a truncated trail", async () => {
+    // 50 versions answer (the cap) and v50 is a tombstone. The read stops at
+    // the cap, so v50 is only the last version READ, not the latest one:
+    // naming it "deleted at v50" would be a claim nobody measured. A v51
+    // request is unrouted, so reading past the cap fails this test too.
+    const table: Record<string, Route> = { [`GET ${BASE}`]: NOT_FOUND };
+    for (let n = 1; n <= 50; n++) {
+      table[`GET ${BASE}/version/${n}`] = {
+        status: 200,
+        body: { ...LIVE_V1, version: n, is_tombstone: n === 50 },
+      };
+    }
+    routes(table);
+    render(<CoordMemoryDetailPage />);
+
+    const headline = await screen.findByTestId(
+      "coord-memory-version-trail-headline"
+    );
+    expect(headline.textContent).toBe(
+      "Memory proj_notes not found. It has more versions than the 50 read here, so its latest version is not named."
+    );
+    expect(headline.textContent).not.toContain("deleted at");
+    const truncated = screen.getByTestId(
+      "coord-memory-version-trail-truncated"
+    );
+    expect(truncated.textContent).toContain(
+      "Only the first 50 versions are listed"
+    );
+    expect(
+      screen.getByTestId("coord-memory-version-trail").querySelectorAll("li")
+    ).toHaveLength(50);
+    expect(fetchMock).toHaveBeenCalledTimes(51);
   });
 
   it("renders no tombstoned badge on a live memory", async () => {
