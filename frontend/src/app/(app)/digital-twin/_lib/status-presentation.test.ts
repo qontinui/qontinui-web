@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { manifest } from "./resolve";
 import {
+  RESTRICTED_COUNT_MEANING,
   STATUS_STYLES,
   formatRatio,
   pageAccessLabel,
@@ -104,5 +105,30 @@ describe("formatRatio", () => {
     // A coord verdict can carry a non-numeric credibility; it must not render
     // as "NaN%" — observed live on the Auth sub-space cell.
     expect(formatRatio(NaN)).toBe("—");
+  });
+});
+
+describe("STATUS_STYLES.restricted", () => {
+  it("never shares a fill class with a roadmap row or an in-flight probe", () => {
+    // The Lifecycle bar paints its restricted, pending and unbuilt segments
+    // from these same three dots, and the matrix shows restricted cells
+    // beside planned ones. Class tokens are compared, so each light and
+    // dark variant is checked against its counterpart.
+    const restricted = STATUS_STYLES.restricted.dot.split(" ");
+    for (const other of ["planned", "probing", "not-built"] as const) {
+      const fills = STATUS_STYLES[other].dot.split(" ");
+      expect(restricted.filter((c) => fills.includes(c))).toEqual([]);
+    }
+  });
+
+  it("describes a per-cell refusal, not the whole-twin gate", () => {
+    expect(STATUS_STYLES.restricted.meaning).toContain("this sub-space");
+    expect(STATUS_STYLES.restricted.meaning).not.toContain(
+      "internal operators"
+    );
+  });
+
+  it("gives the gauge's restricted count a plural tooltip", () => {
+    expect(RESTRICTED_COUNT_MEANING).toContain("these sub-spaces");
   });
 });

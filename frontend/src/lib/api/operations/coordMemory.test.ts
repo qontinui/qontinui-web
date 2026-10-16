@@ -15,6 +15,7 @@ const {
   fetchMemoryEntry,
   fetchMemoryList,
   fetchMemoryVersion,
+  fetchMemoryVersionTrail,
   restoreMemoryVersion,
   upsertMemory,
 } = await import("./coordMemory");
@@ -22,6 +23,14 @@ const {
 function answer(body: unknown) {
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body)));
 }
+
+function fail(status: number, body: string) {
+  fetchMock.mockResolvedValueOnce(new Response(body, { status }));
+}
+
+const V1 = { name: "m", version: 1, content: "first", is_tombstone: false };
+const V2 = { name: "m", version: 2, content: "", is_tombstone: true };
+const V3 = { name: "m", version: 3, content: "third", is_tombstone: false };
 
 describe("coordMemory", () => {
   afterEach(() => {
@@ -108,5 +117,84 @@ describe("coordMemory", () => {
       "/api/v1/operations/memory/a%2Fb/restore",
       { method: "POST", body: '{"version":3}', idempotent: false },
     ]);
+  });
+
+  describe("fetchMemoryVersionTrail", () => {
+    it("stops at the first 404", async () => {
+      answer(V1);
+      answer(V2);
+      fail(404, "no version 3");
+      await expect(fetchMemoryVersionTrail("m")).resolves.toEqual({
+        versions: [V1, V2],
+        truncated: false,
+      });
+      // Two versions cost exactly three reads: v1, v2, and the 404 on v3.
+      expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+        "/api/v1/operations/memory/m/version/1",
+        "/api/v1/operations/memory/m/version/2",
+        "/api/v1/operations/memory/m/version/3",
+      ]);
+    });
+
+    it("carries is_tombstone through", async () => {
+      answer(V1);
+      answer(V2);
+      fail(404, "no version 3");
+      const trail = await fetchMemoryVersionTrail("m");
+      expect(trail.versions.map((v) => v.is_tombstone)).toEqual([false, true]);
+    });
+
+    it("resolves an empty trail when v1 404s", async () => {
+      fail(404, "no version 1");
+      await expect(fetchMemoryVersionTrail("ghost")).resolves.toEqual({
+        versions: [],
+        truncated: false,
+      });
+    });
+
+    it("stops at max and reports truncated", async () => {
+      answer(V1);
+      answer(V2);
+      answer(V3);
+      // v3 answers past the cap of 2: it proves the trail is cut short, and
+      // it is not listed.
+      await expect(fetchMemoryVersionTrail("m", 2)).resolves.toEqual({
+        versions: [V1, V2],
+        truncated: true,
+      });
+      expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+        "/api/v1/operations/memory/m/version/1",
+        "/api/v1/operations/memory/m/version/2",
+        "/api/v1/operations/memory/m/version/3",
+      ]);
+    });
+
+    it("reports a trail of exactly max versions as complete", async () => {
+      answer(V1);
+      answer(V2);
+      fail(404, "no version 3");
+      await expect(fetchMemoryVersionTrail("m", 2)).resolves.toEqual({
+        versions: [V1, V2],
+        truncated: false,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("rejects when the read past max fails", async () => {
+      answer(V1);
+      answer(V2);
+      fail(500, "boom");
+      await expect(fetchMemoryVersionTrail("m", 2)).rejects.toThrow(
+        "GET /api/v1/operations/memory/m/version/3 failed: 500 - boom"
+      );
+    });
+
+    it("rejects on a 500 instead of returning a short trail", async () => {
+      answer(V1);
+      fail(500, "boom");
+      await expect(fetchMemoryVersionTrail("m")).rejects.toThrow(
+        "GET /api/v1/operations/memory/m/version/2 failed: 500 - boom"
+      );
+    });
   });
 });

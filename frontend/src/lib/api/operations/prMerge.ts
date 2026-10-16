@@ -38,6 +38,7 @@ import type {
   SuggestionRow,
   TrainHealth,
 } from "@/components/operations/mergeTypes";
+import type { OperatorTouchSlo } from "@/components/operations/operatorTouchSlo";
 import { OPERATIONS_BASE, readJson } from "./base";
 
 // ----------------------------------------------------------------------------
@@ -236,6 +237,13 @@ export interface TenantReposResponse {
 // Phase 9 D9.6 — SLO dashboard wire types
 // ----------------------------------------------------------------------------
 
+/**
+ * One repo's 7d/30d window. Two of these fields are STRUCTURALLY ZERO on
+ * current coord (`operator_override_rate`, `escalation_rate` — no live writer
+ * produces them); coord names them in {@link SloResponse.structurally_zero}
+ * and `SloRepoCard` labels them so. The live interruption rate is tenant-level
+ * ({@link SloResponse.operator_touch}), because touches carry no repo.
+ */
 interface SloWindowMetrics {
   auto_merge_success_rate: number | null;
   escalation_rate: number | null;
@@ -269,6 +277,14 @@ export interface SloResponse {
   repos: RepoSlo[];
   kill_switch_history_last_30d: KillSwitchHistoryRow[];
   generated_at: string;
+  /**
+   * Plan `2026-08-27-operator-touch-read-and-surface` C3: the tenant-level
+   * operator-touch rate over the same 7d/30d windows. Optional because a coord
+   * predating it omits it — which renders as unknown, never as zero.
+   */
+  operator_touch?: OperatorTouchSlo | null;
+  /** `SloWindowMetrics` field names with no live writer (always 0). */
+  structurally_zero?: string[] | null;
 }
 
 // `MergeEnabledResponse` (mergeTypes.ts) is the shared body of both

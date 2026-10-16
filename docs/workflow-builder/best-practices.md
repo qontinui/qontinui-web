@@ -8,7 +8,6 @@ This guide covers recommended patterns, design strategies, and common pitfalls t
 - [Organization](#organization)
 - [Testing](#testing)
 - [Performance](#performance)
-- [Components](#components)
 - [Documentation](#documentation)
 - [Common Pitfalls](#common-pitfalls)
 
@@ -109,23 +108,6 @@ const massiveWorkflow = {
 /Backup
 ```
 
-### Tag Strategy
-
-```typescript
-// ✅ Good: Consistent, meaningful tags
-'p0-critical'      // Priority 0 - critical
-'p1-high'          // Priority 1 - high
-'type:smoke'       // Test type
-'feature:login'    // Feature area
-'schedule:nightly' // Schedule
-
-// ❌ Bad: Inconsistent or unclear tags (avoid vague names like these)
-'important'
-'test'
-'old'
-'todo'
-```
-
 ### Naming Conventions
 
 ```typescript
@@ -175,16 +157,16 @@ const testCases = [
 // ✅ Good: Multiple specific assertions
 {
   assertions: [
-    { type: 'equals', actual: '{{status}}', expected: 200 },
-    { type: 'exists', actual: '{{token}}' },
-    { type: 'contains', actual: '{{message}}', expected: 'Success' }
+    { id: 'status', type: 'equals', path: 'status', expected: 200 },
+    { id: 'token', type: 'exists', path: 'token' },
+    { id: 'message', type: 'contains', path: 'message', expected: 'Success' }
   ]
 }
 
 // ❌ Bad: Generic or single assertion
 {
   assertions: [
-    { type: 'exists', actual: '{{result}}' }
+    { id: 'result', type: 'exists', path: 'result' }
   ]
 }
 ```
@@ -285,71 +267,6 @@ const regressionSuite = {
 // Taking screenshots after every action
 ```
 
-## Components
-
-### Single Responsibility
-
-```typescript
-// ✅ Good: Focused components
-{
-  name: 'Login',
-  description: 'Authenticates user with credentials'
-}
-
-{
-  name: 'Fill Form',
-  description: 'Fills form fields with data'
-}
-
-// ❌ Bad: Multi-purpose components
-{
-  name: 'Login and Setup and Validate',
-  description: 'Does everything'
-}
-```
-
-### Clear Parameters
-
-```typescript
-// ✅ Good: Well-defined parameters
-{
-  parameters: [
-    {
-      name: 'username',
-      type: 'string',
-      description: 'User login email',
-      required: true
-    },
-    {
-      name: 'rememberMe',
-      type: 'boolean',
-      description: 'Keep user logged in',
-      required: false,
-      defaultValue: false
-    }
-  ]
-}
-
-// ❌ Bad: Vague parameters
-{
-  parameters: [
-    { name: 'data', type: 'object', required: true }
-  ]
-}
-```
-
-### Versioning
-
-```typescript
-// ✅ Good: Semantic versioning
-'1.0.0' // Initial version
-'1.1.0' // Add optional parameter (backward compatible)
-'2.0.0' // Change required parameter (breaking change)
-
-// ❌ Bad: No versioning
-// Just updating component without tracking versions
-```
-
 ## Documentation
 
 ### Keep Documentation Updated
@@ -360,8 +277,8 @@ function updateWorkflow(workflow: Workflow) {
   saveWorkflow(workflow);
 
   // Regenerate documentation
-  const docs = workflowDocumentationService.generateDocumentation(workflow);
-  workflowDocumentationService.updateDocumentation(workflow.id, docs);
+  const docs = workflowDocumentation.generateDocumentation(workflow);
+  workflowDocumentation.updateDocumentation(workflow.id, docs, 'Workflow changed');
 }
 
 // ❌ Bad: Outdated documentation
@@ -472,8 +389,8 @@ Use this workflow to log in.
 Workflow A → Workflow B → Workflow C → Workflow A
 
 // ✅ Good: Check dependencies before saving
-const circular = workflowDependencyAnalyzer.detectCircularDependencies(workflows);
-if (circular.length > 0) {
+const cycles = workflowDependencyAnalyzer.findCircularDependencies(workflows);
+if (cycles.length > 0) {
   alert('Cannot save: Circular dependency detected!');
 }
 ```
@@ -485,12 +402,10 @@ if (circular.length > 0) {
 // Deploying workflows without testing
 
 // ✅ Good: Comprehensive tests
-const testSuite = createTestSuite({
-  name: 'Login Tests',
-  testCaseIds: [/* test cases */]
-});
+const testing = getWorkflowTestingService();
+const testSuite = testing.createTestSuite('Login Tests', undefined, testCaseIds);
 
-await runTestSuite(testSuite.id);
+await testing.runTestSuite(testSuite.id);
 ```
 
 ## Performance Checklist
@@ -545,4 +460,3 @@ Before deploying a workflow:
 - [Organization Guide](./organization.md) - Organize workflows
 - [Testing Guide](./testing.md) - Testing best practices
 - [Analytics](./analytics.md) - Execution metrics and complexity analysis
-- [Troubleshooting](./troubleshooting.md) - Common issues

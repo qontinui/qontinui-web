@@ -72,9 +72,17 @@ const CLOUD_ALIAS_TARGET = path.resolve(
     : 'src/cloud-absent'
 );
 
+// Captured-frame hygiene: NEXT_PUBLIC_HIDE_DEV_OVERLAYS=1 turns off the
+// `next dev` indicator (and query-provider.tsx drops the React Query Devtools
+// toggle on the same flag). The CI style gate sets it so its snapshot-and-frame
+// pairs show the app, not dev-only chrome that the analyzer reports as layout
+// occlusions. Unset, dev keeps both overlays; a production build has neither.
+const hideDevOverlays = process.env.NEXT_PUBLIC_HIDE_DEV_OVERLAYS === '1';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  ...(hideDevOverlays ? { devIndicators: false } : {}),
   // `ioredis` powers the UI Bridge cross-instance relay bus
   // (`@qontinui/ui-bridge` RedisRelayBus, used by lib/ui-bridge/relay.ts).
   // It's loaded via a variable-specifier dynamic import so the SDK stays

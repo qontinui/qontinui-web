@@ -73,6 +73,11 @@ describe("useRepoFleetPolicyWrite", () => {
         'Set GitHub-hosted CI for qontinui/qontinui-web to "inherit" from the console',
     });
     expect(onConfirmed).toHaveBeenCalledTimes(1);
+    // The repo and its read-back, so a caller can update just that repo.
+    expect(onConfirmed).toHaveBeenCalledWith(
+      "qontinui/qontinui-web",
+      effective
+    );
     expect(result.current.readbackErrors).toEqual({});
   });
 

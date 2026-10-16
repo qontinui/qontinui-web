@@ -24,8 +24,9 @@
  * `components/operations/GatesPanel` — the second gate UI, mounted in the
  * pipeline page's `System details` drawer — is DELETED, and this page did not
  * have to grow anything to absorb it. The two never had different action sets:
- * both already mutated through the same helpers in
- * `components/operations/utils.ts` onto the same
+ * both already mutated through the same helpers (then the `gate*Url`
+ * builders of `components/operations/utils.ts`, now the typed client
+ * `lib/api/operations/coordGates.ts`) onto the same
  * `/api/v1/operations/gates/{id}/*` routes, and this page held a strict
  * SUPERSET — it alone has reject, force-clear, continuation-cancel and
  * change-clearance-audience (`git grep -c force GatesPanel.tsx` was 0). What
@@ -64,21 +65,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Archive,
-  Pause,
-  Play,
-  RefreshCw,
-  Skull,
-  Wrench,
-} from "lucide-react";
+import { Archive, Pause, Play, RefreshCw, Skull, Wrench } from "lucide-react";
 import {
   adminDevService,
   type DevOverview,
 } from "@/services/admin-dev-service";
 import { SummaryCards } from "./_components/SummaryCards";
 import { GatesTable } from "./_components/GatesTable";
-import { GlossaryTerm } from "@/components/console";
+import { BackendErrorMessage, GlossaryTerm } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import { useClearanceRuleSet } from "../_shared/useClearanceRuleSet";
 import { RolloutPanel } from "./_components/RolloutPanel";
 import { ShadowReapGroups } from "./_components/ShadowReap";
@@ -130,7 +126,7 @@ export default function CoordGatesPage() {
   const [overview, setOverview] = useState<DevOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   // When on, the gate list page includes reaper-archived gates (live-only by
   // default). The `counts.archived` tile is always shown regardless.
@@ -171,7 +167,7 @@ export default function CoordGatesPage() {
         setError(null);
         setUpdatedAt(Date.now());
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(operationsErrorReading(e));
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -343,7 +339,7 @@ export default function CoordGatesPage() {
           className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           data-testid="gates-error"
         >
-          Failed to load dev overview: {error}
+          Failed to load dev overview: <BackendErrorMessage error={error} />
         </div>
       )}
 

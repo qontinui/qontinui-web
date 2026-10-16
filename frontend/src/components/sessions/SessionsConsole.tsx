@@ -86,7 +86,7 @@ import {
   type Stat,
 } from "@/components/console";
 import { Button } from "@/components/ui/button";
-import { listConsolidatedSessions } from "./api";
+import { listConsolidatedSessions } from "@/lib/api/operations/sessions";
 import {
   SESSION_STATUS_PALETTE,
   SESSION_WORK_PALETTE,

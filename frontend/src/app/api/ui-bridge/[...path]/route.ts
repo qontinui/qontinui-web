@@ -26,8 +26,11 @@
  *   (browser-required route, no relay client), which this bucket was
  *   previously conflated with. Notable paths in this bucket (iter 2 +
  *   iter 4): `/ai/find` aliases, `/ai/forms` (forms live at
- *   `GET /control/forms`), `/control/page-health`, `/control/tabs`,
- *   `/sdk/*`, `/control/network/*` stub routes.
+ *   `GET /control/forms`), `/control/tabs`, `/sdk/*`,
+ *   `/control/network/*` stub routes. (`POST /control/page-health` is
+ *   NOT in this bucket — it has been in the SDK manifest since 0.8.1 and
+ *   forwards to the SDK; it is also deliberately not browser-required,
+ *   because the SDK answers a typed `unknown` Observation itself.)
  *
  *   The proxy auto-tracks the SDK contract: when the SDK adds a route to
  *   `UI_BRIDGE_ROUTES`, the proxy stops 404-ing it and forwards instead —
@@ -292,13 +295,15 @@ async function wrapHandler(
   // instead of being forwarded as it came. With the gate off nothing
   // changes: there is no verified identity to protect.
   //
-  // No route is exempt. Census of the installed SDK
-  // (`@qontinui/ui-bridge` 0.30.0, whose Next adapter is unchanged from
-  // 0.28.0): its Next handler reads every body it reads with
-  // `request.json()` — the `bodyRequired` routes of `UI_BRIDGE_ROUTES`,
-  // `POST /heartbeat`, `POST /commands` and `POST /tabs/cdp/new` — and no
-  // route reads a multipart, binary or text body. Its own clients, and this
-  // app's, send only JSON bodies. `route.real-sdk.test.ts` pins the census.
+  // No route is exempt, because the SDK's Next handler reads every body it
+  // reads with `request.json()` — the `bodyRequired` routes of
+  // `UI_BRIDGE_ROUTES`, its hand-routed POSTs, `POST /heartbeat`,
+  // `POST /commands` and `POST /tabs/cdp/new` — and no route reads a
+  // multipart, binary or text body. Its own clients, and this app's, send
+  // only JSON bodies. That census is a property of the INSTALLED SDK, so it
+  // is not pinned to a version here: `route.real-sdk.test.ts` re-takes it
+  // against whatever `node_modules` resolves, and fails on any release that
+  // reads a body another way.
   if (
     callerUserId &&
     (bodyState === "unparseable" || bodyState === "unreadable")

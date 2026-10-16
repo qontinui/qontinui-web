@@ -1,9 +1,10 @@
 """DB-backed tests for the MEMORY.md bridge indexer (Phase 5).
 
 Same pgvector fixture posture as ``tests/test_memory_api_db.py``, plus a
-test-local mirror of the ``coord.memories`` table and the
-``coord.memories_latest`` view (per the ``coord_memories`` +
-``coord_tenant_scope_columns`` alembic migrations). Covers: initial
+test-local mirror of the ``coord.memories`` table (per the
+``coord_memories`` + ``coord_tenant_scope_columns`` alembic migrations),
+and the ``coord.memories_latest`` view built from the revision that
+defines it (``coordmem_01``), not from a copy. Covers: initial
 mirror, idempotent re-run, version-bump supersede, content-neutral
 version bump (dedup, no churn), removal → tombstone, the NULL-tenant
 skip, and the ``source.lifecycle_hold`` gate on ``list_bridged_records``
@@ -33,11 +34,23 @@ from sqlalchemy.pool import NullPool
 
 from app.jobs.memory_bridge import bridge_sync_once
 from app.services import memory_store as store
+from tests._alembic_harness import backend_root, load_revision_module
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import _SETUP_SQL, _exec, _scalar
 
-# Mirrors alembic ``coord_memories`` (+ the tenant_id column and the
-# tenant-aware view projection from ``coord_tenant_scope_columns``).
+# The view's SELECT comes from the revision that defines it, so this mirror
+# cannot keep testing an old definition after the chain moves on. A later
+# revision that re-defines coord.memories_latest must re-point this.
+_VIEW_REVISION = load_revision_module(
+    backend_root()
+    / "alembic"
+    / "versions"
+    / "coordmem_01_memories_latest_per_tenant.py",
+    "coordmem_01_bridge_mirror",
+)
+
+# Mirrors alembic ``coord_memories`` (+ the tenant_id column from
+# ``coord_tenant_scope_columns``); the view is ``coordmem_01``'s.
 _MEMORIES_SQL = [
     """
     CREATE TABLE IF NOT EXISTS coord.memories (
@@ -55,16 +68,8 @@ _MEMORIES_SQL = [
         UNIQUE (name, version)
     )
     """,
-    """
-    CREATE OR REPLACE VIEW coord.memories_latest AS
-        SELECT DISTINCT ON (name)
-            memory_id, name, version, content, description, type,
-            written_by_agent, written_by_device, written_at, is_tombstone,
-            tenant_id
-        FROM coord.memories
-        WHERE NOT is_tombstone
-        ORDER BY name, version DESC
-    """,
+    "CREATE OR REPLACE VIEW coord.memories_latest AS "
+    + _VIEW_REVISION.MEMORIES_LATEST_SELECT,
 ]
 
 
@@ -336,6 +341,40 @@ class TestBridgeUpsert:
         assert [r["name"] for r in _bridged(db, tenant_a)] == ["a_memory"]
         assert [r["name"] for r in _bridged(db, tenant_b)] == ["b_memory"]
 
+    def test_a_name_held_by_two_tenants_is_bridged_for_both(
+        self, db: AsyncEngine
+    ) -> None:
+        """Each tenant's latest version of a shared name is its own.
+
+        The view ``coordmem_01`` replaced kept ONE row per name across all
+        tenants, so tenant A's memory left the bridge's key set the moment
+        tenant B wrote a higher version of the same name, and the bridge then
+        tombstoned A's record. (The versions differ only because this mirror
+        still carries the global ``UNIQUE (name, version)``.)
+        """
+        tenant_a, tenant_b = uuid4(), uuid4()
+        _write_memory(db, tenant_a, "shared_name", 1, "tenant a body")
+        _write_memory(db, tenant_b, "shared_name", 2, "tenant b body")
+
+        stats = _sync(db)
+        assert stats["upserted"] == 2
+        assert stats["tombstoned"] == 0
+        assert [(r["name"], r["version"]) for r in _bridged(db, tenant_a)] == [
+            ("shared_name", 1)
+        ]
+        assert [(r["name"], r["version"]) for r in _bridged(db, tenant_b)] == [
+            ("shared_name", 2)
+        ]
+
+        # Converged, and nothing flaps: the next pass changes nothing.
+        assert _sync(db) == {
+            "upserted": 0,
+            "superseded": 0,
+            "supersede_refused": 0,
+            "tombstoned": 0,
+            "enqueued": 0,
+        }
+
 
 class TestBridgeTombstone:
     def test_removed_memory_tombstones_bridged_record(self, db: AsyncEngine) -> None:
@@ -344,19 +383,11 @@ class TestBridgeTombstone:
         _sync(db)
         (bridged,) = _bridged(db, tenant)
 
-        # Coord retracts the memory. NOTE the view's semantics: the
-        # ``WHERE NOT is_tombstone`` filter drops tombstone ROWS before
-        # DISTINCT ON, so a name only vanishes from ``memories_latest``
-        # once every version is tombstoned (a lone tombstone version
-        # would just re-expose the previous live one).
-        _write_memory(
-            db, tenant, "proj_alpha_notes", 2, "alpha body", is_tombstone=True
-        )
-        _exec(
-            db,
-            ["UPDATE coord.memories SET is_tombstone = true WHERE name = :name"],
-            name="proj_alpha_notes",
-        )
+        # Coord retracts the memory the way DELETE /coord/memory/:name does:
+        # it appends ONE tombstone version. The view takes the latest version
+        # per (tenant, name) and drops it when it is a tombstone, so the name
+        # leaves the view and the bridge tombstones its record.
+        _write_memory(db, tenant, "proj_alpha_notes", 2, "", is_tombstone=True)
         stats = _sync(db)
         assert stats["tombstoned"] == 1
 
@@ -372,6 +403,22 @@ class TestBridgeTombstone:
             "tombstoned": 0,
             "enqueued": 0,
         }
+
+    def test_another_tenants_tombstone_leaves_a_live_record(
+        self, db: AsyncEngine
+    ) -> None:
+        """A tombstone retracts only its own tenant's memory of that name."""
+        tenant_a, tenant_b = uuid4(), uuid4()
+        _write_memory(db, tenant_a, "shared_name", 1, "tenant a body")
+        _sync(db)
+        (bridged,) = _bridged(db, tenant_a)
+
+        _write_memory(db, tenant_b, "shared_name", 2, "", is_tombstone=True)
+        stats = _sync(db)
+        assert stats["tombstoned"] == 0
+        assert _record_field(db, bridged["memory_id"], "is_tombstone") is False
+        assert [r["name"] for r in _bridged(db, tenant_a)] == ["shared_name"]
+        assert _bridged(db, tenant_b) == []
 
 
 def _set_hold(engine: AsyncEngine, memory_id: UUID, held: bool = True) -> None:
