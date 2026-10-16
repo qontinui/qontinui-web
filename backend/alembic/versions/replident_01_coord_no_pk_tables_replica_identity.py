@@ -39,23 +39,33 @@ change to any of the five is ``worker_hb_body_started_01``'s nullable
 
 ## Decision: ``REPLICA IDENTITY USING INDEX`` on the existing unique index
 
-The plan prefers promoting the unique index to a primary key. That is not safe
-here, for a reason the census could not see: PostgreSQL's
-``ADD PRIMARY KEY USING INDEX`` refuses an index that already backs a
-constraint, so a promotion means DROPPING the unique constraint, and coord
-upserts four of these tables with ``ON CONFLICT ON CONSTRAINT <that name>``
-(``worker_ledger.rs``, ``worker_liveness_watcher.rs``,
-``outbound_budget_observer.rs``, ``webhook_pulse.rs``). Coord's own test
-bootstraps also re-create the tables with those UNIQUE constraints. Dropping or
-renaming them would break coord's writes the moment this deploys. Adding a
-second, redundant primary-key index beside each constraint would keep the
-names, but doubles index maintenance on ``worker_heartbeats``, coord's hottest
-upsert target, for no gain.
+The plan prefers promoting the unique index to a primary key. It is not done
+here, because a promotion costs more than it buys on these tables:
+
+* PostgreSQL's ``ADD PRIMARY KEY USING INDEX`` refuses an index that already
+  backs a constraint (``index "…" is already associated with a constraint``),
+  so the existing index cannot be promoted in place. A promotion needs a NEW
+  unique index built first (``CREATE UNIQUE INDEX CONCURRENTLY``, outside any
+  transaction), then ``DROP CONSTRAINT x, ADD CONSTRAINT x PRIMARY KEY USING
+  INDEX <new>``. That keeps the constraint NAME — which matters, because coord
+  upserts three of these tables with ``ON CONFLICT ON CONSTRAINT <name>``
+  (``worker_heartbeats`` in ``worker_ledger.rs`` and
+  ``worker_liveness_watcher.rs``, ``outbound_budget_observations`` in
+  ``outbound_budget_observer.rs``, ``webhook_pulse`` in ``webhook_pulse.rs``;
+  ``pr_unlandable_attempts`` is upserted by column inference and
+  ``credential_probe_specs`` has no coord writer) — but it is a concurrent
+  index build per table, plus a constraint swap under ``ACCESS EXCLUSIVE``.
+* Keeping the unique constraint and adding a primary key beside it instead
+  doubles index maintenance on ``worker_heartbeats``, coord's hottest upsert
+  target, for no gain.
+* Coord's own test bootstraps re-create these tables with ``UNIQUE``
+  constraints (``CREATE TABLE IF NOT EXISTS`` in ``mcp/tools.rs``), so a
+  production primary key would drift from what coord's tests run against.
 
 ``REPLICA IDENTITY USING INDEX`` names the same key a promoted primary key
 would — the unique, non-partial, immediate index whose columns are all
 ``NOT NULL`` — so the subscriber identifies a row by exactly the same columns.
-It is catalog-only: no index build, no table rewrite, no constraint renamed.
+It is catalog-only: no index build, no table rewrite, no constraint touched.
 Every column of every one of the five keys is ``NOT NULL`` in the chain, so no
 nullability changes.
 
@@ -103,6 +113,7 @@ If another revision lands on ``coord_pr_holds_01`` first, re-point
 ``tests/test_replident_01_migration.py``.
 """
 
+import contextlib
 from collections.abc import Sequence
 
 from alembic import op
@@ -214,7 +225,8 @@ def _run_in_own_transaction(sql: str) -> None:
         op.execute("SET LOCAL lock_timeout = '3s'")
         op.execute(sql)
     except BaseException:
-        op.execute("ROLLBACK")
+        with contextlib.suppress(Exception):
+            op.execute("ROLLBACK")
         raise
     op.execute("COMMIT")
 
