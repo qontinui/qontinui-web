@@ -106,6 +106,9 @@ def test_upgrade_shape_checks_cascade_and_downgrade(_admin_url: str) -> None:
             ("https://ghe.example.com/api/v3/", "https://ghe.example.com"),
             ("https://ghe.example.com/api/v3", "https://ghe.example.com/"),
             ("https://ghe.example.com/api/v3", "https://ghe.example.com/sub"),
+            ("https://ghe example.com/api/v3", "https://ghe.example.com"),
+            ("https://ghe.example.com/api /v3", "https://ghe.example.com"),
+            ("https://ghe.example.com/api/v3", "https://ghe.example.com\t"),
         ]:
             tenant = _new_tenant(engine)
             with pytest.raises(IntegrityError):
