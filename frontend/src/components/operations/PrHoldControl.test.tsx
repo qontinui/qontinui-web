@@ -10,6 +10,8 @@
  *   3. Release confirms first, and another tenant's hold offers no Release.
  *   4. Errors are honest — coord's `{error, message}` reaches the toast.
  *   5. Non-admins see no actions (hidden, not disabled).
+ *   6. A GitHub draft with no coord hold shows as a hold signal, with no
+ *      Release (coord cannot undraft).
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -85,7 +87,9 @@ describe("PrHoldControl", () => {
       renderControl({ hold: { hold: null, hold_unknown: true } });
       const dash = screen.getByTestId("pr-hold-unknown");
       expect(dash.textContent).toBe("–");
-      expect(dash.className).toContain("amber");
+      const badge = dash.querySelector("[data-status-kind]");
+      expect(badge?.getAttribute("data-status-kind")).toBe("unknown");
+      expect(badge?.className).toContain("amber");
       // Holding is still safe to offer; releasing is not.
       expect(screen.getByTestId("pr-hold-place")).toBeInTheDocument();
       expect(screen.queryByTestId("pr-hold-release")).not.toBeInTheDocument();
@@ -122,6 +126,33 @@ describe("PrHoldControl", () => {
       );
       expect(screen.queryByTestId("pr-hold-release")).not.toBeInTheDocument();
       expect(screen.queryByTestId("pr-hold-place")).not.toBeInTheDocument();
+    });
+
+    it("renders a held PR through the audited amber badge", () => {
+      renderControl({ hold: HELD });
+      const badge = screen
+        .getByTestId("pr-hold-summary")
+        .querySelector("[data-status-kind]");
+      expect(badge?.getAttribute("data-status-kind")).toBe("held");
+      expect(badge?.className).toContain("amber");
+    });
+
+    it("shows a GitHub draft as a hold signal with no Release", () => {
+      renderControl({ prState: "draft", hold: { hold: null } });
+      expect(screen.getByTestId("pr-hold-github-draft").textContent).toContain(
+        "GitHub draft"
+      );
+      expect(screen.queryByTestId("pr-hold-release")).not.toBeInTheDocument();
+      // A coord hold can still be placed on top of it.
+      expect(screen.getByTestId("pr-hold-place")).toBeInTheDocument();
+    });
+
+    it("shows the coord hold, not the draft badge, when both apply", () => {
+      renderControl({ prState: "draft", hold: HELD });
+      expect(screen.getByTestId("pr-hold-summary")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("pr-hold-github-draft")
+      ).not.toBeInTheDocument();
     });
 
     it("renders nothing for a merged PR or a branch-only row", () => {
@@ -194,6 +225,9 @@ describe("PrHoldControl", () => {
       fireEvent.click(screen.getByTestId("pr-hold-release"));
       expect(fetchMock).not.toHaveBeenCalled();
       expect(screen.getByTestId("pr-hold-release-dialog")).toBeInTheDocument();
+      expect(
+        screen.getByText(/lands it automatically once nothing else blocks it/)
+      ).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("pr-hold-release-confirm"));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -203,9 +237,13 @@ describe("PrHoldControl", () => {
 
     it("surfaces coord's refusal code and message", async () => {
       fetchMock.mockResolvedValue(
+        // The envelope the web backend serves (structured_errors=True +
+        // the app's http_exception_handler): coord's code at the top level.
         errorResponse(403, {
           error: "not_holder",
           message: "only the holder or an operator may release this hold",
+          timestamp: 1,
+          path: "/api/v1/operations/prs/qontinui/qontinui-coord/900/hold",
         })
       );
       renderControl({ hold: HELD });

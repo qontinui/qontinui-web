@@ -32,6 +32,18 @@ describe("holdViewOf", () => {
       holdViewOf({ hold: { held_by: 1 } as unknown as typeof HOLD }).state
     ).toBe("unknown");
   });
+  it("a hold whose `since` is missing or not a string is UNKNOWN", () => {
+    const { since: _drop, ...noSince } = HOLD;
+    void _drop;
+    expect(holdViewOf({ hold: noSince as unknown as typeof HOLD }).state).toBe(
+      "unknown"
+    );
+    expect(
+      holdViewOf({ hold: { ...HOLD, since: 5 } as unknown as typeof HOLD })
+        .state
+    ).toBe("unknown");
+    expect(holdViewOf({ hold: { ...HOLD, since: null } }).state).toBe("held");
+  });
   it("a held row carries the hold and its foreignness", () => {
     const v = holdViewOf({ hold: HOLD });
     expect(v).toEqual({ state: "held", hold: HOLD, foreign: false });
@@ -64,6 +76,23 @@ describe("describeHoldError", () => {
         })
       )
     ).toBe("HTTP 403 — security_tier_operator_only — m");
+  });
+  it("reads coord's code from the envelope the web backend serves", () => {
+    // The `/hold` proxy uses `structured_errors=True`, so the app's
+    // http_exception_handler splices coord's object into the top level.
+    expect(
+      describeHoldError(
+        403,
+        JSON.stringify({
+          error: "not_holder",
+          message: "only the holder or an operator may release this hold",
+          timestamp: 1,
+          path: "/api/v1/operations/prs/o/r/1/hold",
+        })
+      )
+    ).toBe(
+      "HTTP 403 — not_holder — only the holder or an operator may release this hold"
+    );
   });
   it("falls back to the raw body, then the bare status", () => {
     expect(describeHoldError(502, "bad gateway")).toBe(

@@ -1388,7 +1388,7 @@ describe("MergePipeline", () => {
         screen.getByText(/Release the hold on #900\?/)
       ).toBeInTheDocument();
       expect(
-        screen.getByText(/coord will land it automatically/i)
+        screen.getByText(/coord\s+lands it automatically once nothing else blocks it/i)
       ).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("pr-hold-release-confirm"));
