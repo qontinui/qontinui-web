@@ -104,10 +104,12 @@ os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 #   (`due: 0` instead of `due: 1` on `TestDispatchFailure` / `TestNextFireAdvance`);
 # - `memory_consolidate` swept the fresh tenant a memory test had just seeded
 #   (qontinui-web#1103, `assert 2 == 1`; see `test_memory_lifecycle_db._job_rows`);
-# - its `asyncio.sleep(next_due - now)` was recorded by a process-wide
+# - its `asyncio.sleep(next_due - now)` was recorded by the then process-wide
 #   `asyncio.sleep` mock in `test_coord_proxy_contract.py` as `0.7789, 0.7788,
-#   ...` (CI run 37519038790, shard 6/6; coord finding 171089df) — the mock
-#   returned at once, so the loop spun, each delay a few microseconds shorter.
+#   ...` (qontinui-web#1718, CI run 37519038790, shard 6/6, 2026-10-06; coord
+#   finding 171089df) — the mock returned at once, so the loop spun, each delay a
+#   few microseconds shorter. That mock has since been scoped to coord_proxy by
+#   `tests/_coord_proxy_sleep.py`; the loop it exposed is what this stops.
 #
 # So `booted_app` STOPS the singleton scheduler right after boot (the lifespan
 # still calls `start()`, so the production boot path is still exercised and the
@@ -172,8 +174,9 @@ def booted_app() -> Generator[TestClient, None, None]:
     with TestClient(app) as client:
         # Stop the loop on the event loop that owns it (the TestClient portal's),
         # so it is cancelled and awaited there rather than left ticking for the
-        # whole session. The lifespan's own `scheduler.stop()` at shutdown is
-        # then a no-op.
+        # whole session. Its first pass may already have fired the boot-time
+        # jobs; `stop()` cancels and awaits those too. The lifespan's own
+        # `scheduler.stop()` at shutdown is then a no-op.
         client.portal.call(scheduler.stop)
         yield client
 

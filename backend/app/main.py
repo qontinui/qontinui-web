@@ -531,15 +531,12 @@ async def startup_event():
     # asyncio.create_task loops right here). Every tick is gated on a Postgres
     # advisory lock, so N replicas run exactly one executor per task.
     #
-    # DELIBERATELY NOT gated on `skip_side_effects`. Killing the scheduler under
-    # tests also stops `memory_reindex` / `memory_consolidate` /
-    # `memory_bridge_sync`, and `tests/test_memory_api_db.py`'s hybrid-query
-    # tests depend on those having run — with the scheduler off that file fails a
-    # varying 1-5 tests per run. The one dangerous task, `scheduled_dispatch`, is
-    # already switched off for the suite by
-    # `tests/conftest.py`'s QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0 (see
-    # tests/test_scheduler_dispatch_sweeper_off_in_tests.py). Keep the blast
-    # radius at that one task.
+    # DELIBERATELY NOT gated on `skip_side_effects`, so the boot path under test
+    # stays the production one. The test suite instead STOPS the singleton right
+    # after boot (`tests/conftest.py::booted_app`), because a loop left ticking
+    # for the whole session raced tests for shared rows and leaked its sleeps into
+    # sleep mocks; that is pinned by
+    # tests/test_scheduler_dispatch_sweeper_off_in_tests.py.
     try:
         from app.core.scheduler import scheduler
 

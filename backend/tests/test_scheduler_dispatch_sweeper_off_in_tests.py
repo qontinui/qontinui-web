@@ -10,13 +10,13 @@ WHOLE session on the TestClient portal thread, concurrently with every test.
 
 Why it matters, measured: the loop's `asyncio.sleep(next_due - now)` was
 recorded by a process-wide `asyncio.sleep` mock in
-`test_coord_proxy_contract.py` as `0.7789, 0.7788, ...` (CI run 37519038790,
-shard 6/6; coord finding 171089df) — the mock returned at once, so the loop
-spun with each delay a few microseconds shorter. And the sweeper race below.
+`test_coord_proxy_contract.py` as `0.7789, 0.7788, ...` (qontinui-web#1718, CI
+run 37519038790, shard 6/6; coord finding 171089df) — the mock returned at once,
+so the loop spun with each delay a few microseconds shorter. (That mock is now
+scoped to coord_proxy by `tests/_coord_proxy_sleep.py`.) And the sweeper race
+below.
 
-The per-task dispatch switch is kept as defense in depth.
-
-The dangerous task in that set is `scheduled_dispatch`. It calls
+The most dangerous task in the set is `scheduled_dispatch`. It calls
 `poll_and_dispatch_due()`, which claims due rows `FOR UPDATE SKIP LOCKED` from
 whatever `app.db.session.async_engine` points at — and `test_scheduler_db.py`
 repoints that module global at the test engine. The sweeper then races those
@@ -28,8 +28,9 @@ the file is run alone — and it used to be order-dependent as well (did a
 `test_client` test run earlier?). It reddened unrelated PRs on
 `TestDispatchFailure` and `TestNextFireAdvance` while `main` was green.
 
-`tests/conftest.py` therefore sets
-`QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0`.
+Stopping the loop in `booted_app` is the fix; `tests/conftest.py` ALSO sets
+`QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0` as defense in depth, so the
+one task that writes shared rows stays off if the stop ever regresses.
 
 Two deliberate constraints on how this file tests that, both learned the hard
 way by measuring:
@@ -42,7 +43,9 @@ way by measuring:
    only difference. Boot is now pinned (autouse) and its DB-touching side
    effects are gated on `TESTING` — see `app.main._boot_side_effects_disabled` —
    but the rule stands: a guard asserts against the flags and module state the
-   app reads, never against a booted app. See
+   app reads, never against a booted app (through its client). Reading the
+   scheduler singleton's own state, as the last test here does, is module state.
+   See
    `test_app_boot_side_effects_inert_in_tests.py` for the boot-inertness half.
 2. **It must not reach for the GLOBAL `QONTINUI_SCHEDULER_ENABLED`.** That
    switch is read by EVERY `SchedulerService.start()`, including the private
@@ -110,9 +113,8 @@ def test_app_scheduler_loop_is_stopped_for_the_session() -> None:
         "The app's scheduler loop is running during the test session. "
         "tests/conftest.py::booted_app must stop it after boot."
     )
-    assert not scheduler._runners, (
-        f"Scheduled job runs are still in flight: {sorted(t.get_name() for t in scheduler._runners)}"
-    )
+    in_flight = sorted(t.get_name() for t in scheduler._runners)
+    assert not in_flight, f"Scheduled job runs are still in flight: {in_flight}"
 
 
 def test_dispatch_task_stays_registered() -> None:
