@@ -678,7 +678,7 @@ function MemoryVersionTrail({ name }: { name: string }) {
         data-testid="coord-memory-version-trail-headline"
       >
         {state.truncated
-          ? `Memory ${name} not found. It has more versions than the ${state.versions.length} read here, so its latest version is not named.`
+          ? `Memory ${name} not found. It has more versions than the ${state.versions.length} listed here, so its latest version is not named.`
           : latest.is_tombstone
             ? `Memory ${name} was deleted at v${latest.version}. Every version is kept; open one to restore it.`
             : `Memory ${name} not found. Its versions are kept; open one to restore it.`}
@@ -686,13 +686,20 @@ function MemoryVersionTrail({ name }: { name: string }) {
       <ul className="space-y-1 text-sm">
         {state.versions.map((v) => (
           <li key={v.version} className="flex items-center gap-2">
+            {/*
+             * The accessible name starts with the visible "vN" (WCAG 2.5.3,
+             * Label in Name), so a voice user can say what they see; the
+             * hidden context follows it.
+             */}
             <Link
               href={`/admin/coord/memory/${encodeURIComponent(name)}/version/${v.version}`}
               className="font-mono underline"
-              aria-label={`Open version ${v.version} of ${name}`}
               data-testid={`coord-memory-version-trail-link-${v.version}`}
             >
               v{v.version}
+              <span className="sr-only">
+                : open version {v.version} of {name}
+              </span>
             </Link>
             {v.is_tombstone ? (
               <span className="text-muted-foreground">deleted</span>
