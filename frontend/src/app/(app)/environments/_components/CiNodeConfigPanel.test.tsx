@@ -611,3 +611,169 @@ describe("CiNodeConfigPanel", () => {
     expect(screen.queryByTestId("ci-node-enabled")).toBeNull();
   });
 });
+
+/**
+ * "Let CI steps use this machine's Claude accounts" — the device-scope
+ * off-switch of plan `2026-10-13-ci-node-runs-model-dependent-eval-steps`
+ * (D6, Phase 4). "Not set here" is a choice of its own, never drawn as on, and
+ * a toggle can always return to it.
+ */
+describe("CiNodeConfigPanel — model access", () => {
+  function putBody(call = 1): Record<string, unknown> {
+    const [, init] = fetchMock.mock.calls[call] as [string, RequestInit];
+    expect(init.method).toBe("PUT");
+    return JSON.parse(String(init.body));
+  }
+
+  function pressed(choice: string): string | null {
+    return screen
+      .getByTestId(`ci-node-model-access-${choice}`)
+      .getAttribute("aria-pressed");
+  }
+
+  async function saveAndReadBody(): Promise<Record<string, unknown>> {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state({ dispatched: true })));
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    return putBody();
+  }
+
+  it("names what off does not stop, before the control", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const field = await screen.findByTestId("ci-node-model-access");
+    const residual = within(field).getByTestId("ci-node-model-access-residual");
+    expect(residual.textContent).toMatch(/deliberately points claude/i);
+    expect(residual.textContent).toMatch(/account files/i);
+    const control = within(field).getByTestId("ci-node-model-access-off");
+    expect(
+      residual.compareDocumentPosition(control) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(field.textContent).toMatch(/still run/i);
+    expect(field.textContent).toMatch(/UNKNOWN/);
+  });
+
+  it("an unset value is its own choice — never drawn as on — and saves nothing for it", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    expect(pressed("machine")).toBe("true");
+    expect(pressed("on")).toBe("false");
+    expect(pressed("off")).toBe("false");
+    const label = screen.getByTestId("ci-node-model-access-state");
+    expect(label).toHaveAttribute("data-state", "machine");
+    expect(label.textContent).toMatch(/sends nothing/);
+    // After an earlier explicit save the runner holds THAT value, so the copy
+    // must not promise "on unless changed on the machine".
+    expect(label.textContent).toMatch(
+      /keeps the last value it received, from here or set on the machine/
+    );
+
+    fireEvent.click(screen.getByTestId("ci-node-enabled"));
+    expect((await saveAndReadBody()).model_access ?? null).toBeNull();
+  });
+
+  it("toggling off and back on, then returning to the machine's setting, saves nothing for it", async () => {
+    // The re-enable bug: off → on left `true` in the draft, so an unrelated
+    // save sent an explicit true over the owner's machine-side off.
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    fireEvent.click(screen.getByTestId("ci-node-model-access-off"));
+    fireEvent.click(screen.getByTestId("ci-node-model-access-on"));
+    expect(pressed("on")).toBe("true");
+    fireEvent.click(screen.getByTestId("ci-node-model-access-machine"));
+    expect(pressed("machine")).toBe("true");
+    // Back where it started: nothing to save.
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("ci-node-enabled"));
+    expect((await saveAndReadBody()).model_access ?? null).toBeNull();
+  });
+
+  it("choosing Off saves an explicit false", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("ci-node-model-access-off"));
+    expect(screen.getByTestId("ci-node-model-access-state")).toHaveAttribute(
+      "data-state",
+      "off"
+    );
+    expect(screen.getByTestId("ci-node-apply")).toBeEnabled();
+    expect((await saveAndReadBody()).model_access).toBe(false);
+  });
+
+  it("a stored false reads back as Off; choosing On saves an explicit true", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, model_access: false },
+          configured: true,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+    expect(pressed("off")).toBe("true");
+
+    fireEvent.click(screen.getByTestId("ci-node-model-access-on"));
+    expect((await saveAndReadBody()).model_access).toBe(true);
+  });
+
+  it("a coordinator that predates the field is reported as not delivered, in its own words", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, model_access: false },
+          configured: true,
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "coord_predates_model_access",
+          dispatch_detail: "the model-access choice did not reach the machine",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(refusal.textContent).toMatch(
+      /does not carry the model-access choice/
+    );
+    expect(refusal).toHaveAttribute("data-fixable-here", "false");
+  });
+
+  it("an answer that could not confirm the value is UNKNOWN, not 'older coordinator'", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, model_access: false },
+          configured: true,
+          dispatched: false,
+          dispatch_status: 200,
+          dispatch_error: "model_access_unconfirmed",
+          dispatch_detail:
+            "whether the model-access choice reached the machine is unknown",
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    const refusal = await screen.findByTestId("ci-node-dispatch-refusal");
+    expect(refusal.textContent).toMatch(
+      /did not confirm the model-access choice/
+    );
+    expect(refusal.textContent).not.toMatch(/does not carry/);
+  });
+
+  it("configsEqual treats a config predating the field as unset, not as a change", () => {
+    const base = state().requested;
+    const legacy = { ...base };
+    delete legacy.model_access;
+    expect(configsEqual({ ...base, model_access: null }, legacy)).toBe(true);
+    expect(configsEqual({ ...base, model_access: false }, legacy)).toBe(false);
+  });
+});

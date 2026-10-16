@@ -316,7 +316,8 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
 
     expect(spoofedCells).toEqual([]);
     // Not vacuous: the sweep covered the GET routes and reached the relay
-    // under the verified owner (19 dispatches on SDK 0.30.0).
+    // under the verified owner (a floor, not a count: the dispatch total
+    // moves with the installed SDK's route table).
     expect(routes.length).toBeGreaterThan(80);
     expect(
       dispatched.filter(({ options }) => ownerOf(options) === VERIFIED).length

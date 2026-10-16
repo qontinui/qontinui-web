@@ -38,7 +38,7 @@ const SEGMENTS = [
   {
     key: "pending",
     label: "probing…",
-    className: "animate-pulse bg-zinc-400",
+    className: STATUS_STYLES.probing.dot,
   },
   {
     key: "silent",
@@ -58,7 +58,7 @@ const SEGMENTS = [
   {
     key: "unbuilt",
     label: "planned / not built",
-    className: "bg-zinc-300 dark:bg-zinc-600",
+    className: STATUS_STYLES["not-built"].dot,
   },
 ] as const;
 

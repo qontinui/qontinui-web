@@ -73,6 +73,7 @@ frontend/scripts/*
 !frontend/scripts/cloud-control-overlay.mjs
 !frontend/scripts/vercel-install.sh
 !frontend/scripts/check-browser-safe-imports.mjs
+!frontend/scripts/check-doc-code-refs.mjs
 !frontend/scripts/export-test-coverage.mjs
 !frontend/scripts/generate-api-types.ts
 !frontend/scripts/prod-probes/

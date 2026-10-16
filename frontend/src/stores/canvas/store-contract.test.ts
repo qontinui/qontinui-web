@@ -1,15 +1,19 @@
 /**
- * Canvas Store Tests
+ * Composed canvas store tests
  *
- * Test coverage:
- * - Store initialization
- * - CRUD operations
- * - History (undo/redo)
- * - Selection management
- * - Clipboard operations
- * - Keyboard shortcuts
- * - Validation
- * - Persistence
+ * Exercises the composed `useCanvasStore` from `index.ts`, so every slice
+ * runs wired together as the app uses it. Covers:
+ * - Initial state
+ * - Workflow load / clear
+ * - Action CRUD (add, update, delete, delete many, move)
+ * - Selection (single, multi, all, clear)
+ * - Clipboard (copy, paste with new IDs, cut)
+ * - History (record, undo, redo, canUndo)
+ * - Viewport (set, zoom in, zoom out)
+ * - Connections (add, delete)
+ *
+ * Persistence is covered by `persist-contract.test.ts`; the slice creators in
+ * isolation by `slices.test.ts`.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";

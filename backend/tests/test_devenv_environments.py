@@ -3774,6 +3774,217 @@ class TestCallerTokenForwarding:
         assert r.json()["requested"]["max_concurrent_builds"] is None
 
 
+class TestCiNodeModelAccessRoundTrip:
+    """``model_access`` — "Let CI steps use this machine's Claude accounts" —
+    round-trips through the CI-node PUT/GET and reaches coord's directive only
+    when the machine row carries a value (plan
+    ``2026-10-13-ci-node-runs-model-dependent-eval-steps`` Phase 4)."""
+
+    async def _machine(self, client, device_id: str, name: str) -> str:
+        r = await client.post(
+            f"{API_PREFIX}/machines/dispatch-enroll",
+            json={"name": name, "target_device_id": device_id},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["machine"]["id"]
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_off_is_stored_forwarded_and_read_back(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "model-off-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": False},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["model_access"] is False
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert ci_node["model_access"] is False
+
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["model_access"] is False
+
+            # Turning it back on travels as an explicit true.
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": True},
+            )
+            assert r.status_code == 200, r.text
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert ci_node["model_access"] is True
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert r.json()["requested"]["model_access"] is True
+
+    @staticmethod
+    def _coord_echoing(captured: dict, *, echo_model_access: bool):
+        """A coord double whose 2xx echoes ``applied`` — with or without the
+        ``model_access`` key, i.e. a coord with or without the field."""
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            captured[path] = {"headers": headers, "body": json_body}
+            if "ci_node" not in json_body:  # the enroll dispatch
+                return httpx.Response(200, json={"dispatched": True})
+            applied = dict(json_body["ci_node"])
+            if not echo_model_access:
+                applied.pop("model_access", None)
+            return httpx.Response(200, json={"dispatched": True, "applied": applied})
+
+        return _fake_post
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", [False, True])
+    async def test_a_coord_that_echoes_the_value_is_delivered(
+        self, async_db_session: AsyncSession, test_user, monkeypatch, value: bool
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord",
+            self._coord_echoing(captured, echo_model_access=True),
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, f"echo-{value}-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": value},
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is True
+        assert r.json()["dispatch_error"] is None
+
+    @pytest.mark.asyncio
+    async def test_a_coord_predating_the_field_is_not_reported_as_delivered(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """An older coord drops the unknown key with a 2xx; its ``applied``
+        echo lacks it. The owner's explicit off must not read as delivered."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord",
+            self._coord_echoing(captured, echo_model_access=False),
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "old-coord-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": False},
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_status"] == 200
+        assert body["dispatch_error"] == "coord_predates_model_access"
+        assert "model-access" in body["dispatch_detail"]
+        # Saved here regardless.
+        assert body["requested"]["model_access"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            httpx.Response(200, content=b"<html>proxy page</html>"),
+            httpx.Response(200, json={"dispatched": True}),
+        ],
+        ids=["unparseable_body", "no_applied_object"],
+    )
+    async def test_an_answer_that_cannot_confirm_is_unconfirmed_not_older_coord(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        monkeypatch,
+        answer: httpx.Response,
+    ) -> None:
+        """Only an ``applied`` object lacking the key proves an older coord; an
+        unreadable body or a missing ``applied`` is UNKNOWN, said as such."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            if "ci_node" not in json_body:  # the enroll dispatch
+                return httpx.Response(200, json={"dispatched": True})
+            return answer
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "unconfirmed-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True, "model_access": False},
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dispatched"] is False
+        assert body["dispatch_error"] == "model_access_unconfirmed"
+        assert "unknown" in body["dispatch_detail"]
+
+    @pytest.mark.asyncio
+    async def test_a_save_without_the_value_needs_no_echo(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """Nothing sent, nothing to confirm: an older coord's echo is fine."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord",
+            self._coord_echoing(captured, echo_model_access=False),
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "no-value-box")
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True},
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is True
+
+    @pytest.mark.asyncio
+    async def test_an_untouched_switch_is_not_sent_and_reads_as_not_set(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A save that never set the switch must not speak for it: coord gets
+        no key, so the runner keeps whatever consent it already holds."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            machine_id = await self._machine(client, device_id, "model-unset-box")
+            # Never configured: the GET reports "not set here", not a guess.
+            r = await client.get(f"{API_PREFIX}/machines/{machine_id}/ci-node")
+            assert r.status_code == 200, r.text
+            assert r.json()["requested"]["model_access"] is None
+
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": True},
+            )
+            assert r.status_code == 200, r.text
+            ci_node = captured["/devenv/ci-node-dispatch"]["body"]["ci_node"]
+            assert "model_access" not in ci_node
+            assert r.json()["requested"]["model_access"] is None
+
+
 async def _new_user(db: AsyncSession, label: str):
     """Create + persist a real ``auth.users`` row (devenv FKs require one)."""
     from app.models.user import User
