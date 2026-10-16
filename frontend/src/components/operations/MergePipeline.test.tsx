@@ -79,7 +79,7 @@ vi.mock("./CiRepoStrip", () => ({
   CiRepoStrip: () => <div data-testid="stub-ci-repo-strip" />,
 }));
 
-// The draft-state toggle surfaces success/error via sonner; stub it so the
+// The hold control surfaces success/error via sonner; stub it so the
 // gating tests never render real toasts and can assert what was signalled.
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -90,8 +90,8 @@ vi.mock("sonner", () => ({
   }),
 }));
 
-// The draft-state toggle now lives in the shared `PrDraftStateControl`, which
-// wraps itself in `CoordAdminOnly` — a Developer-tier member must not see a
+// The hold control lives in the shared `PrHoldControl`, whose actions
+// wrap themselves in `CoordAdminOnly` — a Developer-tier member must not see a
 // control that 403s. These tests exercise the control, so they authenticate as
 // a coord admin (same shape as MergeTrainActivity.test.tsx / the settings test).
 vi.mock("@/contexts/auth-context", () => ({
@@ -1350,39 +1350,31 @@ describe("MergePipeline", () => {
     ).toHaveAttribute("data-activity", "awaiting-ci");
   });
 
-  // Draft-state toggle (plan 2026-07-23-operator-set-pr-draft-state). The
-  // control is gated on the row's pr_state and lives in the expanded detail.
-  describe("draft-state toggle", () => {
-    it("offers 'Ready for review' (not 'Convert to draft') on a draft PR", () => {
-      hookData.current.prs = [
-        pr({ pr_number: 900, pr_state: "draft", merge_state_status: "DRAFT" }),
-      ];
-
-      render(<MergePipeline />);
-      fireEvent.click(screen.getByText("qontinui-web#900"));
-
-      expect(screen.getByTestId("pr-ready-for-review")).toBeInTheDocument();
-      expect(
-        screen.queryByTestId("pr-convert-to-draft")
-      ).not.toBeInTheDocument();
-    });
-
-    it("offers 'Convert to draft' (not 'Ready for review') on an open PR", () => {
-      hookData.current.prs = [pr({ pr_number: 901 })]; // default pr_state "open"
+  // Hold control (plan 2026-10-04-coord-pr-hold-without-github-drafts,
+  // Phase 4). It replaced the draft toggle and lives in the expanded detail.
+  describe("hold control", () => {
+    it("offers Hold on an open, unheld PR", () => {
+      hookData.current.prs = [pr({ pr_number: 901, hold: null })];
 
       render(<MergePipeline />);
       fireEvent.click(screen.getByText("qontinui-web#901"));
 
-      expect(screen.getByTestId("pr-convert-to-draft")).toBeInTheDocument();
-      expect(
-        screen.queryByTestId("pr-ready-for-review")
-      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("pr-hold-place")).toBeInTheDocument();
+      expect(screen.queryByTestId("pr-hold-release")).not.toBeInTheDocument();
     });
 
-    it("confirms the release-to-train consequence before undrafting", async () => {
+    it("confirms the release-to-train consequence before releasing", async () => {
       fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
       hookData.current.prs = [
-        pr({ pr_number: 900, pr_state: "draft", merge_state_status: "DRAFT" }),
+        pr({
+          pr_number: 900,
+          hold: {
+            held_by: "operator:0b6a1c2e-0000-4000-8000-000000000000",
+            reason: "waiting on a migration",
+            kind: "manual",
+            since: "2026-10-16T12:00:00Z",
+          },
+        }),
       ];
 
       render(<MergePipeline />);
@@ -1390,25 +1382,24 @@ describe("MergePipeline", () => {
 
       // Clicking the button must NOT fire the mutation directly — it opens a
       // confirm whose copy names the auto-land consequence.
-      fireEvent.click(screen.getByTestId("pr-ready-for-review"));
+      fireEvent.click(screen.getByTestId("pr-hold-release"));
       expect(fetchMock).not.toHaveBeenCalled();
       expect(
-        screen.getByText(/Release #900 to the merge train\?/)
+        screen.getByText(/Release the hold on #900\?/)
       ).toBeInTheDocument();
       expect(
         screen.getByText(/coord will land it automatically/i)
       ).toBeInTheDocument();
 
-      // Confirming POSTs draft:false to the draft-state proxy.
-      fireEvent.click(screen.getByText("Release to merge train"));
+      fireEvent.click(screen.getByTestId("pr-hold-release-confirm"));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
       const [url, init] = fetchMock.mock.calls[0] as [
         string,
         { method: string; body: string },
       ];
-      expect(url).toContain("/prs/qontinui/qontinui-web/900/draft-state");
+      expect(url).toContain("/prs/qontinui/qontinui-web/900/hold");
       expect(init.method).toBe("POST");
-      expect(JSON.parse(init.body)).toEqual({ draft: false });
+      expect(JSON.parse(init.body)).toEqual({ held: false });
     });
   });
 });

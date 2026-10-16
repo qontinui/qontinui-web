@@ -15766,7 +15766,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
+    "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
         parameters: {
             query?: never;
             header?: never;
@@ -15776,28 +15776,29 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Set Pr Draft State
-         * @description Set a PR's GitHub draft state (operator release valve).
+         * Set Pr Hold
+         * @description Place or release a coord hold on a PR (the operator's hold control).
          *
-         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-         *     (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-         *     ``false`` marks the PR ready-for-review (releasing it to the merge train),
-         *     ``true`` converts it back to draft (the documented hold mechanism).
+         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+         *     (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+         *     the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+         *     so it works on private repos on GitHub Free, which have no draft PRs.
          *
-         *     Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-         *     bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-         *     fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-         *     server-side. Releasing a draft-required (security-surface) PR is an operator
-         *     judgment, so this is operator-authed — never an agent JWT.
+         *     Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+         *     ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+         *     ``held: false`` releases. Release authority is coord's: the holder, or an
+         *     admin-role operator for any hold; a ``security_tier`` hold is the
+         *     operator's alone.
          *
-         *     Only the ``draft`` boolean is forwarded; any other keys the client sends are
-         *     dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-         *     coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-         *     via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-         *     / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-         *     502 github_draft_state_failed, 500 internal).
+         *     Auth mirrors the gate-action stack: the operator's Cognito bearer is
+         *     forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+         *     derives the tenant, role and repo authority server-side. Only the four
+         *     contract keys are forwarded. coord's status codes and ``{"error",
+         *     "message"}`` bodies pass through verbatim via ``_proxy_coord_post``
+         *     (400 invalid_input, 403 not_holder / security_tier_operator_only,
+         *     404 not_found, 500 internal).
          */
-        post: operations["api_v1_operations_prs_owner_repo_number_draft_state_post"];
+        post: operations["api_v1_operations_prs_owner_repo_number_hold_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -77739,7 +77740,7 @@ export interface operations {
             };
         };
     };
-    api_v1_operations_prs_owner_repo_number_draft_state_post: {
+    api_v1_operations_prs_owner_repo_number_hold_post: {
         parameters: {
             query?: never;
             header?: never;

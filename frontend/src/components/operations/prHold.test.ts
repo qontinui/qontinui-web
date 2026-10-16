@@ -1,0 +1,83 @@
+import { describe, expect, it } from "vitest";
+import {
+  canOfferRelease,
+  describeHoldError,
+  holdKindLabel,
+  holdViewOf,
+  holderLabel,
+  splitOwnerRepo,
+} from "./prHold";
+
+const HOLD = {
+  held_by: "operator:abcdef12-0000-4000-8000-000000000000",
+  reason: "r",
+  kind: "manual",
+  since: "2026-10-16T12:00:00Z",
+};
+
+describe("holdViewOf", () => {
+  it("absent key is UNKNOWN, never not-held", () => {
+    expect(holdViewOf({}).state).toBe("unknown");
+  });
+  it("hold_unknown wins over a null hold", () => {
+    expect(holdViewOf({ hold: null, hold_unknown: true }).state).toBe(
+      "unknown"
+    );
+  });
+  it("null is a confident not-held", () => {
+    expect(holdViewOf({ hold: null })).toEqual({ state: "not_held" });
+  });
+  it("a malformed hold is UNKNOWN", () => {
+    expect(
+      holdViewOf({ hold: { held_by: 1 } as unknown as typeof HOLD }).state
+    ).toBe("unknown");
+  });
+  it("a held row carries the hold and its foreignness", () => {
+    const v = holdViewOf({ hold: HOLD });
+    expect(v).toEqual({ state: "held", hold: HOLD, foreign: false });
+    expect(canOfferRelease(v)).toBe(true);
+    const f = holdViewOf({ hold: { ...HOLD, held_by: "another_tenant" } });
+    expect(f.state === "held" && f.foreign).toBe(true);
+    expect(canOfferRelease(f)).toBe(false);
+  });
+});
+
+describe("labels", () => {
+  it("names known kinds and passes unknown ones through", () => {
+    expect(holdKindLabel("security_tier")).toBe("security review");
+    expect(holdKindLabel("brand_new")).toBe("brand_new");
+  });
+  it("shortens actor keys", () => {
+    expect(holderLabel(HOLD.held_by)).toBe("operator abcdef12");
+    expect(holderLabel("coord")).toBe("coord");
+    expect(holderLabel("another_tenant")).toBe("another tenant");
+  });
+});
+
+describe("describeHoldError", () => {
+  it("carries code and message, unwrapping `detail`", () => {
+    expect(
+      describeHoldError(
+        403,
+        JSON.stringify({
+          detail: { error: "security_tier_operator_only", message: "m" },
+        })
+      )
+    ).toBe("HTTP 403 — security_tier_operator_only — m");
+  });
+  it("falls back to the raw body, then the bare status", () => {
+    expect(describeHoldError(502, "bad gateway")).toBe(
+      "HTTP 502 — bad gateway"
+    );
+    expect(describeHoldError(500, "")).toBe("HTTP 500");
+  });
+});
+
+describe("splitOwnerRepo", () => {
+  it("accepts owner/name only", () => {
+    expect(splitOwnerRepo("a/b")).toEqual(["a", "b"]);
+    expect(splitOwnerRepo("a")).toBeNull();
+    expect(splitOwnerRepo("a/b/c")).toBeNull();
+    expect(splitOwnerRepo("/b")).toBeNull();
+  });
+});
