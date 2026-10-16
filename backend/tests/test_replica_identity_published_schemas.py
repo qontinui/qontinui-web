@@ -22,11 +22,16 @@ A table passes when PostgreSQL can identify its rows to a subscriber:
 * ``relreplident = 'i'`` (USING INDEX) with a valid index flagged
   ``indisreplident`` — after that index is dropped the table keeps ``'i'`` but
   behaves as NOTHING, so the flag alone is not enough;
-* ``relreplident = 'f'`` (FULL).
+* ``relreplident = 'f'`` (FULL) when every column's type has a default
+  equality operator — under FULL the SUBSCRIBER finds the old row by comparing
+  every column, and a ``json`` / ``point`` / ``xml`` column stalls its apply
+  with "could not identify an equality operator". The publisher accepts such a
+  table, so only this predicate catches it.
 
-It fails on ``'d'`` with no primary key and on ``'n'`` (NOTHING). Ordinary
-tables and partitioned tables (``relkind`` ``r``/``p``) are checked, so a
-partition in ``coord_parts`` is held to the same rule as its parent.
+It fails on ``'d'`` with no primary key, on ``'n'`` (NOTHING), and on FULL
+over a column with no equality operator. Ordinary tables and partitioned
+tables (``relkind`` ``r``/``p``) are checked, and so is every partition of a
+published partitioned table, whichever schema the partition lives in.
 
 Substrate comes from ``_alembic_harness`` (an ephemeral database inside the
 test Postgres, skipped when none is reachable). A skip proves nothing — set
@@ -76,6 +81,13 @@ REPLIDENT_01_TABLES: tuple[str, ...] = (
     "coord.credential_probe_specs",
 )
 
+# A relation is published when it, or any partitioned ancestor of it, is in the
+# scope: a partition of a published partitioned table is published (its
+# changes are what the parent's publication carries) wherever the partition
+# itself lives, and the publisher checks the PARTITION's replica identity.
+# ``pg_partition_ancestors`` includes the relation itself, but returns NO rows
+# for a table that is neither a partition nor partitioned, so the relation's own
+# schema and name are tested directly as well.
 _PUBLISHED_RELATIONS = """
     SELECT c.oid,
            format('%I.%I', n.nspname, c.relname) AS name,
@@ -84,7 +96,55 @@ _PUBLISHED_RELATIONS = """
       JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE c.relkind IN ('r', 'p')
        AND (n.nspname = ANY(:schemas)
-            OR format('%I.%I', n.nspname, c.relname) = ANY(:tables))
+            OR format('%I.%I', n.nspname, c.relname) = ANY(:tables)
+            OR EXISTS (
+             SELECT 1
+               FROM pg_partition_ancestors(c.oid) AS anc(relid)
+               JOIN pg_class ac ON ac.oid = anc.relid
+               JOIN pg_namespace an ON an.oid = ac.relnamespace
+              WHERE an.nspname = ANY(:schemas)
+                 OR format('%I.%I', an.nspname, ac.relname) = ANY(:tables)))
+"""
+
+# A column the subscriber cannot compare under REPLICA IDENTITY FULL. With FULL
+# the apply worker finds the old row by comparing EVERY column with its type's
+# default equality operator (``tuples_equal`` → ``lookup_type_cache``), and a
+# type without one stalls apply with "could not identify an equality operator
+# for type …". This mirrors the type cache: a default btree or hash opclass on
+# the type, or on a type it is implicitly binary-coercible to (``varchar`` →
+# ``text``; NOT ``xml`` → ``text``, whose cast is not implicit), or the
+# polymorphic opclass for an enum / range / multirange / composite; a domain is
+# read through to its base type and an array through to its element. Measured
+# against a real pg16 subscription: json, point, xml, json[] and a domain over
+# json fail; text, varchar, jsonb, uuid, int[], enums, domains over text,
+# bytea, inet, cidr, int4range, char, name, numeric and pgvector's vector pass.
+_COLUMN_WITHOUT_EQUALITY = """
+    SELECT 1
+      FROM pg_attribute a
+      JOIN pg_type ty ON ty.oid = a.atttypid
+      JOIN LATERAL (SELECT CASE WHEN ty.typtype = 'd' THEN ty.typbasetype
+                                ELSE ty.oid END AS oid) b1 ON true
+      JOIN pg_type t1 ON t1.oid = b1.oid
+      JOIN LATERAL (SELECT CASE WHEN t1.typcategory = 'A' AND t1.typelem <> 0
+                                THEN t1.typelem ELSE t1.oid END AS oid) b2 ON true
+      JOIN pg_type bt ON bt.oid = b2.oid
+     WHERE a.attrelid = t.oid AND a.attnum > 0 AND NOT a.attisdropped
+       AND NOT EXISTS (
+             SELECT 1
+               FROM pg_opclass oc
+               JOIN pg_am am ON am.oid = oc.opcmethod
+              WHERE am.amname IN ('btree', 'hash') AND oc.opcdefault
+                AND (oc.opcintype = bt.oid
+                     OR EXISTS (SELECT 1 FROM pg_cast k
+                                 WHERE k.castsource = bt.oid
+                                   AND k.casttarget = oc.opcintype
+                                   AND k.castmethod = 'b'
+                                   AND k.castcontext = 'i')
+                     OR (oc.opcintype = 'anyenum'::regtype AND bt.typtype = 'e')
+                     OR (oc.opcintype = 'anyrange'::regtype AND bt.typtype = 'r')
+                     OR (oc.opcintype = 'anymultirange'::regtype
+                         AND bt.typtype = 'm')
+                     OR (oc.opcintype = 'record'::regtype AND bt.typtype = 'c')))
 """
 
 
@@ -112,7 +172,8 @@ def tables_without_replica_identity(conn: Connection) -> list[str]:
                          SELECT 1 FROM pg_index i
                           WHERE i.indrelid = t.oid
                             AND i.indisreplident AND i.indisvalid))
-                  OR t.ident = 'f')
+                  OR (t.ident = 'f'
+                      AND NOT EXISTS ({_COLUMN_WITHOUT_EQUALITY})))
              ORDER BY t.name
             """
         ),
@@ -256,8 +317,52 @@ def test_replident_01_tables_use_their_unique_index(at_head: Engine) -> None:
             "ALTER TABLE public.alembic_version DROP CONSTRAINT alembic_version_pkc",
             "public.alembic_version",
         ),
+        # FULL over a column the SUBSCRIBER cannot compare: the publisher
+        # accepts these, and the subscriber's apply stalls on the first
+        # UPDATE/DELETE ("could not identify an equality operator").
+        (
+            "CREATE TABLE coord.zz_full_json (a int, doc json);"
+            "ALTER TABLE coord.zz_full_json REPLICA IDENTITY FULL",
+            "coord.zz_full_json",
+        ),
+        (
+            "CREATE TABLE coord.zz_full_point (a int, p point);"
+            "ALTER TABLE coord.zz_full_point REPLICA IDENTITY FULL",
+            "coord.zz_full_point",
+        ),
+        (
+            "CREATE TABLE coord.zz_full_xml (a int, x xml);"
+            "ALTER TABLE coord.zz_full_xml REPLICA IDENTITY FULL",
+            "coord.zz_full_xml",
+        ),
+        (
+            "CREATE TABLE coord.zz_full_json_array (a int, docs json[]);"
+            "ALTER TABLE coord.zz_full_json_array REPLICA IDENTITY FULL",
+            "coord.zz_full_json_array",
+        ),
+        # A partition OUTSIDE the published schemas, of a published partitioned
+        # parent: the publisher checks the partition's own identity.
+        (
+            "CREATE TABLE coord.zz_part_parent (a int NOT NULL)"
+            " PARTITION BY LIST (a);"
+            "ALTER TABLE coord.zz_part_parent REPLICA IDENTITY FULL;"
+            "CREATE TABLE public.zz_part_child PARTITION OF coord.zz_part_parent"
+            " FOR VALUES IN (1)",
+            "public.zz_part_child",
+        ),
     ],
-    ids=["default-no-pk", "nothing", "index-dropped", "new-table", "alembic-version"],
+    ids=[
+        "default-no-pk",
+        "nothing",
+        "index-dropped",
+        "new-table",
+        "alembic-version",
+        "full-json",
+        "full-point",
+        "full-xml",
+        "full-json-array",
+        "partition-outside-scope",
+    ],
 )
 def test_the_guard_reds_when_one_table_loses_its_identity(
     at_head: Engine, mutation: str, offender: str
@@ -278,14 +383,36 @@ def test_the_guard_reds_when_one_table_loses_its_identity(
         assert tables_without_replica_identity(conn) == []
 
 
-def test_full_identity_passes_without_a_primary_key(at_head: Engine) -> None:
-    """``FULL`` is an accepted identity for a key-less table."""
+def test_full_identity_passes_when_every_column_is_comparable(
+    at_head: Engine,
+) -> None:
+    """``FULL`` over comparable types passes, and an unpublished partition is out.
+
+    The no-false-positive half of the FULL and partition rules: every type here
+    replicated an UPDATE under FULL on a real pg16 subscription.
+    """
     with at_head.connect() as conn:
         transaction = conn.begin()
         try:
-            conn.execute(text("CREATE TABLE coord.zz_replident_full (a int)"))
             conn.execute(
-                text("ALTER TABLE coord.zz_replident_full REPLICA IDENTITY FULL")
+                text(
+                    "CREATE TYPE coord.zz_enum AS ENUM ('a');"
+                    "CREATE DOMAIN coord.zz_dom AS text;"
+                    "CREATE TABLE coord.zz_replident_full ("
+                    " c_text text, c_varchar varchar(5), c_int int, c_jsonb jsonb,"
+                    " c_uuid uuid, c_ts timestamptz, c_intarr int[],"
+                    " c_enum coord.zz_enum, c_dom coord.zz_dom, c_bytea bytea,"
+                    " c_inet inet, c_cidr cidr, c_range int4range, c_char char(3),"
+                    " c_name name, c_numeric numeric, c_vec vector(3));"
+                    "ALTER TABLE coord.zz_replident_full REPLICA IDENTITY FULL;"
+                    # A partition in a published schema of an UNPUBLISHED
+                    # parent is published by the schema; one outside every
+                    # published scope, under an unpublished parent, is not.
+                    "CREATE TABLE public.zz_unpub_parent (a int NOT NULL)"
+                    " PARTITION BY LIST (a);"
+                    "CREATE TABLE public.zz_unpub_child PARTITION OF"
+                    " public.zz_unpub_parent FOR VALUES IN (1)"
+                )
             )
             assert tables_without_replica_identity(conn) == []
         finally:
