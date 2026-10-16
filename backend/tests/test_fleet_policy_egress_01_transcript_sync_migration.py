@@ -33,7 +33,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "fleet_policy_egress_01_transcript_sync"
-_PARENT_REVISION_ID = "census_idx_01_device_repo_path_observed"
+_PARENT_REVISION_ID = "fpl_01"
 _UPDATED_BY = "migration:fleet_policy_egress_01_transcript_sync"
 _TRANSCRIPT = "egress_transcript_sync"
 _TERMINAL = "egress_terminal_stream"
