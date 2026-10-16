@@ -10,6 +10,9 @@
  * - the trail and its literal hrefs, with the tombstone version marked;
  * - "none" for a name that never had a version;
  * - "unknown, not none" when the trail read fails (R6);
+ * - the headline names a deletion only when the trail is complete and its
+ *   latest version is a tombstone: a trail of exactly 50 is complete, and one
+ *   whose v51 answers is not;
  * - a delete keeps the operator on the page and shows the trail, rather than
  *   sending them to a list the deleted memory no longer appears in;
  * - the removed `tombstoned` badge stays removed.
@@ -136,12 +139,11 @@ describe("CoordMemoryDetailPage version trail", () => {
     expect(
       screen.getByTestId("coord-memory-detail-missing").contains(trail)
     ).toBe(true);
-    // Each link names what it opens, not just "v1".
+    // Each link's accessible name starts with its visible "v1" (WCAG 2.5.3,
+    // Label in Name), then says what it opens.
     expect(
-      screen
-        .getByTestId("coord-memory-version-trail-link-1")
-        .getAttribute("aria-label")
-    ).toBe("Open version 1 of proj_notes");
+      screen.getByRole("link", { name: "v1: open version 1 of proj_notes" })
+    ).toBe(screen.getByTestId("coord-memory-version-trail-link-1"));
     // Coord's own 404 is the not-found branch's claim, not a load failure.
     expect(screen.queryByText(/Failed to load/)).toBeNull();
   });
@@ -228,11 +230,51 @@ describe("CoordMemoryDetailPage version trail", () => {
   });
 
   it("does not name the latest version of a truncated trail", async () => {
-    // 50 versions answer (the cap) and v50 is a tombstone. The read stops at
-    // the cap, so v50 is only the last version READ, not the latest one:
-    // naming it "deleted at v50" would be a claim nobody measured. A v51
-    // request is unrouted, so reading past the cap fails this test too.
+    // 51 versions answer and v50 is a tombstone. The trail lists the cap of
+    // 50, and v51 answering past it proves there are more, so v50 is not the
+    // latest version: "deleted at v50" would be false. A v52 request is
+    // unrouted, so reading more than one past the cap fails this test.
     const table: Record<string, Route> = { [`GET ${BASE}`]: NOT_FOUND };
+    for (let n = 1; n <= 51; n++) {
+      table[`GET ${BASE}/version/${n}`] = {
+        status: 200,
+        body: { ...LIVE_V1, version: n, is_tombstone: n === 50 },
+      };
+    }
+    routes(table);
+    render(<CoordMemoryDetailPage />);
+
+    const headline = await screen.findByTestId(
+      "coord-memory-version-trail-headline"
+    );
+    expect(headline.textContent).toBe(
+      "Memory proj_notes not found. It has more versions than the 50 listed here, so its latest version is not named."
+    );
+    expect(headline.textContent).not.toContain("deleted at");
+    const truncated = screen.getByTestId(
+      "coord-memory-version-trail-truncated"
+    );
+    expect(truncated.textContent).toContain(
+      "Only the first 50 versions are listed"
+    );
+    expect(
+      screen.getByTestId("coord-memory-version-trail").querySelectorAll("li")
+    ).toHaveLength(50);
+    // v51 was read, and is not listed.
+    expect(
+      screen.queryByTestId("coord-memory-version-trail-link-51")
+    ).toBeNull();
+    // The entry, then v1 to v51.
+    expect(fetchMock).toHaveBeenCalledTimes(52);
+  });
+
+  it("names the deletion of a trail of exactly 50 versions", async () => {
+    // 50 versions answer, v50 is a tombstone, and v51 404s. The trail is
+    // complete at the cap, so v50 IS the latest version and is named.
+    const table: Record<string, Route> = {
+      [`GET ${BASE}`]: NOT_FOUND,
+      [`GET ${BASE}/version/51`]: { status: 404, body: "no version 51" },
+    };
     for (let n = 1; n <= 50; n++) {
       table[`GET ${BASE}/version/${n}`] = {
         status: 200,
@@ -246,19 +288,16 @@ describe("CoordMemoryDetailPage version trail", () => {
       "coord-memory-version-trail-headline"
     );
     expect(headline.textContent).toBe(
-      "Memory proj_notes not found. It has more versions than the 50 read here, so its latest version is not named."
+      "Memory proj_notes was deleted at v50. Every version is kept; open one to restore it."
     );
-    expect(headline.textContent).not.toContain("deleted at");
-    const truncated = screen.getByTestId(
-      "coord-memory-version-trail-truncated"
-    );
-    expect(truncated.textContent).toContain(
-      "Only the first 50 versions are listed"
-    );
+    expect(
+      screen.queryByTestId("coord-memory-version-trail-truncated")
+    ).toBeNull();
     expect(
       screen.getByTestId("coord-memory-version-trail").querySelectorAll("li")
     ).toHaveLength(50);
-    expect(fetchMock).toHaveBeenCalledTimes(51);
+    // The entry, then v1 to v50, then the 404 on v51.
+    expect(fetchMock).toHaveBeenCalledTimes(52);
   });
 
   it("renders no tombstoned badge on a live memory", async () => {
