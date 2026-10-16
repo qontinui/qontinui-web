@@ -1,7 +1,7 @@
 """Copy each tenant's transcript-sync ``off`` into the ``egress_transcript_sync`` and ``egress_terminal_stream`` fleet-policy domains
 
 Revision ID: fleet_policy_egress_01_transcript_sync
-Revises: census_idx_01_device_repo_path_observed
+Revises: fpl_01
 Create Date: 2026-10-10
 
 Phase 6 step 3(b) of plan
@@ -97,7 +97,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "fleet_policy_egress_01_transcript_sync"
-down_revision: str | Sequence[str] | None = "census_idx_01_device_repo_path_observed"
+down_revision: str | Sequence[str] | None = "fpl_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
