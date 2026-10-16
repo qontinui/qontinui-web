@@ -1,7 +1,7 @@
 """agent.work_artifacts — the specification family: kinds, trace relations, stable refs
 
 Revision ID: plan_library_11_spec_artifacts
-Revises: twin_fidelity_01_coord_twin_fidelity_observations
+Revises: ingcred_01
 Create Date: 2026-10-10
 
 Phase 6 step 1 of ``2026-10-09-spec-front-end-of-the-software-factory``
@@ -104,7 +104,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "plan_library_11_spec_artifacts"
-down_revision: str = "twin_fidelity_01_coord_twin_fidelity_observations"
+down_revision: str = "ingcred_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -165,12 +165,21 @@ _SPEC_REF_CHECK = (
 _NIL_ORG = "00000000-0000-0000-0000-000000000000"
 
 
-def _drop_checks_sql(table: str, column: str) -> str:
+#: CHECKs that mention ``relation`` but are NOT this revision's to rebuild.
+#: ``plan_library_11_followup_anchors_and_closure`` (an earlier revision)
+#: added the follow-up-only fence; the relation drop below must
+#: leave it in place, or every closure column loses its fence on upgrade.
+_KEEP_RELATION_CHECKS = ("ck_work_artifact_edges_followup_only_columns",)
+
+
+def _drop_checks_sql(table: str, column: str, keep: Sequence[str] = ()) -> str:
     """Discover-and-drop every CHECK on ``agent.<table>`` mentioning ``column``.
 
     The same loop ``plan_library_03``/``_04`` run, parameterised by table and
-    column instead of copied twice.
+    column instead of copied twice. ``keep`` names constraints the loop must
+    leave alone although they mention ``column``.
     """
+    keep_clause = f"AND con.conname NOT IN ({_in_list(keep)})" if keep else ""
     return f"""
 DO $$
 DECLARE
@@ -187,6 +196,7 @@ BEGIN
         WHERE nsp.nspname = 'agent'
           AND rel.relname = '{table}'
           AND con.contype = 'c'
+          {keep_clause}
           AND EXISTS (
               SELECT 1
               FROM unnest(con.conkey) AS k(attnum)
@@ -286,7 +296,9 @@ def upgrade() -> None:
     )
 
     # ── 3. The relation vocabulary ──────────────────────────────────────
-    op.execute(_drop_checks_sql("work_artifact_edges", "relation"))
+    op.execute(
+        _drop_checks_sql("work_artifact_edges", "relation", _KEEP_RELATION_CHECKS)
+    )
     _add_relation_checks(_PRIOR_RELATIONS + _TRACE_RELATIONS)
 
     # ── 4. The never-reused counter ─────────────────────────────────────
@@ -314,7 +326,9 @@ def downgrade() -> None:
     # Relations first: deleting the spec artifacts below would cascade most
     # of these edges anyway, but a trace edge between two NON-spec artifacts
     # (a plan ``implements`` a plan) has no pre-revision shape either.
-    op.execute(_drop_checks_sql("work_artifact_edges", "relation"))
+    op.execute(
+        _drop_checks_sql("work_artifact_edges", "relation", _KEEP_RELATION_CHECKS)
+    )
     op.execute(
         f"""
         DELETE FROM agent.work_artifact_edges
