@@ -91,42 +91,36 @@ os.environ["BACKEND_CORS_ORIGIN_REGEX"] = r"^https://([a-z0-9-]+\.)*qontinui\.io
 os.environ["STORAGE_BACKEND"] = "local"
 os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 
-# Keep the REAL cron-dispatch sweeper out of the test session.
+# Keep the app's background scheduler OUT of the test session.
 #
 # `booted_app` below is session-scoped AND autouse: it enters `TestClient(app)`
 # as a context manager, which runs the lifespan — and the lifespan calls
 # `scheduler.start()` on the module-level singleton in `app.core.scheduler`.
-# So the app's background scheduler is live from the start of EVERY session,
-# ticking every 30s. (It used to boot only when some test pulled the old lazy
-# `test_client` fixture, which made "is the scheduler running?" depend on the
-# collected file set — that is exactly what the autouse fixture removes, and it
-# makes disabling the dispatch task below mandatory rather than incidental.)
+# Left alone, that loop runs for the WHOLE session on the TestClient portal
+# thread's event loop, concurrently with every test, and has been the hidden
+# cause of a string of order- and timing-dependent reds:
 #
-# Its `scheduled_dispatch` task calls `poll_and_dispatch_due()`, which claims
-# due rows `FOR UPDATE SKIP LOCKED` against whatever
-# `app.db.session.async_engine` currently points at. The DB-backed scheduler
-# tests repoint that module global at the test engine (see
-# `tests/test_scheduler_db.py::sched_db`), so the real sweeper races them for
-# their own seeded rows: it claims a row and advances `next_fire_at`, and the
-# test's own `poll_and_dispatch_due()` then reports `due: 0` instead of
-# `due: 1`. That is timing-dependent (does a 30s tick land inside the test?),
-# which is why it never reproduces when the file is run on its own — and it used
-# to be order-dependent too (did a `test_client` test run earlier?). It has
-# reddened unrelated
-# PRs on `TestDispatchFailure` and `TestNextFireAdvance` while `main` was green.
+# - `scheduled_dispatch` claimed rows `tests/test_scheduler_db.py` had seeded
+#   (`due: 0` instead of `due: 1` on `TestDispatchFailure` / `TestNextFireAdvance`);
+# - `memory_consolidate` swept the fresh tenant a memory test had just seeded
+#   (qontinui-web#1103, `assert 2 == 1`; see `test_memory_lifecycle_db._job_rows`);
+# - its `asyncio.sleep(next_due - now)` was recorded by the then process-wide
+#   `asyncio.sleep` mock in `test_coord_proxy_contract.py` as `0.7789, 0.7788,
+#   ...` (qontinui-web#1718, CI run 37519038790, shard 6/6, 2026-10-06; coord
+#   finding 171089df) — the mock returned at once, so the loop spun, each delay a
+#   few microseconds shorter. That mock has since been scoped to coord_proxy by
+#   `tests/_coord_proxy_sleep.py`; the loop it exposed is what this stops.
 #
-# Disable ONLY that task, via the per-task switch — NOT the global
-# `QONTINUI_SCHEDULER_ENABLED`. Killing the whole scheduler also stops
-# `memory_reindex` / `memory_consolidate` / `memory_bridge_sync`, and the
-# `test_memory_api_db.py` hybrid-query tests depend on those having run: with
-# the scheduler fully off, that file fails a varying 1-5 tests per run. Those
-# tests are relying on background work and are their own latent bug — but this
-# change is not the place to expose it, so keep the blast radius to the one
-# task that actually causes the scheduler flake.
+# So `booted_app` STOPS the singleton scheduler right after boot (the lifespan
+# still calls `start()`, so the production boot path is still exercised and the
+# task inventory stays registered for `scheduler.status()`). Tests that need a
+# scheduled job run its coroutine directly or build their own
+# `SchedulerService`, which is what `tests/test_scheduler*.py` already do.
+# `tests/test_scheduler_dispatch_sweeper_off_in_tests.py` pins that the loop is
+# not running.
 #
-# Task REGISTRATION is unaffected (a disabled task stays registered and is
-# skipped per tick), so `test_no_celery_import.py`'s inventory assertions and
-# `scheduler_status()` still see `scheduled_dispatch`.
+# The per-task switch below stays as defense in depth: if the stop above ever
+# regresses, the task that claims rows other tests seeded is still off.
 os.environ["QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED"] = "0"
 
 # Cloud-control side-effect import — must run before any `app.models` import
@@ -164,8 +158,8 @@ def booted_app() -> Generator[TestClient, None, None]:
     `_boot_side_effects_disabled()` gates `init_db`, the wrapper-registry sync
     loop, the coord service-account mint and the recording-pipeline recovery
     UPDATE on `TESTING=1` (set at the top of this file). `scheduler.start()` is
-    deliberately still live — see the comment on
-    QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED above.
+    still CALLED (the boot path stays the production one), and then STOPPED
+    here — see the comment above QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED.
 
     Being autouse, this is the FIRST session fixture set up and therefore the
     LAST torn down, so it now boots BEFORE `test_engine` creates the tables and
@@ -174,9 +168,16 @@ def booted_app() -> Generator[TestClient, None, None]:
     (shutdown's `metrics_service.force_flush` returns immediately on an empty
     buffer and swallows anything else).
     """
+    from app.core.scheduler import scheduler
     from app.main import app
 
     with TestClient(app) as client:
+        # Stop the loop on the event loop that owns it (the TestClient portal's),
+        # so it is cancelled and awaited there rather than left ticking for the
+        # whole session. Its first pass may already have fired the boot-time
+        # jobs; `stop()` cancels and awaits those too. The lifespan's own
+        # `scheduler.stop()` at shutdown is then a no-op.
+        client.portal.call(scheduler.stop)
         yield client
 
 

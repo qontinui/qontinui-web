@@ -17,6 +17,49 @@ READ boundary — **CLOSED, and must stay closed.**
     ``coord.*`` read SQL (a ``SELECT ... FROM coord.x`` / ``JOIN coord.x``
     string literal) lands the offending file in this set and fails CI.
 
+A ``description=`` string is PUBLISHED, and is flagged deliberately.
+    The docstring/non-docstring split this guard implements is not merely an
+    implementation convenience — it lands in the right place. A function
+    docstring is internal prose and is exempt. A ``description=`` (or
+    ``title=``) on a FastAPI ``Query``/``Path``/``Body`` or a pydantic
+    ``Field`` is **reflected into ``openapi-schema*.json``**, which the
+    frontend api-client generates from and which coord's route observer reads
+    as web's declared external surface. A ``coord.<table>`` token there puts
+    another service's private schema name into web's public API contract —
+    documentation-level coupling rather than SQL-level, but real, and exactly
+    the knowledge this boundary exists to keep out of web.
+
+    So when this guard fires on a ``description=``/``title=`` — as opposed to
+    on real read SQL — the fix is NOT to exempt it: move the schema detail
+    into the function's own docstring, which is exempt, and leave the
+    published string generic. (On actual ``SELECT ... FROM coord.x`` the fix
+    is the opposite and is stated above: route the read through coord's HTTP
+    API. Do not relocate SQL into prose.)
+
+    Measured 2026-09-22 with this module's own AST logic: **136 raw
+    ``coord.<table>`` mentions across 43 files** under ``backend/app`` sit in
+    docstrings. Of those, **110 across 39 files are exempt SOLELY by being a
+    docstring** — relocating one of those sentences into a ``description=``
+    reproduces this failure, and that is intended behaviour rather than a
+    false positive. The other **26 across 4 files** are in
+    ``WRITE_PATH_FOLLOWUP`` (``models/device.py``,
+    ``models/device_connection.py``, ``models/test_target.py``,
+    ``services/memory_store.py``), which ``test_read_boundary_is_closed``
+    skips wholesale before it parses anything — so a ``coord.<table>`` token
+    in a ``description=`` there trips nothing, and the "relocating it fails
+    CI" claim does NOT hold for them.
+
+    One bound on that number, so it is not over-read: it counts raw
+    occurrences, while the guard dedups per AST node — so a real failure
+    lists fewer entries than the raw count. Read the failure output, do
+    not predict its size from this figure.
+
+    And ``_COORD_TOKEN`` (a ``coord.``-prefixed lowercase token) matches
+    a table name only by luck — it also matches ``coord.qontinui`` inside
+    ``https://coord.qontinui.io``. No such non-docstring literal exists today,
+    but a future published string naming coord's HOST would fail with a
+    read-boundary message, and THAT would be a false positive.
+
 WRITE path + cross-schema FKs — a **named, scoped follow-up** (still open).
     Web keeps direct WRITE access to ``coord.*`` for the device
     register/heartbeat/delete + WS-lifecycle path (the ``Device`` /

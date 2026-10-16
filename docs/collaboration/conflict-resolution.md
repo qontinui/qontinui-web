@@ -87,7 +87,7 @@ const saveWithVersion = async (resource: VersionedResource) => {
 ### 3. Auto-Save with Throttling
 
 ```typescript
-import { useDebounce } from '@/hooks/use-debounce';
+import { useDebounce } from '@/components/workflow-organization/search-filter-utils';
 
 export function AutoSaveWorkflow({ workflow }: { workflow: Workflow }) {
   const [localWorkflow, setLocalWorkflow] = useState(workflow);

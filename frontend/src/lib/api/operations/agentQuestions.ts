@@ -28,11 +28,40 @@ import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE, readJson } from "./base";
 
-/** `GET /agent-questions/pending` (handler `get_pending_agent_questions`). */
+/** Who a pending question is addressed to (coord's `audience` column). */
+export type AgentQuestionAudience = "operator" | "agent";
+
+/** What {@link fetchPendingAgentQuestions} asks for. */
+export interface PendingAgentQuestionsQuery {
+  /** Page size; coord caps it and echoes the applied value as `limit`. */
+  limit: number;
+  /** Rows to skip; omitted (or 0) means the first page. */
+  offset?: number;
+  /** Narrow to one audience; omitted means every audience. */
+  audience?: AgentQuestionAudience | null;
+}
+
+/**
+ * `GET /agent-questions/pending?limit=<n>[&offset=<n>][&audience=<a>]`
+ * (handler `get_pending_agent_questions`).
+ *
+ * Every key is one an older coord/proxy build may not know. FastAPI IGNORES an
+ * unknown query parameter rather than rejecting it, so the degraded outcome is
+ * "the filter did not apply", never a 422 — the caller reads the envelope back
+ * (`limit` / `offset` echoes, each row's `audience`) rather than assuming the
+ * request was obeyed.
+ */
 export async function fetchPendingAgentQuestions(
+  query: PendingAgentQuestionsQuery,
   options: HttpOptions = {}
 ): Promise<unknown> {
-  const url = `${OPERATIONS_BASE}/agent-questions/pending`;
+  const qs = new URLSearchParams();
+  qs.set("limit", String(query.limit));
+  if (query.offset !== undefined && query.offset > 0) {
+    qs.set("offset", String(query.offset));
+  }
+  if (query.audience) qs.set("audience", query.audience);
+  const url = `${OPERATIONS_BASE}/agent-questions/pending?${qs.toString()}`;
   const res = await httpClient.fetch(url, {
     ...options,
     method: "GET",
@@ -42,14 +71,20 @@ export async function fetchPendingAgentQuestions(
 }
 
 /**
- * `GET /agent-questions/pending?gap=true` (handler
+ * `GET /agent-questions/pending?gap=true&limit=` (handler
  * `get_pending_agent_questions`) — the blocking POLICY_GAP reports. `gap` is a
  * coord-side hint; the caller still filters on the POLICY_GAP marker.
+ *
+ * The limit is EXPLICIT: with none, coord applies its default page size and
+ * the page length would read as the size of the gap queue. No `audience` is
+ * sent, deliberately — a policy gap blocks whoever hit it, so narrowing the
+ * queue to one audience would hide gaps rather than sort them.
  */
 export async function fetchPendingPolicyGapQuestions(
+  limit: number,
   options: HttpOptions = {}
 ): Promise<unknown> {
-  const url = `${OPERATIONS_BASE}/agent-questions/pending?gap=true`;
+  const url = `${OPERATIONS_BASE}/agent-questions/pending?gap=true&limit=${limit}`;
   const res = await httpClient.fetch(url, {
     ...options,
     method: "GET",

@@ -41,7 +41,10 @@ import pytest_asyncio
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.operations import CoordTransportUnavailable
+from app.api.v1.endpoints.operations import (
+    CoordTransportUnavailable,
+    _coord_unreachable,
+)
 from app.core.scheduler import ScheduledTask, SchedulerService
 from app.crud import work_artifact as crud
 from app.crud import work_artifact_followups as followups_crud
@@ -303,9 +306,8 @@ class TestReconcileRoute:
     async def test_a_coord_outage_moves_nothing_and_reads_coord_once(
         self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        down = CoordTransportUnavailable(
-            status_code=502, detail="coord is not reachable"
-        )
+        # Built the way `_proxy_coord_get` builds it: a typed refusal.
+        down = _coord_unreachable(CoordTransportUnavailable)
         stub = _StubCoord({1: down, 2: down, 3: down})
         _stub_route_coord(monkeypatch, stub)
         plan = await _make_artifact(client, "outage")

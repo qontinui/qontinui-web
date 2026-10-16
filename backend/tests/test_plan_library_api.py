@@ -2111,6 +2111,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
                 "anchored": "true",
             },
             f"{API_PREFIX}/difficulty": {},
+            f"{API_PREFIX}/model-routing": {},
             f"{API_PREFIX}/vocabulary": {},
             f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},
             f"{API_PREFIX}/{{artifact_id}}/export": {"version_number": "1"},

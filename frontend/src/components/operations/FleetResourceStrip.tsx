@@ -893,8 +893,8 @@ function Aged({
 
 /**
  * CPU package temperature, display only. No colour ramp: no threshold is
- * declared (plan D1), so a reading is neutral text. The three states and the
- * Windows-host rule live in `cpuTempReading`.
+ * declared (plan D1), so a reading is neutral text. The three states live in
+ * `cpuTempReading`.
  */
 function TemperatureCell({ row }: { row: StripRow }) {
   const s = row.sample;
@@ -916,15 +916,31 @@ function TemperatureCell({ row }: { row: StripRow }) {
       </Aged>
     );
   }
+  if (reading.kind === "not_measurable_host") {
+    return (
+      <span
+        className="text-muted-foreground"
+        data-testid="fleet-resource-cpu-temp"
+      >
+        not measured on this host type
+      </span>
+    );
+  }
   return (
-    <span
-      className="text-muted-foreground"
-      data-testid="fleet-resource-cpu-temp"
-    >
-      {reading.kind === "not_measurable_host"
-        ? "not measured on this host type"
-        : "unknown"}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="text-muted-foreground"
+          data-testid="fleet-resource-cpu-temp"
+        >
+          unknown
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="text-[11px]">
+        no reading reported (sensor absent, or collector not yet publishing
+        this field)
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

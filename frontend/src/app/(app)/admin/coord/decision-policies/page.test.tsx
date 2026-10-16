@@ -18,6 +18,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
+/** `GET …/coord/next-step-settings` — coord's served per-domain defaults. */
+const getSettings = vi.fn();
 const post = vi.fn();
 const patch = vi.fn();
 const del = vi.fn();
@@ -30,7 +32,10 @@ vi.mock("@/services/service-factory", () => ({
       const method = init.method ?? "GET";
       const body = JSON.parse(init.body ?? "null");
       let out: unknown;
-      if (method === "GET") out = await get(url);
+      if (method === "GET")
+        out = url.endsWith("/coord/next-step-settings")
+          ? await getSettings(url)
+          : await get(url);
       else if (method === "POST") out = await post(url, body);
       else if (method === "PATCH") out = await patch(url, body);
       else if (method === "DELETE") out = await del(url);
@@ -72,6 +77,7 @@ interface Row {
   repo?: string | null;
   priority?: number;
   enabled?: boolean;
+  built_in?: boolean;
 }
 
 function row(patchRow: Row) {
@@ -125,6 +131,26 @@ const NEXT_STEP = row({
   payload: {},
 });
 
+/** coord's system-band seed row for the sixth domain (built_in). */
+const ADMISSION_STALL = row({
+  policy_id: "as-1",
+  decision_domain: "admission_stall_fix",
+  mode: "guidance",
+  autonomy_level: "auto_decide",
+  name: "admission stall responder",
+  payload: {},
+  built_in: true,
+});
+
+const ARCH_TRADEOFF = row({
+  policy_id: "at-1",
+  decision_domain: "architecture_tradeoff",
+  mode: "guidance",
+  autonomy_level: "guidance_only",
+  name: "architecture trade-off frame",
+  payload: {},
+});
+
 /** A v2 row this page must NOT claim — it belongs to /admin/coord/gate-clearance. */
 const GATE_CLEARANCE = row({
   policy_id: "gc-1",
@@ -135,6 +161,40 @@ const GATE_CLEARANCE = row({
   payload: { gate_class: "security-surface", authority: "operator_only" },
 });
 
+/** What coord's next-step settings served on 2026-10-14, spelled out. */
+const SERVED_DEFAULTS = [
+  ["next_step", "auto_decide", "system_row"],
+  ["pr_fix", "auto_decide", "system_row"],
+  ["red_main_fix", "auto_decide", "system_row"],
+  ["admission_stall_fix", "auto_decide", "system_row"],
+  ["architecture_tradeoff", "guidance_only", "system_row"],
+  ["verification_sufficiency", "guidance_only", "code_fallback"],
+] as const;
+
+/** `[domain, default level, default source, resolved_from?, autonomy_level?]` */
+type ServedDefault =
+  | readonly [string, string, string]
+  | readonly [string, string, string, string, string];
+
+function serveDefaults(rows: readonly ServedDefault[]) {
+  getSettings.mockResolvedValue({
+    master_enabled: true,
+    can_edit: true,
+    domains: rows.map(([decision_domain, level, source, from, current]) => ({
+      decision_domain,
+      label: decision_domain,
+      description: "",
+      autonomy_level: current ?? level,
+      default_autonomy_level: level,
+      default_source: source,
+      mode: "guidance",
+      resolved_from: from ?? "system",
+      requires_master: false,
+      effective: false,
+    })),
+  });
+}
+
 function serve(policies: unknown[]) {
   get.mockResolvedValue({ policies, total: policies.length });
 }
@@ -143,6 +203,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   isCoordAdmin = true;
   serve([]);
+  serveDefaults(SERVED_DEFAULTS);
   post.mockResolvedValue(PR_FIX);
   patch.mockResolvedValue({});
   del.mockResolvedValue(undefined);
@@ -175,14 +236,25 @@ describe("cardinality", () => {
   });
 
   it("renders many, in coord's domain order, and drops a foreign domain", async () => {
-    serve([RED_MAIN, GATE_CLEARANCE, PR_FIX, NEXT_STEP]);
+    serve([
+      ARCH_TRADEOFF,
+      RED_MAIN,
+      ADMISSION_STALL,
+      GATE_CLEARANCE,
+      PR_FIX,
+      NEXT_STEP,
+    ]);
     render(<DecisionPoliciesPage />);
     const rows = await screen.findAllByTestId("decision-policy-row");
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(5);
+    // admission_stall_fix sits between red_main_fix and architecture_tradeoff,
+    // exactly where coord's DOMAIN_SPECS puts it.
     expect(rows.map((r) => r.getAttribute("data-row-key"))).toEqual([
       "ns-1",
       "pf-1",
       "rm-1",
+      "as-1",
+      "at-1",
     ]);
     // The gate_clearance row is a v2 row too, and is not this page's.
     expect(screen.queryByText("security-surface clearance")).toBeNull();
@@ -209,6 +281,213 @@ describe("the inert-at-always_escalate fact", () => {
 });
 
 describe("create", () => {
+  it("offers admission_stall_fix in the domain picker, in coord's order", async () => {
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    await user.click(within(dialog).getByLabelText("Decision domain"));
+    const options = (await screen.findAllByRole("option")).map(
+      (o) => o.textContent
+    );
+    expect(options).toEqual([
+      "next_step",
+      "pr_fix",
+      "red_main_fix",
+      "admission_stall_fix",
+      "architecture_tradeoff",
+      "verification_sufficiency",
+    ]);
+    await user.click(screen.getByRole("option", { name: "admission_stall_fix" }));
+    expect(
+      within(dialog).getByText(/merge-train steward when your tenant's/)
+    ).toBeTruthy();
+  });
+
+  it("warns that a new admission_stall_fix row overrides coord's auto_decide default, and offers no repo", async () => {
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    await user.click(within(dialog).getByLabelText("Decision domain"));
+    await user.click(
+      await screen.findByRole("option", { name: "admission_stall_fix" })
+    );
+    const warning = await within(dialog).findByTestId(
+      "decision-policy-default-override-warning"
+    );
+    expect(warning.textContent).toContain("system default at auto_decide");
+    expect(warning.textContent).toContain("workspace-wide row");
+    expect(warning.textContent).toContain("turns that default off");
+    // Coord consults this domain with repo = None: no repo field is offered.
+    expect(within(dialog).queryByLabelText("Repo scope")).toBeNull();
+    expect(
+      within(dialog).getByTestId("decision-policy-repo-not-served").textContent
+    ).toContain("with no repo");
+  });
+
+  it("warns for architecture_tradeoff's guidance_only default as well", async () => {
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    await user.click(within(dialog).getByLabelText("Decision domain"));
+    await user.click(
+      await screen.findByRole("option", { name: "architecture_tradeoff" })
+    );
+    expect(
+      (
+        await within(dialog).findByTestId(
+          "decision-policy-default-override-warning"
+        )
+      ).textContent
+    ).toContain("system default at guidance_only");
+    expect(within(dialog).getByLabelText("Repo scope")).toBeTruthy();
+  });
+
+  it("does not warn for verification_sufficiency, whose default is no row", async () => {
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    await user.click(within(dialog).getByLabelText("Decision domain"));
+    await user.click(
+      await screen.findByRole("option", { name: "verification_sufficiency" })
+    );
+    // Wait for the read to land (the loading caution clears), then: nothing.
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByTestId("decision-policy-default-loading")
+      ).toBeNull()
+    );
+    expect(
+      within(dialog).queryByTestId("decision-policy-default-unknown")
+    ).toBeNull();
+    expect(
+      within(dialog).queryByTestId("decision-policy-default-override-warning")
+    ).toBeNull();
+    expect(getSettings).toHaveBeenCalledWith(
+      "/api/v1/operations/coord/next-step-settings"
+    );
+  });
+
+  it("follows the LIVE default: a system row moved to always_escalate draws no warning", async () => {
+    serveDefaults([["pr_fix", "always_escalate", "system_row"]]);
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    await user.click(within(dialog).getByLabelText("Decision domain"));
+    await user.click(await screen.findByRole("option", { name: "pr_fix" }));
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByTestId("decision-policy-default-loading")
+      ).toBeNull()
+    );
+    expect(
+      within(dialog).queryByTestId("decision-policy-default-unknown")
+    ).toBeNull();
+    expect(
+      within(dialog).queryByTestId("decision-policy-default-override-warning")
+    ).toBeNull();
+  });
+
+  it("shows an UNKNOWN caution, not silence, when the default cannot be read", async () => {
+    getSettings.mockRejectedValue(new Error("coord unreachable"));
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("decision-policy-default-unknown").textContent
+      ).toContain("coord unreachable")
+    );
+    const caution = within(dialog).getByTestId(
+      "decision-policy-default-unknown"
+    );
+    expect(caution.textContent).toContain(
+      "Could not read coord's current default for this domain"
+    );
+    expect(caution.textContent).toContain("outranks it and turns it off");
+    expect(
+      within(dialog).queryByTestId("decision-policy-default-override-warning")
+    ).toBeNull();
+  });
+
+  it("says it is reading coord's default before the read answers", async () => {
+    getSettings.mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    expect(
+      within(dialog).getByTestId("decision-policy-default-loading").textContent
+    ).toBe("Reading coord's current default for this domain…");
+    expect(
+      within(dialog).queryByTestId("decision-policy-default-unknown")
+    ).toBeNull();
+  });
+
+  it("defers to an existing workspace override rather than claiming to turn the default off", async () => {
+    serveDefaults([
+      ["next_step", "auto_decide", "system_row", "tenant", "guidance_only"],
+    ]);
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    const warning = await within(dialog).findByTestId(
+      "decision-policy-default-override-warning"
+    );
+    expect(warning.textContent).toBe(
+      "A workspace row already overrides coord's default for this domain at guidance_only; a new row " +
+        "takes effect only if it outranks that row (lower priority number, then older)."
+    );
+  });
+
+  it("names an existing row already scoped to the same repo", async () => {
+    serve([PR_FIX]);
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    await screen.findAllByTestId("decision-policy-row");
+    const dialog = await openCreate(user);
+    await user.click(within(dialog).getByLabelText("Decision domain"));
+    await user.click(await screen.findByRole("option", { name: "pr_fix" }));
+    await user.type(
+      within(dialog).getByLabelText("Repo scope"),
+      "qontinui/qontinui-dev-notes"
+    );
+    const warning = await within(dialog).findByTestId(
+      "decision-policy-default-override-warning"
+    );
+    expect(warning.textContent).toBe(
+      "A row scoped to qontinui/qontinui-dev-notes already exists for this domain: " +
+        '"pr_fix autonomous repair frame" (at always_escalate, priority 100). This row takes effect for ' +
+        "qontinui/qontinui-dev-notes only if it outranks it (lower priority number, then older), and then " +
+        "at always_escalate."
+    );
+  });
+
+  it("shows the UNKNOWN caution when the domain is missing from coord's answer", async () => {
+    serveDefaults([["pr_fix", "auto_decide", "system_row"]]);
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    // The form starts on next_step, which this answer does not list.
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("decision-policy-default-unknown").textContent
+      ).toContain("does not list this domain")
+    );
+  });
+
+  it("re-words the warning for a repo-scoped row", async () => {
+    const user = userEvent.setup();
+    render(<DecisionPoliciesPage />);
+    const dialog = await openCreate(user);
+    await user.type(within(dialog).getByLabelText("Repo scope"), "o/r");
+    expect(
+      (
+        await within(dialog).findByTestId(
+          "decision-policy-default-override-warning"
+        )
+      ).textContent
+    ).toContain("A row scoped to o/r outranks it for that repo");
+  });
+
   it("posts decision_domain + mode + payload, and no v1 or autonomy field", async () => {
     const user = userEvent.setup();
     render(<DecisionPoliciesPage />);
@@ -326,6 +605,33 @@ describe("editing an existing row", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
+  it("names the repos a workspace → repo replace releases, and that it can re-arm the default", async () => {
+    const user = userEvent.setup();
+    serve([RED_MAIN]);
+    render(<DecisionPoliciesPage />);
+    await expandFirstRow(user);
+    await user.click(
+      screen.getByRole("button", { name: "Edit red main fixer" })
+    );
+    const dialog = screen.getByTestId("decision-policy-editor");
+
+    const payload = within(dialog).getByTestId("decision-policy-payload");
+    await user.clear(payload);
+    await user.type(payload, '{{"notes": "changed"}');
+    await user.type(within(dialog).getByLabelText("Repo scope"), "o/r");
+
+    const release = await within(dialog).findByTestId(
+      "decision-policy-release-caution"
+    );
+    await waitFor(() =>
+      expect(release.textContent).toBe(
+        "Repos other than o/r stop using this row and go back to coord's default (at auto_decide), " +
+          "unless another workspace row covers them. With coord's system default at auto_decide, this " +
+          "can re-arm dispatch for those repos."
+      )
+    );
+  });
+
   it("warns that replacing a graduated row de-graduates it", async () => {
     const user = userEvent.setup();
     serve([RED_MAIN]);
@@ -371,6 +677,450 @@ describe("editing an existing row", () => {
     expect(Object.keys(body)).not.toContain("enabled");
     expect(post).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+describe("an in-place scope edit", () => {
+  async function openEditOf(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string
+  ) {
+    await expandFirstRow(user);
+    await user.click(screen.getByRole("button", { name: `Edit ${name}` }));
+    return screen.getByTestId("decision-policy-editor");
+  }
+
+  it("cautions at the row's CURRENT level when a repo row is made workspace-wide, and still PATCHes", async () => {
+    const user = userEvent.setup();
+    serve([PR_FIX]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditOf(user, "pr_fix autonomous repair frame");
+    expect(
+      within(dialog).queryByTestId("decision-policy-scope-edit-caution")
+    ).toBeNull();
+
+    await user.clear(within(dialog).getByLabelText("Repo scope"));
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("decision-policy-scope-edit-caution")
+          .textContent
+      ).toContain(
+        "Workspace-wide, this row (at always_escalate) outranks coord's system default (auto_decide) for every repo without its own row."
+      )
+    );
+    expect(
+      within(dialog).getByTestId("decision-policy-scope-edit-caution")
+        .textContent
+    ).toContain("qontinui/qontinui-dev-notes stops using this row");
+    // A PATCH keeps the level, so it is not the create-time "turns it off" text.
+    expect(
+      within(dialog).queryByTestId("decision-policy-default-override-warning")
+    ).toBeNull();
+
+    await user.click(within(dialog).getByTestId("decision-policy-save"));
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    expect((patch.mock.calls[0]?.[1] as Record<string, unknown>).repo).toBe(
+      null
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("names the new repo when a workspace row is moved to one", async () => {
+    const user = userEvent.setup();
+    serve([RED_MAIN]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditOf(user, "red main fixer");
+    await user.type(within(dialog).getByLabelText("Repo scope"), "o/r");
+    const caution = within(dialog).getByTestId(
+      "decision-policy-scope-edit-caution"
+    );
+    expect(caution.textContent).toContain(
+      "For o/r, this row will outrank coord's system default and any workspace row at this row's level auto_decide."
+    );
+    expect(caution.textContent).toContain(
+      "Repos other than o/r stop using this row"
+    );
+  });
+});
+
+describe("what a replace or a priority edit releases or contests", () => {
+  async function openEditByName(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string
+  ) {
+    const rows = await screen.findAllByTestId("decision-policy-row");
+    const target = rows.find((r) => r.textContent?.includes(name));
+    if (!target) throw new Error(`no row named ${name}`);
+    await user.click(within(target).getByRole("button", { expanded: false }));
+    await user.click(screen.getByRole("button", { name: `Edit ${name}` }));
+    return screen.getByTestId("decision-policy-editor");
+  }
+
+  it("names what the OLD domain loses when a replace changes the domain", async () => {
+    const user = userEvent.setup();
+    serve([RED_MAIN]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "red main fixer");
+    await user.click(within(dialog).getByLabelText("Decision domain"));
+    await user.click(await screen.findByRole("option", { name: "pr_fix" }));
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("decision-policy-release-caution")
+          .textContent
+      ).toBe(
+        "red_main_fix loses this row and goes back to another row or coord's default (at auto_decide). " +
+          "With coord's system default at auto_decide, this can re-arm dispatch for red_main_fix."
+      )
+    );
+    const note = within(dialog).getByTestId(
+      "decision-policy-replace-note"
+    ).textContent;
+    expect(note).toContain("the replacement's domain is never left with no policy");
+    expect(note).toContain("the old domain (red_main_fix) does lose this row");
+  });
+
+  it("raises no release caution for a repo-scoped admission_stall_fix row, which never served", async () => {
+    const REPO_ADMISSION = row({
+      policy_id: "ra-1",
+      decision_domain: "admission_stall_fix",
+      mode: "guidance",
+      autonomy_level: "auto_decide",
+      name: "repo admission frame",
+      payload: {},
+      repo: "o/r",
+    });
+    const user = userEvent.setup();
+    serve([REPO_ADMISSION]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "repo admission frame");
+    const payload = within(dialog).getByTestId("decision-policy-payload");
+    await user.clear(payload);
+    await user.type(payload, '{{"notes": "changed"}');
+
+    // The replacement is workspace-wide, so the default warning still shows.
+    await within(dialog).findByTestId(
+      "decision-policy-default-override-warning"
+    );
+    expect(
+      within(dialog).queryByTestId("decision-policy-release-caution")
+    ).toBeNull();
+  });
+
+  it("says when a priority-only edit hands the scope to this row", async () => {
+    const ARMED = row({
+      policy_id: "pf-2",
+      decision_domain: "pr_fix",
+      mode: "guidance",
+      autonomy_level: "auto_decide",
+      name: "armed repo frame",
+      payload: {},
+      repo: "qontinui/qontinui-dev-notes",
+      priority: 50,
+    });
+    const user = userEvent.setup();
+    serve([PR_FIX, ARMED]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "pr_fix autonomous repair frame");
+    expect(
+      within(dialog).queryByTestId("decision-policy-priority-caution")
+    ).toBeNull();
+
+    const priority = within(dialog).getByLabelText("Priority");
+    await user.clear(priority);
+    await user.type(priority, "10");
+    expect(
+      within(dialog).getByTestId("decision-policy-priority-caution").textContent
+    ).toBe(
+      'This row now ranks above "armed repo frame" (auto_decide) for qontinui/qontinui-dev-notes — ' +
+        "consults take this row's always_escalate."
+    );
+  });
+});
+
+describe("ranking within the edited row's own band", () => {
+  async function openEditByName(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string
+  ) {
+    const rows = await screen.findAllByTestId("decision-policy-row");
+    const target = rows.find((r) => r.textContent?.includes(name));
+    if (!target) throw new Error(`no row named ${name}`);
+    await user.click(within(target).getByRole("button", { expanded: false }));
+    await user.click(screen.getByRole("button", { name: `Edit ${name}` }));
+    return screen.getByTestId("decision-policy-editor");
+  }
+
+  const TENANT_ADMISSION = row({
+    policy_id: "ta-1",
+    decision_domain: "admission_stall_fix",
+    mode: "guidance",
+    autonomy_level: "always_escalate",
+    name: "tenant admission frame",
+    payload: {},
+    priority: 50,
+  });
+
+  /** coord's system seed — another tenant, band 2. */
+  const SEED = {
+    ...row({
+      policy_id: "seed-1",
+      decision_domain: "admission_stall_fix",
+      mode: "guidance",
+      autonomy_level: "auto_decide",
+      name: "system-default admission-stall response",
+      payload: {},
+      built_in: true,
+    }),
+    tenant_id: "system-tenant",
+  };
+
+  async function movePriority(
+    user: ReturnType<typeof userEvent.setup>,
+    dialog: HTMLElement,
+    to: string
+  ) {
+    const priority = within(dialog).getByLabelText("Priority");
+    await user.clear(priority);
+    await user.type(priority, to);
+  }
+
+  it("a built-in seed never competes: a priority edit across 100 gives no caution", async () => {
+    const user = userEvent.setup();
+    serve([TENANT_ADMISSION, SEED]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "tenant admission frame");
+    await movePriority(user, dialog, "150");
+    expect(
+      within(dialog).queryByTestId("decision-policy-priority-caution")
+    ).toBeNull();
+  });
+
+  it("mirror: a tenant row at a different level across 100 does draw the caution", async () => {
+    const OTHER_TENANT_ROW = row({
+      policy_id: "ta-2",
+      decision_domain: "admission_stall_fix",
+      mode: "guidance",
+      autonomy_level: "auto_decide",
+      name: "other tenant admission frame",
+      payload: {},
+      priority: 100,
+    });
+    const user = userEvent.setup();
+    serve([TENANT_ADMISSION, OTHER_TENANT_ROW, SEED]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "tenant admission frame");
+    await movePriority(user, dialog, "150");
+    expect(
+      within(dialog).getByTestId("decision-policy-priority-caution").textContent
+    ).toBe(
+      'This row now ranks below "other tenant admission frame" (auto_decide) for the workspace — ' +
+        "consults take auto_decide instead of this row's always_escalate."
+    );
+  });
+
+  it("a replace that keeps the scope says it loses the tie the old row won", async () => {
+    const ARMED_SAME_PRIORITY = row({
+      policy_id: "pf-3",
+      decision_domain: "pr_fix",
+      mode: "guidance",
+      autonomy_level: "auto_decide",
+      name: "armed repo frame",
+      payload: {},
+      repo: "qontinui/qontinui-dev-notes",
+      priority: 100,
+    });
+    const user = userEvent.setup();
+    serve([
+      PR_FIX,
+      { ...ARMED_SAME_PRIORITY, created_at: "2026-09-05T00:00:00Z" },
+    ]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "pr_fix autonomous repair frame");
+    const payload = within(dialog).getByTestId("decision-policy-payload");
+    await user.clear(payload);
+    await user.type(payload, '{{"notes": "changed"}');
+    expect(
+      within(dialog).getByTestId("decision-policy-replace-rank-caution")
+        .textContent
+    ).toBe(
+      'The replacement is the newest row, so it ranks below "armed repo frame" (auto_decide) for ' +
+        "qontinui/qontinui-dev-notes — consults take auto_decide instead of this row's always_escalate."
+    );
+  });
+
+  it("narrowing the only workspace row uses the system-default wording, not 'a workspace row already overrides'", async () => {
+    serveDefaults([
+      ...SERVED_DEFAULTS.filter(([d]) => d !== "red_main_fix"),
+      ["red_main_fix", "auto_decide", "system_row", "tenant", "auto_decide"],
+    ]);
+    const user = userEvent.setup();
+    serve([RED_MAIN]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "red main fixer");
+    const payload = within(dialog).getByTestId("decision-policy-payload");
+    await user.clear(payload);
+    await user.type(payload, '{{"notes": "changed"}');
+    await user.type(within(dialog).getByLabelText("Repo scope"), "o/r");
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("decision-policy-default-override-warning")
+          .textContent
+      ).toContain(
+        "This domain has a coord system default at auto_decide. A row scoped to o/r outranks it"
+      )
+    );
+    expect(
+      within(dialog).getByTestId("decision-policy-default-override-warning")
+        .textContent
+    ).not.toContain("A workspace row already overrides");
+    expect(
+      within(dialog).getByTestId("decision-policy-release-caution").textContent
+    ).toContain(
+      "With coord's system default at auto_decide, this can re-arm dispatch for those repos."
+    );
+  });
+});
+
+describe("built-in coord system rows", () => {
+  it("offer no edit, delete or graduation, and say how to override them", async () => {
+    const user = userEvent.setup();
+    serve([ADMISSION_STALL]);
+    render(<DecisionPoliciesPage />);
+    await expandFirstRow(user);
+    expect(
+      screen.getByTestId("decision-policy-built-in-note").textContent
+    ).toBe("coord system default — override it by creating a workspace row.");
+    expect(
+      screen.queryByRole("button", { name: "Edit admission stall responder" })
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Delete admission stall responder" })
+    ).toBeNull();
+    expect(screen.queryByTestId("decision-policy-graduation")).toBeNull();
+  });
+
+  it("still offers them on a workspace row", async () => {
+    const user = userEvent.setup();
+    serve([RED_MAIN]);
+    render(<DecisionPoliciesPage />);
+    await expandFirstRow(user);
+    expect(screen.queryByTestId("decision-policy-built-in-note")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Edit red main fixer" })
+    ).toBeTruthy();
+  });
+});
+
+describe("only claiming re-armed dispatch where coord can dispatch", () => {
+  async function openEditByName(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string
+  ) {
+    const rows = await screen.findAllByTestId("decision-policy-row");
+    const target = rows.find((r) => r.textContent?.includes(name));
+    if (!target) throw new Error(`no row named ${name}`);
+    await user.click(within(target).getByRole("button", { expanded: false }));
+    await user.click(screen.getByRole("button", { name: `Edit ${name}` }));
+    return screen.getByTestId("decision-policy-editor");
+  }
+
+  async function narrowToRepo(
+    user: ReturnType<typeof userEvent.setup>,
+    dialog: HTMLElement
+  ) {
+    const payload = within(dialog).getByTestId("decision-policy-payload");
+    await user.clear(payload);
+    await user.type(payload, '{{"notes": "changed"}');
+    await user.type(within(dialog).getByLabelText("Repo scope"), "o/r");
+  }
+
+  it("architecture_tradeoff narrowed to a repo restores a guidance frame, not dispatch", async () => {
+    const user = userEvent.setup();
+    serve([ARCH_TRADEOFF]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "architecture trade-off frame");
+    await narrowToRepo(user, dialog);
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("decision-policy-release-caution")
+          .textContent
+      ).toBe(
+        "Repos other than o/r stop using this row and go back to coord's default (at guidance_only), " +
+          "unless another workspace row covers them. With coord's system default at guidance_only, " +
+          "this restores coord's guidance_only frame for those repos."
+      )
+    );
+  });
+
+  it("next_step at guidance_only narrowed to a repo does not claim dispatch", async () => {
+    serveDefaults([["next_step", "guidance_only", "system_row"]]);
+    const user = userEvent.setup();
+    serve([NEXT_STEP]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "next step frame");
+    await narrowToRepo(user, dialog);
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("decision-policy-release-caution")
+          .textContent
+      ).toContain("this restores coord's guidance_only frame for those repos.")
+    );
+    expect(
+      within(dialog).getByTestId("decision-policy-release-caution").textContent
+    ).not.toContain("dispatch");
+  });
+
+  it("a disabled row's priority edit gives no ranking caution", async () => {
+    const ARMED = row({
+      policy_id: "pf-2",
+      decision_domain: "pr_fix",
+      mode: "guidance",
+      autonomy_level: "auto_decide",
+      name: "armed repo frame",
+      payload: {},
+      repo: "qontinui/qontinui-dev-notes",
+      priority: 50,
+    });
+    const user = userEvent.setup();
+    serve([{ ...PR_FIX, enabled: false }, ARMED]);
+    render(<DecisionPoliciesPage />);
+    const dialog = await openEditByName(user, "pr_fix autonomous repair frame");
+    const priority = within(dialog).getByLabelText("Priority");
+    await user.clear(priority);
+    await user.type(priority, "10");
+    expect(
+      within(dialog).queryByTestId("decision-policy-priority-caution")
+    ).toBeNull();
+  });
+});
+
+describe("a tenant's customize-override row", () => {
+  it("keeps its controls and is not labelled a coord system default", async () => {
+    const OVERRIDE = {
+      ...row({
+        policy_id: "ov-1",
+        decision_domain: "admission_stall_fix",
+        mode: "guidance",
+        autonomy_level: "guidance_only",
+        name: "customized admission responder",
+        payload: {},
+        built_in: true,
+      }),
+      override_state: "customized",
+      system_rule_id: "as-1",
+    };
+    const user = userEvent.setup();
+    serve([OVERRIDE]);
+    render(<DecisionPoliciesPage />);
+    await expandFirstRow(user);
+    expect(screen.queryByTestId("decision-policy-built-in-note")).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Edit customized admission responder",
+      })
+    ).toBeTruthy();
   });
 });
 

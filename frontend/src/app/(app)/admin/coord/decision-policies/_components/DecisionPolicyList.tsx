@@ -38,6 +38,7 @@ import {
   AUTONOMY_LABELS,
   AUTONOMY_LEVELS,
   domainSpec,
+  isCoordSystemRow,
   isLoosening,
   MASTER_FLAG_CAVEAT,
   MODE_LABELS,
@@ -316,34 +317,47 @@ function PolicyRow({
           ) : undefined
         }
         actions={
-          <CoordAdminOnly>
-            <div className="space-y-3">
-              <GraduationControl
-                rule={rule}
-                saving={saving}
-                onGraduate={onGraduate}
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onEdit}
-                  disabled={saving}
-                  aria-label={`Edit ${rule.name}`}
-                >
-                  Edit policy
-                </Button>
-                <DestructiveButton
-                  size="sm"
-                  onClick={onDelete}
-                  disabled={saving}
-                  aria-label={`Delete ${rule.name}`}
-                >
-                  Delete policy
-                </DestructiveButton>
+          // coord refuses every write to a system row from a tenant ("policy
+          // belongs to a different tenant"), so no write control is offered.
+          // A tenant's customize-override is `built_in` too, but it is the
+          // tenant's own row and keeps its controls (`isCoordSystemRow`).
+          isCoordSystemRow(rule) ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="decision-policy-built-in-note"
+            >
+              coord system default — override it by creating a workspace row.
+            </p>
+          ) : (
+            <CoordAdminOnly>
+              <div className="space-y-3">
+                <GraduationControl
+                  rule={rule}
+                  saving={saving}
+                  onGraduate={onGraduate}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onEdit}
+                    disabled={saving}
+                    aria-label={`Edit ${rule.name}`}
+                  >
+                    Edit policy
+                  </Button>
+                  <DestructiveButton
+                    size="sm"
+                    onClick={onDelete}
+                    disabled={saving}
+                    aria-label={`Delete ${rule.name}`}
+                  >
+                    Delete policy
+                  </DestructiveButton>
+                </div>
               </div>
-            </div>
-          </CoordAdminOnly>
+            </CoordAdminOnly>
+          )
         }
         raw={
           <div className="font-mono text-[10px] text-muted-foreground/60 break-all">
@@ -351,7 +365,7 @@ function PolicyRow({
             {` · decision_domain: ${rule.decision_domain ?? "null"}`}
             {` · mode: ${rule.mode}`}
             {` · autonomy_level: ${rule.autonomy_level}`}
-            {` · band: ${rule.built_in ? "system" : "tenant"}`}
+            {` · band: ${isCoordSystemRow(rule) ? "system" : "tenant"}`}
             {rule.repo ? ` · repo: ${rule.repo}` : ""}
             {rule.expires_at ? ` · expires_at: ${rule.expires_at}` : ""}
           </div>
