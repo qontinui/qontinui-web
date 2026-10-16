@@ -3038,6 +3038,14 @@ async def get_pr_merge_slo(
     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
     the last two existed to justify exiting.
 
+    Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+    fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+    — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+    ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+    with no live writer (``operator_override_rate``, ``escalation_rate``).
+    This proxy returns coord's JSON as-is (no response model reshapes it), so
+    both reach the frontend without a change here.
+
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """
     return await _proxy_coord_get(
@@ -3081,8 +3089,14 @@ async def _proxy_coord_passthrough(
     *,
     tenant_id: UUID,
     body: Any = None,
+    params: dict[str, Any] | None = None,
 ) -> JSONResponse:
     """Proxy to coord, forwarding its status code and JSON body VERBATIM.
+
+    ``params`` is the query string of a GET (ignored for a POST, whose input
+    is its ``body``). ``None`` puts nothing on the wire — callers build it
+    from their declared ``Query`` parameters and omit the unset ones, so an
+    absent filter reaches coord as absent rather than as an empty value.
 
     Unlike :func:`_proxy_coord_get` / :func:`_proxy_coord_post`, a coord 4xx is
     NOT re-raised as an ``HTTPException`` — it is returned as-is. That keeps
@@ -3109,7 +3123,7 @@ async def _proxy_coord_passthrough(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             if is_get:
-                resp = await client.get(url, headers=headers)
+                resp = await client.get(url, params=params, headers=headers)
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
@@ -4444,6 +4458,109 @@ async def get_pull_decisions(
         params["since"] = since
     return await _proxy_coord_get(
         "/coord/policies/resolutions", tenant_id=tenant_id, params=params
+    )
+
+
+# ---- Operator touches (the operator-touch read + constraint verdict) -----
+#
+# Plan ``2026-08-27-operator-touch-read-and-surface`` Phase C3 (C3a item 3).
+# coord's ``GET /coord/operator-touches`` is the FIRST read door over
+# ``coord.operator_touches``: one payload carrying the window aggregate
+# (per-disposition totals, reason classes ranked by share), a keyset page of
+# touches, and the constraint verdict — computed once in coord and served on
+# both routes below so the ``/admin/coord/operator-touches`` health strip is
+# DERIVED from the page's own payload rather than separately fetched (C3c).
+#
+# Error posture: ``_proxy_coord_passthrough``, not ``_proxy_coord_get``. coord
+# answers an unreadable store with a typed ``503 {"error":
+# "schema_migration_pending"|"db_unavailable", "detail"}`` and a bad query
+# with ``400 {"error": "bad_request", "detail"}``; the page renders those as
+# "unknown", never as an empty-but-healthy store, so the browser needs coord's
+# ``error`` key intact rather than folded into this module's generic envelope.
+#
+# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set;
+# this edge adds no validation of its own. coord answers a bad query in two
+# shapes, and both pass through verbatim:
+#
+# * a VALUE error it validates itself — ``window_days`` not 7|30, an unknown
+#   ``disposition``, a malformed ``before`` cursor — is its typed
+#   ``400 {"error": "bad_request", "detail"}``; ``limit`` out of range is
+#   clamped, not refused;
+# * a TYPE error caught by axum's plain ``Query<...>`` extractor before coord's
+#   handler runs — ``window_days=abc``, ``open_only=yes``, a ``limit`` that
+#   overflows ``i64`` — is axum's PLAIN-TEXT 400, which
+#   ``_proxy_coord_passthrough`` wraps as ``{"error": "<axum's text>"}``.
+#
+# Typing the params here would instead answer a FastAPI 422 of a third shape,
+# which the page would misattribute to coord.
+
+
+@router.get("/coord/operator-touches")
+async def get_operator_touches(
+    window_days: str | None = Query(default=None),
+    disposition: str | None = Query(default=None),
+    open_only: str | None = Query(default=None),
+    actionable_only: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    before: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+    ``aggregate_included`` (``false`` on a ``before`` page, where every
+    aggregate field and ``constraint_verdict`` are ``null``),
+    ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+    ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+    ``touches``, ``next_cursor`` and ``constraint_verdict``.
+
+    Every parameter is declared as a STRING and forwarded unchanged. coord
+    clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+    ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+    an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+    passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+    Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+    which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+    answer, not a failure; coord's 400/503 bodies pass through verbatim.
+    """
+    candidates = {
+        "window_days": window_days,
+        "disposition": disposition,
+        "open_only": open_only,
+        "actionable_only": actionable_only,
+        "limit": limit,
+        "before": before,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/operator-touches/constraint-verdict")
+async def get_operator_touch_constraint_verdict(
+    window_days: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+
+    The standalone form of the ``constraint_verdict`` object the touch read
+    carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+    reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+    verdict, never a default. Error bodies pass through verbatim.
+    """
+    params: dict[str, Any] | None = (
+        {"window_days": window_days} if window_days else None
+    )
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches/constraint-verdict",
+        tenant_id=tenant_id,
+        params=params,
     )
 
 
@@ -10350,16 +10467,37 @@ _FLEET_POLICY_CONTROL_KEYS = (
 )
 
 
+class FleetPolicyRepoOverride(BaseModel):
+    """One repo-band row that overrides the tenant band for its repo.
+
+    Mirrors one entry of coord's ``repo_overrides``
+    (``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a
+    reader of that repo resolves from the row: ``level``, or ``off`` when the
+    row's ``master_enabled`` is false. ``level`` is opaque here, as it is on
+    the write: a level this console does not recognise is the page's to name,
+    never this proxy's to drop.
+    """
+
+    #: The row's ``scope_key`` as coord stored it (``owner/name`` for the
+    #: domains keyed that way).
+    repo: str
+    level: str
+    master_enabled: bool
+    effective_level: str
+
+
 class FleetPolicyView(BaseModel):
     """The requested domain's resolved policy — and ONLY that domain's.
 
     ``effective_level`` is what a device actually resolves, which is not the
     same as the level that was last written: coord folds ``master_enabled``
     in (a disabled master resolves ``off`` whatever ``level`` says), and a
-    tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
-    That last case is why ``resolved_scope`` is surfaced: "off because nobody
-    ever wrote a row" and "off because someone turned it off" are different
-    facts about the fleet and the operator is entitled to tell them apart.
+    tenant with no row at all resolves the domain's declared no-row default
+    with ``resolved_scope: "none"`` — ``off`` unless coord's
+    ``domain_default_level`` declares another for that domain. That last case
+    is why ``resolved_scope`` is surfaced: "set because nobody ever wrote a
+    row" and "set because someone chose it" are different facts about the
+    fleet and the operator is entitled to tell them apart.
     """
 
     domain: str
@@ -10385,6 +10523,13 @@ class FleetPolicyView(BaseModel):
     #: caller asked about ``fleet_resources`` itself, so they are its own.
     #: ``None`` when coord sent none.
     keys_not_shown_source: Literal["fleet_resources_row", "this_domain"] | None = None
+    #: Every repo-band row of THIS domain that overrides the tenant band —
+    #: coord's ``repo_overrides``, ordered by repo. An ``inherit`` row clears an
+    #: override and is not listed. ``None`` is UNKNOWN, never "no overrides":
+    #: coord sent no list (a coord predating it), or sent one this proxy could
+    #: not read whole — a list missing one entry would claim to be complete
+    #: while hiding an override that is in force.
+    repo_overrides: list[FleetPolicyRepoOverride] | None = None
 
 
 class FleetPolicyPut(BaseModel):
@@ -10499,6 +10644,41 @@ class FleetPolicyWriteResult(BaseModel):
     readback_error: str | None = None
 
 
+def _fleet_policy_repo_overrides(raw: Any) -> list[FleetPolicyRepoOverride] | None:
+    """Coord's ``repo_overrides``, or ``None`` (UNKNOWN) unless it reads WHOLE.
+
+    All or nothing: one malformed entry makes the whole list unknown. A list
+    with that entry dropped would read as "these are every override", while an
+    override the operator cannot see is still in force for its repo.
+    """
+    if not isinstance(raw, list):
+        return None
+    overrides: list[FleetPolicyRepoOverride] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        repo = entry.get("repo")
+        level = entry.get("level")
+        master = entry.get("master_enabled")
+        effective = entry.get("effective_level")
+        if not (
+            isinstance(repo, str)
+            and isinstance(level, str)
+            and isinstance(master, bool)
+            and isinstance(effective, str)
+        ):
+            return None
+        overrides.append(
+            FleetPolicyRepoOverride(
+                repo=repo,
+                level=level,
+                master_enabled=master,
+                effective_level=effective,
+            )
+        )
+    return overrides
+
+
 def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPolicyView:
     """Project coord's GET body onto the requested domain's OWN fields."""
     body = payload if isinstance(payload, dict) else {}
@@ -10529,6 +10709,7 @@ def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPol
         can_edit=can_edit,
         keys_not_shown=not_shown,
         keys_not_shown_source=source,
+        repo_overrides=_fleet_policy_repo_overrides(body.get("repo_overrides")),
     )
 
 

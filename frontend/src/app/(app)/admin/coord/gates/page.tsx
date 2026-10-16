@@ -72,7 +72,9 @@ import {
 } from "@/services/admin-dev-service";
 import { SummaryCards } from "./_components/SummaryCards";
 import { GatesTable } from "./_components/GatesTable";
-import { GlossaryTerm } from "@/components/console";
+import { BackendErrorMessage, GlossaryTerm } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import { useClearanceRuleSet } from "../_shared/useClearanceRuleSet";
 import { RolloutPanel } from "./_components/RolloutPanel";
 import { ShadowReapGroups } from "./_components/ShadowReap";
@@ -124,7 +126,7 @@ export default function CoordGatesPage() {
   const [overview, setOverview] = useState<DevOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   // When on, the gate list page includes reaper-archived gates (live-only by
   // default). The `counts.archived` tile is always shown regardless.
@@ -165,7 +167,7 @@ export default function CoordGatesPage() {
         setError(null);
         setUpdatedAt(Date.now());
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(operationsErrorReading(e));
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -337,7 +339,7 @@ export default function CoordGatesPage() {
           className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           data-testid="gates-error"
         >
-          Failed to load dev overview: {error}
+          Failed to load dev overview: <BackendErrorMessage error={error} />
         </div>
       )}
 

@@ -151,4 +151,34 @@ describe("useCommandSafetyRewritePolicy", () => {
     expect(result.current.policy?.effective_level).toBe("on");
     expect(result.current.readbackError).toContain("502");
   });
+
+  // ARMING (`useTenantFleetPolicyDial`): a dial's Refresh now says whether
+  // its read landed and is what is shown -- the signal the image generation
+  // panel uses to retire a repo's failed read-back, and that every dial built
+  // on the shared hook (this one included) now hands its caller.
+  it("reload resolves true for a read that landed, false for one that failed", async () => {
+    getMock.mockResolvedValueOnce(ON_NO_ROW);
+    const { result } = renderHook(() => useCommandSafetyRewritePolicy());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    getMock.mockResolvedValueOnce({
+      ...ON_NO_ROW,
+      effective_level: "off",
+      resolved_scope: "tenant",
+    });
+    let applied: unknown;
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    expect(applied).toBe(true);
+    expect(result.current.policy?.effective_level).toBe("off");
+
+    getMock.mockRejectedValueOnce(new Error("HTTP 502"));
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    expect(applied).toBe(false);
+    // The last confirmed value stays on screen; the failure is not "off".
+    expect(result.current.policy?.effective_level).toBe("off");
+  });
 });

@@ -2,7 +2,9 @@
 
 import json
 import mimetypes
+import os
 import shutil
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO
@@ -43,12 +45,26 @@ class LocalBackend(StorageBackend):
         content_type: str | None = None,
         metadata: dict | None = None,
     ) -> str:
-        """Upload file to local filesystem."""
+        """Upload file to local filesystem.
+
+        The bytes go to a temporary file beside the target and are then moved
+        into place with ``os.replace`` — atomic on one filesystem — so a
+        reader (or ``file_exists``) sees either no file or the whole file,
+        never a partly written one. A write that fails removes its temporary
+        file; a process killed mid-copy leaves the target untouched and at most
+        a ``.<name>.<hex>.partial`` file beside it.
+        """
+        temp_path = None
         try:
             file_path = self._get_file_path(key)
+            temp_path = file_path.with_name(
+                f".{file_path.name}.{uuid.uuid4().hex}.partial"
+            )
 
-            with open(file_path, "wb") as f:
+            with open(temp_path, "wb") as f:
                 shutil.copyfileobj(file_obj, f)
+            os.replace(temp_path, file_path)
+            temp_path = None
 
             if metadata:
                 metadata_path = file_path.with_suffix(file_path.suffix + ".meta.json")
@@ -69,6 +85,9 @@ class LocalBackend(StorageBackend):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to upload file locally: {str(e)}",
             )
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
 
     def download_file(self, key: str) -> bytes:
         """Download file from local filesystem."""
