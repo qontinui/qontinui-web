@@ -22993,7 +22993,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List labelled pairs, oldest label first, a page at a time */
+        /** Read the label feed: labels and undos, by commit-ordered position */
         get: operations["api_v1_taste_labels_get"];
         put?: never;
         post?: never;
@@ -23030,7 +23030,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Withdraw an unanswered pair */
+        /**
+         * Withdraw an unanswered pair
+         * @description Two populations: a device or service credential — studio correcting
+         *     its own push — and an operator. The operator's path is the labeller's:
+         *     a member who may only view the inbox may not empty it either.
+         */
         delete: operations["api_v1_taste_pairs_pair_id_delete"];
         options?: never;
         head?: never;
@@ -23048,7 +23053,12 @@ export interface paths {
         /** Label one pair: A, B or both bad, with reasons, a comment and an edit */
         put: operations["api_v1_taste_pairs_pair_id_label_put"];
         post?: never;
-        /** Undo a label: the pair returns to the queue */
+        /**
+         * Undo your label (or, with force, a colleague's): the pair returns to the queue
+         * @description Admin-gated like every label write (``get_labeller``), ``force``
+         *     included: only a coord-tenant admin of the effective tenant, or a
+         *     qontinui superuser, reaches this handler at all.
+         */
         delete: operations["api_v1_taste_pairs_pair_id_label_delete"];
         options?: never;
         head?: never;
@@ -50941,7 +50951,9 @@ export interface components {
          *
          *     A week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``
          *     was written for this tenant (``setting``) or is the declared default
-         *     (``default``).
+         *     (``default``). A pair is charged ONCE, to the week it was first
+         *     answered: relabelling it, or undoing and answering it again, costs
+         *     nothing.
          */
         TasteBudget: {
             /** Labelled This Week */
@@ -51019,11 +51031,24 @@ export interface components {
             reason_vocabulary: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
             /** Recent */
             recent: components["schemas"]["TastePairOut"][];
+            /** Viewer User Id */
+            viewer_user_id: string | null;
         };
         /**
          * TasteLabelPage
-         * @description ``GET /api/v1/taste/labels`` — labelled pairs, oldest label first, for
-         *     the taste twin (Phase 24). ``next_cursor`` is set exactly when more exist.
+         * @description ``GET /api/v1/taste/labels`` — the tenant's label feed, for the taste
+         *     twin (Phase 24).
+         *
+         *     Every pair that has ever been answered, once, at its LATEST change, in
+         *     ``change_seq`` order. A label or relabel is a row with ``label`` set; an
+         *     undo is a tombstone (``tombstone: true``, ``label`` null). Positions are
+         *     handed out in commit order per tenant, so paging by ``next_cursor`` never
+         *     skips a late commit; a pair changed again reappears at its new position,
+         *     so a reader that keeps the last row per pair id holds the current state.
+         *     ``next_cursor`` is the position after the last row returned — or the
+         *     ``after`` that was sent, when the page is empty — so it is set on the
+         *     LAST page too: to follow the feed, ask again later with it. ``truncated``
+         *     says whether more rows exist right now.
          */
         TasteLabelPage: {
             /** Labels */
@@ -51071,6 +51096,8 @@ export interface components {
             capture_a_sha256: string | null;
             /** Capture B Sha256 */
             capture_b_sha256: string | null;
+            /** Change Seq */
+            change_seq: number | null;
             /** Comment */
             comment: string | null;
             /** Context */
@@ -51086,6 +51113,8 @@ export interface components {
             edit_asset_sha256: string | null;
             /** Edit Note */
             edit_note: string | null;
+            /** First Labelled At */
+            first_labelled_at: string | null;
             /**
              * Id
              * Format: uuid
@@ -51118,8 +51147,11 @@ export interface components {
              * @enum {string}
              */
             source: "calibration" | "active_learning" | "post_hoc";
+            /** Tombstone */
+            tombstone: boolean;
             /** Uncertainty */
             uncertainty: number | null;
+            undo: components["schemas"]["TasteUndo"] | null;
             /**
              * Updated At
              * Format: date-time
@@ -51178,6 +51210,34 @@ export interface components {
             /** Images */
             images: number;
         };
+        /**
+         * TasteRemovedLabel
+         * @description The answer an undo removed, as it stood.
+         */
+        TasteRemovedLabel: {
+            /** Comment */
+            comment: string | null;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256: string | null;
+            /** Edit Note */
+            edit_note: string | null;
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "a" | "b" | "both_bad";
+            /**
+             * Labelled At
+             * Format: date-time
+             */
+            labelled_at: string;
+            /** Labeller Name */
+            labeller_name: string | null;
+            /** Labeller User Id */
+            labeller_user_id: string | null;
+            /** Reasons */
+            reasons: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+        };
         /** TasteSettingsOut */
         TasteSettingsOut: {
             /**
@@ -51197,6 +51257,25 @@ export interface components {
         TasteSettingsWrite: {
             /** Weekly Budget */
             weekly_budget: number;
+        };
+        /**
+         * TasteUndo
+         * @description The most recent undo of a pair's label. Kept after the pair is
+         *     answered again, so a removed answer is never lost without a trace.
+         */
+        TasteUndo: {
+            /** Forced */
+            forced: boolean;
+            removed: components["schemas"]["TasteRemovedLabel"];
+            /**
+             * Undone At
+             * Format: date-time
+             */
+            undone_at: string;
+            /** Undone By Name */
+            undone_by_name: string | null;
+            /** Undone By User Id */
+            undone_by_user_id: string | null;
         };
         /**
          * TeamMemberCreate
@@ -90258,6 +90337,13 @@ export interface operations {
                     "application/json": components["schemas"]["CalibrationBatchResult"];
                 };
             };
+            /** @description An image left the pool mid-build; nothing was queued. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -90307,7 +90393,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description The previous page's next_cursor. */
+                /** @description The previous page's next_cursor (set on every page, the last one included, so a reader can follow the feed). */
                 after?: string | null;
             };
             header?: never;
@@ -90365,7 +90451,7 @@ export interface operations {
                     "application/json": components["schemas"]["TastePairPushResponse"];
                 };
             };
-            /** @description This tenant holds no image with a named sha256. */
+            /** @description This tenant holds no image with a named sha256 (or one was deleted while the pair was being queued). */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -90394,6 +90480,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An operator who may not label (a coord-tenant admin, or a qontinui superuser, may). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -90475,7 +90568,10 @@ export interface operations {
     };
     api_v1_taste_pairs_pair_id_label_delete: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Remove the label even though another labeller gave it. The row records that the undo was forced, who forced it, and the answer it removed. */
+                force?: boolean;
+            };
             header?: never;
             path: {
                 pair_id: string;
@@ -90500,7 +90596,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The pair is not labelled. */
+            /** @description The pair is not labelled, or its label is another labeller's and force was not sent. */
             409: {
                 headers: {
                     [name: string]: unknown;

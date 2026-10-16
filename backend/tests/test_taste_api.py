@@ -28,6 +28,7 @@ coord. Layer 6 shows the real app routes through the real ones.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
@@ -37,9 +38,9 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -56,11 +57,14 @@ from app.models.taste import (
     DEFAULT_WEEKLY_BUDGET,
     TASTE_LABELS,
     TASTE_PAIR_SOURCES,
+    TasteLabelClock,
     TastePair,
     TasteSettings,
 )
 from app.models.user import User
 from app.schemas.taste import TASTE_REASONS, TasteLabel, TasteReason, TasteSource
+from app.services.coord_identity import CoordIdentity, CoordTenant
+from app.services.taste_calibration import PoolImage
 
 API = "/api/v1/taste"
 REPO = "qontinui-web"
@@ -120,26 +124,34 @@ async def _user(db: AsyncSession, name: str) -> User:
 
 
 class Harness:
-    """One tenant's view of the taste router; ``labeller`` and ``can_label``
-    are swappable mid-test (a second operator, a member who may only look)."""
+    """One tenant's view of the taste router; ``labeller``, ``can_label`` and
+    ``actor`` are swappable mid-test (a second operator, a member who may only
+    look, an operator's session instead of studio's device credential)."""
 
     def __init__(self, db: AsyncSession, tenant: UUID, labeller: User) -> None:
         self.db = db
         self.tenant = tenant
         self.labeller = labeller
         self.can_label = True
+        self.actor = "device"
         self.app = FastAPI()
         self.app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
         self.app.add_exception_handler(
-            RequestValidationError, validation_exception_handler
-        )  # type: ignore[arg-type]
+            RequestValidationError,
+            validation_exception_handler,  # type: ignore[arg-type]
+        )
 
         async def _db() -> AsyncIterator[Any]:
             yield db
 
         self.app.dependency_overrides[get_async_db] = _db
         self.app.dependency_overrides[get_memory_tenant] = lambda: MemoryPrincipal(
-            tenant_id=tenant, device_id=None, actor="device"
+            tenant_id=tenant,
+            device_id=None,
+            actor=self.actor,
+            # A device JWT may carry a user claim too; only an operator's
+            # session makes it the viewer.
+            user_id=self.labeller.id,
         )
         self.app.dependency_overrides[endpoints.get_labeller] = (
             lambda: endpoints.Labeller(tenant_id=tenant, user=self.labeller)
@@ -434,7 +446,7 @@ class TestQueue:
         await a.db.execute(
             update(TastePair)
             .where(TastePair.id == UUID(pid))
-            .values(labelled_at=last_week)
+            .values(labelled_at=last_week, first_labelled_at=last_week)
         )
         inbox = await a.inbox()
         assert inbox["budget"]["source"] == "default"
@@ -524,6 +536,14 @@ class TestLabel:
         assert undone.status_code == 200
         assert undone.json()["label"] is None and undone.json()["reasons"] == []
         assert undone.json()["labeller_user_id"] is None
+        # Nothing is erased silently: the removed answer stays on the row.
+        undo = undone.json()["undo"]
+        assert undo["forced"] is False
+        assert undo["undone_by_user_id"] == str(a.labeller.id)
+        assert undo["removed"]["label"] == "both_bad"
+        assert undo["removed"]["reasons"] == ["low_quality"]
+        assert undo["removed"]["labeller_user_id"] == str(a.labeller.id)
+        assert undone.json()["tombstone"] is True
         assert _ids((await a.inbox())["pairs"]) == [pid]
         again = await a.http.delete(f"{API}/pairs/{pid}/label")
         assert again.status_code == 409 and again.json()["error"] == "pair_not_labelled"
@@ -679,13 +699,364 @@ async def test_labels_page_oldest_first_with_a_cursor(a: Harness) -> None:
             f"{API}/labels", params={"limit": 2, "after": page1["next_cursor"]}
         )
     ).json()
-    assert page2["truncated"] is False and page2["next_cursor"] is None
+    # The last page carries a cursor too, so a reader can follow the feed.
+    assert page2["truncated"] is False and page2["next_cursor"]
     seen = _ids(page1["labels"]) + _ids(page2["labels"])
     assert seen == ids
     assert unanswered not in seen
+    caught_up = (
+        await a.http.get(f"{API}/labels", params={"after": page2["next_cursor"]})
+    ).json()
+    assert caught_up["labels"] == [] and caught_up["truncated"] is False
+    assert caught_up["next_cursor"] == page2["next_cursor"]
 
     bad = await a.http.get(f"{API}/labels", params={"after": "not-a-cursor"})
     assert bad.status_code == 422 and bad.json()["error"] == "invalid_cursor"
+
+
+async def test_the_label_feed_carries_undos_as_tombstones_and_moves_a_changed_pair(
+    a: Harness,
+) -> None:
+    imgs = await _images(a, *"abcd")
+    first = await a.pair_id(imgs[0], imgs[1])
+    second = await a.pair_id(imgs[2], imgs[3])
+    assert (await a.label(first, "a")).status_code == 200
+    assert (await a.label(second, "b")).status_code == 200
+
+    async def feed(after: str | None = None) -> dict[str, Any]:
+        params = {"after": after} if after else {}
+        resp = await a.http.get(f"{API}/labels", params=params)
+        assert resp.status_code == 200, resp.text
+        return dict(resp.json())
+
+    before = await feed()
+    assert _ids(before["labels"]) == [first, second]
+    assert [r["tombstone"] for r in before["labels"]] == [False, False]
+
+    assert (await a.http.delete(f"{API}/pairs/{first}/label")).status_code == 200
+    # A follower that already read the two labels meets the undo next.
+    news = await feed(before["next_cursor"])
+    [tomb] = news["labels"]
+    assert tomb["id"] == first and tomb["tombstone"] is True
+    assert tomb["label"] is None and tomb["undo"]["removed"]["label"] == "a"
+
+    assert (await a.label(second, "a", relabel=True)).status_code == 200
+    replay = await feed()
+    # Each pair once, at its latest change, in position order.
+    assert _ids(replay["labels"]) == [first, second]
+    assert [r["tombstone"] for r in replay["labels"]] == [True, False]
+    seqs = [r["change_seq"] for r in replay["labels"]]
+    assert seqs == sorted(seqs) and len(set(seqs)) == 2
+    assert seqs[1] > max(r["change_seq"] for r in before["labels"])
+
+
+async def test_feed_positions_are_handed_out_in_commit_order(test_engine: Any) -> None:
+    """The property the twin's paging rests on: a second writer cannot take a
+    position until the first writer's transaction ends, so no write can
+    commit below a position a reader has already seen."""
+    tenant = uuid4()
+    try:
+        async with test_engine.connect() as one, test_engine.connect() as two:
+            await one.begin()
+            await two.begin()
+            first = AsyncSession(bind=one)
+            second = AsyncSession(bind=two)
+            seq1 = await crud._next_change_seq(first, tenant_id=tenant)
+            waiter = asyncio.create_task(
+                crud._next_change_seq(second, tenant_id=tenant)
+            )
+            await asyncio.sleep(0.5)
+            assert not waiter.done(), "a second writer took a position mid-write"
+            await one.commit()
+            seq2 = await asyncio.wait_for(waiter, timeout=10)
+            assert seq2 == seq1 + 1
+            await two.commit()
+    finally:
+        async with test_engine.begin() as conn:
+            await conn.execute(
+                delete(TasteLabelClock).where(TasteLabelClock.tenant_id == tenant)
+            )
+
+
+async def test_a_device_credential_is_never_handed_a_labellers_email(
+    a: Harness,
+) -> None:
+    x, y = await _images(a, "x", "y")
+    pid = await a.pair_id(x, y)
+    nameless = await _user(a.db, "nameless")
+    nameless.full_name = None
+    await a.db.flush()
+    a.labeller = nameless
+    assert (await a.label(pid, "a")).status_code == 200
+
+    [feed_row] = (await a.http.get(f"{API}/labels")).json()["labels"]
+    assert feed_row["labeller_user_id"] == str(nameless.id)
+    assert feed_row["labeller_name"] is None
+    [recent] = (await a.inbox())["recent"]
+    assert recent["labeller_name"] is None
+
+    a.actor = "operator"
+    [recent] = (await a.inbox())["recent"]
+    assert recent["labeller_name"] == nameless.email
+
+
+# ===========================================================================
+# Layer 5b — undo ownership, the withdraw gate, the labeller rule
+# ===========================================================================
+
+
+class TestUndoOwnership:
+    async def test_undo_reaches_only_your_own_label_unless_forced_and_force_is_recorded(
+        self, a: Harness, operator: User
+    ) -> None:
+        x, y = await _images(a, "x", "y")
+        pid = await a.pair_id(x, y)
+        mine = await a.label(pid, "a", reasons=["on_style"], comment="warmer")
+        assert mine.status_code == 200
+
+        colleague = await _user(a.db, "colleague")
+        a.labeller = colleague
+        refused = await a.http.delete(f"{API}/pairs/{pid}/label")
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["error"] == "label_not_yours"
+        assert refused.json()["current"]["labeller_user_id"] == str(operator.id)
+        row = await crud.get_pair(a.db, tenant_id=a.tenant, pair_id=UUID(pid))
+        assert row is not None and row.label == "a"
+        assert row.labeller_user_id == operator.id and row.undone_at is None
+
+        forced = await a.http.delete(
+            f"{API}/pairs/{pid}/label", params={"force": "true"}
+        )
+        assert forced.status_code == 200, forced.text
+        undo = forced.json()["undo"]
+        assert undo["forced"] is True
+        assert undo["undone_by_user_id"] == str(colleague.id)
+        assert undo["undone_by_name"] == "Colleague"
+        removed = undo["removed"]
+        assert removed["label"] == "a" and removed["reasons"] == ["on_style"]
+        assert removed["comment"] == "warmer"
+        assert removed["labeller_user_id"] == str(operator.id)
+        assert removed["labeller_name"] == "Operator"
+        assert removed["labelled_at"] == mine.json()["labelled_at"]
+        assert _ids((await a.inbox())["pairs"]) == [pid]
+
+    async def test_force_on_your_own_label_is_not_recorded_as_forced(
+        self, a: Harness
+    ) -> None:
+        x, y = await _images(a, "x", "y")
+        pid = await a.pair_id(x, y)
+        assert (await a.label(pid, "b")).status_code == 200
+        out = await a.http.delete(f"{API}/pairs/{pid}/label", params={"force": "true"})
+        assert out.status_code == 200 and out.json()["undo"]["forced"] is False
+
+    async def test_the_inbox_names_its_viewer_to_an_operator_only(
+        self, a: Harness, operator: User
+    ) -> None:
+        assert (await a.inbox())["viewer_user_id"] is None
+        a.actor = "operator"
+        assert (await a.inbox())["viewer_user_id"] == str(operator.id)
+
+
+class TestWithdrawGate:
+    async def test_an_operator_withdraws_only_when_they_may_label(
+        self, a: Harness
+    ) -> None:
+        x, y, z = await _images(a, "x", "y", "z")
+        pid = await a.pair_id(x, y)
+        a.actor, a.can_label = "operator", False
+        refused = await a.http.delete(f"{API}/pairs/{pid}")
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"] == "not_coord_tenant_admin"
+        assert await crud.get_pair(a.db, tenant_id=a.tenant, pair_id=UUID(pid))
+        a.can_label = True
+        assert (await a.http.delete(f"{API}/pairs/{pid}")).status_code == 204
+
+    async def test_studios_device_path_stays_open(self, a: Harness) -> None:
+        x, y = await _images(a, "x", "y")
+        pid = await a.pair_id(x, y)
+        a.actor, a.can_label = "device", False
+        assert (await a.http.delete(f"{API}/pairs/{pid}")).status_code == 204
+
+
+class TestDeletedMidWrite:
+    async def test_an_image_deleted_mid_push_is_a_404_not_a_500(
+        self, a: Harness, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        [x] = await _images(a, "x")
+
+        async def checked_before_the_delete(*_args: Any, **_kw: Any) -> None:
+            return None
+
+        monkeypatch.setattr(endpoints, "_require_assets", checked_before_the_delete)
+        gone = await a.push(x, _sha("deleted-meanwhile"))
+        assert gone.status_code == 404, gone.text
+        assert gone.json()["error"] == "image_asset_not_found"
+        # Only the push's savepoint rolled back: the session still writes.
+        [y] = await _images(a, "y")
+        assert (await a.push(x, y)).status_code == 201
+
+    async def test_an_edit_image_deleted_mid_label_is_a_404(
+        self, a: Harness, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        x, y = await _images(a, "x", "y")
+        pid = await a.pair_id(x, y)
+        ghost = _sha("edit-deleted-meanwhile")
+        real = crud.get_assets
+
+        async def still_there_when_checked(
+            db: AsyncSession, *, tenant_id: UUID, shas: Any
+        ) -> dict[str, Any]:
+            wanted = list(shas)
+            found: dict[str, Any] = dict(
+                await real(db, tenant_id=tenant_id, shas=wanted)
+            )
+            if ghost in wanted:
+                found[ghost] = object()
+            return found
+
+        monkeypatch.setattr(crud, "get_assets", still_there_when_checked)
+        resp = await a.label(pid, "a", edit_asset_sha256=ghost)
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["field"] == "edit_asset_sha256"
+        row = await crud.get_pair(a.db, tenant_id=a.tenant, pair_id=UUID(pid))
+        assert row is not None and row.label is None
+
+    async def test_a_pool_image_deleted_mid_build_is_a_409(
+        self, a: Harness, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        [x] = await _images(a, "x")
+
+        async def pool_with_a_deleted_image(
+            db: AsyncSession, *, tenant_id: UUID
+        ) -> list[PoolImage]:
+            return [
+                PoolImage(sha256=x, direction="warm"),
+                PoolImage(sha256=_sha("pool-deleted"), direction="cool"),
+            ]
+
+        monkeypatch.setattr(crud, "calibration_pool", pool_with_a_deleted_image)
+        resp = await a.http.post(f"{API}/calibration-batch", json={"size": 1})
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error"] == "calibration_pool_changed"
+
+
+class TestBudgetCharge:
+    async def test_relabelling_an_older_pair_costs_nothing_this_week(
+        self, a: Harness
+    ) -> None:
+        x, y, z = await _images(a, "x", "y", "z")
+        old = await a.pair_id(x, y)
+        assert (await a.label(old, "a")).status_code == 200
+        last_week = crud.week_start(datetime.now(UTC)) - timedelta(seconds=1)
+        await a.db.execute(
+            update(TastePair)
+            .where(TastePair.id == UUID(old))
+            .values(labelled_at=last_week, first_labelled_at=last_week)
+        )
+        assert (await a.label(old, "b", relabel=True)).status_code == 200
+        assert (await a.inbox())["budget"]["labelled_this_week"] == 0
+        # An undo and a fresh answer are not a new question either.
+        assert (await a.http.delete(f"{API}/pairs/{old}/label")).status_code == 200
+        assert (await a.label(old, "a")).status_code == 200
+        assert (await a.inbox())["budget"]["labelled_this_week"] == 0
+        # A pair first answered this week is charged.
+        new = await a.pair_id(x, z)
+        assert (await a.label(new, "a")).status_code == 200
+        assert (await a.inbox())["budget"]["labelled_this_week"] == 1
+
+
+class TestGetCanLabel:
+    """The rule ``can_label`` reports, read directly — the harness overrides
+    the dependency everywhere else."""
+
+    TENANT_A = UUID(int=1)
+    TENANT_B = UUID(int=2)
+
+    def _request(self, active: str | None, identity: CoordIdentity | None) -> Request:
+        headers = (
+            [] if active is None else [(b"x-qontinui-active-tenant", active.encode())]
+        )
+        request = Request(
+            {"type": "http", "method": "GET", "path": "/", "headers": headers}
+        )
+        if identity is not None:
+            request.state._coord_identity = identity
+        return request
+
+    def _identity(
+        self, roles_a: tuple[str, ...], roles_b: tuple[str, ...]
+    ) -> CoordIdentity:
+        return CoordIdentity(
+            operator_id=None,
+            home_tenant_id=self.TENANT_A,
+            email=None,
+            roles=(),
+            tenants=(
+                CoordTenant(tenant_id=self.TENANT_A, slug="a", roles=roles_a),
+                CoordTenant(tenant_id=self.TENANT_B, slug="b", roles=roles_b),
+            ),
+            is_admin="admin" in roles_a + roles_b,
+        )
+
+    def _principal(self, actor: str) -> MemoryPrincipal:
+        return MemoryPrincipal(tenant_id=self.TENANT_A, device_id=None, actor=actor)
+
+    @staticmethod
+    def _user(superuser: bool) -> User:
+        return User(email="x@example.com", username="x", is_superuser=superuser)
+
+    async def test_a_device_or_service_credential_never_labels(self) -> None:
+        for actor in ("device", "coord_service"):
+            assert (
+                await endpoints.get_can_label(
+                    self._request(None, None), self._principal(actor), self._user(True)
+                )
+                is False
+            )
+
+    async def test_an_operator_session_with_no_user_does_not_label(self) -> None:
+        assert (
+            await endpoints.get_can_label(
+                self._request(None, None), self._principal("operator"), None
+            )
+            is False
+        )
+
+    async def test_a_superuser_labels_without_consulting_coord(self) -> None:
+        # No identity on the request: consulting coord would raise 401.
+        assert (
+            await endpoints.get_can_label(
+                self._request(None, None), self._principal("operator"), self._user(True)
+            )
+            is True
+        )
+
+    @pytest.mark.parametrize(
+        ("roles_a", "roles_b", "active", "expected"),
+        [
+            (("admin",), ("developer",), None, True),
+            (("admin",), ("developer",), str(UUID(int=2)), False),
+            (("developer",), ("admin",), str(UUID(int=2)), True),
+            (("developer",), ("admin",), "b", True),
+            (("developer",), ("admin",), None, False),
+            # A selection naming no membership falls back to home.
+            (("admin",), ("developer",), str(UUID(int=99)), True),
+        ],
+    )
+    async def test_admin_is_read_in_the_effective_tenant(
+        self,
+        roles_a: tuple[str, ...],
+        roles_b: tuple[str, ...],
+        active: str | None,
+        expected: bool,
+    ) -> None:
+        request = self._request(active, self._identity(roles_a, roles_b))
+        assert (
+            await endpoints.get_can_label(
+                request, self._principal("operator"), self._user(False)
+            )
+            is expected
+        )
 
 
 # ===========================================================================

@@ -14,7 +14,15 @@ NULL … RETURNING``), so two labellers working the queue at once can neither
 overwrite each other's label nor answer the same pair twice: the loser's
 statement matches no row, and the caller reads the row to say why.
 
-The callers commit; these functions only flush.
+Every label and every undo also takes the tenant's next label-feed position
+from ``web.taste_label_clock`` (:func:`_next_change_seq`). That row lock is
+held until the caller commits, so per tenant positions are handed out in
+commit order — :func:`list_labels` pages by position and can never skip a
+write that commits late.
+
+The callers commit; these functions only flush. A write that names an image
+deleted since the caller checked raises :class:`ImageAssetGone` (the FK
+refused it) after rolling back only its own savepoint.
 """
 
 from __future__ import annotations
@@ -24,15 +32,21 @@ import binascii
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.image_asset import ImageAsset
-from app.models.taste import DEFAULT_WEEKLY_BUDGET, TastePair, TasteSettings
+from app.models.taste import (
+    DEFAULT_WEEKLY_BUDGET,
+    TasteLabelClock,
+    TastePair,
+    TasteSettings,
+)
 from app.models.user import User
 from app.services.taste_calibration import MAX_POOL_IMAGES, PoolImage, direction_of
 
@@ -44,6 +58,15 @@ POOL_KINDS: tuple[str, ...] = ("candidate", "exemplar")
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+class ImageAssetGone(LookupError):
+    """An image a write names was deleted after the caller checked for it:
+    the composite FK to ``web.image_assets`` refused the row."""
+
+
+def _is_asset_fk_violation(exc: IntegrityError) -> bool:
+    return "fk_taste_pairs_" in str(exc.orig)
 
 
 def week_start(now: datetime) -> datetime:
@@ -81,15 +104,23 @@ async def get_assets(
 
 
 async def labeller_names(
-    db: AsyncSession, user_ids: Iterable[UUID | None]
+    db: AsyncSession, user_ids: Iterable[UUID | None], *, with_email: bool
 ) -> dict[UUID, str]:
+    """Each user's display name. ``with_email`` falls back to the email for
+    a user with no name — for an operator's session only: a device or service
+    credential is never handed a person's email."""
     wanted = sorted({uid for uid in user_ids if uid is not None}, key=str)
     if not wanted:
         return {}
     result = await db.execute(
         select(User.id, User.full_name, User.email).where(User.id.in_(wanted))
     )
-    return {uid: (name or email) for uid, name, email in result.all()}
+    names: dict[UUID, str] = {}
+    for uid, name, email in result.all():
+        shown = name or (email if with_email else None)
+        if shown:
+            names[uid] = shown
+    return names
 
 
 def _queue_order() -> tuple[Any, ...]:
@@ -144,8 +175,10 @@ async def queue_counts(
         select(
             func.count().filter(TastePair.label.is_(None)),
             func.count().filter(TastePair.label.is_not(None)),
+            # Charged once, in the week the pair was FIRST answered: a
+            # relabel or an undo-and-relabel of an older pair costs nothing.
             func.count().filter(
-                TastePair.label.is_not(None), TastePair.labelled_at >= since
+                TastePair.label.is_not(None), TastePair.first_labelled_at >= since
             ),
         ).where(TastePair.tenant_id == tenant_id)
     )
@@ -157,20 +190,23 @@ class InvalidCursor(ValueError):
     """A ``labels`` cursor that is not one this API minted."""
 
 
-def encode_label_cursor(pair: TastePair) -> str:
-    assert pair.labelled_at is not None
-    raw = f"{pair.labelled_at.isoformat()}|{pair.id}"
+_CURSOR_PREFIX = "seq:"
+
+
+def encode_label_cursor(change_seq: int) -> str:
+    raw = f"{_CURSOR_PREFIX}{change_seq}"
     return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
 
 
-def decode_label_cursor(cursor: str) -> tuple[datetime, UUID]:
+def decode_label_cursor(cursor: str) -> int:
     try:
         raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
-        at, _, ident = raw.partition("|")
-        when = datetime.fromisoformat(at)
-        if when.tzinfo is None:
-            raise ValueError("naive timestamp")
-        return when, UUID(ident)
+        if not raw.startswith(_CURSOR_PREFIX):
+            raise ValueError("not a feed position")
+        seq = int(raw[len(_CURSOR_PREFIX) :])
+        if seq < 1:
+            raise ValueError("not a feed position")
+        return seq
     except (binascii.Error, UnicodeError, ValueError) as exc:
         raise InvalidCursor("after is not a cursor this API issued") from exc
 
@@ -180,22 +216,21 @@ async def list_labels(
     *,
     tenant_id: UUID,
     limit: int,
-    after: tuple[datetime, UUID] | None,
+    after: int | None,
 ) -> tuple[Sequence[TastePair], bool]:
-    """Labelled pairs, oldest label first; ``truncated`` when more exist."""
+    """The tenant's label feed in position order: every pair that has ever
+    been answered, at its LATEST change — a label, a relabel, or an undo
+    (a tombstone: ``label`` NULL, ``undone_at`` set). ``truncated`` when more
+    exist. A pair changed again moves to its new position, so a reader that
+    replays the feed and keeps the last row per pair holds the current state.
+    """
     query = select(TastePair).where(
-        TastePair.tenant_id == tenant_id, TastePair.label.is_not(None)
+        TastePair.tenant_id == tenant_id, TastePair.change_seq.is_not(None)
     )
     if after is not None:
-        at, ident = after
-        query = query.where(
-            or_(
-                TastePair.labelled_at > at,
-                and_(TastePair.labelled_at == at, TastePair.id > ident),
-            )
-        )
+        query = query.where(TastePair.change_seq > after)
     result = await db.execute(
-        query.order_by(TastePair.labelled_at.asc(), TastePair.id.asc()).limit(limit + 1)
+        query.order_by(TastePair.change_seq.asc()).limit(limit + 1)
     )
     rows = result.scalars().all()
     return rows[:limit], len(rows) > limit
@@ -236,6 +271,20 @@ async def queued_slotless_pairs(
 
 
 # ── writes ──────────────────────────────────────────────────────────────
+
+
+async def _next_change_seq(db: AsyncSession, *, tenant_id: UUID) -> int:
+    """The tenant's next label-feed position. The clock row stays locked until
+    the caller's transaction ends, so a second writer waits here and positions
+    are handed out in commit order (module docstring)."""
+    statement = pg_insert(TasteLabelClock).values(tenant_id=tenant_id, last_seq=1)
+    result = await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=[TasteLabelClock.tenant_id],
+            set_={"last_seq": TasteLabelClock.last_seq + 1},
+        ).returning(TasteLabelClock.last_seq)
+    )
+    return int(result.scalar_one())
 
 
 async def find_pair(
@@ -285,7 +334,7 @@ async def push_pair(
     the first one's row.
     """
     now = _now()
-    inserted = await db.execute(
+    statement = (
         pg_insert(TastePair)
         .values(
             tenant_id=tenant_id,
@@ -306,7 +355,13 @@ async def push_pair(
         .on_conflict_do_nothing()
         .returning(TastePair.id)
     )
-    new_id = inserted.scalar_one_or_none()
+    try:
+        async with db.begin_nested():
+            new_id = (await db.execute(statement)).scalar_one_or_none()
+    except IntegrityError as exc:
+        if _is_asset_fk_violation(exc):
+            raise ImageAssetGone(str(exc.orig)) from exc
+        raise
     if new_id is not None:
         pair = await get_pair(db, tenant_id=tenant_id, pair_id=new_id)
         assert pair is not None
@@ -339,12 +394,14 @@ async def set_label(
     """Label the pair; None when no row matched (absent, or already labelled
     and ``relabel`` was not asked for — the caller reads the row to say
     which). A label clears the pair's skip: an answered pair is no longer
-    deferred."""
+    deferred. ``first_labelled_at`` is set once and kept, so the budget
+    charges the pair once."""
     now = _now()
+    seq = await _next_change_seq(db, tenant_id=tenant_id)
     condition = [TastePair.tenant_id == tenant_id, TastePair.id == pair_id]
     if not relabel:
         condition.append(TastePair.label.is_(None))
-    result = await db.execute(
+    statement = (
         update(TastePair)
         .where(*condition)
         .values(
@@ -355,29 +412,78 @@ async def set_label(
             edit_asset_sha256=edit_asset_sha256,
             labeller_user_id=labeller_user_id,
             labelled_at=now,
+            first_labelled_at=func.coalesce(TastePair.first_labelled_at, now),
+            change_seq=seq,
             skipped_at=None,
             updated_at=now,
         )
         .returning(TastePair.id)
     )
-    if result.scalar_one_or_none() is None:
+    try:
+        async with db.begin_nested():
+            matched = (await db.execute(statement)).scalar_one_or_none()
+    except IntegrityError as exc:
+        if _is_asset_fk_violation(exc):
+            raise ImageAssetGone(str(exc.orig)) from exc
+        raise
+    if matched is None:
         return None
     return await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
 
 
+UndoRefusal = Literal["absent", "not_labelled", "not_yours"]
+
+
 async def clear_label(
-    db: AsyncSession, *, tenant_id: UUID, pair_id: UUID
-) -> TastePair | None:
-    """Undo a label: the pair returns to the queue, unanswered. None when no
-    LABELLED row matched."""
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    pair_id: UUID,
+    actor_user_id: UUID,
+    force: bool,
+) -> TastePair | UndoRefusal:
+    """Undo a label: the pair returns to the queue, unanswered.
+
+    Only the actor's OWN label is undone unless ``force`` is set — a label
+    whose labeller is someone else (or a deleted user) is refused as
+    ``not_yours``. Nothing is erased silently: the removed answer is kept on
+    the row as ``undone_label`` with who undid it, when, and whether that
+    removed another labeller's answer (``undone_forced``), and the undo takes
+    a feed position, so the taste twin reads it as a tombstone.
+    """
+    now = _now()
+    seq = await _next_change_seq(db, tenant_id=tenant_id)
+    condition = [
+        TastePair.tenant_id == tenant_id,
+        TastePair.id == pair_id,
+        TastePair.label.is_not(None),
+    ]
+    if not force:
+        condition.append(TastePair.labeller_user_id == actor_user_id)
     result = await db.execute(
         update(TastePair)
-        .where(
-            TastePair.tenant_id == tenant_id,
-            TastePair.id == pair_id,
-            TastePair.label.is_not(None),
-        )
+        .where(*condition)
         .values(
+            # The right-hand side reads the row as it was: the answer removed.
+            undone_label=func.jsonb_build_object(
+                "label",
+                TastePair.label,
+                "reasons",
+                TastePair.reasons,
+                "comment",
+                TastePair.comment,
+                "edit_note",
+                TastePair.edit_note,
+                "edit_asset_sha256",
+                TastePair.edit_asset_sha256,
+                "labeller_user_id",
+                TastePair.labeller_user_id,
+                "labelled_at",
+                TastePair.labelled_at,
+            ),
+            undone_forced=TastePair.labeller_user_id.is_distinct_from(actor_user_id),
+            undone_by_user_id=actor_user_id,
+            undone_at=now,
             label=None,
             reasons=[],
             comment=None,
@@ -385,13 +491,21 @@ async def clear_label(
             edit_asset_sha256=None,
             labeller_user_id=None,
             labelled_at=None,
-            updated_at=_now(),
+            change_seq=seq,
+            updated_at=now,
         )
         .returning(TastePair.id)
     )
-    if result.scalar_one_or_none() is None:
-        return None
-    return await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+    if result.scalar_one_or_none() is not None:
+        pair = await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+        assert pair is not None
+        return pair
+    existing = await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+    if existing is None:
+        return "absent"
+    if existing.label is None:
+        return "not_labelled"
+    return "not_yours"
 
 
 async def skip_pair(

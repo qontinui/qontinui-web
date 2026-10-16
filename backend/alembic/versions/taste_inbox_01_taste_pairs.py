@@ -1,13 +1,14 @@
-"""web.taste_pairs + web.taste_settings — the taste inbox
+"""web.taste_pairs + web.taste_label_clock + web.taste_settings — the taste inbox
 
 Revision ID: taste_inbox_01
-Revises: image_assets_01
+Revises: route_serving_method_idx_01
 Create Date: 2026-10-15
 
 Phase 23 of plan ``2026-10-13-image-generation-and-visual-judgment``
-(qontinui-dev-notes/plans). Two tables in the EXISTING web-owned ``web``
+(qontinui-dev-notes/plans). Three tables in the EXISTING web-owned ``web``
 schema: the queue of pairwise taste questions the operator answers
-asynchronously, and the per-tenant weekly labelling budget. Product data, not
+asynchronously, the per-tenant label-feed clock, and the per-tenant weekly
+labelling budget. Product data, not
 orchestration: no ``coord.*`` relation is created, altered or referenced, so
 ``[policy: alembic-sole-authorship]``'s coord ordering is not engaged.
 
@@ -33,7 +34,22 @@ Tables
     optional ``comment``, an optional ``edit_note`` and an optional edited
     image (``edit_asset_sha256``), and the labeller (``labeller_user_id``).
     ``skipped_at`` / ``skip_count`` move a pair to the back of the queue
-    without answering it.
+    without answering it. ``first_labelled_at`` is when the pair was FIRST
+    answered (kept across an undo and a relabel): the weekly budget charges a
+    pair once, in that week. ``change_seq`` is the pair's position in the
+    tenant's label feed (``GET /taste/labels``), drawn from
+    ``web.taste_label_clock`` on every label and every undo. ``undone_*``
+    record the most recent undo: when, by whom, whether it removed another
+    labeller's answer (``undone_forced``), and the answer it removed
+    (``undone_label``, a JSON object) — so an undo is never a silent erase.
+
+``web.taste_label_clock``
+    One row per tenant: ``last_seq``, the last label-feed position handed
+    out. A label write increments it with ``INSERT … ON CONFLICT DO UPDATE``
+    and holds the row lock until it commits, so per tenant the positions are
+    handed out in COMMIT order: a reader that has seen position N can never
+    later meet a newly committed write below N. That is what lets the taste
+    twin page the feed by position without skipping a late commit.
 
 ``web.taste_settings``
     One row per tenant: ``weekly_budget``, how many labels the inbox asks for
@@ -64,7 +80,7 @@ Design notes
   later widening — a new source, a new label — can ``DROP CONSTRAINT <known
   name>``.
 
-Locking: both tables are created EMPTY, but their FKs point at two LIVE
+Locking: the tables are created EMPTY, but their FKs point at two LIVE
 tables, ``web.image_assets`` and ``auth.users``, and creating an FK takes a
 SHARE ROW EXCLUSIVE lock on the referenced table (no scan: the referencing
 table is empty). Login and the image store write those tables, so the wait is
@@ -85,13 +101,14 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "taste_inbox_01"
-down_revision: str = "image_assets_01"
+down_revision: str = "route_serving_method_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create ``web.taste_pairs`` and ``web.taste_settings``."""
+    """Create ``web.taste_pairs``, ``web.taste_label_clock`` and
+    ``web.taste_settings``."""
     # Bound the wait for the referenced tables' locks (module docstring).
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
@@ -136,6 +153,14 @@ def upgrade() -> None:
                 CONSTRAINT fk_taste_pairs_labeller
                 REFERENCES auth.users (id) ON DELETE SET NULL,
             labelled_at        TIMESTAMPTZ,
+            first_labelled_at  TIMESTAMPTZ,
+            change_seq         BIGINT,
+            undone_at          TIMESTAMPTZ,
+            undone_by_user_id  UUID
+                CONSTRAINT fk_taste_pairs_undone_by
+                REFERENCES auth.users (id) ON DELETE SET NULL,
+            undone_forced      BOOLEAN NOT NULL DEFAULT false,
+            undone_label       JSONB,
             created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT ck_taste_pairs_distinct_assets
@@ -146,6 +171,14 @@ def upgrade() -> None:
                 CHECK ((capture_a_sha256 IS NULL) = (capture_b_sha256 IS NULL)),
             CONSTRAINT ck_taste_pairs_label_time
                 CHECK ((label IS NULL) = (labelled_at IS NULL)),
+            CONSTRAINT ck_taste_pairs_labelled_first
+                CHECK (label IS NULL OR first_labelled_at IS NOT NULL),
+            CONSTRAINT ck_taste_pairs_labelled_seq
+                CHECK (label IS NULL OR change_seq IS NOT NULL),
+            CONSTRAINT ck_taste_pairs_undo_whole
+                CHECK ((undone_at IS NULL) = (undone_label IS NULL)),
+            CONSTRAINT ck_taste_pairs_undo_object
+                CHECK (undone_label IS NULL OR jsonb_typeof(undone_label) = 'object'),
             CONSTRAINT fk_taste_pairs_asset_a
                 FOREIGN KEY (tenant_id, asset_a_sha256)
                 REFERENCES web.image_assets (tenant_id, sha256) ON DELETE CASCADE,
@@ -196,6 +229,26 @@ def upgrade() -> None:
         """
     )
 
+    # The label feed's position: unique per tenant, the twin's page key.
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_taste_pairs_change_seq
+            ON web.taste_pairs (tenant_id, change_seq)
+            WHERE change_seq IS NOT NULL
+        """
+    )
+
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS web.taste_label_clock (
+            tenant_id  UUID PRIMARY KEY,
+            last_seq   BIGINT NOT NULL
+                CONSTRAINT ck_taste_label_clock_positive
+                CHECK (last_seq >= 1)
+        )
+        """
+    )
+
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS web.taste_settings (
@@ -214,12 +267,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop both tables. The ``web`` schema and ``web.image_assets`` (an
+    """Drop the three tables. The ``web`` schema and ``web.image_assets`` (an
     earlier revision's) stay; the images the pairs named are not touched.
     Dropping the FKs locks the referenced tables, so the wait is bounded as
     in the upgrade."""
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute("DROP TABLE IF EXISTS web.taste_settings")
+    op.execute("DROP TABLE IF EXISTS web.taste_label_clock")
+    op.execute("DROP INDEX IF EXISTS web.uq_taste_pairs_change_seq")
     op.execute("DROP INDEX IF EXISTS web.ix_taste_pairs_labelled")
     op.execute("DROP INDEX IF EXISTS web.ix_taste_pairs_pending")
     op.execute("DROP INDEX IF EXISTS web.uq_taste_pairs_pair")

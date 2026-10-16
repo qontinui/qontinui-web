@@ -15,6 +15,10 @@ design rationale.
     an optional comment and an optional edit, the labeller and the time. The
     taste twin (Phase 24) reads the labelled rows.
 
+``TasteLabelClock``
+    One row per tenant: the last label-feed position handed out (see the
+    class).
+
 ``TasteSettings``
     One row per tenant: the weekly labelling budget. No row means the
     default (:data:`DEFAULT_WEEKLY_BUDGET`), and the API says which.
@@ -31,6 +35,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -121,6 +127,22 @@ class TastePair(Base):
             "(label IS NULL) = (labelled_at IS NULL)", name="ck_taste_pairs_label_time"
         ),
         CheckConstraint(
+            "label IS NULL OR first_labelled_at IS NOT NULL",
+            name="ck_taste_pairs_labelled_first",
+        ),
+        CheckConstraint(
+            "label IS NULL OR change_seq IS NOT NULL",
+            name="ck_taste_pairs_labelled_seq",
+        ),
+        CheckConstraint(
+            "(undone_at IS NULL) = (undone_label IS NULL)",
+            name="ck_taste_pairs_undo_whole",
+        ),
+        CheckConstraint(
+            "undone_label IS NULL OR jsonb_typeof(undone_label) = 'object'",
+            name="ck_taste_pairs_undo_object",
+        ),
+        CheckConstraint(
             "uncertainty IS NULL OR (uncertainty >= 0 AND uncertainty <= 1)",
             name="ck_taste_pairs_uncertainty",
         ),
@@ -161,6 +183,13 @@ class TastePair(Base):
             "tenant_id",
             "labelled_at",
             postgresql_where=text("label IS NOT NULL"),
+        ),
+        Index(
+            "uq_taste_pairs_change_seq",
+            "tenant_id",
+            "change_seq",
+            unique=True,
+            postgresql_where=text("change_seq IS NOT NULL"),
         ),
         {"schema": "web"},
     )
@@ -216,6 +245,31 @@ class TastePair(Base):
     labelled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: When the pair was FIRST answered; kept across an undo and a relabel, so
+    #: the weekly budget charges a pair once, in the week it was first answered.
+    first_labelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: The pair's position in the tenant's label feed (``GET /taste/labels``),
+    #: from :class:`TasteLabelClock` on every label and every undo. NULL until
+    #: the pair is first answered.
+    change_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: The most recent undo: when, by whom, whether it removed ANOTHER
+    #: labeller's answer, and that answer as it stood.
+    undone_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    undone_by_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(
+            "auth.users.id", ondelete="SET NULL", name="fk_taste_pairs_undone_by"
+        ),
+        nullable=True,
+    )
+    undone_forced: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    undone_label: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -228,6 +282,26 @@ class TastePair(Base):
         default=_now,
         server_default=text("now()"),
     )
+
+
+class TasteLabelClock(Base):
+    """A tenant's label-feed clock: the last position handed out.
+
+    A label write increments ``last_seq`` with ``INSERT … ON CONFLICT DO
+    UPDATE`` and holds the row lock until its transaction ends, so per tenant
+    positions are handed out in commit order — the property that lets the
+    taste twin page ``GET /taste/labels`` by position without ever skipping a
+    late commit.
+    """
+
+    __tablename__ = "taste_label_clock"
+    __table_args__ = (
+        CheckConstraint("last_seq >= 1", name="ck_taste_label_clock_positive"),
+        {"schema": "web"},
+    )
+
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class TasteSettings(Base):

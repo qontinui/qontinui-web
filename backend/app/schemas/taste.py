@@ -208,6 +208,32 @@ class TasteImage(BaseModel):
     direction: str | None
 
 
+class TasteRemovedLabel(BaseModel):
+    """The answer an undo removed, as it stood."""
+
+    label: TasteLabel
+    reasons: list[TasteReason]
+    comment: str | None
+    edit_note: str | None
+    edit_asset_sha256: str | None
+    labeller_user_id: UUID | None
+    #: The removed answer's labeller, when that user still exists.
+    labeller_name: str | None
+    labelled_at: datetime
+
+
+class TasteUndo(BaseModel):
+    """The most recent undo of a pair's label. Kept after the pair is
+    answered again, so a removed answer is never lost without a trace."""
+
+    undone_at: datetime
+    undone_by_user_id: UUID | None
+    undone_by_name: str | None
+    #: True when the undo removed ANOTHER labeller's answer (``force``).
+    forced: bool
+    removed: TasteRemovedLabel
+
+
 class TastePairOut(BaseModel):
     id: UUID
     repo: str | None
@@ -235,6 +261,16 @@ class TastePairOut(BaseModel):
     #: The labeller's name (or email) when the user still exists.
     labeller_name: str | None
     labelled_at: datetime | None
+    #: When the pair was FIRST answered — the week whose budget it was
+    #: charged to. Kept across an undo and a relabel.
+    first_labelled_at: datetime | None
+    #: The pair's position in the tenant's label feed (``GET /taste/labels``);
+    #: null until the pair is first answered. Moves on every label and undo.
+    change_seq: int | None
+    #: True for a feed row whose latest change was an undo: ``label`` is null
+    #: and the pair is back in the queue. ``undo`` says what was removed.
+    tombstone: bool
+    undo: TasteUndo | None
     created_at: datetime
     updated_at: datetime
 
@@ -250,7 +286,9 @@ class TasteBudget(BaseModel):
 
     A week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``
     was written for this tenant (``setting``) or is the declared default
-    (``default``).
+    (``default``). A pair is charged ONCE, to the week it was first
+    answered: relabelling it, or undoing and answering it again, costs
+    nothing.
     """
 
     weekly_budget: int
@@ -287,6 +325,9 @@ class TasteInbox(BaseModel):
     budget: TasteBudget
     pending_total: int
     labelled_total: int
+    #: The caller's own user id (an operator's session), or null for a device
+    #: or service credential. The page undoes the newest label carrying it.
+    viewer_user_id: UUID | None
     over_budget: bool
     pairs: list[TastePairOut]
     #: The most recent labels, newest first — the undo list.
@@ -301,8 +342,20 @@ class TasteInbox(BaseModel):
 
 
 class TasteLabelPage(BaseModel):
-    """``GET /api/v1/taste/labels`` — labelled pairs, oldest label first, for
-    the taste twin (Phase 24). ``next_cursor`` is set exactly when more exist."""
+    """``GET /api/v1/taste/labels`` — the tenant's label feed, for the taste
+    twin (Phase 24).
+
+    Every pair that has ever been answered, once, at its LATEST change, in
+    ``change_seq`` order. A label or relabel is a row with ``label`` set; an
+    undo is a tombstone (``tombstone: true``, ``label`` null). Positions are
+    handed out in commit order per tenant, so paging by ``next_cursor`` never
+    skips a late commit; a pair changed again reappears at its new position,
+    so a reader that keeps the last row per pair id holds the current state.
+    ``next_cursor`` is the position after the last row returned — or the
+    ``after`` that was sent, when the page is empty — so it is set on the
+    LAST page too: to follow the feed, ask again later with it. ``truncated``
+    says whether more rows exist right now.
+    """
 
     limit: int
     truncated: bool

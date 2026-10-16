@@ -55231,7 +55231,7 @@
         "type": "string"
       },
       "TasteBudget": {
-        "description": "The weekly labelling budget and how much of it this week has used.\n\nA week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``\nwas written for this tenant (``setting``) or is the declared default\n(``default``).",
+        "description": "The weekly labelling budget and how much of it this week has used.\n\nA week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``\nwas written for this tenant (``setting``) or is the declared default\n(``default``). A pair is charged ONCE, to the week it was first\nanswered: relabelling it, or undoing and answering it again, costs\nnothing.",
         "properties": {
           "labelled_this_week": {
             "title": "Labelled This Week",
@@ -55401,12 +55401,25 @@
             },
             "title": "Recent",
             "type": "array"
+          },
+          "viewer_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewer User Id"
           }
         },
         "required": [
           "budget",
           "pending_total",
           "labelled_total",
+          "viewer_user_id",
           "over_budget",
           "pairs",
           "recent",
@@ -55418,7 +55431,7 @@
         "type": "object"
       },
       "TasteLabelPage": {
-        "description": "``GET /api/v1/taste/labels`` \u2014 labelled pairs, oldest label first, for\nthe taste twin (Phase 24). ``next_cursor`` is set exactly when more exist.",
+        "description": "``GET /api/v1/taste/labels`` \u2014 the tenant's label feed, for the taste\ntwin (Phase 24).\n\nEvery pair that has ever been answered, once, at its LATEST change, in\n``change_seq`` order. A label or relabel is a row with ``label`` set; an\nundo is a tombstone (``tombstone: true``, ``label`` null). Positions are\nhanded out in commit order per tenant, so paging by ``next_cursor`` never\nskips a late commit; a pair changed again reappears at its new position,\nso a reader that keeps the last row per pair id holds the current state.\n``next_cursor`` is the position after the last row returned \u2014 or the\n``after`` that was sent, when the page is empty \u2014 so it is set on the\nLAST page too: to follow the feed, ask again later with it. ``truncated``\nsays whether more rows exist right now.",
         "properties": {
           "labels": {
             "items": {
@@ -55567,6 +55580,17 @@
             ],
             "title": "Capture B Sha256"
           },
+          "change_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Seq"
+          },
           "comment": {
             "anyOf": [
               {
@@ -55609,6 +55633,18 @@
               }
             ],
             "title": "Edit Note"
+          },
+          "first_labelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Labelled At"
           },
           "id": {
             "format": "uuid",
@@ -55740,6 +55776,10 @@
             "title": "Source",
             "type": "string"
           },
+          "tombstone": {
+            "title": "Tombstone",
+            "type": "boolean"
+          },
           "uncertainty": {
             "anyOf": [
               {
@@ -55750,6 +55790,16 @@
               }
             ],
             "title": "Uncertainty"
+          },
+          "undo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TasteUndo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_at": {
             "format": "date-time",
@@ -55780,6 +55830,10 @@
           "labeller_user_id",
           "labeller_name",
           "labelled_at",
+          "first_labelled_at",
+          "change_seq",
+          "tombstone",
+          "undo",
           "created_at",
           "updated_at"
         ],
@@ -55927,6 +55981,112 @@
         "title": "TastePool",
         "type": "object"
       },
+      "TasteRemovedLabel": {
+        "description": "The answer an undo removed, as it stood.",
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "edit_asset_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Asset Sha256"
+          },
+          "edit_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Note"
+          },
+          "label": {
+            "enum": [
+              "a",
+              "b",
+              "both_bad"
+            ],
+            "title": "Label",
+            "type": "string"
+          },
+          "labelled_at": {
+            "format": "date-time",
+            "title": "Labelled At",
+            "type": "string"
+          },
+          "labeller_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labeller Name"
+          },
+          "labeller_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labeller User Id"
+          },
+          "reasons": {
+            "items": {
+              "enum": [
+                "on_style",
+                "off_style",
+                "off_palette",
+                "composition",
+                "cropping",
+                "wrong_subject",
+                "too_busy",
+                "text_in_image",
+                "artifacts",
+                "low_quality"
+              ],
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "reasons",
+          "comment",
+          "edit_note",
+          "edit_asset_sha256",
+          "labeller_user_id",
+          "labeller_name",
+          "labelled_at"
+        ],
+        "title": "TasteRemovedLabel",
+        "type": "object"
+      },
       "TasteSettingsOut": {
         "properties": {
           "source": {
@@ -55977,6 +56137,55 @@
           "weekly_budget"
         ],
         "title": "TasteSettingsWrite",
+        "type": "object"
+      },
+      "TasteUndo": {
+        "description": "The most recent undo of a pair's label. Kept after the pair is\nanswered again, so a removed answer is never lost without a trace.",
+        "properties": {
+          "forced": {
+            "title": "Forced",
+            "type": "boolean"
+          },
+          "removed": {
+            "$ref": "#/components/schemas/TasteRemovedLabel"
+          },
+          "undone_at": {
+            "format": "date-time",
+            "title": "Undone At",
+            "type": "string"
+          },
+          "undone_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone By Name"
+          },
+          "undone_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone By User Id"
+          }
+        },
+        "required": [
+          "undone_at",
+          "undone_by_user_id",
+          "undone_by_name",
+          "forced",
+          "removed"
+        ],
+        "title": "TasteUndo",
         "type": "object"
       },
       "TeamMemberCreate": {
@@ -125513,6 +125722,9 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "description": "An image left the pool mid-build; nothing was queued."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -125619,7 +125831,7 @@
             }
           },
           {
-            "description": "The previous page's next_cursor.",
+            "description": "The previous page's next_cursor (set on every page, the last one included, so a reader can follow the feed).",
             "in": "query",
             "name": "after",
             "required": false,
@@ -125633,7 +125845,7 @@
                   "type": "null"
                 }
               ],
-              "description": "The previous page's next_cursor.",
+              "description": "The previous page's next_cursor (set on every page, the last one included, so a reader can follow the feed).",
               "title": "After"
             }
           }
@@ -125661,7 +125873,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "List labelled pairs, oldest label first, a page at a time",
+        "summary": "Read the label feed: labels and undos, by commit-ordered position",
         "tags": [
           "taste"
         ]
@@ -125702,7 +125914,7 @@
             "description": "Successful Response"
           },
           "404": {
-            "description": "This tenant holds no image with a named sha256."
+            "description": "This tenant holds no image with a named sha256 (or one was deleted while the pair was being queued)."
           },
           "422": {
             "description": "A malformed field, or a capture that is not one."
@@ -125724,6 +125936,7 @@
     },
     "/api/v1/taste/pairs/{pair_id}": {
       "delete": {
+        "description": "Two populations: a device or service credential \u2014 studio correcting\nits own push \u2014 and an operator. The operator's path is the labeller's:\na member who may only view the inbox may not empty it either.",
         "operationId": "api_v1_taste_pairs_pair_id_delete",
         "parameters": [
           {
@@ -125740,6 +125953,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "An operator who may not label (a coord-tenant admin, or a qontinui superuser, may)."
           },
           "404": {
             "description": "No such pair for this tenant."
@@ -125774,6 +125990,7 @@
     },
     "/api/v1/taste/pairs/{pair_id}/label": {
       "delete": {
+        "description": "Admin-gated like every label write (``get_labeller``), ``force``\nincluded: only a coord-tenant admin of the effective tenant, or a\nqontinui superuser, reaches this handler at all.",
         "operationId": "api_v1_taste_pairs_pair_id_label_delete",
         "parameters": [
           {
@@ -125784,6 +126001,18 @@
               "format": "uuid",
               "title": "Pair Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Remove the label even though another labeller gave it. The row records that the undo was forced, who forced it, and the answer it removed.",
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Remove the label even though another labeller gave it. The row records that the undo was forced, who forced it, and the answer it removed.",
+              "title": "Force",
+              "type": "boolean"
             }
           }
         ],
@@ -125802,7 +126031,7 @@
             "description": "No such pair for this tenant."
           },
           "409": {
-            "description": "The pair is not labelled."
+            "description": "The pair is not labelled, or its label is another labeller's and force was not sent."
           },
           "422": {
             "content": {
@@ -125820,7 +126049,7 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Undo a label: the pair returns to the queue",
+        "summary": "Undo your label (or, with force, a colleague's): the pair returns to the queue",
         "tags": [
           "taste"
         ]

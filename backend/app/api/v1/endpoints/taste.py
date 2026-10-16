@@ -14,15 +14,18 @@ Endpoints (mounted under ``/api/v1/taste``):
   and whether this caller may label.
 * ``POST "/pairs"`` — queue one pair (studio's door; a re-push of a queued
   pair answers with it). ``DELETE "/pairs/{pair_id}"`` withdraws an
-  UNANSWERED pair — the correction for a wrong push.
+  UNANSWERED pair — the correction for a wrong push: a device or service
+  credential (studio's own correction), or an operator who may label.
 * ``PUT "/pairs/{pair_id}/label"`` — answer a pair; ``DELETE`` the same path
-  undoes the answer; ``POST "/pairs/{pair_id}/skip"`` moves an unanswered pair
-  to the back of the queue.
+  undoes the caller's OWN answer (``force=true`` removes a colleague's, and
+  the row records that it was forced, by whom, and what was removed);
+  ``POST "/pairs/{pair_id}/skip"`` moves an unanswered pair to the back of
+  the queue.
 * ``POST "/calibration-batch"`` — queue the first, deliberately diverse batch
   (step 3) from the tenant's own candidate and exemplar images.
 * ``PUT "/settings"`` — the weekly budget.
-* ``GET "/labels"`` — labelled pairs, oldest first, a page at a time: the
-  taste twin's read.
+* ``GET "/labels"`` — the label feed, by commit-ordered position, undos
+  included as tombstones: the taste twin's read (``TasteLabelPage``).
 
 Auth. Reads and the pair push/withdraw use
 :func:`app.api.v1.endpoints.memory.get_memory_tenant`, unchanged — the image
@@ -31,7 +34,9 @@ operator's session, the tenant taken only from the principal. LABEL writes,
 skips, the budget and the calibration build are the operator's: they require
 coord-tenant admin in the EFFECTIVE tenant (or a qontinui superuser) through
 :func:`require_coord_tenant_admin_target`, and every label records its
-labeller (``auth.users.id``). Any tenant member may view.
+labeller (``auth.users.id``). Any tenant member may view. A labeller's email
+is shown only to an operator's session, never to a device or service
+credential.
 
 What this phase cannot show yet, and says so: a pair's in-situ captures come
 from Phase 18's operated capture, which has not landed, so every pair today
@@ -88,9 +93,11 @@ from app.schemas.taste import (
     TastePairPushResponse,
     TastePool,
     TasteReason,
+    TasteRemovedLabel,
     TasteSettingsOut,
     TasteSettingsWrite,
     TasteSource,
+    TasteUndo,
 )
 from app.services.coord_identity import get_coord_identity
 from app.services.taste_calibration import (
@@ -113,6 +120,18 @@ MAX_LABEL_PAGE: Final = 1000
 def _refusal(status_code: int, error: str, message: str, **extra: Any) -> HTTPException:
     return HTTPException(
         status_code=status_code, detail={"error": error, "message": message, **extra}
+    )
+
+
+def _asset_gone(field: str | None) -> HTTPException:
+    """An image the write named was deleted after it was checked: the same
+    answer as an image the tenant never held."""
+    return _refusal(
+        status.HTTP_404_NOT_FOUND,
+        "image_asset_not_found",
+        "An image this write names was deleted from the store while it was "
+        "being written; nothing was changed.",
+        field=field,
     )
 
 
@@ -146,6 +165,13 @@ async def get_can_label(
     )
 
 
+def viewer_user_id(principal: MemoryPrincipal) -> UUID | None:
+    """The caller's own user id when the caller is an operator's session
+    (``get_memory_tenant`` binds it from the authenticated user); None for a
+    device or service credential, even one that carries a user claim."""
+    return principal.user_id if principal.actor == "operator" else None
+
+
 class Labeller:
     """The operator a label write is attributed to, and the tenant it lands in."""
 
@@ -176,15 +202,58 @@ def _image(asset: ImageAsset) -> TasteImage:
     )
 
 
+def _removed_labeller(pair: TastePair) -> UUID | None:
+    raw = (pair.undone_label or {}).get("labeller_user_id")
+    return UUID(raw) if raw else None
+
+
+def _undo(pair: TastePair, names: dict[UUID, str]) -> TasteUndo | None:
+    if pair.undone_at is None or pair.undone_label is None:
+        return None
+    removed = pair.undone_label
+    removed_by = _removed_labeller(pair)
+    return TasteUndo(
+        undone_at=pair.undone_at,
+        undone_by_user_id=pair.undone_by_user_id,
+        undone_by_name=names.get(pair.undone_by_user_id)
+        if pair.undone_by_user_id
+        else None,
+        forced=pair.undone_forced,
+        removed=TasteRemovedLabel(
+            label=removed["label"],
+            reasons=list(removed.get("reasons") or []),
+            comment=removed.get("comment"),
+            edit_note=removed.get("edit_note"),
+            edit_asset_sha256=removed.get("edit_asset_sha256"),
+            labeller_user_id=removed_by,
+            labeller_name=names.get(removed_by) if removed_by else None,
+            labelled_at=removed["labelled_at"],
+        ),
+    )
+
+
 async def _render_pairs(
-    db: AsyncSession, tenant_id: UUID, pairs: list[TastePair]
+    db: AsyncSession,
+    tenant_id: UUID,
+    pairs: list[TastePair],
+    *,
+    with_email: bool,
 ) -> list[TastePairOut]:
+    """``with_email``: an operator's session only (see ``labeller_names``)."""
     assets = await crud.get_assets(
         db,
         tenant_id=tenant_id,
         shas=[sha for p in pairs for sha in (p.asset_a_sha256, p.asset_b_sha256)],
     )
-    names = await crud.labeller_names(db, (p.labeller_user_id for p in pairs))
+    names = await crud.labeller_names(
+        db,
+        (
+            uid
+            for p in pairs
+            for uid in (p.labeller_user_id, p.undone_by_user_id, _removed_labeller(p))
+        ),
+        with_email=with_email,
+    )
     out: list[TastePairOut] = []
     for pair in pairs:
         out.append(
@@ -215,6 +284,10 @@ async def _render_pairs(
                 if pair.labeller_user_id
                 else None,
                 labelled_at=pair.labelled_at,
+                first_labelled_at=pair.first_labelled_at,
+                change_seq=pair.change_seq,
+                tombstone=pair.label is None and pair.change_seq is not None,
+                undo=_undo(pair, names),
                 created_at=pair.created_at,
                 updated_at=pair.updated_at,
             )
@@ -284,12 +357,15 @@ async def read_taste_inbox(
     recent = list(
         await crud.list_recent_labels(db, tenant_id=tenant_id, limit=RECENT_LABELS)
     )
-    rendered = await _render_pairs(db, tenant_id, queue + recent)
+    rendered = await _render_pairs(
+        db, tenant_id, queue + recent, with_email=principal.actor == "operator"
+    )
     pool = await crud.calibration_pool(db, tenant_id=tenant_id)
     return TasteInbox(
         budget=budget,
         pending_total=counts.pending,
         labelled_total=counts.labelled,
+        viewer_user_id=viewer_user_id(principal),
         over_budget=over_budget,
         pairs=rendered[: len(queue)],
         recent=rendered[len(queue) :],
@@ -345,7 +421,10 @@ async def _require_assets(
             "description": "The pair was already queued (in either order); "
             "nothing changed.",
         },
-        404: {"description": "This tenant holds no image with a named sha256."},
+        404: {
+            "description": "This tenant holds no image with a named sha256 "
+            "(or one was deleted while the pair was being queued)."
+        },
         422: {"description": "A malformed field, or a capture that is not one."},
     },
     summary="Queue one pairwise taste question",
@@ -357,20 +436,23 @@ async def queue_taste_pair(
     db: AsyncSession = Depends(get_async_db),
 ) -> TastePairPushResponse:
     await _require_assets(db, principal.tenant_id, payload)
-    pair, created = await crud.push_pair(
-        db,
-        tenant_id=principal.tenant_id,
-        repo=payload.repo,
-        slot_id=payload.slot_id,
-        asset_a_sha256=payload.asset_a_sha256,
-        asset_b_sha256=payload.asset_b_sha256,
-        capture_a_sha256=payload.capture_a_sha256,
-        capture_b_sha256=payload.capture_b_sha256,
-        source=payload.source,
-        uncertainty=payload.uncertainty,
-        context=payload.context,
-        pushed_by=principal.actor,
-    )
+    try:
+        pair, created = await crud.push_pair(
+            db,
+            tenant_id=principal.tenant_id,
+            repo=payload.repo,
+            slot_id=payload.slot_id,
+            asset_a_sha256=payload.asset_a_sha256,
+            asset_b_sha256=payload.asset_b_sha256,
+            capture_a_sha256=payload.capture_a_sha256,
+            capture_b_sha256=payload.capture_b_sha256,
+            source=payload.source,
+            uncertainty=payload.uncertainty,
+            context=payload.context,
+            pushed_by=principal.actor,
+        )
+    except crud.ImageAssetGone as exc:
+        raise _asset_gone(None) from exc
     await db.commit()
     logger.info(
         "taste_pair_pushed",
@@ -381,7 +463,9 @@ async def queue_taste_pair(
         created=created,
     )
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    [out] = await _render_pairs(db, principal.tenant_id, [pair])
+    [out] = await _render_pairs(
+        db, principal.tenant_id, [pair], with_email=principal.actor == "operator"
+    )
     return TastePairPushResponse(pair=out, created=created)
 
 
@@ -389,6 +473,10 @@ async def queue_taste_pair(
     "/pairs/{pair_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
+        403: {
+            "description": "An operator who may not label (a coord-tenant "
+            "admin, or a qontinui superuser, may)."
+        },
         404: {"description": "No such pair for this tenant."},
         409: {"description": "The pair is labelled; a label is never withdrawn here."},
     },
@@ -397,8 +485,18 @@ async def queue_taste_pair(
 async def withdraw_taste_pair(
     pair_id: Annotated[UUID, Path()],
     principal: MemoryPrincipal = Depends(get_memory_tenant),
+    can_label: bool = Depends(get_can_label),
     db: AsyncSession = Depends(get_async_db),
 ) -> Response:
+    """Two populations: a device or service credential — studio correcting
+    its own push — and an operator. The operator's path is the labeller's:
+    a member who may only view the inbox may not empty it either."""
+    if principal.actor == "operator" and not can_label:
+        raise _refusal(
+            status.HTTP_403_FORBIDDEN,
+            "not_coord_tenant_admin",
+            "Only a coord admin of this project withdraws a queued pair.",
+        )
     if not await crud.withdraw_pair(db, tenant_id=principal.tenant_id, pair_id=pair_id):
         existing = await crud.get_pair(
             db, tenant_id=principal.tenant_id, pair_id=pair_id
@@ -447,23 +545,26 @@ async def label_taste_pair(
                 "edit_asset_sha256: this tenant holds no image with that sha256.",
                 field="edit_asset_sha256",
             )
-    pair = await crud.set_label(
-        db,
-        tenant_id=tenant_id,
-        pair_id=pair_id,
-        choice=payload.choice,
-        reasons=list(payload.reasons),
-        comment=payload.comment,
-        edit_note=payload.edit_note,
-        edit_asset_sha256=payload.edit_asset_sha256,
-        labeller_user_id=labeller.user.id,
-        relabel=payload.relabel,
-    )
+    try:
+        pair = await crud.set_label(
+            db,
+            tenant_id=tenant_id,
+            pair_id=pair_id,
+            choice=payload.choice,
+            reasons=list(payload.reasons),
+            comment=payload.comment,
+            edit_note=payload.edit_note,
+            edit_asset_sha256=payload.edit_asset_sha256,
+            labeller_user_id=labeller.user.id,
+            relabel=payload.relabel,
+        )
+    except crud.ImageAssetGone as exc:
+        raise _asset_gone("edit_asset_sha256") from exc
     if pair is None:
         existing = await crud.get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
         if existing is None:
             raise _pair_not_found()
-        [current] = await _render_pairs(db, tenant_id, [existing])
+        [current] = await _render_pairs(db, tenant_id, [existing], with_email=True)
         raise _refusal(
             status.HTTP_409_CONFLICT,
             "pair_already_labelled",
@@ -479,7 +580,7 @@ async def label_taste_pair(
         reasons=len(payload.reasons),
         relabel=payload.relabel,
     )
-    [out] = await _render_pairs(db, tenant_id, [pair])
+    [out] = await _render_pairs(db, tenant_id, [pair], with_email=True)
     return out
 
 
@@ -488,29 +589,68 @@ async def label_taste_pair(
     response_model=TastePairOut,
     responses={
         404: {"description": "No such pair for this tenant."},
-        409: {"description": "The pair is not labelled."},
+        409: {
+            "description": "The pair is not labelled, or its label is another "
+            "labeller's and force was not sent."
+        },
     },
-    summary="Undo a label: the pair returns to the queue",
+    summary="Undo your label (or, with force, a colleague's): the pair returns "
+    "to the queue",
 )
 async def unlabel_taste_pair(
     pair_id: Annotated[UUID, Path()],
+    force: Annotated[
+        bool,
+        Query(
+            description="Remove the label even though another labeller gave "
+            "it. The row records that the undo was forced, who forced it, and "
+            "the answer it removed."
+        ),
+    ] = False,
     labeller: Labeller = Depends(get_labeller),
     db: AsyncSession = Depends(get_async_db),
 ) -> TastePairOut:
-    pair = await crud.clear_label(db, tenant_id=labeller.tenant_id, pair_id=pair_id)
-    if pair is None:
-        if (
-            await crud.get_pair(db, tenant_id=labeller.tenant_id, pair_id=pair_id)
-            is None
-        ):
-            raise _pair_not_found()
+    """Admin-gated like every label write (``get_labeller``), ``force``
+    included: only a coord-tenant admin of the effective tenant, or a
+    qontinui superuser, reaches this handler at all."""
+    tenant_id = labeller.tenant_id
+    outcome = await crud.clear_label(
+        db,
+        tenant_id=tenant_id,
+        pair_id=pair_id,
+        actor_user_id=labeller.user.id,
+        force=force,
+    )
+    if outcome == "absent":
+        raise _pair_not_found()
+    if outcome == "not_labelled":
         raise _refusal(
             status.HTTP_409_CONFLICT,
             "pair_not_labelled",
             "This pair has no label to undo.",
         )
+    if outcome == "not_yours":
+        existing = await crud.get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+        assert existing is not None
+        [current] = await _render_pairs(db, tenant_id, [existing], with_email=True)
+        who = current.labeller_name or "a labeller who no longer exists"
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            "label_not_yours",
+            f"This label is {who}'s, not yours; nothing was changed. Send "
+            "force=true to remove it anyway — the removal is recorded.",
+            current=current.model_dump(mode="json"),
+        )
+    assert not isinstance(outcome, str)
     await db.commit()
-    [out] = await _render_pairs(db, labeller.tenant_id, [pair])
+    logger.info(
+        "taste_pair_unlabelled",
+        tenant_id=str(tenant_id),
+        pair_id=str(pair_id),
+        by=str(labeller.user.id),
+        forced=outcome.undone_forced,
+    )
+    [out] = await _render_pairs(db, tenant_id, [outcome], with_email=True)
     return out
 
 
@@ -541,7 +681,7 @@ async def skip_taste_pair(
             "This pair is already labelled; there is nothing to skip.",
         )
     await db.commit()
-    [out] = await _render_pairs(db, labeller.tenant_id, [pair])
+    [out] = await _render_pairs(db, labeller.tenant_id, [pair], with_email=True)
     return out
 
 
@@ -551,6 +691,9 @@ async def skip_taste_pair(
 @router.post(
     "/calibration-batch",
     response_model=CalibrationBatchResult,
+    responses={
+        409: {"description": "An image left the pool mid-build; nothing was queued."}
+    },
     summary="Queue the calibration batch: pairs across the tenant's directions",
 )
 async def build_taste_calibration_batch(
@@ -567,20 +710,29 @@ async def build_taste_calibration_batch(
     created_ids: list[UUID] = []
     raced = 0
     for a, b in plan.new_pairs:
-        pair, created = await crud.push_pair(
-            db,
-            tenant_id=tenant_id,
-            repo=None,
-            slot_id=None,
-            asset_a_sha256=a.sha256,
-            asset_b_sha256=b.sha256,
-            capture_a_sha256=None,
-            capture_b_sha256=None,
-            source="calibration",
-            uncertainty=None,
-            context={"directions": [a.direction, b.direction]},
-            pushed_by="operator",
-        )
+        try:
+            pair, created = await crud.push_pair(
+                db,
+                tenant_id=tenant_id,
+                repo=None,
+                slot_id=None,
+                asset_a_sha256=a.sha256,
+                asset_b_sha256=b.sha256,
+                capture_a_sha256=None,
+                capture_b_sha256=None,
+                source="calibration",
+                uncertainty=None,
+                context={"directions": [a.direction, b.direction]},
+                pushed_by="operator",
+            )
+        except crud.ImageAssetGone as exc:
+            # Nothing of this build is committed: the request rolls back.
+            raise _refusal(
+                status.HTTP_409_CONFLICT,
+                "calibration_pool_changed",
+                "An image left the calibration pool while the batch was being "
+                "built; nothing was queued. Build the batch again.",
+            ) from exc
         if created:
             created_ids.append(pair.id)
         else:
@@ -637,13 +789,17 @@ async def write_taste_settings(
     "/labels",
     response_model=TasteLabelPage,
     responses={422: {"description": "A malformed cursor."}},
-    summary="List labelled pairs, oldest label first, a page at a time",
+    summary="Read the label feed: labels and undos, by commit-ordered position",
 )
 async def read_taste_labels(
     limit: Annotated[int, Query(ge=1, le=MAX_LABEL_PAGE)] = DEFAULT_LABEL_PAGE,
     after: Annotated[
         str | None,
-        Query(max_length=512, description="The previous page's next_cursor."),
+        Query(
+            max_length=512,
+            description="The previous page's next_cursor (set on every page, "
+            "the last one included, so a reader can follow the feed).",
+        ),
     ] = None,
     principal: MemoryPrincipal = Depends(get_memory_tenant),
     db: AsyncSession = Depends(get_async_db),
@@ -658,11 +814,17 @@ async def read_taste_labels(
         db, tenant_id=principal.tenant_id, limit=limit, after=resume
     )
     pairs = list(rows)
+    last_seq = pairs[-1].change_seq if pairs else resume
     return TasteLabelPage(
         limit=limit,
         truncated=truncated,
-        next_cursor=crud.encode_label_cursor(pairs[-1])
-        if truncated and pairs
+        next_cursor=crud.encode_label_cursor(last_seq)
+        if last_seq is not None
         else None,
-        labels=await _render_pairs(db, principal.tenant_id, pairs),
+        labels=await _render_pairs(
+            db,
+            principal.tenant_id,
+            pairs,
+            with_email=principal.actor == "operator",
+        ),
     )

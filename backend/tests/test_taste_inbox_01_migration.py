@@ -20,11 +20,11 @@ Without a database (always runs):
 Against a real Postgres (skipped when none is reachable; a skip proves
 nothing — point ``QONTINUI_TEST_PG_DSN`` at a throwaway database):
 
-4. **Upgrade from the parent** creates both tables and their indexes, and the
+4. **Upgrade from the parent** creates the three tables and their indexes, and the
    constraints bite: a pair naming another tenant's image, the same pair in
    the other order, an unknown source or label, a label with no time, half a
    slot, half a capture pair.
-5. **Downgrade** removes both tables and leaves ``web.image_assets`` in place;
+5. **Downgrade** removes the three tables and leaves ``web.image_assets`` in place;
    **re-upgrade** restores them; re-running the upgrade body is a no-op.
 """
 
@@ -40,7 +40,13 @@ from sqlalchemy import CheckConstraint, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
-from app.models.taste import TASTE_LABELS, TASTE_PAIR_SOURCES, TastePair, TasteSettings
+from app.models.taste import (
+    TASTE_LABELS,
+    TASTE_PAIR_SOURCES,
+    TasteLabelClock,
+    TastePair,
+    TasteSettings,
+)
 from tests._alembic_harness import (
     admin_database_url,
     backend_root,
@@ -153,7 +159,7 @@ def test_every_statement_is_static_guarded_bounded_and_web_only() -> None:
 def test_the_models_carry_every_check_the_migration_does() -> None:
     in_models = {
         constraint.name
-        for model in (TastePair, TasteSettings)
+        for model in (TastePair, TasteLabelClock, TasteSettings)
         for constraint in model.__table__.constraints
         if isinstance(constraint, CheckConstraint) and constraint.name
     }
@@ -166,7 +172,7 @@ def test_the_models_carry_every_check_the_migration_does() -> None:
     )
     fk_models = {
         fk.name
-        for model in (TastePair, TasteSettings)
+        for model in (TastePair, TasteLabelClock, TasteSettings)
         for fk in model.__table__.foreign_key_constraints
     }
     assert fk_models == set(re.findall(r"CONSTRAINT (fk_taste_\w+)", upgrade))
@@ -248,10 +254,12 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert table_exists(engine, "web", "taste_pairs")
         assert table_exists(engine, "web", "taste_settings")
+        assert table_exists(engine, "web", "taste_label_clock")
         for name in (
             "uq_taste_pairs_pair",
             "ix_taste_pairs_pending",
             "ix_taste_pairs_labelled",
+            "uq_taste_pairs_change_seq",
         ):
             assert index_exists(engine, name, schema="web"), name
 
@@ -291,6 +299,22 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         _refused(
             engine, _pair(tenant, b="c" * 64, label="a"), "ck_taste_pairs_label_time"
         )
+        # A label is charged to a first-answered week and takes a feed position.
+        _refused(
+            engine,
+            _pair(tenant, b="c" * 64, label="a", at="2026-10-15T00:00:00Z"),
+            "ck_taste_pairs_labelled_first",
+        )
+        with pytest.raises(IntegrityError) as clock:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO web.taste_label_clock (tenant_id, last_seq) "
+                        "VALUES (:t, 0)"
+                    ),
+                    {"t": tenant},
+                )
+        assert "ck_taste_label_clock_positive" in str(clock.value)
         # The same images for a slot are another question.
         with engine.begin() as conn:
             conn.execute(_PAIR, _pair(tenant, repo="web", slot="home.hero"))
@@ -342,6 +366,7 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not table_exists(engine, "web", "taste_pairs")
         assert not table_exists(engine, "web", "taste_settings")
+        assert not table_exists(engine, "web", "taste_label_clock")
         assert not index_exists(engine, "uq_taste_pairs_pair", schema="web")
         assert table_exists(engine, "web", "image_assets")
 
