@@ -1,15 +1,17 @@
-"""Schema + round-trip tests for the ``fcap_01`` .. ``fcap_03`` revisions.
+"""Schema + round-trip tests for the ``fcap_01`` revision.
 
 Phase 1 of plan
-``2026-10-01-fleet-capacity-page-finds-the-bottleneck-and-the-idle-hardware``:
+``2026-10-01-fleet-capacity-page-finds-the-bottleneck-and-the-idle-hardware``,
+one revision in three parts (consolidated from a three-revision chain because
+``Migration Reversal Tested`` exercises exactly one added migration per PR):
 
-* ``fcap_01`` — ``coord.device_resource_samples.workloads`` / ``gpu`` (JSONB,
+* Part 1 — ``coord.device_resource_samples.workloads`` / ``gpu`` (JSONB,
   nullable, no DEFAULT, deliberately no CHECK — a CHECK would fail the whole
   best-effort sample INSERT).
-* ``fcap_02`` — ``workload_census_enabled BOOLEAN NULL`` on
+* Part 2 — ``workload_census_enabled BOOLEAN NULL`` on
   ``coord.fleet_runtime_policy`` AND ``coord.fleet_runtime_policy_versions``
   (NULL = on; the snapshot table must never hold less than its parent).
-* ``fcap_03`` — ``coord.capacity_advice_log`` (append-only advice ledger, no FK
+* Part 3 — ``coord.capacity_advice_log`` (append-only advice ledger, no FK
   on ``tenant_id`` / ``computer_id``, CHECKed ``confidence`` / ``actor``,
   unconstrained ``kind``).
 
@@ -48,28 +50,25 @@ from tests._alembic_harness import (
     table_exists,
 )
 
-_FILES = {
-    "fcap_01": "fcap_01_workload_census_and_gpu_on_resource_sample.py",
-    "fcap_02": "fcap_02_workload_census_policy_control.py",
-    "fcap_03": "fcap_03_capacity_advice_log.py",
-}
+_REV = "fcap_01"
+_FILE = "fcap_01_fleet_capacity_schema.py"
 
 
-def _path(rev: str) -> Path:
-    return backend_root() / "alembic" / "versions" / _FILES[rev]
+def _path() -> Path:
+    return backend_root() / "alembic" / "versions" / _FILE
 
 
-def _source(rev: str) -> str:
-    return _path(rev).read_text(encoding="utf-8")
+def _source() -> str:
+    return _path().read_text(encoding="utf-8")
 
 
-def _module(rev: str) -> ModuleType:
-    return load_revision_module(_path(rev), f"_rev_{rev}")
+def _module() -> ModuleType:
+    return load_revision_module(_path(), f"_rev_{_REV}")
 
 
-# The chain's root is re-pointed onto whatever head exists at land time, so it
-# is read from the revision itself rather than pinned here.
-_BASE_PARENT = declared_parent_revision_id(_source("fcap_01"), _FILES["fcap_01"])
+# The revision is re-pointed onto whatever head exists at land time, so its
+# parent is read from the revision itself rather than pinned here.
+_BASE_PARENT = declared_parent_revision_id(_source(), _FILE)
 
 _SAMPLES = "device_resource_samples"
 _POLICY = "fleet_runtime_policy"
@@ -109,28 +108,26 @@ _ADVICE_COLUMNS: tuple[tuple[str, str, str], ...] = (
 # ---------------------------------------------------------------------------
 
 
-def test_the_three_revisions_form_one_linear_chain() -> None:
-    """fcap_01 <- fcap_02 <- fcap_03, and only fcap_01 points outside the family."""
-    assert _module("fcap_01").revision == "fcap_01"
-    assert _module("fcap_02").down_revision == "fcap_01"
-    assert _module("fcap_03").down_revision == "fcap_02"
+def test_one_revision_and_no_leftover_chain() -> None:
+    """fcap_01 is the whole family: one file, parented outside it."""
+    assert _module().revision == _REV
     assert not _BASE_PARENT.startswith("fcap_")
+    versions = backend_root() / "alembic" / "versions"
+    assert sorted(p.name for p in versions.glob("fcap_*.py")) == [_FILE]
 
 
 def test_the_column_lists_are_the_interface_coord_reads() -> None:
     """The data tuples ARE the coord interface; a rename idles forever."""
-    m1 = _module("fcap_01")
-    assert tuple(m1._CAPACITY_COLUMNS) == _SAMPLE_COLUMNS
-    assert m1._TABLE == f"coord.{_SAMPLES}"
-    m2 = _module("fcap_02")
-    assert tuple(m2._CENSUS_CONTROL_COLUMNS) == _CENSUS_CONTROL
-    assert tuple(m2._TABLES) == (f"coord.{_POLICY}", f"coord.{_POLICY_VERSIONS}")
+    m = _module()
+    assert tuple(m._CAPACITY_COLUMNS) == _SAMPLE_COLUMNS
+    assert m._TABLE == f"coord.{_SAMPLES}"
+    assert tuple(m._CENSUS_CONTROL_COLUMNS) == _CENSUS_CONTROL
+    assert tuple(m._POLICY_TABLES) == (f"coord.{_POLICY}", f"coord.{_POLICY_VERSIONS}")
 
 
-@pytest.mark.parametrize("rev", sorted(_FILES))
-def test_every_op_execute_takes_a_static_string_literal(rev: str) -> None:
+def test_every_op_execute_takes_a_static_string_literal() -> None:
     """coord's merge-train migration classifier rejects a dynamic op.execute."""
-    tree = ast.parse(_source(rev))
+    tree = ast.parse(_source())
     calls = [
         node
         for node in ast.walk(tree)
@@ -145,14 +142,13 @@ def test_every_op_execute_takes_a_static_string_literal(rev: str) -> None:
         assert len(call.args) == 1 and not call.keywords
         arg = call.args[0]
         assert isinstance(arg, ast.Constant) and isinstance(arg.value, str), (
-            f"{rev}: op.execute at line {call.lineno} is not a static string literal"
+            f"{_REV}: op.execute at line {call.lineno} is not a static string literal"
         )
 
 
-@pytest.mark.parametrize("rev", ["fcap_01", "fcap_02"])
-def test_no_drop_column_outside_downgrade(rev: str) -> None:
+def test_no_drop_column_outside_downgrade() -> None:
     """DROP COLUMN text lives only in downgrade(), where the drop guard skips it."""
-    tree = ast.parse(_source(rev))
+    tree = ast.parse(_source())
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "downgrade":
             continue
@@ -163,8 +159,8 @@ def test_no_drop_column_outside_downgrade(rev: str) -> None:
                 assert "DROP COLUMN" not in n.value.upper()
 
 
-def _recorded_sql(monkeypatch: pytest.MonkeyPatch, rev: str, step: str) -> list[str]:
-    module = _module(rev)
+def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
+    module = _module()
     executed: list[str] = []
 
     class _RecordingOp:
@@ -177,36 +173,42 @@ def _recorded_sql(monkeypatch: pytest.MonkeyPatch, rev: str, step: str) -> list[
     return executed
 
 
-def test_fcap_01_adds_and_drops_exactly_its_columns_with_no_check(
+def _on_table(statements: list[str], table: str) -> list[str]:
+    """The statements that ALTER exactly ``coord.<table>`` (newline-terminated,
+    so ``fleet_runtime_policy`` does not also match its ``_versions`` twin)."""
+    return [s for s in statements if f"ALTER TABLE coord.{table}\n" in s]
+
+
+def test_part_1_adds_and_drops_exactly_its_columns_with_no_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    statements = _recorded_sql(monkeypatch, "fcap_01", "upgrade")
-    up = "\n".join(statements)
-    down = "\n".join(_recorded_sql(monkeypatch, "fcap_01", "downgrade"))
-    adds = [s for s in statements if "ADD COLUMN" in s]
+    statements = _recorded_sql(monkeypatch, "upgrade")
+    down_statements = _recorded_sql(monkeypatch, "downgrade")
+    adds = _on_table(statements, _SAMPLES)
     assert len(adds) == 1, "one ALTER carries both columns"
     add = adds[0]
-    assert f"ALTER TABLE coord.{_SAMPLES}" in add
+    drops = _on_table(down_statements, _SAMPLES)
+    assert len(drops) == 1, "one ALTER drops both columns"
+    drop = drops[0]
     for name, ddl in _SAMPLE_COLUMNS:
         assert f"ADD COLUMN IF NOT EXISTS {name} {ddl}" in add
-        assert f"DROP COLUMN IF EXISTS {name}" in down
+        assert f"DROP COLUMN IF EXISTS {name}" in drop
     assert add.count("ADD COLUMN") == len(_SAMPLE_COLUMNS)
-    assert down.count("DROP COLUMN") == len(_SAMPLE_COLUMNS)
+    assert drop.count("DROP COLUMN") == len(_SAMPLE_COLUMNS)
     # A CHECK would fail the whole best-effort sample INSERT; a DEFAULT would
     # fabricate a measured value into every row an older runner sends.
     assert "CHECK" not in add.upper()
-    assert "CONSTRAINT" not in up.upper()
+    assert "CONSTRAINT" not in add.upper()
     assert "DEFAULT" not in add.upper()
     assert statements[0] == "SET LOCAL lock_timeout = '3s'"
     assert "SET LOCAL lock_timeout = DEFAULT" in statements
-    down_statements = _recorded_sql(monkeypatch, "fcap_01", "downgrade")
     assert down_statements[0] == "SET LOCAL lock_timeout = '3s'"
     assert down_statements[-1] == "SET LOCAL lock_timeout = DEFAULT"
 
 
-def test_fcap_02_widens_both_tables_together(monkeypatch: pytest.MonkeyPatch) -> None:
-    up = _recorded_sql(monkeypatch, "fcap_02", "upgrade")
-    down = _recorded_sql(monkeypatch, "fcap_02", "downgrade")
+def test_part_2_widens_both_tables_together(monkeypatch: pytest.MonkeyPatch) -> None:
+    up = _recorded_sql(monkeypatch, "upgrade")
+    down = _recorded_sql(monkeypatch, "downgrade")
     for table in (_POLICY, _POLICY_VERSIONS):
         assert any(
             f"ALTER TABLE coord.{table}\n" in s
@@ -228,7 +230,7 @@ def test_fcap_02_widens_both_tables_together(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_the_comments_state_what_null_means() -> None:
-    src1 = _source("fcap_01")
+    src1 = _source()
     for name, _ in _SAMPLE_COLUMNS:
         body = comment_body_from_source(src1, f"coord.{_SAMPLES}.{name}")
         assert "NOT MEASURED / UNKNOWN" in body
@@ -251,7 +253,7 @@ def test_the_comments_state_what_null_means() -> None:
         assert cls in workloads, f"class {cls} missing from the vocabulary comment"
     assert "argv, cwd and env NEVER leave the host" in workloads
 
-    src2 = _source("fcap_02")
+    src2 = src1
     parent = comment_body_from_source(src2, f"coord.{_POLICY}.workload_census_enabled")
     assert "NULL = no override, the census" in parent
     assert "RUNS" in parent
@@ -260,7 +262,7 @@ def test_the_comments_state_what_null_means() -> None:
     )
     assert "Snapshot of coord.fleet_runtime_policy.workload_census_enabled" in snapshot
     assert "NULL is ON" in snapshot
-    assert "BEFORE revision fcap_02 carry NULL" in snapshot
+    assert "BEFORE revision fcap_01 carry NULL" in snapshot
     assert "Immutable" in snapshot
 
     gpu = comment_body_from_source(src1, f"coord.{_SAMPLES}.gpu")
@@ -279,12 +281,12 @@ def _admin_url_or_skip() -> str:
     return url
 
 
-def _assert_fcap_01_02_present(engine: Engine) -> None:
+def _assert_parts_1_2_present(engine: Engine) -> None:
     for name, ddl in _SAMPLE_COLUMNS:
         info = column_info(engine, _SAMPLES, name)
         assert info == (ddl.lower(), "YES", None), f"{_SAMPLES}.{name}: {info}"
         assert column_comment(engine, _SAMPLES, name) == comment_body_from_source(
-            _source("fcap_01"), f"coord.{_SAMPLES}.{name}"
+            _source(), f"coord.{_SAMPLES}.{name}"
         )
     for table in (_POLICY, _POLICY_VERSIONS):
         info = column_info(engine, table, "workload_census_enabled")
@@ -292,7 +294,7 @@ def _assert_fcap_01_02_present(engine: Engine) -> None:
         assert column_comment(
             engine, table, "workload_census_enabled"
         ) == comment_body_from_source(
-            _source("fcap_02"), f"coord.{table}.workload_census_enabled"
+            _source(), f"coord.{table}.workload_census_enabled"
         )
 
 
@@ -316,7 +318,7 @@ def _assert_advice_log_present(engine: Engine) -> None:
     assert fks == 0, (
         "an append-only log carries no FK (computer_id's waits on web#1598)"
     )
-    src3 = _source("fcap_03")
+    src3 = _source()
     for name in ("confidence", "kind", "computer_id"):
         assert column_comment(engine, _ADVICE, name) == comment_body_from_source(
             src3, f"coord.{_ADVICE}.{name}"
@@ -367,15 +369,15 @@ def test_full_chain_up_down_up_and_round_trips() -> None:
                     INSERT INTO coord.fleet_runtime_policy_versions
                         (policy_id, version, level, master_enabled,
                          change_note, updated_by)
-                    VALUES (:p, 1, 'controls', true, 'seeded before fcap_02',
+                    VALUES (:p, 1, 'controls', true, 'seeded before fcap_01',
                             'seed@example.com')
                     """
                 ),
                 {"p": str(policy_id)},
             )
 
-        run_alembic(backend_root(), db_url, "upgrade", "fcap_03")
-        _assert_fcap_01_02_present(engine)
+        run_alembic(backend_root(), db_url, "upgrade", _REV)
+        _assert_parts_1_2_present(engine)
         _assert_advice_log_present(engine)
 
         census = [
@@ -530,23 +532,19 @@ def test_full_chain_up_down_up_and_round_trips() -> None:
             ).scalar_one()
         assert survived == 1, "downgrade destroyed a pre-existing sample row"
 
-        run_alembic(backend_root(), db_url, "upgrade", "fcap_03")
-        _assert_fcap_01_02_present(engine)
+        run_alembic(backend_root(), db_url, "upgrade", _REV)
+        _assert_parts_1_2_present(engine)
         _assert_advice_log_present(engine)
 
 
 def test_upgrade_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Re-running each revision's own upgrade() SQL is a no-op, not an error."""
-    statements = [
-        sql
-        for rev in ("fcap_01", "fcap_02", "fcap_03")
-        for sql in _recorded_sql(monkeypatch, rev, "upgrade")
-    ]
+    """Re-running the revision's own upgrade() SQL is a no-op, not an error."""
+    statements = _recorded_sql(monkeypatch, "upgrade")
     admin_url = _admin_url_or_skip()
     with ephemeral_database(admin_url, "fcapi") as (engine, db_url):
-        run_alembic(backend_root(), db_url, "upgrade", "fcap_03")
+        run_alembic(backend_root(), db_url, "upgrade", _REV)
         with engine.begin() as conn:
             for sql in statements:
                 conn.execute(text(sql))
-        _assert_fcap_01_02_present(engine)
+        _assert_parts_1_2_present(engine)
         _assert_advice_log_present(engine)
