@@ -1,7 +1,7 @@
 """coord: give the five primary-key-less tables a replica identity
 
 Revision ID: replident_01
-Revises: route_serving_method_idx_01
+Revises: coord_tenant_github_hosts_01
 Create Date: 2026-10-16
 
 Plan ``2026-10-15-coord-and-web-data-move-off-aws-by-logical-replication``,
@@ -121,7 +121,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "replident_01"
-down_revision: str | Sequence[str] | None = "route_serving_method_idx_01"
+down_revision: str | Sequence[str] | None = "coord_tenant_github_hosts_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
