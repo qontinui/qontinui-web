@@ -55,6 +55,7 @@ from app.api.v1.endpoints import (
     prompt_injections,
 )
 from app.core.config import settings
+from app.core.refusal import RefusalHTTPException
 from app.services import coord_proxy as services_coord_proxy
 from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
@@ -71,6 +72,10 @@ FULL_HEADERS = {
 
 NOT_REACHABLE = "coord is not reachable"
 TIMED_OUT = "timeout waiting for coord"
+#: What operations' own proxy helpers raise for a transport failure: a typed
+#: refusal (plan 2026-09-20-..., Phase D2), still an ``HTTPException`` with
+#: the same status and detail. The private copies elsewhere stay plain.
+OPS_TRANSPORT = RefusalHTTPException
 
 _REQ = httpx.Request("GET", "http://coord.test/coord/contract-probe")
 
@@ -202,13 +207,15 @@ def _get_family(cls: type[HTTPException]) -> dict[str, Cell]:
 
 
 _WRITE_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     # The one reader that maps a non-Connect transport error.
     "read_error": Cell(
         Raises(
             504,
             "coord's answer was lost in transit (ReadError); "
-            "the change may have been applied",
+            "the change may have been applied, so re-read the current "
+            "state before retrying",
+            OPS_TRANSPORT,
         )
     ),
     "coord_404_empty": Cell(Raises(404, "")),
@@ -221,14 +228,16 @@ _WRITE_FAMILY: dict[str, Cell] = {
         Raises(
             504,
             "coord answered 200 with a body that is not JSON; "
-            "the change may have been applied",
+            "the change may have been applied, so re-read the current "
+            "state before retrying",
+            OPS_TRANSPORT,
         )
     ),
 }
 
 # ``_proxy_coord_verbatim`` and the open-coded clone-credential route.
 _VERBATIM_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     "read_error": _READ_ERROR_ESCAPES,
     "coord_404_empty": Cell(Responds(404, {"detail": ""})),
     "coord_422_json": Cell(Responds(422, _JSON_ERROR_DICT)),
@@ -243,13 +252,13 @@ _VERBATIM_FAMILY: dict[str, Cell] = {
 }
 
 _DELETE_FAMILY: dict[str, Cell] = {
-    **_get_family(HTTPException),
+    **_get_family(OPS_TRANSPORT),
     "ok_200_empty": Cell(Returns({"status": "ok"})),
     "no_content_204": Cell(Returns({"status": "ok"})),
 }
 
 _PASSTHROUGH_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     "read_error": _READ_ERROR_ESCAPES,
     # Empty error body → the synthesized message, not an empty string.
     "coord_404_empty": Cell(Responds(404, {"error": "coord returned HTTP 404"})),
@@ -291,9 +300,9 @@ EXPECTED: dict[str, dict[str, Cell]] = {
         **_get_family(operations.CoordTransportUnavailable),
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
     },
-    "ops_post": _get_family(HTTPException),
+    "ops_post": _get_family(OPS_TRANSPORT),
     "ops_post_structured_errors": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         # Only a JSON OBJECT becomes a dict detail; empty/HTML stay text.
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
     },
@@ -301,12 +310,12 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # coord's own status passed through (the 202 row); ≥400 and non-JSON 2xx
     # behave exactly as plain ops_post.
     "ops_post_return_status": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "ok_200_json": Cell(Returns((_OK_DICT, 200))),
         OK_202_JSON: Cell(Returns((_OK_DICT, 202))),
     },
     "ops_post_non_json_success_as_empty": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "ok_200_empty": Cell(Returns({})),
         "no_content_204": Cell(Returns({})),
         "ok_200_text": Cell(Returns({})),
@@ -317,7 +326,7 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # re-raised exception is its own ``__cause__``. Class, status and detail
     # are unchanged, which is all these cells assert.
     "ops_post_readable": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "coord_422_json": Cell(
             Raises(
                 422,
@@ -984,8 +993,17 @@ _WIRE_ROWS: list[
         {"params": PARAMS, "json": BODY},
         ("params", "json"),
     ),
-    # The GET arm sends neither params nor json.
-    ("passthrough-get", "ops_passthrough", {}, (_url(),), {}, ()),
+    # The GET arm sends no json, and ``params`` verbatim: ``None`` when the
+    # caller passed no query (httpx puts nothing on the wire for it).
+    ("passthrough-get", "ops_passthrough", {}, (_url(),), {"params": None}, ()),
+    (
+        "passthrough-get_params",
+        "ops_passthrough",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
     (
         "passthrough_post-body",
         "ops_passthrough_post",

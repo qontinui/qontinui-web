@@ -75,7 +75,7 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
     // Refresh starts, and is still in flight when the write lands.
     const slowRead = deferred<ReturnType<typeof view>>();
     getMock.mockReturnValueOnce(slowRead.promise);
-    let refresh!: Promise<void>;
+    let refresh!: Promise<boolean>;
     act(() => {
       refresh = result.current.reload();
     });
@@ -115,7 +115,7 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
 
     const slowRead = deferred<ReturnType<typeof view>>();
     getMock.mockReturnValueOnce(slowRead.promise);
-    let refresh!: Promise<void>;
+    let refresh!: Promise<boolean>;
     act(() => {
       refresh = result.current.reload();
     });
@@ -153,7 +153,7 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
 
     const slowRead = deferred<ReturnType<typeof view>>();
     getMock.mockReturnValueOnce(slowRead.promise);
-    let refresh!: Promise<void>;
+    let refresh!: Promise<boolean>;
     act(() => {
       refresh = result.current.reload();
     });
@@ -204,5 +204,69 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
 
     expect(result.current.policy?.effective_level).toBe("on");
     expect(result.current.readbackError).toBeNull();
+  });
+});
+
+describe("useTenantFleetPolicyDial — reload says whether its read was applied", () => {
+  it("resolves true for a read that landed, false for one that failed", async () => {
+    getMock.mockResolvedValueOnce(view("off"));
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial")
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    getMock.mockResolvedValueOnce(view("on"));
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    expect(applied).toBe(true);
+    expect(result.current.policy?.effective_level).toBe("on");
+
+    getMock.mockRejectedValueOnce(new Error("HTTP 502"));
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    // Failed: the last confirmed value stays, and the caller is told so.
+    expect(applied).toBe(false);
+    expect(result.current.policy?.effective_level).toBe("on");
+  });
+
+  it("resolves false for a read discarded because a write landed meanwhile", async () => {
+    getMock.mockResolvedValueOnce(view("off"));
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial")
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const slowRead = deferred<ReturnType<typeof view>>();
+    getMock.mockReturnValueOnce(slowRead.promise);
+    let refresh!: Promise<boolean>;
+    act(() => {
+      refresh = result.current.reload();
+    });
+
+    putMock.mockResolvedValue({
+      ok: true,
+      domain: "some_dial",
+      written_level: "on",
+      written_master_enabled: true,
+      versioned: true,
+      version: 2,
+      updated_by: null,
+      effective: view("on"),
+      readback_error: null,
+    });
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    let applied: boolean | undefined;
+    await act(async () => {
+      slowRead.resolve(view("off"));
+      applied = await refresh;
+    });
+    expect(applied).toBe(false);
+    expect(result.current.policy?.effective_level).toBe("on");
   });
 });

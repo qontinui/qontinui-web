@@ -187,6 +187,46 @@ describe("walkWorkUnits", () => {
     expect(out?.rows).toHaveLength(WALK_PAGE_LIMIT);
   });
 
+  it("names a refused later page by its refusal sentence, never the raw body", async () => {
+    const body = JSON.stringify({
+      error: "workspace_root_unresolved",
+      refusal: {
+        code: "workspace_root_unresolved",
+        next_action: { kind: "set_setting", target: "workspace_root" },
+        glossary_terms: [],
+        observed_at: "2026-09-29T00:00:00Z",
+        source: "web_backend",
+      },
+    });
+    const { get } = scripted({
+      first: {
+        order: "authored_desc",
+        work_units: fullPage("a"),
+        next_cursor: {
+          after_authored_at: "2026-09-01T00:00:00Z",
+          after_slug: "a-499",
+        },
+      },
+      "a-499": new Error(
+        `GET /api/v1/operations/coord/plans failed: 409 - ${body}`
+      ),
+    });
+
+    const out = await walkWorkUnits(
+      pageOf(get),
+      base(),
+      "authored_desc",
+      always
+    );
+
+    expect(out).toMatchObject({
+      kind: "partial",
+      reason: "error",
+      error:
+        'No workspace folder could be found for this operation. Set the "workspace_root" setting, then try again.',
+    });
+  });
+
   it("throws when the FIRST page fails — nothing was read", async () => {
     const { get } = scripted({ first: new Error("HTTP 503") });
     await expect(

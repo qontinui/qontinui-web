@@ -1,179 +1,62 @@
 # Workflow Analytics & Complexity
 
-This guide covers workflow analytics, metrics tracking, and complexity analysis.
+This guide covers workflow execution analytics and structural complexity analysis.
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Analytics Dashboard](#analytics-dashboard)
-- [Metrics Collection](#metrics-collection)
+- [Execution Analytics](#execution-analytics)
 - [Complexity Analysis](#complexity-analysis)
-- [Reports & Exports](#reports--exports)
 - [Best Practices](#best-practices)
 
 ## Overview
 
-The Workflow Analytics and Complexity services provide insight into workflow execution history and structural complexity.
+Two services provide insight into workflows:
 
-### Key Features
+- **`workflowAnalyticsService`** (`@/services/workflow-analytics-service`) records executions in browser storage and derives per-workflow metrics, aggregate stats and reports from them.
+- **`workflowComplexityAnalyzer`** (`@/services/workflow-complexity-analyzer`) computes structural metrics from a workflow's actions and connections.
 
-- **Analytics**: Execution metrics, success rates, duration tracking
-- **Complexity Analysis**: Cyclomatic complexity, cognitive load, maintainability
-- **Reporting**: Detailed reports and trend analysis
+## Execution Analytics
 
-## Analytics Dashboard
-
-### Workflow Metrics
+### Track an Execution
 
 ```typescript
 import { workflowAnalyticsService } from '@/services/workflow-analytics-service';
 
-// Get metrics for a workflow
+// trackExecution(workflowId, workflowName, duration, success, error?, folderId?)
+workflowAnalyticsService.trackExecution('workflow-123', 'Login Flow', 1500, true);
+workflowAnalyticsService.trackExecution('workflow-123', 'Login Flow', 900, false, 'Element not found');
+```
+
+### Workflow Metrics
+
+```typescript
 const metrics = workflowAnalyticsService.getWorkflowMetrics(workflowId);
 
-console.log(`Execution Count: ${metrics.executionCount}`);
-console.log(`Success Rate: ${metrics.successRate}%`);
-console.log(`Average Duration: ${metrics.averageDuration}ms`);
-console.log(`Last Executed: ${new Date(metrics.lastExecuted).toLocaleString()}`);
-```
-
-### Metrics Structure
-
-```typescript
-interface WorkflowMetrics {
-  workflowId: string;
-  workflowName: string;
-
-  // Execution stats
-  executionCount: number;
-  successCount: number;
-  failureCount: number;
-  errorCount: number;
-
-  // Performance
-  averageDuration: number;
-  minDuration: number;
-  maxDuration: number;
-  totalDuration: number;
-
-  // Success rate
-  successRate: number;
-
-  // Timestamps
-  firstExecuted?: string;
-  lastExecuted?: string;
-
-  // Trend data
-  trend?: 'improving' | 'declining' | 'stable';
+if (metrics) {
+  console.log(`Executions: ${metrics.totalExecutions}`);
+  console.log(`Success Rate: ${(metrics.successRate * 100).toFixed(1)}%`);
+  console.log(`Average Duration: ${metrics.avgDuration}ms`);
 }
 ```
 
-### Record Execution
+`getWorkflowMetrics` returns `null` for a workflow with no recorded executions. The full `WorkflowMetrics` shape is defined in `frontend/src/services/workflow-analytics-service.ts`.
+
+### Rankings, Stats and Reports
 
 ```typescript
-// Record workflow execution
-workflowAnalyticsService.recordExecution({
-  workflowId: 'workflow-123',
-  workflowName: 'Login Flow',
-  duration: 1500,
-  success: true,
-  timestamp: new Date().toISOString(),
-  metadata: {
-    environment: 'production',
-    userId: 'user-456'
-  }
-});
-```
+const mostUsed = workflowAnalyticsService.getMostUsedWorkflows(10);
+const slowest = workflowAnalyticsService.getSlowestWorkflows(10);
+const failing = workflowAnalyticsService.getHighestErrorRateWorkflows();
 
-### Performance Report
+const stats = workflowAnalyticsService.getAggregatedStats();
+const timeline = workflowAnalyticsService.getExecutionTimeline(workflowId);
 
-```typescript
-// Get performance report
-const report = workflowAnalyticsService.generatePerformanceReport(workflowId);
+// Optional TimeRange narrows the report
+const report = workflowAnalyticsService.exportAnalyticsReport();
 
-console.log(report.summary);
-console.log(`Avg Duration: ${report.averageDuration}ms`);
-console.log(`P95 Duration: ${report.p95Duration}ms`);
-console.log(`Success Rate: ${report.successRate}%`);
-```
-
-## Metrics Collection
-
-### Automatic Tracking
-
-```typescript
-// Metrics are automatically collected during workflow execution
-// This happens in the execution engine
-
-async function executeWorkflow(workflow: Workflow) {
-  const startTime = Date.now();
-
-  try {
-    // Execute workflow
-    const result = await runWorkflow(workflow);
-
-    // Record success
-    workflowAnalyticsService.recordExecution({
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      duration: Date.now() - startTime,
-      success: true,
-      timestamp: new Date().toISOString()
-    });
-
-    return result;
-  } catch (error) {
-    // Record failure
-    workflowAnalyticsService.recordExecution({
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      duration: Date.now() - startTime,
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-
-    throw error;
-  }
-}
-```
-
-### Custom Metrics
-
-```typescript
-// Track custom metrics
-workflowAnalyticsService.recordCustomMetric({
-  workflowId: 'workflow-123',
-  metricName: 'apiCallCount',
-  value: 5,
-  timestamp: new Date().toISOString()
-});
-
-workflowAnalyticsService.recordCustomMetric({
-  workflowId: 'workflow-123',
-  metricName: 'dataProcessed',
-  value: 1000,
-  unit: 'records',
-  timestamp: new Date().toISOString()
-});
-```
-
-### Metrics Aggregation
-
-```typescript
-// Get aggregated metrics
-const aggregated = workflowAnalyticsService.getAggregatedMetrics({
-  workflowIds: ['wf-1', 'wf-2', 'wf-3'],
-  period: 'last-7-days',
-  groupBy: 'day'
-});
-
-aggregated.forEach(day => {
-  console.log(`Date: ${day.date}`);
-  console.log(`  Executions: ${day.executionCount}`);
-  console.log(`  Avg Duration: ${day.averageDuration}ms`);
-  console.log(`  Success Rate: ${day.successRate}%`);
-});
+// Clear one workflow's history, or everything
+workflowAnalyticsService.clearMetrics(workflowId);
 ```
 
 ## Complexity Analysis
@@ -183,85 +66,32 @@ aggregated.forEach(day => {
 ```typescript
 import { workflowComplexityAnalyzer } from '@/services/workflow-complexity-analyzer';
 
-// Analyze workflow complexity
 const complexity = workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
+console.log(`Actions: ${complexity.actionCount}`);
 console.log(`Cyclomatic Complexity: ${complexity.cyclomaticComplexity}`);
-console.log(`Cognitive Complexity: ${complexity.cognitiveComplexity}`);
-console.log(`Nesting Depth: ${complexity.maxNestingDepth}`);
-console.log(`Maintainability Index: ${complexity.maintainabilityIndex}/100`);
+console.log(`Max Depth: ${complexity.maxDepth}`);
+console.log(`Score: ${complexity.complexityScore}/100 (${complexity.complexityRating})`);
 ```
 
-### Complexity Metrics
+The full `ComplexityAnalysis` shape is defined in `frontend/src/services/workflow-complexity-analyzer.ts`.
+
+### Simplification Suggestions
 
 ```typescript
-interface ComplexityMetrics {
-  // Cyclomatic complexity (control flow complexity)
-  cyclomaticComplexity: number;
+const suggestions = workflowComplexityAnalyzer.suggestSimplifications(workflow);
 
-  // Cognitive complexity (how hard to understand)
-  cognitiveComplexity: number;
-
-  // Nesting depth
-  maxNestingDepth: number;
-  averageNestingDepth: number;
-
-  // Maintainability
-  maintainabilityIndex: number;  // 0-100
-
-  // Code smells
-  codeSmells: CodeSmell[];
-
-  // Action counts
-  actionCounts: {
-    total: number;
-    byType: Record<string, number>;
-  };
-}
-```
-
-### Code Smells
-
-```typescript
-// Detect code smells
-const smells = complexity.codeSmells;
-
-smells.forEach(smell => {
-  console.log(`\n${smell.type}:`);
-  console.log(`  Severity: ${smell.severity}`);
-  console.log(`  Description: ${smell.description}`);
-  console.log(`  Location: ${smell.location}`);
-  console.log(`  Suggestion: ${smell.suggestion}`);
+suggestions.forEach((s) => {
+  console.log(`[${s.severity}] ${s.type}: ${s.description}`);
+  console.log(`  ${s.recommendation}`);
 });
 ```
 
-## Reports & Exports
-
-### Export Analytics Data
+### Comparing Workflows
 
 ```typescript
-// Export to JSON
-const analyticsData = workflowAnalyticsService.exportAnalytics(workflowId);
-
-// Export to CSV
-const csv = workflowAnalyticsService.exportAnalyticsCSV(workflowId);
-```
-
-### Trend Analysis
-
-```typescript
-// Get performance trends over time
-const trends = workflowAnalyticsService.getPerformanceTrends(workflowId, {
-  period: 'last-30-days',
-  granularity: 'day'
-});
-
-trends.forEach(day => {
-  console.log(`${day.date}:`);
-  console.log(`  Avg Duration: ${day.avgDuration}ms (${day.trend})`);
-  console.log(`  Success Rate: ${day.successRate}%`);
-  console.log(`  Executions: ${day.executionCount}`);
-});
+const comparison = workflowComplexityAnalyzer.compareComplexity(workflowA, workflowB);
+const distribution = workflowComplexityAnalyzer.getComplexityDistribution(workflows);
 ```
 
 ## Best Practices
@@ -269,17 +99,15 @@ trends.forEach(day => {
 ### Performance Monitoring
 
 ```typescript
-// Monitor workflow performance continuously
 function monitorWorkflowPerformance(workflowId: string) {
   const metrics = workflowAnalyticsService.getWorkflowMetrics(workflowId);
+  if (!metrics) return;
 
-  // Alert on degradation
-  if (metrics.successRate < 90) {
-    alert(`Warning: Success rate dropped to ${metrics.successRate}%`);
+  if (metrics.successRate < 0.9) {
+    console.warn(`Success rate dropped to ${(metrics.successRate * 100).toFixed(1)}%`);
   }
-
-  if (metrics.averageDuration > 5000) {
-    alert(`Warning: Average duration increased to ${metrics.averageDuration}ms`);
+  if (metrics.avgDuration > 5000) {
+    console.warn(`Average duration increased to ${metrics.avgDuration}ms`);
   }
 }
 ```
@@ -288,4 +116,3 @@ function monitorWorkflowPerformance(workflowId: string) {
 
 - [Testing Guide](./testing.md) - Test performance improvements
 - [Best Practices](./best-practices.md) - Performance optimization patterns
-- [API Reference](./api-reference.md) - Complete API documentation

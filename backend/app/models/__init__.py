@@ -85,6 +85,7 @@ from app.models.execution_tree_event import (
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.feedback_score import FeedbackScore
 from app.models.finding_category_config import FindingCategoryConfig
+from app.models.image_asset import ImageAsset, ImageSlotCandidate
 from app.models.known_issue import KnownIssue
 from app.models.machine_display_name import MachineDisplayName
 from app.models.notification import (
@@ -115,6 +116,7 @@ from app.models.overview import (
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
+from app.models.plan_model_route import PlanDifficultyModelRoute
 from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
@@ -324,6 +326,9 @@ __all__ = [
     "DetectedIssue",
     # Finding Category Configs
     "FindingCategoryConfig",
+    # Content-addressed image store (web.image_assets / web.image_slot_candidates)
+    "ImageAsset",
+    "ImageSlotCandidate",
     # Design/UX Policies
     "DesignPolicy",
     # Discoveries
@@ -551,6 +556,9 @@ __all__ = [
     "PlanScanRootObservation",
     # Per-device refused scan-source reports (agent.plan_scan_root_refusals)
     "PlanScanRootRefusal",
+    # Operator-chosen model family per plan difficulty
+    # (agent.plan_difficulty_model_routes)
+    "PlanDifficultyModelRoute",
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",

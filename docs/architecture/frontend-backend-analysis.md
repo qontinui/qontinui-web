@@ -234,12 +234,12 @@ No bundle analysis in place
 
 **2. Dynamic Imports for Heavy Components**
 ```typescript
-// Instead of:
-import { WorkflowCanvas } from '@/components/canvas/workflow-canvas';
+// Instead of (HeavyEditor stands for any large client-only component):
+import { HeavyEditor } from './HeavyEditor';
 
 // Use:
-const WorkflowCanvas = dynamic(() => import('@/components/canvas/workflow-canvas'), {
-  loading: () => <CanvasLoadingSpinner />,
+const HeavyEditor = dynamic(() => import('./HeavyEditor'), {
+  loading: () => <LoadingSpinner />,
   ssr: false
 });
 ```

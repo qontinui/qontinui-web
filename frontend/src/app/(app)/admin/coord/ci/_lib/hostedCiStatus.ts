@@ -74,6 +74,12 @@ export interface CiHostingView {
   domain: string;
   tenant_default: CiHostingReading;
   repos: CiHostingRepoReading[];
+  /**
+   * Set when coord could not list the tenant's repos (or sent no list): the
+   * empty `repos` is then UNKNOWN, never "no repos". Absent from an older
+   * backend, which says nothing either way.
+   */
+  repos_unknown_reason?: string | null;
   /** Same effective-tenant rule as the fleet-policy read's `can_edit`. */
   can_edit: boolean;
 }

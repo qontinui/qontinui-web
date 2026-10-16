@@ -30,6 +30,7 @@ if os.environ.get("QONTINUI_DISABLE_CLOUD_EXTENSIONS") != "1":
         pass
 
 from app.api.v1.api import api_router
+from app.api.v1.endpoints import image_assets as image_assets_endpoints
 from app.api.v1.endpoints.plan_library import (
     ARTIFACT_EXPORT_HEADERS,
     CORPUS_EXPORT_HEADERS,
@@ -98,6 +99,46 @@ app.add_exception_handler(InterfaceError, db_operational_exception_handler)  # t
 app.add_exception_handler(ConnectionRefusedError, db_operational_exception_handler)  # type: ignore
 if settings.ENVIRONMENT == "development":
     app.add_exception_handler(Exception, general_exception_handler)
+
+# Upload body caps, before anything parses the body (the multipart parser
+# would otherwise spool an unbounded body to disk ahead of authentication).
+#
+# Registered FIRST, so it is the INNERMOST user middleware — the one nearest
+# the routes. Every layer outside it (trusted-host, query timing, logging,
+# metrics, request-id, security headers, gzip, CORS) passes the body stream
+# through without reading it, so the cap still runs before anything parses the
+# body. And every one of them wraps it: the request-id layer adds X-Request-ID
+# to its 413 and binds the id its log line carries, and the logging and
+# metrics layers record the 413 the client receives — outside them, a chunked
+# overflow was recorded as the 400 their inner ExceptionGroup produced while
+# the client got a 413. CORS stays outermost, so the 413 still carries the
+# CORS headers a browser needs to read it.
+app.add_middleware(
+    BodyLimitMiddleware,
+    limits={
+        ("POST", f"{settings.API_V1_STR}/overview/files"): BodyLimit(
+            max_bytes=overview_files.MAX_UPLOAD_REQUEST_BYTES,
+            error="file_too_large",
+            message=(
+                "Files can be at most "
+                f"{overview_files.MAX_FILE_BYTES // (1024 * 1024)} MB."
+            ),
+            max_file_bytes=overview_files.MAX_FILE_BYTES,
+        ),
+        # The content-addressed image store's upload (plan
+        # 2026-10-13-image-generation-and-visual-judgment, Phase 13). The
+        # handler then holds the image part itself to MAX_IMAGE_BYTES.
+        ("POST", f"{settings.API_V1_STR}/image-assets"): BodyLimit(
+            max_bytes=image_assets_endpoints.MAX_UPLOAD_REQUEST_BYTES,
+            error="image_too_large",
+            message=(
+                "Images can be at most "
+                f"{image_assets_endpoints.MAX_IMAGE_BYTES // (1024 * 1024)} MB."
+            ),
+            max_file_bytes=image_assets_endpoints.MAX_IMAGE_BYTES,
+        ),
+    },
+)
 
 # Add rate limiting
 if settings.RATE_LIMIT_ENABLED:
@@ -209,24 +250,6 @@ logger.info("security_headers_middleware_enabled", environment=settings.ENVIRONM
 # that already carries a `Content-Encoding`.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 logger.info("gzip_middleware_enabled", minimum_size=1024, compresslevel=6)
-
-# Upload body caps, before anything parses the body (the multipart parser
-# would otherwise spool an unbounded body to disk ahead of authentication).
-# Inside CORSMiddleware, so a 413 still carries the CORS headers a browser
-# needs to read it.
-app.add_middleware(
-    BodyLimitMiddleware,
-    limits={
-        ("POST", f"{settings.API_V1_STR}/overview/files"): BodyLimit(
-            max_bytes=overview_files.MAX_UPLOAD_REQUEST_BYTES,
-            error="file_too_large",
-            message=(
-                "Files can be at most "
-                f"{overview_files.MAX_FILE_BYTES // (1024 * 1024)} MB."
-            ),
-        ),
-    },
-)
 
 # Response headers a browser client is allowed to READ.
 #
@@ -508,15 +531,12 @@ async def startup_event():
     # asyncio.create_task loops right here). Every tick is gated on a Postgres
     # advisory lock, so N replicas run exactly one executor per task.
     #
-    # DELIBERATELY NOT gated on `skip_side_effects`. Killing the scheduler under
-    # tests also stops `memory_reindex` / `memory_consolidate` /
-    # `memory_bridge_sync`, and `tests/test_memory_api_db.py`'s hybrid-query
-    # tests depend on those having run — with the scheduler off that file fails a
-    # varying 1-5 tests per run. The one dangerous task, `scheduled_dispatch`, is
-    # already switched off for the suite by
-    # `tests/conftest.py`'s QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0 (see
-    # tests/test_scheduler_dispatch_sweeper_off_in_tests.py). Keep the blast
-    # radius at that one task.
+    # DELIBERATELY NOT gated on `skip_side_effects`, so the boot path under test
+    # stays the production one. The test suite instead STOPS the singleton right
+    # after boot (`tests/conftest.py::booted_app`), because a loop left ticking
+    # for the whole session raced tests for shared rows and leaked its sleeps into
+    # sleep mocks; that is pinned by
+    # tests/test_scheduler_dispatch_sweeper_off_in_tests.py.
     try:
         from app.core.scheduler import scheduler
 
