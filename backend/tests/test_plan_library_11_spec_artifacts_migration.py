@@ -53,7 +53,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_11_spec_artifacts"
-_PARENT_REVISION_ID = "twin_fidelity_01_coord_twin_fidelity_observations"
+_PARENT_REVISION_ID = "ingcred_01"
 _REVISION_FILENAME = "plan_library_11_spec_artifacts.py"
 
 _NEW_KINDS = (
@@ -253,6 +253,9 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
             assert f"'{relation}'" in rels["ck_work_artifact_edges_relation"]
         assert "ck_work_artifact_edges_open_target" in rels
         assert "ck_work_artifact_edges_followup_note" in rels
+        # A relation-mentioning CHECK this revision does not own: the
+        # discover-and-drop loop must leave the follow-up-only fence alone.
+        assert "ck_work_artifact_edges_followup_only_columns" in rels
 
         assert _has_column(engine, "spec_ref")
         assert "uq_work_artifacts_spec_ref" in _index_names(engine)
@@ -281,6 +284,7 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         assert "'refutes'" in down_rels["ck_work_artifact_edges_relation"]
         assert "ck_work_artifact_edges_open_target" in down_rels
         assert "ck_work_artifact_edges_followup_note" in down_rels
+        assert "ck_work_artifact_edges_followup_only_columns" in down_rels
 
         assert not _has_column(engine, "spec_ref")
         assert "uq_work_artifacts_spec_ref" not in _index_names(engine)
