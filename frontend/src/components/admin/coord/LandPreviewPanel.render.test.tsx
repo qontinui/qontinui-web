@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+import { UNKNOWN_AMBER } from "@/components/console";
+
 import { LandPreviewPanel, type LandPreviewResponse } from "./LandPreviewPanel";
 
 /**
@@ -162,6 +164,7 @@ describe("LandPreviewPanel — honest non-coverage (pending → note, not empty)
     const el = screen.getByTestId("land-ci-pending");
     expect(el.textContent).toContain("prediction unavailable");
     expect(el.textContent).toContain("no workflow history yet");
+    expect(el).toHaveClass(...UNKNOWN_AMBER.split(" "));
   });
 
   it("deploy.pending renders the note as the explanation", () => {
@@ -169,6 +172,36 @@ describe("LandPreviewPanel — honest non-coverage (pending → note, not empty)
     const el = screen.getByTestId("land-deploy-pending");
     expect(el.textContent).toContain("prediction unavailable");
     expect(el.textContent).toContain("deploy targets undeclared");
+    expect(el).toHaveClass(...UNKNOWN_AMBER.split(" "));
+  });
+
+  it("renders the panel's other unknowns in UNKNOWN_AMBER", () => {
+    // A workflow with no estimate, a cascade whose completion is unknown, and
+    // a known no-force answer beside an unknown advance target.
+    const unknowns: LandPreviewResponse = {
+      repo: "qontinui/qontinui-coord",
+      pr_number: 3,
+      predicted: {
+        cascade: { dependent_refs_to_restack: [], expected_conflicts: [] },
+        git: { no_force_required: true },
+        ci: {
+          pending: false,
+          workflows: [{ workflow_name: "rust-ci", expected_pass: null }],
+        },
+      },
+      risk: { risky: false, reasons: [] },
+    };
+    render(<LandPreviewPanel preview={unknowns} />);
+    const amber = UNKNOWN_AMBER.split(" ");
+    const estimate = screen.getByTestId("land-confidence-unknown");
+    expect(estimate.textContent).toBe("no estimate");
+    expect(estimate).toHaveClass(...amber);
+    const cascade = screen.getByTestId("land-cascade-clean-badge");
+    expect(cascade.textContent).toBe("unknown");
+    expect(cascade).toHaveClass(...amber);
+    const advance = screen.getByTestId("land-git-advance-unknown");
+    expect(advance.textContent).toBe("unknown");
+    expect(advance).toHaveClass(...amber);
   });
 
   it("cascade.will_complete_cleanly === true → 'yes' badge", () => {
@@ -176,6 +209,133 @@ describe("LandPreviewPanel — honest non-coverage (pending → note, not empty)
     expect(screen.getByTestId("land-cascade-clean-badge").textContent).toBe(
       "yes"
     );
+  });
+});
+
+describe("LandPreviewPanel — main_merge_overlap is tri-state", () => {
+  // The contract: null or absent means coord could not tell whether the land
+  // overlaps an in-flight main merge. Coord serves null for that once Phase 3
+  // of plan 2026-10-16-coord-mcp-claim-tools-diverge-from-the-http-claim-doors
+  // lands. Rendering it as nothing would read as "no overlap", so null and
+  // absent both get the explicit unknown notice; only `false` renders nothing.
+  const WITHOUT_OVERLAP: LandPreviewResponse = {
+    repo: "qontinui/qontinui-coord",
+    pr_number: 9,
+    predicted: {
+      cascade: { dependent_refs_to_restack: [], expected_conflicts: [] },
+    },
+    risk: { risky: false, reasons: [] },
+  };
+  const withOverlap = (
+    main_merge_overlap: boolean | null
+  ): LandPreviewResponse => ({
+    ...WITHOUT_OVERLAP,
+    predicted: { ...WITHOUT_OVERLAP.predicted, main_merge_overlap },
+  });
+
+  it("renders the main-merge overlap warning for true", () => {
+    render(<LandPreviewPanel preview={withOverlap(true)} />);
+    expect(screen.getByTestId("land-main-merge-overlap").textContent).toContain(
+      "Overlaps an in-flight main merge"
+    );
+    expect(screen.queryByTestId("land-main-merge-overlap-unknown")).toBeNull();
+  });
+
+  it("renders neither element for false", () => {
+    render(<LandPreviewPanel preview={withOverlap(false)} />);
+    expect(screen.queryByTestId("land-main-merge-overlap")).toBeNull();
+    expect(screen.queryByTestId("land-main-merge-overlap-unknown")).toBeNull();
+  });
+
+  it("renders the unknown notice for null", () => {
+    render(<LandPreviewPanel preview={withOverlap(null)} />);
+    // Warning first: a null shown as the overlap warning goes red HERE; a null
+    // shown as nothing goes red on the notice below.
+    expect(screen.queryByTestId("land-main-merge-overlap")).toBeNull();
+    const notice = screen.getByTestId("land-main-merge-overlap-unknown");
+    expect(notice.textContent).toContain("Main-merge overlap unknown");
+    // Unknown is amber, never calm (style guide R3), and only through the
+    // console's own constant: a muted notice here goes red.
+    expect(notice).toHaveClass(...UNKNOWN_AMBER.split(" "));
+  });
+
+  it("renders the unknown notice when main_merge_overlap is absent", () => {
+    expect("main_merge_overlap" in (WITHOUT_OVERLAP.predicted ?? {})).toBe(
+      false
+    );
+    render(<LandPreviewPanel preview={WITHOUT_OVERLAP} />);
+    expect(screen.queryByTestId("land-main-merge-overlap")).toBeNull();
+    const notice = screen.getByTestId("land-main-merge-overlap-unknown");
+    expect(notice.textContent).toContain("Main-merge overlap unknown");
+    expect(notice).toHaveClass(...UNKNOWN_AMBER.split(" "));
+  });
+});
+
+describe("LandPreviewPanel — the risk verdict is tri-state", () => {
+  // Only a boolean `risky` is a verdict. Anything else is unknown: the panel
+  // must never show the green "Land looks clean" card for a land coord sent
+  // no verdict for.
+  const base: LandPreviewResponse = {
+    repo: "qontinui/qontinui-coord",
+    pr_number: 11,
+    predicted: {
+      cascade: { dependent_refs_to_restack: [], expected_conflicts: [] },
+    },
+  };
+  const expectUnknown = () => {
+    const card = screen.getByTestId("land-risk-card");
+    expect(card).toHaveClass(...UNKNOWN_AMBER.split(" "));
+    expect(card.textContent).toContain("Risk unknown");
+    expect(card.textContent).not.toContain("Land looks clean");
+    expect(screen.getByTestId("land-risk-badge").textContent).toBe("unknown");
+    expect(screen.getByTestId("land-risk-unknown")).toBeTruthy();
+  };
+
+  it("renders the unknown notice for a null risk", () => {
+    render(<LandPreviewPanel preview={{ ...base, risk: null }} />);
+    expectUnknown();
+  });
+
+  it("renders the unknown notice for an absent risk", () => {
+    expect("risk" in base).toBe(false);
+    render(<LandPreviewPanel preview={base} />);
+    expectUnknown();
+  });
+
+  it("renders the unknown notice for risky: null", () => {
+    render(
+      <LandPreviewPanel
+        preview={{ ...base, risk: { risky: null, reasons: ["no verdict"] } }}
+      />
+    );
+    expectUnknown();
+    // The reasons coord did send still render.
+    expect(screen.getByTestId("land-risk-reason").textContent).toBe(
+      "no verdict"
+    );
+  });
+
+  it("renders the unknown notice when risky is absent", () => {
+    render(<LandPreviewPanel preview={{ ...base, risk: { reasons: [] } }} />);
+    expectUnknown();
+  });
+
+  it("keeps the clean and risky cards for a boolean verdict", () => {
+    const { unmount } = render(
+      <LandPreviewPanel preview={{ ...base, risk: { risky: false } }} />
+    );
+    expect(screen.getByTestId("land-risk-badge").textContent).toBe("ok");
+    expect(screen.getByTestId("land-risk-card").textContent).toContain(
+      "Land looks clean"
+    );
+    expect(screen.queryByTestId("land-risk-unknown")).toBeNull();
+    unmount();
+    render(<LandPreviewPanel preview={{ ...base, risk: { risky: true } }} />);
+    expect(screen.getByTestId("land-risk-badge").textContent).toBe("risky");
+    expect(screen.getByTestId("land-risk-card").textContent).toContain(
+      "Risky land"
+    );
+    expect(screen.queryByTestId("land-risk-unknown")).toBeNull();
   });
 });
 
