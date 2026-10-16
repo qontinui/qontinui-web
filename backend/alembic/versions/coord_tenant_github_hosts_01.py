@@ -70,11 +70,11 @@ def upgrade() -> None:
             updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_by  TEXT,
             CONSTRAINT tenant_github_hosts_api_base_shape CHECK (
-                api_base ~ '^https://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$'
+                api_base ~ '^https://[^/?#@\s]+(/[^?#\s]*)?$'
                 AND api_base !~ '/$'
             ),
             CONSTRAINT tenant_github_hosts_web_base_shape CHECK (
-                web_base ~ '^https://[^/?#@[:space:]]+$'
+                web_base ~ '^https://[^/?#@\s]+$'
             )
         )
         """
