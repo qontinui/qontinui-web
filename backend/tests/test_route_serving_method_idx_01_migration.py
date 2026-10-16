@@ -62,7 +62,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "route_serving_method_idx_01"
-_PARENT_REVISION_ID = "ingcred_01"
+_PARENT_REVISION_ID = "coord_pr_holds_01"
 _REVISION_FILENAME = "route_serving_method_idx_01_host_path_method_observed.py"
 
 _INDEX = "idx_route_serving_observations_host_path_method_observed"

@@ -1,7 +1,7 @@
 """coord.route_serving_observations: (host, route_path, method, observed_at DESC) index
 
 Revision ID: route_serving_method_idx_01
-Revises: ingcred_01
+Revises: coord_pr_holds_01
 Create Date: 2026-10-16
 
 A Phase 4 prerequisite (the "Depends-On (added 2026-10-16)" bullet) of plan
@@ -94,7 +94,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "route_serving_method_idx_01"
-down_revision: str | Sequence[str] | None = "ingcred_01"
+down_revision: str | Sequence[str] | None = "coord_pr_holds_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
