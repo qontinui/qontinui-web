@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the workload class census and the GPU axes
 
 Revision ID: fcap_01
-Revises: policy_rules_agent_name_uq_01
+Revises: route_serving_method_idx_01
 Create Date: 2026-10-08
 
 Phase 1 of plan
@@ -128,13 +128,13 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fcap_01"
-down_revision: str | Sequence[str] | None = "policy_rules_agent_name_uq_01"
+down_revision: str | Sequence[str] | None = "route_serving_method_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 # down_revision is the LOCAL CHAIN HEAD at authoring time
 # (`scripts/ci/count_alembic_heads.py` -> HEAD_COUNT=1,
-# HEAD=policy_rules_agent_name_uq_01). The head can move before this lands; if
+# HEAD=route_serving_method_idx_01, re-pointed 2026-10-16). The head can move before this lands; if
 # `alembic-heads-pr` reports HEAD_COUNT=2, re-point this line onto the new head
 # — the migration test reads it at runtime, so nothing else needs to move. That
 # is the gate working as designed.
