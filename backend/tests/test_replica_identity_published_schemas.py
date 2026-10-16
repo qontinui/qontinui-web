@@ -114,8 +114,12 @@ _PUBLISHED_RELATIONS = """
 # the type, or on a type it is implicitly binary-coercible to (``varchar`` →
 # ``text``; NOT ``xml`` → ``text``, whose cast is not implicit), or the
 # polymorphic opclass for an enum / range / multirange / composite; a domain is
-# read through to its base type and an array through to its element. Measured
-# against a real pg16 subscription: json, point, xml, json[] and a domain over
+# read through to its base type and an array through to its element. Known
+# limits (none occurs in the published schemas today): a composite passes
+# without checking its fields, an array of a domain is not read through to the
+# domain's base type, and generated columns are not skipped. Observed by the
+# implementing session against a throwaway pg16 subscription (not recorded in
+# this repo): json, point, xml, json[] and a domain over
 # json fail; text, varchar, jsonb, uuid, int[], enums, domains over text,
 # bytea, inet, cidr, int4range, char, name, numeric and pgvector's vector pass.
 _COLUMN_WITHOUT_EQUALITY = """
@@ -405,9 +409,8 @@ def test_full_identity_passes_when_every_column_is_comparable(
                     " c_inet inet, c_cidr cidr, c_range int4range, c_char char(3),"
                     " c_name name, c_numeric numeric, c_vec vector(3));"
                     "ALTER TABLE coord.zz_replident_full REPLICA IDENTITY FULL;"
-                    # A partition in a published schema of an UNPUBLISHED
-                    # parent is published by the schema; one outside every
-                    # published scope, under an unpublished parent, is not.
+                    # A partition outside every published scope, under an
+                    # unpublished parent, is not published.
                     "CREATE TABLE public.zz_unpub_parent (a int NOT NULL)"
                     " PARTITION BY LIST (a);"
                     "CREATE TABLE public.zz_unpub_child PARTITION OF"

@@ -58,7 +58,8 @@ here, because a promotion costs more than it buys on these tables:
 * Keeping the unique constraint and adding a primary key beside it instead
   doubles index maintenance on ``worker_heartbeats``, coord's hottest upsert
   target, for no gain.
-* Coord's own test bootstraps re-create these tables with ``UNIQUE``
+* Coord's own test bootstraps re-create two of these tables
+  (``worker_heartbeats``, ``outbound_budget_observations``) with ``UNIQUE``
   constraints (``CREATE TABLE IF NOT EXISTS`` in ``mcp/tools.rs``), so a
   production primary key would drift from what coord's tests run against.
 
