@@ -30,6 +30,7 @@ function fail(status: number, body: string) {
 
 const V1 = { name: "m", version: 1, content: "first", is_tombstone: false };
 const V2 = { name: "m", version: 2, content: "", is_tombstone: true };
+const V3 = { name: "m", version: 3, content: "third", is_tombstone: false };
 
 describe("coordMemory", () => {
   afterEach(() => {
@@ -154,11 +155,38 @@ describe("coordMemory", () => {
     it("stops at max and reports truncated", async () => {
       answer(V1);
       answer(V2);
+      answer(V3);
+      // v3 answers past the cap of 2: it proves the trail is cut short, and
+      // it is not listed.
       await expect(fetchMemoryVersionTrail("m", 2)).resolves.toEqual({
         versions: [V1, V2],
         truncated: true,
       });
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+        "/api/v1/operations/memory/m/version/1",
+        "/api/v1/operations/memory/m/version/2",
+        "/api/v1/operations/memory/m/version/3",
+      ]);
+    });
+
+    it("reports a trail of exactly max versions as complete", async () => {
+      answer(V1);
+      answer(V2);
+      fail(404, "no version 3");
+      await expect(fetchMemoryVersionTrail("m", 2)).resolves.toEqual({
+        versions: [V1, V2],
+        truncated: false,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("rejects when the read past max fails", async () => {
+      answer(V1);
+      answer(V2);
+      fail(500, "boom");
+      await expect(fetchMemoryVersionTrail("m", 2)).rejects.toThrow(
+        "GET /api/v1/operations/memory/m/version/3 failed: 500 - boom"
+      );
     });
 
     it("rejects on a 500 instead of returning a short trail", async () => {

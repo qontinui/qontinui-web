@@ -74,7 +74,7 @@ export interface CoordMemoryVersionDetail {
 /** What {@link fetchMemoryVersionTrail} read: the versions, oldest first. */
 export interface MemoryVersionTrail {
   versions: CoordMemoryVersionDetail[];
-  /** True when the read stopped at its cap rather than at a missing version. */
+  /** True only when a version past the cap exists: more versions exist than are listed. */
   truncated: boolean;
 }
 
@@ -121,8 +121,21 @@ export async function fetchMemoryVersion(
   return readJson<CoordMemoryVersionDetail>(res, `GET ${url}`);
 }
 
+/** One version, or `null` when coord 404s it. Any other failure rejects. */
+async function fetchVersionUnlessMissing(
+  name: string,
+  n: number
+): Promise<CoordMemoryVersionDetail | null> {
+  try {
+    return await fetchMemoryVersion(name, String(n));
+  } catch (e) {
+    if (isNotFoundError(e)) return null;
+    throw e;
+  }
+}
+
 /**
- * Every version of a memory, read one at a time through
+ * Up to `max` versions of a memory, read one at a time through
  * {@link fetchMemoryVersion} from v1 upward, stopping at the first 404.
  *
  * This is how the page of a DELETED memory finds its versions: once
@@ -139,7 +152,12 @@ export async function fetchMemoryVersion(
  *
  * A 404 on v1 resolves an EMPTY trail: the name has no versions. Any other
  * failure REJECTS, so a caller can render the versions as unknown rather than
- * as none. `max` bounds the reads; reaching it resolves `truncated: true`.
+ * as none.
+ *
+ * `max` caps the versions listed. Once `max` have answered, ONE more read asks
+ * for version `max + 1`, and `truncated` is true only when that version exists;
+ * it is never listed. A 404 there means the trail is complete, and any other
+ * failure rejects, as on every other read.
  */
 export async function fetchMemoryVersionTrail(
   name: string,
@@ -147,14 +165,13 @@ export async function fetchMemoryVersionTrail(
 ): Promise<MemoryVersionTrail> {
   const versions: CoordMemoryVersionDetail[] = [];
   for (let n = 1; n <= max; n++) {
-    try {
-      versions.push(await fetchMemoryVersion(name, String(n)));
-    } catch (e) {
-      if (isNotFoundError(e)) return { versions, truncated: false };
-      throw e;
-    }
+    const version = await fetchVersionUnlessMissing(name, n);
+    if (version === null) return { versions, truncated: false };
+    versions.push(version);
   }
-  return { versions, truncated: true };
+  // At the cap: only a version that answers past it proves there are more.
+  const past = await fetchVersionUnlessMissing(name, max + 1);
+  return { versions, truncated: past !== null };
 }
 
 /**
