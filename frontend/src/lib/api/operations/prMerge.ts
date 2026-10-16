@@ -797,24 +797,28 @@ export async function reevaluatePr(
 }
 
 /**
- * `POST /prs/{owner}/{repo}/{number}/draft-state` — `set_pr_draft_state`
- * (plan `2026-07-23-operator-set-pr-draft-state`). `draft: false` marks the
- * PR ready for review (releasing it to the merge train), `true` converts it
- * back to draft (the documented hold). The backend forwards to coord's
- * `POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state`.
- * Nothing reads the echo, so a 2xx whose body does not parse resolves `null`.
- * Not re-sent on a 5xx (`idempotent: false`).
+ * `POST /prs/{owner}/{repo}/{number}/hold` — `set_pr_hold` (plan
+ * `2026-10-04-coord-pr-hold-without-github-drafts`, Phase 4). `held: true`
+ * places a coord hold with a REQUIRED `reason`; `held: false` releases this
+ * caller's hold (or, for an admin operator, any hold). The backend forwards to
+ * coord's `POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold`.
+ * `reason` is omitted from the body when null. Nothing reads the echo, so a
+ * 2xx whose body does not parse resolves `null`. Not re-sent on a 5xx
+ * (`idempotent: false`).
  */
-export async function setPrDraftState(
+export async function setPrHold(
   owner: string,
   repo: string,
   prNumber: number,
-  draft: boolean
+  held: boolean,
+  reason: string | null
 ): Promise<unknown> {
-  const url = `${OPERATIONS_BASE}/prs/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${prNumber}/draft-state`;
+  const url = `${OPERATIONS_BASE}/prs/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${prNumber}/hold`;
+  const body: { held: boolean; reason?: string } = { held };
+  if (reason !== null) body.reason = reason;
   const res = await httpClient.fetch(url, {
     method: "POST",
-    body: JSON.stringify({ draft }),
+    body: JSON.stringify(body),
     idempotent: false,
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
