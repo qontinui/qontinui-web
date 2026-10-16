@@ -13,14 +13,18 @@ Pinned here:
 * unknown client keys are dropped rather than forwarded;
 * the route is gated on ``require_coord_tenant_admin`` (route-table fixture
   pins the dependency list; here we assert the gate's tenant is forwarded);
+* coord's typed refusal reaches the browser as the top-level ``error`` (the
+  route opts into ``structured_errors``; asserted through the app's real
+  ``http_exception_handler``);
 * the ``/draft-state`` proxy is gone.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -122,3 +126,57 @@ def test_draft_state_proxy_is_gone(client: TestClient):
         json={"draft": True},
     )
     assert resp.status_code in (404, 405)
+
+
+def test_hold_proxy_asks_for_structured_errors(client: TestClient):
+    with patch_ops("_proxy_coord_post", new_callable=AsyncMock) as proxy:
+        proxy.return_value = {}
+        client.post(HOLD, json={"held": False})
+
+    assert proxy.call_args.kwargs["structured_errors"] is True
+
+
+# ---------------------------------------------------------------------------
+# The shape the BROWSER receives (the app's real exception handler)
+# ---------------------------------------------------------------------------
+
+
+def _real_handler_client() -> TestClient:
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    from app.middleware.error_handler import http_exception_handler
+
+    test_app = _build_test_app()
+    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    return TestClient(test_app)
+
+
+def _coord_client(status_code: int, json_data) -> MagicMock:
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status_code
+    resp.json.return_value = json_data
+    resp.text = "<unused: body parsed as JSON>"
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    return mock_client
+
+
+def test_a_coord_refusal_reaches_the_browser_with_coord_s_code():
+    """coord's 403 ``not_holder`` must reach the console as the top-level
+    ``error``, not as a JSON string inside ``message`` — the console's
+    ``describeHoldError`` reads ``error`` to tell the refusals apart."""
+    client = _real_handler_client()
+    coord_body = {
+        "error": "not_holder",
+        "message": "only the holder or an operator may release this hold",
+    }
+    with patch("httpx.AsyncClient", return_value=_coord_client(403, coord_body)):
+        resp = client.post(HOLD, json={"held": False})
+
+    assert resp.status_code == 403
+    body = resp.json()
+    assert "detail" not in body
+    assert body["error"] == "not_holder"
+    assert body["message"] == coord_body["message"]

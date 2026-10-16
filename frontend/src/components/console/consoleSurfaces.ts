@@ -268,6 +268,13 @@ import {
 } from "@/components/operations/domainCostStatus";
 // Operator action items — plan
 // `2026-10-12-operator-action-items-pushed-to-the-phone` Phase 3.
+// The PR hold control — plan `2026-10-04-coord-pr-hold-without-github-drafts`
+// Phase 4.
+import {
+  PR_HOLD_ATTENTION_BY_KIND,
+  PR_HOLD_AUTHOR_GLYPH_KINDS,
+  PR_HOLD_BADGE_CLASS,
+} from "@/components/operations/prHoldStatus";
 import {
   ACTION_ITEM_ATTENTION_BY_KIND,
   ACTION_ITEM_AUTHOR_GLYPH_KINDS,
@@ -294,6 +301,15 @@ export interface ConsoleSurface {
  * renders it. One row per surface.
  */
 export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
+  {
+    surface: "PR hold control (/admin/coord/prs, /admin/coord/pipeline)",
+    module: "components/operations/prHoldStatus.ts",
+    attentionByKind: PR_HOLD_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: PR_HOLD_BADGE_CLASS,
+      authorGlyphKinds: PR_HOLD_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   {
     surface: "findings (/admin/coord/findings)",
     module: "app/(app)/admin/coord/findings/_lib/findingStatus.ts",
