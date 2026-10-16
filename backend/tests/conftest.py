@@ -120,7 +120,7 @@ os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 # not running.
 #
 # The per-task switch below stays as defense in depth: if the stop above ever
-# regresses, the one task that writes shared rows is still off.
+# regresses, the task that claims rows other tests seeded is still off.
 os.environ["QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED"] = "0"
 
 # Cloud-control side-effect import — must run before any `app.models` import
