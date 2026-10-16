@@ -1,8 +1,9 @@
 """Scheduled job — MEMORY.md bridge indexer.
 
 Plan ``2026-07-10-tenant-agentic-memory-web-backend``, Phase 5. Mirrors
-``coord.memories_latest`` (coord's MEMORY.md federation view: latest
-non-tombstoned version per name) into ``coord.memory_records`` rows so
+``coord.memories_latest`` (coord's MEMORY.md federation view: the latest
+version per tenant and name, absent once retracted) into
+``coord.memory_records`` rows so
 federated memories participate in the tenant's hybrid retrieval:
 
 * ``kind='reference'``, ``scope='tenant'``, ``title = memory name``,
