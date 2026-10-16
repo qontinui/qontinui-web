@@ -1,7 +1,7 @@
 """coord: give the five primary-key-less tables a replica identity
 
 Revision ID: replident_01
-Revises: coord_pr_holds_01
+Revises: route_serving_method_idx_01
 Create Date: 2026-10-16
 
 Plan ``2026-10-15-coord-and-web-data-move-off-aws-by-logical-replication``,
@@ -98,7 +98,7 @@ skipped.
 ## Downgrade
 
 Returns each of the five to ``REPLICA IDENTITY DEFAULT`` when it has no primary
-key, which is the shape of ``coord_pr_holds_01``. Do NOT downgrade while a
+key, which is the shape of the parent revision. Do NOT downgrade while a
 publication that publishes UPDATE/DELETE includes these tables: it restores
 exactly the failure this revision removes.
 
@@ -109,7 +109,7 @@ and fails on any table in a published schema (the plan's D1 list, plus
 ``public.alembic_version``) without a replica identity, so a FUTURE table
 created without a primary key is caught before production.
 
-If another revision lands on ``coord_pr_holds_01`` first, re-point
+If another revision lands on the parent first, re-point
 ``down_revision`` (and the ``Revises:`` line above), and the parent pinned in
 ``tests/test_replident_01_migration.py``.
 """
@@ -121,7 +121,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "replident_01"
-down_revision: str | Sequence[str] | None = "coord_pr_holds_01"
+down_revision: str | Sequence[str] | None = "route_serving_method_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
