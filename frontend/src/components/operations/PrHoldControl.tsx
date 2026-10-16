@@ -23,6 +23,9 @@
  * - Unknown (coord's read failed, or a coord build that serves no `hold`
  *   field): an amber `–`, never "not held" (style guide R3). Hold is still
  *   offered — holding only ever stops a merge, so it is safe without knowing.
+ * - A GitHub draft with no coord hold: a "GitHub draft" badge and no Release.
+ *   coord treats a draft as a hold (plan D1) but cannot undraft; drafts still
+ *   exist on public repos, and the console no longer has an undraft action.
  *
  * ## Direction asymmetry (deliberate)
  *
@@ -57,7 +60,12 @@ import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
-import { absoluteTime, relativeTime } from "@/components/console";
+import {
+  StatusBadge,
+  absoluteTime,
+  attentionOf,
+  relativeTime,
+} from "@/components/console";
 import { setPrHold } from "@/lib/api/operations/prMerge";
 import {
   canOfferRelease,
@@ -68,6 +76,11 @@ import {
   splitOwnerRepo,
   type PrHoldFields,
 } from "./prHold";
+import {
+  PR_HOLD_ATTENTION_BY_KIND,
+  PR_HOLD_STATUS_PALETTE,
+  type PrHoldBadgeKind,
+} from "./prHoldStatus";
 
 const log = createLogger("PrHoldControl");
 
@@ -128,7 +141,7 @@ export function PrHoldControl({
         toast.success(
           held
             ? `#${prNumber} held — coord will not land it until the hold is released.`
-            : `#${prNumber} released — coord will land it once CI is green.`
+            : `#${prNumber} released — back in the merge train; coord lands it once nothing else blocks it.`
         );
         setHoldOpen(false);
         setReleaseOpen(false);
@@ -148,6 +161,10 @@ export function PrHoldControl({
   if (prState !== "open" && prState !== "draft") return null;
 
   const trimmed = reason.trim();
+  // A GitHub draft is a hold signal coord honours (plan D1), but coord cannot
+  // undraft, so it gets a badge and no Release. Shown when no coord hold is
+  // the one on display.
+  const showDraft = prState === "draft" && view.state !== "held";
 
   return (
     <span
@@ -155,18 +172,31 @@ export function PrHoldControl({
       data-testid="pr-hold-control"
     >
       {view.state === "unknown" && (
+        <span data-testid="pr-hold-unknown" data-hold-state="unknown">
+          <HoldBadge
+            kind="unknown"
+            label="–"
+            reason={`hold state unknown: ${view.why}. Do not read this as "not held"`}
+          />
+        </span>
+      )}
+      {showDraft && (
         <span
-          className="rounded px-1.5 text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400"
-          title={`Hold state unknown — ${view.why}. Do not read this as "not held".`}
-          data-testid="pr-hold-unknown"
-          data-hold-state="unknown"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+          data-testid="pr-hold-github-draft"
+          data-hold-state="github_draft"
         >
-          –
+          <HoldBadge
+            kind="github_draft"
+            label="GitHub draft"
+            reason="coord treats a draft as a hold; mark it ready for review on GitHub to release it"
+          />
+          <span>held by GitHub — release it on GitHub</span>
         </span>
       )}
       {view.state === "held" && (
         <span
-          className="text-xs text-muted-foreground max-w-[22rem] truncate"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground max-w-[26rem]"
           data-testid="pr-hold-summary"
           data-hold-state="held"
           title={[
@@ -178,15 +208,17 @@ export function PrHoldControl({
             .filter(Boolean)
             .join("\n")}
         >
-          <strong className="font-medium text-foreground">Held</strong> by{" "}
-          {holderLabel(view.hold.held_by)}
-          {!view.foreign && (
-            <>
-              {" "}
-              ({holdKindLabel(view.hold.kind)}) — {view.hold.reason}
-            </>
-          )}
-          {view.hold.since && <> · {relativeTime(view.hold.since)}</>}
+          <HoldBadge kind="held" label="Held" />
+          <span className="truncate">
+            by {holderLabel(view.hold.held_by)}
+            {!view.foreign && (
+              <>
+                {" "}
+                ({holdKindLabel(view.hold.kind)}) — {view.hold.reason}
+              </>
+            )}
+            {view.hold.since && <> · {relativeTime(view.hold.since)}</>}
+          </span>
         </span>
       )}
 
@@ -213,9 +245,10 @@ export function PrHoldControl({
                     <AlertDialogDescription>
                       {repoShort}#{prNumber} is held by{" "}
                       {holderLabel(view.hold.held_by)}: “{view.hold.reason}”.
-                      Releasing it hands the PR back to the merge train. Once CI
-                      is green, coord will land it automatically — there is no
-                      further review step.
+                      Releasing it returns the PR to the merge train, and coord
+                      lands it automatically once nothing else blocks it (CI,
+                      its dependencies, a GitHub draft) — there is no further
+                      review step.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -254,15 +287,14 @@ export function PrHoldControl({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Hold #{prNumber}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    coord will not land {repoShort}#{prNumber} while it is held,
-                    on any repo. Say why, so whoever meets the hold knows what
-                    releases it.
+                    coord will not land {repoShort}#{prNumber} while it is held.
+                    Say why, so whoever meets the hold knows what releases it.
                     {hasActiveProposal && (
                       <>
                         <br />
                         <br />A merge attempt is already in flight for this PR.
-                        coord cancels it when the hold is placed, but one
-                        already pushing to main cannot be recalled.
+                        coord voids its queued merge proposal when the hold is
+                        placed, but one already landing cannot be recalled.
                       </>
                     )}
                   </AlertDialogDescription>
@@ -295,5 +327,28 @@ export function PrHoldControl({
         )}
       </CoordAdminOnly>
     </span>
+  );
+}
+
+/** One hold badge, through the console's audited palette (style guide R3). */
+function HoldBadge({
+  kind,
+  label,
+  reason,
+}: {
+  kind: PrHoldBadgeKind;
+  label: string;
+  reason?: string;
+}) {
+  return (
+    <StatusBadge
+      status={{
+        kind,
+        label,
+        reason,
+        attention: attentionOf(PR_HOLD_ATTENTION_BY_KIND, kind),
+      }}
+      palette={PR_HOLD_STATUS_PALETTE}
+    />
   );
 }
