@@ -21,7 +21,11 @@ interface UseNextStepSettingsReturn {
   draft: DraftMap;
   hasChanges: boolean;
   canEdit: boolean;
-  masterEnabled: boolean;
+  /**
+   * coord's `master_enabled` (the next_step autodispatch flag), or `null`
+   * when the settings have not been read — UNKNOWN, never "off".
+   */
+  masterEnabled: boolean | null;
   setDomainLevel: (domain: string, level: AutonomyLevel) => void;
   resetDomain: (domain: string) => void;
   setPrimary: (on: boolean) => void;
@@ -178,7 +182,7 @@ export function useNextStepSettings(): UseNextStepSettingsReturn {
 
   const hasChanges = pendingDomainWrites(settings, draft, touched).length > 0;
   const canEdit = settings?.can_edit ?? false;
-  const masterEnabled = settings?.master_enabled ?? false;
+  const masterEnabled = settings ? settings.master_enabled : null;
 
   return {
     settings,

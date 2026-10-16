@@ -7880,6 +7880,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an image to the content-addressed store
+         * @description Store one image under the hash of its bytes, for the caller's tenant.
+         *
+         *     Every refusal — a malformed or unstorable field, an oversized or
+         *     unreadable image — happens before anything is written to storage.
+         */
+        post: operations["api_v1_image_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/slot-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List one image slot's candidates, a page at a time
+         * @description One page of the slot's candidates, each with the asset it names.
+         */
+        get: operations["api_v1_image_assets_slot_candidates_get"];
+        /**
+         * Propose an image for a slot, or move a proposal
+         * @description Create or update the (repo, slot_id, asset_sha256) candidate.
+         *
+         *     ``recipe_hash``, ``values`` and ``judge`` are replaced when sent and kept
+         *     when omitted. ``status: chosen`` returns the slot's previous choice to
+         *     ``candidate`` in the same transaction; ``demoted`` names it.
+         */
+        put: operations["api_v1_image_assets_slot_candidates_put"];
+        post?: never;
+        /**
+         * Withdraw one proposal (the image itself stays)
+         * @description Delete the (repo, slot_id, asset_sha256) candidate row.
+         */
+        delete: operations["api_v1_image_assets_slot_candidates_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's record and a URL to its bytes
+         * @description Answers only when the caller's tenant holds an image with this hash.
+         */
+        get: operations["api_v1_image_assets_sha256_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's bytes
+         * @description The bytes of an image the caller's tenant holds — the same 404 as the
+         *     record route for any other hash, another tenant's included.
+         */
+        get: operations["api_v1_image_assets_sha256_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integration-testing/execute": {
         parameters: {
             query?: never;
@@ -9203,6 +9299,24 @@ export interface paths {
          *
          *     ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
          *     Gaps tab can list pre-answered (non-blocking) gap reports.
+         *
+         *     ``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME
+         *     ``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both
+         *     reach it — but only if they are declared HERE. Until they were, this
+         *     handler declared ``limit`` and ``gap`` alone and **FastAPI dropped the
+         *     rest on the floor**: a caller asking for ``?offset=50&audience=operator``
+         *     reached coord with neither, and got page 1 of every audience with a 200
+         *     in front of it. That is the exact failure the pending docstring above
+         *     describes in its own words, still live one handler down — no visible
+         *     defect only because nothing pages the answered tab yet, which makes the
+         *     next answered pager a silent no-op its author cannot observe. Validated
+         *     identically to the pending handler (``limit`` ``ge=1, le=500``,
+         *     ``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than
+         *     with a second convention.
+         *
+         *     The envelope is coord's, verbatim, with the same absence contract the
+         *     pending docstring sets out: ``total``/``truncated`` are OMITTED when coord
+         *     could not observe the count, and an absent key is UNKNOWN, never zero.
          */
         get: operations["api_v1_operations_agent_questions_answered_get"];
         put?: never;
@@ -9252,6 +9366,58 @@ export interface paths {
          *     when set, forwarded to coord as the POLICY_GAP filter —
          *     ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
          *     Backs the Gaps tab on the questions inbox.
+         *
+         *     ``limit`` / ``offset`` / ``audience`` (plan
+         *     2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).
+         *     Until these were declared here the proxy took ``gap`` alone, and FastAPI
+         *     drops an undeclared query param on the floor — so a caller asking for
+         *     ``?limit=500&audience=operator`` reached coord with NEITHER, and any
+         *     frontend-side limit change was a **no-op it could not observe**. Declaring
+         *     them is the whole fix on this side; the forwarding below is mechanical.
+         *
+         *     Why it mattered: measured 2026-09-12, ``coord.agent_questions`` held
+         *     ~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``
+         *     and only ~442 with ``audience='operator'``. Coord's default page is 100
+         *     rows newest-first, so a correctly-escalated operator question sank out of
+         *     reach behind the agent tier's volume and was unanswerable for 10 days.
+         *     ``audience=operator`` is what makes the operator's own 442 addressable;
+         *     ``limit``/``offset`` are what make the rest of them reachable.
+         *
+         *     ``limit`` is validated exactly as the ANSWERED proxy below validates its
+         *     own (``ge=1, le=500``) rather than with a second convention. ``offset`` is
+         *     ``ge=0`` — the answered proxy has no offset to copy, and the work-units
+         *     proxy's ``offset: int | None = Query(default=None, ge=0)`` is the house
+         *     form.
+         *
+         *     ``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates
+         *     the sibling change**, and "deployed" is the load-bearing word. Coord's
+         *     source on ``main`` now DOES parse both — ``PendingQuery``
+         *     (``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,
+         *     ``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in
+         *     this same change set — so a grep of that source is not grounds for deleting
+         *     the degrade path here: what governs is the build answering this box, and it
+         *     lags ``main``. The struct is plain serde with no ``deny_unknown_fields``,
+         *     so on an older build an unknown query key is dropped rather than refused.
+         *     Forwarding them is therefore safe in both directions, but a 200 is never
+         *     proof the filter was applied — the frontend reads the echoed ``limit`` and
+         *     ``offset`` back and says which parameter went nowhere. ``limit`` coord has
+         *     always honoured (default 100, hard max 500), which is the bound the defect
+         *     below ran into.
+         *
+         *     The response envelope is **unchanged** and deliberately untranslated:
+         *     :func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord
+         *     already ships ``{questions, count, limit, shown, offset}`` plus ``total``
+         *     and ``truncated`` — so the paging metadata the frontend needs arrives
+         *     without a re-wrap here.
+         *
+         *     ⚠️ **``total`` and ``truncated`` are OMITTED — the key absent — when coord
+         *     could not observe the count**, which is precisely why nothing here
+         *     re-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the
+         *     returned rows, so an ``offset`` past the end of the match set returns zero
+         *     rows and no count with them; a ``0`` in its place would be a fabrication,
+         *     and the operator console turns a pending ``0`` into "No agent is waiting on
+         *     an answer". Any future re-wrap here MUST preserve the absence — a
+         *     ``body.get("total", 0)`` anywhere in this path recreates the defect.
          */
         get: operations["api_v1_operations_agent_questions_pending_get"];
         put?: never;
@@ -13291,6 +13457,10 @@ export interface paths {
          * Reject Gate
          * @description Reject an OperatorApproval gate (operator bearer forwarded —
          *     fleet-auth P2/D6).
+         *
+         *     The optional JSON body ``{"reason": ...}`` carries the reason. It is
+         *     forwarded to coord stripped, and only when non-blank; an absent body or a
+         *     blank reason forwards ``{}``.
          */
         post: operations["api_v1_operations_gates_gate_id_reject_post"];
         delete?: never;
@@ -17330,9 +17500,10 @@ export interface paths {
          *
          *     Plan ``2026-09-18-plan-library-difficulty-field``. The rating is computed
          *     from each plan's body by ``app.services.plan_difficulty`` — two axes,
-         *     conceptual and implementation, folded into a routing level (``high`` →
-         *     Fable 5.1, ``medium`` → Opus 5, ``low`` → a fast tier), with a plan's own
-         *     ``Difficulty:`` stamp overriding the computed level.
+         *     conceptual and implementation, folded into a routing level, with a plan's
+         *     own ``Difficulty:`` stamp overriding the computed level. Which model family
+         *     each level routes to is the caller's organization's map
+         *     (``GET/PUT /plan-library/model-routing``).
          *
          *     Before answering, plans rated under an older rubric (or none) are re-rated,
          *     up to a per-request cap, newest first — see
@@ -17675,6 +17846,59 @@ export interface paths {
          */
         post: operations["api_v1_plan_library_followups_reconcile_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-library/model-routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which model family each difficulty level routes to (this organization)
+         * @description The routing map ``GET /plan-library``, ``/candidates`` and
+         *     ``/difficulty`` serve this caller, with each level's provenance.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Same admission as those three reads (a Cognito user OR a coord device JWT):
+         *     the map is already on their envelopes, this adds only where each level came
+         *     from. ``can_edit`` says whether ``PUT`` would be accepted for this scope —
+         *     the NULL organization bucket can never be written — not whether the
+         *     caller's CREDENTIAL can write (a device JWT cannot; see the PUT).
+         */
+        get: operations["api_v1_plan_library_model_routing_get"];
+        /**
+         * Set the model family each difficulty level routes to (Cognito session only)
+         * @description Record the FULL ``{high, medium, low}`` → model-family map.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Families are the ``claude_code_agent_tool_v1`` selector vocabulary
+         *     (``fable | opus | sonnet | haiku``); the harness resolves each to that
+         *     family's latest model, so no version is ever stored. Every level is
+         *     required and every level's row is written, so a save is a whole map. Two
+         *     levels may share a family.
+         *
+         *     Scoped to the caller's personal organization — the scope the three serving
+         *     routes read. 409 for a principal with none: that is the shared NULL bucket.
+         *
+         *     Answers with the map as RE-READ after the commit, so what the console shows
+         *     after a save is what the serving routes now return.
+         */
+        put: operations["api_v1_plan_library_model_routing_put"];
+        post?: never;
+        /**
+         * Clear this organization's model routing back to the defaults (Cognito session only)
+         * @description Delete every stored level, so each serves the shipped default again.
+         *
+         *     Not the same as ``PUT``-ing a map equal to today's defaults: that stores a
+         *     copy, which stays pinned if the defaults move. After this every level's
+         *     ``source`` is ``default``. Idempotent; 409 for the NULL bucket, as ``PUT``.
+         */
+        delete: operations["api_v1_plan_library_model_routing_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -27727,6 +27951,25 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_image_asset_api_v1_image_assets_post */
+        Body_upload_image_asset_api_v1_image_assets_post: {
+            /**
+             * File
+             * @description The image. Its filename and Content-Type are ignored: the format is read from the bytes.
+             */
+            file: string;
+            /**
+             * Kind
+             * @description How the image entered the store. The first upload's kind stands.
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /**
+             * Provenance
+             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys, up to that same cap, and never removes or changes one.
+             */
+            provenance?: string | null;
+        };
         /** Body_upload_recording_api_v1_recordings_upload_post */
         Body_upload_recording_api_v1_recordings_upload_post: {
             /** Description */
@@ -29084,11 +29327,17 @@ export interface components {
             domain: string;
             /** Repos */
             repos?: components["schemas"]["CiHostingRepoReading"][];
+            /** Repos Unknown Reason */
+            repos_unknown_reason?: string | null;
             tenant_default: components["schemas"]["CiHostingReading"];
         };
         /**
          * CiNodeConfig
-         * @description The four ``CiNodeSettings`` fields, with the runner's own defaults.
+         * @description The ``CiNodeSettings`` fields, with the runner's own defaults.
+         *
+         *     ``model_access`` is the exception: its default is ``None`` ("not set
+         *     here"), not the runner's ``True``, because an absent value must leave the
+         *     runner's stored consent alone rather than overwrite it.
          *
          *     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
          *     on purpose: a machine that has never been configured here must round-trip
@@ -29109,6 +29358,8 @@ export interface components {
              * @default 20
              */
             min_free_disk_gb: number;
+            /** Model Access */
+            model_access?: boolean | null;
             /** Repo Allowlist */
             repo_allowlist?: string[];
         };
@@ -36961,16 +37212,39 @@ export interface components {
             scope_key?: string | null;
         };
         /**
+         * FleetPolicyRepoOverride
+         * @description One repo-band row that overrides the tenant band for its repo.
+         *
+         *     Mirrors one entry of coord's ``repo_overrides``
+         *     (``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a
+         *     reader of that repo resolves from the row: ``level``, or ``off`` when the
+         *     row's ``master_enabled`` is false. ``level`` is opaque here, as it is on
+         *     the write: a level this console does not recognise is the page's to name,
+         *     never this proxy's to drop.
+         */
+        FleetPolicyRepoOverride: {
+            /** Effective Level */
+            effective_level: string;
+            /** Level */
+            level: string;
+            /** Master Enabled */
+            master_enabled: boolean;
+            /** Repo */
+            repo: string;
+        };
+        /**
          * FleetPolicyView
          * @description The requested domain's resolved policy — and ONLY that domain's.
          *
          *     ``effective_level`` is what a device actually resolves, which is not the
          *     same as the level that was last written: coord folds ``master_enabled``
          *     in (a disabled master resolves ``off`` whatever ``level`` says), and a
-         *     tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
-         *     That last case is why ``resolved_scope`` is surfaced: "off because nobody
-         *     ever wrote a row" and "off because someone turned it off" are different
-         *     facts about the fleet and the operator is entitled to tell them apart.
+         *     tenant with no row at all resolves the domain's declared no-row default
+         *     with ``resolved_scope: "none"`` — ``off`` unless coord's
+         *     ``domain_default_level`` declares another for that domain. That last case
+         *     is why ``resolved_scope`` is surfaced: "set because nobody ever wrote a
+         *     row" and "set because someone chose it" are different facts about the
+         *     fleet and the operator is entitled to tell them apart.
          */
         FleetPolicyView: {
             /** Can Edit */
@@ -36985,6 +37259,8 @@ export interface components {
             keys_not_shown_source?: ("fleet_resources_row" | "this_domain") | null;
             /** Master Enabled */
             master_enabled: boolean;
+            /** Repo Overrides */
+            repo_overrides?: components["schemas"]["FleetPolicyRepoOverride"][] | null;
             /** Resolved Scope */
             resolved_scope: string;
         };
@@ -37551,6 +37827,14 @@ export interface components {
             name: string;
         };
         /**
+         * GateRejectRequest
+         * @description Optional JSON body of ``POST /gates/{gate_id}/reject``.
+         */
+        GateRejectRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * GenerateDescriptionRequest
          * @description Request to generate LLM description for an element region.
          */
@@ -37926,6 +38210,115 @@ export interface components {
             show_find?: boolean | null;
             /** Show Type */
             show_type?: boolean | null;
+        };
+        /**
+         * ImageAssetConflict
+         * @description One thing a re-upload sent that the store did not apply.
+         */
+        ImageAssetConflict: {
+            /** Path */
+            path: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "kind_stands" | "stored_value_stands" | "provenance_full";
+        };
+        /**
+         * ImageAssetUploadResponse
+         * @description ``created`` is true when this request created the row (HTTP 201) and
+         *     false when the tenant already held these bytes (HTTP 200).
+         */
+        ImageAssetUploadResponse: {
+            /** Byte Size */
+            byte_size: number;
+            /** Conflicts */
+            conflicts: components["schemas"]["ImageAssetConflict"][];
+            /** Created */
+            created: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Orientation */
+            orientation: number | null;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * ImageAssetWithUrl
+         * @description A stored image plus a URL to its bytes.
+         *
+         *     On S3 / MinIO ``url`` is a presigned URL. Its ``url_expires_at`` is the
+         *     requested lifetime capped at the signing credential's own expiry when the
+         *     backend can read one (an assumed role, an instance or task profile): a
+         *     presigned URL stops working when the credential that signed it expires,
+         *     whatever its ``X-Amz-Expires`` says. When no expiry can be read — long-lived
+         *     access keys, or credentials whose expiry botocore does not expose — the
+         *     value ASSUMES the credential outlives the URL.
+         *
+         *     On the local development backend ``url`` is this API's own authenticated
+         *     content route (``GET /api/v1/image-assets/{sha256}/content``): fetch it
+         *     with the same credential. It does not expire, so ``url_expires_at`` is
+         *     null.
+         */
+        ImageAssetWithUrl: {
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Orientation */
+            orientation: number | null;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Url */
+            url: string;
+            /** Url Expires At */
+            url_expires_at: string | null;
+            /** Width */
+            width: number;
         };
         /**
          * ImageExtractRequest
@@ -40940,6 +41333,80 @@ export interface components {
             tokens_output: number;
         };
         /**
+         * ModelFamilyOption
+         * @description One family the console offers, with the copy ``model_tiers`` serves for it.
+         */
+        ModelFamilyOption: {
+            /** Display */
+            display: string;
+            /** Family */
+            family: string;
+        };
+        /**
+         * ModelRoutingResponse
+         * @description The caller's organization's routing map, as STORED and as SERVED.
+         *
+         *     ``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are
+         *     exactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``
+         *     serve this caller. ``sources`` says, per level, whether a stored row or the
+         *     shipped default answered (``default_selectors``). ``can_edit`` is false for
+         *     a principal with no personal organization: that scope is the shared NULL
+         *     bucket, which reads the defaults and refuses a write (409).
+         */
+        ModelRoutingResponse: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Default Selectors */
+            default_selectors: {
+                [key: string]: string;
+            };
+            /** Families */
+            families: components["schemas"]["ModelFamilyOption"][];
+            /** Model Selector Vocabulary */
+            model_selector_vocabulary: string;
+            /** Model Selectors */
+            model_selectors: {
+                [key: string]: string;
+            };
+            /** Model Tiers */
+            model_tiers: {
+                [key: string]: string;
+            };
+            /** Sources */
+            sources: {
+                [key: string]: "stored" | "default";
+            };
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By User Id */
+            updated_by_user_id?: string | null;
+        };
+        /**
+         * ModelRoutingUpdate
+         * @description ``PUT /plan-library/model-routing`` — the FULL map, one family per level.
+         *
+         *     Every level is required and an unknown key is refused, so a save is always
+         *     a whole, explicit map: there is no partial write whose omitted levels mean
+         *     either "keep" or "reset" depending on who reads the code.
+         */
+        ModelRoutingUpdate: {
+            /**
+             * High
+             * @enum {string}
+             */
+            high: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Low
+             * @enum {string}
+             */
+            low: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Medium
+             * @enum {string}
+             */
+            medium: "fable" | "opus" | "sonnet" | "haiku";
+        };
+        /**
          * MonitorSettingsSchema
          * @description Monitor configuration settings schema.
          */
@@ -43474,7 +43941,11 @@ export interface components {
          *     row that is still unrated is left OUT of ``items`` — absent here means
          *     "no rating", which the console renders as unrated, never as "low".
          *     ``model_tiers`` maps each level to the model tier it routes to, served so
-         *     every consumer names the same models. It is DISPLAY COPY — never parse it.
+         *     every consumer names the same models. It is DISPLAY COPY — never parse it —
+         *     derived from ``model_selectors``, so the two always agree. Both are the
+         *     caller's organization's map as the operator set it on
+         *     ``PUT /plan-library/model-routing``, each level defaulting to the shipped
+         *     map when no row names it.
          *     ``model_selectors`` is the machine-readable twin: each level's harness
          *     selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
          *     Code Agent tool's ``model`` values). A consumer whose harness does not
@@ -48299,6 +48770,154 @@ export interface components {
             } | null;
             /** Version */
             version?: string | null;
+        };
+        /**
+         * SlotCandidateAsset
+         * @description The asset a candidate names, as stored.
+         */
+        SlotCandidateAsset: {
+            /** Byte Size */
+            byte_size: number;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * SlotCandidateDemotion
+         * @description A slot's previous choice, returned to ``candidate`` because another
+         *     asset was chosen in the same request.
+         */
+        SlotCandidateDemotion: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Status After
+             * @default candidate
+             * @constant
+             */
+            status_after: "candidate";
+            /**
+             * Status Before
+             * @default chosen
+             * @constant
+             */
+            status_before: "chosen";
+        };
+        /**
+         * SlotCandidateList
+         * @description ``GET /api/v1/image-assets/slot-candidates`` — one page of a slot's
+         *     candidates, ``oldest`` or ``newest`` first.
+         *
+         *     The query is echoed so an empty page can be checked against what was
+         *     asked. ``truncated`` says whether more rows exist past this page, and
+         *     ``next_cursor`` — set exactly when it is true — fetches them: pass it back
+         *     as ``after`` with the same ``order``.
+         */
+        SlotCandidateList: {
+            /** Candidates */
+            candidates: components["schemas"]["SlotCandidateOut"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Order
+             * @enum {string}
+             */
+            order: "oldest" | "newest";
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /** Status */
+            status: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** SlotCandidateOut */
+        SlotCandidateOut: {
+            asset: components["schemas"]["SlotCandidateAsset"];
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Judge */
+            judge: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * SlotCandidateUpsert
+         * @description ``PUT /api/v1/image-assets/slot-candidates`` — propose an asset for a
+         *     slot, or move a proposal.
+         *
+         *     Identity is ``repo`` + ``slot_id`` + ``asset_sha256``. ``status`` is
+         *     always sent. ``recipe_hash``, ``values`` and ``judge`` are replaced when
+         *     sent and left as stored when omitted (``recipe_hash: null`` clears it).
+         */
+        SlotCandidateUpsert: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /** Judge */
+            judge?: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash?: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
+        };
+        /** SlotCandidateUpsertResponse */
+        SlotCandidateUpsertResponse: {
+            candidate: components["schemas"]["SlotCandidateOut"];
+            /** Created */
+            created: boolean;
+            /** Demoted */
+            demoted: components["schemas"]["SlotCandidateDemotion"][];
         };
         /** SnapshotRun */
         SnapshotRun: {
@@ -67522,6 +68141,281 @@ export interface operations {
             };
         };
     };
+    api_v1_image_assets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_asset_api_v1_image_assets_post"];
+            };
+        };
+        responses: {
+            /** @description The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys (up to its cap); `conflicts` names what was not applied, and why. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description The image is larger than the store accepts. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The bytes are not an accepted image format. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unreadable image, too many frames or pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_get: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                /** @description Only candidates in this status. */
+                status?: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+                /** @description oldest (the default) or newest first. */
+                order?: "oldest" | "newest";
+                limit?: number;
+                /** @description The previous page's next_cursor, with the same order. */
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateList"];
+                };
+            };
+            /** @description A malformed cursor, or one for the other order. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlotCandidateUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description The candidate was created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Another choice for the slot landed concurrently. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_delete: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                asset_sha256: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such candidate for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_get: {
+        parameters: {
+            query?: {
+                /** @description Seconds a presigned URL stays valid (S3 / MinIO). */
+                expires_in?: number;
+            };
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetWithUrl"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image's bytes, as uploaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/avif": unknown;
+                    "image/gif": unknown;
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
+                    "image/webp": unknown;
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The record exists but its stored bytes do not. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     api_v1_integration_testing_execute_post: {
         parameters: {
             query?: never;
@@ -70080,7 +70974,10 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number | null;
+                offset?: number | null;
                 gap?: boolean | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
@@ -70143,6 +71040,10 @@ export interface operations {
         parameters: {
             query?: {
                 gap?: boolean | null;
+                limit?: number | null;
+                offset?: number | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
@@ -74382,16 +75283,18 @@ export interface operations {
     };
     api_v1_operations_gates_gate_id_reject_post: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 gate_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GateRejectRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -79861,6 +80764,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FollowupReconcileResponse"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelRoutingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
                 };
             };
         };

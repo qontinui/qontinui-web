@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +11,11 @@ import { TwinCatalog } from "./_components/TwinCatalog";
 import { AskTheTwin } from "./_components/AskTheTwin";
 import { DeliveryVerdictCard } from "./_components/DeliveryVerdictCard";
 import { UiBridgePanel } from "./_components/UiBridgePanel";
+import {
+  TwinNavigationContext,
+  type TwinNavigation,
+  type TwinTab,
+} from "./_lib/twin-navigation";
 
 /**
  * Digital Twin Explorer — the twin of the software-development process: the
@@ -60,6 +66,21 @@ export default function DigitalTwinPage() {
     type: "button",
   });
 
+  // Controlled so the sub-space drawer can switch tabs (`TwinNavigation`).
+  const [tab, setTab] = useState<TwinTab>("completeness");
+  // A question the drawer handed to Ask the Twin, until it has been typed in.
+  const [askDraft, setAskDraft] = useState<string | null>(null);
+  const navigation = useMemo<TwinNavigation>(
+    () => ({
+      askTheTwin: (question) => {
+        setAskDraft(question);
+        setTab("completeness");
+      },
+      openTab: setTab,
+    }),
+    []
+  );
+
   return (
     <div className="flex h-[calc(100vh-44px)] flex-col overflow-hidden bg-background">
       <header className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
@@ -76,50 +97,56 @@ export default function DigitalTwinPage() {
         </div>
       </header>
 
-      <Tabs
-        defaultValue="completeness"
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        <TabsList className="mx-6 mt-3 w-fit shrink-0">
-          <TabsTrigger ref={tabCompletenessRef} value="completeness">
-            Completeness
-          </TabsTrigger>
-          <TabsTrigger ref={tabLifecycleRef} value="lifecycle">
-            Lifecycle
-          </TabsTrigger>
-          <TabsTrigger ref={tabDeliveryRef} value="delivery">
-            Delivery
-          </TabsTrigger>
-          <TabsTrigger ref={tabUiBridgeRef} value="ui-bridge">
-            UI Bridge
-          </TabsTrigger>
-        </TabsList>
+      <TwinNavigationContext.Provider value={navigation}>
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(value as TwinTab)}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <TabsList className="mx-6 mt-3 w-fit shrink-0">
+            <TabsTrigger ref={tabCompletenessRef} value="completeness">
+              Completeness
+            </TabsTrigger>
+            <TabsTrigger ref={tabLifecycleRef} value="lifecycle">
+              Lifecycle
+            </TabsTrigger>
+            <TabsTrigger ref={tabDeliveryRef} value="delivery">
+              Delivery
+            </TabsTrigger>
+            <TabsTrigger ref={tabUiBridgeRef} value="ui-bridge">
+              UI Bridge
+            </TabsTrigger>
+          </TabsList>
 
-        <ScrollArea className="min-h-0 flex-1">
-          <TabsContent value="completeness" className="mt-0">
-            <div className="space-y-6 px-6 py-4">
-              <CoverageMatrix />
-              <TwinCatalog />
-              <AskTheTwin />
-            </div>
-          </TabsContent>
-          <TabsContent value="lifecycle" className="mt-0">
-            <div className="px-6 py-4">
-              <LifecycleView />
-            </div>
-          </TabsContent>
-          <TabsContent value="delivery" className="mt-0">
-            <div className="px-6 py-4">
-              <DeliveryVerdictCard />
-            </div>
-          </TabsContent>
-          <TabsContent value="ui-bridge" className="mt-0">
-            <div className="px-6 py-4">
-              <UiBridgePanel />
-            </div>
-          </TabsContent>
-        </ScrollArea>
-      </Tabs>
+          <ScrollArea className="min-h-0 flex-1">
+            <TabsContent value="completeness" className="mt-0">
+              <div className="space-y-6 px-6 py-4">
+                <CoverageMatrix />
+                <TwinCatalog />
+                <AskTheTwin
+                  draft={askDraft}
+                  onDraftApplied={() => setAskDraft(null)}
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="lifecycle" className="mt-0">
+              <div className="px-6 py-4">
+                <LifecycleView />
+              </div>
+            </TabsContent>
+            <TabsContent value="delivery" className="mt-0">
+              <div className="px-6 py-4">
+                <DeliveryVerdictCard />
+              </div>
+            </TabsContent>
+            <TabsContent value="ui-bridge" className="mt-0">
+              <div className="px-6 py-4">
+                <UiBridgePanel />
+              </div>
+            </TabsContent>
+          </ScrollArea>
+        </Tabs>
+      </TwinNavigationContext.Provider>
     </div>
   );
 }

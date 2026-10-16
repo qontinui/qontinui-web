@@ -177,6 +177,12 @@ jobs:
       # The style-gate spec self-enables the per-user co-pilot pref + seeds
       # consent; the build-time relay surface mirrors Spec CI.
       NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
+      # `next dev` renders two dev-only overlays (its indicator, bottom-left, and
+      # the React Query Devtools toggle, bottom-right). Both land in the frame and
+      # the snapshot, and vision-audit reports them as CRITICAL layout occlusions
+      # on /runner (seen with the fac2f604 pin, qontinui-web#1879). This flag
+      # stops the app rendering either (next.config.mjs, query-provider.tsx).
+      NEXT_PUBLIC_HIDE_DEV_OVERLAYS: "1"
 
     steps:
       # Stamp THIS JOB's start time. Must stay the FIRST step of the job.
@@ -268,7 +274,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: stable
 

@@ -5691,6 +5691,45 @@
         "title": "Body_upload_image_api_v1_projects__project_id__images_upload_post",
         "type": "object"
       },
+      "Body_upload_image_asset_api_v1_image_assets_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "The image. Its filename and Content-Type are ignored: the format is read from the bytes.",
+            "title": "File",
+            "type": "string"
+          },
+          "kind": {
+            "description": "How the image entered the store. The first upload's kind stands.",
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys, up to that same cap, and never removes or changes one.",
+            "title": "Provenance"
+          }
+        },
+        "required": [
+          "file",
+          "kind"
+        ],
+        "title": "Body_upload_image_asset_api_v1_image_assets_post",
+        "type": "object"
+      },
       "Body_upload_recording_api_v1_recordings_upload_post": {
         "properties": {
           "description": {
@@ -8858,6 +8897,17 @@
             "title": "Repos",
             "type": "array"
           },
+          "repos_unknown_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repos Unknown Reason"
+          },
           "tenant_default": {
             "$ref": "#/components/schemas/CiHostingReading"
           }
@@ -8870,7 +8920,7 @@
         "type": "object"
       },
       "CiNodeConfig": {
-        "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
+        "description": "The ``CiNodeSettings`` fields, with the runner's own defaults.\n\n``model_access`` is the exception: its default is ``None`` (\"not set\nhere\"), not the runner's ``True``, because an absent value must leave the\nrunner's stored consent alone rather than overwrite it.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.\nSince qontinui-runner#1684 that posture's capacity is ``None`` \u2014 derived\nfrom the host \u2014 not a fixed number.",
         "properties": {
           "enabled": {
             "default": false,
@@ -8896,6 +8946,17 @@
             "minimum": 1.0,
             "title": "Min Free Disk Gb",
             "type": "integer"
+          },
+          "model_access": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Access"
           },
           "repo_allowlist": {
             "items": {
@@ -25146,8 +25207,37 @@
         "title": "FleetPolicyPut",
         "type": "object"
       },
+      "FleetPolicyRepoOverride": {
+        "description": "One repo-band row that overrides the tenant band for its repo.\n\nMirrors one entry of coord's ``repo_overrides``\n(``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a\nreader of that repo resolves from the row: ``level``, or ``off`` when the\nrow's ``master_enabled`` is false. ``level`` is opaque here, as it is on\nthe write: a level this console does not recognise is the page's to name,\nnever this proxy's to drop.",
+        "properties": {
+          "effective_level": {
+            "title": "Effective Level",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "master_enabled": {
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "level",
+          "master_enabled",
+          "effective_level"
+        ],
+        "title": "FleetPolicyRepoOverride",
+        "type": "object"
+      },
       "FleetPolicyView": {
-        "description": "The requested domain's resolved policy \u2014 and ONLY that domain's.\n\n``effective_level`` is what a device actually resolves, which is not the\nsame as the level that was last written: coord folds ``master_enabled``\nin (a disabled master resolves ``off`` whatever ``level`` says), and a\ntenant with no row at all resolves ``off`` / ``resolved_scope: \"none\"``.\nThat last case is why ``resolved_scope`` is surfaced: \"off because nobody\never wrote a row\" and \"off because someone turned it off\" are different\nfacts about the fleet and the operator is entitled to tell them apart.",
+        "description": "The requested domain's resolved policy \u2014 and ONLY that domain's.\n\n``effective_level`` is what a device actually resolves, which is not the\nsame as the level that was last written: coord folds ``master_enabled``\nin (a disabled master resolves ``off`` whatever ``level`` says), and a\ntenant with no row at all resolves the domain's declared no-row default\nwith ``resolved_scope: \"none\"`` \u2014 ``off`` unless coord's\n``domain_default_level`` declares another for that domain. That last case\nis why ``resolved_scope`` is surfaced: \"set because nobody ever wrote a\nrow\" and \"set because someone chose it\" are different facts about the\nfleet and the operator is entitled to tell them apart.",
         "properties": {
           "can_edit": {
             "title": "Can Edit",
@@ -25186,6 +25276,20 @@
           "master_enabled": {
             "title": "Master Enabled",
             "type": "boolean"
+          },
+          "repo_overrides": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FleetPolicyRepoOverride"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Overrides"
           },
           "resolved_scope": {
             "title": "Resolved Scope",
@@ -26514,6 +26618,24 @@
         "title": "GateRef",
         "type": "object"
       },
+      "GateRejectRequest": {
+        "description": "Optional JSON body of ``POST /gates/{gate_id}/reject``.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "GateRejectRequest",
+        "type": "object"
+      },
       "GenerateDescriptionRequest": {
         "description": "Request to generate LLM description for an element region.",
         "properties": {
@@ -27284,6 +27406,211 @@
           }
         },
         "title": "IllustrationSettingsSchema",
+        "type": "object"
+      },
+      "ImageAssetConflict": {
+        "description": "One thing a re-upload sent that the store did not apply.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "kind_stands",
+              "stored_value_stands",
+              "provenance_full"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "ImageAssetConflict",
+        "type": "object"
+      },
+      "ImageAssetUploadResponse": {
+        "description": "``created`` is true when this request created the row (HTTP 201) and\nfalse when the tenant already held these bytes (HTTP 200).",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/ImageAssetConflict"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "orientation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orientation"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "kind",
+          "mime_type",
+          "width",
+          "height",
+          "orientation",
+          "byte_size",
+          "provenance",
+          "created_at",
+          "updated_at",
+          "created",
+          "conflicts"
+        ],
+        "title": "ImageAssetUploadResponse",
+        "type": "object"
+      },
+      "ImageAssetWithUrl": {
+        "description": "A stored image plus a URL to its bytes.\n\nOn S3 / MinIO ``url`` is a presigned URL. Its ``url_expires_at`` is the\nrequested lifetime capped at the signing credential's own expiry when the\nbackend can read one (an assumed role, an instance or task profile): a\npresigned URL stops working when the credential that signed it expires,\nwhatever its ``X-Amz-Expires`` says. When no expiry can be read \u2014 long-lived\naccess keys, or credentials whose expiry botocore does not expose \u2014 the\nvalue ASSUMES the credential outlives the URL.\n\nOn the local development backend ``url`` is this API's own authenticated\ncontent route (``GET /api/v1/image-assets/{sha256}/content``): fetch it\nwith the same credential. It does not expire, so ``url_expires_at`` is\nnull.",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "orientation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orientation"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "url_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url Expires At"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "kind",
+          "mime_type",
+          "width",
+          "height",
+          "orientation",
+          "byte_size",
+          "provenance",
+          "created_at",
+          "updated_at",
+          "url",
+          "url_expires_at"
+        ],
+        "title": "ImageAssetWithUrl",
         "type": "object"
       },
       "ImageExtractRequest": {
@@ -33501,6 +33828,154 @@
         "title": "ModelCostBreakdown",
         "type": "object"
       },
+      "ModelFamilyOption": {
+        "description": "One family the console offers, with the copy ``model_tiers`` serves for it.",
+        "properties": {
+          "display": {
+            "title": "Display",
+            "type": "string"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "display"
+        ],
+        "title": "ModelFamilyOption",
+        "type": "object"
+      },
+      "ModelRoutingResponse": {
+        "description": "The caller's organization's routing map, as STORED and as SERVED.\n\n``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are\nexactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``\nserve this caller. ``sources`` says, per level, whether a stored row or the\nshipped default answered (``default_selectors``). ``can_edit`` is false for\na principal with no personal organization: that scope is the shared NULL\nbucket, which reads the defaults and refuses a write (409).",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "default_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Default Selectors",
+            "type": "object"
+          },
+          "families": {
+            "items": {
+              "$ref": "#/components/schemas/ModelFamilyOption"
+            },
+            "title": "Families",
+            "type": "array"
+          },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
+          "sources": {
+            "additionalProperties": {
+              "enum": [
+                "stored",
+                "default"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By User Id"
+          }
+        },
+        "required": [
+          "model_selectors",
+          "model_tiers",
+          "model_selector_vocabulary",
+          "sources",
+          "default_selectors",
+          "families",
+          "can_edit"
+        ],
+        "title": "ModelRoutingResponse",
+        "type": "object"
+      },
+      "ModelRoutingUpdate": {
+        "additionalProperties": false,
+        "description": "``PUT /plan-library/model-routing`` \u2014 the FULL map, one family per level.\n\nEvery level is required and an unknown key is refused, so a save is always\na whole, explicit map: there is no partial write whose omitted levels mean\neither \"keep\" or \"reset\" depending on who reads the code.",
+        "properties": {
+          "high": {
+            "enum": [
+              "fable",
+              "opus",
+              "sonnet",
+              "haiku"
+            ],
+            "title": "High",
+            "type": "string"
+          },
+          "low": {
+            "enum": [
+              "fable",
+              "opus",
+              "sonnet",
+              "haiku"
+            ],
+            "title": "Low",
+            "type": "string"
+          },
+          "medium": {
+            "enum": [
+              "fable",
+              "opus",
+              "sonnet",
+              "haiku"
+            ],
+            "title": "Medium",
+            "type": "string"
+          }
+        },
+        "required": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "ModelRoutingUpdate",
+        "type": "object"
+      },
       "MonitorSettingsSchema": {
         "description": "Monitor configuration settings schema.",
         "properties": {
@@ -39132,7 +39607,7 @@
         "type": "object"
       },
       "PlanDifficultyResponse": {
-        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models. It is DISPLAY COPY \u2014 never parse it.\n``model_selectors`` is the machine-readable twin: each level's harness\nselector, in the vocabulary ``model_selector_vocabulary`` names (the Claude\nCode Agent tool's ``model`` values). A consumer whose harness does not\nmatch that vocabulary treats the selector map as absent. All three are\nserved, byte-identical, on ``GET /plan-library`` and\n``/plan-library/candidates`` too.",
+        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models. It is DISPLAY COPY \u2014 never parse it \u2014\nderived from ``model_selectors``, so the two always agree. Both are the\ncaller's organization's map as the operator set it on\n``PUT /plan-library/model-routing``, each level defaulting to the shipped\nmap when no row names it.\n``model_selectors`` is the machine-readable twin: each level's harness\nselector, in the vocabulary ``model_selector_vocabulary`` names (the Claude\nCode Agent tool's ``model`` values). A consumer whose harness does not\nmatch that vocabulary treats the selector map as absent. All three are\nserved, byte-identical, on ``GET /plan-library`` and\n``/plan-library/candidates`` too.",
         "properties": {
           "count": {
             "title": "Count",
@@ -50949,6 +51424,319 @@
           }
         },
         "title": "SkillUpdate",
+        "type": "object"
+      },
+      "SlotCandidateAsset": {
+        "description": "The asset a candidate names, as stored.",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "candidate",
+              "derivative",
+              "capture",
+              "exemplar"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "kind",
+          "mime_type",
+          "width",
+          "height",
+          "byte_size"
+        ],
+        "title": "SlotCandidateAsset",
+        "type": "object"
+      },
+      "SlotCandidateDemotion": {
+        "description": "A slot's previous choice, returned to ``candidate`` because another\nasset was chosen in the same request.",
+        "properties": {
+          "asset_sha256": {
+            "title": "Asset Sha256",
+            "type": "string"
+          },
+          "status_after": {
+            "const": "candidate",
+            "default": "candidate",
+            "title": "Status After",
+            "type": "string"
+          },
+          "status_before": {
+            "const": "chosen",
+            "default": "chosen",
+            "title": "Status Before",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_sha256"
+        ],
+        "title": "SlotCandidateDemotion",
+        "type": "object"
+      },
+      "SlotCandidateList": {
+        "description": "``GET /api/v1/image-assets/slot-candidates`` \u2014 one page of a slot's\ncandidates, ``oldest`` or ``newest`` first.\n\nThe query is echoed so an empty page can be checked against what was\nasked. ``truncated`` says whether more rows exist past this page, and\n``next_cursor`` \u2014 set exactly when it is true \u2014 fetches them: pass it back\nas ``after`` with the same ``order``.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCandidateOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "order": {
+            "enum": [
+              "oldest",
+              "newest"
+            ],
+            "title": "Order",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "slot_id": {
+            "title": "Slot Id",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "candidate",
+                  "chosen",
+                  "rejected",
+                  "shipped"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "slot_id",
+          "status",
+          "order",
+          "limit",
+          "truncated",
+          "next_cursor",
+          "candidates"
+        ],
+        "title": "SlotCandidateList",
+        "type": "object"
+      },
+      "SlotCandidateOut": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/SlotCandidateAsset"
+          },
+          "asset_sha256": {
+            "title": "Asset Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "judge": {
+            "additionalProperties": true,
+            "title": "Judge",
+            "type": "object"
+          },
+          "recipe_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Hash"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "slot_id": {
+            "title": "Slot Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "candidate",
+              "chosen",
+              "rejected",
+              "shipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "repo",
+          "slot_id",
+          "asset_sha256",
+          "status",
+          "recipe_hash",
+          "values",
+          "judge",
+          "created_at",
+          "updated_at",
+          "asset"
+        ],
+        "title": "SlotCandidateOut",
+        "type": "object"
+      },
+      "SlotCandidateUpsert": {
+        "additionalProperties": false,
+        "description": "``PUT /api/v1/image-assets/slot-candidates`` \u2014 propose an asset for a\nslot, or move a proposal.\n\nIdentity is ``repo`` + ``slot_id`` + ``asset_sha256``. ``status`` is\nalways sent. ``recipe_hash``, ``values`` and ``judge`` are replaced when\nsent and left as stored when omitted (``recipe_hash: null`` clears it).",
+        "properties": {
+          "asset_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Asset Sha256",
+            "type": "string"
+          },
+          "judge": {
+            "additionalProperties": true,
+            "title": "Judge",
+            "type": "object"
+          },
+          "recipe_hash": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Hash"
+          },
+          "repo": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?$",
+            "title": "Repo",
+            "type": "string"
+          },
+          "slot_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "title": "Slot Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "candidate",
+              "chosen",
+              "rejected",
+              "shipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "repo",
+          "slot_id",
+          "asset_sha256",
+          "status"
+        ],
+        "title": "SlotCandidateUpsert",
+        "type": "object"
+      },
+      "SlotCandidateUpsertResponse": {
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/SlotCandidateOut"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "demoted": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCandidateDemotion"
+            },
+            "title": "Demoted",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate",
+          "created",
+          "demoted"
+        ],
+        "title": "SlotCandidateUpsertResponse",
         "type": "object"
       },
       "SnapshotRun": {
@@ -87606,6 +88394,456 @@
         ]
       }
     },
+    "/api/v1/image-assets": {
+      "post": {
+        "description": "Store one image under the hash of its bytes, for the caller's tenant.\n\nEvery refusal \u2014 a malformed or unstorable field, an oversized or\nunreadable image \u2014 happens before anything is written to storage.",
+        "operationId": "api_v1_image_assets_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_image_asset_api_v1_image_assets_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAssetUploadResponse"
+                }
+              }
+            },
+            "description": "The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys (up to its cap); `conflicts` names what was not applied, and why."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAssetUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "413": {
+            "description": "The image is larger than the store accepts."
+          },
+          "415": {
+            "description": "The bytes are not an accepted image format."
+          },
+          "422": {
+            "description": "Unreadable image, too many frames or pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep)."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload an image to the content-addressed store",
+        "tags": [
+          "image-assets"
+        ]
+      }
+    },
+    "/api/v1/image-assets/slot-candidates": {
+      "delete": {
+        "description": "Delete the (repo, slot_id, asset_sha256) candidate row.",
+        "operationId": "api_v1_image_assets_slot_candidates_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?$",
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slot_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "title": "Slot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "asset_sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Asset Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such candidate for this tenant."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Withdraw one proposal (the image itself stays)",
+        "tags": [
+          "image-assets"
+        ]
+      },
+      "get": {
+        "description": "One page of the slot's candidates, each with the asset it names.",
+        "operationId": "api_v1_image_assets_slot_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?$",
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slot_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "title": "Slot Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only candidates in this status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "candidate",
+                    "chosen",
+                    "rejected",
+                    "shipped"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only candidates in this status.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "oldest (the default) or newest first.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "oldest",
+              "description": "oldest (the default) or newest first.",
+              "enum": [
+                "oldest",
+                "newest"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The previous page's next_cursor, with the same order.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous page's next_cursor, with the same order.",
+              "title": "After"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "A malformed cursor, or one for the other order."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List one image slot's candidates, a page at a time",
+        "tags": [
+          "image-assets"
+        ]
+      },
+      "put": {
+        "description": "Create or update the (repo, slot_id, asset_sha256) candidate.\n\n``recipe_hash``, ``values`` and ``judge`` are replaced when sent and kept\nwhen omitted. ``status: chosen`` returns the slot's previous choice to\n``candidate`` in the same transaction; ``demoted`` names it.",
+        "operationId": "api_v1_image_assets_slot_candidates_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlotCandidateUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotCandidateUpsertResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotCandidateUpsertResponse"
+                }
+              }
+            },
+            "description": "The candidate was created."
+          },
+          "404": {
+            "description": "This tenant holds no image with that sha256."
+          },
+          "409": {
+            "description": "Another choice for the slot landed concurrently."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Propose an image for a slot, or move a proposal",
+        "tags": [
+          "image-assets"
+        ]
+      }
+    },
+    "/api/v1/image-assets/{sha256}": {
+      "get": {
+        "description": "Answers only when the caller's tenant holds an image with this hash.",
+        "operationId": "api_v1_image_assets_sha256_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Seconds a presigned URL stays valid (S3 / MinIO).",
+            "in": "query",
+            "name": "expires_in",
+            "required": false,
+            "schema": {
+              "default": 3600,
+              "description": "Seconds a presigned URL stays valid (S3 / MinIO).",
+              "maximum": 604800,
+              "minimum": 60,
+              "title": "Expires In",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageAssetWithUrl"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "This tenant holds no image with that sha256."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read one image's record and a URL to its bytes",
+        "tags": [
+          "image-assets"
+        ]
+      }
+    },
+    "/api/v1/image-assets/{sha256}/content": {
+      "get": {
+        "description": "The bytes of an image the caller's tenant holds \u2014 the same 404 as the\nrecord route for any other hash, another tenant's included.",
+        "operationId": "api_v1_image_assets_sha256_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/avif": {},
+              "image/gif": {},
+              "image/jpeg": {},
+              "image/png": {},
+              "image/webp": {}
+            },
+            "description": "The image's bytes, as uploaded."
+          },
+          "404": {
+            "description": "This tenant holds no image with that sha256."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "The record exists but its stored bytes do not."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read one image's bytes",
+        "tags": [
+          "image-assets"
+        ]
+      }
+    },
     "/api/v1/integration-testing/execute": {
       "post": {
         "description": "Execute a mock workflow using historical data (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\nActual config testing execution happens in qontinui-runner using\nthe HistoricalDataClient to fetch historical results.\n\nNote: This is a placeholder that returns simulated data.",
@@ -92265,7 +93503,7 @@
     },
     "/api/v1/operations/agent-questions/answered": {
       "get": {
-        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.\n\n``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the\nGaps tab can list pre-answered (non-blocking) gap reports.",
+        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.\n\n``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the\nGaps tab can list pre-answered (non-blocking) gap reports.\n\n``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME\n``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both\nreach it \u2014 but only if they are declared HERE. Until they were, this\nhandler declared ``limit`` and ``gap`` alone and **FastAPI dropped the\nrest on the floor**: a caller asking for ``?offset=50&audience=operator``\nreached coord with neither, and got page 1 of every audience with a 200\nin front of it. That is the exact failure the pending docstring above\ndescribes in its own words, still live one handler down \u2014 no visible\ndefect only because nothing pages the answered tab yet, which makes the\nnext answered pager a silent no-op its author cannot observe. Validated\nidentically to the pending handler (``limit`` ``ge=1, le=500``,\n``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than\nwith a second convention.\n\nThe envelope is coord's, verbatim, with the same absence contract the\npending docstring sets out: ``total``/``truncated`` are OMITTED when coord\ncould not observe the count, and an absent key is UNKNOWN, never zero.",
         "operationId": "api_v1_operations_agent_questions_answered_get",
         "parameters": [
           {
@@ -92288,6 +93526,23 @@
           },
           {
             "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "in": "query",
             "name": "gap",
             "required": false,
             "schema": {
@@ -92300,6 +93555,28 @@
                 }
               ],
               "title": "Gap"
+            }
+          },
+          {
+            "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "operator",
+                    "agent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+              "title": "Audience"
             }
           }
         ],
@@ -92376,7 +93653,7 @@
     },
     "/api/v1/operations/agent-questions/pending": {
       "get": {
-        "description": "Return pending agent questions awaiting an operator response.\n\n``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):\nwhen set, forwarded to coord as the POLICY_GAP filter \u2014\n``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.\nBacks the Gaps tab on the questions inbox.",
+        "description": "Return pending agent questions awaiting an operator response.\n\n``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):\nwhen set, forwarded to coord as the POLICY_GAP filter \u2014\n``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.\nBacks the Gaps tab on the questions inbox.\n\n``limit`` / ``offset`` / ``audience`` (plan\n2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).\nUntil these were declared here the proxy took ``gap`` alone, and FastAPI\ndrops an undeclared query param on the floor \u2014 so a caller asking for\n``?limit=500&audience=operator`` reached coord with NEITHER, and any\nfrontend-side limit change was a **no-op it could not observe**. Declaring\nthem is the whole fix on this side; the forwarding below is mechanical.\n\nWhy it mattered: measured 2026-09-12, ``coord.agent_questions`` held\n~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``\nand only ~442 with ``audience='operator'``. Coord's default page is 100\nrows newest-first, so a correctly-escalated operator question sank out of\nreach behind the agent tier's volume and was unanswerable for 10 days.\n``audience=operator`` is what makes the operator's own 442 addressable;\n``limit``/``offset`` are what make the rest of them reachable.\n\n``limit`` is validated exactly as the ANSWERED proxy below validates its\nown (``ge=1, le=500``) rather than with a second convention. ``offset`` is\n``ge=0`` \u2014 the answered proxy has no offset to copy, and the work-units\nproxy's ``offset: int | None = Query(default=None, ge=0)`` is the house\nform.\n\n``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates\nthe sibling change**, and \"deployed\" is the load-bearing word. Coord's\nsource on ``main`` now DOES parse both \u2014 ``PendingQuery``\n(``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,\n``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in\nthis same change set \u2014 so a grep of that source is not grounds for deleting\nthe degrade path here: what governs is the build answering this box, and it\nlags ``main``. The struct is plain serde with no ``deny_unknown_fields``,\nso on an older build an unknown query key is dropped rather than refused.\nForwarding them is therefore safe in both directions, but a 200 is never\nproof the filter was applied \u2014 the frontend reads the echoed ``limit`` and\n``offset`` back and says which parameter went nowhere. ``limit`` coord has\nalways honoured (default 100, hard max 500), which is the bound the defect\nbelow ran into.\n\nThe response envelope is **unchanged** and deliberately untranslated:\n:func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord\nalready ships ``{questions, count, limit, shown, offset}`` plus ``total``\nand ``truncated`` \u2014 so the paging metadata the frontend needs arrives\nwithout a re-wrap here.\n\n\u26a0\ufe0f **``total`` and ``truncated`` are OMITTED \u2014 the key absent \u2014 when coord\ncould not observe the count**, which is precisely why nothing here\nre-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the\nreturned rows, so an ``offset`` past the end of the match set returns zero\nrows and no count with them; a ``0`` in its place would be a fabrication,\nand the operator console turns a pending ``0`` into \"No agent is waiting on\nan answer\". Any future re-wrap here MUST preserve the absence \u2014 a\n``body.get(\"total\", 0)`` anywhere in this path recreates the defect.",
         "operationId": "api_v1_operations_agent_questions_pending_get",
         "parameters": [
           {
@@ -92393,6 +93670,63 @@
                 }
               ],
               "title": "Gap"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "operator",
+                    "agent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+              "title": "Audience"
             }
           }
         ],
@@ -99567,7 +100901,7 @@
     },
     "/api/v1/operations/gates/{gate_id}/reject": {
       "post": {
-        "description": "Reject an OperatorApproval gate (operator bearer forwarded \u2014\nfleet-auth P2/D6).",
+        "description": "Reject an OperatorApproval gate (operator bearer forwarded \u2014\nfleet-auth P2/D6).\n\nThe optional JSON body ``{\"reason\": ...}`` carries the reason. It is\nforwarded to coord stripped, and only when non-blank; an absent body or a\nblank reason forwards ``{}``.",
         "operationId": "api_v1_operations_gates_gate_id_reject_post",
         "parameters": [
           {
@@ -99578,24 +100912,25 @@
               "title": "Gate Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "reason",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Reason"
-            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GateRejectRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -108284,7 +109619,7 @@
     },
     "/api/v1/plan-library/difficulty": {
       "get": {
-        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
+        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level, with a plan's\nown ``Difficulty:`` stamp overriding the computed level. Which model family\neach level routes to is the caller's organization's map\n(``GET/PUT /plan-library/model-routing``).\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
         "operationId": "api_v1_plan_library_difficulty_get",
         "responses": {
           "200": {
@@ -108952,6 +110287,106 @@
           }
         ],
         "summary": "Settle fixing follow-ups from coord's land record",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/model-routing": {
+      "delete": {
+        "description": "Delete every stored level, so each serves the shipped default again.\n\nNot the same as ``PUT``-ing a map equal to today's defaults: that stores a\ncopy, which stays pinned if the defaults move. After this every level's\n``source`` is ``default``. Idempotent; 409 for the NULL bucket, as ``PUT``.",
+        "operationId": "api_v1_plan_library_model_routing_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRoutingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Clear this organization's model routing back to the defaults (Cognito session only)",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "get": {
+        "description": "The routing map ``GET /plan-library``, ``/candidates`` and\n``/difficulty`` serve this caller, with each level's provenance.\n\nPlan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.\nSame admission as those three reads (a Cognito user OR a coord device JWT):\nthe map is already on their envelopes, this adds only where each level came\nfrom. ``can_edit`` says whether ``PUT`` would be accepted for this scope \u2014\nthe NULL organization bucket can never be written \u2014 not whether the\ncaller's CREDENTIAL can write (a device JWT cannot; see the PUT).",
+        "operationId": "api_v1_plan_library_model_routing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRoutingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Which model family each difficulty level routes to (this organization)",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "put": {
+        "description": "Record the FULL ``{high, medium, low}`` \u2192 model-family map.\n\nPlan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.\nFamilies are the ``claude_code_agent_tool_v1`` selector vocabulary\n(``fable | opus | sonnet | haiku``); the harness resolves each to that\nfamily's latest model, so no version is ever stored. Every level is\nrequired and every level's row is written, so a save is a whole map. Two\nlevels may share a family.\n\nScoped to the caller's personal organization \u2014 the scope the three serving\nroutes read. 409 for a principal with none: that is the shared NULL bucket.\n\nAnswers with the map as RE-READ after the commit, so what the console shows\nafter a save is what the serving routes now return.",
+        "operationId": "api_v1_plan_library_model_routing_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRoutingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRoutingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set the model family each difficulty level routes to (Cognito session only)",
         "tags": [
           "plan-library"
         ]

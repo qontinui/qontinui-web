@@ -152,7 +152,10 @@ import {
   RefreshButton,
   readIsUnknown,
   GlossaryTerm,
+  BackendErrorMessage,
 } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import { planAuthoredAt } from "@/components/admin/coord/planStatus";
 import {
@@ -390,7 +393,7 @@ export default function CoordWorkUnitsListPage() {
   // the client sort within an order is not, so switching between two walked
   // sorts re-sorts the rows already on the page instead of re-reading.
   const order = serverOrderFor(sort);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
   // `loaded` prop, and the two questions it conflated are what let a
   // fabricated absence through: "is a request outstanding?" is not "has this
@@ -434,7 +437,7 @@ export default function CoordWorkUnitsListPage() {
         setError(null);
       } catch (e) {
         if (!guard.isCurrentQuestion()) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(operationsErrorReading(e));
       }
     },
     [status, shepherd, order]
@@ -1049,7 +1052,12 @@ export default function CoordWorkUnitsListPage() {
       )}
 
       {error && (
-        <p className="text-sm text-destructive">Failed to load: {error}</p>
+        <p
+          className="text-sm text-destructive"
+          data-testid="coord-work-units-error"
+        >
+          Failed to load: <BackendErrorMessage error={error} />
+        </p>
       )}
 
       {difficultyIndex.state === "failed" && (

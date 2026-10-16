@@ -21,8 +21,14 @@ import { describe, expect, it } from "vitest";
  *
  * Resume point: when the pin reaches 0 the migration is done, and
  * `components/operations/utils.ts` exports no URL.
+ *
+ * Pin 0 does NOT mean every `/operations` request is relative. The two
+ * `/sessions/{id}/events` SSE readers in `sessions.ts` sit inside the client
+ * (so this scan never counts them) and deliberately stay on the ABSOLUTE base
+ * (`ApiConfig.getBaseUrl()`) until the Vercel rewrite is measured for
+ * long-lived streaming bodies.
  */
-const PINNED_COUNT = 19;
+const PINNED_COUNT = 0;
 
 const SRC_ROOT = path.resolve(__dirname, "../../..");
 
