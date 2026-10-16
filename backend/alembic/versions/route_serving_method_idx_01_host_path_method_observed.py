@@ -37,8 +37,9 @@ The existing per-key index is ``idx_route_serving_observations_host_path_observe
 but neither read above once ``method`` is in the key: within one path its
 ``observed_at`` order interleaves the methods, so every sibling-method row has to
 be fetched and sorted on ``(method, observed_at)``. That loses the index-served
-property qontinui-coord#3300 (plan ``2026-10-14-coord-high-ingest-tables-are-unbounded``
-Phase 2) gives the ``(host, route_path)`` guard. With ``method`` between the path
+property that qontinui-coord#3300 (open at the time of writing; plan
+``2026-10-14-coord-high-ingest-tables-are-unbounded`` Phase 2) proposes for the
+``(host, route_path)`` guard. With ``method`` between the path
 and ``observed_at DESC``, both reads are an ordered range scan with no Sort node.
 ``DESC`` is load-bearing: the reader orders ``route_path ASC, method ASC,
 observed_at DESC``, which an all-ascending index cannot supply in either scan
@@ -54,7 +55,8 @@ take the revision off the auto-land path anyway.
 Building on a large table
 ==========================================================================
 
-The table is about 17M rows / 5.7 GB in production, and the observer appends
+The table held 17.3M rows / 5.7 GB in production when the plan measured it
+(plan evidence row E9, 2026-09-25), and the observer appends
 to it every cycle. ``CREATE INDEX CONCURRENTLY IF NOT EXISTS`` takes ``SHARE
 UPDATE EXCLUSIVE`` only, so the appends keep landing during the build; it
 cannot run inside a transaction, hence ``op.get_context().autocommit_block()``.
