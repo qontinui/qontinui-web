@@ -11,10 +11,12 @@ import {
   uploadReferenceImage,
   writeTasteBudget,
   type CalibrationBatchResult,
+  type ImageAssetKind,
   type TasteInbox,
   type TasteLabelWrite,
 } from "@/lib/api/taste";
 import { BackendError } from "@/lib/errors/backend-error-message";
+import { summarizeReferenceUploads } from "../_lib/tasteInbox";
 
 /** How many queued pairs one read asks for: the card shows the first, and
  *  the rest tell the operator what is next without another round trip. */
@@ -40,6 +42,11 @@ function statusOf(err: unknown): number | null {
  * pair the operator just answered. A failed read keeps the last good inbox on
  * screen and says the read failed, rather than blanking the queue into
  * something that looks empty.
+ *
+ * One write at a time: a second write asked for while one is in flight is
+ * dropped (a ref, not the `busy` state, guards it — two key presses inside
+ * one render would both read `busy` as false), so a double press never
+ * sends a pair twice.
  */
 export function useTasteInbox() {
   const [inbox, setInbox] = useState<TasteInbox | null>(null);
@@ -47,6 +54,7 @@ export function useTasteInbox() {
   const [overBudget, setOverBudget] = useState(false);
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const inFlight = useRef(false);
 
   const load = useCallback(async (keepGoing: boolean) => {
     const mine = ++generation.current;
@@ -70,18 +78,29 @@ export function useTasteInbox() {
 
   const refresh = useCallback(() => load(overBudget), [load, overBudget]);
 
-  /** Run one write, then re-read. Returns whether the write landed. */
+  /** Run one write, then re-read. Returns the write's answer, or null when
+   *  it did not land or another write was already in flight. A 409 shows
+   *  `conflict`, or — with `conflictFromServer` — the server's own
+   *  sentence. */
   const write = useCallback(
     async <T>(
       run: () => Promise<T>,
-      describe: { failed: string; conflict?: string }
+      describe: {
+        failed: string;
+        conflict?: string;
+        conflictFromServer?: boolean;
+      }
     ): Promise<T | null> => {
+      if (inFlight.current) return null;
+      inFlight.current = true;
       setBusy(true);
       try {
         const result = await run();
         return result;
       } catch (err) {
-        if (statusOf(err) === 409 && describe.conflict) {
+        if (statusOf(err) === 409 && describe.conflictFromServer) {
+          toast.info(message(err, describe.failed));
+        } else if (statusOf(err) === 409 && describe.conflict) {
           toast.info(describe.conflict);
         } else {
           toast.error(message(err, describe.failed));
@@ -91,6 +110,7 @@ export function useTasteInbox() {
         // Re-read whether or not the write landed: a 409 means the server
         // moved on without us, and the screen should show where it is now.
         await load(overBudget);
+        inFlight.current = false;
         setBusy(false);
       }
     },
@@ -116,11 +136,14 @@ export function useTasteInbox() {
     [write]
   );
 
+  /** Undo the viewer's own label, or — `force` — a colleague's, which the
+   *  server records as forced. A 409 (already undone, or not yours) shows
+   *  the server's sentence. */
   const undo = useCallback(
-    (pairId: string) =>
-      write(() => undoTasteLabel(pairId), {
+    (pairId: string, force = false) =>
+      write(() => undoTasteLabel(pairId, { force }), {
         failed: "The label was not undone.",
-        conflict: "That label was already undone.",
+        conflictFromServer: true,
       }),
     [write]
   );
@@ -163,19 +186,16 @@ export function useTasteInbox() {
 
   const uploadReferences = useCallback(
     async (files: File[]) => {
-      let stored = 0;
+      const stored: { kind: ImageAssetKind }[] = [];
       for (const file of files) {
         const result = await write(() => uploadReferenceImage(file), {
           failed: `${file.name} was not uploaded.`,
         });
-        if (result) stored += 1;
+        if (result) stored.push(result);
       }
-      if (stored) {
-        toast.success(
-          `${stored} reference ${stored === 1 ? "image" : "images"} added to the calibration pool.`
-        );
-      }
-      return stored;
+      const summary = summarizeReferenceUploads(stored);
+      if (summary) toast[summary.tone](summary.message);
+      return stored.length;
     },
     [write]
   );

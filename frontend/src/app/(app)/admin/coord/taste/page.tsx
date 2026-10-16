@@ -14,6 +14,10 @@
  * coord-tenant admin on the backend (`require_coord_tenant_admin_target`),
  * and only reflected here via the inbox's `can_label`.
  *
+ * Keyboard (WCAG 2.1.4): the single-key shortcuts act only while the pair
+ * card has focus, and the card carries a visible toggle that turns them off
+ * (remembered per browser). A held key never repeats an answer.
+ *
  * What it cannot show yet, and says on the card: in-situ captures need plan
  * Phase 18, so each pair is shown bare; studio's pushes start with Phase 20,
  * so the queue today is the calibration batch.
@@ -21,7 +25,14 @@
  * Chrome (R9): no page title — the console shell renders it.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { HealthStrip, RefreshButton } from "@/components/console";
 import { Button } from "@/components/ui/button";
 import type { TasteLabel, TasteReason } from "@/lib/api/taste";
@@ -29,7 +40,30 @@ import { EMPTY_DRAFT, PairCard, type PairDraft } from "./_components/PairCard";
 import { RecentLabels } from "./_components/RecentLabels";
 import { SetupPanel } from "./_components/SetupPanel";
 import { useTasteInbox } from "./_hooks/useTasteInbox";
-import { deriveTasteHealth, resolveKey } from "./_lib/tasteInbox";
+import {
+  deriveTasteHealth,
+  newestOwnLabel,
+  resolveKey,
+} from "./_lib/tasteInbox";
+
+/** Where the shortcut toggle is remembered — a per-browser convenience. */
+const SHORTCUTS_STORAGE_KEY = "coord-taste-shortcuts";
+
+function readShortcutsPreference(): boolean {
+  try {
+    return window.localStorage.getItem(SHORTCUTS_STORAGE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function writeShortcutsPreference(on: boolean): void {
+  try {
+    window.localStorage.setItem(SHORTCUTS_STORAGE_KEY, on ? "on" : "off");
+  } catch {
+    // Storage unavailable: the toggle still works for this visit.
+  }
+}
 
 function isTextField(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -78,6 +112,14 @@ export default function TasteInboxPage() {
 
   const commentRef = useRef<HTMLTextAreaElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
+
+  const [shortcutsOn, setShortcutsOn] = useState(true);
+  useEffect(() => setShortcutsOn(readShortcutsPreference()), []);
+  const changeShortcuts = useCallback((on: boolean) => {
+    setShortcutsOn(on);
+    writeShortcutsPreference(on);
+  }, []);
 
   const choose = useCallback(
     (choice: TasteLabel) => {
@@ -97,14 +139,16 @@ export default function TasteInboxPage() {
     if (head && !busy) void skip(head.id);
   }, [head, busy, skip]);
 
-  const undoLast = useCallback(() => {
-    const last = inbox?.recent[0];
-    if (last && !busy) void undo(last.id);
-  }, [inbox, busy, undo]);
+  /** `u`: the newest label THIS viewer gave — never a colleague's. */
+  const ownLast = newestOwnLabel(inbox?.recent ?? [], inbox?.viewer_user_id);
+  const undoOwnLast = useCallback(() => {
+    if (ownLast && !busy) void undo(ownLast.id);
+  }, [ownLast, busy, undo]);
 
-  useEffect(() => {
-    if (!canLabel) return;
-    const onKey = (event: KeyboardEvent) => {
+  const onCardKey = useCallback(
+    (event: KeyboardEvent<HTMLElement>) => {
+      // A held key repeats keydown; an answer is given once per press.
+      if (!canLabel || !shortcutsOn || event.repeat) return;
       const action = resolveKey(
         {
           key: event.key,
@@ -116,20 +160,15 @@ export default function TasteInboxPage() {
         vocabulary
       );
       if (!action) return;
-      if (action.kind === "leaveField") {
-        (event.target as HTMLElement).blur();
-        return;
-      }
-      // Focus moves and undo work with or without a pair on the card; the
-      // rest act on the head pair only.
-      if (action.kind === "undo") {
-        event.preventDefault();
-        undoLast();
-        return;
-      }
-      if (!head) return;
       event.preventDefault();
       switch (action.kind) {
+        case "leaveField":
+          // Back to the card, so the next key still reaches it.
+          cardRef.current?.focus();
+          break;
+        case "undo":
+          undoOwnLast();
+          break;
         case "choose":
           choose(action.choice);
           break;
@@ -151,10 +190,9 @@ export default function TasteInboxPage() {
           editRef.current?.focus();
           break;
       }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [canLabel, vocabulary, head, choose, skipHead, undoLast]);
+    },
+    [canLabel, shortcutsOn, vocabulary, choose, skipHead, undoOwnLast]
+  );
 
   const budgetSpent =
     inbox !== null &&
@@ -193,6 +231,11 @@ export default function TasteInboxPage() {
           onSkip={skipHead}
           commentRef={commentRef}
           editRef={editRef}
+          cardRef={cardRef}
+          onKeyDown={onCardKey}
+          shortcutsOn={shortcutsOn}
+          onShortcutsChange={changeShortcuts}
+          canUndoOwn={ownLast !== null}
         />
       ) : budgetSpent ? (
         <div
@@ -234,8 +277,9 @@ export default function TasteInboxPage() {
           recent={inbox?.recent ?? []}
           loaded={inbox !== null}
           canLabel={canLabel}
+          viewerUserId={inbox?.viewer_user_id ?? null}
           busy={busy}
-          onUndo={(id) => void undo(id)}
+          onUndo={(id, force) => void undo(id, force)}
         />
       </section>
 

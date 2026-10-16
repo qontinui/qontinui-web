@@ -7,6 +7,9 @@
  * what a re-read of that queue says — the property plan Phase 23's gate
  * names: label a pair, skip one, mark both bad, refresh, and the queue
  * neither drops nor duplicates a row.
+ *
+ * The keys are pressed ON THE PAIR CARD: the shortcuts are scoped to it
+ * (WCAG 2.1.4), and a key anywhere else on the page does nothing.
  */
 
 import {
@@ -15,6 +18,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -45,6 +49,10 @@ const VOCAB: TasteReason[] = [
 interface Row extends TastePair {
   skipOrder: number | null;
 }
+
+/** The viewer's user id, and a colleague's. */
+const ME = "user-me";
+const COLLEAGUE = "user-colleague";
 
 const server = {
   rows: [] as Row[],
@@ -93,6 +101,10 @@ function seed(n: number) {
     labeller_user_id: null,
     labeller_name: null,
     labelled_at: null,
+    first_labelled_at: null,
+    change_seq: null,
+    tombstone: false,
+    undo: null,
     created_at: `2026-10-15T10:0${i}:00Z`,
     updated_at: `2026-10-15T10:0${i}:00Z`,
     skipOrder: null,
@@ -129,6 +141,7 @@ function inbox(limit: number, overBudget: boolean): TasteInbox {
     },
     pending_total: pending().length,
     labelled_total: labelled.length,
+    viewer_user_id: ME,
     over_budget: overBudget,
     pairs: pending().slice(0, headLimit),
     recent: labelled.slice(0, 10),
@@ -183,6 +196,7 @@ beforeEach(() => {
       if (server.raceLabeller) {
         Object.assign(row, {
           label: "b",
+          labeller_user_id: COLLEAGUE,
           labeller_name: server.raceLabeller,
           labelled_at: `2026-10-15T11:00:${String(labelClock++).padStart(2, "0")}Z`,
         });
@@ -195,6 +209,7 @@ beforeEach(() => {
         reasons: body.reasons ?? [],
         comment: body.comment ?? null,
         edit_note: body.edit_note ?? null,
+        labeller_user_id: ME,
         labeller_name: "Operator",
         labelled_at: `2026-10-15T11:00:${String(labelClock++).padStart(2, "0")}Z`,
         skipOrder: null,
@@ -210,17 +225,28 @@ beforeEach(() => {
     row.skipped_at = "2026-10-15T11:30:00Z";
     return structuredClone(row);
   });
-  api.undoTasteLabel.mockImplementation(async (id: string) => {
-    const row = server.rows.find((r) => r.id === id)!;
-    Object.assign(row, {
-      label: null,
-      reasons: [],
-      labelled_at: null,
-      labeller_name: null,
-    });
-    server.labelledThisWeek -= 1;
-    return structuredClone(row);
-  });
+  api.undoTasteLabel.mockImplementation(
+    async (id: string, options: { force: boolean }) => {
+      const row = server.rows.find((r) => r.id === id)!;
+      if (row.label === null) throw await refusal(409, "pair_not_labelled");
+      if (row.labeller_user_id !== ME && !options.force)
+        throw await refusal(409, "label_not_yours");
+      Object.assign(row, {
+        label: null,
+        reasons: [],
+        labelled_at: null,
+        labeller_user_id: null,
+        labeller_name: null,
+      });
+      server.labelledThisWeek -= 1;
+      return structuredClone(row);
+    }
+  );
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* no storage in this environment */
+  }
 });
 
 afterEach(() => {
@@ -234,9 +260,29 @@ function headId(): string | null {
   );
 }
 
-async function press(key: string, target: EventTarget = window) {
+function card(): HTMLElement {
+  return screen.getByTestId("taste-pair-card");
+}
+
+/** Press a key on `target` — the pair card unless said otherwise. */
+async function press(
+  key: string,
+  target?: EventTarget,
+  init: { repeat?: boolean } = {}
+) {
   await act(async () => {
-    fireEvent.keyDown(target, { key });
+    fireEvent.keyDown(target ?? card(), { key, ...init });
+  });
+}
+
+/** A colleague answered `id` after the viewer's labels. */
+function colleagueLabels(id: string) {
+  const row = server.rows.find((r) => r.id === id)!;
+  Object.assign(row, {
+    label: "b",
+    labeller_user_id: COLLEAGUE,
+    labeller_name: "Colleague",
+    labelled_at: "2026-10-15T12:00:00Z",
   });
 }
 
@@ -302,7 +348,8 @@ describe("the taste inbox", () => {
     await press("x", comment);
     expect(api.labelTastePair).not.toHaveBeenCalled();
     await press("Escape", comment);
-    expect(document.activeElement).not.toBe(comment);
+    // Back on the card, so the next key reaches it.
+    expect(document.activeElement).toBe(card());
     await press("b");
     await settle("p2");
     expect(api.labelTastePair).toHaveBeenCalledWith(
@@ -311,15 +358,133 @@ describe("the taste inbox", () => {
     );
   });
 
-  it("u undoes the last label and the pair returns to the head of the queue", async () => {
+  it("u undoes YOUR newest label, never a colleague's newer one", async () => {
     render(<TasteInboxPage />);
     await settle("p1");
     await press("a");
     await settle("p2");
+    colleagueLabels("p3"); // newer than p1, and not the viewer's
+    fireEvent.click(screen.getByTestId("taste-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("taste-recent-p3")).toBeTruthy()
+    );
     await press("u");
     await settle("p1");
-    expect(api.undoTasteLabel).toHaveBeenCalledWith("p1");
+    expect(api.undoTasteLabel).toHaveBeenCalledTimes(1);
+    expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
+    expect(server.rows.find((r) => r.id === "p3")!.label).toBe("b");
     expect(screen.queryByTestId("taste-recent-p1")).toBeNull();
+  });
+
+  it("u does nothing when every recent label is a colleague's", async () => {
+    colleagueLabels("p4");
+    render(<TasteInboxPage />);
+    await settle("p1");
+    expect(screen.getByTestId("taste-shortcuts-hint").textContent).not.toMatch(
+      /u undoes/
+    );
+    await press("u");
+    expect(api.undoTasteLabel).not.toHaveBeenCalled();
+  });
+
+  it("removing a colleague's label asks first, names them, and sends force", async () => {
+    colleagueLabels("p4");
+    render(<TasteInboxPage />);
+    await settle("p1");
+    const row = screen.getByTestId("taste-recent-p4");
+    fireEvent.click(within(row).getAllByRole("button")[0]!);
+    const remove = await screen.findByTestId("taste-undo-p4");
+    expect(remove.textContent).toMatch(/Remove Colleague's label/);
+    fireEvent.click(remove);
+    expect(api.undoTasteLabel).not.toHaveBeenCalled();
+    expect(screen.getByTestId("taste-force-confirm-p4").textContent).toMatch(
+      /recorded as forced/
+    );
+    fireEvent.click(screen.getByTestId("taste-force-undo-p4"));
+    await waitFor(() =>
+      expect(api.undoTasteLabel).toHaveBeenCalledWith("p4", { force: true })
+    );
+  });
+
+  it("keys act only while the pair card has focus", async () => {
+    render(<TasteInboxPage />);
+    await settle("p1");
+    await press("a", window);
+    await press("s", document.body);
+    expect(api.labelTastePair).not.toHaveBeenCalled();
+    expect(api.skipTastePair).not.toHaveBeenCalled();
+  });
+
+  it("the shortcut toggle turns every key off, and the hints with it", async () => {
+    render(<TasteInboxPage />);
+    await settle("p1");
+    expect(within(card()).getAllByText("x")).toHaveLength(1);
+    fireEvent.click(screen.getByTestId("taste-shortcuts-toggle"));
+    expect(screen.getByTestId("taste-shortcuts-hint").textContent).toMatch(
+      /Shortcuts are off/
+    );
+    expect(within(card()).queryAllByText("x")).toHaveLength(0);
+    await press("a");
+    await press("1");
+    expect(api.labelTastePair).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("coord-taste-shortcuts")).toBe("off");
+  });
+
+  it("a held key answers once: auto-repeat is ignored", async () => {
+    render(<TasteInboxPage />);
+    await settle("p1");
+    await press("a", undefined, { repeat: true });
+    expect(api.labelTastePair).not.toHaveBeenCalled();
+  });
+
+  it("a double press while a label is in flight sends one write", async () => {
+    let release: () => void = () => {};
+    const original = api.labelTastePair.getMockImplementation()!;
+    api.labelTastePair.mockImplementation(
+      async (id: string, body: TasteLabelWrite) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return original(id, body);
+      }
+    );
+    render(<TasteInboxPage />);
+    await settle("p1");
+    await act(async () => {
+      fireEvent.keyDown(card(), { key: "a" });
+      fireEvent.keyDown(card(), { key: "b" });
+    });
+    await act(async () => release());
+    await settle("p2");
+    expect(api.labelTastePair).toHaveBeenCalledTimes(1);
+    expect(server.rows.find((r) => r.id === "p1")!.label).toBe("a");
+  });
+
+  it("the budget field keeps a number being typed across a re-read", async () => {
+    render(<TasteInboxPage />);
+    await settle("p1");
+    const input = screen.getByTestId("taste-budget-input") as HTMLInputElement;
+    expect(input.value).toBe("30");
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.click(screen.getByTestId("taste-refresh"));
+    await waitFor(() => expect(server.inboxCalls.length).toBeGreaterThan(1));
+    await act(async () => {});
+    expect(input.value).toBe("12");
+  });
+
+  it("a reference upload the store already held as a capture is not called a pool image", async () => {
+    api.uploadReferenceImage.mockResolvedValue({ kind: "capture" });
+    render(<TasteInboxPage />);
+    await settle("p1");
+    const file = new File(["x"], "ref.png", { type: "image/png" });
+    fireEvent.change(screen.getByTestId("taste-reference-input"), {
+      target: { files: [file] },
+    });
+    const { toast } = await import("sonner");
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        "1 image was already stored as a capture, so it stays out of the pool."
+      )
+    );
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("a pair someone else answered first is re-read, not overwritten", async () => {

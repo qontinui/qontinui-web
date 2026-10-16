@@ -9,6 +9,7 @@
  */
 
 import type {
+  ImageAssetKind,
   TasteInbox,
   TasteLabel,
   TastePair,
@@ -79,7 +80,10 @@ export interface KeyInput {
 /**
  * The inbox's keyboard map. Inside a text field only Escape acts (it leaves
  * the field), so typing a comment can never label a pair; with a modifier
- * held nothing acts, so browser shortcuts keep working.
+ * held nothing acts, so browser shortcuts keep working. The page listens on
+ * the pair card only, and only while the operator's shortcut toggle is on
+ * (WCAG 2.1.4): a stray key elsewhere on the page never answers a pair.
+ * ArrowDown is deliberately unmapped — it scrolls the page.
  */
 export function resolveKey(
   input: KeyInput,
@@ -103,7 +107,6 @@ export function resolveKey(
       return { kind: "choose", choice: "both_bad" };
     case "s":
     case "S":
-    case "ArrowDown":
       return { kind: "skip" };
     case "c":
     case "C":
@@ -214,5 +217,71 @@ export function deriveTasteHealth(
     level: "amber",
     headline: `${plural(pending, "pair is", "pairs are")} waiting for a label — ${budget.remaining} left in this week's budget.${stale}`,
     badges,
+  };
+}
+
+/**
+ * The label `u` undoes: the newest one the VIEWER gave. Never a colleague's —
+ * removing someone else's answer is a deliberate, recorded act in the recent
+ * list, not a keystroke. Null when the viewer has no label in the list (or
+ * the read named no viewer: a device credential).
+ */
+export function newestOwnLabel(
+  recent: readonly TastePair[],
+  viewerUserId: string | null | undefined
+): TastePair | null {
+  if (!viewerUserId) return null;
+  return recent.find((p) => p.labeller_user_id === viewerUserId) ?? null;
+}
+
+/** The image kinds a calibration batch draws from (the backend's
+ *  `POOL_KINDS`). */
+export const POOL_KINDS: readonly ImageAssetKind[] = ["candidate", "exemplar"];
+
+export interface ReferenceUploadSummary {
+  /** Uploads that are in the calibration pool. */
+  inPool: number;
+  /** Uploads whose bytes the store already held under a kind the pool does
+   *  not draw from — the first upload's kind stands, so they stay out. */
+  outOfPool: { kind: ImageAssetKind; count: number }[];
+  message: string;
+  tone: "success" | "warning";
+}
+
+/**
+ * What a batch of reference uploads did, worded from what the store
+ * ANSWERED — not from what was asked. The store keeps the first upload's
+ * kind, so bytes it already held as a capture or a derivative are stored but
+ * do not join the pool, and the toast says so.
+ */
+export function summarizeReferenceUploads(
+  results: readonly { kind: ImageAssetKind }[]
+): ReferenceUploadSummary | null {
+  if (results.length === 0) return null;
+  const inPool = results.filter((r) => POOL_KINDS.includes(r.kind)).length;
+  const counts = new Map<ImageAssetKind, number>();
+  for (const r of results) {
+    if (!POOL_KINDS.includes(r.kind))
+      counts.set(r.kind, (counts.get(r.kind) ?? 0) + 1);
+  }
+  const outOfPool = [...counts.entries()].map(([kind, count]) => ({
+    kind,
+    count,
+  }));
+  const parts: string[] = [];
+  if (inPool > 0)
+    parts.push(
+      `${plural(inPool, "image is", "images are")} in the calibration pool.`
+    );
+  for (const { kind, count } of outOfPool) {
+    parts.push(
+      `${plural(count, "image was", "images were")} already stored as ${kind === "capture" ? "a capture" : `a ${kind}`}, so ${count === 1 ? "it stays" : "they stay"} out of the pool.`
+    );
+  }
+  return {
+    inPool,
+    outOfPool,
+    message: parts.join(" "),
+    tone: outOfPool.length > 0 ? "warning" : "success",
   };
 }

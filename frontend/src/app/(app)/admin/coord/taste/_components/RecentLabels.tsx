@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   RecordDetail,
   RecordList,
@@ -20,20 +21,95 @@ import {
  * The most recent labels, newest first — the undo list (no-surprise
  * reversibility: every answer can be taken back, and the pair returns to the
  * queue). One record per line (R2), detail in place (R5), raw ids last.
+ *
+ * Your own label undoes in one click. A colleague's is never removed by
+ * accident: the button names whose answer it is and asks once more, and the
+ * server records the removal as forced, with your name and their answer.
  */
 export function RecentLabels({
   recent,
   loaded,
   canLabel,
+  viewerUserId,
   busy,
   onUndo,
 }: {
   recent: TastePair[];
   loaded: boolean;
   canLabel: boolean;
+  /** The viewer's own user id, from the inbox read; null when unknown. */
+  viewerUserId: string | null;
   busy: boolean;
-  onUndo: (pairId: string) => void;
+  onUndo: (pairId: string, force: boolean) => void;
 }) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const undoAction = (pair: TastePair) => {
+    if (!canLabel) return undefined;
+    const mine =
+      viewerUserId !== null && pair.labeller_user_id === viewerUserId;
+    if (mine) {
+      return (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => onUndo(pair.id, false)}
+          data-testid={`taste-undo-${pair.id}`}
+        >
+          Undo this label
+        </Button>
+      );
+    }
+    const whose = pair.labeller_name ?? "another labeller";
+    if (confirming === pair.id) {
+      return (
+        <div
+          className="flex flex-wrap items-center gap-2 text-xs"
+          data-testid={`taste-force-confirm-${pair.id}`}
+        >
+          <span>
+            This is {whose}&apos;s answer. Removing it is recorded as forced,
+            with your name and their answer.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            disabled={busy}
+            onClick={() => {
+              setConfirming(null);
+              onUndo(pair.id, true);
+            }}
+            data-testid={`taste-force-undo-${pair.id}`}
+          >
+            Remove it
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setConfirming(null)}
+          >
+            Keep it
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={() => setConfirming(pair.id)}
+        data-testid={`taste-undo-${pair.id}`}
+      >
+        Remove {whose}&apos;s label…
+      </Button>
+    );
+  };
+
   return (
     <RecordList<TastePair>
       items={recent}
@@ -77,20 +153,7 @@ export function RecentLabels({
                   {pair.edit_note && <p>Would change: {pair.edit_note}</p>}
                 </div>
               }
-              actions={
-                canLabel ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => onUndo(pair.id)}
-                    data-testid={`taste-undo-${pair.id}`}
-                  >
-                    Undo this label
-                  </Button>
-                ) : undefined
-              }
+              actions={undoAction(pair)}
               raw={
                 <p className="font-mono text-[11px] text-muted-foreground break-all">
                   pair {pair.id} · A {pair.asset_a.sha256.slice(0, 12)} · B{" "}

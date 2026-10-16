@@ -35,6 +35,7 @@ export type TasteSource = TastePair["source"];
 export type CalibrationBatchResult = Schemas["CalibrationBatchResult"];
 export type TasteSettingsOut = Schemas["TasteSettingsOut"];
 export type ImageAssetUploadResponse = Schemas["ImageAssetUploadResponse"];
+export type ImageAssetKind = TasteImage["kind"];
 
 async function readTasteJson<T>(res: Response): Promise<T> {
   if (!res.ok) throw await backendError(res);
@@ -68,10 +69,20 @@ export async function labelTastePair(
   return readTasteJson<TastePair>(res);
 }
 
-export async function undoTasteLabel(pairId: string): Promise<TastePair> {
-  const res = await httpClient.fetch(`${TASTE_BASE}/pairs/${pairId}/label`, {
-    method: "DELETE",
-  });
+/**
+ * Undo a label. Without `force` the server undoes only the caller's OWN
+ * label (a colleague's answers 409 `label_not_yours`); with `force` it
+ * removes a colleague's, and records that it was forced, by whom, and the
+ * answer it removed.
+ */
+export async function undoTasteLabel(
+  pairId: string,
+  options: { force: boolean } = { force: false }
+): Promise<TastePair> {
+  const res = await httpClient.fetch(
+    `${TASTE_BASE}/pairs/${pairId}/label?force=${String(options.force)}`,
+    { method: "DELETE" }
+  );
   return readTasteJson<TastePair>(res);
 }
 

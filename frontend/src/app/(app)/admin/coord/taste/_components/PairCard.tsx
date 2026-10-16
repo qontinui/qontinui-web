@@ -1,6 +1,6 @@
 "use client";
 
-import type { RefObject } from "react";
+import type { KeyboardEvent, RefObject } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,7 +39,9 @@ function Key({ children }: { children: string }) {
  * The pair at the head of the queue: A and B side by side, the reason chips,
  * the comment and the edit, and the four answers. Presentational — the page
  * owns the draft and the keyboard, so a key and a click do exactly the same
- * thing.
+ * thing. The keys act only while this card has focus (it is focusable
+ * itself), and only while its "Keyboard shortcuts" toggle is on; the key
+ * hints show only while they would work.
  *
  * A viewer who may not label sees the pair and is told why there are no
  * controls, rather than meeting buttons that would 403.
@@ -55,6 +57,11 @@ export function PairCard({
   onSkip,
   commentRef,
   editRef,
+  cardRef,
+  onKeyDown,
+  shortcutsOn,
+  onShortcutsChange,
+  canUndoOwn,
 }: {
   pair: TastePair;
   canLabel: boolean;
@@ -66,7 +73,14 @@ export function PairCard({
   onSkip: () => void;
   commentRef: RefObject<HTMLTextAreaElement | null>;
   editRef: RefObject<HTMLTextAreaElement | null>;
+  cardRef: RefObject<HTMLElement | null>;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  shortcutsOn: boolean;
+  onShortcutsChange: (on: boolean) => void;
+  /** Whether the viewer has a label of their own in the recent list. */
+  canUndoOwn: boolean;
 }) {
+  const keys = canLabel && shortcutsOn;
   const bare = bareNote(pair);
   const toggle = (reason: TasteReason) =>
     onDraft({
@@ -78,10 +92,16 @@ export function PairCard({
 
   return (
     <section
-      className="space-y-3 rounded-md border border-border bg-card/30 p-3"
+      ref={cardRef}
+      tabIndex={canLabel ? 0 : undefined}
+      onKeyDown={canLabel ? onKeyDown : undefined}
+      className="space-y-3 rounded-md border border-border bg-card/30 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
       data-testid="taste-pair-card"
       data-pair-id={pair.id}
       aria-label="The pair to label"
+      aria-keyshortcuts={
+        keys ? "a b x s c e u 1 2 3 4 5 6 7 8 9 0 Escape" : undefined
+      }
     >
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Badge variant="outline" className="font-mono text-[11px]">
@@ -137,7 +157,7 @@ export function PairCard({
                   data-testid={`taste-reason-${reason}`}
                 >
                   {REASON_LABEL[reason]}
-                  {key && <Key>{key}</Key>}
+                  {keys && key && <Key>{key}</Key>}
                 </Button>
               );
             })}
@@ -145,9 +165,7 @@ export function PairCard({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-xs text-muted-foreground">
-              <span>
-                Comment <Key>c</Key>
-              </span>
+              <span>Comment {keys && <Key>c</Key>}</span>
               <Textarea
                 ref={commentRef}
                 value={draft.comment}
@@ -159,9 +177,7 @@ export function PairCard({
               />
             </label>
             <label className="space-y-1 text-xs text-muted-foreground">
-              <span>
-                What you would change <Key>e</Key>
-              </span>
+              <span>What you would change {keys && <Key>e</Key>}</span>
               <Textarea
                 ref={editRef}
                 value={draft.editNote}
@@ -183,7 +199,7 @@ export function PairCard({
               onClick={() => onChoose("a")}
               data-testid="taste-choose-a"
             >
-              A is better <Key>a / ←</Key>
+              A is better {keys && <Key>a / ←</Key>}
             </Button>
             <Button
               type="button"
@@ -191,7 +207,7 @@ export function PairCard({
               onClick={() => onChoose("b")}
               data-testid="taste-choose-b"
             >
-              B is better <Key>b / →</Key>
+              B is better {keys && <Key>b / →</Key>}
             </Button>
             <Button
               type="button"
@@ -200,7 +216,7 @@ export function PairCard({
               onClick={() => onChoose("both_bad")}
               data-testid="taste-choose-both-bad"
             >
-              Both bad <Key>x</Key>
+              Both bad {keys && <Key>x</Key>}
             </Button>
             <Button
               type="button"
@@ -209,10 +225,24 @@ export function PairCard({
               onClick={onSkip}
               data-testid="taste-skip"
             >
-              Skip <Key>s / ↓</Key>
+              Skip {keys && <Key>s</Key>}
             </Button>
-            <span className="text-xs text-muted-foreground">
-              Esc leaves a text field; u undoes your last label.
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <label className="inline-flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={shortcutsOn}
+                onChange={(e) => onShortcutsChange(e.target.checked)}
+                data-testid="taste-shortcuts-toggle"
+              />
+              Keyboard shortcuts
+            </label>
+            <span data-testid="taste-shortcuts-hint">
+              {shortcutsOn
+                ? `Keys work while this card has focus — click it or Tab to it. Esc leaves a text field${canUndoOwn ? "; u undoes your newest label" : ""}.`
+                : "Shortcuts are off: only the buttons answer."}
             </span>
           </div>
         </>

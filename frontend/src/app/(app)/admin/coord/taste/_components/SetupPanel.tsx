@@ -34,9 +34,12 @@ export function SetupPanel({
 }) {
   const [budgetInput, setBudgetInput] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  // Follow the stored VALUE, not the read: every write re-reads the inbox,
+  // and resetting on each new object would wipe a number being typed.
+  const storedWeekly = budget?.weekly_budget;
   useEffect(() => {
-    if (budget) setBudgetInput(String(budget.weekly_budget));
-  }, [budget]);
+    if (storedWeekly !== undefined) setBudgetInput(String(storedWeekly));
+  }, [storedWeekly]);
   const parsed = Number(budgetInput);
   const budgetValid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 1000;
 

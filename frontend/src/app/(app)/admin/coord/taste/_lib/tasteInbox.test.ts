@@ -3,9 +3,11 @@ import type { TasteInbox, TastePair, TasteReason } from "@/lib/api/taste";
 import {
   bareNote,
   deriveTasteHealth,
+  newestOwnLabel,
   pairContext,
   reasonKey,
   resolveKey,
+  summarizeReferenceUploads,
 } from "./tasteInbox";
 
 const VOCAB: TasteReason[] = [
@@ -55,6 +57,10 @@ function pairFixture(over: Partial<TastePair> = {}): TastePair {
     labeller_user_id: null,
     labeller_name: null,
     labelled_at: null,
+    first_labelled_at: null,
+    change_seq: null,
+    tombstone: false,
+    undo: null,
     created_at: "2026-10-15T10:00:00Z",
     updated_at: "2026-10-15T10:00:00Z",
     ...over,
@@ -72,6 +78,7 @@ function inboxFixture(over: Partial<TasteInbox> = {}): TasteInbox {
     },
     pending_total: 0,
     labelled_total: 0,
+    viewer_user_id: null,
     over_budget: false,
     pairs: [],
     recent: [],
@@ -95,7 +102,6 @@ describe("resolveKey", () => {
     expect(press("ArrowRight")).toEqual({ kind: "choose", choice: "b" });
     expect(press("x")).toEqual({ kind: "choose", choice: "both_bad" });
     expect(press("s")).toEqual({ kind: "skip" });
-    expect(press("ArrowDown")).toEqual({ kind: "skip" });
     expect(press("u")).toEqual({ kind: "undo" });
     expect(press("c")).toEqual({ kind: "focusComment" });
     expect(press("e")).toEqual({ kind: "focusEdit" });
@@ -119,11 +125,77 @@ describe("resolveKey", () => {
     });
   });
 
+  it("leaves ArrowDown to the browser: it scrolls, it never skips", () => {
+    expect(press("ArrowDown")).toBeNull();
+    expect(press("ArrowUp")).toBeNull();
+  });
+
   it("leaves modified keys to the browser", () => {
     expect(press("a", { ctrlKey: true })).toBeNull();
     expect(press("b", { metaKey: true })).toBeNull();
     expect(press("x", { altKey: true })).toBeNull();
     expect(press("q")).toBeNull();
+  });
+});
+
+describe("newestOwnLabel", () => {
+  const mine = pairFixture({ id: "mine", label: "a", labeller_user_id: "me" });
+  const theirs = pairFixture({
+    id: "theirs",
+    label: "b",
+    labeller_user_id: "colleague",
+  });
+
+  it("skips a colleague's newer label and finds the viewer's own", () => {
+    expect(newestOwnLabel([theirs, mine], "me")?.id).toBe("mine");
+  });
+
+  it("finds nothing when the viewer has no label in the list", () => {
+    expect(newestOwnLabel([theirs], "me")).toBeNull();
+  });
+
+  it("finds nothing when the read named no viewer", () => {
+    expect(newestOwnLabel([theirs, mine], null)).toBeNull();
+    expect(
+      newestOwnLabel([pairFixture({ labeller_user_id: null })], null)
+    ).toBeNull();
+  });
+});
+
+describe("summarizeReferenceUploads", () => {
+  it("says the pool grew only by the uploads that joined it", () => {
+    const summary = summarizeReferenceUploads([
+      { kind: "exemplar" },
+      { kind: "candidate" },
+      { kind: "capture" },
+    ]);
+    expect(summary?.inPool).toBe(2);
+    expect(summary?.tone).toBe("warning");
+    expect(summary?.message).toBe(
+      "2 images are in the calibration pool. 1 image was already stored as a capture, so it stays out of the pool."
+    );
+  });
+
+  it("is a plain success when every upload joined", () => {
+    const summary = summarizeReferenceUploads([{ kind: "exemplar" }]);
+    expect(summary).toMatchObject({ inPool: 1, tone: "success" });
+    expect(summary?.message).toBe("1 image is in the calibration pool.");
+  });
+
+  it("never claims the pool grew when nothing joined it", () => {
+    const summary = summarizeReferenceUploads([
+      { kind: "derivative" },
+      { kind: "derivative" },
+    ]);
+    expect(summary?.inPool).toBe(0);
+    expect(summary?.message).not.toMatch(/in the calibration pool\./);
+    expect(summary?.message).toMatch(
+      /2 images were already stored as a derivative/
+    );
+  });
+
+  it("says nothing for no uploads", () => {
+    expect(summarizeReferenceUploads([])).toBeNull();
   });
 });
 
