@@ -45,7 +45,7 @@ degrades a missing table to github.com, so either deploy order is safe. Every
 statement names the ``coord`` schema and is idempotent (``IF NOT EXISTS``).
 
 Revision ID: coord_tenant_github_hosts_01
-Revises: ingcred_01
+Revises: route_serving_method_idx_01
 """
 
 from collections.abc import Sequence
@@ -53,7 +53,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "coord_tenant_github_hosts_01"
-down_revision: str | Sequence[str] | None = "ingcred_01"
+down_revision: str | Sequence[str] | None = "route_serving_method_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

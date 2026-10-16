@@ -37,7 +37,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION = "coord_tenant_github_hosts_01"
-_PARENT = "ingcred_01"
+_PARENT = "route_serving_method_idx_01"
 
 
 def test_the_pinned_parent_matches_the_revision() -> None:
