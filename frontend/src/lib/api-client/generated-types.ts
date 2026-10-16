@@ -15793,10 +15793,15 @@ export interface paths {
          *     Auth mirrors the gate-action stack: the operator's Cognito bearer is
          *     forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
          *     derives the tenant, role and repo authority server-side. Only the four
-         *     contract keys are forwarded. coord's status codes and ``{"error",
-         *     "message"}`` bodies pass through verbatim via ``_proxy_coord_post``
-         *     (400 invalid_input, 403 not_holder / security_tier_operator_only,
-         *     404 not_found, 500 internal).
+         *     contract keys are forwarded.
+         *
+         *     ``structured_errors=True``: coord's typed refusal object (``{"error",
+         *     "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+         *     ``http_exception_handler`` splices into the top level of its envelope, so
+         *     the browser receives ``error`` as coord's code (400 invalid_input,
+         *     403 not_holder / security_tier_operator_only, 404 not_found,
+         *     500 internal) rather than a JSON string inside ``message``. A coord error
+         *     body that is not a JSON object still falls back to its text.
          */
         post: operations["api_v1_operations_prs_owner_repo_number_hold_post"];
         delete?: never;
