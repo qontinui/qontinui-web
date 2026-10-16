@@ -21,6 +21,7 @@
  */
 
 import type { CoordMemoryRow } from "@/components/admin/coord/memoryStatus";
+import { isNotFoundError } from "@/components/console/readFailure";
 import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_BASE, readJson } from "./base";
@@ -54,7 +55,6 @@ export interface CoordMemoryDetail {
   written_by_agent?: string | null;
   written_by_device?: string | null;
   history?: MemoryVersionEntry[];
-  tombstoned?: boolean;
 }
 
 /** `GET /memory/{name}/version/{version}` body — handler `get_memory_version`. */
@@ -67,6 +67,15 @@ export interface CoordMemoryVersionDetail {
   written_at?: string | null;
   written_by_agent?: string | null;
   written_by_device?: string | null;
+  /** True on the version that retracted the name (coord's `MemoryRow.is_tombstone`). */
+  is_tombstone?: boolean;
+}
+
+/** What {@link fetchMemoryVersionTrail} read: the versions, oldest first. */
+export interface MemoryVersionTrail {
+  versions: CoordMemoryVersionDetail[];
+  /** True when the read stopped at its cap rather than at a missing version. */
+  truncated: boolean;
 }
 
 /** `POST /memory/upsert` body — handler `post_memory_upsert`. */
@@ -110,6 +119,41 @@ export async function fetchMemoryVersion(
   const url = `${OPERATIONS_BASE}/memory/${encodeURIComponent(name)}/version/${encodeURIComponent(version)}`;
   const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
   return readJson<CoordMemoryVersionDetail>(res, `GET ${url}`);
+}
+
+/**
+ * Every version of a memory, read one at a time through
+ * {@link fetchMemoryVersion} from v1 upward, stopping at the first 404.
+ *
+ * This is how the page of a DELETED memory finds its versions: coord's
+ * `GET /memory/{name}` 404s once the latest version is a tombstone (plan
+ * `2026-10-16-coord-memories-latest-view-crosses-tenants`), so there is no
+ * history array to read, while `GET /memory/{name}/version/{n}` still serves
+ * every version, the tombstone included.
+ *
+ * Stopping at the first 404 is sound because coord numbers a tenant's versions
+ * 1, 2, 3, … with no gaps: every writer appends `MAX(version) + 1` for its own
+ * tenant, and the import writes 1 (measured in production 2026-10-16: all 203
+ * memories contiguous from v1).
+ *
+ * A 404 on v1 resolves an EMPTY trail: the name has no versions. Any other
+ * failure REJECTS, so a caller can render the versions as unknown rather than
+ * as none. `max` bounds the reads; reaching it resolves `truncated: true`.
+ */
+export async function fetchMemoryVersionTrail(
+  name: string,
+  max = 50
+): Promise<MemoryVersionTrail> {
+  const versions: CoordMemoryVersionDetail[] = [];
+  for (let n = 1; n <= max; n++) {
+    try {
+      versions.push(await fetchMemoryVersion(name, String(n)));
+    } catch (e) {
+      if (isNotFoundError(e)) return { versions, truncated: false };
+      throw e;
+    }
+  }
+  return { versions, truncated: true };
 }
 
 /**
