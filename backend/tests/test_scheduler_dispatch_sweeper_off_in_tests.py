@@ -30,7 +30,7 @@ the file is run alone — and it used to be order-dependent as well (did a
 
 Stopping the loop in `booted_app` is the fix; `tests/conftest.py` ALSO sets
 `QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0` as defense in depth, so the
-one task that writes shared rows stays off if the stop ever regresses.
+task that claims rows other tests seeded stays off if the stop ever regresses.
 
 Two deliberate constraints on how this file tests that, both learned the hard
 way by measuring:
@@ -38,13 +38,15 @@ way by measuring:
 1. **It must not use the app-client fixture.** Back when `test_client` owned the
    lifespan, pulling it from a NEW file changed when app startup happened
    relative to everything else. Startup did real DB work, and moving it made
-   `test_memory_api_db.py` fail a varying 1-5 tests per run. Baseline was green
+   `test_memory_api_db.py` fail a varying 1-5 tests per run (history from the
+   old `test_client`-owned startup, not re-measured since). Baseline was green
    across two full runs; adding a `test_client`-dependent guard here was the
    only difference. Boot is now pinned (autouse) and its DB-touching side
    effects are gated on `TESTING` — see `app.main._boot_side_effects_disabled` —
    but the rule stands: a guard asserts against the flags and module state the
    app reads, never against a booted app (through its client). Reading the
-   scheduler singleton's own state, as the last test here does, is module state.
+   scheduler singleton's own state, as
+   `test_app_scheduler_loop_is_stopped_for_the_session` does, is module state.
    See
    `test_app_boot_side_effects_inert_in_tests.py` for the boot-inertness half.
 2. **It must not reach for the GLOBAL `QONTINUI_SCHEDULER_ENABLED`.** That
