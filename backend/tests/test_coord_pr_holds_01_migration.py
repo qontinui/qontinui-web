@@ -59,7 +59,7 @@ _REVISION_FILENAME = "coord_pr_holds_01_create.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "ingcred_01"
+_PARENT_REVISION_ID = "ciorch_01"
 
 _SCHEMA = "coord"
 _TABLE = "pr_holds"
