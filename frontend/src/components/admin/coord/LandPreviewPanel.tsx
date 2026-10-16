@@ -12,7 +12,14 @@
  * main-merge-overlap warning (or an explicit "unknown" notice when coord could
  * not tell), the inferred-prior note when applied, and the risk verdict
  * (risky + reasons, or "unknown" when coord sent no boolean verdict)
- * prominently. Every unknown renders in the console's UNKNOWN_AMBER.
+ * prominently. The unknowns named above render in the console's
+ * UNKNOWN_AMBER, as do a workflow with no estimate, a cascade completion or
+ * advance target coord did not give, and a CI or deploy prediction coord
+ * marked pending. Some unknowns still render as known: an absent cascade,
+ * ci or deploy block, or a sibling's null cascade, shows its count and list
+ * as empty, and a cascade coord could not predict (sent as an empty, clean
+ * one) reads as clean. Those wait for Phase 3y of plan
+ * 2026-10-16-coord-mcp-claim-tools-diverge-from-the-http-claim-doors.
  *
  * Everything is read defensively (optional chaining + fallbacks) because the
  * predicted-effect field set may grow — the plan calls for inspecting field

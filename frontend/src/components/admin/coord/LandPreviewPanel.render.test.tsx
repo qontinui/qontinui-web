@@ -290,19 +290,25 @@ describe("LandPreviewPanel — the risk verdict is tri-state", () => {
     expect(screen.getByTestId("land-risk-badge").textContent).toBe("unknown");
     expect(screen.getByTestId("land-risk-unknown")).toBeTruthy();
   };
+  // A boolean verdict is known, so its card never spends the unknown amber
+  // (style guide R3). One class per assertion: `.not.toHaveClass(a, b, c)`
+  // passes as soon as any one of the classes is missing.
+  const expectNotAmber = (el: HTMLElement) => {
+    for (const c of UNKNOWN_AMBER.split(" ")) expect(el).not.toHaveClass(c);
+  };
 
   it("renders the unknown notice for a null risk", () => {
     render(<LandPreviewPanel preview={{ ...base, risk: null }} />);
     expectUnknown();
   });
 
-  it("renders the unknown notice for an absent risk", () => {
+  it("renders the unknown notice when risk is absent", () => {
     expect("risk" in base).toBe(false);
     render(<LandPreviewPanel preview={base} />);
     expectUnknown();
   });
 
-  it("renders the unknown notice for risky: null", () => {
+  it("renders the unknown notice when risk.risky is null", () => {
     render(
       <LandPreviewPanel
         preview={{ ...base, risk: { risky: null, reasons: ["no verdict"] } }}
@@ -325,16 +331,16 @@ describe("LandPreviewPanel — the risk verdict is tri-state", () => {
       <LandPreviewPanel preview={{ ...base, risk: { risky: false } }} />
     );
     expect(screen.getByTestId("land-risk-badge").textContent).toBe("ok");
-    expect(screen.getByTestId("land-risk-card").textContent).toContain(
-      "Land looks clean"
-    );
+    const clean = screen.getByTestId("land-risk-card");
+    expect(clean.textContent).toContain("Land looks clean");
+    expectNotAmber(clean);
     expect(screen.queryByTestId("land-risk-unknown")).toBeNull();
     unmount();
     render(<LandPreviewPanel preview={{ ...base, risk: { risky: true } }} />);
     expect(screen.getByTestId("land-risk-badge").textContent).toBe("risky");
-    expect(screen.getByTestId("land-risk-card").textContent).toContain(
-      "Risky land"
-    );
+    const risky = screen.getByTestId("land-risk-card");
+    expect(risky.textContent).toContain("Risky land");
+    expectNotAmber(risky);
     expect(screen.queryByTestId("land-risk-unknown")).toBeNull();
   });
 });
