@@ -255,7 +255,7 @@ async function resolveMentions(usernames: string[]): Promise<string[]> {
 
 ```typescript
 import { useState, useEffect } from 'react';
-import { useDebounce } from '@/hooks/use-debounce';
+import { useDebounce } from '@/components/workflow-organization/search-filter-utils';
 
 export function MentionAutocomplete({
   value,

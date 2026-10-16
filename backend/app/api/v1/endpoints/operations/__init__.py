@@ -72,6 +72,13 @@ from app.api.deps import (
 )
 from app.api.v1.endpoints.devices import devices_to_wire
 from app.core.config import settings
+from app.core.refusal import (
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.crud import runner_crud
 from app.middleware.rate_limit import get_authorization_identifier, user_limiter
 from app.models.machine_display_name import MachineDisplayName
@@ -936,7 +943,7 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
-class CoordTransportUnavailable(HTTPException):
+class CoordTransportUnavailable(RefusalHTTPException):
     """The request to coord never completed — so its status is OURS, not coord's.
 
     :func:`_proxy_coord_get` invents a 502 for a connect error and a 504 for a
@@ -955,7 +962,87 @@ class CoordTransportUnavailable(HTTPException):
     retry loop, and covers any future transport conversion that uses it
     without a second edit. It is transparent to every other caller of the
     proxies: it IS an ``HTTPException``, with the same status and detail.
+
+    It is also a refusal (:class:`RefusalHTTPException`), built by
+    :func:`_coord_unreachable` / :func:`_coord_timeout` like every other
+    transport failure in this module.
     """
+
+
+def _coord_unreachable(
+    exc_type: type[RefusalHTTPException] = RefusalHTTPException,
+) -> RefusalHTTPException:
+    """The 502 for a connect error: coord never saw the request, so nothing
+    changed and the same request later is safe."""
+    return refusal_error(
+        502,
+        RefusalCode.upstream_unavailable,
+        NextActionKind.retry_later,
+        COORD_UNREACHABLE_DETAIL,
+        discriminator="coord_unreachable",
+        glossary_terms=[GlossaryTerm.coord],
+        exc_type=exc_type,
+    )
+
+
+def _coord_timeout(
+    exc_type: type[RefusalHTTPException] = RefusalHTTPException,
+    *,
+    write: bool,
+) -> RefusalHTTPException:
+    """The 504 for a timeout: coord may have acted.
+
+    ``write`` decides what "retry later" means. A timed-out READ is safe to
+    repeat. A timed-out WRITE may already have been applied, so a blind retry
+    can apply it twice: its next action names the re-read that must come
+    first, and its discriminator lets a reader refuse to render a bare Retry
+    button for it.
+    """
+    return refusal_error(
+        504,
+        RefusalCode.upstream_timeout,
+        NextActionKind.retry_later,
+        # The detail is the same constant for a read and a write: callers
+        # (``fleet_targets._reraise_coord_refusal``) recognise web's own
+        # transport text by it. The write's re-read lives in
+        # ``next_action.target``, which ``Refusal::render`` states since
+        # qontinui-schemas#204 ("... but first check "<target>": the earlier
+        # attempt may already have taken effect"), as does the web reader's
+        # mirror of it (frontend ``lib/errors/refusal.ts``).
+        COORD_TIMEOUT_DETAIL,
+        discriminator="coord_write_timeout" if write else "coord_timeout",
+        target=_REREAD_BEFORE_RETRY if write else None,
+        glossary_terms=[GlossaryTerm.coord],
+        exc_type=exc_type,
+    )
+
+
+#: The ``next_action.target`` of every refusal whose write may have landed.
+#: On ``retry_later`` the target names WHAT to re-check before retrying
+#: (qontinui-schemas#204), so ``Refusal::render`` reads: "Try again later, but
+#: first check "whether the change was applied": the earlier attempt may
+#: already have taken effect".
+_REREAD_BEFORE_RETRY = "whether the change was applied"
+
+
+def _coord_answer_lost(detail: str, *, not_json: bool) -> RefusalHTTPException:
+    """The 504 for a write whose answer did not arrive intact. The change may
+    have been applied; only a re-read can tell.
+
+    Two causes, told apart by ``code``: a transport error after the request
+    was sent is ``upstream_timeout`` (``answer_lost``); a 2xx whose body is
+    not JSON is an answer this backend cannot classify, so ``unknown``
+    (``answer_not_json``) rather than a timeout it was not.
+    """
+    return refusal_error(
+        504,
+        RefusalCode.unknown if not_json else RefusalCode.upstream_timeout,
+        NextActionKind.retry_later,
+        detail,
+        discriminator="answer_not_json" if not_json else "answer_lost",
+        target=_REREAD_BEFORE_RETRY,
+        glossary_terms=[GlossaryTerm.coord],
+    )
 
 
 async def _proxy_coord_get(
@@ -1045,15 +1132,9 @@ async def _proxy_coord_get(
         try:
             resp = await client.get(url, params=params, headers=request_headers)
         except httpx.ConnectError as exc:
-            raise CoordTransportUnavailable(
-                status_code=502,
-                detail="coord is not reachable",
-            ) from exc
+            raise _coord_unreachable(CoordTransportUnavailable) from exc
         except httpx.TimeoutException as exc:
-            raise CoordTransportUnavailable(
-                status_code=504,
-                detail="timeout waiting for coord",
-            ) from exc
+            raise _coord_timeout(CoordTransportUnavailable, write=False) from exc
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -1392,24 +1473,17 @@ async def _proxy_coord_write(
         try:
             resp = await send(url, json=body, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            ) from exc
+            raise _coord_timeout(write=True) from exc
         except httpx.HTTPError as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise HTTPException(
-                status_code=504,
-                detail=(
-                    f"coord's answer was lost in transit ({type(exc).__name__}); "
-                    "the change may have been applied"
-                ),
+            raise _coord_answer_lost(
+                f"coord's answer was lost in transit ({type(exc).__name__}); "
+                "the change may have been applied, so re-read the current "
+                "state before retrying",
+                not_json=False,
             ) from exc
     if resp.status_code >= 400:
         raise HTTPException(
@@ -1429,12 +1503,11 @@ async def _proxy_coord_write(
             # `getattr`: a log line on an error path must never raise itself.
             content_type=getattr(resp, "headers", {}).get("content-type"),
         )
-        raise HTTPException(
-            status_code=504,
-            detail=(
-                f"coord answered {resp.status_code} with a body that is not "
-                "JSON; the change may have been applied"
-            ),
+        raise _coord_answer_lost(
+            f"coord answered {resp.status_code} with a body that is not "
+            "JSON; the change may have been applied, so re-read the current "
+            "state before retrying",
+            not_json=True,
         ) from exc
 
 
@@ -1569,9 +1642,9 @@ async def post_github_clone_credential(
         try:
             resp = await client.post(url, json={"repo": body.repo}, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -1619,9 +1692,9 @@ async def _proxy_coord_verbatim(
                 method, url, params=params, json=json_body, headers=headers
             )
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout(write=method.upper() != "GET")
     try:
         content = resp.json()
     except ValueError:
@@ -2431,15 +2504,9 @@ async def post_pr_merge_onboarding_connect_state(
         try:
             resp = await client.post(url, json=payload, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -2572,15 +2639,9 @@ async def post_pr_merge_onboarding_claim(
         try:
             resp = await client.post(url, json=payload, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2660,15 +2721,9 @@ async def post_pr_merge_onboarding_enroll(
         try:
             resp = await client.post(url, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2736,15 +2791,9 @@ async def post_pr_merge_onboarding_restore_repo(
         try:
             resp = await client.post(url, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -2989,6 +3038,14 @@ async def get_pr_merge_slo(
     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
     the last two existed to justify exiting.
 
+    Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+    fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+    — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+    ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+    with no live writer (``operator_override_rate``, ``escalation_rate``).
+    This proxy returns coord's JSON as-is (no response model reshapes it), so
+    both reach the frontend without a change here.
+
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """
     return await _proxy_coord_get(
@@ -3027,13 +3084,19 @@ async def get_pr_merge_slo(
 
 
 async def _proxy_coord_passthrough(
-    method: Literal["GET", "POST"],
+    method: str,
     path: str,
     *,
     tenant_id: UUID,
     body: Any = None,
+    params: dict[str, Any] | None = None,
 ) -> JSONResponse:
     """Proxy to coord, forwarding its status code and JSON body VERBATIM.
+
+    ``params`` is the query string of a GET (ignored for a POST, whose input
+    is its ``body``). ``None`` puts nothing on the wire — callers build it
+    from their declared ``Query`` parameters and omit the unset ones, so an
+    absent filter reaches coord as absent rather than as an empty value.
 
     Unlike :func:`_proxy_coord_get` / :func:`_proxy_coord_post`, a coord 4xx is
     NOT re-raised as an ``HTTPException`` — it is returned as-is. That keeps
@@ -3054,16 +3117,19 @@ async def _proxy_coord_passthrough(
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id)
+    # One normalised verb decides both the call made and whether a timeout
+    # may have written, so the two can never disagree.
+    is_get = method.upper() == "GET"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            if method == "GET":
-                resp = await client.get(url, headers=headers)
+            if is_get:
+                resp = await client.get(url, params=params, headers=headers)
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout(write=not is_get)
     try:
         payload: Any = resp.json()
     except ValueError:
@@ -3333,15 +3399,9 @@ async def _proxy_coord_post(
         try:
             resp = await client.post(url, json=body, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail=COORD_UNREACHABLE_DETAIL,
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail=COORD_TIMEOUT_DETAIL,
-            )
+            raise _coord_timeout(write=True)
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -3557,19 +3617,35 @@ async def reopen_gate(
     )
 
 
+class GateRejectRequest(BaseModel):
+    """Optional JSON body of ``POST /gates/{gate_id}/reject``."""
+
+    reason: str | None = None
+
+
+# ``reason`` was once a bare handler parameter, which FastAPI binds to the
+# QUERY string, so the reason the web client sends in the JSON body was
+# silently dropped and every rejection reached coord without one. It is now a
+# body model. The reason is stripped before forwarding because coord stores a
+# whitespace-only reason literally.
 @router.post("/gates/{gate_id}/reject")
 async def reject_gate(
     gate_id: str,
-    reason: str | None = None,
+    body: GateRejectRequest | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reject an OperatorApproval gate (operator bearer forwarded —
-    fleet-auth P2/D6)."""
-    body: dict[str, Any] = {}
+    fleet-auth P2/D6).
+
+    The optional JSON body ``{"reason": ...}`` carries the reason. It is
+    forwarded to coord stripped, and only when non-blank; an absent body or a
+    blank reason forwards ``{}``."""
+    reject_body: dict[str, Any] = {}
+    reason = body.reason.strip() if body is not None and body.reason else ""
     if reason:
-        body["reason"] = reason
+        reject_body["reason"] = reason
     return await _proxy_coord_post(
-        f"/coord/gates/{gate_id}/reject", body, tenant_id=tenant_id
+        f"/coord/gates/{gate_id}/reject", reject_body, tenant_id=tenant_id
     )
 
 
@@ -4382,6 +4458,109 @@ async def get_pull_decisions(
         params["since"] = since
     return await _proxy_coord_get(
         "/coord/policies/resolutions", tenant_id=tenant_id, params=params
+    )
+
+
+# ---- Operator touches (the operator-touch read + constraint verdict) -----
+#
+# Plan ``2026-08-27-operator-touch-read-and-surface`` Phase C3 (C3a item 3).
+# coord's ``GET /coord/operator-touches`` is the FIRST read door over
+# ``coord.operator_touches``: one payload carrying the window aggregate
+# (per-disposition totals, reason classes ranked by share), a keyset page of
+# touches, and the constraint verdict — computed once in coord and served on
+# both routes below so the ``/admin/coord/operator-touches`` health strip is
+# DERIVED from the page's own payload rather than separately fetched (C3c).
+#
+# Error posture: ``_proxy_coord_passthrough``, not ``_proxy_coord_get``. coord
+# answers an unreadable store with a typed ``503 {"error":
+# "schema_migration_pending"|"db_unavailable", "detail"}`` and a bad query
+# with ``400 {"error": "bad_request", "detail"}``; the page renders those as
+# "unknown", never as an empty-but-healthy store, so the browser needs coord's
+# ``error`` key intact rather than folded into this module's generic envelope.
+#
+# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set;
+# this edge adds no validation of its own. coord answers a bad query in two
+# shapes, and both pass through verbatim:
+#
+# * a VALUE error it validates itself — ``window_days`` not 7|30, an unknown
+#   ``disposition``, a malformed ``before`` cursor — is its typed
+#   ``400 {"error": "bad_request", "detail"}``; ``limit`` out of range is
+#   clamped, not refused;
+# * a TYPE error caught by axum's plain ``Query<...>`` extractor before coord's
+#   handler runs — ``window_days=abc``, ``open_only=yes``, a ``limit`` that
+#   overflows ``i64`` — is axum's PLAIN-TEXT 400, which
+#   ``_proxy_coord_passthrough`` wraps as ``{"error": "<axum's text>"}``.
+#
+# Typing the params here would instead answer a FastAPI 422 of a third shape,
+# which the page would misattribute to coord.
+
+
+@router.get("/coord/operator-touches")
+async def get_operator_touches(
+    window_days: str | None = Query(default=None),
+    disposition: str | None = Query(default=None),
+    open_only: str | None = Query(default=None),
+    actionable_only: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    before: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+    ``aggregate_included`` (``false`` on a ``before`` page, where every
+    aggregate field and ``constraint_verdict`` are ``null``),
+    ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+    ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+    ``touches``, ``next_cursor`` and ``constraint_verdict``.
+
+    Every parameter is declared as a STRING and forwarded unchanged. coord
+    clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+    ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+    an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+    passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+    Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+    which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+    answer, not a failure; coord's 400/503 bodies pass through verbatim.
+    """
+    candidates = {
+        "window_days": window_days,
+        "disposition": disposition,
+        "open_only": open_only,
+        "actionable_only": actionable_only,
+        "limit": limit,
+        "before": before,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/operator-touches/constraint-verdict")
+async def get_operator_touch_constraint_verdict(
+    window_days: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+
+    The standalone form of the ``constraint_verdict`` object the touch read
+    carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+    reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+    verdict, never a default. Error bodies pass through verbatim.
+    """
+    params: dict[str, Any] | None = (
+        {"window_days": window_days} if window_days else None
+    )
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches/constraint-verdict",
+        tenant_id=tenant_id,
+        params=params,
     )
 
 
@@ -6523,6 +6702,19 @@ async def get_computer(
 @router.get("/agent-questions/pending")
 async def get_pending_agent_questions(
     gap: bool | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
+    audience: Literal["operator", "agent"] | None = Query(
+        default=None,
+        description=(
+            "Audience filter, forwarded to coord. ``operator`` is the human "
+            "inbox; ``agent`` is the agent tier. Closed two-value set — the "
+            "same authorization boundary the ``audience`` column in coord's "
+            "schema carries a CHECK constraint for — so anything else is a 422 here "
+            "rather than a filter coord silently ignores. Absent = no "
+            "audience filter (coord's own default, which is every audience)."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return pending agent questions awaiting an operator response.
@@ -6531,10 +6723,68 @@ async def get_pending_agent_questions(
     when set, forwarded to coord as the POLICY_GAP filter —
     ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
     Backs the Gaps tab on the questions inbox.
+
+    ``limit`` / ``offset`` / ``audience`` (plan
+    2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).
+    Until these were declared here the proxy took ``gap`` alone, and FastAPI
+    drops an undeclared query param on the floor — so a caller asking for
+    ``?limit=500&audience=operator`` reached coord with NEITHER, and any
+    frontend-side limit change was a **no-op it could not observe**. Declaring
+    them is the whole fix on this side; the forwarding below is mechanical.
+
+    Why it mattered: measured 2026-09-12, ``coord.agent_questions`` held
+    ~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``
+    and only ~442 with ``audience='operator'``. Coord's default page is 100
+    rows newest-first, so a correctly-escalated operator question sank out of
+    reach behind the agent tier's volume and was unanswerable for 10 days.
+    ``audience=operator`` is what makes the operator's own 442 addressable;
+    ``limit``/``offset`` are what make the rest of them reachable.
+
+    ``limit`` is validated exactly as the ANSWERED proxy below validates its
+    own (``ge=1, le=500``) rather than with a second convention. ``offset`` is
+    ``ge=0`` — the answered proxy has no offset to copy, and the work-units
+    proxy's ``offset: int | None = Query(default=None, ge=0)`` is the house
+    form.
+
+    ``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates
+    the sibling change**, and "deployed" is the load-bearing word. Coord's
+    source on ``main`` now DOES parse both — ``PendingQuery``
+    (``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,
+    ``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in
+    this same change set — so a grep of that source is not grounds for deleting
+    the degrade path here: what governs is the build answering this box, and it
+    lags ``main``. The struct is plain serde with no ``deny_unknown_fields``,
+    so on an older build an unknown query key is dropped rather than refused.
+    Forwarding them is therefore safe in both directions, but a 200 is never
+    proof the filter was applied — the frontend reads the echoed ``limit`` and
+    ``offset`` back and says which parameter went nowhere. ``limit`` coord has
+    always honoured (default 100, hard max 500), which is the bound the defect
+    below ran into.
+
+    The response envelope is **unchanged** and deliberately untranslated:
+    :func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord
+    already ships ``{questions, count, limit, shown, offset}`` plus ``total``
+    and ``truncated`` — so the paging metadata the frontend needs arrives
+    without a re-wrap here.
+
+    ⚠️ **``total`` and ``truncated`` are OMITTED — the key absent — when coord
+    could not observe the count**, which is precisely why nothing here
+    re-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the
+    returned rows, so an ``offset`` past the end of the match set returns zero
+    rows and no count with them; a ``0`` in its place would be a fabrication,
+    and the operator console turns a pending ``0`` into "No agent is waiting on
+    an answer". Any future re-wrap here MUST preserve the absence — a
+    ``body.get("total", 0)`` anywhere in this path recreates the defect.
     """
     params: dict[str, Any] = {}
     if gap is not None:
         params["gap"] = gap
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
+    if audience is not None:
+        params["audience"] = audience
     return await _proxy_coord_get(
         "/coord/agent-questions/pending",
         params=params or None,
@@ -6545,7 +6795,19 @@ async def get_pending_agent_questions(
 @router.get("/agent-questions/answered")
 async def get_answered_agent_questions(
     limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
     gap: bool | None = Query(default=None),
+    audience: Literal["operator", "agent"] | None = Query(
+        default=None,
+        description=(
+            "Audience filter, forwarded to coord. ``operator`` is the human "
+            "inbox; ``agent`` is the agent tier. Closed two-value set — the "
+            "same authorization boundary the ``audience`` column in coord's "
+            "schema carries a CHECK constraint for — so anything else is a 422 here "
+            "rather than a filter coord silently ignores. Absent = no "
+            "audience filter (coord's own default, which is every audience)."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return recently-answered agent questions.
@@ -6555,12 +6817,34 @@ async def get_answered_agent_questions(
 
     ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
     Gaps tab can list pre-answered (non-blocking) gap reports.
+
+    ``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME
+    ``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both
+    reach it — but only if they are declared HERE. Until they were, this
+    handler declared ``limit`` and ``gap`` alone and **FastAPI dropped the
+    rest on the floor**: a caller asking for ``?offset=50&audience=operator``
+    reached coord with neither, and got page 1 of every audience with a 200
+    in front of it. That is the exact failure the pending docstring above
+    describes in its own words, still live one handler down — no visible
+    defect only because nothing pages the answered tab yet, which makes the
+    next answered pager a silent no-op its author cannot observe. Validated
+    identically to the pending handler (``limit`` ``ge=1, le=500``,
+    ``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than
+    with a second convention.
+
+    The envelope is coord's, verbatim, with the same absence contract the
+    pending docstring sets out: ``total``/``truncated`` are OMITTED when coord
+    could not observe the count, and an absent key is UNKNOWN, never zero.
     """
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
     if gap is not None:
         params["gap"] = gap
+    if audience is not None:
+        params["audience"] = audience
     return await _proxy_coord_get(
         "/coord/agent-questions/answered",
         params=params or None,
@@ -6969,15 +7253,9 @@ async def _proxy_coord_delete(
             else:
                 resp = await client.delete(url, params=params, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail=COORD_UNREACHABLE_DETAIL,
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail=COORD_TIMEOUT_DETAIL,
-            )
+            raise _coord_timeout(write=True)
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     # Coord may return 204 No Content for delete; tolerate empty bodies.
@@ -7532,11 +7810,9 @@ async def get_device_status(
             tenant_id=tenant_id, since=since, headers=_tenant_headers(tenant_id)
         )
     except httpx.ConnectError as exc:
-        raise HTTPException(status_code=502, detail="coord is not reachable") from exc
+        raise _coord_unreachable() from exc
     except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=504, detail="timeout waiting for coord"
-        ) from exc
+        raise _coord_timeout(write=False) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=exc.response.status_code, detail=exc.response.text
@@ -9517,9 +9793,9 @@ async def get_coord_session_restore_record(
                     elif line.startswith("data:"):
                         data_lines.append(line[5:].removeprefix(" "))
     except httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="coord is not reachable")
+        raise _coord_unreachable()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="timeout waiting for coord")
+        raise _coord_timeout(write=False)
 
     return {
         "session_id": str(session_id),
@@ -10191,16 +10467,37 @@ _FLEET_POLICY_CONTROL_KEYS = (
 )
 
 
+class FleetPolicyRepoOverride(BaseModel):
+    """One repo-band row that overrides the tenant band for its repo.
+
+    Mirrors one entry of coord's ``repo_overrides``
+    (``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a
+    reader of that repo resolves from the row: ``level``, or ``off`` when the
+    row's ``master_enabled`` is false. ``level`` is opaque here, as it is on
+    the write: a level this console does not recognise is the page's to name,
+    never this proxy's to drop.
+    """
+
+    #: The row's ``scope_key`` as coord stored it (``owner/name`` for the
+    #: domains keyed that way).
+    repo: str
+    level: str
+    master_enabled: bool
+    effective_level: str
+
+
 class FleetPolicyView(BaseModel):
     """The requested domain's resolved policy — and ONLY that domain's.
 
     ``effective_level`` is what a device actually resolves, which is not the
     same as the level that was last written: coord folds ``master_enabled``
     in (a disabled master resolves ``off`` whatever ``level`` says), and a
-    tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
-    That last case is why ``resolved_scope`` is surfaced: "off because nobody
-    ever wrote a row" and "off because someone turned it off" are different
-    facts about the fleet and the operator is entitled to tell them apart.
+    tenant with no row at all resolves the domain's declared no-row default
+    with ``resolved_scope: "none"`` — ``off`` unless coord's
+    ``domain_default_level`` declares another for that domain. That last case
+    is why ``resolved_scope`` is surfaced: "set because nobody ever wrote a
+    row" and "set because someone chose it" are different facts about the
+    fleet and the operator is entitled to tell them apart.
     """
 
     domain: str
@@ -10226,6 +10523,13 @@ class FleetPolicyView(BaseModel):
     #: caller asked about ``fleet_resources`` itself, so they are its own.
     #: ``None`` when coord sent none.
     keys_not_shown_source: Literal["fleet_resources_row", "this_domain"] | None = None
+    #: Every repo-band row of THIS domain that overrides the tenant band —
+    #: coord's ``repo_overrides``, ordered by repo. An ``inherit`` row clears an
+    #: override and is not listed. ``None`` is UNKNOWN, never "no overrides":
+    #: coord sent no list (a coord predating it), or sent one this proxy could
+    #: not read whole — a list missing one entry would claim to be complete
+    #: while hiding an override that is in force.
+    repo_overrides: list[FleetPolicyRepoOverride] | None = None
 
 
 class FleetPolicyPut(BaseModel):
@@ -10340,6 +10644,41 @@ class FleetPolicyWriteResult(BaseModel):
     readback_error: str | None = None
 
 
+def _fleet_policy_repo_overrides(raw: Any) -> list[FleetPolicyRepoOverride] | None:
+    """Coord's ``repo_overrides``, or ``None`` (UNKNOWN) unless it reads WHOLE.
+
+    All or nothing: one malformed entry makes the whole list unknown. A list
+    with that entry dropped would read as "these are every override", while an
+    override the operator cannot see is still in force for its repo.
+    """
+    if not isinstance(raw, list):
+        return None
+    overrides: list[FleetPolicyRepoOverride] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        repo = entry.get("repo")
+        level = entry.get("level")
+        master = entry.get("master_enabled")
+        effective = entry.get("effective_level")
+        if not (
+            isinstance(repo, str)
+            and isinstance(level, str)
+            and isinstance(master, bool)
+            and isinstance(effective, str)
+        ):
+            return None
+        overrides.append(
+            FleetPolicyRepoOverride(
+                repo=repo,
+                level=level,
+                master_enabled=master,
+                effective_level=effective,
+            )
+        )
+    return overrides
+
+
 def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPolicyView:
     """Project coord's GET body onto the requested domain's OWN fields."""
     body = payload if isinstance(payload, dict) else {}
@@ -10370,6 +10709,7 @@ def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPol
         can_edit=can_edit,
         keys_not_shown=not_shown,
         keys_not_shown_source=source,
+        repo_overrides=_fleet_policy_repo_overrides(body.get("repo_overrides")),
     )
 
 
@@ -10542,6 +10882,9 @@ class CiHostingView(BaseModel):
     domain: str = "github_hosted_ci"
     tenant_default: CiHostingReading
     repos: list[CiHostingRepoReading] = Field(default_factory=list)
+    #: Set when coord could not LIST the tenant's repos (or sent no list): the
+    #: empty ``repos`` is then UNKNOWN, never "this tenant has no repos".
+    repos_unknown_reason: str | None = None
     #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
     can_edit: bool
 
@@ -10585,11 +10928,19 @@ def _ci_hosting_view(payload: Any, *, can_edit: bool) -> CiHostingView:
                     **_ci_hosting_reading(entry),
                 )
             )
+    raw_reason = body.get("repos_unknown_reason")
+    repos_unknown_reason = (
+        raw_reason if isinstance(raw_reason, str) and raw_reason else None
+    )
+    if repos_unknown_reason is None and not isinstance(repos_raw, list):
+        # No list at all is not an empty list.
+        repos_unknown_reason = "no_repos_reported"
     return CiHostingView(
         tenant_default=CiHostingReading(
             **_ci_hosting_reading(body.get("tenant_default"))
         ),
         repos=repos,
+        repos_unknown_reason=repos_unknown_reason,
         can_edit=can_edit,
     )
 

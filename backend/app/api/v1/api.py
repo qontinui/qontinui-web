@@ -75,6 +75,7 @@ from app.api.v1.endpoints import (
     helper_tasks,
     historical,
     identity_resolution,
+    image_assets,
     images,
     integration_testing,
     internal,
@@ -481,6 +482,12 @@ api_router.include_router(
 # Tenant agentic memory — write/query/supersede/stats over
 # coord.memory_records (plan 2026-07-10-tenant-agentic-memory, Phase 1).
 api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
+# Content-addressed image store — web.image_assets + web.image_slot_candidates
+# under the memory endpoints' device-JWT tenant (plan
+# 2026-10-13-image-generation-and-visual-judgment, Phase 13).
+api_router.include_router(
+    image_assets.router, prefix="/image-assets", tags=["image-assets"]
+)
 # Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries

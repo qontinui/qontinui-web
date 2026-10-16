@@ -110,6 +110,14 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // today — the coord memory page reads `/api/v1/operations/memory/list` —
   // so this entry is for future callers, which then scope correctly.
   "/api/v1/memory/",
+  // Content-addressed image store — the same `get_memory_tenant` operator
+  // arm: every `web.image_assets` / `web.image_slot_candidates` row and every
+  // object key is scoped by the tenant `get_coord_identity` resolves, so
+  // without the header a multi-tenant operator would read (and upload into)
+  // the home project's images under another project's name. Its first
+  // dashboard caller is the taste inbox (plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phases 13 and 23).
+  "/api/v1/image-assets",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.

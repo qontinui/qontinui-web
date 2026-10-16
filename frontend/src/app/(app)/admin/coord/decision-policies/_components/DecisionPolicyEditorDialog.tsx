@@ -24,20 +24,32 @@ import { AlertTriangle, Info, Loader2 } from "lucide-react";
 import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   canonicalPayload,
+  createDefaultCaution,
   CREATE_IS_INERT,
   DECISION_POLICY_DOMAINS,
   DECISION_POLICY_MODES,
   DEFAULT_DECISION_DOMAIN,
   domainSpec,
+  effectiveCreateRepo,
+  isLiveRow,
   MODE_DESCRIPTIONS,
   MODE_LABELS,
   payloadToText,
+  priorityEditCaution,
+  readWithoutDeletedWorkspaceRow,
+  releaseClause,
+  replaceRankCaution,
+  REPO_NOT_SERVED_NOTE,
+  sameScopeRows,
+  scopeEditCaution,
+  systemDefaultFor,
   UNVALIDATED_NOTE,
   validateDecisionPayload,
   type DecisionPolicyInput,
   type DecisionPolicyMode,
   type DecisionPolicyUpdate,
 } from "../decisionPolicies";
+import { useServedDomainDefaults } from "../_hooks/useServedDomainDefaults";
 
 const STARTER_PAYLOAD = `{
   "constraints": [
@@ -59,6 +71,12 @@ export interface DecisionPolicyEditorDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Editing an existing row, or `null` to create one. */
   rule: CoordPolicyRow | null;
+  /**
+   * The rows the page has loaded, or `null` when its list read has not
+   * answered. Used to find rows already scoped to the target repo — coord's
+   * settings read is repo-less and cannot see them.
+   */
+  existingRules: readonly CoordPolicyRow[] | null;
   saving: boolean;
   onCreate: (input: DecisionPolicyInput) => Promise<boolean>;
   /** Name / repo / priority / rationale only — coord cannot PATCH a payload,
@@ -76,11 +94,16 @@ export interface DecisionPolicyEditorDialogProps {
  *
  * Three things this form is deliberately explicit about, because coord is:
  *
- *  - **Creating a row arms nothing.** Coord's `CreatePolicyRequest` has no
- *    `autonomy_level` field, so the row lands at `always_escalate`, which
- *    `decide.rs` short-circuits to Escalate regardless of mode. The create
- *    dialog says so, and offers no autonomy control at all — offering one
- *    would be offering a field the server silently ignores.
+ *  - **Creating a row arms nothing — but can disarm a default.** Coord's
+ *    `CreatePolicyRequest` has no `autonomy_level` field, so the row lands at
+ *    `always_escalate`, which `decide.rs` short-circuits to Escalate
+ *    regardless of mode. The create dialog says so, and offers no autonomy
+ *    control at all — offering one would be offering a field the server
+ *    silently ignores. Because a tenant/repo row outranks coord's system row,
+ *    a domain whose system default sits above `always_escalate` gets an
+ *    explicit warning that creating a row turns that default off. That
+ *    default is read LIVE from coord's next-step settings each time the dialog
+ *    opens; an unread one gets an UNKNOWN caution, never silence.
  *  - **Changing the payload, domain or mode replaces the row.** Coord's
  *    `UpdatePolicyRequest` carries none of the three, so there is no in-place
  *    edit. Saying so before the user commits is the whole difference between
@@ -101,12 +124,14 @@ export function DecisionPolicyEditorDialog({
   open,
   onOpenChange,
   rule,
+  existingRules,
   saving,
   onCreate,
   onPatch,
   onReplace,
 }: DecisionPolicyEditorDialogProps) {
   const editing = rule !== null;
+  const servedDefaults = useServedDomainDefaults(open);
 
   const [name, setName] = useState("");
   const [decisionDomain, setDecisionDomain] = useState<string>(
@@ -160,6 +185,150 @@ export function DecisionPolicyEditorDialog({
 
   const spec = domainSpec(decisionDomain);
   const unvalidated = UNVALIDATED_NOTE[mode];
+  // A domain whose consults carry no repo cannot be served by a repo-scoped
+  // row, so the field is not offered and the write never carries one.
+  const repoOffered = spec?.repoScoped !== false;
+  const writtenRepo = effectiveCreateRepo(decisionDomain, repo);
+
+  // A replacement is a create too, so it can newly outrank the system row —
+  // but only when the row it replaces did not already (another domain, or a
+  // repo scope that the replacement no longer carries).
+  const replacementNewlyOutranks =
+    replaceRequired &&
+    rule !== null &&
+    (rule.decision_domain !== decisionDomain ||
+      (rule.repo ?? "") !== writtenRepo);
+  const defaultRead = systemDefaultFor(
+    servedDefaults.domains,
+    servedDefaults.error,
+    decisionDomain
+  );
+  const excludeId = rule?.policy_id ?? null;
+  // Rows compete on priority only within one band: the edited row's tenant
+  // when there is one; for a create, every non-built-in row.
+  const bandTenant = rule?.tenant_id ?? null;
+  const bandRows = (domain: string, scope: string) =>
+    sameScopeRows(existingRules, domain, scope, excludeId, bandTenant);
+
+  // The scope the old row actually SERVED: a repo stored on a repo-less
+  // domain never served that repo, so it served nothing at all.
+  const oldDomain = rule?.decision_domain ?? null;
+  const oldDomainRepoLess =
+    oldDomain !== null && domainSpec(oldDomain)?.repoScoped === false;
+  const oldServedNothing = oldDomainRepoLess && (rule?.repo ?? "") !== "";
+  const oldScope = rule?.repo ?? "";
+
+  // When a save takes THIS workspace row out of the workspace scope (a
+  // replace or a PATCH narrowing it to a repo), coord's `resolved_from:
+  // tenant` may be this very row. If the loaded list proves no other
+  // workspace row exists, read the default as the system band does.
+  const leavesWorkspace =
+    editing &&
+    rule !== null &&
+    rule.decision_domain === decisionDomain &&
+    oldScope === "" &&
+    (replaceRequired ? writtenRepo : repo.trim()) !== "";
+  const scopeRead = leavesWorkspace
+    ? readWithoutDeletedWorkspaceRow(defaultRead, bandRows(decisionDomain, ""))
+    : defaultRead;
+
+  const defaultCaution =
+    !editing || replacementNewlyOutranks
+      ? createDefaultCaution(
+          scopeRead,
+          writtenRepo,
+          bandRows(decisionDomain, writtenRepo)
+        )
+      : null;
+  // A replace DELETES the old row, so any scope it covered and the
+  // replacement does not is released — named, with what it falls back to.
+  let releaseCaution: string | null = null;
+  if (
+    replaceRequired &&
+    rule !== null &&
+    oldDomain !== null &&
+    !oldServedNothing
+  ) {
+    if (oldDomain !== decisionDomain) {
+      releaseCaution = releaseClause(
+        systemDefaultFor(
+          servedDefaults.domains,
+          servedDefaults.error,
+          oldDomain
+        ),
+        oldScope,
+        "",
+        oldDomain,
+        true
+      );
+    } else if (repoOffered && oldScope !== writtenRepo) {
+      releaseCaution = releaseClause(
+        scopeRead,
+        oldScope,
+        writtenRepo,
+        decisionDomain
+      );
+    }
+  }
+  // A replace that keeps domain and scope still reorders the band: the
+  // replacement is the newest row and may carry a new priority.
+  const replaceRankNote =
+    replaceRequired &&
+    rule !== null &&
+    oldDomain === decisionDomain &&
+    !oldServedNothing &&
+    priorityValid &&
+    oldScope === writtenRepo
+      ? replaceRankCaution(
+          bandRows(decisionDomain, oldScope),
+          {
+            name: rule.name,
+            autonomy_level: rule.autonomy_level,
+            priority: rule.priority,
+            created_at: rule.created_at,
+            policy_id: rule.policy_id,
+          },
+          priorityNum,
+          oldScope,
+          undefined,
+          isLiveRow(rule)
+        )
+      : null;
+  // An in-place PATCH that moves the repo scope changes what the row
+  // outranks too — at the row's CURRENT level, since a PATCH keeps it.
+  const scopeCaution =
+    editing && rule !== null && !replaceRequired && repoOffered
+      ? scopeEditCaution(
+          scopeRead,
+          oldScope,
+          repo,
+          rule.autonomy_level,
+          decisionDomain,
+          bandRows(decisionDomain, repo)
+        )
+      : null;
+  // A priority-only PATCH can hand the scope to this row, or away from it.
+  const priorityCaution =
+    editing &&
+    rule !== null &&
+    !replaceRequired &&
+    !oldServedNothing &&
+    priorityValid &&
+    oldScope === (repoOffered ? repo.trim() : oldScope)
+      ? priorityEditCaution(
+          bandRows(decisionDomain, oldScope),
+          {
+            name: rule.name,
+            autonomy_level: rule.autonomy_level,
+            created_at: rule.created_at,
+            policy_id: rule.policy_id,
+            oldPriority: rule.priority,
+            newPriority: priorityNum,
+            live: isLiveRow(rule),
+          },
+          oldScope
+        )
+      : null;
 
   const canSave =
     name.trim().length > 0 && priorityValid && validation.ok && !saving;
@@ -181,12 +350,15 @@ export function DecisionPolicyEditorDialog({
     } else if (replaceRequired) {
       ok = await onReplace(rule, input);
     } else {
-      ok = await onPatch(rule.policy_id, {
+      const body: DecisionPolicyUpdate = {
         name: input.name,
-        repo: repo.trim() === "" ? null : repo.trim(),
         priority: priorityNum,
         rationale,
-      });
+      };
+      // For a repo-less domain the field is not offered, so a PATCH must not
+      // touch the stored scope either way.
+      if (repoOffered) body.repo = repo.trim() === "" ? null : repo.trim();
+      ok = await onPatch(rule.policy_id, body);
     }
     if (ok) onOpenChange(false);
   };
@@ -263,18 +435,40 @@ export function DecisionPolicyEditorDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="decision-policy-repo">Repo scope</Label>
-              <Input
-                id="decision-policy-repo"
-                value={repo}
-                onChange={(e) => setRepo(e.target.value)}
-                placeholder="owner/repo — leave blank for the whole workspace"
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                A repo-scoped row outranks a workspace-wide one for that repo
-                and never matches any other.
-              </p>
+              {repoOffered ? (
+                <>
+                  <Label htmlFor="decision-policy-repo">Repo scope</Label>
+                  <Input
+                    id="decision-policy-repo"
+                    value={repo}
+                    onChange={(e) => setRepo(e.target.value)}
+                    placeholder="owner/repo — leave blank for the whole workspace"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A repo-scoped row outranks a workspace-wide one for that
+                    repo and never matches any other.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">Repo scope</p>
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="decision-policy-repo-not-served"
+                  >
+                    {REPO_NOT_SERVED_NOTE}
+                    {editing && rule?.repo ? (
+                      <>
+                        {" "}
+                        This row is scoped to{" "}
+                        <code className="font-mono">{rule.repo}</code>, so it
+                        never serves a consult.
+                      </>
+                    ) : null}
+                  </p>
+                </>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="decision-policy-priority">Priority</Label>
@@ -391,6 +585,62 @@ export function DecisionPolicyEditorDialog({
             </p>
           )}
 
+          {defaultCaution && (
+            <p
+              className="flex items-start gap-1 rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs"
+              data-testid={
+                defaultCaution.kind === "override"
+                  ? "decision-policy-default-override-warning"
+                  : defaultCaution.kind === "loading"
+                    ? "decision-policy-default-loading"
+                    : "decision-policy-default-unknown"
+              }
+            >
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+              <span>{defaultCaution.text}</span>
+            </p>
+          )}
+
+          {releaseCaution && (
+            <p
+              className="flex items-start gap-1 rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs"
+              data-testid="decision-policy-release-caution"
+            >
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+              <span>{releaseCaution}</span>
+            </p>
+          )}
+
+          {replaceRankNote && (
+            <p
+              className="flex items-start gap-1 rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs"
+              data-testid="decision-policy-replace-rank-caution"
+            >
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+              <span>{replaceRankNote}</span>
+            </p>
+          )}
+
+          {priorityCaution && (
+            <p
+              className="flex items-start gap-1 rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs"
+              data-testid="decision-policy-priority-caution"
+            >
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+              <span>{priorityCaution}</span>
+            </p>
+          )}
+
+          {scopeCaution && (
+            <p
+              className="flex items-start gap-1 rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs"
+              data-testid="decision-policy-scope-edit-caution"
+            >
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+              <span>{scopeCaution}</span>
+            </p>
+          )}
+
           {replaceRequired && (
             <p
               className="rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs"
@@ -399,9 +649,17 @@ export function DecisionPolicyEditorDialog({
               Coord cannot edit a row&apos;s domain, mode or payload in place,
               so saving <strong>replaces</strong> this row: the new one is
               created first, then the old one is deleted. The old row keeps
-              deciding until that second step lands, so the domain is never left
-              with no policy — and if the delete fails, both are listed and the
-              old one still decides.
+              deciding until that second step lands, so the replacement&apos;s
+              domain is never left with no policy — and if the delete fails,
+              both are listed and the old one still decides.
+              {rule && rule.decision_domain !== decisionDomain && (
+                <>
+                  {" "}
+                  Because the domain changes, the old domain (
+                  <code className="font-mono">{rule.decision_domain}</code>)
+                  does lose this row once the delete lands.
+                </>
+              )}
               {rule && rule.autonomy_level !== "always_escalate" && (
                 <>
                   {" "}

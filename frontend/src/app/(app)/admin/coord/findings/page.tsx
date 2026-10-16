@@ -86,7 +86,10 @@ import {
   StatusBadge,
   readIsUnknown,
   GlossaryTerm,
+  BackendErrorMessage,
 } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import {
   fetchCoordFindingById,
   fetchCoordFindings,
@@ -233,7 +236,9 @@ export default function CoordFindingsPage() {
    * what coord returned, so a failed APPEND must not stale the strip or read
    * the list as UNKNOWN. It invalidates only "we can page further".
    */
-  const [pagingError, setPagingError] = useState<string | null>(null);
+  const [pagingError, setPagingError] = useState<BackendErrorReading | null>(
+    null
+  );
   const [truncatedKeys, setTruncatedKeys] = useState(false);
   const [loading, setLoading] = useState(true);
   /**
@@ -251,7 +256,7 @@ export default function CoordFindingsPage() {
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const [unavailableKind, setUnavailableKind] =
     useState<FindingsUnavailableKind | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   /**
@@ -357,7 +362,7 @@ export default function CoordFindingsPage() {
       // clear would turn "unknown" into "no findings match".
       setUnavailable(null);
       setUnavailableKind(null);
-      setError(`Failed to load: ${e instanceof Error ? e.message : String(e)}`);
+      setError(operationsErrorReading(e));
       setReadFailed(true);
     } finally {
       if (current()) setLoading(false);
@@ -432,7 +437,7 @@ export default function CoordFindingsPage() {
       if (body.unavailable) {
         // A degraded PAGE is a failed append, not a degraded list: the rows
         // loaded so far are still what coord returned.
-        setPagingError(body.unavailable);
+        setPagingError({ kind: "unstructured", sentence: body.unavailable });
         return;
       }
       const page = rowsOf(body);
@@ -460,7 +465,7 @@ export default function CoordFindingsPage() {
       // coord's own words (a 400 on a malformed or stale cursor arrives here
       // through the proxy), and no silent retry: the operator chooses between
       // trying again and restarting from the newest page.
-      setPagingError(e instanceof Error ? e.message : String(e));
+      setPagingError(operationsErrorReading(e));
     } finally {
       if (current()) setLoadingMore(false);
     }
@@ -704,7 +709,14 @@ export default function CoordFindingsPage() {
         </p>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p
+          className="text-sm text-destructive"
+          data-testid="coord-findings-error"
+        >
+          Failed to load: <BackendErrorMessage error={error} />
+        </p>
+      )}
 
       {unavailable && (
         <p
@@ -831,10 +843,13 @@ export default function CoordFindingsPage() {
           className="flex flex-wrap items-center gap-2"
           data-testid="coord-findings-paging-error"
         >
-          <p className="text-sm text-destructive">
-            Could not load older findings: {pagingError}. The findings above are
-            still what coord returned.
-          </p>
+          <div className="text-sm text-destructive">
+            <p>
+              Could not load older findings:{" "}
+              <BackendErrorMessage error={pagingError} />
+            </p>
+            <p>The findings above are still what coord returned.</p>
+          </div>
           <Button
             variant="outline"
             size="sm"

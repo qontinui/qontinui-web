@@ -74,21 +74,16 @@ const createOrganization = async () => {
 
 ### Code Example
 
-```typescript
-import { organizationService } from '@/services/organization-service';
+Organizations are a **cloud-only** feature. `organizationService` is a proxy onto the cloud build's implementation; in an open-source build it throws on use.
 
-// Create a new organization
-const organization = await organizationService.create({
+```typescript
+import { organizationService } from '@/services/service-factory';
+
+// Create a new organization (cloud builds only)
+const organization = await organizationService.createOrganization({
   name: 'Engineering Team',
   slug: 'engineering',
-  description: 'Main engineering team workspace',
-  avatar_url: 'https://example.com/avatar.png',
-  settings: {
-    defaultMemberRole: 'member',
-    allowMemberInvites: true,
-    requireApproval: false,
-    maxMembers: 50
-  }
+  description: 'Main engineering team workspace'
 });
 ```
 
@@ -510,39 +505,6 @@ const switchOrganization = async (orgId: string) => {
   // Refresh UI to show org-specific data
   window.location.reload();
 };
-```
-
-### UI Component Example
-
-```typescript
-import { Select } from '@/components/ui/select';
-import { useOrganizations } from '@/hooks/use-organizations';
-
-export function OrganizationSwitcher() {
-  const { organizations, activeOrg, setActiveOrg } = useOrganizations();
-
-  return (
-    <Select
-      value={activeOrg?.id}
-      onValueChange={setActiveOrg}
-    >
-      {organizations.map(org => (
-        <SelectItem key={org.id} value={org.id}>
-          <div className="flex items-center gap-2">
-            {org.avatar_url && (
-              <img
-                src={org.avatar_url}
-                alt={org.name}
-                className="w-6 h-6 rounded"
-              />
-            )}
-            <span>{org.name}</span>
-          </div>
-        </SelectItem>
-      ))}
-    </Select>
-  );
-}
 ```
 
 ## Organization Best Practices

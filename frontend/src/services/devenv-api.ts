@@ -199,7 +199,7 @@ export interface MachineUpdate {
 // it here and to the backend's `CiNodeConfig` in the same PR.
 // ---------------------------------------------------------------------------
 
-/** The four `CiNodeSettings` fields. */
+/** The `CiNodeSettings` fields this surface edits. */
 export interface CiNodeConfig {
   /** Master opt-in. Enabling lets coord run repo-declared commands here. */
   enabled: boolean;
@@ -220,6 +220,18 @@ export interface CiNodeConfig {
   repo_allowlist: string[];
   /** Free disk (GiB) required on the runner's volume to START a build. */
   min_free_disk_gb: number;
+  /**
+   * "Let CI steps use this machine's Claude accounts" — the device-scope
+   * off-switch for CI model calls (plan
+   * `2026-10-13-ci-node-runs-model-dependent-eval-steps` D6).
+   *
+   * `null` (or absent, from a backend predating the field) means qontinui.io
+   * has never set it: the save does not send it, and the runner keeps its own
+   * value — on unless changed on the machine. Only an explicit `true` /
+   * `false` travels, so saving other settings can neither re-enable a machine
+   * switched off on the machine itself nor disable a fresh one.
+   */
+  model_access?: boolean | null;
 }
 
 /**
@@ -279,6 +291,7 @@ export const CI_NODE_DEFAULTS: CiNodeConfig = {
   max_concurrent_builds: null,
   repo_allowlist: [],
   min_free_disk_gb: 20,
+  model_access: null,
 };
 
 export function getCiNodeConfig(machineId: string): Promise<CiNodeConfigState> {

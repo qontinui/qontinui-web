@@ -1,27 +1,20 @@
 # Workflow Documentation System
 
-This guide covers auto-generating and maintaining workflow documentation with markdown support.
+This guide covers generating, storing and exporting workflow documentation with `workflowDocumentation`.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Generating Documentation](#generating-documentation)
+- [Stored Documentation](#stored-documentation)
 - [Documentation Templates](#documentation-templates)
-- [Custom Documentation](#custom-documentation)
+- [Action Comments](#action-comments)
 - [Export Formats](#export-formats)
 - [Best Practices](#best-practices)
 
 ## Overview
 
-The Workflow Documentation Service automatically generates comprehensive documentation from workflow structure, supports markdown formatting, and allows custom documentation sections.
-
-### Key Features
-
-- Auto-generate documentation from workflow
-- Markdown-based documentation
-- Customizable templates
-- Multiple export formats (Markdown, HTML, PDF)
-- Include diagrams and screenshots
+`workflowDocumentation` (`@/services/workflow-documentation`) is the singleton instance of `WorkflowDocumentationService`. It generates markdown from a workflow's structure, keeps per-workflow documentation (with version history) and per-action comments in browser storage, and exports them.
 
 ## Generating Documentation
 
@@ -30,284 +23,71 @@ The Workflow Documentation Service automatically generates comprehensive documen
 ```typescript
 import { workflowDocumentation } from '@/services/workflow-documentation';
 
-// Generate documentation for a workflow
+// Full markdown document for a workflow
 const docs = workflowDocumentation.generateDocumentation(workflow);
-
-console.log(docs);
 ```
 
-### Generated Documentation Structure
+### Individual Sections
 
-```markdown
-# Workflow Name
-
-**Description:** Workflow description here
-
-## Overview
-
-- **Created:** 2024-01-15
-- **Last Updated:** 2024-01-16
-- **Actions:** 15
-- **Complexity:** Medium
-
-## Actions
-
-### 1. Find Login Button
-**Type:** FIND
-**Description:** Locate the login button on the page
-
-**Configuration:**
-- Target: Login button
-- Timeout: 5000ms
-
-### 2. Click Login
-**Type:** CLICK
-**Description:** Click the login button
-
-...
-
-## Dependencies
-
-This workflow depends on:
-- User Authentication Workflow
-- Session Management Workflow
-
-## Variables
-
-### Input Variables
-- `username` (string): User login name
-- `password` (string): User password
-
-### Output Variables
-- `sessionToken` (string): Authentication token
-- `userId` (string): User identifier
-```
-
-### Include Custom Sections
+Each section of the generated document is also available on its own, as markdown:
 
 ```typescript
-// Generate with custom sections
-const docs = workflowDocumentationService.generateDocumentation(workflow, {
-  includeSections: [
-    'overview',
-    'actions',
-    'dependencies',
-    'variables',
-    'custom'
-  ],
-  customSections: [
-    {
-      title: 'Prerequisites',
-      content: 'User must be registered before running this workflow.'
-    },
-    {
-      title: 'Expected Results',
-      content: 'User should be logged in with valid session token.'
-    }
-  ]
-});
+const variables = workflowDocumentation.generateVariablesTable(workflow);
+const dependencies = workflowDocumentation.generateDependenciesList(workflow);
+const flowchart = workflowDocumentation.generateFlowchart(workflow); // Mermaid
+```
+
+## Stored Documentation
+
+```typescript
+// Create once, then update; every update is kept as a version
+workflowDocumentation.createDocumentation(workflow.id, docs, { author: 'jane' });
+workflowDocumentation.updateDocumentation(workflow.id, newDocs, 'Describe retry step');
+
+const current = workflowDocumentation.getDocumentation(workflow.id);
+const history = workflowDocumentation.getDocumentationHistory(workflow.id);
+
+// Search across all stored documentation
+const workflowIds = workflowDocumentation.findWorkflowsByDocContent('login');
 ```
 
 ## Documentation Templates
 
-### Create Template
-
 ```typescript
-// Create a documentation template
-const template = workflowDocumentationService.createTemplate({
-  name: 'Standard Workflow Template',
-  sections: [
-    {
-      id: 'overview',
-      title: 'Overview',
-      include: true,
-      template: `
-## Overview
+// Built-in templates: name, description, category, content
+const templates = workflowDocumentation.getTemplates();
 
-**Workflow Name:** {{workflow.name}}
-**Description:** {{workflow.description}}
-**Author:** {{workflow.metadata.author}}
-**Created:** {{workflow.createdAt}}
-      `.trim()
-    },
-    {
-      id: 'purpose',
-      title: 'Purpose',
-      include: true,
-      template: `
-## Purpose
-
-{{customContent.purpose}}
-      `.trim()
-    },
-    {
-      id: 'actions',
-      title: 'Actions',
-      include: true,
-      template: `
-## Actions
-
-{{#each workflow.actions}}
-### {{@index}}. {{this.name}}
-**Type:** {{this.type}}
-{{#if this.description}}
-**Description:** {{this.description}}
-{{/if}}
-
-{{/each}}
-      `.trim()
-    }
-  ]
-});
+// Creates the workflow's documentation from a template, by template name
+const applied = workflowDocumentation.applyTemplate(workflow.id, 'Standard Workflow', workflow);
 ```
 
-### Use Template
+## Action Comments
 
 ```typescript
-// Generate documentation using template
-const docs = workflowDocumentationService.generateFromTemplate(
-  workflow,
-  template,
-  {
-    purpose: 'This workflow automates the login process for testing.'
-  }
+const comment = workflowDocumentation.addActionComment(
+  workflow.id,
+  actionId,
+  'Waits for the login form to settle before typing',
 );
-```
 
-## Custom Documentation
-
-### Add Custom Documentation
-
-```typescript
-// Add custom documentation to workflow
-workflowDocumentationService.addCustomDocumentation(workflow.id, {
-  title: 'Setup Instructions',
-  content: `
-## Setup
-
-Before running this workflow:
-
-1. Ensure user account exists
-2. Verify test environment is running
-3. Check network connectivity
-  `.trim(),
-  position: 'before-actions'
-});
-
-// Add multiple sections
-workflowDocumentationService.addCustomDocumentation(workflow.id, {
-  title: 'Troubleshooting',
-  content: `
-## Common Issues
-
-### Login Fails
-- Check credentials are correct
-- Verify account is not locked
-
-### Timeout Errors
-- Increase timeout values
-- Check network speed
-  `.trim(),
-  position: 'end'
-});
-```
-
-### Markdown Support
-
-```typescript
-// Use full markdown features
-const docs = `
-# Workflow Documentation
-
-## Overview
-
-This workflow handles **user authentication** with the following features:
-
-- Username/password login
-- Session management
-- Error handling
-
-## Code Example
-
-\`\`\`javascript
-const result = await loginWorkflow.execute({
-  username: 'user@example.com',
-  password: 'secure123'
-});
-\`\`\`
-
-## Diagram
-
-![Login Flow](./diagrams/login-flow.png)
-
-## Notes
-
-> **Warning:** This workflow requires valid credentials.
-
-## Checklist
-
-- [ ] User registered
-- [ ] Environment configured
-- [ ] Network accessible
-`;
-
-workflowDocumentationService.setCustomDocumentation(workflow.id, docs);
+const comments = workflowDocumentation.getAllActionComments(workflow.id);
 ```
 
 ## Export Formats
 
-### Export as Markdown
-
 ```typescript
-// Export documentation as markdown
-const markdown = workflowDocumentationService.exportDocumentation(
-  workflow.id,
-  'markdown'
-);
+// One workflow; returns null when it has no stored documentation
+const markdown = workflowDocumentation.exportDocumentation(workflow.id, {
+  format: 'markdown',
+  includeTOC: true,
+  includeComments: true,
+});
 
-// Save to file
-const blob = new Blob([markdown], { type: 'text/markdown' });
-downloadFile(blob, `${workflow.name}.md`);
-```
+const html = workflowDocumentation.exportDocumentation(workflow.id, { format: 'html' });
 
-### Export as HTML
-
-```typescript
-// Export as HTML
-const html = workflowDocumentationService.exportDocumentation(
-  workflow.id,
-  'html'
-);
-
-// HTML includes styling and formatting
-const htmlWithStyles = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>${workflow.name} - Documentation</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
-    h1 { color: #333; }
-    h2 { color: #666; border-bottom: 1px solid #ddd; }
-    code { background: #f5f5f5; padding: 2px 6px; }
-  </style>
-</head>
-<body>
-  ${html}
-</body>
-</html>
-`;
-```
-
-### Export as JSON
-
-```typescript
-// Export structured documentation as JSON
-const json = workflowDocumentationService.exportDocumentationJSON(workflow.id);
-
-const data = JSON.parse(json);
-console.log(data.title);
-console.log(data.sections);
+// Every stored document, or a project README covering a set of workflows
+const all = workflowDocumentation.exportAllDocumentation({ format: 'markdown' });
+const readme = workflowDocumentation.exportProjectReadme(workflows);
 ```
 
 ## Best Practices
@@ -315,122 +95,18 @@ console.log(data.sections);
 ### Keep Documentation Updated
 
 ```typescript
-// Update documentation when workflow changes
-function updateWorkflow(workflow: Workflow): void {
-  // Make changes
-  saveWorkflow(workflow);
+function refreshDocumentation(workflow: Workflow): void {
+  const docs = workflowDocumentation.generateDocumentation(workflow);
 
-  // Regenerate documentation
-  const docs = workflowDocumentationService.generateDocumentation(workflow);
-
-  // Update custom sections if needed
-  workflowDocumentationService.updateDocumentation(workflow.id, docs);
+  if (workflowDocumentation.hasDocumentation(workflow.id)) {
+    workflowDocumentation.updateDocumentation(workflow.id, docs, 'Regenerated');
+  } else {
+    workflowDocumentation.createDocumentation(workflow.id, docs);
+  }
 }
-```
-
-### Include Examples
-
-```typescript
-// Add usage examples
-const exampleSection = `
-## Usage Examples
-
-### Basic Usage
-
-\`\`\`typescript
-const result = await workflow.execute({
-  username: 'test@example.com',
-  password: 'Test123!'
-});
-
-if (result.success) {
-  console.log('Login successful:', result.sessionToken);
-}
-\`\`\`
-
-### With Error Handling
-
-\`\`\`typescript
-try {
-  const result = await workflow.execute(credentials);
-  handleSuccess(result);
-} catch (error) {
-  handleError(error);
-}
-\`\`\`
-`;
-
-workflowDocumentationService.addCustomDocumentation(workflow.id, {
-  title: 'Usage Examples',
-  content: exampleSection
-});
-```
-
-### Document Dependencies
-
-```typescript
-// Auto-document dependencies
-const dependencies = workflowDependencyAnalyzer.getDependencies(workflow.id);
-
-const dependencyDocs = `
-## Dependencies
-
-This workflow depends on the following workflows:
-
-${dependencies.map(dep => `- ${dep.targetWorkflowName || dep.targetWorkflowId}`).join('\n')}
-
-## Used By
-
-This workflow is used by:
-
-${dependents.map(dep => `- ${dep.sourceWorkflowName || dep.sourceWorkflowId}`).join('\n')}
-`;
-```
-
-### Include Visual Diagrams
-
-```typescript
-// Add diagram references
-const visualDocs = `
-## Workflow Diagram
-
-![Workflow Flow](./diagrams/${workflow.id}-flow.png)
-
-## State Diagram
-
-![State Transitions](./diagrams/${workflow.id}-states.png)
-`;
-```
-
-## Advanced Features
-
-### Multi-Language Support
-
-```typescript
-// Generate documentation in multiple languages
-const docs_en = workflowDocumentationService.generateDocumentation(workflow, {
-  language: 'en',
-  translations: translations_en
-});
-
-const docs_es = workflowDocumentationService.generateDocumentation(workflow, {
-  language: 'es',
-  translations: translations_es
-});
-```
-
-### Interactive Documentation
-
-```typescript
-// Generate interactive documentation with code samples
-const interactiveDocs = workflowDocumentationService.generateInteractive(workflow, {
-  includeTryIt: true,
-  includeCodeSamples: true,
-  includeVideoWalkthrough: true
-});
 ```
 
 ## See Also
 
-- [Organization Guide](./organization.md) - Organize documentation
+- [Organization Guide](./organization.md) - Organize workflows
 - [Best Practices](./best-practices.md) - Documentation best practices

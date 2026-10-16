@@ -277,6 +277,8 @@ describe("consent UX at the Dev Ops mount", () => {
       max_concurrent_builds: null,
       repo_allowlist: [],
       min_free_disk_gb: 20,
+      // Model access is unset (the machine expresses no opinion), never on.
+      model_access: null,
     });
     expect(screen.getByTestId("ci-node-enabled")).toHaveAttribute(
       "data-state",
