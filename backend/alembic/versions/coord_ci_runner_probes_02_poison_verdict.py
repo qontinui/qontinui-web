@@ -1,7 +1,7 @@
 """coord.ci_runner_probes.poison_verdict_at_dispatch - the poison verdict read when the canary was dispatched
 
 Revision ID: coord_ci_runner_probes_02
-Revises: ingcred_01
+Revises: coord_tenant_github_hosts_01
 Create Date: 2026-10-16
 
 Phase 1 item 0 of plan
@@ -37,7 +37,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_ci_runner_probes_02"
-down_revision: str | Sequence[str] | None = "ingcred_01"
+down_revision: str | Sequence[str] | None = "coord_tenant_github_hosts_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
