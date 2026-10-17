@@ -205,8 +205,9 @@ _PATH_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 #: look-alike characters outside these categories (variation selectors,
 #: U+034F, U+3164, the NFC and NFD spellings of one name) are accepted. A
 #: path is part of a page's identity, so it is refused rather than edited
-#: (``files.py`` instead strips ``Cf`` from an upload's display name).
-_PATH_ALLOWED_FORMAT_CHARS = frozenset(
+#: (``files.py`` instead strips the other ``Cf`` characters from an upload's
+#: display name, and keeps these).
+SPELLING_FORMAT_CHARS = frozenset(
     "\u00ad\u200c\u200d"
     "\u0600\u0601\u0602\u0603\u0604\u0605\u06dd\u070f\u0890\u0891\u08e2"
     "\U000110bd\U000110cd"
@@ -222,9 +223,7 @@ def _is_path_forbidden_char(c: str) -> bool:
         # refused for being new.
         cp = ord(c)
         return cp == 0x2065 or 0xFFF0 <= cp <= 0xFFF8 or 0xE0000 <= cp <= 0xE0FFF
-    return (
-        category in _PATH_FORBIDDEN_CATEGORIES and c not in _PATH_ALLOWED_FORMAT_CHARS
-    )
+    return category in _PATH_FORBIDDEN_CATEGORIES and c not in SPELLING_FORMAT_CHARS
 
 
 #: A git COMMIT sha — the newest commit on the published ref touching the
