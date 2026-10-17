@@ -104,12 +104,15 @@ async def _newest_row_id(
 @router.post("/labels")
 async def post_overlord_label(
     payload: OverlordLabelRequest,
-    _tenant_id: UUID = Depends(require_coord_tenant_admin),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Append the operator's label to an intervention; return coord's new row."""
     try:
         headers = await coord_service_account._headers(str(current_user.id))  # noqa: SLF001
+        # The service token is tenant-blind: coord takes the tenant from this
+        # header, trusting it on the same terms as X-Qontinui-User-Id.
+        headers["X-Qontinui-Active-Tenant"] = str(tenant_id)
     except CoordServiceAccountDisabledError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

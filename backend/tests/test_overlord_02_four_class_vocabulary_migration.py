@@ -104,10 +104,23 @@ def test_overlord_02_marks_legacy_rows_and_enforces_the_four_class_vocabulary() 
     with ephemeral_database(admin_database_url(), "overlord02_test") as (engine, url):
         run_alembic(root, url, "upgrade", _PRIOR_REVISION_ID)
 
-        legacy_d, legacy_labelled_c, plain_a = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        legacy_d, legacy_labelled_c, plain_a, late_d = (
+            uuid.uuid4(),
+            uuid.uuid4(),
+            uuid.uuid4(),
+            uuid.uuid4(),
+        )
         with engine.begin() as conn:
             conn.execute(_LEGACY_INSERT, {"id": legacy_d, "tid": _TENANT, "stop_class": "D", "label": None})
             conn.execute(_LEGACY_INSERT, {"id": legacy_labelled_c, "tid": _TENANT, "stop_class": "A", "label": "C"})
+            conn.execute(
+                text(
+                    "INSERT INTO coord.overlord_interventions "
+                    "(id, intervention_id, tenant_id, stop_class, verb, mode, observed_at) "
+                    "VALUES (:id, :id, :tid, 'D', 'nudge', 'live', '2027-01-01T00:00:00+00')"
+                ),
+                {"id": late_d, "tid": _TENANT},
+            )
             conn.execute(_LEGACY_INSERT, {"id": plain_a, "tid": _TENANT, "stop_class": "A", "label": "A"})
 
         run_alembic(root, url, "upgrade", _REVISION_ID)
@@ -128,6 +141,9 @@ def test_overlord_02_marks_legacy_rows_and_enforces_the_four_class_vocabulary() 
         assert rows[legacy_d] == ("D", True, None, None, None)
         assert rows[legacy_labelled_c] == ("A", True, "C", "class", "unknown")
         assert rows[plain_a] == ("A", False, "A", "class", "unknown")
+        # A legacy-lettered row written AFTER the authoring floor (the old coord
+        # keeps accepting C/D/F until redeployed) must not abort the upgrade.
+        assert rows[late_d] == ("D", True, None, None, None)
 
         def refused(**kw: object) -> None:
             with pytest.raises(IntegrityError):
@@ -148,7 +164,8 @@ def test_overlord_02_marks_legacy_rows_and_enforces_the_four_class_vocabulary() 
 
         # A legacy row keeps its letter, but only before the cutoff.
         accepted(stop_class="D", legacy=True, observed_at="2026-10-05T00:00:00+00")
-        refused(stop_class="D", legacy=True, observed_at="2026-10-20T00:00:00+00")
+        # The cutoff is one second past the newest legacy row (late_d, 2027-01-01).
+        refused(stop_class="D", legacy=True, observed_at="2027-02-01T00:00:00+00")
 
         # The new outcomes.
         for outcome in ("queued", "reopened", "finished"):
