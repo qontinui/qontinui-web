@@ -4,7 +4,7 @@
  */
 // Next names this route after this file's own source: the line below moves
 // with the card's look ("Cache-busting" in @/lib/server/social-card).
-// card-inputs: d2af5ac3da231dc9
+// card-inputs: 12bcfd98c627f356
 import {
   renderSocialCard,
   SOCIAL_CARD_ALT,

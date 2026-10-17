@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Download, Github, Eye, ArrowRight } from "lucide-react";
+import { SceneEmbed } from "@/components/studio/scene-embed";
+import { HERO_SCENE } from "@/components/studio/scenes";
 import { getDownloadLabel } from "../_hooks/use-landing-page";
 
 interface HeroSectionProps {
@@ -14,22 +16,23 @@ interface HeroSectionProps {
 
 export function HeroSection({ platform, handleDownload }: HeroSectionProps) {
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
-      <div className="absolute inset-0 dot-grid animate-pulse" />
+    <section className="relative overflow-hidden pt-28 pb-16">
+      <div className="absolute inset-0 dot-grid" />
       <div className="container mx-auto px-4 text-center relative z-10">
         <Badge className="mb-6 bg-green-500/20 text-green-300 border-green-500/30">
           Free & Open Source
         </Badge>
 
         <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 text-balance">
-          AI Development That{" "}
-          <span className="text-primary">Verifies Its Own Work</span>
+          State the intent.{" "}
+          <span className="text-primary">The factory builds it.</span>
         </h1>
 
         <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto text-pretty">
-          An open-source desktop app that orchestrates AI coding sessions with
-          verification loops, error monitoring, and visual feedback. Bring your
-          own AI provider — no vendor lock-in.
+          Qontinui is an open-source software factory for your own codebase. A
+          fleet of AI agents plans, implements, tests and lands changes in
+          parallel, against a digital twin of your development process, so they
+          answer their own questions instead of asking you.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -68,6 +71,14 @@ export function HeroSection({ platform, handleDownload }: HeroSectionProps) {
             Build from source
           </a>
         </p>
+
+        <SceneEmbed
+          scene={HERO_SCENE}
+          autoPlay
+          loop
+          priority
+          className="mt-12 max-w-5xl mx-auto text-left"
+        />
 
         <div className="mt-12 max-w-xl mx-auto">
           <Link href="/visual">
