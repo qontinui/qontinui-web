@@ -26,6 +26,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import get_current_active_user_async
+from app.api.v1.endpoints.agent_sessions import ACTIVE_TENANT_HEADER
 from app.api.v1.endpoints.operations import require_coord_tenant_admin
 from app.core.config import settings
 from app.models.user import User
@@ -111,8 +112,9 @@ async def post_overlord_label(
     try:
         headers = await coord_service_account._headers(str(current_user.id))  # noqa: SLF001
         # The service token is tenant-blind: coord takes the tenant from this
-        # header, trusting it on the same terms as X-Qontinui-User-Id.
-        headers["X-Qontinui-Active-Tenant"] = str(tenant_id)
+        # header (the membership-checked tenant require_coord_tenant_admin resolved),
+        # trusting it on the same terms as X-Qontinui-User-Id.
+        headers[ACTIVE_TENANT_HEADER] = str(tenant_id)
     except CoordServiceAccountDisabledError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

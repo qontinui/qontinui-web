@@ -454,6 +454,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/coord/overlord/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Overlord Label
+         * @description Append the operator's label to an intervention; return coord's new row.
+         */
+        post: operations["api_v1_admin_coord_overlord_labels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/download-analytics": {
         parameters: {
             query?: never;
@@ -39860,6 +39880,11 @@ export interface components {
             tokens_total?: number | null;
         };
         /**
+         * LabelKind
+         * @enum {string}
+         */
+        LabelKind: "class" | "false_finish";
+        /**
          * LearnedWorkflowResponse
          * @description Schema for learned workflow response.
          */
@@ -42399,6 +42424,11 @@ export interface components {
             truncated: boolean | null;
         };
         /**
+         * OperatorLabel
+         * @enum {string}
+         */
+        OperatorLabel: "A" | "B" | "E";
+        /**
          * OrganizationCreate
          * @description Schema for creating a new organization.
          */
@@ -42544,6 +42574,19 @@ export interface components {
             retry_count: number;
             /** Success */
             success: boolean;
+        };
+        /**
+         * OverlordLabelRequest
+         * @description ``extra='forbid'``: a stray ``label_source`` is a 422, not ignored.
+         */
+        OverlordLabelRequest: {
+            /**
+             * Intervention Id
+             * Format: uuid
+             */
+            intervention_id: string;
+            label_kind: components["schemas"]["LabelKind"];
+            operator_label?: components["schemas"]["OperatorLabel"] | null;
         };
         /**
          * OverviewSettingsRead
@@ -56946,6 +56989,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_admin_coord_overlord_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverlordLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
