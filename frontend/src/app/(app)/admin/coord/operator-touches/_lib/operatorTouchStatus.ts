@@ -552,6 +552,14 @@ export function deriveTouchesHealth(input: {
           : "every input to the verdict was read",
   };
   const stale = failed ? staleDetail("") + " " : "";
+  // A capacity verdict does not depend on the touch store, so a touch input
+  // that is unmeasured or unknown must not hide it — it rides in the detail
+  // line of both of those arms.
+  const capacity = verdictKind(verdict);
+  const capacityNote = (touchInput: string) =>
+    capacity === "machines" || capacity === "tokens"
+      ? `${VERDICT_HEADLINE[capacity]} (the touch input is ${touchInput}). `
+      : "";
 
   if (head.measurement !== "measured" && head.measurement !== "not_yet_measured") {
     // Only coord's two words are understood. Anything else — a newer word or
@@ -561,6 +569,7 @@ export function deriveTouchesHealth(input: {
       headline: "Unknown — coord reported a measurement this page does not know",
       detail:
         stale +
+        capacityNote("unknown") +
         "no count can be stated, so each is a dash rather than a zero",
       badges: [...dashBadges(), verdictBadge],
       headlineTitle: verdict?.reason ?? null,
@@ -569,19 +578,12 @@ export function deriveTouchesHealth(input: {
   }
 
   if (head.measurement === "not_yet_measured") {
-    // A capacity verdict does not depend on the touch store, so an empty
-    // store must not hide it — it rides in the detail line.
-    const capacity = verdictKind(verdict);
-    const capacityNote =
-      capacity === "machines" || capacity === "tokens"
-        ? `${VERDICT_HEADLINE[capacity]} (the touch input is not yet measured). `
-        : "";
     return {
       level: "amber",
       headline: "Not yet measured — the touch emitter has not run",
       detail:
         stale +
-        capacityNote +
+        capacityNote("not yet measured") +
         "no operator touch has ever been recorded for this tenant, so every count is absent evidence, not a zero",
       badges: [...dashBadges(), verdictBadge],
       headlineTitle: verdict?.reason ?? null,
