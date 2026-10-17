@@ -28831,8 +28831,16 @@
         "type": "object"
       },
       "KindForkGroup": {
-        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.",
+        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.\n\n``family`` names which kind family forked: ``\"spec\"`` (the specification\nkinds) or ``\"plan\"`` (every other kind). Kinds are counted within one\nfamily, so a key forked in BOTH families is two groups sharing\n``(slug, source_repo)``; ``family`` is what tells them apart.",
         "properties": {
+          "family": {
+            "enum": [
+              "spec",
+              "plan"
+            ],
+            "title": "Family",
+            "type": "string"
+          },
           "kinds": {
             "items": {
               "type": "string"
@@ -28874,6 +28882,7 @@
         "required": [
           "slug",
           "source_repo",
+          "family",
           "kinds",
           "variant_count",
           "resolvable",
@@ -63549,6 +63558,17 @@
             ],
             "title": "Source Repo"
           },
+          "spec_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Ref"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -63590,6 +63610,7 @@
           "kind",
           "kind_locked",
           "slug",
+          "spec_ref",
           "title",
           "status",
           "content_sha256",
@@ -63677,7 +63698,12 @@
               "supersedes",
               "depends_on",
               "spawned_followup",
-              "refutes"
+              "refutes",
+              "derives_from",
+              "refines",
+              "implements",
+              "verifies",
+              "traces_to"
             ],
             "title": "Relation",
             "type": "string"
@@ -63861,7 +63887,13 @@
               "investigation_report",
               "handoff",
               "plan",
-              "diagnostic"
+              "diagnostic",
+              "request",
+              "requirement",
+              "interface_mapping",
+              "story",
+              "test_case",
+              "doc_correction"
             ],
             "title": "Kind",
             "type": "string"
@@ -64196,6 +64228,17 @@
             ],
             "title": "Source Repo"
           },
+          "spec_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Ref"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -64230,6 +64273,7 @@
           "kind",
           "kind_locked",
           "slug",
+          "spec_ref",
           "title",
           "status",
           "content_sha256",
@@ -64317,7 +64361,13 @@
               "investigation_report",
               "handoff",
               "plan",
-              "diagnostic"
+              "diagnostic",
+              "request",
+              "requirement",
+              "interface_mapping",
+              "story",
+              "test_case",
+              "doc_correction"
             ],
             "title": "Kind",
             "type": "string"
@@ -108314,6 +108364,24 @@
               ],
               "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
               "title": "Intent Ref"
+            }
+          },
+          {
+            "description": "Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization.",
+            "in": "query",
+            "name": "spec_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization.",
+              "title": "Spec Ref"
             }
           },
           {
