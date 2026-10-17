@@ -1,7 +1,7 @@
 """web.taste_pairs + web.taste_label_clock + web.taste_settings — the taste inbox
 
 Revision ID: taste_inbox_01
-Revises: coord_tenant_github_hosts_01
+Revises: coord_ci_runner_probes_02
 Create Date: 2026-10-15
 
 Phase 23 of plan ``2026-10-13-image-generation-and-visual-judgment``
@@ -102,7 +102,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "taste_inbox_01"
-down_revision: str = "coord_tenant_github_hosts_01"
+down_revision: str = "coord_ci_runner_probes_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

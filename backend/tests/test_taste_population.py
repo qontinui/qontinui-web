@@ -32,7 +32,7 @@ arming tests (``qontinui-claude-config/scripts/arming-record.sh``).
 from __future__ import annotations
 
 import io
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -52,6 +52,7 @@ from app.api.v1.endpoints import operations as operations_ep
 from app.models.user import User
 from app.services import storage as storage_module
 from app.services.coord_identity import CoordIdentity, CoordTenant
+from tests._ops_patch import patch_ops, setattr_ops
 
 pytestmark = pytest.mark.asyncio
 
@@ -133,9 +134,9 @@ async def world(
             is_admin="admin" in w.roles,
         )
 
-    monkeypatch.setattr(
-        operations_ep, "get_coord_identity", AsyncMock(side_effect=_identity)
-    )
+    # Every operations module that binds the name, not just the package:
+    # the admin gate may live in a submodule (tests/_ops_patch.py).
+    setattr_ops(monkeypatch, "get_coord_identity", AsyncMock(side_effect=_identity))
 
     saved = dict(app.dependency_overrides)
     app.dependency_overrides[get_async_db] = _db
@@ -171,18 +172,13 @@ async def _admin_target(roles: tuple[str, ...], user: User, home: UUID) -> UUID:
         tenants=(CoordTenant(tenant_id=home, slug="tenant-a", roles=roles),),
         is_admin="admin" in roles,
     )
-    patched: Callable[..., Any] = AsyncMock(return_value=identity)
-    original = operations_ep.get_coord_identity
-    operations_ep.get_coord_identity = patched  # type: ignore[assignment]
-    try:
+    with patch_ops("get_coord_identity", AsyncMock(return_value=identity)):
         admin_home = await operations_ep.require_coord_tenant_admin(
             request=request, current_user=user
         )
         return await operations_ep.require_coord_tenant_admin_target(
             request=request, home_tenant_id=admin_home
         )
-    finally:
-        operations_ep.get_coord_identity = original  # type: ignore[assignment]
 
 
 def _bearer(device: str) -> dict[str, str]:
