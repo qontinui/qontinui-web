@@ -16,7 +16,11 @@ what this file pins:
   ``source_repo`` not in lowercase, half a source, a ``source_sha`` with no
   source — for any writer, the model declares the same three, and they go
   with a downgrade;
-* up → down → up leaves no residue, and the pre-existing page survives.
+* up → down → up leaves no residue, and the pre-existing page survives;
+* a re-run after a partial upgrade converges, whether the CHECKs it finds are
+  validated or still NOT VALID;
+* no code outside ``downgrade`` removes anything, which is what lets coord's
+  alembic re-point move the revision onto a newer main head (its E6 clause).
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable (``QONTINUI_TEST_PG`` /
@@ -25,6 +29,8 @@ test Postgres, skipped when none is reachable (``QONTINUI_TEST_PG`` /
 
 from __future__ import annotations
 
+import ast
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -44,7 +50,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "overview_05_page_sources"
-_PARENT_REVISION_ID = "taste_inbox_01"
+_PARENT_REVISION_ID = "fleet_policy_egress_01_transcript_sync"
 _REVISION_FILENAME = "overview_05_page_sources.py"
 
 #: (table, column, information_schema.data_type)
@@ -93,6 +99,66 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
         f"{_REVISION_FILENAME} declares down_revision={declared!r} but this test "
         f"pins {_PARENT_REVISION_ID!r}; re-point both together"
     )
+
+
+#: The destructive tokens coord's alembic re-point refuses outside
+#: ``downgrade()`` (clause E6), copied verbatim from qontinui-coord
+#: ``crates/coord/src/alembic_repoint_plan.rs`` ``DESTRUCTIVE_TOKENS`` and matched
+#: over lowercased, whitespace-collapsed code, as E6 matches them. E6 reads the
+#: raw source; this test reads ``ast.unparse`` output, which spells a newline or
+#: tab inside a string as a backslash escape, so those are turned back into
+#: spaces first.
+_E6_DESTRUCTIVE_TOKENS = re.compile(
+    r"\.drop_"
+    r"|\bdrop_(?:table|column|index|constraint|schema)\("
+    r"|\bdrop(?:table|index|constraint|schema|column|sequence)\b"
+    r"|\bdrop (?:materialized view|table|column|schema|index|constraint|type|view"
+    r"|sequence|function|procedure|trigger|extension|database)\b"
+    r"|\btruncate\b"
+    r"|\bdelete from\b"
+    r"|\bdelete ?\("
+    r"|\balter table\b[^;]{0,300}?\bdrop\b"
+)
+
+
+def test_nothing_outside_downgrade_removes_anything() -> None:
+    """coord re-points this revision onto a newer main head only when no code
+    outside ``downgrade`` carries a destructive token (its alembic re-point's E6
+    clause). This revision once dropped each CHECK before re-adding it, which
+    made every later main revision a fork that only a hand edit could fix."""
+    module = ast.parse(_revision_source())
+    # Docstrings are prose, which E6 does not read either.
+    for owner in ast.walk(module):
+        if isinstance(
+            owner, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            body = owner.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                owner.body = body[1:] or [ast.Pass()]
+    code = " ".join(
+        ast.unparse(node)
+        for node in module.body
+        if not (isinstance(node, ast.FunctionDef) and node.name == "downgrade")
+    )
+    assert "def upgrade" in code and "VALIDATE CONSTRAINT" in code, (
+        "the scan did not read upgrade()"
+    )
+    # A statement at column 0 of a multi-line string would otherwise sit right
+    # after an escape's letter, out of reach of a word boundary.
+    for escape in (chr(92) + "n", chr(92) + "t"):
+        code = code.replace(escape, " ")
+    normalized = " ".join(code.lower().split())
+    removal = _E6_DESTRUCTIVE_TOKENS.search(normalized)
+    if removal is not None:
+        context = normalized[max(removal.start() - 60, 0) : removal.end() + 60]
+        pytest.fail(
+            f"{_REVISION_FILENAME} removes something outside downgrade(): {context!r}"
+        )
 
 
 def test_the_models_declare_the_same_columns() -> None:
@@ -219,9 +285,38 @@ def test_upgrade_shape_the_partial_unique_index_and_a_clean_round_trip(
 def test_a_rerun_after_a_partial_upgrade_converges(_admin_url: str) -> None:
     """The CHECKs commit before the index build; a build that then fails
     leaves the version unstamped, and the re-run must not trip over the
-    constraints the first run already added (drop-then-add)."""
+    constraints the first run already added (each is added only when absent)."""
     with ephemeral_database(_admin_url, "overview_05_rerun") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        assert _checks(engine) == dict.fromkeys(_CHECKS, True)
+        assert index_exists(engine, "uq_overview_pages_source", schema="overview")
+
+
+def test_a_rerun_validates_the_checks_a_killed_validate_left_not_valid(
+    _admin_url: str,
+) -> None:
+    """A run killed during VALIDATE leaves the CHECKs on the table NOT VALID and
+    the index unbuilt. The re-run finds a CHECK of each name, so it adds none,
+    and it must still validate all three and build the index."""
+    with ephemeral_database(_admin_url, "overview_05_notvalid") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE pg_constraint SET convalidated = false "
+                        "WHERE conrelid = 'overview.pages'::regclass "
+                        "AND conname = ANY(:names)"
+                    ),
+                    {"names": list(_CHECKS)},
+                )
+        except Exception as exc:  # noqa: BLE001 — needs a superuser
+            pytest.skip(f"cannot mark a CHECK NOT VALID here: {exc}")
+        with engine.begin() as conn:
+            conn.execute(text("DROP INDEX overview.uq_overview_pages_source"))
+        assert _checks(engine) == dict.fromkeys(_CHECKS, False)
         run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert _checks(engine) == dict.fromkeys(_CHECKS, True)
