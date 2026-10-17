@@ -275,6 +275,13 @@ async function press(
   });
 }
 
+/** Press a key wherever focus REALLY is — no target chosen by the test. */
+async function pressFocused(key: string) {
+  await act(async () => {
+    fireEvent.keyDown(document.activeElement ?? document.body, { key });
+  });
+}
+
 /** A colleague answered `id` after the viewer's labels. */
 function colleagueLabels(id: string) {
   const row = server.rows.find((r) => r.id === id)!;
@@ -409,6 +416,38 @@ describe("the taste inbox", () => {
     await press("u", region);
     await settle("p1");
     expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
+  });
+
+  it("focus follows the answer across the swap, both ways", async () => {
+    seed(1);
+    render(<TasteInboxPage />);
+    await settle("p1");
+    act(() => card().focus());
+    expect(document.activeElement).toBe(card());
+
+    await pressFocused("a"); // the last pair: the card gives way to the panel
+    const region = await screen.findByTestId("taste-done-region");
+    await waitFor(() => expect(document.activeElement).toBe(region));
+
+    await pressFocused("u"); // the undo brings the pair back
+    await settle("p1");
+    await waitFor(() => expect(document.activeElement).toBe(card()));
+    expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
+  });
+
+  it("focus the operator put elsewhere is never taken by the swap", async () => {
+    seed(1);
+    render(<TasteInboxPage />);
+    await settle("p1");
+    fireEvent.click(screen.getByTestId("taste-choose-a")); // a click, not a key
+    await screen.findByTestId("taste-done-region");
+    const row = screen.getByTestId("taste-recent-p1");
+    fireEvent.click(within(row).getAllByRole("button")[0]!);
+    const undoButton = await screen.findByTestId("taste-undo-p1");
+    act(() => undoButton.focus());
+    fireEvent.click(undoButton);
+    await settle("p1");
+    expect(document.activeElement).not.toBe(card());
   });
 
   it("u does nothing when every recent label is a colleague's", async () => {

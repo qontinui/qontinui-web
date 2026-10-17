@@ -172,6 +172,14 @@ class TasteLabelWrite(BaseModel):
             raise ValueError("reasons must not repeat")
         return value
 
+    @model_validator(mode="after")
+    def _force_needs_relabel(self) -> TasteLabelWrite:
+        # force widens a relabel; on a first answer it would be silently
+        # ignored, which hides a caller's mistake.
+        if self.force and not self.relabel:
+            raise ValueError("force is sent only with relabel: true")
+        return self
+
     @field_validator("comment", "edit_note")
     @classmethod
     def _blank_is_none(cls, value: str | None) -> str | None:

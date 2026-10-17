@@ -51,7 +51,7 @@ judge panel; until then the calibration batch is the queue.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Any, Final, cast
+from typing import Annotated, Any, Final, Literal, cast
 from uuid import UUID
 
 import structlog
@@ -542,7 +542,7 @@ async def _label_refusal(
     pair_id: UUID,
     reason: crud.LabelRefusal,
     *,
-    verb: str,
+    verb: Literal["replace", "undo"],
 ) -> HTTPException:
     """The refusal for a label write that changed nothing. The write's
     savepoint has already rolled back, so the feed clock is released before
@@ -550,10 +550,20 @@ async def _label_refusal(
     if reason == "absent":
         return _pair_not_found()
     if reason == "not_labelled":
+        if verb == "undo":
+            return _refusal(
+                status.HTTP_409_CONFLICT,
+                "pair_not_labelled",
+                "This pair has no label to undo.",
+            )
+        # A label write cannot miss on an unanswered pair unless the pair
+        # changed under it (a concurrent undo between its UPDATE and this
+        # re-read): say so, rather than talk about an undo nobody asked for.
         return _refusal(
             status.HTTP_409_CONFLICT,
-            "pair_not_labelled",
-            "This pair has no label to undo.",
+            "pair_changed_meanwhile",
+            "This pair changed while the label was being saved; nothing was "
+            "changed. Read it again and answer it.",
         )
     existing = await crud.get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
     if existing is None:

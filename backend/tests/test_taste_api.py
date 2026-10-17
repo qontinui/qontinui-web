@@ -968,6 +968,35 @@ def test_only_the_asset_fks_count_as_a_deleted_image() -> None:
             ), name
 
 
+async def test_force_without_relabel_is_refused(a: Harness) -> None:
+    x, y = await _images(a, "x", "y")
+    pid = await a.pair_id(x, y)
+    resp = await a.label(pid, "a", force=True)
+    assert resp.status_code == 422, resp.text
+    row = await crud.get_pair(a.db, tenant_id=a.tenant, pair_id=UUID(pid))
+    assert row is not None and row.label is None
+    assert (await a.label(pid, "a", relabel=True, force=True)).status_code == 200
+
+
+async def test_a_label_write_that_loses_to_an_undo_says_the_pair_changed(
+    a: Harness,
+) -> None:
+    """The route-specific sentence for a lost race: the label route never
+    answers with the undo route's "no label to undo"."""
+    label = await endpoints._label_refusal(
+        a.db, a.tenant, uuid4(), "not_labelled", verb="replace"
+    )
+    assert label.status_code == 409
+    assert isinstance(label.detail, dict)
+    assert label.detail["error"] == "pair_changed_meanwhile"
+    assert "undo" not in label.detail["message"]
+    undo = await endpoints._label_refusal(
+        a.db, a.tenant, uuid4(), "not_labelled", verb="undo"
+    )
+    assert isinstance(undo.detail, dict)
+    assert undo.detail["error"] == "pair_not_labelled"
+
+
 class TestWithdrawGate:
     async def test_an_operator_withdraws_only_when_they_may_label(
         self, a: Harness

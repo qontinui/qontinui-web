@@ -30,6 +30,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -116,6 +117,29 @@ export default function TasteInboxPage() {
   const editRef = useRef<HTMLTextAreaElement>(null);
   const cardRef = useRef<HTMLElement>(null);
 
+  // Focus follows the answer across the card / panel swap. A write that
+  // starts with focus inside the current surface marks it; when the surface
+  // then swaps (the last pair answered, an undo that brings one back, "keep
+  // labelling"), the old element unmounts and focus falls to <body> — so the
+  // new surface takes it, and the next key still lands. Focus the user moved
+  // elsewhere is never taken.
+  const carryFocus = useRef(false);
+  const markFocus = useCallback(() => {
+    carryFocus.current =
+      cardRef.current?.contains(document.activeElement) ?? false;
+  }, []);
+  const surface = head ? "card" : inbox ? "panel" : "none";
+  const lastSurface = useRef(surface);
+  useLayoutEffect(() => {
+    if (lastSurface.current === surface) return;
+    lastSurface.current = surface;
+    const lost =
+      document.activeElement === null ||
+      document.activeElement === document.body;
+    if (carryFocus.current && lost) cardRef.current?.focus();
+    carryFocus.current = false;
+  }, [surface]);
+
   const [shortcutsOn, setShortcutsOn] = useState(true);
   useEffect(() => setShortcutsOn(readShortcutsPreference()), []);
   const changeShortcuts = useCallback((on: boolean) => {
@@ -126,6 +150,7 @@ export default function TasteInboxPage() {
   const choose = useCallback(
     (choice: TasteLabel) => {
       if (!head || busy) return;
+      markFocus();
       void label(head.id, {
         choice,
         reasons: draft.reasons,
@@ -135,18 +160,22 @@ export default function TasteInboxPage() {
         force: false,
       });
     },
-    [head, busy, label, draft]
+    [head, busy, label, draft, markFocus]
   );
 
   const skipHead = useCallback(() => {
-    if (head && !busy) void skip(head.id);
-  }, [head, busy, skip]);
+    if (!head || busy) return;
+    markFocus();
+    void skip(head.id);
+  }, [head, busy, skip, markFocus]);
 
   /** `u`: the newest label THIS viewer gave — never a colleague's. */
   const ownLast = newestOwnLabel(inbox?.recent ?? [], inbox?.viewer_user_id);
   const undoOwnLast = useCallback(() => {
-    if (ownLast && !busy) void undo(ownLast.id);
-  }, [ownLast, busy, undo]);
+    if (!ownLast || busy) return;
+    markFocus();
+    void undo(ownLast.id);
+  }, [ownLast, busy, undo, markFocus]);
 
   const onCardKey = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
@@ -266,7 +295,10 @@ export default function TasteInboxPage() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => setOverBudget(true)}
+                  onClick={() => {
+                    markFocus();
+                    setOverBudget(true);
+                  }}
                   data-testid="taste-keep-going"
                 >
                   Keep labelling anyway
