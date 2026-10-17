@@ -35,7 +35,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,8 +65,26 @@ class ImageAssetGone(LookupError):
     the composite FK to ``web.image_assets`` refused the row."""
 
 
+#: The composite FKs from a pair to ``web.image_assets`` — the images a write
+#: names. Not the user FKs (labeller, remover), which are SET NULL and never a
+#: deleted-image race.
+ASSET_FKS: tuple[str, ...] = (
+    "fk_taste_pairs_asset_a",
+    "fk_taste_pairs_asset_b",
+    "fk_taste_pairs_capture_a",
+    "fk_taste_pairs_capture_b",
+    "fk_taste_pairs_edit_asset",
+)
+
+
 def _is_asset_fk_violation(exc: IntegrityError) -> bool:
-    return "fk_taste_pairs_" in str(exc.orig)
+    constraint = getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None)
+    if constraint is None:
+        constraint = getattr(exc.orig, "constraint_name", None)
+    if constraint is not None:
+        return constraint in ASSET_FKS
+    text = str(exc.orig)
+    return any(f'"{name}"' in text for name in ASSET_FKS)
 
 
 def week_start(now: datetime) -> datetime:
@@ -220,7 +238,7 @@ async def list_labels(
 ) -> tuple[Sequence[TastePair], bool]:
     """The tenant's label feed in position order: every pair that has ever
     been answered, at its LATEST change — a label, a relabel, or an undo
-    (a tombstone: ``label`` NULL, ``undone_at`` set). ``truncated`` when more
+    (a tombstone: ``label`` NULL, ``removed_at`` set). ``truncated`` when more
     exist. A pair changed again moves to its new position, so a reader that
     replays the feed and keeps the last row per pair holds the current state.
     """
@@ -378,6 +396,55 @@ async def push_pair(
     return existing, False
 
 
+LabelRefusal = Literal["absent", "already_labelled", "not_labelled", "not_yours"]
+
+
+class _NoMatch(Exception):
+    """Raised inside a write's savepoint when its conditional UPDATE matched
+    no row, so the savepoint rolls back — taking the feed-clock tick and the
+    clock row's lock with it before the caller reads the row to say why."""
+
+
+def _removal_snapshot(actor_user_id: UUID, via: str, now: datetime) -> dict[str, Any]:
+    """SET clauses recording the answer a write is about to remove. Each
+    right-hand side reads the row as it WAS, so ``removed_label`` is the
+    answer removed; ``removed_forced`` is true only when that answer was
+    another labeller's (or a deleted user's)."""
+    return {
+        "removed_label": func.jsonb_build_object(
+            "label",
+            TastePair.label,
+            "reasons",
+            TastePair.reasons,
+            "comment",
+            TastePair.comment,
+            "edit_note",
+            TastePair.edit_note,
+            "edit_asset_sha256",
+            TastePair.edit_asset_sha256,
+            "labeller_user_id",
+            TastePair.labeller_user_id,
+            "labelled_at",
+            TastePair.labelled_at,
+        ),
+        "removed_forced": TastePair.labeller_user_id.is_distinct_from(actor_user_id),
+        "removed_by_user_id": actor_user_id,
+        "removed_at": now,
+        "removed_via": via,
+    }
+
+
+async def _refusal_reason(
+    db: AsyncSession, *, tenant_id: UUID, pair_id: UUID, relabel: bool
+) -> LabelRefusal:
+    existing = await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+    if existing is None:
+        return "absent"
+    if existing.label is None:
+        return "not_labelled"
+    return "not_yours" if relabel else "already_labelled"
+
+
 async def set_label(
     db: AsyncSession,
     *,
@@ -390,48 +457,72 @@ async def set_label(
     edit_asset_sha256: str | None,
     labeller_user_id: UUID,
     relabel: bool,
-) -> TastePair | None:
-    """Label the pair; None when no row matched (absent, or already labelled
-    and ``relabel`` was not asked for — the caller reads the row to say
-    which). A label clears the pair's skip: an answered pair is no longer
-    deferred. ``first_labelled_at`` is set once and kept, so the budget
-    charges the pair once."""
+    force: bool,
+) -> TastePair | LabelRefusal:
+    """Label the pair, or say why not: ``absent``; ``already_labelled``
+    (answered, and ``relabel`` was not asked for); ``not_yours`` (a relabel
+    of another labeller's answer without ``force``).
+
+    A relabel that replaces an answer records it as the pair's removal
+    (``removed_via = 'relabel'``), so a replaced answer is never lost. A label
+    clears the pair's skip. ``first_labelled_at`` is set once and kept, so the
+    budget charges the pair once.
+    """
     now = _now()
-    seq = await _next_change_seq(db, tenant_id=tenant_id)
     condition = [TastePair.tenant_id == tenant_id, TastePair.id == pair_id]
-    if not relabel:
+    values: dict[str, Any] = {
+        "label": choice,
+        "reasons": reasons,
+        "comment": comment,
+        "edit_note": edit_note,
+        "edit_asset_sha256": edit_asset_sha256,
+        "labeller_user_id": labeller_user_id,
+        "labelled_at": now,
+        "first_labelled_at": func.coalesce(TastePair.first_labelled_at, now),
+        "skipped_at": None,
+        "updated_at": now,
+    }
+    if relabel:
+        replaced = TastePair.label.is_not(None)
+        if not force:
+            condition.append(
+                or_(
+                    TastePair.label.is_(None),
+                    TastePair.labeller_user_id == labeller_user_id,
+                )
+            )
+        # Record the replaced answer — only when there IS one: relabelling an
+        # unanswered pair keeps whatever earlier removal the row records.
+        for column, value in _removal_snapshot(
+            labeller_user_id, "relabel", now
+        ).items():
+            values[column] = case((replaced, value), else_=getattr(TastePair, column))
+    else:
         condition.append(TastePair.label.is_(None))
-    statement = (
-        update(TastePair)
-        .where(*condition)
-        .values(
-            label=choice,
-            reasons=reasons,
-            comment=comment,
-            edit_note=edit_note,
-            edit_asset_sha256=edit_asset_sha256,
-            labeller_user_id=labeller_user_id,
-            labelled_at=now,
-            first_labelled_at=func.coalesce(TastePair.first_labelled_at, now),
-            change_seq=seq,
-            skipped_at=None,
-            updated_at=now,
-        )
-        .returning(TastePair.id)
-    )
     try:
         async with db.begin_nested():
-            matched = (await db.execute(statement)).scalar_one_or_none()
+            values["change_seq"] = await _next_change_seq(db, tenant_id=tenant_id)
+            matched = (
+                await db.execute(
+                    update(TastePair)
+                    .where(*condition)
+                    .values(**values)
+                    .returning(TastePair.id)
+                )
+            ).scalar_one_or_none()
+            if matched is None:
+                raise _NoMatch
+    except _NoMatch:
+        return await _refusal_reason(
+            db, tenant_id=tenant_id, pair_id=pair_id, relabel=relabel
+        )
     except IntegrityError as exc:
         if _is_asset_fk_violation(exc):
             raise ImageAssetGone(str(exc.orig)) from exc
         raise
-    if matched is None:
-        return None
-    return await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
-
-
-UndoRefusal = Literal["absent", "not_labelled", "not_yours"]
+    pair = await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+    assert pair is not None
+    return pair
 
 
 async def clear_label(
@@ -441,18 +532,16 @@ async def clear_label(
     pair_id: UUID,
     actor_user_id: UUID,
     force: bool,
-) -> TastePair | UndoRefusal:
+) -> TastePair | LabelRefusal:
     """Undo a label: the pair returns to the queue, unanswered.
 
     Only the actor's OWN label is undone unless ``force`` is set — a label
     whose labeller is someone else (or a deleted user) is refused as
     ``not_yours``. Nothing is erased silently: the removed answer is kept on
-    the row as ``undone_label`` with who undid it, when, and whether that
-    removed another labeller's answer (``undone_forced``), and the undo takes
-    a feed position, so the taste twin reads it as a tombstone.
+    the row as its removal (``removed_via = 'undo'``), and the undo takes a
+    feed position, so the taste twin reads it as a tombstone.
     """
     now = _now()
-    seq = await _next_change_seq(db, tenant_id=tenant_id)
     condition = [
         TastePair.tenant_id == tenant_id,
         TastePair.id == pair_id,
@@ -460,52 +549,37 @@ async def clear_label(
     ]
     if not force:
         condition.append(TastePair.labeller_user_id == actor_user_id)
-    result = await db.execute(
-        update(TastePair)
-        .where(*condition)
-        .values(
-            # The right-hand side reads the row as it was: the answer removed.
-            undone_label=func.jsonb_build_object(
-                "label",
-                TastePair.label,
-                "reasons",
-                TastePair.reasons,
-                "comment",
-                TastePair.comment,
-                "edit_note",
-                TastePair.edit_note,
-                "edit_asset_sha256",
-                TastePair.edit_asset_sha256,
-                "labeller_user_id",
-                TastePair.labeller_user_id,
-                "labelled_at",
-                TastePair.labelled_at,
-            ),
-            undone_forced=TastePair.labeller_user_id.is_distinct_from(actor_user_id),
-            undone_by_user_id=actor_user_id,
-            undone_at=now,
-            label=None,
-            reasons=[],
-            comment=None,
-            edit_note=None,
-            edit_asset_sha256=None,
-            labeller_user_id=None,
-            labelled_at=None,
-            change_seq=seq,
-            updated_at=now,
+    try:
+        async with db.begin_nested():
+            seq = await _next_change_seq(db, tenant_id=tenant_id)
+            matched = (
+                await db.execute(
+                    update(TastePair)
+                    .where(*condition)
+                    .values(
+                        **_removal_snapshot(actor_user_id, "undo", now),
+                        label=None,
+                        reasons=[],
+                        comment=None,
+                        edit_note=None,
+                        edit_asset_sha256=None,
+                        labeller_user_id=None,
+                        labelled_at=None,
+                        change_seq=seq,
+                        updated_at=now,
+                    )
+                    .returning(TastePair.id)
+                )
+            ).scalar_one_or_none()
+            if matched is None:
+                raise _NoMatch
+    except _NoMatch:
+        return await _refusal_reason(
+            db, tenant_id=tenant_id, pair_id=pair_id, relabel=True
         )
-        .returning(TastePair.id)
-    )
-    if result.scalar_one_or_none() is not None:
-        pair = await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
-        assert pair is not None
-        return pair
-    existing = await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
-    if existing is None:
-        return "absent"
-    if existing.label is None:
-        return "not_labelled"
-    return "not_yours"
+    pair = await get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+    assert pair is not None
+    return pair
 
 
 async def skip_pair(
@@ -534,14 +608,20 @@ async def skip_pair(
 
 
 async def withdraw_pair(db: AsyncSession, *, tenant_id: UUID, pair_id: UUID) -> bool:
-    """Delete an UNANSWERED pair; False when none matched. A labelled pair is
-    the operator's evidence and is never withdrawn by this door."""
+    """Delete a pair that was NEVER answered; False when none matched.
+
+    A pair with a feed position (``change_seq``) — answered now, or answered
+    and undone — is the operator's evidence and is never withdrawn by this
+    door: deleting an undone pair would drop its tombstone from the label
+    feed, so a reader that saw the label would keep it forever, and the
+    removal record (a forced undo's who and what) would go with the row.
+    """
     result = await db.execute(
         delete(TastePair)
         .where(
             TastePair.tenant_id == tenant_id,
             TastePair.id == pair_id,
-            TastePair.label.is_(None),
+            TastePair.change_seq.is_(None),
         )
         .returning(TastePair.id)
     )

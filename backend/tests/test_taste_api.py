@@ -521,7 +521,11 @@ class TestLabel:
             row is not None and row.label == "a" and row.labeller_user_id == operator.id
         )
 
-        replaced = await a.label(pid, "b", relabel=True)
+        # A relabel replaces only your own answer; a colleague's needs force.
+        not_yours = await a.label(pid, "b", relabel=True)
+        assert not_yours.status_code == 409
+        assert not_yours.json()["error"] == "label_not_yours"
+        replaced = await a.label(pid, "b", relabel=True, force=True)
         assert replaced.status_code == 200
         assert replaced.json()["labeller_user_id"] == str(a.labeller.id)
 
@@ -537,9 +541,9 @@ class TestLabel:
         assert undone.json()["label"] is None and undone.json()["reasons"] == []
         assert undone.json()["labeller_user_id"] is None
         # Nothing is erased silently: the removed answer stays on the row.
-        undo = undone.json()["undo"]
+        undo = undone.json()["removal"]
         assert undo["forced"] is False
-        assert undo["undone_by_user_id"] == str(a.labeller.id)
+        assert undo["removed_by_user_id"] == str(a.labeller.id)
         assert undo["removed"]["label"] == "both_bad"
         assert undo["removed"]["reasons"] == ["low_quality"]
         assert undo["removed"]["labeller_user_id"] == str(a.labeller.id)
@@ -738,7 +742,7 @@ async def test_the_label_feed_carries_undos_as_tombstones_and_moves_a_changed_pa
     news = await feed(before["next_cursor"])
     [tomb] = news["labels"]
     assert tomb["id"] == first and tomb["tombstone"] is True
-    assert tomb["label"] is None and tomb["undo"]["removed"]["label"] == "a"
+    assert tomb["label"] is None and tomb["removal"]["removed"]["label"] == "a"
 
     assert (await a.label(second, "a", relabel=True)).status_code == 200
     replay = await feed()
@@ -822,16 +826,16 @@ class TestUndoOwnership:
         assert refused.json()["current"]["labeller_user_id"] == str(operator.id)
         row = await crud.get_pair(a.db, tenant_id=a.tenant, pair_id=UUID(pid))
         assert row is not None and row.label == "a"
-        assert row.labeller_user_id == operator.id and row.undone_at is None
+        assert row.labeller_user_id == operator.id and row.removed_at is None
 
         forced = await a.http.delete(
             f"{API}/pairs/{pid}/label", params={"force": "true"}
         )
         assert forced.status_code == 200, forced.text
-        undo = forced.json()["undo"]
+        undo = forced.json()["removal"]
         assert undo["forced"] is True
-        assert undo["undone_by_user_id"] == str(colleague.id)
-        assert undo["undone_by_name"] == "Colleague"
+        assert undo["removed_by_user_id"] == str(colleague.id)
+        assert undo["removed_by_name"] == "Colleague"
         removed = undo["removed"]
         assert removed["label"] == "a" and removed["reasons"] == ["on_style"]
         assert removed["comment"] == "warmer"
@@ -847,7 +851,7 @@ class TestUndoOwnership:
         pid = await a.pair_id(x, y)
         assert (await a.label(pid, "b")).status_code == 200
         out = await a.http.delete(f"{API}/pairs/{pid}/label", params={"force": "true"})
-        assert out.status_code == 200 and out.json()["undo"]["forced"] is False
+        assert out.status_code == 200 and out.json()["removal"]["forced"] is False
 
     async def test_the_inbox_names_its_viewer_to_an_operator_only(
         self, a: Harness, operator: User
@@ -855,6 +859,113 @@ class TestUndoOwnership:
         assert (await a.inbox())["viewer_user_id"] is None
         a.actor = "operator"
         assert (await a.inbox())["viewer_user_id"] == str(operator.id)
+
+
+class TestRelabelOwnership:
+    async def test_a_relabel_of_your_own_answer_is_recorded_not_forced(
+        self, a: Harness
+    ) -> None:
+        x, y = await _images(a, "x", "y")
+        pid = await a.pair_id(x, y)
+        first = await a.label(pid, "a", reasons=["on_style"])
+        out = await a.label(pid, "b", relabel=True)
+        assert out.status_code == 200, out.text
+        removal = out.json()["removal"]
+        assert removal["via"] == "relabel" and removal["forced"] is False
+        assert removal["removed"]["label"] == "a"
+        assert removal["removed"]["reasons"] == ["on_style"]
+        assert removal["removed"]["labelled_at"] == first.json()["labelled_at"]
+        assert out.json()["tombstone"] is False
+
+    async def test_a_colleagues_answer_is_replaced_only_with_force_and_recorded(
+        self, a: Harness, operator: User
+    ) -> None:
+        x, y = await _images(a, "x", "y")
+        pid = await a.pair_id(x, y)
+        assert (await a.label(pid, "a", comment="mine")).status_code == 200
+        colleague = await _user(a.db, "colleague")
+        a.labeller = colleague
+        refused = await a.label(pid, "b", relabel=True)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["error"] == "label_not_yours"
+        row = await crud.get_pair(a.db, tenant_id=a.tenant, pair_id=UUID(pid))
+        assert row is not None and row.label == "a" and row.removed_at is None
+        assert row.labeller_user_id == operator.id
+
+        forced = await a.label(pid, "b", relabel=True, force=True)
+        assert forced.status_code == 200, forced.text
+        removal = forced.json()["removal"]
+        assert removal["via"] == "relabel" and removal["forced"] is True
+        assert removal["removed_by_user_id"] == str(colleague.id)
+        assert removal["removed"]["labeller_user_id"] == str(operator.id)
+        assert removal["removed"]["comment"] == "mine"
+        assert forced.json()["labeller_user_id"] == str(colleague.id)
+
+    async def test_a_refused_write_takes_no_feed_position(self, a: Harness) -> None:
+        """The refusal rolls back the write's savepoint, tick and clock lock
+        with it, before the 409 is rendered."""
+        x, y = await _images(a, "x", "y")
+        pid = await a.pair_id(x, y)
+        assert (await a.label(pid, "a")).status_code == 200
+
+        async def clock() -> int:
+            row = await a.db.get(TasteLabelClock, a.tenant, populate_existing=True)
+            assert row is not None
+            return row.last_seq
+
+        before = await clock()
+        a.labeller = await _user(a.db, "colleague")
+        assert (await a.label(pid, "b", relabel=True)).status_code == 409
+        assert (await a.http.delete(f"{API}/pairs/{pid}/label")).status_code == 409
+        assert (await a.label(pid, "b")).status_code == 409
+        assert await clock() == before
+
+
+async def test_an_undone_pair_is_not_withdrawn_and_its_tombstone_stays(
+    a: Harness,
+) -> None:
+    x, y = await _images(a, "x", "y")
+    pid = await a.pair_id(x, y)
+    assert (await a.label(pid, "a")).status_code == 200
+    seen = (await a.http.get(f"{API}/labels")).json()
+    assert _ids(seen["labels"]) == [pid]
+
+    assert (await a.http.delete(f"{API}/pairs/{pid}/label")).status_code == 200
+    # The 409 for a labelled pair used to say "undo the label first"; an
+    # undone pair still has history in the feed, so it is not withdrawn.
+    refused = await a.http.delete(f"{API}/pairs/{pid}")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"] == "pair_has_label_history"
+
+    after = (
+        await a.http.get(f"{API}/labels", params={"after": seen["next_cursor"]})
+    ).json()
+    [tomb] = after["labels"]
+    assert tomb["id"] == pid and tomb["tombstone"] is True
+    assert tomb["removal"]["via"] == "undo"
+    assert tomb["removal"]["removed"]["label"] == "a"
+
+
+def test_only_the_asset_fks_count_as_a_deleted_image() -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    class Orig(Exception):
+        def __init__(self, text: str, constraint: str | None) -> None:
+            super().__init__(text)
+            self.constraint_name = constraint
+
+    def violation(name: str, *, attribute: bool) -> IntegrityError:
+        text = f'insert or update on table "taste_pairs" violates foreign key constraint "{name}"'
+        orig = Orig(text, name if attribute else None)
+        return IntegrityError("INSERT", {}, orig)
+
+    for attribute in (True, False):
+        for name in crud.ASSET_FKS:
+            assert crud._is_asset_fk_violation(violation(name, attribute=attribute))
+        for name in ("fk_taste_pairs_labeller", "fk_taste_pairs_removed_by"):
+            assert not crud._is_asset_fk_violation(
+                violation(name, attribute=attribute)
+            ), name
 
 
 class TestWithdrawGate:

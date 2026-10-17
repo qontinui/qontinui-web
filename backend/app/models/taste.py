@@ -65,6 +65,10 @@ TASTE_PAIR_SOURCES: tuple[str, ...] = ("calibration", "active_learning", "post_h
 #: ``both_bad`` — neither is acceptable. Enforced by ``ck_taste_pairs_label``.
 TASTE_LABELS: tuple[str, ...] = ("a", "b", "both_bad")
 
+#: How an answer was removed (``ck_taste_pairs_removal_via``): ``undo`` — the
+#: pair went back to the queue; ``relabel`` — a new answer replaced it.
+TASTE_REMOVAL_VIAS: tuple[str, ...] = ("undo", "relabel")
+
 #: The longest comment, or edit note, a label may carry (characters).
 MAX_TASTE_TEXT_CHARS = 2000
 
@@ -135,12 +139,17 @@ class TastePair(Base):
             name="ck_taste_pairs_labelled_seq",
         ),
         CheckConstraint(
-            "(undone_at IS NULL) = (undone_label IS NULL)",
-            name="ck_taste_pairs_undo_whole",
+            "(removed_at IS NULL) = (removed_label IS NULL) "
+            "AND (removed_at IS NULL) = (removed_via IS NULL)",
+            name="ck_taste_pairs_removal_whole",
         ),
         CheckConstraint(
-            "undone_label IS NULL OR jsonb_typeof(undone_label) = 'object'",
-            name="ck_taste_pairs_undo_object",
+            "removed_label IS NULL OR jsonb_typeof(removed_label) = 'object'",
+            name="ck_taste_pairs_removal_object",
+        ),
+        CheckConstraint(
+            "removed_via IS NULL OR " + _in_list("removed_via", TASTE_REMOVAL_VIAS),
+            name="ck_taste_pairs_removal_via",
         ),
         CheckConstraint(
             "uncertainty IS NULL OR (uncertainty >= 0 AND uncertainty <= 1)",
@@ -254,22 +263,25 @@ class TastePair(Base):
     #: from :class:`TasteLabelClock` on every label and every undo. NULL until
     #: the pair is first answered.
     change_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    #: The most recent undo: when, by whom, whether it removed ANOTHER
-    #: labeller's answer, and that answer as it stood.
-    undone_at: Mapped[datetime | None] = mapped_column(
+    #: The most recent REMOVAL of an answer (an undo, or a relabel that
+    #: replaced it): when, by whom, whether it removed ANOTHER labeller's
+    #: answer, and that answer as it stood.
+    removed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    undone_by_user_id: Mapped[UUID | None] = mapped_column(
+    removed_by_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey(
-            "auth.users.id", ondelete="SET NULL", name="fk_taste_pairs_undone_by"
+            "auth.users.id", ondelete="SET NULL", name="fk_taste_pairs_removed_by"
         ),
         nullable=True,
     )
-    undone_forced: Mapped[bool] = mapped_column(
+    removed_forced: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    undone_label: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    removed_label: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    #: How the answer was removed: ``undo`` or ``relabel`` (replaced).
+    removed_via: Mapped[str | None] = mapped_column(String(8), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

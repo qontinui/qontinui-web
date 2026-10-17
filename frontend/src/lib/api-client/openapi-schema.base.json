@@ -55471,7 +55471,7 @@
       },
       "TasteLabelWrite": {
         "additionalProperties": false,
-        "description": "``PUT /api/v1/taste/pairs/{id}/label`` \u2014 answer one pair.\n\nA pair someone has already labelled is refused (409\n``pair_already_labelled``) unless ``relabel`` is true, so two labellers\nworking the queue at once never silently overwrite each other.",
+        "description": "``PUT /api/v1/taste/pairs/{id}/label`` \u2014 answer one pair.\n\nA pair someone has already labelled is refused (409\n``pair_already_labelled``) unless ``relabel`` is true, so two labellers\nworking the queue at once never silently overwrite each other. A relabel\nreplaces only your OWN answer; another labeller's needs ``force`` too\n(409 ``label_not_yours`` otherwise), and the replaced answer is kept.",
         "properties": {
           "choice": {
             "enum": [
@@ -55517,6 +55517,11 @@
               }
             ],
             "title": "Edit Note"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
           },
           "reasons": {
             "items": {
@@ -55729,6 +55734,16 @@
             "title": "Reasons",
             "type": "array"
           },
+          "removal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TasteRemoval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "repo": {
             "anyOf": [
               {
@@ -55791,16 +55806,6 @@
             ],
             "title": "Uncertainty"
           },
-          "undo": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TasteUndo"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -55833,7 +55838,7 @@
           "first_labelled_at",
           "change_seq",
           "tombstone",
-          "undo",
+          "removal",
           "created_at",
           "updated_at"
         ],
@@ -55981,8 +55986,66 @@
         "title": "TastePool",
         "type": "object"
       },
+      "TasteRemoval": {
+        "description": "The most recent removal of a pair's answer: an undo (``via: undo``,\nthe pair went back to the queue) or a relabel that replaced it\n(``via: relabel``). Kept after the pair is answered again, so a removed\nanswer is never lost without a trace.",
+        "properties": {
+          "forced": {
+            "title": "Forced",
+            "type": "boolean"
+          },
+          "removed": {
+            "$ref": "#/components/schemas/TasteRemovedLabel"
+          },
+          "removed_at": {
+            "format": "date-time",
+            "title": "Removed At",
+            "type": "string"
+          },
+          "removed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed By Name"
+          },
+          "removed_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed By User Id"
+          },
+          "via": {
+            "enum": [
+              "undo",
+              "relabel"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "via",
+          "removed_at",
+          "removed_by_user_id",
+          "removed_by_name",
+          "forced",
+          "removed"
+        ],
+        "title": "TasteRemoval",
+        "type": "object"
+      },
       "TasteRemovedLabel": {
-        "description": "The answer an undo removed, as it stood.",
+        "description": "The answer an undo or a relabel removed, as it stood.",
         "properties": {
           "comment": {
             "anyOf": [
@@ -56137,55 +56200,6 @@
           "weekly_budget"
         ],
         "title": "TasteSettingsWrite",
-        "type": "object"
-      },
-      "TasteUndo": {
-        "description": "The most recent undo of a pair's label. Kept after the pair is\nanswered again, so a removed answer is never lost without a trace.",
-        "properties": {
-          "forced": {
-            "title": "Forced",
-            "type": "boolean"
-          },
-          "removed": {
-            "$ref": "#/components/schemas/TasteRemovedLabel"
-          },
-          "undone_at": {
-            "format": "date-time",
-            "title": "Undone At",
-            "type": "string"
-          },
-          "undone_by_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Undone By Name"
-          },
-          "undone_by_user_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Undone By User Id"
-          }
-        },
-        "required": [
-          "undone_at",
-          "undone_by_user_id",
-          "undone_by_name",
-          "forced",
-          "removed"
-        ],
-        "title": "TasteUndo",
         "type": "object"
       },
       "TeamMemberCreate": {
@@ -125961,7 +125975,7 @@
             "description": "No such pair for this tenant."
           },
           "409": {
-            "description": "The pair is labelled; a label is never withdrawn here."
+            "description": "The pair is labelled, or was answered and undone (its history is in the label feed); neither is withdrawn."
           },
           "422": {
             "content": {
@@ -125982,7 +125996,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Withdraw an unanswered pair",
+        "summary": "Withdraw a never-answered pair",
         "tags": [
           "taste"
         ]
@@ -126093,7 +126107,7 @@
             "description": "No such pair, or no such edited image, for this tenant."
           },
           "409": {
-            "description": "Someone already labelled this pair (send relabel: true to replace it)."
+            "description": "The pair is already labelled (send relabel: true to replace your own answer), or the answer is another labeller's (label_not_yours: send force: true as well; the replaced answer is recorded)."
           },
           "422": {
             "content": {

@@ -23031,7 +23031,7 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Withdraw an unanswered pair
+         * Withdraw a never-answered pair
          * @description Two populations: a device or service credential — studio correcting
          *     its own push — and an operator. The operator's path is the labeller's:
          *     a member who may only view the inbox may not empty it either.
@@ -51066,7 +51066,9 @@ export interface components {
          *
          *     A pair someone has already labelled is refused (409
          *     ``pair_already_labelled``) unless ``relabel`` is true, so two labellers
-         *     working the queue at once never silently overwrite each other.
+         *     working the queue at once never silently overwrite each other. A relabel
+         *     replaces only your OWN answer; another labeller's needs ``force`` too
+         *     (409 ``label_not_yours`` otherwise), and the replaced answer is kept.
          */
         TasteLabelWrite: {
             /**
@@ -51080,6 +51082,11 @@ export interface components {
             edit_asset_sha256?: string | null;
             /** Edit Note */
             edit_note?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
             /** Reasons */
             reasons?: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
             /**
@@ -51134,6 +51141,7 @@ export interface components {
             pushed_by: string;
             /** Reasons */
             reasons: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            removal: components["schemas"]["TasteRemoval"] | null;
             /** Repo */
             repo: string | null;
             /** Skip Count */
@@ -51151,7 +51159,6 @@ export interface components {
             tombstone: boolean;
             /** Uncertainty */
             uncertainty: number | null;
-            undo: components["schemas"]["TasteUndo"] | null;
             /**
              * Updated At
              * Format: date-time
@@ -51211,8 +51218,34 @@ export interface components {
             images: number;
         };
         /**
+         * TasteRemoval
+         * @description The most recent removal of a pair's answer: an undo (``via: undo``,
+         *     the pair went back to the queue) or a relabel that replaced it
+         *     (``via: relabel``). Kept after the pair is answered again, so a removed
+         *     answer is never lost without a trace.
+         */
+        TasteRemoval: {
+            /** Forced */
+            forced: boolean;
+            removed: components["schemas"]["TasteRemovedLabel"];
+            /**
+             * Removed At
+             * Format: date-time
+             */
+            removed_at: string;
+            /** Removed By Name */
+            removed_by_name: string | null;
+            /** Removed By User Id */
+            removed_by_user_id: string | null;
+            /**
+             * Via
+             * @enum {string}
+             */
+            via: "undo" | "relabel";
+        };
+        /**
          * TasteRemovedLabel
-         * @description The answer an undo removed, as it stood.
+         * @description The answer an undo or a relabel removed, as it stood.
          */
         TasteRemovedLabel: {
             /** Comment */
@@ -51257,25 +51290,6 @@ export interface components {
         TasteSettingsWrite: {
             /** Weekly Budget */
             weekly_budget: number;
-        };
-        /**
-         * TasteUndo
-         * @description The most recent undo of a pair's label. Kept after the pair is
-         *     answered again, so a removed answer is never lost without a trace.
-         */
-        TasteUndo: {
-            /** Forced */
-            forced: boolean;
-            removed: components["schemas"]["TasteRemovedLabel"];
-            /**
-             * Undone At
-             * Format: date-time
-             */
-            undone_at: string;
-            /** Undone By Name */
-            undone_by_name: string | null;
-            /** Undone By User Id */
-            undone_by_user_id: string | null;
         };
         /**
          * TeamMemberCreate
@@ -90499,7 +90513,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The pair is labelled; a label is never withdrawn here. */
+            /** @description The pair is labelled, or was answered and undone (its history is in the label feed); neither is withdrawn. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -90548,7 +90562,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Someone already labelled this pair (send relabel: true to replace it). */
+            /** @description The pair is already labelled (send relabel: true to replace your own answer), or the answer is another labeller's (label_not_yours: send force: true as well; the replaced answer is recorded). */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -13,12 +13,15 @@ Endpoints (mounted under ``/api/v1/taste``):
   budget and its use, the recent labels (the undo list), the calibration pool
   and whether this caller may label.
 * ``POST "/pairs"`` — queue one pair (studio's door; a re-push of a queued
-  pair answers with it). ``DELETE "/pairs/{pair_id}"`` withdraws an
-  UNANSWERED pair — the correction for a wrong push: a device or service
-  credential (studio's own correction), or an operator who may label.
-* ``PUT "/pairs/{pair_id}/label"`` — answer a pair; ``DELETE`` the same path
-  undoes the caller's OWN answer (``force=true`` removes a colleague's, and
-  the row records that it was forced, by whom, and what was removed);
+  pair answers with it). ``DELETE "/pairs/{pair_id}"`` withdraws a
+  NEVER-answered pair — the correction for a wrong push: a device or service
+  credential (studio's own correction), or an operator who may label. A pair
+  with label history (answered, or answered and undone) is never withdrawn:
+  its tombstone must stay in the feed.
+* ``PUT "/pairs/{pair_id}/label"`` — answer a pair (``relabel`` replaces the
+  caller's OWN answer; ``force`` a colleague's); ``DELETE`` the same path
+  undoes the caller's OWN answer (``force=true`` a colleague's). Either kind
+  of removal is recorded on the row: forced or not, by whom, and the answer;
   ``POST "/pairs/{pair_id}/skip"`` moves an unanswered pair to the back of
   the queue.
 * ``POST "/calibration-batch"`` — queue the first, deliberately diverse batch
@@ -93,11 +96,11 @@ from app.schemas.taste import (
     TastePairPushResponse,
     TastePool,
     TasteReason,
+    TasteRemoval,
     TasteRemovedLabel,
     TasteSettingsOut,
     TasteSettingsWrite,
     TasteSource,
-    TasteUndo,
 )
 from app.services.coord_identity import get_coord_identity
 from app.services.taste_calibration import (
@@ -202,23 +205,25 @@ def _image(asset: ImageAsset) -> TasteImage:
     )
 
 
-def _removed_labeller(pair: TastePair) -> UUID | None:
-    raw = (pair.undone_label or {}).get("labeller_user_id")
+def _displaced_labeller(pair: TastePair) -> UUID | None:
+    raw = (pair.removed_label or {}).get("labeller_user_id")
     return UUID(raw) if raw else None
 
 
-def _undo(pair: TastePair, names: dict[UUID, str]) -> TasteUndo | None:
-    if pair.undone_at is None or pair.undone_label is None:
+def _removal(pair: TastePair, names: dict[UUID, str]) -> TasteRemoval | None:
+    if pair.removed_at is None or pair.removed_label is None:
         return None
-    removed = pair.undone_label
-    removed_by = _removed_labeller(pair)
-    return TasteUndo(
-        undone_at=pair.undone_at,
-        undone_by_user_id=pair.undone_by_user_id,
-        undone_by_name=names.get(pair.undone_by_user_id)
-        if pair.undone_by_user_id
+    removed = pair.removed_label
+    removed_by = _displaced_labeller(pair)
+    return TasteRemoval(
+        # ck_taste_pairs_removal_whole holds via, at and label together.
+        via=cast(Any, pair.removed_via),
+        removed_at=pair.removed_at,
+        removed_by_user_id=pair.removed_by_user_id,
+        removed_by_name=names.get(pair.removed_by_user_id)
+        if pair.removed_by_user_id
         else None,
-        forced=pair.undone_forced,
+        forced=pair.removed_forced,
         removed=TasteRemovedLabel(
             label=removed["label"],
             reasons=list(removed.get("reasons") or []),
@@ -250,7 +255,11 @@ async def _render_pairs(
         (
             uid
             for p in pairs
-            for uid in (p.labeller_user_id, p.undone_by_user_id, _removed_labeller(p))
+            for uid in (
+                p.labeller_user_id,
+                p.removed_by_user_id,
+                _displaced_labeller(p),
+            )
         ),
         with_email=with_email,
     )
@@ -287,7 +296,7 @@ async def _render_pairs(
                 first_labelled_at=pair.first_labelled_at,
                 change_seq=pair.change_seq,
                 tombstone=pair.label is None and pair.change_seq is not None,
-                undo=_undo(pair, names),
+                removal=_removal(pair, names),
                 created_at=pair.created_at,
                 updated_at=pair.updated_at,
             )
@@ -478,9 +487,12 @@ async def queue_taste_pair(
             "admin, or a qontinui superuser, may)."
         },
         404: {"description": "No such pair for this tenant."},
-        409: {"description": "The pair is labelled; a label is never withdrawn here."},
+        409: {
+            "description": "The pair is labelled, or was answered and undone "
+            "(its history is in the label feed); neither is withdrawn."
+        },
     },
-    summary="Withdraw an unanswered pair",
+    summary="Withdraw a never-answered pair",
 )
 async def withdraw_taste_pair(
     pair_id: Annotated[UUID, Path()],
@@ -503,11 +515,19 @@ async def withdraw_taste_pair(
         )
         if existing is None:
             raise _pair_not_found()
+        if existing.label is not None:
+            raise _refusal(
+                status.HTTP_409_CONFLICT,
+                "pair_already_labelled",
+                "This pair is labelled; the label is the operator's and the "
+                "pair is not withdrawn.",
+            )
         raise _refusal(
             status.HTTP_409_CONFLICT,
-            "pair_already_labelled",
-            "This pair has been labelled; the label is the operator's and is "
-            "not withdrawn with the pair. Undo the label first.",
+            "pair_has_label_history",
+            "This pair was answered and the answer undone; its history is in "
+            "the label feed, so the pair is not withdrawn. It waits in the "
+            "queue to be answered again or skipped.",
         )
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -516,13 +536,57 @@ async def withdraw_taste_pair(
 # ── labels ─────────────────────────────────────────────────────────────
 
 
+async def _label_refusal(
+    db: AsyncSession,
+    tenant_id: UUID,
+    pair_id: UUID,
+    reason: crud.LabelRefusal,
+    *,
+    verb: str,
+) -> HTTPException:
+    """The refusal for a label write that changed nothing. The write's
+    savepoint has already rolled back, so the feed clock is released before
+    the row is read and rendered here."""
+    if reason == "absent":
+        return _pair_not_found()
+    if reason == "not_labelled":
+        return _refusal(
+            status.HTTP_409_CONFLICT,
+            "pair_not_labelled",
+            "This pair has no label to undo.",
+        )
+    existing = await crud.get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
+    if existing is None:
+        return _pair_not_found()
+    [current] = await _render_pairs(db, tenant_id, [existing], with_email=True)
+    if reason == "already_labelled":
+        return _refusal(
+            status.HTTP_409_CONFLICT,
+            "pair_already_labelled",
+            "This pair was already labelled; nothing was changed.",
+            current=current.model_dump(mode="json"),
+        )
+    who = current.labeller_name or "a labeller who no longer exists"
+    return _refusal(
+        status.HTTP_409_CONFLICT,
+        "label_not_yours",
+        f"This label is {who}'s, not yours; nothing was changed. Send "
+        f"force=true to {verb} it anyway — that is recorded, with your name "
+        "and their answer.",
+        current=current.model_dump(mode="json"),
+    )
+
+
 @router.put(
     "/pairs/{pair_id}/label",
     response_model=TastePairOut,
     responses={
         404: {"description": "No such pair, or no such edited image, for this tenant."},
         409: {
-            "description": "Someone already labelled this pair (send relabel: true to replace it)."
+            "description": "The pair is already labelled (send relabel: true to "
+            "replace your own answer), or the answer is another labeller's "
+            "(label_not_yours: send force: true as well; the replaced answer "
+            "is recorded)."
         },
     },
     summary="Label one pair: A, B or both bad, with reasons, a comment and an edit",
@@ -557,20 +621,12 @@ async def label_taste_pair(
             edit_asset_sha256=payload.edit_asset_sha256,
             labeller_user_id=labeller.user.id,
             relabel=payload.relabel,
+            force=payload.force,
         )
     except crud.ImageAssetGone as exc:
         raise _asset_gone("edit_asset_sha256") from exc
-    if pair is None:
-        existing = await crud.get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
-        if existing is None:
-            raise _pair_not_found()
-        [current] = await _render_pairs(db, tenant_id, [existing], with_email=True)
-        raise _refusal(
-            status.HTTP_409_CONFLICT,
-            "pair_already_labelled",
-            "This pair was already labelled; nothing was changed.",
-            current=current.model_dump(mode="json"),
-        )
+    if isinstance(pair, str):
+        raise await _label_refusal(db, tenant_id, pair_id, pair, verb="replace")
     await db.commit()
     logger.info(
         "taste_pair_labelled",
@@ -579,6 +635,7 @@ async def label_taste_pair(
         label=payload.choice,
         reasons=len(payload.reasons),
         relabel=payload.relabel,
+        forced=pair.removed_forced and pair.removed_via == "relabel",
     )
     [out] = await _render_pairs(db, tenant_id, [pair], with_email=True)
     return out
@@ -621,34 +678,15 @@ async def unlabel_taste_pair(
         actor_user_id=labeller.user.id,
         force=force,
     )
-    if outcome == "absent":
-        raise _pair_not_found()
-    if outcome == "not_labelled":
-        raise _refusal(
-            status.HTTP_409_CONFLICT,
-            "pair_not_labelled",
-            "This pair has no label to undo.",
-        )
-    if outcome == "not_yours":
-        existing = await crud.get_pair(db, tenant_id=tenant_id, pair_id=pair_id)
-        assert existing is not None
-        [current] = await _render_pairs(db, tenant_id, [existing], with_email=True)
-        who = current.labeller_name or "a labeller who no longer exists"
-        raise _refusal(
-            status.HTTP_409_CONFLICT,
-            "label_not_yours",
-            f"This label is {who}'s, not yours; nothing was changed. Send "
-            "force=true to remove it anyway — the removal is recorded.",
-            current=current.model_dump(mode="json"),
-        )
-    assert not isinstance(outcome, str)
+    if isinstance(outcome, str):
+        raise await _label_refusal(db, tenant_id, pair_id, outcome, verb="undo")
     await db.commit()
     logger.info(
         "taste_pair_unlabelled",
         tenant_id=str(tenant_id),
         pair_id=str(pair_id),
         by=str(labeller.user.id),
-        forced=outcome.undone_forced,
+        forced=outcome.removed_forced,
     )
     [out] = await _render_pairs(db, tenant_id, [outcome], with_email=True)
     return out

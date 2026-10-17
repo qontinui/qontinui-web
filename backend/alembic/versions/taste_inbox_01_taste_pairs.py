@@ -1,7 +1,7 @@
 """web.taste_pairs + web.taste_label_clock + web.taste_settings — the taste inbox
 
 Revision ID: taste_inbox_01
-Revises: route_serving_method_idx_01
+Revises: coord_tenant_github_hosts_01
 Create Date: 2026-10-15
 
 Phase 23 of plan ``2026-10-13-image-generation-and-visual-judgment``
@@ -38,10 +38,11 @@ Tables
     answered (kept across an undo and a relabel): the weekly budget charges a
     pair once, in that week. ``change_seq`` is the pair's position in the
     tenant's label feed (``GET /taste/labels``), drawn from
-    ``web.taste_label_clock`` on every label and every undo. ``undone_*``
-    record the most recent undo: when, by whom, whether it removed another
-    labeller's answer (``undone_forced``), and the answer it removed
-    (``undone_label``, a JSON object) — so an undo is never a silent erase.
+    ``web.taste_label_clock`` on every label and every undo. ``removed_*``
+    record the most recent REMOVAL of an answer — an undo, or a relabel that
+    replaced it (``removed_via``): when, by whom, whether it removed another
+    labeller's answer (``removed_forced``), and the answer it removed
+    (``removed_label``, a JSON object) — so no answer is ever erased silently.
 
 ``web.taste_label_clock``
     One row per tenant: ``last_seq``, the last label-feed position handed
@@ -101,7 +102,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "taste_inbox_01"
-down_revision: str = "route_serving_method_idx_01"
+down_revision: str = "coord_tenant_github_hosts_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -155,12 +156,13 @@ def upgrade() -> None:
             labelled_at        TIMESTAMPTZ,
             first_labelled_at  TIMESTAMPTZ,
             change_seq         BIGINT,
-            undone_at          TIMESTAMPTZ,
-            undone_by_user_id  UUID
-                CONSTRAINT fk_taste_pairs_undone_by
+            removed_at          TIMESTAMPTZ,
+            removed_by_user_id  UUID
+                CONSTRAINT fk_taste_pairs_removed_by
                 REFERENCES auth.users (id) ON DELETE SET NULL,
-            undone_forced      BOOLEAN NOT NULL DEFAULT false,
-            undone_label       JSONB,
+            removed_forced      BOOLEAN NOT NULL DEFAULT false,
+            removed_label       JSONB,
+            removed_via         VARCHAR(8),
             created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT ck_taste_pairs_distinct_assets
@@ -175,10 +177,13 @@ def upgrade() -> None:
                 CHECK (label IS NULL OR first_labelled_at IS NOT NULL),
             CONSTRAINT ck_taste_pairs_labelled_seq
                 CHECK (label IS NULL OR change_seq IS NOT NULL),
-            CONSTRAINT ck_taste_pairs_undo_whole
-                CHECK ((undone_at IS NULL) = (undone_label IS NULL)),
-            CONSTRAINT ck_taste_pairs_undo_object
-                CHECK (undone_label IS NULL OR jsonb_typeof(undone_label) = 'object'),
+            CONSTRAINT ck_taste_pairs_removal_whole
+                CHECK ((removed_at IS NULL) = (removed_label IS NULL)
+                    AND (removed_at IS NULL) = (removed_via IS NULL)),
+            CONSTRAINT ck_taste_pairs_removal_via
+                CHECK (removed_via IS NULL OR removed_via IN ('undo', 'relabel')),
+            CONSTRAINT ck_taste_pairs_removal_object
+                CHECK (removed_label IS NULL OR jsonb_typeof(removed_label) = 'object'),
             CONSTRAINT fk_taste_pairs_asset_a
                 FOREIGN KEY (tenant_id, asset_a_sha256)
                 REFERENCES web.image_assets (tenant_id, sha256) ON DELETE CASCADE,

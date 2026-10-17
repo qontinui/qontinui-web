@@ -141,7 +141,9 @@ class TasteLabelWrite(BaseModel):
 
     A pair someone has already labelled is refused (409
     ``pair_already_labelled``) unless ``relabel`` is true, so two labellers
-    working the queue at once never silently overwrite each other.
+    working the queue at once never silently overwrite each other. A relabel
+    replaces only your OWN answer; another labeller's needs ``force`` too
+    (409 ``label_not_yours`` otherwise), and the replaced answer is kept.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -156,7 +158,12 @@ class TasteLabelWrite(BaseModel):
     edit_note: str | None = Field(default=None, max_length=MAX_TASTE_TEXT_CHARS)
     #: An edited image, uploaded to the store first.
     edit_asset_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
+    #: Replace an existing answer. Only your OWN answer is replaced unless
+    #: ``force`` is also set (409 ``label_not_yours`` otherwise); the replaced
+    #: answer is recorded on the pair as its ``removal``.
     relabel: bool = False
+    #: With ``relabel``: replace ANOTHER labeller's answer. Recorded as forced.
+    force: bool = False
 
     @field_validator("reasons")
     @classmethod
@@ -209,7 +216,7 @@ class TasteImage(BaseModel):
 
 
 class TasteRemovedLabel(BaseModel):
-    """The answer an undo removed, as it stood."""
+    """The answer an undo or a relabel removed, as it stood."""
 
     label: TasteLabel
     reasons: list[TasteReason]
@@ -222,14 +229,17 @@ class TasteRemovedLabel(BaseModel):
     labelled_at: datetime
 
 
-class TasteUndo(BaseModel):
-    """The most recent undo of a pair's label. Kept after the pair is
-    answered again, so a removed answer is never lost without a trace."""
+class TasteRemoval(BaseModel):
+    """The most recent removal of a pair's answer: an undo (``via: undo``,
+    the pair went back to the queue) or a relabel that replaced it
+    (``via: relabel``). Kept after the pair is answered again, so a removed
+    answer is never lost without a trace."""
 
-    undone_at: datetime
-    undone_by_user_id: UUID | None
-    undone_by_name: str | None
-    #: True when the undo removed ANOTHER labeller's answer (``force``).
+    via: Literal["undo", "relabel"]
+    removed_at: datetime
+    removed_by_user_id: UUID | None
+    removed_by_name: str | None
+    #: True when the removal took ANOTHER labeller's answer (``force``).
     forced: bool
     removed: TasteRemovedLabel
 
@@ -268,9 +278,10 @@ class TastePairOut(BaseModel):
     #: null until the pair is first answered. Moves on every label and undo.
     change_seq: int | None
     #: True for a feed row whose latest change was an undo: ``label`` is null
-    #: and the pair is back in the queue. ``undo`` says what was removed.
+    #: and the pair is back in the queue. ``removal`` says what was removed.
     tombstone: bool
-    undo: TasteUndo | None
+    #: The most recent removal of an answer (undo or relabel), or null.
+    removal: TasteRemoval | None
     created_at: datetime
     updated_at: datetime
 
