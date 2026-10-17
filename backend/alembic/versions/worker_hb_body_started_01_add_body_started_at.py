@@ -290,6 +290,10 @@ def upgrade() -> None:
         "ALTER TABLE coord.worker_heartbeats "
         "ADD COLUMN IF NOT EXISTS body_started_at TIMESTAMPTZ NULL"
     )
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
@@ -297,3 +301,7 @@ def downgrade() -> None:
     op.execute(
         "ALTER TABLE coord.worker_heartbeats DROP COLUMN IF EXISTS body_started_at"
     )
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")

@@ -154,6 +154,11 @@ def upgrade() -> None:
             schema="coord",
         )
 
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
+
     # 3. LAST: the in-flight indexes, built CONCURRENTLY outside the DDL
     #    transaction so the hot table is never locked for the scan. Plain
     #    literals, never f-strings: check_alembic_schema_args.py audits only
@@ -199,3 +204,8 @@ def downgrade() -> None:
 
     if _has_column("agent_worktrees", "dispatch_source"):
         op.drop_column("agent_worktrees", "dispatch_source", schema="coord")
+
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")

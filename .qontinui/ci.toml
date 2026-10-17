@@ -12,10 +12,11 @@
 # makes the invariant unauditable.
 #
 # The script-backed gates are stronger than "mirrored": web-boundary-lint,
-# forbid-public-schema, alembic-single-head, coord-column-drop-guard,
-# gitignore-tracked-files, ruff-version-parity, path-case-collisions and
-# forbid-fixed-sleeps-in-e2e (count them from the `command` arrays below, not
-# from a number here - the last number this line carried was stale)
+# forbid-public-schema, alembic-single-head, alembic-lock-timeout-restored,
+# coord-column-drop-guard, gitignore-tracked-files, ruff-version-parity,
+# path-case-collisions and forbid-fixed-sleeps-in-e2e (count them from the
+# `command` arrays below, not from a number here - the last number this line
+# carried was stale)
 # invoke the SAME committed script the workflow invokes (scripts/ci/*.py), so
 # there is nothing left to keep in sync — the two lanes cannot drift because
 # there is only one copy of the logic. That is the
@@ -293,6 +294,20 @@ name = "alembic-single-head"
 # the argv stays bare. `--baseline-ref` only selects the remediation text — it
 # cannot move the verdict — so the two lanes are the same gate.
 command = ["python", "scripts/ci/count_alembic_heads.py"]
+
+[[steps]]
+name = "alembic-lock-timeout-restored"
+# alembic-graph-pr.yml, step "Check lock_timeout is restored". Offline AST
+# scan of backend/alembic/versions/*.py for a SET LOCAL lock_timeout bound
+# that the same upgrade()/downgrade() never restores — env.py runs the whole
+# batch in one transaction, so an unrestored bound leaks its lock-wait ceiling
+# into whatever revision runs next. Same no-database shape as
+# alembic-single-head above, so it can live here beside it.
+#
+# THREE lanes share this script: the PR check, this manifest, and
+# .pre-commit-config.yaml's `alembic-lock-timeout-restored` hook. Coord
+# finding b4782f88-49f2-464e-92f9-4f44194dee34 (qontinui-web#1423).
+command = ["python", "scripts/ci/check_lock_timeout_restored.py"]
 
 [[steps]]
 name = "coord-column-drop-guard"
