@@ -53,7 +53,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_11_spec_artifacts"
-_PARENT_REVISION_ID = "taste_inbox_01"
+_PARENT_REVISION_ID = "fpl_01"
 _REVISION_FILENAME = "plan_library_11_spec_artifacts.py"
 
 _NEW_KINDS = (
