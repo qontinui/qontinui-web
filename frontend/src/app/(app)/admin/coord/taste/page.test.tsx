@@ -435,6 +435,31 @@ describe("the taste inbox", () => {
     expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
   });
 
+  it("a fast double press on the last pair still hands focus to the panel", async () => {
+    let release: () => void = () => {};
+    const original = api.labelTastePair.getMockImplementation()!;
+    api.labelTastePair.mockImplementation(
+      async (id: string, body: TasteLabelWrite) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return original(id, body);
+      }
+    );
+    seed(1);
+    render(<TasteInboxPage />);
+    await settle("p1");
+    act(() => card().focus());
+    await act(async () => {
+      // a then b before the first write settles: the second is dropped.
+      fireEvent.keyDown(document.activeElement!, { key: "a" });
+      fireEvent.keyDown(document.activeElement!, { key: "b" });
+    });
+    await act(async () => release());
+    const region = await screen.findByTestId("taste-done-region");
+    await waitFor(() => expect(document.activeElement).toBe(region));
+    expect(api.labelTastePair).toHaveBeenCalledTimes(1);
+    expect(server.rows.find((r) => r.id === "p1")!.label).toBe("a");
+  });
+
   it("a keyboard answer that swaps nothing leaves no mark for a later, unrelated swap", async () => {
     seed(2);
     render(<TasteInboxPage />);

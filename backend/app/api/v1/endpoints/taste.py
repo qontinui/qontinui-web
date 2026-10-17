@@ -536,6 +536,29 @@ async def withdraw_taste_pair(
 # ── labels ─────────────────────────────────────────────────────────────
 
 
+def _loggable_answer(answer: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A removed or replaced answer as the server log may carry it: the
+    structured fields, and only the LENGTH of the operator's free text
+    (comment, edit note) — never the text itself, which lives on the row's
+    ``removal`` alone."""
+    if answer is None:
+        return None
+
+    def length(key: str) -> int | None:
+        text = answer.get(key)
+        return len(text) if isinstance(text, str) else None
+
+    return {
+        "label": answer.get("label"),
+        "reasons": answer.get("reasons"),
+        "labeller_user_id": answer.get("labeller_user_id"),
+        "labelled_at": answer.get("labelled_at"),
+        "edit_asset_sha256": answer.get("edit_asset_sha256"),
+        "comment_len": length("comment"),
+        "edit_note_len": length("edit_note"),
+    }
+
+
 async def _label_refusal(
     db: AsyncSession,
     tenant_id: UUID,
@@ -645,7 +668,7 @@ async def label_taste_pair(
     # clock reading. An older record (an earlier undo or relabel) is not this
     # write's and is not logged as such.
     replaced = (
-        pair.removed_label
+        _loggable_answer(pair.removed_label)
         if pair.removed_via == "relabel" and pair.removed_at == pair.labelled_at
         else None
     )
@@ -711,7 +734,7 @@ async def unlabel_taste_pair(
         pair_id=str(pair_id),
         by=str(labeller.user.id),
         change_seq=outcome.change_seq,
-        removed=outcome.removed_label,
+        removed=_loggable_answer(outcome.removed_label),
         forced=outcome.removed_forced,
     )
     [out] = await _render_pairs(db, tenant_id, [outcome], with_email=True)

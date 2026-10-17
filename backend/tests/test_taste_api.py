@@ -1010,7 +1010,15 @@ async def test_the_server_log_carries_who_and_what_for_every_removal(
         assert (await a.label(pid, "a", comment="first")).status_code == 200
         colleague = await _user(a.db, "colleague")
         a.labeller = colleague
-        assert (await a.label(pid, "b", relabel=True, force=True)).status_code == 200
+        relabelled = await a.label(
+            pid,
+            "b",
+            relabel=True,
+            force=True,
+            comment="second words",
+            edit_note="crop it",
+        )
+        assert relabelled.status_code == 200
         assert (await a.http.delete(f"{API}/pairs/{pid}/label")).status_code == 200
 
     labelled = [e for e in logs if e["event"] == "taste_pair_labelled"]
@@ -1021,11 +1029,27 @@ async def test_the_server_log_carries_who_and_what_for_every_removal(
     assert first["replaced"] is None and first["forced"] is False
     assert relabel["by"] == str(colleague.id) and relabel["forced"] is True
     assert relabel["replaced"]["label"] == "a"
-    assert relabel["replaced"]["comment"] == "first"
     assert relabel["replaced"]["labeller_user_id"] == str(operator.id)
+    # Free text never reaches the log: its length does.
+    assert relabel["replaced"]["comment_len"] == len("first")
+    assert relabel["replaced"]["edit_note_len"] is None
+    assert set(relabel["replaced"]) == {
+        "label",
+        "reasons",
+        "labeller_user_id",
+        "labelled_at",
+        "edit_asset_sha256",
+        "comment_len",
+        "edit_note_len",
+    }
+    assert "first" not in repr(logs)
     [undo] = unlabelled
     assert undo["by"] == str(colleague.id) and undo["forced"] is False
     assert undo["removed"]["label"] == "b"
+    assert "comment" not in undo["removed"] and "edit_note" not in undo["removed"]
+    assert undo["removed"]["comment_len"] == len("second words")
+    assert undo["removed"]["edit_note_len"] == len("crop it")
+    assert "second words" not in repr(logs) and "crop it" not in repr(logs)
     assert undo["removed"]["labeller_user_id"] == str(colleague.id)
     assert undo["change_seq"] > relabel["change_seq"] > first["change_seq"]
 

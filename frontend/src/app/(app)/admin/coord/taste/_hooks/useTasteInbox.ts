@@ -89,6 +89,11 @@ export function useTasteInbox() {
     void load(overBudget, tag);
   }, [load, overBudget]);
 
+  /** Whether a write is running now — read from the ref, so it is true for
+   *  a second key press inside the same render, before `busy` catches up.
+   *  A write asked for while this is true is dropped by `write`. */
+  const writeInFlight = useCallback(() => inFlight.current, []);
+
   /** "Keep labelling anyway": ask for the queue head past the budget. */
   const keepGoing = useCallback((tag: number | null = null) => {
     keepGoingTag.current = tag;
@@ -239,6 +244,7 @@ export function useTasteInbox() {
     overBudget,
     keepGoing,
     readTag,
+    writeInFlight,
     refresh,
     label,
     skip,

@@ -89,6 +89,7 @@ export default function TasteInboxPage() {
     overBudget,
     keepGoing,
     readTag,
+    writeInFlight,
     refresh,
     label,
     skip,
@@ -131,11 +132,14 @@ export default function TasteInboxPage() {
   const surface = head ? "card" : inbox ? "panel" : "none";
   const markFocus = useCallback((): number => {
     const tag = ++writeSeq.current;
+    // A write already running means this one will be dropped (the hook runs
+    // one at a time): its mark must not replace the running write's.
+    if (writeInFlight()) return tag;
     carryFocus.current = cardRef.current?.contains(document.activeElement)
       ? { tag, surface }
       : null;
     return tag;
-  }, [surface]);
+  }, [surface, writeInFlight]);
   useLayoutEffect(() => {
     const mark = carryFocus.current;
     if (mark === null || readTag !== mark.tag) return;
