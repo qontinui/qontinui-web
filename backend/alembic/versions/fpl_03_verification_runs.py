@@ -1,7 +1,7 @@
 """coord.verification_runs - one row per Rust verification-wrapper invocation
 
 Revision ID: fpl_03
-Revises: taste_inbox_01
+Revises: fpl_01
 Create Date: 2026-10-17
 
 Phase 4 of plan
@@ -93,8 +93,9 @@ revision.
 Head resolution
 ===============
 
-``down_revision = "taste_inbox_01"`` - the single head of
-qontinui-web ``origin/main`` @ ``3f872b95e``, measured 2026-10-17 by parsing
+``down_revision = "fpl_01"`` - the single head of
+qontinui-web ``origin/main`` after the 2026-10-17 merge of ``fpl_01`` (re-chained
+from ``taste_inbox_01`` once that landed), measured by parsing
 every file in ``backend/alembic/versions`` (multi-line tuple
 ``down_revision`` values included) and taking the one ``revision`` no file
 names as a parent. If main moves before this lands, re-chain onto the live
@@ -108,7 +109,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fpl_03"
-down_revision: str | Sequence[str] | None = "taste_inbox_01"
+down_revision: str | Sequence[str] | None = "fpl_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
