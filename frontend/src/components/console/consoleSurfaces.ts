@@ -105,6 +105,14 @@ import {
   FINDING_AUTHOR_GLYPH_RETENTIONS,
   FINDING_RETENTION_CLASS,
 } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
+// The operator-touch aggregate — plan
+// `2026-08-27-operator-touch-read-and-surface` Phase C3. Same shape as
+// findings: a `*Status.ts` in a `_lib/` beside its own route.
+import {
+  TOUCH_ATTENTION_BY_KIND,
+  TOUCH_AUTHOR_GLYPH_KINDS,
+  TOUCH_KIND_CLASS,
+} from "@/app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus";
 // Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a —
 // the v2 decision-domain editor. Same shape as gate-clearance: a `*Status.ts`
 // beside its own route.
@@ -221,6 +229,13 @@ import {
   MODEL_ACCESS_AUTHOR_GLYPH_KINDS,
   MODEL_ACCESS_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/ci/_lib/ciModelAccessStatus";
+// Image generation's per-repo overrides (tenant policy) — plan
+// `2026-10-13-image-generation-and-visual-judgment` Phase 12.
+import {
+  IMAGE_GENERATION_ATTENTION_BY_KIND,
+  IMAGE_GENERATION_AUTHOR_GLYPH_KINDS,
+  IMAGE_GENERATION_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus";
 // Per-repo follow-up dials (agent registry) — plan
 // `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
 import {
@@ -286,6 +301,15 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: FINDING_RETENTION_CLASS,
       authorGlyphKinds: FINDING_AUTHOR_GLYPH_RETENTIONS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "operator touches (/admin/coord/operator-touches)",
+    module: "app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus.ts",
+    attentionByKind: TOUCH_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: TOUCH_KIND_CLASS,
+      authorGlyphKinds: TOUCH_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
@@ -666,6 +690,19 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: MODEL_ACCESS_BADGE_CLASS,
       authorGlyphKinds: MODEL_ACCESS_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- image generation's per-repo overrides (tenant policy) -------------
+  {
+    // A level in effect (`off` included) is a setting somebody chose, so
+    // calm; only a level this console cannot read is amber.
+    surface: "image generation repo overrides (/admin/coord/tenant-policy)",
+    module: "app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus.ts",
+    attentionByKind: IMAGE_GENERATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: IMAGE_GENERATION_BADGE_CLASS,
+      authorGlyphKinds:
+        IMAGE_GENERATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- per-repo follow-up dials (agent registry) -------------------------

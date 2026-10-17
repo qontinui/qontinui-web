@@ -66,7 +66,10 @@ import {
   type HealthBadge,
   type HealthStripLevel,
   GlossaryTerm,
+  BackendErrorMessage,
 } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import {
   derivePolicyAutonomyStatus,
   POLICY_STATUS_PALETTE,
@@ -117,7 +120,7 @@ function autonomyChip(level: AutonomyLevel) {
 export default function CoordPoliciesPage() {
   const [data, setData] = useState<NextStepSettingsFleet | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [openTenant, setOpenTenant] = useState<string | null>(null);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
@@ -130,7 +133,7 @@ export default function CoordPoliciesPage() {
       setError(null);
     } catch (e) {
       if (!isCurrent()) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(operationsErrorReading(e));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -208,7 +211,7 @@ export default function CoordPoliciesPage() {
           className="text-sm text-destructive"
           data-testid="coord-policies-error"
         >
-          Failed to load: {error}
+          Failed to load: <BackendErrorMessage error={error} />
         </p>
       )}
 

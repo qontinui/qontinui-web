@@ -7880,6 +7880,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an image to the content-addressed store
+         * @description Store one image under the hash of its bytes, for the caller's tenant.
+         *
+         *     Every refusal — a malformed or unstorable field, an oversized or
+         *     unreadable image — happens before anything is written to storage.
+         */
+        post: operations["api_v1_image_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/slot-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List one image slot's candidates, a page at a time
+         * @description One page of the slot's candidates, each with the asset it names.
+         */
+        get: operations["api_v1_image_assets_slot_candidates_get"];
+        /**
+         * Propose an image for a slot, or move a proposal
+         * @description Create or update the (repo, slot_id, asset_sha256) candidate.
+         *
+         *     ``recipe_hash``, ``values`` and ``judge`` are replaced when sent and kept
+         *     when omitted. ``status: chosen`` returns the slot's previous choice to
+         *     ``candidate`` in the same transaction; ``demoted`` names it.
+         */
+        put: operations["api_v1_image_assets_slot_candidates_put"];
+        post?: never;
+        /**
+         * Withdraw one proposal (the image itself stays)
+         * @description Delete the (repo, slot_id, asset_sha256) candidate row.
+         */
+        delete: operations["api_v1_image_assets_slot_candidates_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's record and a URL to its bytes
+         * @description Answers only when the caller's tenant holds an image with this hash.
+         */
+        get: operations["api_v1_image_assets_sha256_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's bytes
+         * @description The bytes of an image the caller's tenant holds — the same 404 as the
+         *     record route for any other hash, another tenant's included.
+         */
+        get: operations["api_v1_image_assets_sha256_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integration-testing/execute": {
         parameters: {
             query?: never;
@@ -10668,6 +10764,68 @@ export interface paths {
          *     never sent on the wire.
          */
         get: operations["api_v1_operations_coord_next_step_settings_fleet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/operator-touches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operator Touches
+         * @description Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched —
+         *     ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+         *     ``aggregate_included`` (``false`` on a ``before`` page, where every
+         *     aggregate field and ``constraint_verdict`` are ``null``),
+         *     ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+         *     ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+         *     ``touches``, ``next_cursor`` and ``constraint_verdict``.
+         *
+         *     Every parameter is declared as a STRING and forwarded unchanged. coord
+         *     clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+         *     ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+         *     an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+         *     passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+         *     Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+         *     which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+         *     answer, not a failure; coord's 400/503 bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_operator_touches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/operator-touches/constraint-verdict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operator Touch Constraint Verdict
+         * @description Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+         *
+         *     The standalone form of the ``constraint_verdict`` object the touch read
+         *     carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+         *     reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+         *     verdict, never a default. Error bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_operator_touches_constraint_verdict_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15435,6 +15593,14 @@ export interface paths {
          *     ``2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch``
          *     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
          *     the last two existed to justify exiting.
+         *
+         *     Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+         *     fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+         *     — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+         *     ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+         *     with no live writer (``operator_override_rate``, ``escalation_rate``).
+         *     This proxy returns coord's JSON as-is (no response model reshapes it), so
+         *     both reach the frontend without a change here.
          *
          *     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
          */
@@ -22782,6 +22948,157 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/taste/calibration-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue the calibration batch: pairs across the tenant's directions
+         * @description Idempotent: a pair already queued is never queued twice, so building
+         *     again only adds pairs the pool's growth makes possible.
+         */
+        post: operations["api_v1_taste_calibration_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the taste inbox: the queue head, the budget, recent labels */
+        get: operations["api_v1_taste_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the label feed: labels and undos, by commit-ordered position */
+        get: operations["api_v1_taste_labels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue one pairwise taste question */
+        post: operations["api_v1_taste_pairs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw a never-answered pair
+         * @description Two populations: a device or service credential — studio correcting
+         *     its own push — and an operator. The operator's path is the labeller's:
+         *     a member who may only view the inbox may not empty it either.
+         */
+        delete: operations["api_v1_taste_pairs_pair_id_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Label one pair: A, B or both bad, with reasons, a comment and an edit */
+        put: operations["api_v1_taste_pairs_pair_id_label_put"];
+        post?: never;
+        /**
+         * Undo your label (or, with force, a colleague's): the pair returns to the queue
+         * @description Admin-gated like every label write (``get_labeller``), ``force``
+         *     included: only a coord-tenant admin of the effective tenant, or a
+         *     qontinui superuser, reaches this handler at all.
+         */
+        delete: operations["api_v1_taste_pairs_pair_id_label_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip an unanswered pair: it moves to the back of the queue */
+        post: operations["api_v1_taste_pairs_pair_id_skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the weekly labelling budget */
+        put: operations["api_v1_taste_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/template-capture/candidates": {
         parameters: {
             query?: never;
@@ -27855,6 +28172,25 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_image_asset_api_v1_image_assets_post */
+        Body_upload_image_asset_api_v1_image_assets_post: {
+            /**
+             * File
+             * @description The image. Its filename and Content-Type are ignored: the format is read from the bytes.
+             */
+            file: string;
+            /**
+             * Kind
+             * @description How the image entered the store. The first upload's kind stands.
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /**
+             * Provenance
+             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys, up to that same cap, and never removes or changes one.
+             */
+            provenance?: string | null;
+        };
         /** Body_upload_recording_api_v1_recordings_upload_post */
         Body_upload_recording_api_v1_recordings_upload_post: {
             /** Description */
@@ -28232,6 +28568,41 @@ export interface components {
              * Format: date
              */
             start_date: string;
+        };
+        /**
+         * CalibrationBatchRequest
+         * @description ``POST /api/v1/taste/calibration-batch``.
+         */
+        CalibrationBatchRequest: {
+            /**
+             * Size
+             * @default 20
+             */
+            size: number;
+        };
+        /**
+         * CalibrationBatchResult
+         * @description What a calibration build did.
+         *
+         *     ``created`` new pairs were queued; ``already_queued`` were pairs the
+         *     builder chose that the queue already held. ``shortfall`` names why fewer
+         *     than ``requested`` were created: ``pool_too_small`` (fewer than two images
+         *     to pair), ``pool_exhausted`` (every pairing the pool allows is queued),
+         *     ``concurrent_build`` (another build queued some of this one's pairs
+         *     first).
+         */
+        CalibrationBatchResult: {
+            /** Already Queued */
+            already_queued: number;
+            /** Created */
+            created: number;
+            /** Pair Ids */
+            pair_ids: string[];
+            pool: components["schemas"]["TastePool"];
+            /** Requested */
+            requested: number;
+            /** Shortfall */
+            shortfall: ("pool_too_small" | "pool_exhausted" | "concurrent_build") | null;
         };
         /**
          * CancelProposalBody
@@ -37097,16 +37468,39 @@ export interface components {
             scope_key?: string | null;
         };
         /**
+         * FleetPolicyRepoOverride
+         * @description One repo-band row that overrides the tenant band for its repo.
+         *
+         *     Mirrors one entry of coord's ``repo_overrides``
+         *     (``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a
+         *     reader of that repo resolves from the row: ``level``, or ``off`` when the
+         *     row's ``master_enabled`` is false. ``level`` is opaque here, as it is on
+         *     the write: a level this console does not recognise is the page's to name,
+         *     never this proxy's to drop.
+         */
+        FleetPolicyRepoOverride: {
+            /** Effective Level */
+            effective_level: string;
+            /** Level */
+            level: string;
+            /** Master Enabled */
+            master_enabled: boolean;
+            /** Repo */
+            repo: string;
+        };
+        /**
          * FleetPolicyView
          * @description The requested domain's resolved policy — and ONLY that domain's.
          *
          *     ``effective_level`` is what a device actually resolves, which is not the
          *     same as the level that was last written: coord folds ``master_enabled``
          *     in (a disabled master resolves ``off`` whatever ``level`` says), and a
-         *     tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
-         *     That last case is why ``resolved_scope`` is surfaced: "off because nobody
-         *     ever wrote a row" and "off because someone turned it off" are different
-         *     facts about the fleet and the operator is entitled to tell them apart.
+         *     tenant with no row at all resolves the domain's declared no-row default
+         *     with ``resolved_scope: "none"`` — ``off`` unless coord's
+         *     ``domain_default_level`` declares another for that domain. That last case
+         *     is why ``resolved_scope`` is surfaced: "set because nobody ever wrote a
+         *     row" and "set because someone chose it" are different facts about the
+         *     fleet and the operator is entitled to tell them apart.
          */
         FleetPolicyView: {
             /** Can Edit */
@@ -37121,6 +37515,8 @@ export interface components {
             keys_not_shown_source?: ("fleet_resources_row" | "this_domain") | null;
             /** Master Enabled */
             master_enabled: boolean;
+            /** Repo Overrides */
+            repo_overrides?: components["schemas"]["FleetPolicyRepoOverride"][] | null;
             /** Resolved Scope */
             resolved_scope: string;
         };
@@ -38070,6 +38466,115 @@ export interface components {
             show_find?: boolean | null;
             /** Show Type */
             show_type?: boolean | null;
+        };
+        /**
+         * ImageAssetConflict
+         * @description One thing a re-upload sent that the store did not apply.
+         */
+        ImageAssetConflict: {
+            /** Path */
+            path: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "kind_stands" | "stored_value_stands" | "provenance_full";
+        };
+        /**
+         * ImageAssetUploadResponse
+         * @description ``created`` is true when this request created the row (HTTP 201) and
+         *     false when the tenant already held these bytes (HTTP 200).
+         */
+        ImageAssetUploadResponse: {
+            /** Byte Size */
+            byte_size: number;
+            /** Conflicts */
+            conflicts: components["schemas"]["ImageAssetConflict"][];
+            /** Created */
+            created: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Orientation */
+            orientation: number | null;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * ImageAssetWithUrl
+         * @description A stored image plus a URL to its bytes.
+         *
+         *     On S3 / MinIO ``url`` is a presigned URL. Its ``url_expires_at`` is the
+         *     requested lifetime capped at the signing credential's own expiry when the
+         *     backend can read one (an assumed role, an instance or task profile): a
+         *     presigned URL stops working when the credential that signed it expires,
+         *     whatever its ``X-Amz-Expires`` says. When no expiry can be read — long-lived
+         *     access keys, or credentials whose expiry botocore does not expose — the
+         *     value ASSUMES the credential outlives the URL.
+         *
+         *     On the local development backend ``url`` is this API's own authenticated
+         *     content route (``GET /api/v1/image-assets/{sha256}/content``): fetch it
+         *     with the same credential. It does not expire, so ``url_expires_at`` is
+         *     null.
+         */
+        ImageAssetWithUrl: {
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Orientation */
+            orientation: number | null;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Url */
+            url: string;
+            /** Url Expires At */
+            url_expires_at: string | null;
+            /** Width */
+            width: number;
         };
         /**
          * ImageExtractRequest
@@ -48522,6 +49027,154 @@ export interface components {
             /** Version */
             version?: string | null;
         };
+        /**
+         * SlotCandidateAsset
+         * @description The asset a candidate names, as stored.
+         */
+        SlotCandidateAsset: {
+            /** Byte Size */
+            byte_size: number;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * SlotCandidateDemotion
+         * @description A slot's previous choice, returned to ``candidate`` because another
+         *     asset was chosen in the same request.
+         */
+        SlotCandidateDemotion: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Status After
+             * @default candidate
+             * @constant
+             */
+            status_after: "candidate";
+            /**
+             * Status Before
+             * @default chosen
+             * @constant
+             */
+            status_before: "chosen";
+        };
+        /**
+         * SlotCandidateList
+         * @description ``GET /api/v1/image-assets/slot-candidates`` — one page of a slot's
+         *     candidates, ``oldest`` or ``newest`` first.
+         *
+         *     The query is echoed so an empty page can be checked against what was
+         *     asked. ``truncated`` says whether more rows exist past this page, and
+         *     ``next_cursor`` — set exactly when it is true — fetches them: pass it back
+         *     as ``after`` with the same ``order``.
+         */
+        SlotCandidateList: {
+            /** Candidates */
+            candidates: components["schemas"]["SlotCandidateOut"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Order
+             * @enum {string}
+             */
+            order: "oldest" | "newest";
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /** Status */
+            status: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** SlotCandidateOut */
+        SlotCandidateOut: {
+            asset: components["schemas"]["SlotCandidateAsset"];
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Judge */
+            judge: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * SlotCandidateUpsert
+         * @description ``PUT /api/v1/image-assets/slot-candidates`` — propose an asset for a
+         *     slot, or move a proposal.
+         *
+         *     Identity is ``repo`` + ``slot_id`` + ``asset_sha256``. ``status`` is
+         *     always sent. ``recipe_hash``, ``values`` and ``judge`` are replaced when
+         *     sent and left as stored when omitted (``recipe_hash: null`` clears it).
+         */
+        SlotCandidateUpsert: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /** Judge */
+            judge?: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash?: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
+        };
+        /** SlotCandidateUpsertResponse */
+        SlotCandidateUpsertResponse: {
+            candidate: components["schemas"]["SlotCandidateOut"];
+            /** Created */
+            created: boolean;
+            /** Demoted */
+            demoted: components["schemas"]["SlotCandidateDemotion"][];
+        };
         /** SnapshotRun */
         SnapshotRun: {
             /** Created At */
@@ -50292,6 +50945,352 @@ export interface components {
          * @enum {string}
          */
         TaskType: "task" | "automation" | "scheduled";
+        /**
+         * TasteBudget
+         * @description The weekly labelling budget and how much of it this week has used.
+         *
+         *     A week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``
+         *     was written for this tenant (``setting``) or is the declared default
+         *     (``default``). A pair is charged ONCE, to the week it was first
+         *     answered: relabelling it, or undoing and answering it again, costs
+         *     nothing.
+         */
+        TasteBudget: {
+            /** Labelled This Week */
+            labelled_this_week: number;
+            /** Remaining */
+            remaining: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "setting" | "default";
+            /**
+             * Week Starts At
+             * Format: date-time
+             */
+            week_starts_at: string;
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
+        /** TasteDirection */
+        TasteDirection: {
+            /** Direction */
+            direction: string;
+            /** Images */
+            images: number;
+        };
+        /**
+         * TasteImage
+         * @description One image of a pair, as the store holds it.
+         */
+        TasteImage: {
+            /** Byte Size */
+            byte_size: number;
+            /** Direction */
+            direction: string | null;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * TasteInbox
+         * @description ``GET /api/v1/taste/inbox`` — everything the inbox page renders, in
+         *     one read.
+         *
+         *     ``pairs`` is the head of the queue in the order it is asked: never-skipped
+         *     pairs first (most uncertain, then oldest), then skipped ones (least
+         *     recently skipped first). While the week's budget is spent it is empty
+         *     unless ``over_budget`` was asked for — the queue itself is untouched, and
+         *     ``pending_total`` still counts it.
+         */
+        TasteInbox: {
+            budget: components["schemas"]["TasteBudget"];
+            /** Can Label */
+            can_label: boolean;
+            /** Labelled Total */
+            labelled_total: number;
+            /** Over Budget */
+            over_budget: boolean;
+            /** Pairs */
+            pairs: components["schemas"]["TastePairOut"][];
+            /** Pending Total */
+            pending_total: number;
+            pool: components["schemas"]["TastePool"];
+            /** Reason Vocabulary */
+            reason_vocabulary: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            /** Recent */
+            recent: components["schemas"]["TastePairOut"][];
+            /** Viewer User Id */
+            viewer_user_id: string | null;
+        };
+        /**
+         * TasteLabelPage
+         * @description ``GET /api/v1/taste/labels`` — the tenant's label feed, for the taste
+         *     twin (Phase 24).
+         *
+         *     Every pair that has ever been answered, once, at its LATEST change, in
+         *     ``change_seq`` order. A label or relabel is a row with ``label`` set; an
+         *     undo is a tombstone (``tombstone: true``, ``label`` null). Positions are
+         *     handed out in commit order per tenant, so paging by ``next_cursor`` never
+         *     skips a late commit; a pair changed again reappears at its new position,
+         *     so a reader that keeps the last row per pair id holds the current state.
+         *     ``next_cursor`` is the position after the last row returned — or the
+         *     ``after`` that was sent, when the page is empty — so it is set on the
+         *     LAST page too: to follow the feed, ask again later with it. ``truncated``
+         *     says whether more rows exist right now.
+         */
+        TasteLabelPage: {
+            /** Labels */
+            labels: components["schemas"]["TastePairOut"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * TasteLabelWrite
+         * @description ``PUT /api/v1/taste/pairs/{id}/label`` — answer one pair.
+         *
+         *     A pair someone has already labelled is refused (409
+         *     ``pair_already_labelled``) unless ``relabel`` is true, so two labellers
+         *     working the queue at once never silently overwrite each other. A relabel
+         *     replaces only your OWN answer; another labeller's needs ``force`` too
+         *     (409 ``label_not_yours`` otherwise), and the replaced answer is kept.
+         */
+        TasteLabelWrite: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "a" | "b" | "both_bad";
+            /** Comment */
+            comment?: string | null;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256?: string | null;
+            /** Edit Note */
+            edit_note?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Reasons */
+            reasons?: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            /**
+             * Relabel
+             * @default false
+             */
+            relabel: boolean;
+        };
+        /** TastePairOut */
+        TastePairOut: {
+            asset_a: components["schemas"]["TasteImage"];
+            asset_b: components["schemas"]["TasteImage"];
+            /** Capture A Sha256 */
+            capture_a_sha256: string | null;
+            /** Capture B Sha256 */
+            capture_b_sha256: string | null;
+            /** Change Seq */
+            change_seq: number | null;
+            /** Comment */
+            comment: string | null;
+            /** Context */
+            context: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256: string | null;
+            /** Edit Note */
+            edit_note: string | null;
+            /** First Labelled At */
+            first_labelled_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** In Situ */
+            in_situ: boolean;
+            /** Label */
+            label: ("a" | "b" | "both_bad") | null;
+            /** Labelled At */
+            labelled_at: string | null;
+            /** Labeller Name */
+            labeller_name: string | null;
+            /** Labeller User Id */
+            labeller_user_id: string | null;
+            /** Pushed By */
+            pushed_by: string;
+            /** Reasons */
+            reasons: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            removal: components["schemas"]["TasteRemoval"] | null;
+            /** Repo */
+            repo: string | null;
+            /** Skip Count */
+            skip_count: number;
+            /** Skipped At */
+            skipped_at: string | null;
+            /** Slot Id */
+            slot_id: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "calibration" | "active_learning" | "post_hoc";
+            /** Tombstone */
+            tombstone: boolean;
+            /** Uncertainty */
+            uncertainty: number | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * TastePairPush
+         * @description ``POST /api/v1/taste/pairs`` — put one pairwise question in the queue.
+         *
+         *     Studio's door (Phase 20 onward: where the judge panel disagrees or the
+         *     taste head is least certain, plus post-hoc samples of landed images).
+         *     Identity is the slot plus the UNORDERED pair of images: a push of a pair
+         *     already queued answers with that row (``created: false``) and changes
+         *     nothing.
+         */
+        TastePairPush: {
+            /** Asset A Sha256 */
+            asset_a_sha256: string;
+            /** Asset B Sha256 */
+            asset_b_sha256: string;
+            /** Capture A Sha256 */
+            capture_a_sha256?: string | null;
+            /** Capture B Sha256 */
+            capture_b_sha256?: string | null;
+            /** Context */
+            context?: {
+                [key: string]: unknown;
+            };
+            /** Repo */
+            repo?: string | null;
+            /** Slot Id */
+            slot_id?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "calibration" | "active_learning" | "post_hoc";
+            /** Uncertainty */
+            uncertainty?: number | null;
+        };
+        /** TastePairPushResponse */
+        TastePairPushResponse: {
+            /** Created */
+            created: boolean;
+            pair: components["schemas"]["TastePairOut"];
+        };
+        /**
+         * TastePool
+         * @description The images a calibration batch can draw from: every ``candidate`` and
+         *     ``exemplar`` the tenant holds, grouped by direction.
+         */
+        TastePool: {
+            /** Directions */
+            directions: components["schemas"]["TasteDirection"][];
+            /** Images */
+            images: number;
+        };
+        /**
+         * TasteRemoval
+         * @description The most recent removal of a pair's answer: an undo (``via: undo``,
+         *     the pair went back to the queue) or a relabel that replaced it
+         *     (``via: relabel``). Kept after the pair is answered again, so a removed
+         *     answer is never lost without a trace.
+         */
+        TasteRemoval: {
+            /** Forced */
+            forced: boolean;
+            removed: components["schemas"]["TasteRemovedLabel"];
+            /**
+             * Removed At
+             * Format: date-time
+             */
+            removed_at: string;
+            /** Removed By Name */
+            removed_by_name: string | null;
+            /** Removed By User Id */
+            removed_by_user_id: string | null;
+            /**
+             * Via
+             * @enum {string}
+             */
+            via: "undo" | "relabel";
+        };
+        /**
+         * TasteRemovedLabel
+         * @description The answer an undo or a relabel removed, as it stood.
+         */
+        TasteRemovedLabel: {
+            /** Comment */
+            comment: string | null;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256: string | null;
+            /** Edit Note */
+            edit_note: string | null;
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "a" | "b" | "both_bad";
+            /**
+             * Labelled At
+             * Format: date-time
+             */
+            labelled_at: string;
+            /** Labeller Name */
+            labeller_name: string | null;
+            /** Labeller User Id */
+            labeller_user_id: string | null;
+            /** Reasons */
+            reasons: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+        };
+        /** TasteSettingsOut */
+        TasteSettingsOut: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "setting" | "default";
+            /** Updated At */
+            updated_at: string | null;
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
+        /**
+         * TasteSettingsWrite
+         * @description ``PUT /api/v1/taste/settings``.
+         */
+        TasteSettingsWrite: {
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
         /**
          * TeamMemberCreate
          * @description Schema for adding a team member.
@@ -67744,6 +68743,281 @@ export interface operations {
             };
         };
     };
+    api_v1_image_assets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_asset_api_v1_image_assets_post"];
+            };
+        };
+        responses: {
+            /** @description The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys (up to its cap); `conflicts` names what was not applied, and why. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description The image is larger than the store accepts. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The bytes are not an accepted image format. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unreadable image, too many frames or pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_get: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                /** @description Only candidates in this status. */
+                status?: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+                /** @description oldest (the default) or newest first. */
+                order?: "oldest" | "newest";
+                limit?: number;
+                /** @description The previous page's next_cursor, with the same order. */
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateList"];
+                };
+            };
+            /** @description A malformed cursor, or one for the other order. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlotCandidateUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description The candidate was created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Another choice for the slot landed concurrently. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_delete: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                asset_sha256: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such candidate for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_get: {
+        parameters: {
+            query?: {
+                /** @description Seconds a presigned URL stays valid (S3 / MinIO). */
+                expires_in?: number;
+            };
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetWithUrl"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image's bytes, as uploaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/avif": unknown;
+                    "image/gif": unknown;
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
+                    "image/webp": unknown;
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The record exists but its stored bytes do not. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     api_v1_integration_testing_execute_post: {
         parameters: {
             query?: never;
@@ -71865,6 +73139,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_operator_touches_get: {
+        parameters: {
+            query?: {
+                window_days?: string | null;
+                disposition?: string | null;
+                open_only?: string | null;
+                actionable_only?: string | null;
+                limit?: string | null;
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_operator_touches_constraint_verdict_get: {
+        parameters: {
+            query?: {
+                window_days?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -88975,6 +90316,383 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VerificationResultResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_calibration_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationBatchResult"];
+                };
+            };
+            /** @description An image left the pool mid-build; nothing was queued. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_inbox_get: {
+        parameters: {
+            query?: {
+                /** @description How many queued pairs to return. */
+                limit?: number;
+                /** @description Return queued pairs even when this week's budget is spent (the operator chose to keep going). */
+                over_budget?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteInbox"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_labels_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description The previous page's next_cursor (set on every page, the last one included, so a reader can follow the feed). */
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteLabelPage"];
+                };
+            };
+            /** @description A malformed cursor. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_taste_pairs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TastePairPush"];
+            };
+        };
+        responses: {
+            /** @description The pair was already queued (in either order); nothing changed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairPushResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairPushResponse"];
+                };
+            };
+            /** @description This tenant holds no image with a named sha256 (or one was deleted while the pair was being queued). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A malformed field, or a capture that is not one. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An operator who may not label (a coord-tenant admin, or a qontinui superuser, may). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is labelled, or was answered and undone (its history is in the label feed); neither is withdrawn. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_label_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TasteLabelWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair, or no such edited image, for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description pair_already_labelled: the pair is already labelled (send relabel: true to replace your own answer). label_not_yours: the answer is another labeller's (send force: true as well; the replaced answer is recorded). pair_changed_meanwhile: the pair changed under the write (a concurrent undo); nothing was changed — read it again. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_label_delete: {
+        parameters: {
+            query?: {
+                /** @description Remove the label even though another labeller gave it. The row records that the undo was forced, who forced it, and the answer it removed. */
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is not labelled, or its label is another labeller's and force was not sent. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is already labelled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TasteSettingsWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteSettingsOut"];
                 };
             };
             /** @description Validation Error */

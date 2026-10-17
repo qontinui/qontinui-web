@@ -783,6 +783,13 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/design-policies",
     "https://api.test/api/v1/digital-twin/subspaces",
     "https://api.test/api/v1/memory/records",
+    // The image store: rows and object keys are the active tenant's.
+    "https://api.test/api/v1/image-assets",
+    "https://api.test/api/v1/image-assets/slot-candidates?repo=qontinui-web&slot_id=home.hero",
+    `https://api.test/api/v1/image-assets/${"a".repeat(64)}`,
+    // The taste inbox: its queue and labels are the active tenant's.
+    "https://api.test/api/v1/taste/inbox?limit=5",
+    "https://api.test/api/v1/taste/pairs/00000000-0000-0000-0000-000000000001/label",
     "https://api.test/api/v1/plan-library/candidates",
     "https://api.test/api/v1/session-repository/unfinished",
     // Test-host designation writes: coord binding-checks the device against

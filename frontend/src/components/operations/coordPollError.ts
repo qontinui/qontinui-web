@@ -18,10 +18,13 @@
  *
  * ## Two coord answers that are not "the route failed"
  *
- * - **`503 {"error":"deadline","budget_ms":N}`** — coord gave up on its own
- *   read at its route budget (D2). Nothing was measured, so the surface is
- *   UNKNOWN, and the text names the budget. Never zero, never empty, never
- *   healthy ([policy: `unknown-must-not-render-as-a-default`]).
+ * - **`503 {"error":"deadline","budget_ms":N,"loader":"census",…}`** — coord
+ *   gave up on its own read at its route budget (D2). Nothing was measured, so
+ *   the surface is UNKNOWN, and the text names the budget — and, when coord
+ *   says, the step that ran out (`census` is a slow database scan,
+ *   `pool_acquire` a coord with no free connection: different faults the same
+ *   503 would otherwise hide). Never zero, never empty, never healthy
+ *   ([policy: `unknown-must-not-render-as-a-default`]).
  * - **`404 {"error":"route_disabled"}`** — an operator switched the route off
  *   (D4's kill switch or tenant dial). That is a deliberate state, not a
  *   route this build lacks, and saying "not shipped yet" about it would be a
@@ -41,7 +44,7 @@ export const COORD_DASHBOARD_POLL_OPTIONS: HttpOptions = { maxRetries: 0 };
 
 /** What a coord error answer means for a dashboard surface. */
 export type CoordErrorKind =
-  | { kind: "deadline"; budgetMs: number | null }
+  | { kind: "deadline"; budgetMs: number | null; loader: string | null }
   | { kind: "route_disabled" }
   | { kind: "route_unavailable" }
   | { kind: "other" };
@@ -69,6 +72,13 @@ function parseErrorBody(
   }
 }
 
+/**
+ * A loader name as coord's fleet routes serve it (`pool_acquire`, `census`,
+ * `target_window`, …). Anything else — a long string, markup, a number — is
+ * dropped rather than rendered: this text lands in a banner.
+ */
+const LOADER_NAME = /^[a-z][a-z0-9_]{0,39}$/;
+
 /** Classify a coord answer from its status and raw body text. Pure. */
 export function classifyCoordError(
   status: number | null,
@@ -78,10 +88,16 @@ export function classifyCoordError(
   const body = parseErrorBody(bodyText);
   if (status === 503 && body?.error === "deadline") {
     const budget = body.budget_ms;
+    const loader = body.loader;
     return {
       kind: "deadline",
       budgetMs:
         typeof budget === "number" && Number.isFinite(budget) ? budget : null,
+      // `null` both when coord sent none (a route that does not name its
+      // loaders, or a deadline that fired before any loader started) and
+      // when the value is not a loader name.
+      loader:
+        typeof loader === "string" && LOADER_NAME.test(loader) ? loader : null,
     };
   }
   if (status === 404 && body?.error === "route_disabled") {
@@ -93,10 +109,17 @@ export function classifyCoordError(
   return { kind: "other" };
 }
 
-/** The UNKNOWN wording for a coord read deadline, naming the budget. */
-export function deadlineText(budgetMs: number | null): string {
+/**
+ * The UNKNOWN wording for a coord read deadline, naming the budget and, when
+ * coord named it, the loader that was running when the budget ran out.
+ */
+export function deadlineText(
+  budgetMs: number | null,
+  loader: string | null = null
+): string {
   const budget = budgetMs === null ? "its budget" : `${budgetMs} ms`;
-  return `coord read deadline (${budget}) exceeded — unknown`;
+  const where = loader === null ? "" : ` in its ${loader} step`;
+  return `coord read deadline (${budget}) exceeded${where} — unknown`;
 }
 
 /** The wording for a route an operator switched off. */
@@ -116,7 +139,7 @@ export function describeCoordPollError(
   const verdict = classifyCoordError(httpStatusOf(err), httpBodyOf(err));
   switch (verdict.kind) {
     case "deadline":
-      return deadlineText(verdict.budgetMs);
+      return deadlineText(verdict.budgetMs, verdict.loader);
     case "route_disabled":
       return ROUTE_DISABLED_TEXT;
     case "route_unavailable":

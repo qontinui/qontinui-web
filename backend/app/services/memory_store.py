@@ -3921,9 +3921,10 @@ async def list_bridge_source_keys(
 ) -> list[tuple[UUID, str, int]]:
     """(tenant_id, name, version) for every latest live coord memory.
 
-    Reads the ``coord.memories_latest`` view (latest non-tombstoned
-    version per name). Rows without a tenant binding are skipped — the
-    bridge writes into ``coord.memory_records``, whose ``tenant_id`` is
+    Reads the ``coord.memories_latest`` view: the latest version per
+    ``(tenant_id, name)``, absent when that version is a tombstone
+    (revision ``coordmem_01``). Rows without a tenant binding are skipped —
+    the bridge writes into ``coord.memory_records``, whose ``tenant_id`` is
     NOT NULL.
     """
     rows = await session.execute(

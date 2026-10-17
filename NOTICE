@@ -1,0 +1,42 @@
+Qontinui Web
+Copyright (C) 2025-2026 Joshua Spinak
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See LICENSE for the full text.
+
+
+Additional permission under GNU AGPL version 3 section 7
+--------------------------------------------------------
+
+If you modify this Program, or any covered work, by linking or combining it
+with Remotion -- the npm packages `remotion` and `@remotion/player` (or a
+modified version of either), containing parts covered by the terms of the
+Remotion License -- the licensors of this Program grant you additional
+permission to convey the resulting work.
+
+Corresponding Source for a non-source form of such a combination need not
+include the source code of those Remotion packages. Their own licence governs
+them, and you remain responsible for complying with it.
+
+This permission covers only the two packages named above. It does not extend
+to any other non-free library, including other `@remotion/*` packages. You may
+remove this permission from your copy, or from a modified version, as section
+7 allows. Contributions to this repository are accepted under
+AGPL-3.0-or-later together with this permission.
+
+
+Third-party software under its own licence
+------------------------------------------
+
+Remotion (`remotion`, `@remotion/player`; https://www.remotion.dev) is NOT
+licensed under the AGPL. It is source-available software under its own
+licence: https://www.remotion.dev/license. Anyone who uses, builds, deploys
+or redistributes the parts of this Program that include it must comply with
+that licence, including its limits on team size and use.
+
+The scene library behind the marketing site's animated explainers,
+`@qontinui/studio-scenes` (https://github.com/qontinui/qontinui-studio,
+directory `scenes/`), is under the MIT licence. Its bundled Inter fonts are
+under the SIL Open Font License 1.1.

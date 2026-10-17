@@ -9,8 +9,17 @@
  * dependent refs + per-conflict chips (paths / auto-resolvable / affected
  * agents), expected CI workflows with confidence bands rendered HONESTLY
  * (a wide band reads as visibly uncertain), expected deploys, the
- * main-merge-overlap warning, the inferred-prior note when applied, and the
- * risk verdict (risky + reasons) prominently.
+ * main-merge-overlap warning (or an explicit "unknown" notice when coord could
+ * not tell), the inferred-prior note when applied, and the risk verdict
+ * (risky + reasons, or "unknown" when coord sent no boolean verdict)
+ * prominently. The unknowns named above render in the console's
+ * UNKNOWN_AMBER, as do a workflow with no estimate, a cascade completion or
+ * advance target coord did not give, and a CI or deploy prediction coord
+ * marked pending. Some unknowns still render as known: an absent cascade,
+ * ci or deploy block, or a sibling's null cascade, shows its count and list
+ * as empty, and a cascade coord could not predict (sent as an empty, clean
+ * one) reads as clean. Those wait for Phase 3y of plan
+ * 2026-10-16-coord-mcp-claim-tools-diverge-from-the-http-claim-doors.
  *
  * Everything is read defensively (optional chaining + fallbacks) because the
  * predicted-effect field set may grow — the plan calls for inspecting field
@@ -19,9 +28,11 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { UNKNOWN_AMBER } from "@/components/console";
 import {
   AlertTriangle,
   CheckCircle2,
+  CircleHelp,
   GitBranch,
   History,
   Layers,
@@ -109,7 +120,10 @@ function ConfidenceBand({
 
   if (point === null && low === null && high === null) {
     return (
-      <span className="text-xs text-muted-foreground italic">
+      <span
+        className={`rounded border px-1 text-xs italic ${UNKNOWN_AMBER}`}
+        data-testid="land-confidence-unknown"
+      >
         no estimate
       </span>
     );
@@ -302,42 +316,74 @@ export function LandPreviewPanel({
   const prior = predicted.inferred_prior ?? null;
   const risk = preview.risk ?? {};
   const riskReasons = risk.reasons ?? [];
+  // Only a boolean `risky` is a verdict. A null or absent `risk`, or a `risky`
+  // that is null or absent, is unknown and must not read as "Land looks clean".
+  const riskVerdict =
+    risk.risky === true ? "risky" : risk.risky === false ? "clean" : "unknown";
   const siblingCascades = Array.isArray(predicted.sibling_cascades)
     ? predicted.sibling_cascades
     : [];
 
   return (
     <div className="space-y-3" data-testid="coord-land-preview">
-      {/* Risk verdict — prominent at top */}
+      {/* Risk verdict — prominent at top. Unknown is amber, never calm
+          (style guide R3): an unknown verdict under a green card would read
+          as "nothing is wrong". */}
       <Card
         className={
-          risk.risky ? "border-destructive" : "border-success/60"
+          riskVerdict === "risky"
+            ? "border-destructive"
+            : riskVerdict === "clean"
+              ? "border-success/60"
+              : UNKNOWN_AMBER
         }
+        data-testid="land-risk-card"
       >
         <CardContent className="p-4">
           <div className="flex items-start gap-2">
-            {risk.risky ? (
+            {riskVerdict === "risky" ? (
               <ShieldAlert className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-            ) : (
+            ) : riskVerdict === "clean" ? (
               <CheckCircle2 className="h-5 w-5 text-success shrink-0 mt-0.5" />
+            ) : (
+              <CircleHelp className="h-5 w-5 shrink-0 mt-0.5" />
             )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold">
-                  {risk.risky ? "Risky land" : "Land looks clean"}
+                  {riskVerdict === "risky"
+                    ? "Risky land"
+                    : riskVerdict === "clean"
+                      ? "Land looks clean"
+                      : "Risk unknown"}
                 </span>
-                <Badge
-                  variant={risk.risky ? "destructive" : "success"}
-                  data-testid="land-risk-badge"
-                >
-                  {risk.risky ? "risky" : "ok"}
-                </Badge>
+                {riskVerdict === "unknown" ? (
+                  <Badge
+                    variant="outline"
+                    className={UNKNOWN_AMBER}
+                    data-testid="land-risk-badge"
+                  >
+                    unknown
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant={riskVerdict === "risky" ? "destructive" : "success"}
+                    data-testid="land-risk-badge"
+                  >
+                    {riskVerdict === "risky" ? "risky" : "ok"}
+                  </Badge>
+                )}
                 <span className="text-xs text-muted-foreground font-mono">
                   {preview.repo}
                   {typeof preview.pr_number === "number" &&
                     ` #${preview.pr_number}`}
                 </span>
               </div>
+              {riskVerdict === "unknown" && (
+                <p className="mt-1 text-sm" data-testid="land-risk-unknown">
+                  coord returned no risk verdict for this land.
+                </p>
+              )}
               {riskReasons.length > 0 && (
                 <ul className="mt-1.5 list-disc pl-5 text-sm text-muted-foreground space-y-0.5">
                   {riskReasons.map((r, i) => (
@@ -352,8 +398,13 @@ export function LandPreviewPanel({
         </CardContent>
       </Card>
 
-      {/* Main-merge overlap warning */}
-      {predicted.main_merge_overlap && (
+      {/* Main-merge overlap, tri-state like `will_complete_cleanly` below:
+          true warns, false renders nothing, and null or absent means coord
+          could not tell. That third state is said in words, because showing
+          it as the blank that means "no overlap" would state a guess as fact,
+          and it is painted UNKNOWN_AMBER, never calm: style guide R3, "amber
+          also covers we do not know". */}
+      {predicted.main_merge_overlap === true ? (
         <div
           className="flex items-center gap-2 rounded border border-warning/60 bg-warning/10 px-3 py-2 text-sm"
           data-testid="land-main-merge-overlap"
@@ -361,6 +412,15 @@ export function LandPreviewPanel({
           <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
           Overlaps an in-flight main merge — landing now may be reaped or
           serialized behind it.
+        </div>
+      ) : predicted.main_merge_overlap === false ? null : (
+        <div
+          className={`flex items-center gap-2 rounded border px-3 py-2 text-sm ${UNKNOWN_AMBER}`}
+          data-testid="land-main-merge-overlap-unknown"
+        >
+          <CircleHelp className="h-4 w-4 shrink-0" />
+          Main-merge overlap unknown — coord could not determine whether this
+          land overlaps an in-flight main merge.
         </div>
       )}
 
@@ -396,7 +456,7 @@ export function LandPreviewPanel({
               <Badge
                 variant="outline"
                 data-testid="land-cascade-clean-badge"
-                className="italic"
+                className={`italic ${UNKNOWN_AMBER}`}
               >
                 unknown
               </Badge>
@@ -418,7 +478,13 @@ export function LandPreviewPanel({
                   {git.will_advance_to}
                 </Badge>
               ) : (
-                <span className="text-muted-foreground italic">unknown</span>
+                <Badge
+                  variant="outline"
+                  className={`text-[11px] italic ${UNKNOWN_AMBER}`}
+                  data-testid="land-git-advance-unknown"
+                >
+                  unknown
+                </Badge>
               )}
               {git.no_force_required === false && (
                 <Badge variant="warning" className="text-[10px]">
@@ -510,7 +576,7 @@ export function LandPreviewPanel({
         <CardContent>
           {ciPending ? (
             <p
-              className="text-sm text-muted-foreground italic"
+              className={`rounded-md border px-2 py-1 text-sm italic ${UNKNOWN_AMBER}`}
               data-testid="land-ci-pending"
             >
               prediction unavailable
@@ -614,7 +680,7 @@ export function LandPreviewPanel({
         <CardContent>
           {deployPending ? (
             <p
-              className="text-sm text-muted-foreground italic"
+              className={`rounded-md border px-2 py-1 text-sm italic ${UNKNOWN_AMBER}`}
               data-testid="land-deploy-pending"
             >
               prediction unavailable
