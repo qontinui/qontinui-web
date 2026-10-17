@@ -1,3 +1,5 @@
+import type { PrHold } from "./prHold";
+
 // ============================================================================
 // Merge-train wire types
 // ============================================================================
@@ -200,6 +202,13 @@ export interface PrRow {
   close_cause?: string | null;
   /** kebab-case deploy state ("has my merged PR deployed yet?"). */
   deploy_state?: string | null;
+  /**
+   * coord hold (plan `2026-10-04-coord-pr-hold-without-github-drafts`). `null`
+   * = read and not held; an ABSENT key = UNKNOWN (an older coord);
+   * `hold_unknown: true` = coord's hold read failed. See `prHold.ts`.
+   */
+  hold?: PrHold | null;
+  hold_unknown?: boolean;
 }
 
 export interface PrListResponse {

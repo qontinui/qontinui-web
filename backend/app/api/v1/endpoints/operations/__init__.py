@@ -1223,44 +1223,68 @@ async def get_pr_merge_prs(
     )
 
 
-@router.post("/prs/{owner}/{repo}/{number}/draft-state")
-async def set_pr_draft_state(
+# Body keys the hold proxy forwards to coord. coord's ``HoldBody`` is
+# ``deny_unknown_fields``, so anything else would be a 400 there; dropping it
+# here keeps the wire body exactly coord's contract.
+_PR_HOLD_FORWARDED_KEYS: tuple[str, ...] = ("held", "reason", "kind", "gate_id")
+
+
+@router.post("/prs/{owner}/{repo}/{number}/hold")
+async def set_pr_hold(
     owner: str,
     repo: str,
     number: int,
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Set a PR's GitHub draft state (operator release valve).
+    """Place or release a coord hold on a PR (the operator's hold control).
 
-    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-    (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-    ``false`` marks the PR ready-for-review (releasing it to the merge train),
-    ``true`` converts it back to draft (the documented hold mechanism).
+    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+    (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+    the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+    so it works on private repos on GitHub Free, which have no draft PRs.
 
-    Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-    bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-    fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-    server-side. Releasing a draft-required (security-surface) PR is an operator
-    judgment, so this is operator-authed — never an agent JWT.
+    Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+    ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+    ``held: false`` releases. Release authority is coord's: the holder, or an
+    admin-role operator for any hold; a ``security_tier`` hold is the
+    operator's alone.
 
-    Only the ``draft`` boolean is forwarded; any other keys the client sends are
-    dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-    coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-    via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-    / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-    502 github_draft_state_failed, 500 internal).
+    Auth mirrors the gate-action stack: the operator's Cognito bearer is
+    forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+    derives the tenant, role and repo authority server-side. Only the four
+    contract keys are forwarded.
+
+    ``structured_errors=True``: coord's typed refusal object (``{"error",
+    "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+    ``http_exception_handler`` splices into the top level of its envelope, so
+    the browser receives ``error`` as coord's code (400 invalid_input,
+    403 not_holder / security_tier_operator_only, 404 not_found,
+    500 internal) rather than a JSON string inside ``message``. A coord error
+    body that is not a JSON object still falls back to its text.
     """
-    draft = body.get("draft")
-    if not isinstance(draft, bool):
+    held = body.get("held")
+    if not isinstance(held, bool):
         raise HTTPException(
             status_code=400,
-            detail="draft-state body requires a boolean `draft` field",
+            detail="hold body requires a boolean `held` field",
         )
+    forwarded: dict[str, Any] = {"held": held}
+    for key in _PR_HOLD_FORWARDED_KEYS[1:]:
+        value = body.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise HTTPException(
+                status_code=400,
+                detail=f"hold body field `{key}` must be a string",
+            )
+        forwarded[key] = value
     return await _proxy_coord_post(
-        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state",
-        {"draft": draft},
+        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/hold",
+        forwarded,
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 

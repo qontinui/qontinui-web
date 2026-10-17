@@ -386,6 +386,11 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` D6).
   // `metadata.domain` / `scope_key` / `level` say which setting and how.
   "fleet_policy.upsert": "Changed a fleet policy",
+  // coord-stored PR holds (plan
+  // `2026-10-04-coord-pr-hold-without-github-drafts`, `pr_hold.rs`).
+  // `metadata.reason` / `kind` / `held_by` say which hold and why.
+  "pr_hold.place": "Held a PR",
+  "pr_hold.release": "Released a PR hold",
 };
 
 export function describeAuditAction(action: string): AuditActionLabel {
