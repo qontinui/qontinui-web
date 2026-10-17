@@ -36,8 +36,11 @@ import jwt as pyjwt
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.refusal import NextActionKind, RefusalCode, RefusalHTTPException
 
 API = "/api/v1/overview"
 
@@ -144,6 +147,28 @@ def _patch_httpx(
     fake = types.SimpleNamespace(**{k: getattr(httpx, k) for k in dir(httpx)})
     fake.AsyncClient = client
     monkeypatch.setattr(module, "httpx", fake)
+
+
+def _when_free(exc: RefusalHTTPException) -> dict[str, Any]:
+    """A refusal's fields minus ``observed_at``, which stamps the moment each
+    refusal was built and so differs between any two of them."""
+    return exc.refusal.model_dump(exclude={"observed_at"})
+
+
+async def _memberships_failing_with(
+    monkeypatch: pytest.MonkeyPatch, error: type[httpx.TransportError]
+) -> RefusalHTTPException:
+    """Call coord's membership door through a transport that raises ``error``."""
+    from app.services import coord_device_memberships
+
+    class _Failing(FakeCoord):
+        def handler(self, request: httpx.Request) -> httpx.Response:
+            raise error("coord did not answer", request=request)
+
+    _patch_httpx(monkeypatch, coord_device_memberships, _Failing())
+    with pytest.raises(RefusalHTTPException) as caught:
+        await coord_device_memberships.fetch_device_memberships("a-device-token")
+    return caught.value
 
 
 @pytest.fixture()
@@ -470,6 +495,62 @@ class TestDevicePrincipal:
         assert response.status_code == 401, response.text
         assert coord.requests == []
 
+    async def test_an_unparseable_bearer_is_asked_to_sign_in(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """It has no ``kid`` for the family check to read, so coord's verifier
+        refuses it as ``failed_verification``. On this door, as on deps'
+        dual-auth path, that is a stale sign-in, not a defect to report."""
+        from app.overview.permissions import get_overview_principal
+        from app.services import coord_jwks
+
+        async def _jwks() -> dict[str, Any]:
+            return {"keys": []}
+
+        monkeypatch.setattr(coord_jwks.coord_jwks_client, "get_jwks", _jwks)
+        bearer = HTTPAuthorizationCredentials(scheme="Bearer", credentials="not.a.jwt")
+        with pytest.raises(RefusalHTTPException) as caught:
+            await get_overview_principal(user=None, credentials=bearer)
+        refusal = caught.value.refusal
+        assert caught.value.status_code == 401
+        assert refusal.code == RefusalCode.authentication_required
+        assert refusal.next_action.kind == NextActionKind.sign_in
+        assert refusal.discriminator == "failed_verification"
+
+    async def test_a_foreign_issuer_still_reports_a_defect(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Past the family check a ``coord-`` kid this coord does not serve is
+        a device token another coord minted: a wiring fault a sign-in cannot
+        fix, so the verifier's ``report_defect`` passes through unchanged."""
+        from app.api import deps
+        from app.overview.permissions import get_overview_principal
+        from app.services import coord_jwks
+
+        kid = "coord-ed25519-deadbeefdeadbeef"
+
+        async def _foreign(_token: str) -> tuple[dict, Any]:
+            exc = coord_jwks.CoordTokenForeignIssuerError(
+                "no served key carries this kid",
+                coord_url="https://coord.example",
+                token_kid=kid,
+                served_kids=[],
+            )
+            raise deps._token_rejection_refusal(
+                exc, coord_jwks.describe_token_rejection(exc)
+            )
+
+        monkeypatch.setattr(deps, "_verify_device_jwt", _foreign)
+        bearer = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=_jwt_with_kid(kid)
+        )
+        with pytest.raises(RefusalHTTPException) as caught:
+            await get_overview_principal(user=None, credentials=bearer)
+        refusal = caught.value.refusal
+        assert refusal.code == RefusalCode.credential_rejected
+        assert refusal.next_action.kind == NextActionKind.report_defect
+        assert refusal.discriminator == "foreign_issuer"
+
     async def test_no_credential_at_all_is_a_401(
         self, async_db_session, coord: FakeCoord, verified_devices
     ) -> None:
@@ -646,6 +727,29 @@ class TestMembershipAnswers:
             await coord_device_memberships.fetch_device_memberships("a-device-token")
         assert caught.value.status_code == 502
         assert caught.value.detail["code"] == "coord_memberships_unavailable"
+
+    async def test_an_unreachable_coord_is_the_proxys_own_502(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Built as the operations proxy builds it, and compared with the
+        proxy's own helper, so the two cannot drift apart unnoticed."""
+        from app.api.v1.endpoints.operations import _coord_unreachable
+
+        caught = await _memberships_failing_with(monkeypatch, httpx.ConnectError)
+        proxy = _coord_unreachable()
+        assert caught.status_code == proxy.status_code
+        assert _when_free(caught) == _when_free(proxy)
+
+    async def test_a_slow_coord_is_the_proxys_own_read_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The membership call is a GET, so it is the timeout's READ arm."""
+        from app.api.v1.endpoints.operations import _coord_timeout
+
+        caught = await _memberships_failing_with(monkeypatch, httpx.ReadTimeout)
+        proxy = _coord_timeout(write=False)
+        assert caught.status_code == proxy.status_code
+        assert _when_free(caught) == _when_free(proxy)
 
 
 class TestCoordBackedResources:
