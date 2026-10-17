@@ -50,7 +50,7 @@ from tests._alembic_harness import (
 # `_PARENT_REVISION_ID` MUST equal the revision's own `down_revision`; the
 # first test enforces it. Re-point both together if main moves before landing.
 _REVISION_ID = "fpl_02"
-_PARENT_REVISION_ID = "coord_ci_runner_probes_02"
+_PARENT_REVISION_ID = "fleet_policy_egress_01_transcript_sync"
 _REVISION_FILENAME = "fpl_02_fleet_machine_hourly.py"
 
 _SCHEMA = "coord"

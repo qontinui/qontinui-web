@@ -1,7 +1,7 @@
 """coord.fleet_machine_hourly - one row per machine per hour, kept 400 days
 
 Revision ID: fpl_02
-Revises: coord_ci_runner_probes_02
+Revises: fleet_policy_egress_01_transcript_sync
 Create Date: 2026-10-17
 
 Phase 3 of plan ``2026-10-17-fleet-work-placement-minimizes-time-to-merged-pr``
@@ -39,7 +39,7 @@ worker deletes rows whose ``hour`` is older than 400 days. Reads:
 * ``sample_count`` INTEGER NOT NULL - host-lane samples folded.
 * ``sessions_p50`` / ``sessions_max`` - active terminal sessions.
 * ``ci_jobs_c1`` / ``ci_jobs_c2`` / ``ci_jobs_c3_remote`` - jobs this machine
-  ran in the hour by plan D1 class: C1 merge-candidate CI, C2 every other CI
+  completed in the hour by plan D1 class: C1 merge-candidate CI, C2 every other CI
   job, C3-remote verification builds it ran for another machine.
 * ``mem_available_p5_bytes`` / ``mem_available_p50_bytes`` and
   ``commit_available_p5_bytes`` / ``commit_available_p50_bytes``.
@@ -70,12 +70,12 @@ degrades to a logged no-op on a missing relation in any case.
 
 ## Head choice
 
-``down_revision`` is ``coord_ci_runner_probes_02``, the single head of
-``origin/main`` at ``751b5d1a1`` when this revision was written. Sibling
-revisions of the same plan (``fpl_01``, ``fpl_03``) were being authored at the
-same time; whichever lands second re-points ``down_revision``, the
-``Revises:`` header and ``_PARENT_REVISION_ID`` in the migration test at the
-new single head. No ``alembic merge``: this repo keeps strict single-head
+``down_revision`` is ``fleet_policy_egress_01_transcript_sync``, the single
+head of ``origin/main`` at ``28175e7e5`` when this revision was re-pointed. The
+sibling revision ``fpl_03`` of the same plan was being authored at the same
+time; whichever lands second re-points ``down_revision``, the ``Revises:``
+header and ``_PARENT_REVISION_ID`` in the migration test at the new single
+head. No ``alembic merge``: this repo keeps strict single-head
 discipline.
 
 ## Merge-train classifier disposition
@@ -100,7 +100,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fpl_02"
-down_revision: str | Sequence[str] | None = "coord_ci_runner_probes_02"
+down_revision: str | Sequence[str] | None = "fleet_policy_egress_01_transcript_sync"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -171,7 +171,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.fleet_machine_hourly.tenant_id IS
-            'Tenant of the machine samples, else the single tenant owning the repos of the jobs it ran. NULL = not resolvable; a tenant-scoped read never shows a NULL-tenant row.'
+            'Tenant of the machine samples, else the single tenant owning the repos of the jobs it ran. NULL = not resolvable; a tenant-scoped read never shows a NULL-tenant row. The row counts only this tenant jobs and verification runs, never another tenant activity on a shared machine.'
         """
     )
     op.execute(
@@ -183,7 +183,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.fleet_machine_hourly.ci_jobs_c1 IS
-            'Merge-candidate CI jobs (head branch merge-candidate, merge-candidate-batch or merge-candidate-spec) this machine ran that started in the hour. NULL = the job ledger was unreadable, or the machine had no samples and no observed job.'
+            'Merge-candidate CI jobs (head branch merge-candidate, merge-candidate-batch or merge-candidate-spec) this machine ran that completed in the hour. NULL = the job ledger was unreadable, or the machine had no samples and no observed job.'
         """
     )
     op.execute(
