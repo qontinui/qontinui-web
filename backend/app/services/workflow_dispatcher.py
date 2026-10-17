@@ -194,13 +194,9 @@ def _refusal_for(outcome: DeviceResolveResult) -> AutoPickRefusal:
             outcome=outcome,
         )
     if isinstance(outcome, NoCapableDeviceOutcome):
-        missing = f" (missing: {', '.join(outcome.missing)})" if outcome.missing else ""
         return AutoPickRefusal(
             code="no_healthy_runner",
-            message=(
-                "No online runner of yours can run this"
-                f"{missing}. Start a runner so it connects, then retry."
-            ),
+            message=_no_capable_message(outcome),
             outcome=outcome,
         )
     if isinstance(outcome, PinIneligibleOutcome):
@@ -215,6 +211,35 @@ def _refusal_for(outcome: DeviceResolveResult) -> AutoPickRefusal:
         message="Coord's device resolver gave an answer this build cannot read.",
         outcome=outcome,
     )
+
+
+def _runners(n: int) -> str:
+    return "1 runner" if n == 1 else f"{n} runners"
+
+
+def _no_capable_message(outcome: NoCapableDeviceOutcome) -> str:
+    """The ``no_capable_device`` copy, naming coord's counts when they explain
+    the refusal: online runners still owing the credential probes, and capable
+    runners last seen too long ago to count as offline-but-coming-back."""
+    missing = f" (missing: {', '.join(outcome.missing)})" if outcome.missing else ""
+    parts = [f"No online runner of yours can run this{missing}."]
+    if outcome.unprobed_online_devices:
+        n = outcome.unprobed_online_devices
+        parts.append(
+            f"{_runners(n)} online {'has' if n == 1 else 'have'} not yet run "
+            "the credential probes this work needs; retry once "
+            f"{'it has' if n == 1 else 'they have'}."
+        )
+    if outcome.stale_capable:
+        n = outcome.stale_capable
+        parts.append(
+            f"{_runners(n)} able to take this work {'was' if n == 1 else 'were'} last "
+            "seen too long ago to wait for."
+        )
+    if not outcome.unprobed_online_devices:
+        # With a runner online but unprobed, "start one" is the wrong advice.
+        parts.append("Start a runner so it connects, then retry.")
+    return " ".join(parts)
 
 
 async def _owned_device(
