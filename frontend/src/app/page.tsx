@@ -11,7 +11,7 @@ import { HeroSection } from "./_components/hero-section";
 import { UIBridgeSection } from "./_components/ui-bridge-section";
 import { ProviderSection } from "./_components/provider-section";
 import { KeyFeaturesSection } from "./_components/key-features-section";
-import { HowItWorksSection } from "./_components/how-it-works-section";
+import { FactorySection } from "./_components/factory-section";
 import { ComparisonSection } from "./_components/comparison-section";
 import { ResearchSection } from "./_components/research-section";
 import { DownloadCTASection } from "./_components/download-cta-section";
@@ -34,7 +34,7 @@ function LandingContent() {
       <UIBridgeSection />
       <ProviderSection />
       <KeyFeaturesSection />
-      <HowItWorksSection />
+      <FactorySection />
       <ComparisonSection />
       <ResearchSection />
       <DownloadCTASection platform={platform} handleDownload={handleDownload} />

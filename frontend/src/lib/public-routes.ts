@@ -25,6 +25,7 @@ export const PUBLIC_PATHS = [
   "/terms",
   "/acceptable-use",
   "/responsible-use",
+  "/how-it-works",
   // Cognito hosted-UI OAuth landing. It arrives unauthenticated (no token/
   // marker cookie yet) carrying `?code=&state=`; it MUST run the PKCE token
   // exchange in-page rather than being bounced to `/login?next=…`. Exempting
