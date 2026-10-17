@@ -163,3 +163,26 @@ describe("GLOBAL_SERVER_WAIVERS — the registry itself", () => {
     expect(overview?.statuses).toEqual([502, 504]);
   });
 });
+
+describe("isGloballyWaivedServerUrl — the taste inbox read", () => {
+  const INBOX = "http://localhost:3001/api/v1/taste/inbox";
+
+  it("waives the 502/504 a missing coord produces on the inbox read", () => {
+    expect(
+      isGloballyWaivedServerUrl(`${INBOX}?limit=5&over_budget=false`, 502)
+    ).toBe(true);
+    expect(isGloballyWaivedServerUrl(INBOX, 504)).toBe(true);
+  });
+
+  it("still gates a 500 on the inbox, and every other taste route", () => {
+    expect(isGloballyWaivedServerUrl(`${INBOX}?limit=5`, 500)).toBe(false);
+    for (const url of [
+      "http://localhost:3001/api/v1/taste/labels",
+      "http://localhost:3001/api/v1/taste/pairs",
+      "http://localhost:3001/api/v1/taste/inboxes",
+      "http://localhost:3001/api/v1/x?next=/api/v1/taste/inbox",
+    ]) {
+      expect(isGloballyWaivedServerUrl(url, 502), url).toBe(false);
+    }
+  });
+});

@@ -80,6 +80,7 @@ describe("coordNavModel", () => {
       "Plan Follow-ups",
       "Questions",
       "Findings",
+      "Operator Touches",
       "Agents",
       "Unfinished Sessions",
       "Agent Commands",
@@ -106,6 +107,7 @@ describe("coordNavModel", () => {
       "Policies",
       "Decision Policies",
       "Policy Edit Review",
+      "Taste Inbox",
     ]);
   });
 

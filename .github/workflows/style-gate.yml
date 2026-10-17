@@ -177,6 +177,12 @@ jobs:
       # The style-gate spec self-enables the per-user co-pilot pref + seeds
       # consent; the build-time relay surface mirrors Spec CI.
       NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
+      # `next dev` renders two dev-only overlays (its indicator, bottom-left, and
+      # the React Query Devtools toggle, bottom-right). Both land in the frame and
+      # the snapshot, and vision-audit reports them as CRITICAL layout occlusions
+      # on /runner (seen with the fac2f604 pin, qontinui-web#1879). This flag
+      # stops the app rendering either (next.config.mjs, query-provider.tsx).
+      NEXT_PUBLIC_HIDE_DEV_OVERLAYS: "1"
 
     steps:
       # Stamp THIS JOB's start time. Must stay the FIRST step of the job.
@@ -877,7 +883,7 @@ jobs:
       # row per route and a labeled cell for each pass (analyze | assert).
       #
       #   * analyze — page-wide, NO element ids / NO spec needed. Invoked with
-      #       analyze --snapshot S --frame F --analyzer all --fail-on critical
+      #       analyze --snapshot S --frame F --scale-factor 1 --analyzer all --fail-on critical
       #     so it exits 2 iff a finding is at/above CRITICAL (without --fail-on
       #     the bin always exits 0). Needs only snapshot+frame to run; the broad
       #     day-one signal.
@@ -990,9 +996,18 @@ jobs:
             # 2>&1 1>FILE: stderr (human summary) is captured into $an_err for the
             # table cell; stdout (the machine-readable per-finding JSON) is saved
             # to the findings artifact for burn-in triage.
+            # --scale-factor 1: vision-audit maps every CSS-pixel bbox onto the
+            # frame through this value, and every frame here is DPR 1. The
+            # style-gate project spreads devices["Desktop Chrome"]
+            # (frontend/playwright.config.ts), whose deviceScaleFactor is 1; the
+            # public lane's browser.newContext takes Playwright's default of 1.
+            # style-capture.spec.ts ASSERTS window.devicePixelRatio === 1 before
+            # it writes each snapshot-and-frame pair and fails that capture
+            # loudly otherwise, so this literal cannot drift silently.
             an_err="$("$VISION_AUDIT" analyze \
               --snapshot "$snap" \
               --frame "$frame" \
+              --scale-factor 1 \
               --analyzer all \
               --fail-on critical 2>&1 1>"$FINDINGS_DIR/$id.analyze.json")"
             an_rc=$?
@@ -1021,6 +1036,7 @@ jobs:
               as_err="$("$VISION_AUDIT" assert \
                 --snapshot "$snap" \
                 --frame "$frame" \
+                --scale-factor 1 \
                 --assertions "$spec" \
                 $baseline_args 2>&1 1>"$FINDINGS_DIR/$id.assert.json")"
               as_rc=$?

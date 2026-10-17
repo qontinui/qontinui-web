@@ -13,12 +13,13 @@
  *   Pipeline · Pull Requests · Gates · Notifications · Action items   ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
+ *             Operator Touches /
  *             Agents / Agent Commands / Agent Skills / Prompt Log /
  *             History / Lands
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
- *             Policy Edit Review
+ *             Policy Edit Review / Taste Inbox
  *   Dev Ops ▸ Overview / CI / Trees° / Spawn° / Runner Drain° / Test Targets° /
  *             Migrations° / Deploys° / Releases° / Git Ops° / Federation° /
  *             Memory° / Onboarding° / Onboarding Status°
@@ -55,8 +56,10 @@ import {
   GitMerge,
   GitPullRequest,
   Hammer,
+  Hand,
   HardDrive,
   History as HistoryIcon,
+  Images,
   Inbox,
   KeyRound,
   Layers,
@@ -303,6 +306,18 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-findings",
       },
       {
+        // Sits after Questions and Findings deliberately: Questions is where a
+        // single interruption is ANSWERED; this is the aggregate over every
+        // one of them — which classes of interruption reach the operator, and
+        // whether the operator is the constraint. Strategic and read-only, so
+        // it is not a second question queue (plan
+        // `2026-08-27-operator-touch-read-and-surface` Phase C3).
+        href: "/admin/coord/operator-touches",
+        label: "Operator Touches",
+        icon: Hand,
+        testId: "coord-nav-operator-touches",
+      },
+      {
         href: "/admin/coord/agents",
         label: "Agents",
         icon: ScrollText,
@@ -478,6 +493,19 @@ export const GROUPS: NavGroup[] = [
         label: "Policy Edit Review",
         icon: Gavel,
         testId: "coord-nav-prompt-document-proposals",
+      },
+      {
+        // The taste inbox (plan `2026-10-13-image-generation-and-visual-judgment`
+        // Phase 23): the operator's pairwise image labels, from which the
+        // taste twin learns what "better" means for this tenant's imagery.
+        // Intent rather than Work: it declares the tenant's taste — what the
+        // factory should build toward — the way the prompt documents above
+        // declare its direction in prose. Member-visible; label writes gate
+        // on coord-tenant admin in the backend and on `can_label` in the page.
+        href: "/admin/coord/taste",
+        label: "Taste Inbox",
+        icon: Images,
+        testId: "coord-nav-taste",
       },
     ],
   },
@@ -663,9 +691,12 @@ export const GROUPS: NavGroup[] = [
         // the `command_safety_rewrite` fleet-policy dial runners read at
         // spawn (plan
         // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`),
-        // and the `account_selection_mode` dial runners force-apply unless the
+        // the `account_selection_mode` dial runners force-apply unless the
         // machine is pinned (plan
-        // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`).
+        // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),
+        // and the `image_generation` dial Studio is to read before each image
+        // request (recorded, not yet enforced), with per-repo overrides (plan
+        // `2026-10-13-image-generation-and-visual-judgment`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,
