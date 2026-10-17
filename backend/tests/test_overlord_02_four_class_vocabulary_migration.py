@@ -111,8 +111,19 @@ def test_overlord_02_marks_legacy_rows_and_enforces_the_four_class_vocabulary() 
             uuid.uuid4(),
         )
         with engine.begin() as conn:
-            conn.execute(_LEGACY_INSERT, {"id": legacy_d, "tid": _TENANT, "stop_class": "D", "label": None})
-            conn.execute(_LEGACY_INSERT, {"id": legacy_labelled_c, "tid": _TENANT, "stop_class": "A", "label": "C"})
+            conn.execute(
+                _LEGACY_INSERT,
+                {"id": legacy_d, "tid": _TENANT, "stop_class": "D", "label": None},
+            )
+            conn.execute(
+                _LEGACY_INSERT,
+                {
+                    "id": legacy_labelled_c,
+                    "tid": _TENANT,
+                    "stop_class": "A",
+                    "label": "C",
+                },
+            )
             conn.execute(
                 text(
                     "INSERT INTO coord.overlord_interventions "
@@ -121,7 +132,10 @@ def test_overlord_02_marks_legacy_rows_and_enforces_the_four_class_vocabulary() 
                 ),
                 {"id": late_d, "tid": _TENANT},
             )
-            conn.execute(_LEGACY_INSERT, {"id": plain_a, "tid": _TENANT, "stop_class": "A", "label": "A"})
+            conn.execute(
+                _LEGACY_INSERT,
+                {"id": plain_a, "tid": _TENANT, "stop_class": "A", "label": "A"},
+            )
 
         run_alembic(root, url, "upgrade", _REVISION_ID)
 
