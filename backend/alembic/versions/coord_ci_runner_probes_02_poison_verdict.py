@@ -55,7 +55,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.ci_runner_probes.poison_verdict_at_dispatch IS
-            'The poison detector verdict for the probed host at the moment this probe row was inserted (clear | suspected | insufficient_evidence | and so on, the Rust enum that writes it). NULL = written before this column existed, or no verdict was readable: UNKNOWN, never clear. Text with no CHECK.'
+            'The poison detector verdict for the probed host at the moment this probe row was inserted (one of suspected | no_peer_baseline | insufficient | clear | indeterminate, the PoisonVerdict label in qontinui-coord). NULL = written before this column existed, or no verdict was readable: UNKNOWN, never clear. Text with no CHECK.'
         """
     )
 
