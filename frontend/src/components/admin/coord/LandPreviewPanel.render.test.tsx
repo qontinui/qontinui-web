@@ -442,9 +442,208 @@ describe("LandPreviewPanel — cross-repo sibling cascades", () => {
     render(<LandPreviewPanel preview={nullCascade} />);
     const card = screen.getByTestId("land-sibling-cascade-card");
     expect(card.textContent).toContain("qontinui/qontinui-runner");
-    expect(card.textContent).toContain("0 dependent refs");
     expect(screen.getByTestId("land-sibling-correlated-via").textContent).toBe(
       "work_plan"
     );
+    // A null cascade is not "0 dependent refs": coord reported nothing.
+    expect(card.textContent).not.toContain("dependent ref");
+    const notice = screen.getByTestId("land-sibling-cascade-unknown");
+    expect(notice.textContent).toContain("coord did not report");
+    expect(notice).toHaveClass(...UNKNOWN_AMBER.split(" "));
+  });
+
+  it("renders a sibling's cascade as unknown when coord reports its cascade_note", () => {
+    const noted: LandPreviewResponse = {
+      repo: "qontinui/qontinui-coord",
+      pr_number: 8,
+      cascade_note: null,
+      predicted: {
+        cascade: {
+          dependent_refs_to_restack: [],
+          cascade_depth: 0,
+          will_complete_cleanly: true,
+          expected_conflicts: [],
+        },
+        sibling_cascades: [
+          {
+            repo: "qontinui/qontinui-runner",
+            branch: "feat/sibling-c",
+            correlated_via: "proposal",
+            // coord's degraded shape for a failed prediction: empty and clean.
+            cascade: {
+              dependent_refs_to_restack: [],
+              cascade_depth: 0,
+              will_complete_cleanly: true,
+              expected_conflicts: [],
+            },
+            cascade_note:
+              "cascade prediction unavailable (unresolvable): no ref tip",
+          },
+        ],
+      },
+      risk: { risky: false, reasons: [] },
+    };
+    render(<LandPreviewPanel preview={noted} />);
+    const card = screen.getByTestId("land-sibling-cascade-card");
+    expect(card.textContent).not.toContain("dependent ref");
+    expect(card.textContent).not.toContain("depth 0");
+    const notice = screen.getByTestId("land-sibling-cascade-unknown");
+    expect(notice.textContent).toContain("no ref tip");
+    expect(notice).toHaveClass(...UNKNOWN_AMBER.split(" "));
+  });
+});
+
+describe("LandPreviewPanel — a cascade, CI or deploy coord did not predict is unknown", () => {
+  // coord's degraded shape for a cascade it could not predict: empty and
+  // clean, with the reason in `cascade_note` beside `predicted`.
+  const EMPTY_CLEAN = {
+    dependent_refs_to_restack: [],
+    cascade_depth: 0,
+    will_complete_cleanly: true,
+    expected_conflicts: [],
+  };
+  const KNOWN_CI = { pending: false, workflows: [], expected_pass: true };
+  const KNOWN_DEPLOY = {
+    pending: false,
+    services_will_deploy: [
+      { surface: "vercel", target: "qontinui-web" },
+      { surface: "ecs", target: "coord-prod" },
+    ],
+  };
+  const amber = UNKNOWN_AMBER.split(" ");
+
+  it("renders the cascade as unknown when coord reports cascade_note", () => {
+    render(
+      <LandPreviewPanel
+        preview={{
+          repo: "qontinui/qontinui-coord",
+          pr_number: 21,
+          cascade_note: "cascade prediction unavailable (not found): no such ref",
+          predicted: { cascade: EMPTY_CLEAN, ci: KNOWN_CI, deploy: KNOWN_DEPLOY },
+          risk: { risky: false, reasons: [] },
+        }}
+      />
+    );
+    const badge = screen.getByTestId("land-cascade-clean-badge");
+    expect(badge.textContent).toBe("unknown");
+    expect(badge).toHaveClass(...amber);
+    expect(screen.queryByText(/No dependent refs/)).toBeNull();
+    expect(screen.queryByText(/dependent ref/)).toBeNull();
+    expect(screen.queryByText("depth 0")).toBeNull();
+    const notice = screen.getByTestId("land-cascade-unknown");
+    expect(notice.textContent).toContain("no such ref");
+    expect(notice).toHaveClass(...amber);
+  });
+
+  it("renders the clean cascade when cascade_note is null", () => {
+    render(
+      <LandPreviewPanel
+        preview={{
+          repo: "qontinui/qontinui-coord",
+          pr_number: 22,
+          cascade_note: null,
+          predicted: { cascade: EMPTY_CLEAN, ci: KNOWN_CI, deploy: KNOWN_DEPLOY },
+          risk: { risky: false, reasons: [] },
+        }}
+      />
+    );
+    expect(screen.getByTestId("land-cascade-clean-badge").textContent).toBe(
+      "yes"
+    );
+    expect(screen.getByText(/No dependent refs/)).toBeTruthy();
+    expect(screen.queryByTestId("land-cascade-unknown")).toBeNull();
+  });
+
+  it("renders the unknown cascade notice when cascade is absent", () => {
+    render(
+      <LandPreviewPanel
+        preview={{
+          repo: "qontinui/qontinui-coord",
+          pr_number: 23,
+          predicted: { ci: KNOWN_CI, deploy: KNOWN_DEPLOY },
+          risk: { risky: false, reasons: [] },
+        }}
+      />
+    );
+    expect(screen.queryByText(/No dependent refs/)).toBeNull();
+    expect(screen.queryByText(/dependent ref/)).toBeNull();
+    const notice = screen.getByTestId("land-cascade-unknown");
+    expect(notice.textContent).toContain("coord did not report");
+    expect(notice).toHaveClass(...amber);
+    expect(screen.getByTestId("land-cascade-clean-badge").textContent).toBe(
+      "unknown"
+    );
+  });
+
+  it("renders the unknown CI notice when ci is absent", () => {
+    render(
+      <LandPreviewPanel
+        preview={{
+          repo: "qontinui/qontinui-coord",
+          pr_number: 24,
+          predicted: { cascade: EMPTY_CLEAN, deploy: KNOWN_DEPLOY },
+          risk: { risky: false, reasons: [] },
+        }}
+      />
+    );
+    expect(
+      screen.queryByText("No CI workflows predicted to trigger.")
+    ).toBeNull();
+    // No "0" count badge: the deploy card's count is 2, so a bare "0" can only
+    // be the CI card's.
+    expect(screen.queryAllByText("0")).toHaveLength(0);
+    expect(screen.queryByTestId("land-ci-overall-badge")).toBeNull();
+    const notice = screen.getByTestId("land-ci-unreported");
+    expect(notice.textContent).toContain("coord did not report the CI prediction");
+    expect(notice).toHaveClass(...amber);
+  });
+
+  it("renders the unknown deploy notice when deploy is absent", () => {
+    render(
+      <LandPreviewPanel
+        preview={{
+          repo: "qontinui/qontinui-coord",
+          pr_number: 25,
+          predicted: {
+            cascade: EMPTY_CLEAN,
+            ci: {
+              pending: false,
+              workflows: [{ workflow_name: "rust-ci", sample_size: 3 }],
+            },
+          },
+          risk: { risky: false, reasons: [] },
+        }}
+      />
+    );
+    expect(screen.queryByText("No deploys predicted to fire.")).toBeNull();
+    // The CI card's count is 1, so a bare "0" can only be the deploy card's.
+    expect(screen.queryAllByText("0")).toHaveLength(0);
+    expect(screen.queryByTestId("land-deploy-health-badge")).toBeNull();
+    const notice = screen.getByTestId("land-deploy-unreported");
+    expect(notice.textContent).toContain(
+      "coord did not report the deploy prediction"
+    );
+    expect(notice).toHaveClass(...amber);
+  });
+
+  it("keeps the empty-list lines when coord reports empty ci and deploy", () => {
+    render(
+      <LandPreviewPanel
+        preview={{
+          repo: "qontinui/qontinui-coord",
+          pr_number: 26,
+          predicted: {
+            cascade: EMPTY_CLEAN,
+            ci: KNOWN_CI,
+            deploy: { pending: false, services_will_deploy: [] },
+          },
+          risk: { risky: false, reasons: [] },
+        }}
+      />
+    );
+    expect(screen.getByText("No CI workflows predicted to trigger.")).toBeTruthy();
+    expect(screen.getByText("No deploys predicted to fire.")).toBeTruthy();
+    expect(screen.queryByTestId("land-ci-unreported")).toBeNull();
+    expect(screen.queryByTestId("land-deploy-unreported")).toBeNull();
   });
 });
