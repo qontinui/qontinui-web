@@ -189,7 +189,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.fleet_machine_hourly.ci_jobs_c3_remote IS
-            'Verification builds this machine ran for another machine (verification_runs outcome offloaded, received here). NULL = coord.verification_runs absent or unreadable, or the machine had no samples and no such run.'
+            'Verification builds this machine ran for another machine (verification_runs outcome offloaded, received here). Counts only runs of this row tenant, so it is not the machine total remote load. NULL = coord.verification_runs absent or unreadable, or the machine had no samples and no such run.'
         """
     )
     op.execute(
