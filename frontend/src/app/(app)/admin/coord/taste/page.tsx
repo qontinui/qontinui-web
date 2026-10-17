@@ -87,7 +87,8 @@ export default function TasteInboxPage() {
     readError,
     busy,
     overBudget,
-    setOverBudget,
+    keepGoing,
+    readTag,
     refresh,
     label,
     skip,
@@ -118,27 +119,32 @@ export default function TasteInboxPage() {
   const cardRef = useRef<HTMLElement>(null);
 
   // Focus follows the answer across the card / panel swap. A write that
-  // starts with focus inside the current surface marks it; when the surface
-  // then swaps (the last pair answered, an undo that brings one back, "keep
-  // labelling"), the old element unmounts and focus falls to <body> — so the
-  // new surface takes it, and the next key still lands. Focus the user moved
-  // elsewhere is never taken.
-  const carryFocus = useRef(false);
-  const markFocus = useCallback(() => {
-    carryFocus.current =
-      cardRef.current?.contains(document.activeElement) ?? false;
-  }, []);
+  // starts with focus inside the current surface marks itself: its tag and
+  // the surface it left. Only the read THAT write produced decides — it
+  // clears the mark whether or not the surface swapped — so a write that
+  // swaps nothing (more pairs waiting, a 409) leaves no stale mark for an
+  // unrelated swap later. On a swap the old element unmounts and focus
+  // falls to <body>; then the new surface takes it. Focus the operator
+  // moved elsewhere is never taken.
+  const writeSeq = useRef(0);
+  const carryFocus = useRef<{ tag: number; surface: string } | null>(null);
   const surface = head ? "card" : inbox ? "panel" : "none";
-  const lastSurface = useRef(surface);
+  const markFocus = useCallback((): number => {
+    const tag = ++writeSeq.current;
+    carryFocus.current = cardRef.current?.contains(document.activeElement)
+      ? { tag, surface }
+      : null;
+    return tag;
+  }, [surface]);
   useLayoutEffect(() => {
-    if (lastSurface.current === surface) return;
-    lastSurface.current = surface;
+    const mark = carryFocus.current;
+    if (mark === null || readTag !== mark.tag) return;
+    carryFocus.current = null;
     const lost =
       document.activeElement === null ||
       document.activeElement === document.body;
-    if (carryFocus.current && lost) cardRef.current?.focus();
-    carryFocus.current = false;
-  }, [surface]);
+    if (surface !== mark.surface && lost) cardRef.current?.focus();
+  }, [surface, readTag]);
 
   const [shortcutsOn, setShortcutsOn] = useState(true);
   useEffect(() => setShortcutsOn(readShortcutsPreference()), []);
@@ -150,31 +156,33 @@ export default function TasteInboxPage() {
   const choose = useCallback(
     (choice: TasteLabel) => {
       if (!head || busy) return;
-      markFocus();
-      void label(head.id, {
-        choice,
-        reasons: draft.reasons,
-        comment: draft.comment.trim() || null,
-        edit_note: draft.editNote.trim() || null,
-        relabel: false,
-        force: false,
-      });
+      const tag = markFocus();
+      void label(
+        head.id,
+        {
+          choice,
+          reasons: draft.reasons,
+          comment: draft.comment.trim() || null,
+          edit_note: draft.editNote.trim() || null,
+          relabel: false,
+          force: false,
+        },
+        tag
+      );
     },
     [head, busy, label, draft, markFocus]
   );
 
   const skipHead = useCallback(() => {
     if (!head || busy) return;
-    markFocus();
-    void skip(head.id);
+    void skip(head.id, markFocus());
   }, [head, busy, skip, markFocus]);
 
   /** `u`: the newest label THIS viewer gave — never a colleague's. */
   const ownLast = newestOwnLabel(inbox?.recent ?? [], inbox?.viewer_user_id);
   const undoOwnLast = useCallback(() => {
     if (!ownLast || busy) return;
-    markFocus();
-    void undo(ownLast.id);
+    void undo(ownLast.id, false, markFocus());
   }, [ownLast, busy, undo, markFocus]);
 
   const onCardKey = useCallback(
@@ -296,8 +304,7 @@ export default function TasteInboxPage() {
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    markFocus();
-                    setOverBudget(true);
+                    keepGoing(markFocus());
                   }}
                   data-testid="taste-keep-going"
                 >

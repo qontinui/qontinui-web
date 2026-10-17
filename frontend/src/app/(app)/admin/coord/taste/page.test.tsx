@@ -435,6 +435,49 @@ describe("the taste inbox", () => {
     expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
   });
 
+  it("a keyboard answer that swaps nothing leaves no mark for a later, unrelated swap", async () => {
+    seed(2);
+    render(<TasteInboxPage />);
+    await settle("p1");
+    act(() => card().focus());
+    await pressFocused("a"); // p2 still waits: the card stays, no swap
+    await settle("p2");
+    expect(document.activeElement).toBe(card());
+    act(() => card().blur()); // the operator leaves the card
+    expect(document.activeElement).toBe(document.body);
+    colleagueLabels("p2"); // the queue empties elsewhere
+    fireEvent.click(screen.getByTestId("taste-refresh"));
+    const region = await screen.findByTestId("taste-done-region");
+    await act(async () => {});
+    expect(document.activeElement).not.toBe(region);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("a u that is refused leaves no mark for a later swap either", async () => {
+    seed(2);
+    render(<TasteInboxPage />);
+    await settle("p1");
+    act(() => card().focus());
+    await pressFocused("a");
+    await settle("p2");
+    // Undone elsewhere: the page still lists p1 as the viewer's, so u 409s.
+    Object.assign(server.rows.find((r) => r.id === "p1")!, {
+      label: null,
+      labelled_at: null,
+      labeller_user_id: null,
+    });
+    await pressFocused("u");
+    await settle("p1"); // the re-read shows p1 back at the head: no swap
+    expect(api.undoTasteLabel).toHaveBeenCalledTimes(1);
+    act(() => card().blur());
+    colleagueLabels("p1");
+    colleagueLabels("p2");
+    fireEvent.click(screen.getByTestId("taste-refresh"));
+    const region = await screen.findByTestId("taste-done-region");
+    await act(async () => {});
+    expect(document.activeElement).not.toBe(region);
+  });
+
   it("focus the operator put elsewhere is never taken by the swap", async () => {
     seed(1);
     render(<TasteInboxPage />);

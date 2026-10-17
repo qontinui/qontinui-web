@@ -593,10 +593,12 @@ async def _label_refusal(
     responses={
         404: {"description": "No such pair, or no such edited image, for this tenant."},
         409: {
-            "description": "The pair is already labelled (send relabel: true to "
-            "replace your own answer), or the answer is another labeller's "
-            "(label_not_yours: send force: true as well; the replaced answer "
-            "is recorded)."
+            "description": "pair_already_labelled: the pair is already "
+            "labelled (send relabel: true to replace your own answer). "
+            "label_not_yours: the answer is another labeller's (send force: "
+            "true as well; the replaced answer is recorded). "
+            "pair_changed_meanwhile: the pair changed under the write (a "
+            "concurrent undo); nothing was changed — read it again."
         },
     },
     summary="Label one pair: A, B or both bad, with reasons, a comment and an edit",
@@ -638,14 +640,26 @@ async def label_taste_pair(
     if isinstance(pair, str):
         raise await _label_refusal(db, tenant_id, pair_id, pair, verb="replace")
     await db.commit()
+    # This write replaced an answer exactly when its removal record was
+    # stamped by it: set_label writes removed_at and labelled_at from one
+    # clock reading. An older record (an earlier undo or relabel) is not this
+    # write's and is not logged as such.
+    replaced = (
+        pair.removed_label
+        if pair.removed_via == "relabel" and pair.removed_at == pair.labelled_at
+        else None
+    )
     logger.info(
         "taste_pair_labelled",
         tenant_id=str(tenant_id),
         pair_id=str(pair_id),
+        by=str(labeller.user.id),
         label=payload.choice,
         reasons=len(payload.reasons),
         relabel=payload.relabel,
-        forced=pair.removed_forced and pair.removed_via == "relabel",
+        change_seq=pair.change_seq,
+        replaced=replaced,
+        forced=replaced is not None and pair.removed_forced,
     )
     [out] = await _render_pairs(db, tenant_id, [pair], with_email=True)
     return out
@@ -696,6 +710,8 @@ async def unlabel_taste_pair(
         tenant_id=str(tenant_id),
         pair_id=str(pair_id),
         by=str(labeller.user.id),
+        change_seq=outcome.change_seq,
+        removed=outcome.removed_label,
         forced=outcome.removed_forced,
     )
     [out] = await _render_pairs(db, tenant_id, [outcome], with_email=True)

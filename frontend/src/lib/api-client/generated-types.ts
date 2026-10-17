@@ -90562,7 +90562,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The pair is already labelled (send relabel: true to replace your own answer), or the answer is another labeller's (label_not_yours: send force: true as well; the replaced answer is recorded). */
+            /** @description pair_already_labelled: the pair is already labelled (send relabel: true to replace your own answer). label_not_yours: the answer is another labeller's (send force: true as well; the replaced answer is recorded). pair_changed_meanwhile: the pair changed under the write (a concurrent undo); nothing was changed — read it again. */
             409: {
                 headers: {
                     [name: string]: unknown;

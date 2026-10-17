@@ -997,6 +997,39 @@ async def test_a_label_write_that_loses_to_an_undo_says_the_pair_changed(
     assert undo.detail["error"] == "pair_not_labelled"
 
 
+async def test_the_server_log_carries_who_and_what_for_every_removal(
+    a: Harness, operator: User
+) -> None:
+    """The log is the complete trail behind the single `removal` slot: each
+    relabel names who replaced which answer, each undo who removed which."""
+    from structlog.testing import capture_logs
+
+    x, y = await _images(a, "x", "y")
+    pid = await a.pair_id(x, y)
+    with capture_logs() as logs:
+        assert (await a.label(pid, "a", comment="first")).status_code == 200
+        colleague = await _user(a.db, "colleague")
+        a.labeller = colleague
+        assert (await a.label(pid, "b", relabel=True, force=True)).status_code == 200
+        assert (await a.http.delete(f"{API}/pairs/{pid}/label")).status_code == 200
+
+    labelled = [e for e in logs if e["event"] == "taste_pair_labelled"]
+    unlabelled = [e for e in logs if e["event"] == "taste_pair_unlabelled"]
+    assert len(labelled) == 2 and len(unlabelled) == 1
+    first, relabel = labelled
+    assert first["by"] == str(operator.id)
+    assert first["replaced"] is None and first["forced"] is False
+    assert relabel["by"] == str(colleague.id) and relabel["forced"] is True
+    assert relabel["replaced"]["label"] == "a"
+    assert relabel["replaced"]["comment"] == "first"
+    assert relabel["replaced"]["labeller_user_id"] == str(operator.id)
+    [undo] = unlabelled
+    assert undo["by"] == str(colleague.id) and undo["forced"] is False
+    assert undo["removed"]["label"] == "b"
+    assert undo["removed"]["labeller_user_id"] == str(colleague.id)
+    assert undo["change_seq"] > relabel["change_seq"] > first["change_seq"]
+
+
 class TestWithdrawGate:
     async def test_an_operator_withdraws_only_when_they_may_label(
         self, a: Harness

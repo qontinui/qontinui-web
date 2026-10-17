@@ -55,26 +55,45 @@ export function useTasteInbox() {
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const inFlight = useRef(false);
+  /** The tag of the write whose re-read produced the current state (or
+   *  null: an initial read, a refresh). Set with that read's result in the
+   *  same render — on a failed read too — so the page can tell the swap a
+   *  write CAUSED from an unrelated one. */
+  const [readTag, setReadTag] = useState<number | null>(null);
+  const keepGoingTag = useRef<number | null>(null);
 
-  const load = useCallback(async (keepGoing: boolean) => {
-    const mine = ++generation.current;
-    try {
-      const next = await fetchTasteInbox({
-        limit: QUEUE_HEAD,
-        overBudget: keepGoing,
-      });
-      if (mine !== generation.current) return;
-      setInbox(next);
-      setReadError(null);
-    } catch (err) {
-      if (mine !== generation.current) return;
-      setReadError(message(err, "The taste inbox could not be read."));
-    }
-  }, []);
+  const load = useCallback(
+    async (keepGoing: boolean, tag: number | null = null) => {
+      const mine = ++generation.current;
+      try {
+        const next = await fetchTasteInbox({
+          limit: QUEUE_HEAD,
+          overBudget: keepGoing,
+        });
+        if (mine !== generation.current) return;
+        setInbox(next);
+        setReadError(null);
+        setReadTag(tag);
+      } catch (err) {
+        if (mine !== generation.current) return;
+        setReadError(message(err, "The taste inbox could not be read."));
+        setReadTag(tag);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    void load(overBudget);
+    const tag = keepGoingTag.current;
+    keepGoingTag.current = null;
+    void load(overBudget, tag);
   }, [load, overBudget]);
+
+  /** "Keep labelling anyway": ask for the queue head past the budget. */
+  const keepGoing = useCallback((tag: number | null = null) => {
+    keepGoingTag.current = tag;
+    setOverBudget(true);
+  }, []);
 
   const refresh = useCallback(() => load(overBudget), [load, overBudget]);
 
@@ -89,7 +108,8 @@ export function useTasteInbox() {
         failed: string;
         conflict?: string;
         conflictFromServer?: boolean;
-      }
+      },
+      tag: number | null = null
     ): Promise<T | null> => {
       if (inFlight.current) return null;
       inFlight.current = true;
@@ -109,7 +129,7 @@ export function useTasteInbox() {
       } finally {
         // Re-read whether or not the write landed: a 409 means the server
         // moved on without us, and the screen should show where it is now.
-        await load(overBudget);
+        await load(overBudget, tag);
         inFlight.current = false;
         setBusy(false);
       }
@@ -118,21 +138,29 @@ export function useTasteInbox() {
   );
 
   const label = useCallback(
-    (pairId: string, body: TasteLabelWrite) =>
-      write(() => labelTastePair(pairId, body), {
-        failed: "The label was not saved.",
-        conflict:
-          "Someone else answered that pair first — the inbox now shows theirs.",
-      }),
+    (pairId: string, body: TasteLabelWrite, tag: number | null = null) =>
+      write(
+        () => labelTastePair(pairId, body),
+        {
+          failed: "The label was not saved.",
+          conflict:
+            "Someone else answered that pair first — the inbox now shows theirs.",
+        },
+        tag
+      ),
     [write]
   );
 
   const skip = useCallback(
-    (pairId: string) =>
-      write(() => skipTastePair(pairId), {
-        failed: "The pair was not skipped.",
-        conflict: "That pair was answered meanwhile.",
-      }),
+    (pairId: string, tag: number | null = null) =>
+      write(
+        () => skipTastePair(pairId),
+        {
+          failed: "The pair was not skipped.",
+          conflict: "That pair was answered meanwhile.",
+        },
+        tag
+      ),
     [write]
   );
 
@@ -140,11 +168,15 @@ export function useTasteInbox() {
    *  server records as forced. A 409 (already undone, or not yours) shows
    *  the server's sentence. */
   const undo = useCallback(
-    (pairId: string, force = false) =>
-      write(() => undoTasteLabel(pairId, { force }), {
-        failed: "The label was not undone.",
-        conflictFromServer: true,
-      }),
+    (pairId: string, force = false, tag: number | null = null) =>
+      write(
+        () => undoTasteLabel(pairId, { force }),
+        {
+          failed: "The label was not undone.",
+          conflictFromServer: true,
+        },
+        tag
+      ),
     [write]
   );
 
@@ -205,7 +237,8 @@ export function useTasteInbox() {
     readError,
     busy,
     overBudget,
-    setOverBudget,
+    keepGoing,
+    readTag,
     refresh,
     label,
     skip,
