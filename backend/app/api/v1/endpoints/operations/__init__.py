@@ -13704,13 +13704,17 @@ async def get_coord_verification_metrics(
         raise
     except HTTPException as exc:
         if exc.status_code in (401, 403):
-            raise HTTPException(
-                status_code=502,
-                detail=(
+            raise refusal_error(
+                502,
+                RefusalCode.credential_rejected,
+                NextActionKind.report_defect,
+                (
                     f"coord refused the operator's credential on "
                     f"{_COORD_VERIFICATION_METRICS_PATH} (HTTP {exc.status_code}): "
                     f"{exc.detail}"
                 ),
+                discriminator="coord_verification_metrics_credential_refused",
+                glossary_terms=[GlossaryTerm.coord],
             ) from exc
         raise
 
