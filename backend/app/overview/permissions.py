@@ -52,7 +52,12 @@ from app.api.v1.endpoints.operations import (
     _effective_tenant_id,
     capture_caller_bearer,
 )
-from app.core.refusal import NextActionKind, RefusalCode, refusal_error
+from app.core.refusal import (
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.models.overview import OverviewSettings
 from app.models.user import User as UserModel
 from app.services.coord_device_memberships import get_device_memberships
@@ -158,7 +163,10 @@ async def get_overview_principal(
       inactive) propagates the verifier's 401, or its 503 when coord's JWKS
       cannot be fetched (inside the 30-second forced-refresh window a key-id
       miss is served from the cache and answers 401 instead). A token without
-      a usable ``device_id`` is a 401 too.
+      a usable ``device_id`` is a 401 too. One refusal is re-stated:
+      ``failed_verification`` (an unparseable bearer, or one with no ``kid``)
+      answers ``authentication_required`` / ``sign_in``, as deps' dual-auth
+      path answers it, while ``foreign_issuer`` keeps ``report_defect``.
     * A verified token that is not a DEVICE principal (``sub_type`` other than
       ``device``: an agent credential, a service token, a capability grant) is
       a 403 ``not_a_device_principal``, decided here, before anything is
@@ -191,7 +199,19 @@ async def get_overview_principal(
             "Authentication required.",
             discriminator="bearer_not_a_coord_token",
         )
-    claims, device_user = await api_deps._verify_device_jwt(token)
+    try:
+        claims, device_user = await api_deps._verify_device_jwt(token)
+    except RefusalHTTPException as exc:
+        # An unparseable bearer, or one with no ``kid``, passes the family
+        # check above and fails as ``failed_verification``. Like a non-coord
+        # bearer it is most often a browser sign-in gone stale, so it gets the
+        # sign-in deps' dual-auth path gives the same failure. A
+        # ``foreign_issuer`` keeps the verifier's ``report_defect``: past the
+        # family check its ``kid`` is coord's, so it is a device token another
+        # coord minted, a deployment fault no sign-in fixes.
+        if exc.refusal.discriminator == "failed_verification":
+            raise api_deps._as_sign_in_refusal(exc) from exc
+        raise
     if claims.get("sub_type") != api_deps.DEVICE_SUB_TYPE:
         raise _refusal(
             403,
