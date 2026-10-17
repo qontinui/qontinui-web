@@ -555,10 +555,10 @@ export function deriveTouchesHealth(input: {
   // A capacity verdict does not depend on the touch store, so a touch input
   // that is unmeasured or unknown must not hide it — it rides in the detail
   // line of both of those arms.
-  const capacity = verdictKind(verdict);
+  const vKind = verdictKind(verdict);
   const capacityNote = (touchInput: string) =>
-    capacity === "machines" || capacity === "tokens"
-      ? `${VERDICT_HEADLINE[capacity]} (the touch input is ${touchInput}). `
+    vKind === "machines" || vKind === "tokens"
+      ? `${VERDICT_HEADLINE[vKind]} (the touch input is ${touchInput}). `
       : "";
 
   if (head.measurement !== "measured" && head.measurement !== "not_yet_measured") {
@@ -592,7 +592,6 @@ export function deriveTouchesHealth(input: {
   }
 
   const totals = head.totals ?? null;
-  const vKind = verdictKind(verdict);
   const since = head.measured_since
     ? `measured since ${relativeTime(head.measured_since, { now: input.now })}`
     : "measurement start unknown";
