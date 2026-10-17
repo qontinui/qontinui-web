@@ -15,11 +15,11 @@
  * prominently. The unknowns named above render in the console's
  * UNKNOWN_AMBER, as do a workflow with no estimate, a cascade completion or
  * advance target coord did not give, and a CI or deploy prediction coord
- * marked pending. Some unknowns still render as known: an absent cascade,
- * ci or deploy block, or a sibling's null cascade, shows its count and list
- * as empty, and a cascade coord could not predict (sent as an empty, clean
- * one) reads as clean. Those wait for Phase 3y of plan
- * 2026-10-16-coord-mcp-claim-tools-diverge-from-the-http-claim-doors.
+ * marked pending. So do the states coord did not report at all: a cascade it
+ * could not predict (it sends an empty, clean cascade plus a `cascade_note`,
+ * own or per sibling), an absent cascade, ci or deploy block, and a sibling's
+ * null cascade. None of those shows a count, a "yes" or an empty-list line,
+ * because each of those would state a guess as fact.
  *
  * Everything is read defensively (optional chaining + fallbacks) because the
  * predicted-effect field set may grow — the plan calls for inspecting field
@@ -62,7 +62,17 @@ export interface LandPreviewResponse {
   from_sha?: string | null;
   to_sha?: string | null;
   predicted?: PredictedLandEffect | null;
+  // coord's reason the own-repo cascade could not be predicted. coord then
+  // sends `predicted.cascade` as an empty, clean cascade, so a present note
+  // means the cascade is unknown. null when the prediction ran; absent from
+  // coords that predate the field.
+  cascade_note?: string | null;
   risk?: RiskVerdict | null;
+}
+
+/** A cascade note is present when it is a non-blank string. */
+function hasNote(note?: string | null): note is string {
+  return typeof note === "string" && note.trim().length > 0;
 }
 
 // ---- Confidence-interval helpers (testable) -------------------------------
@@ -240,6 +250,9 @@ export function correlatedViaVariant(via?: string | null): BadgeVariant {
 
 function SiblingCascadeCard({ sibling }: { sibling: SiblingCascade }) {
   const cascade = sibling.cascade ?? null;
+  // A null cascade, or one coord says it could not predict, is unknown: its
+  // depth and counts are not a prediction, so none of them render.
+  const unknown = cascade === null || hasNote(sibling.cascade_note);
   const dependentRefs = cascade?.dependent_refs_to_restack ?? [];
   const conflicts = cascade?.expected_conflicts ?? [];
   const depth = cascade?.cascade_depth ?? null;
@@ -269,18 +282,31 @@ function SiblingCascadeCard({ sibling }: { sibling: SiblingCascade }) {
           >
             {sibling.correlated_via}
           </Badge>
-          {typeof depth === "number" && (
+          {!unknown && typeof depth === "number" && (
             <Badge variant="outline" className="text-[10px]">
               depth {depth}
             </Badge>
           )}
-          <Badge variant="outline" className="text-[10px]">
-            {dependentRefs.length} dependent ref
-            {dependentRefs.length === 1 ? "" : "s"}
-          </Badge>
+          {!unknown && (
+            <Badge variant="outline" className="text-[10px]">
+              {dependentRefs.length} dependent ref
+              {dependentRefs.length === 1 ? "" : "s"}
+            </Badge>
+          )}
         </div>
 
-        {conflicts.length > 0 && (
+        {unknown && (
+          <p
+            className={`rounded-md border px-2 py-1 text-xs italic ${UNKNOWN_AMBER}`}
+            data-testid="land-sibling-cascade-unknown"
+          >
+            {hasNote(sibling.cascade_note)
+              ? `Restack cascade unknown — ${sibling.cascade_note}`
+              : "Restack cascade unknown — coord did not report this repo's cascade."}
+          </p>
+        )}
+
+        {!unknown && conflicts.length > 0 && (
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">
               Predicted conflicts
@@ -303,13 +329,22 @@ export function LandPreviewPanel({
   preview: LandPreviewResponse;
 }) {
   const predicted = preview.predicted ?? {};
+  // An absent cascade block, or a cascade coord says it could not predict
+  // (it sends an empty, clean one beside `cascade_note`), is unknown: no
+  // "yes", no dependent-ref count, no "No dependent refs".
+  const cascadeUnreported = predicted.cascade == null;
+  const cascadeNote = hasNote(preview.cascade_note) ? preview.cascade_note : null;
+  const cascadeUnknown = cascadeUnreported || cascadeNote !== null;
   const cascade = predicted.cascade ?? {};
   const dependentRefs = cascade.dependent_refs_to_restack ?? [];
   const conflicts = cascade.expected_conflicts ?? [];
   const git = predicted.git ?? {};
+  // An absent ci or deploy block is not "nothing will run": coord did not say.
+  const ciUnreported = predicted.ci == null;
   const ci = predicted.ci ?? {};
   const ciPending = ci.pending === true;
   const workflows = ci.workflows ?? [];
+  const deployUnreported = predicted.deploy == null;
   const deploy = predicted.deploy ?? {};
   const deployPending = deploy.pending === true;
   const deploys = deploy.services_will_deploy ?? [];
@@ -430,25 +465,27 @@ export function LandPreviewPanel({
           <CardTitle className="flex items-center gap-2 text-base">
             <Layers className="h-4 w-4" />
             Cascade
-            {typeof cascade.cascade_depth === "number" && (
+            {!cascadeUnknown && typeof cascade.cascade_depth === "number" && (
               <Badge variant="outline" className="ml-1">
                 depth {cascade.cascade_depth}
               </Badge>
             )}
-            <Badge variant="outline" className="text-xs">
-              {dependentRefs.length} dependent ref
-              {dependentRefs.length === 1 ? "" : "s"}
-            </Badge>
+            {!cascadeUnknown && (
+              <Badge variant="outline" className="text-xs">
+                {dependentRefs.length} dependent ref
+                {dependentRefs.length === 1 ? "" : "s"}
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <span className="text-muted-foreground">completes cleanly:</span>
-            {cascade.will_complete_cleanly === true ? (
+            {!cascadeUnknown && cascade.will_complete_cleanly === true ? (
               <Badge variant="success" data-testid="land-cascade-clean-badge">
                 yes
               </Badge>
-            ) : cascade.will_complete_cleanly === false ? (
+            ) : !cascadeUnknown && cascade.will_complete_cleanly === false ? (
               <Badge variant="warning" data-testid="land-cascade-clean-badge">
                 no
               </Badge>
@@ -494,7 +531,16 @@ export function LandPreviewPanel({
             </div>
           )}
 
-          {dependentRefs.length > 0 ? (
+          {cascadeUnknown ? (
+            <p
+              className={`rounded-md border px-2 py-1 text-sm italic ${UNKNOWN_AMBER}`}
+              data-testid="land-cascade-unknown"
+            >
+              {cascadeNote !== null
+                ? `Restack cascade unknown — ${cascadeNote}`
+                : "Restack cascade unknown — coord did not report the restack cascade."}
+            </p>
+          ) : dependentRefs.length > 0 ? (
             <div
               className="flex flex-wrap gap-1.5"
               data-testid="land-dependent-refs"
@@ -516,7 +562,7 @@ export function LandPreviewPanel({
             </p>
           )}
 
-          {conflicts.length > 0 && (
+          {!cascadeUnknown && conflicts.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground">
                 Predicted conflicts
@@ -557,12 +603,12 @@ export function LandPreviewPanel({
           <CardTitle className="flex items-center gap-2 text-base">
             <Workflow className="h-4 w-4" />
             Expected CI workflows
-            {!ciPending && (
+            {!ciUnreported && !ciPending && (
               <Badge variant="outline" className="text-xs">
                 {workflows.length}
               </Badge>
             )}
-            {!ciPending && typeof ci.expected_pass === "boolean" && (
+            {!ciUnreported && !ciPending && typeof ci.expected_pass === "boolean" && (
               <Badge
                 variant={ci.expected_pass ? "success" : "destructive"}
                 className="text-[10px]"
@@ -574,7 +620,14 @@ export function LandPreviewPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {ciPending ? (
+          {ciUnreported ? (
+            <p
+              className={`rounded-md border px-2 py-1 text-sm italic ${UNKNOWN_AMBER}`}
+              data-testid="land-ci-unreported"
+            >
+              coord did not report the CI prediction.
+            </p>
+          ) : ciPending ? (
             <p
               className={`rounded-md border px-2 py-1 text-sm italic ${UNKNOWN_AMBER}`}
               data-testid="land-ci-pending"
@@ -656,12 +709,13 @@ export function LandPreviewPanel({
           <CardTitle className="flex items-center gap-2 text-base">
             <Rocket className="h-4 w-4" />
             Expected deploys
-            {!deployPending && (
+            {!deployUnreported && !deployPending && (
               <Badge variant="outline" className="text-xs">
                 {deploys.length}
               </Badge>
             )}
-            {!deployPending &&
+            {!deployUnreported &&
+              !deployPending &&
               typeof deploy.expected_health_check_pass === "boolean" && (
                 <Badge
                   variant={
@@ -678,7 +732,14 @@ export function LandPreviewPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {deployPending ? (
+          {deployUnreported ? (
+            <p
+              className={`rounded-md border px-2 py-1 text-sm italic ${UNKNOWN_AMBER}`}
+              data-testid="land-deploy-unreported"
+            >
+              coord did not report the deploy prediction.
+            </p>
+          ) : deployPending ? (
             <p
               className={`rounded-md border px-2 py-1 text-sm italic ${UNKNOWN_AMBER}`}
               data-testid="land-deploy-pending"
