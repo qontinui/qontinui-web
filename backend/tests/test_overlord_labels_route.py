@@ -114,6 +114,10 @@ def test_operator_label_forwards_to_coord_as_operator_page_write() -> None:
     assert "label_source" not in kwargs["json"]
     assert kwargs["headers"]["X-Qontinui-User-Id"] == str(_USER)
     assert kwargs["headers"]["Authorization"] == "Bearer service-token"
+    assert (
+        kwargs["headers"]["X-Qontinui-Active-Tenant"]
+        == "11111111-1111-1111-1111-111111111111"
+    )
 
 
 def test_false_finish_without_class_omits_operator_label() -> None:

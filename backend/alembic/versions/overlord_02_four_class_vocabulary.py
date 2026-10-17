@@ -67,8 +67,12 @@ depends_on: str | Sequence[str] | None = None
 
 logger = logging.getLogger("alembic.runtime.migration")
 
-# No row observed at or after this instant can claim legacy status.
-_LEGACY_CUTOFF = "2026-10-17T22:00:00+00"
+# No row observed at or after the cutoff can claim legacy status. This is the
+# FLOOR: the live cutoff is the later of it and one second past the newest
+# existing C/D/F row, because the pre-2b coord keeps accepting those letters
+# until it is redeployed and a row it writes after the floor must still be
+# markable (see ``upgrade``).
+_LEGACY_CUTOFF_FLOOR = "2026-10-17T22:00:00+00"
 
 _TABLE = "coord.overlord_interventions"
 
@@ -150,6 +154,21 @@ def upgrade() -> None:
         """
     )
 
+    cutoff = bind.exec_driver_sql(
+        f"""
+        SELECT to_char(
+                   GREATEST(
+                       '{_LEGACY_CUTOFF_FLOOR}'::timestamptz,
+                       COALESCE(
+                           (SELECT max(observed_at) + interval '1 second'
+                              FROM {_TABLE} WHERE legacy_class),
+                           '{_LEGACY_CUTOFF_FLOOR}'::timestamptz)
+                   ) AT TIME ZONE 'UTC',
+                   'YYYY-MM-DD"T"HH24:MI:SS.US"+00"')
+        """
+    ).scalar_one()
+    logger.info("overlord_02: legacy cutoff is %s", cutoff)
+
     op.execute(
         f"""
         ALTER TABLE {_TABLE}
@@ -168,7 +187,7 @@ def upgrade() -> None:
             ADD CONSTRAINT ck_overlord_interventions_false_finish_not_e
             CHECK (NOT (label_kind = 'false_finish' AND operator_label = 'E')),
             ADD CONSTRAINT ck_overlord_interventions_legacy_cutoff
-            CHECK (NOT legacy_class OR observed_at < '{_LEGACY_CUTOFF}'::timestamptz)
+            CHECK (NOT legacy_class OR observed_at < '{cutoff}'::timestamptz)
         """
     )
 
