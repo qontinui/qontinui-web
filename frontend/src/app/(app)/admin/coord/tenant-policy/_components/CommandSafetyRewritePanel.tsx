@@ -32,7 +32,7 @@ const LEVEL_COPY: Record<
  * The `command_safety_rewrite` toggle (plan
  * `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts` Phase 4).
  *
- * Laid out exactly as `TranscriptSyncPanel` beside it, with the resolved-band
+ * Laid out as a single-dial panel, with the resolved-band
  * reporting of the plan library's `CapturePolicyPanel`, because this is a
  * fleet-policy dial rather than a `tenant_policies` flag.
  *
