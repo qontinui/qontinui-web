@@ -759,6 +759,7 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/operations/fleet",
     "https://api.test/api/v1/admin-dev/overview",
     "https://api.test/api/v1/admin/agent-sessions",
+    "https://api.test/api/v1/admin/coord/overlord/labels",
     // Project Overview. Every `overview.*` row is keyed on the active tenant
     // and the backend resolves it from this header ALONE, so a missing entry
     // here silently serves (and writes) the operator's home project under
