@@ -86,6 +86,7 @@ from app.api.v1.endpoints import (
     notifications,
     operations,
     organizations,
+    overlord_labels,
     overview,
     pair_codes,
     phase_results,
@@ -550,6 +551,11 @@ api_router.include_router(
 # path is /api/v1/admin-dev/overview (it must NOT inherit agent_sessions'
 # /admin prefix).
 api_router.include_router(admin_dev.router, tags=["admin-dev"])
+# Operator label write for the overlord intervention ledger (plan
+# 2026-10-01-overlord-session-supervisor-..., Phase 2b).
+api_router.include_router(
+    overlord_labels.router, prefix="/admin/coord/overlord", tags=["overlord"]
+)
 
 # Cloud-control extension hook — no-op when no cloud-control package has
 # registered any route extensions. Cloud-control's
