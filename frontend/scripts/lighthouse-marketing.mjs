@@ -36,11 +36,14 @@ const { values } = parseArgs({
   },
 });
 if (!values.base || !values.label || !values.out) {
-  process.stderr.write("usage: lighthouse-marketing.mjs --base <url> --label <name> --out <file.json> [--runs N] [--path P]...\n");
+  process.stderr.write(
+    "usage: lighthouse-marketing.mjs --base <url> --label <name> --out <file.json> [--runs N] [--path P]...\n"
+  );
   process.exit(2);
 }
 const runs = Number(values.runs);
-if (!Number.isInteger(runs) || runs < 1) throw new Error(`--runs must be a positive integer, got ${values.runs}`);
+if (!Number.isInteger(runs) || runs < 1)
+  throw new Error(`--runs must be a positive integer, got ${values.runs}`);
 const paths = values.path?.length ? values.path : ["/"];
 const chrome = process.env.CHROME_PATH;
 if (!chrome) throw new Error("set CHROME_PATH to a Chrome/Chromium binary");
@@ -77,7 +80,10 @@ function runOnce(url, formFactor, index) {
     "--chrome-flags=--headless=new --no-sandbox",
   ];
   if (formFactor === "desktop") args.push("--preset=desktop");
-  execFileSync("npx", args, { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, CHROME_PATH: chrome } });
+  execFileSync("npx", args, {
+    stdio: ["ignore", "inherit", "inherit"],
+    env: { ...process.env, CHROME_PATH: chrome },
+  });
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
@@ -93,7 +99,10 @@ for (const p of paths) {
     lighthouseVersion = reports[0].lighthouseVersion;
     userAgent = reports[0].environment?.hostUserAgent ?? null;
     const errors = reports.map((r) => r.runtimeError?.code).filter(Boolean);
-    if (errors.length) throw new Error(`${url} (${formFactor}): Lighthouse runtime errors ${errors.join(", ")}`);
+    if (errors.length)
+      throw new Error(
+        `${url} (${formFactor}): Lighthouse runtime errors ${errors.join(", ")}`
+      );
     const score = (r, c) => Math.round((r.categories[c]?.score ?? NaN) * 100);
     const entry = {
       performance_median: median(reports.map((r) => score(r, "performance"))),
@@ -103,22 +112,36 @@ for (const p of paths) {
       seo: median(reports.map((r) => score(r, "seo"))),
     };
     for (const [key, audit] of Object.entries(METRICS)) {
-      const v = median(reports.map((r) => r.audits[audit]?.numericValue ?? NaN));
+      const v = median(
+        reports.map((r) => r.audits[audit]?.numericValue ?? NaN)
+      );
       entry[key] = key === "cls" ? Number(v.toFixed(4)) : Math.round(v);
     }
-    entry.total_byte_weight = Math.round(median(reports.map((r) => r.audits["total-byte-weight"]?.numericValue ?? NaN)));
+    entry.total_byte_weight = Math.round(
+      median(
+        reports.map((r) => r.audits["total-byte-weight"]?.numericValue ?? NaN)
+      )
+    );
     // The LCP element of the first run, as Lighthouse 13 reports it (the
     // node item of the lcp-breakdown insight).
-    const lcpNode = reports[0].audits["lcp-breakdown-insight"]?.details?.items?.find((item) => item.type === "node");
-    entry.lcp_element = lcpNode ? `${lcpNode.selector} (${lcpNode.nodeLabel})` : null;
+    const lcpNode = reports[0].audits[
+      "lcp-breakdown-insight"
+    ]?.details?.items?.find((item) => item.type === "node");
+    entry.lcp_element = lcpNode
+      ? `${lcpNode.selector} (${lcpNode.nodeLabel})`
+      : null;
     results[p][formFactor] = entry;
-    process.stdout.write(`${p} ${formFactor}: performance ${entry.performance_median} (runs ${entry.performance_runs.join(",")})\n`);
+    process.stdout.write(
+      `${p} ${formFactor}: performance ${entry.performance_median} (runs ${entry.performance_runs.join(",")})\n`
+    );
   }
 }
 
 let commit = null;
 try {
-  commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  commit = execFileSync("git", ["rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
 } catch {
   // not a git checkout: leave it null rather than guess
 }
@@ -132,7 +155,8 @@ const summary = {
   lighthouse: lighthouseVersion,
   chrome_user_agent: userAgent,
   runs_per_form_factor: runs,
-  method: "scripts/lighthouse-marketing.mjs: median of N fresh-Chrome runs per path and form factor; mobile = Lighthouse default (simulated throttling), desktop = --preset=desktop",
+  method:
+    "scripts/lighthouse-marketing.mjs: median of N fresh-Chrome runs per path and form factor; mobile = Lighthouse default (simulated throttling), desktop = --preset=desktop",
   results,
 };
 writeFileSync(values.out, `${JSON.stringify(summary, null, 2)}\n`);
