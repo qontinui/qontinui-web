@@ -67,6 +67,7 @@ from app.api.deps import get_async_db
 from app.models.overview import OverviewFile, Page
 from app.overview import change_log
 from app.overview import http as contract_http
+from app.overview.pages import SPELLING_FORMAT_CHARS
 from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
 from app.overview.resource import (
     ListResult,
@@ -248,23 +249,81 @@ def file_store() -> FileStore:
 _UNSAFE_NAME = re.compile(r"[\x00-\x1f\x7f/\\]+")
 
 
+#: The format characters that spell something only BETWEEN two characters: the
+#: zero-width non-joiner and joiner and the soft hyphen.
+_INNER_ONLY_FORMAT_CHARS = frozenset("\u00ad\u200c\u200d")
+
+
+def _blank_at_an_edge(ch: str) -> bool:
+    """Whitespace and the inner-only format characters draw nothing at either
+    end of a name or of its stem."""
+    return ch.isspace() or ch in _INNER_ONLY_FORMAT_CHARS
+
+
+def _clean_format_chars(name: str) -> str:
+    """Drop the format characters, and the blank edges, a display name must not
+    keep. Every step is one pass over the name, so the cost is linear in it.
+
+    A right-to-left override can make a name's shown extension differ from its
+    real one, so every format character goes from the extension, and the ones
+    that spell nothing go from everywhere. The stem keeps the ones that are
+    spelling, the same set a page's source path accepts
+    (:data:`pages.SPELLING_FORMAT_CHARS`), so a Persian plural or an emoji ZWJ
+    sequence is not stored misspelled. Whitespace, dots, the joiners and the
+    soft hyphen spell nothing at the start of a name or at the end of a stem.
+    """
+    name = "".join(
+        ch
+        for ch in name
+        if unicodedata.category(ch) != "Cf" or ch in SPELLING_FORMAT_CHARS
+    )
+    start = 0
+    while start < len(name) and (name[start] == "." or _blank_at_an_edge(name[start])):
+        start += 1
+    # A trailing run of dots, whitespace and spelling format characters is cut at
+    # its first dot: every segment after that dot would be an extension with
+    # nothing visible in it. Then the blank characters before the cut go.
+    end = i = len(name)
+    while i > start and (
+        name[i - 1] == "."
+        or _blank_at_an_edge(name[i - 1])
+        or name[i - 1] in SPELLING_FORMAT_CHARS
+    ):
+        i -= 1
+        if name[i] == ".":
+            end = i
+    while end > start and _blank_at_an_edge(name[end - 1]):
+        end -= 1
+    stem, dot, ext = name[start:end].rpartition(".")
+    if not dot:
+        return ext  # no extension: the whole name is a stem, trimmed above
+    stem_end = len(stem)
+    while stem_end and _blank_at_an_edge(stem[stem_end - 1]):
+        stem_end -= 1
+    ext = "".join(ch for ch in ext if unicodedata.category(ch) != "Cf").rstrip()
+    return stem[:stem_end] + dot + ext if ext else stem[:stem_end]
+
+
 def clean_filename(raw: str | None) -> str:
     """The name to show and to offer on download: the base name only, no
     control characters or path separators, at most :data:`MAX_FILENAME`
     characters, keeping the extension."""
     name = unicodedata.normalize("NFC", raw or "")
     name = name.replace("\\", "/").rsplit("/", 1)[-1]
-    # Format characters too (a right-to-left override can make a name's shown
-    # extension differ from its real one).
-    name = "".join(ch for ch in name if unicodedata.category(ch) != "Cf")
-    name = _UNSAFE_NAME.sub("", name).strip().strip(".")
+    name = _clean_format_chars(_UNSAFE_NAME.sub("", name))
     if len(name) > MAX_FILENAME:
         stem, dot, ext = name.rpartition(".")
+        # Keep the extension only when it fits beside at least one character of
+        # the stem; a longer one is no real extension, and keeping it would
+        # leave the name over the limit.
         name = (
             (stem[: MAX_FILENAME - len(ext) - 1] + dot + ext)
-            if dot
+            if dot and len(ext) < MAX_FILENAME - 1
             else name[:MAX_FILENAME]
         )
+        # The cut can land just after a blank character, which would then end
+        # the stem: clean the shortened name once more (it only gets shorter).
+        name = _clean_format_chars(name)
     return name
 
 
