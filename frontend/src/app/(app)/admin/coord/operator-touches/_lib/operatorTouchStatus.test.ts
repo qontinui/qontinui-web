@@ -154,7 +154,9 @@ describe("deriveTouchesHealth — R1, derived from the payload on the page", () 
       constraint_verdict: { ...UNKNOWN_VERDICT, verdict: "machines" },
     });
     expect(h.headline).toBe("Not yet measured — the touch emitter has not run");
-    expect(h.detail).toContain("Machines are the constraint");
+    expect(h.detail).toContain(
+      "Machines are the constraint (the touch input is not yet measured)"
+    );
   });
 
   it("an unknown measurement word does not hide a capacity verdict either", () => {
