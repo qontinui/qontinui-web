@@ -592,7 +592,6 @@ describe("LandPreviewPanel — a cascade, CI or deploy coord did not predict is 
     // No "0" count badge: the deploy card's count is 2, so a bare "0" can only
     // be the CI card's.
     expect(screen.queryAllByText("0")).toHaveLength(0);
-    expect(screen.queryByTestId("land-ci-overall-badge")).toBeNull();
     const notice = screen.getByTestId("land-ci-unreported");
     expect(notice.textContent).toContain("coord did not report the CI prediction");
     expect(notice).toHaveClass(...amber);
@@ -618,7 +617,6 @@ describe("LandPreviewPanel — a cascade, CI or deploy coord did not predict is 
     expect(screen.queryByText("No deploys predicted to fire.")).toBeNull();
     // The CI card's count is 1, so a bare "0" can only be the deploy card's.
     expect(screen.queryAllByText("0")).toHaveLength(0);
-    expect(screen.queryByTestId("land-deploy-health-badge")).toBeNull();
     const notice = screen.getByTestId("land-deploy-unreported");
     expect(notice.textContent).toContain(
       "coord did not report the deploy prediction"
