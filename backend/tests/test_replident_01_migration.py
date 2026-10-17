@@ -46,7 +46,7 @@ _REVISION_FILENAME = "replident_01_coord_no_pk_tables_replica_identity.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "coord_tenant_github_hosts_01"
+_PARENT_REVISION_ID = "fleet_policy_egress_01_transcript_sync"
 
 _EXPECTED_INDEX = {
     "worker_heartbeats": "worker_heartbeats_name_replica_id_uq",
