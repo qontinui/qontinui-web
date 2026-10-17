@@ -60,7 +60,7 @@ function pairFixture(over: Partial<TastePair> = {}): TastePair {
     first_labelled_at: null,
     change_seq: null,
     tombstone: false,
-    undo: null,
+    removal: null,
     created_at: "2026-10-15T10:00:00Z",
     updated_at: "2026-10-15T10:00:00Z",
     ...over,

@@ -104,7 +104,7 @@ function seed(n: number) {
     first_labelled_at: null,
     change_seq: null,
     tombstone: false,
-    undo: null,
+    removal: null,
     created_at: `2026-10-15T10:0${i}:00Z`,
     updated_at: `2026-10-15T10:0${i}:00Z`,
     skipOrder: null,
@@ -307,6 +307,7 @@ describe("the taste inbox", () => {
       comment: null,
       edit_note: null,
       relabel: false,
+      force: false,
     });
 
     await press("s");
@@ -374,6 +375,40 @@ describe("the taste inbox", () => {
     expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
     expect(server.rows.find((r) => r.id === "p3")!.label).toBe("b");
     expect(screen.queryByTestId("taste-recent-p1")).toBeNull();
+  });
+
+  it("u still undoes after the queue runs dry: the empty panel hosts the keys", async () => {
+    seed(1);
+    render(<TasteInboxPage />);
+    await settle("p1");
+    await press("a");
+    const region = await screen.findByTestId("taste-done-region");
+    expect(screen.getByTestId("taste-queue-empty")).toBeTruthy();
+    expect(screen.getByTestId("taste-shortcuts-hint").textContent).toMatch(
+      /u undoes your newest label/
+    );
+    await press("u", region);
+    await settle("p1");
+    expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
+  });
+
+  it("u undoes from the budget-spent panel too, and the toggle still governs it", async () => {
+    seed(2);
+    server.weeklyBudget = 1;
+    render(<TasteInboxPage />);
+    await settle("p1");
+    await press("a");
+    const region = await screen.findByTestId("taste-done-region");
+    expect(screen.getByTestId("taste-budget-spent")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("taste-shortcuts-toggle"));
+    await press("u", region);
+    expect(api.undoTasteLabel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("taste-shortcuts-toggle"));
+    await press("u", window);
+    expect(api.undoTasteLabel).not.toHaveBeenCalled();
+    await press("u", region);
+    await settle("p1");
+    expect(api.undoTasteLabel).toHaveBeenCalledWith("p1", { force: false });
   });
 
   it("u does nothing when every recent label is a colleague's", async () => {

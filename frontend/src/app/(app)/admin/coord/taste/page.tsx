@@ -15,7 +15,8 @@
  * and only reflected here via the inbox's `can_label`.
  *
  * Keyboard (WCAG 2.1.4): the single-key shortcuts act only while the pair
- * card has focus, and the card carries a visible toggle that turns them off
+ * card has focus — or, when there is no pair to answer, the panel shown in
+ * its place, so `u` still undoes — and a visible toggle turns them off
  * (remembered per browser). A held key never repeats an answer.
  *
  * What it cannot show yet, and says on the card: in-situ captures need plan
@@ -39,6 +40,7 @@ import type { TasteLabel, TasteReason } from "@/lib/api/taste";
 import { EMPTY_DRAFT, PairCard, type PairDraft } from "./_components/PairCard";
 import { RecentLabels } from "./_components/RecentLabels";
 import { SetupPanel } from "./_components/SetupPanel";
+import { ShortcutsBar } from "./_components/ShortcutsBar";
 import { useTasteInbox } from "./_hooks/useTasteInbox";
 import {
   deriveTasteHealth,
@@ -130,6 +132,7 @@ export default function TasteInboxPage() {
         comment: draft.comment.trim() || null,
         edit_note: draft.editNote.trim() || null,
         relabel: false,
+        force: false,
       });
     },
     [head, busy, label, draft]
@@ -234,42 +237,63 @@ export default function TasteInboxPage() {
           cardRef={cardRef}
           onKeyDown={onCardKey}
           shortcutsOn={shortcutsOn}
-          onShortcutsChange={changeShortcuts}
-          canUndoOwn={ownLast !== null}
         />
-      ) : budgetSpent ? (
-        <div
-          className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card/30 p-3 text-sm"
-          data-testid="taste-budget-spent"
-        >
-          <span>
-            This week&apos;s budget of {inbox?.budget.weekly_budget} labels is
-            given. {inbox?.pending_total} more{" "}
-            {inbox?.pending_total === 1 ? "pair waits" : "pairs wait"}; nothing
-            blocks on them.
-          </span>
-          {canLabel && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setOverBudget(true)}
-              data-testid="taste-keep-going"
-            >
-              Keep labelling anyway
-            </Button>
-          )}
-        </div>
       ) : inbox ? (
-        <p
-          className="text-sm text-muted-foreground"
-          data-testid="taste-queue-empty"
+        // No pair to answer: this panel hosts the same keys, so `u` still
+        // undoes the viewer's newest label after the queue runs dry.
+        <section
+          ref={cardRef}
+          tabIndex={canLabel ? 0 : undefined}
+          onKeyDown={canLabel ? onCardKey : undefined}
+          aria-label="No pair to answer"
+          aria-keyshortcuts={canLabel && shortcutsOn ? "u" : undefined}
+          className="rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+          data-testid="taste-done-region"
         >
-          No pair is waiting. Studio adds pairs where its judges disagree once
-          the judge panel ships (plan Phase 20); until then the queue is the
-          calibration batch below.
-        </p>
+          {budgetSpent ? (
+            <div
+              className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card/30 p-3 text-sm"
+              data-testid="taste-budget-spent"
+            >
+              <span>
+                This week&apos;s budget of {inbox?.budget.weekly_budget} labels
+                is given. {inbox?.pending_total} more{" "}
+                {inbox?.pending_total === 1 ? "pair waits" : "pairs wait"};
+                nothing blocks on them.
+              </span>
+              {canLabel && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setOverBudget(true)}
+                  data-testid="taste-keep-going"
+                >
+                  Keep labelling anyway
+                </Button>
+              )}
+            </div>
+          ) : (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="taste-queue-empty"
+            >
+              No pair is waiting. Studio adds pairs where its judges disagree
+              once the judge panel ships (plan Phase 20); until then the queue
+              is the calibration batch below.
+            </p>
+          )}
+        </section>
       ) : null}
+
+      {canLabel && (
+        <ShortcutsBar
+          shortcutsOn={shortcutsOn}
+          onChange={changeShortcuts}
+          canUndoOwn={ownLast !== null}
+          scope={head ? "card" : "panel"}
+        />
+      )}
 
       <section className="space-y-2" aria-label="Recent labels">
         <h2 className="text-sm font-semibold">Recent labels</h2>

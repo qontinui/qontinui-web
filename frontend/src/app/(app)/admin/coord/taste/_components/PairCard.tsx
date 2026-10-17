@@ -40,8 +40,8 @@ function Key({ children }: { children: string }) {
  * the comment and the edit, and the four answers. Presentational — the page
  * owns the draft and the keyboard, so a key and a click do exactly the same
  * thing. The keys act only while this card has focus (it is focusable
- * itself), and only while its "Keyboard shortcuts" toggle is on; the key
- * hints show only while they would work.
+ * itself), and only while the page's "Keyboard shortcuts" toggle is on; the
+ * key hints show only while they would work.
  *
  * A viewer who may not label sees the pair and is told why there are no
  * controls, rather than meeting buttons that would 403.
@@ -60,8 +60,6 @@ export function PairCard({
   cardRef,
   onKeyDown,
   shortcutsOn,
-  onShortcutsChange,
-  canUndoOwn,
 }: {
   pair: TastePair;
   canLabel: boolean;
@@ -75,10 +73,8 @@ export function PairCard({
   editRef: RefObject<HTMLTextAreaElement | null>;
   cardRef: RefObject<HTMLElement | null>;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  /** The page's shortcut toggle (rendered by the page's ShortcutsBar). */
   shortcutsOn: boolean;
-  onShortcutsChange: (on: boolean) => void;
-  /** Whether the viewer has a label of their own in the recent list. */
-  canUndoOwn: boolean;
 }) {
   const keys = canLabel && shortcutsOn;
   const bare = bareNote(pair);
@@ -227,23 +223,6 @@ export function PairCard({
             >
               Skip {keys && <Key>s</Key>}
             </Button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <label className="inline-flex items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={shortcutsOn}
-                onChange={(e) => onShortcutsChange(e.target.checked)}
-                data-testid="taste-shortcuts-toggle"
-              />
-              Keyboard shortcuts
-            </label>
-            <span data-testid="taste-shortcuts-hint">
-              {shortcutsOn
-                ? `Keys work while this card has focus — click it or Tab to it. Esc leaves a text field${canUndoOwn ? "; u undoes your newest label" : ""}.`
-                : "Shortcuts are off: only the buttons answer."}
-            </span>
           </div>
         </>
       ) : (
