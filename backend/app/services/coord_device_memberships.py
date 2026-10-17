@@ -59,6 +59,7 @@ import structlog
 from fastapi import HTTPException, Request
 
 from app.core.config import settings
+from app.core.refusal import GlossaryTerm, NextActionKind, RefusalCode, refusal_error
 
 logger = structlog.get_logger(__name__)
 
@@ -199,19 +200,32 @@ def _error_code(resp: httpx.Response) -> str | None:
 async def fetch_device_memberships(bearer: str) -> DeviceMemberships:
     """Call coord's device-membership door with the device's own bearer.
 
-    Transport failures are 502/504, as in ``coord_identity._fetch_identity``.
+    Transport failures are 502/504, as in ``coord_identity._fetch_identity``,
+    built as typed refusals the way the operations proxy builds its own
+    (``_coord_unreachable`` / ``_coord_timeout``). The read is a GET, so a
+    retry after either is safe.
     """
     url = f"{settings.COORD_URL}{MEMBERSHIPS_PATH}"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, headers={"Authorization": f"Bearer {bearer}"})
         except httpx.ConnectError as exc:
-            raise HTTPException(
-                status_code=502, detail="coord is not reachable"
+            raise refusal_error(
+                502,
+                RefusalCode.upstream_unavailable,
+                NextActionKind.retry_later,
+                "coord is not reachable",
+                discriminator="coord_unreachable",
+                glossary_terms=[GlossaryTerm.coord],
             ) from exc
         except httpx.TimeoutException as exc:
-            raise HTTPException(
-                status_code=504, detail="timeout waiting for coord"
+            raise refusal_error(
+                504,
+                RefusalCode.upstream_timeout,
+                NextActionKind.retry_later,
+                "timeout waiting for coord",
+                discriminator="coord_timeout",
+                glossary_terms=[GlossaryTerm.coord],
             ) from exc
         except httpx.HTTPError as exc:
             # Any other transport failure (a dropped connection, a protocol

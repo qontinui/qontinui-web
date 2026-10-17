@@ -52,6 +52,7 @@ from app.api.v1.endpoints.operations import (
     _effective_tenant_id,
     capture_caller_bearer,
 )
+from app.core.refusal import NextActionKind, RefusalCode, refusal_error
 from app.models.overview import OverviewSettings
 from app.models.user import User as UserModel
 from app.services.coord_device_memberships import get_device_memberships
@@ -171,10 +172,25 @@ async def get_overview_principal(
     if user is not None:
         return OverviewPrincipal(kind="user", user=user)
     if credentials is None:
-        raise HTTPException(status_code=401, detail="Authentication required.")
+        raise refusal_error(
+            401,
+            RefusalCode.authentication_required,
+            NextActionKind.sign_in,
+            "Authentication required.",
+            discriminator="no_credential",
+        )
     token = credentials.credentials
     if kid_outside_coord_family(token):
-        raise HTTPException(status_code=401, detail="Authentication required.")
+        # Not a coord token at all, and no person's session resolved from it:
+        # most often an expired browser sign-in, so the next action is the
+        # sign-in deps' dual-auth path names for the same case.
+        raise refusal_error(
+            401,
+            RefusalCode.authentication_required,
+            NextActionKind.sign_in,
+            "Authentication required.",
+            discriminator="bearer_not_a_coord_token",
+        )
     claims, device_user = await api_deps._verify_device_jwt(token)
     if claims.get("sub_type") != api_deps.DEVICE_SUB_TYPE:
         raise _refusal(
