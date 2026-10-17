@@ -43,6 +43,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -82,7 +83,6 @@ import {
 } from "lucide-react";
 import {
   CollapsiblePanel,
-  INERT,
   RowTime,
   StatusBadge,
   absoluteTime,
@@ -97,8 +97,10 @@ import {
 import {
   deleteMemory,
   fetchMemoryEntry,
+  fetchMemoryVersionTrail,
   upsertMemory,
   type CoordMemoryDetail,
+  type CoordMemoryVersionDetail,
 } from "@/lib/api/operations/coordMemory";
 import {
   CoordAdminOnly,
@@ -185,13 +187,24 @@ export default function CoordMemoryDetailPage() {
     try {
       await deleteMemory(name);
       toast.success("Memory tombstoned (recoverable via restore)");
-      router.push("/admin/coord/memory");
+      // Stay here and re-read. Once qontinui-web revision coordmem_01 is
+      // applied, coord 404s a deleted name, so the not-found branch renders the
+      // memory's version trail -- the restore links the toast just promised
+      // (pushing to the list hid them: a deleted memory is not listed there).
+      // Before coordmem_01 is applied, coord's view still serves the previous
+      // live version, and the re-read shows that version unchanged. `memory`
+      // is nulled first (the read's catch never clears it, so the old content
+      // would otherwise stay on screen) and the skeleton shows until the
+      // re-read settles, as on a route change.
+      setMemory(null);
+      setLoading(true);
+      await fetchMemory();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to delete memory");
     } finally {
       setDeleting(false);
     }
-  }, [name, router]);
+  }, [name, fetchMemory]);
 
   const onJumpToVersion = useCallback(
     (versionStr: string) => {
@@ -244,7 +257,7 @@ export default function CoordMemoryDetailPage() {
         <span className="font-mono text-sm">{name}</span>
       </div>
 
-      {error && (
+      {error && !notFound && (
         <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
@@ -279,41 +292,6 @@ export default function CoordMemoryDetailPage() {
                     title="The monotonic version HEAD, not a count of versions."
                   >
                     v{memory.version}
-                  </Badge>
-                )}
-                {memory.tombstoned && (
-                  /*
-                   * R3 — this was `variant="destructive"`, i.e. RED, on a
-                   * TERMINAL state nobody must act on. Nothing clears a
-                   * tombstone and nothing decays while it sits; the operator
-                   * is reading a soft-deleted document, which is a fact about
-                   * the document, not a task. Red here is the same bug R3
-                   * opens by naming — colour encoding how alarming the WORD
-                   * sounds rather than whose move it is — and it is the more
-                   * expensive half of that bug, because a red badge nobody
-                   * must act on is what teaches the eye to skip red.
-                   *
-                   * So: calm hue, and the thing worth knowing said in WORDS
-                   * (the guide's third case). The word "tombstoned" plus this
-                   * title carry strictly more than the colour did.
-                   *
-                   * `INERT` is imported rather than spelled, and this badge is
-                   * deliberately NOT run through `MEMORY_STATUS_PALETTE`:
-                   * `memoryStatus.ts` keys its tones off the memory's TYPE and
-                   * is total over that, while tombstoning is an orthogonal
-                   * lifecycle flag. Folding a fourth tone in would make the
-                   * table non-total over the thing it claims to describe.
-                   * `paletteDisagreements` therefore does not see this line —
-                   * stated here rather than left for the next reader to
-                   * discover.
-                   */
-                  <Badge
-                    variant="outline"
-                    className={INERT}
-                    title="Soft-deleted: reads filter this memory out. The full version history is retained and any prior version can be restored — nothing is lost and nothing needs doing."
-                    data-testid="coord-memory-tombstoned-badge"
-                  >
-                    tombstoned
                   </Badge>
                 )}
                 {memory.written_at && (
@@ -603,11 +581,141 @@ export default function CoordMemoryDetailPage() {
           Could not read memory {name} — whether it exists is unknown, not no.
         </p>
       ) : (
+        <div className="space-y-2" data-testid="coord-memory-detail-missing">
+          <MemoryVersionTrail name={name} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** What the not-found branch knows about a name's versions. */
+type TrailState =
+  | { kind: "loading" }
+  | {
+      kind: "found";
+      versions: CoordMemoryVersionDetail[];
+      latest: CoordMemoryVersionDetail;
+      truncated: boolean;
+    }
+  | { kind: "none" }
+  | { kind: "unknown" };
+
+/**
+ * The not-found branch's version trail.
+ *
+ * From qontinui-web revision `coordmem_01` on (plan
+ * `2026-10-16-coord-memories-latest-view-crosses-tenants`), coord's
+ * `GET /memory/{name}` 404s a memory whose latest version is a tombstone, but
+ * every version stays readable by number. So this reads them
+ * (`fetchMemoryVersionTrail`) and links each one to its `/version/<n>` page,
+ * which is where "Restore this version" lives. Without it, the delete toast's
+ * "recoverable via restore" pointed at a page nobody could find.
+ *
+ * Four states, never confused (R6 — "not found" is a claim about the corpus):
+ * versions found (deleted and restorable), none (the name never had a version),
+ * unknown (the read failed: unknown, not no), and truncated (only the first
+ * versions are listed).
+ */
+function MemoryVersionTrail({ name }: { name: string }) {
+  const [state, setState] = useState<TrailState>({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: "loading" });
+    fetchMemoryVersionTrail(name)
+      .then((trail) => {
+        if (cancelled) return;
+        const latest = trail.versions[trail.versions.length - 1];
+        setState(
+          latest === undefined
+            ? { kind: "none" }
+            : {
+                kind: "found",
+                versions: trail.versions,
+                latest,
+                truncated: trail.truncated,
+              }
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setState({ kind: "unknown" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
+
+  if (state.kind === "loading") {
+    return <Skeleton className="h-4 w-48" />;
+  }
+  if (state.kind === "unknown") {
+    return (
+      <p
+        className="text-sm text-muted-foreground italic"
+        data-testid="coord-memory-version-trail-unknown"
+      >
+        Memory {name} not found, and its versions could not be read — whether
+        any exist is unknown, not no.
+      </p>
+    );
+  }
+  if (state.kind === "none") {
+    return (
+      <p
+        className="text-sm text-muted-foreground italic"
+        data-testid="coord-memory-version-trail-none"
+      >
+        Memory {name} not found; it has no versions.
+      </p>
+    );
+  }
+  const { latest } = state;
+  return (
+    <div className="space-y-2" data-testid="coord-memory-version-trail">
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="coord-memory-version-trail-headline"
+      >
+        {state.truncated
+          ? `Memory ${name} not found. It has more versions than the ${state.versions.length} listed here, so its latest version is not named.`
+          : latest.is_tombstone
+            ? `Memory ${name} was deleted at v${latest.version}. Every version is kept; open one to restore it.`
+            : `Memory ${name} not found. Its versions are kept; open one to restore it.`}
+      </p>
+      <ul className="space-y-1 text-sm">
+        {state.versions.map((v) => (
+          <li key={v.version} className="flex items-center gap-2">
+            {/*
+             * The accessible name starts with the visible "vN" (WCAG 2.5.3,
+             * Label in Name), so a voice user can say what they see; the
+             * hidden context follows it.
+             */}
+            <Link
+              href={`/admin/coord/memory/${encodeURIComponent(name)}/version/${v.version}`}
+              className="font-mono underline"
+              data-testid={`coord-memory-version-trail-link-${v.version}`}
+            >
+              v{v.version}
+              <span className="sr-only">
+                : open version {v.version} of {name}
+              </span>
+            </Link>
+            {v.is_tombstone ? (
+              <span className="text-muted-foreground">deleted</span>
+            ) : (
+              v.written_at && <RowTime at={v.written_at} verb="Written" />
+            )}
+          </li>
+        ))}
+      </ul>
+      {state.truncated && (
         <p
-          className="text-sm text-muted-foreground italic"
-          data-testid="coord-memory-detail-missing"
+          className="text-xs text-muted-foreground"
+          data-testid="coord-memory-version-trail-truncated"
         >
-          Memory {name} not found.
+          Only the first {state.versions.length} versions are listed; open
+          /admin/coord/memory/{name}/version/&lt;n&gt; for a later one.
         </p>
       )}
     </div>
