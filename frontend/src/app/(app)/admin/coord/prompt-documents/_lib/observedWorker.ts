@@ -41,12 +41,19 @@ export function describeObservedPass(
 ): ObservedReading {
   switch (pass?.status) {
     case "alive": {
+      // A leader that has never run a body is not nominal: the loop ticks,
+      // but nothing it was built to do has happened yet.
       if (!pass.last_work_tick_at) {
         return {
           text: "Observed: loop alive, no pass body recorded yet",
-          tone: "nominal",
+          tone: "attention",
         };
       }
+      // Present but unparseable is not a pass we can place in time — say so
+      // and flag it rather than rendering it as a healthy reading.
+      const parseable = !Number.isNaN(
+        new Date(pass.last_work_tick_at).getTime()
+      );
       const when = relativeTime(pass.last_work_tick_at, {
         now,
         absent: "at an unknown time",
@@ -54,7 +61,7 @@ export function describeObservedPass(
       const code = pass.last_decision_code ?? "no decision code recorded";
       return {
         text: `Observed: last pass ${when} — ${code}`,
-        tone: "nominal",
+        tone: parseable ? "nominal" : "attention",
         title: absoluteTime(pass.last_work_tick_at),
       };
     }

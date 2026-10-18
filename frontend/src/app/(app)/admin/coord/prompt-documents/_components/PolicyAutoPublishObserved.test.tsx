@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { FleetPolicyView } from "@/lib/api/operations/tenantPolicy";
 import type { AutoPublishStatusResponse } from "../types";
 
@@ -52,11 +52,24 @@ import {
 } from "./PolicyAutoPublishDialControl";
 import { usePublishAll } from "../_hooks/usePublishAll";
 
-/** The page's wiring, verbatim: one status read, handed to the dial. */
+/**
+ * The dial over one `usePublishAll` read, as the page wires it. The page-level
+ * properties (ONE shared fetch, the reload after a level change) are pinned
+ * against the real page in `PromptDocumentsPageObserved.test.tsx`; this harness
+ * exists to drive each worker state cheaply. `harness-settled` is a definite
+ * signal that the hook's read has finished, so absence can be asserted after
+ * it rather than after a guessed delay; `harness-reload` re-takes the read.
+ */
 function Harness() {
   const state = usePublishAll();
   return (
-    <PolicyAutoPublishDialControl observed={observedFromPublishAll(state)} />
+    <>
+      <span data-testid="harness-settled">{String(state.statusSettled)}</span>
+      <button data-testid="harness-reload" onClick={() => void state.reload()}>
+        reload
+      </button>
+      <PolicyAutoPublishDialControl observed={observedFromPublishAll(state)} />
+    </>
   );
 }
 
@@ -84,6 +97,10 @@ function status(
 
 const minutesAgo = (m: number) =>
   new Date(Date.now() - m * 60_000).toISOString();
+
+function observedNow(): HTMLElement {
+  return screen.getByTestId("policy-auto-publish-observed");
+}
 
 async function observed(): Promise<HTMLElement> {
   return screen.findByTestId("policy-auto-publish-observed");
@@ -117,6 +134,27 @@ describe("the observed auto-publisher, per worker status", () => {
       "Observed: last pass 5m ago — ran:nothing_due"
     );
     expect(line).not.toHaveTextContent(/just now|0s ago/);
+    expect(line).toHaveAttribute("data-observed-tone", "nominal");
+  });
+
+  it("alive with an unparseable work tick: flags it rather than reading nominal", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: "not-a-timestamp",
+          last_decision_code: "ran:published",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: last pass at an unknown time — ran:published"
+    );
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
   it("alive with no work tick yet: says the loop is alive and nothing more", async () => {
@@ -135,6 +173,8 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(await observed()).toHaveTextContent(
       "Observed: loop alive, no pass body recorded yet"
     );
+    // A leader that never ran a body is not nominal.
+    expect(await observed()).toHaveAttribute("data-observed-tone", "attention");
   });
 
   it("stale: says stale since the last tick", async () => {
@@ -249,6 +289,32 @@ describe("the observed auto-publisher, per worker status", () => {
   });
 });
 
+describe("a later read", () => {
+  it("that fails turns an alive observation UNKNOWN rather than leaving it standing", async () => {
+    statusGet.mockResolvedValueOnce(
+      status({
+        pass: {
+          status: "alive",
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: minutesAgo(2),
+          last_decision_code: "ran:published",
+        },
+      })
+    );
+    render(<Harness />);
+    expect(await observed()).toHaveTextContent(
+      "Observed: last pass 2m ago — ran:published"
+    );
+
+    statusGet.mockResolvedValueOnce(new Response("boom", { status: 500 }));
+    fireEvent.click(screen.getByTestId("harness-reload"));
+
+    await waitFor(() => expect(statusGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(observedNow()).toHaveTextContent(UNKNOWN));
+    expect(observedNow()).not.toHaveTextContent(/last pass/);
+  });
+});
+
 describe("where the observation is withheld", () => {
   it("renders nothing under the not_system_tenant latch", async () => {
     statusGet.mockResolvedValue(
@@ -259,9 +325,12 @@ describe("where the observation is withheld", () => {
     render(<Harness />);
 
     await screen.findByTestId("policy-auto-publish-in-force");
-    await waitFor(() => expect(statusGet).toHaveBeenCalled());
-    // Give the rejected read time to latch, then assert the line never came.
-    await new Promise((r) => setTimeout(r, 50));
+    // The read has definitely settled (failed and latched) before absence is
+    // asserted — no guessed delay.
+    await waitFor(() =>
+      expect(screen.getByTestId("harness-settled")).toHaveTextContent("true")
+    );
+    expect(statusGet).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByTestId("policy-auto-publish-observed")
     ).not.toBeInTheDocument();
