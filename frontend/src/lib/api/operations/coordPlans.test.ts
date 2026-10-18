@@ -20,6 +20,7 @@ const {
   fetchPlans,
   fetchPlansOverview,
   fetchPlansThroughput,
+  planRowsOf,
   transitionPlan,
 } = await import("./coordPlans");
 
@@ -164,5 +165,15 @@ describe("coordPlans", () => {
         idempotent: false,
       },
     ]);
+  });
+
+  it("planRowsOf reads work_units, falls back to plans, and defaults to none", () => {
+    const a = { slug: "a" } as never;
+    const b = { slug: "b" } as never;
+    expect(planRowsOf({ work_units: [a], plans: [b] })).toEqual([a]);
+    expect(planRowsOf({ plans: [b] })).toEqual([b]);
+    expect(planRowsOf({})).toEqual([]);
+    expect(planRowsOf(null)).toEqual([]);
+    expect(planRowsOf(undefined)).toEqual([]);
   });
 });

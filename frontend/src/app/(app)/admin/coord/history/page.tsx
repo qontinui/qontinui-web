@@ -46,7 +46,7 @@ import {
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { fetchPlans } from "@/lib/api/operations/coordPlans";
+import { fetchPlans, planRowsOf } from "@/lib/api/operations/coordPlans";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
@@ -99,7 +99,7 @@ function useSection(status: SectionId): SectionState & { refetch: () => void } {
         qs.set("limit", "50");
         const body = await fetchPlans(qs, COORD_DASHBOARD_POLL_OPTIONS);
         if (!isCurrent()) return;
-        const plans = body.work_units ?? body.plans ?? [];
+        const plans = planRowsOf(body);
         setState({ plans, count: plans.length, settled: true, error: null });
       } catch (e) {
         if (!isCurrent()) return;

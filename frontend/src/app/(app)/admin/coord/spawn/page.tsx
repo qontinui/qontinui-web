@@ -85,6 +85,7 @@ import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import {
   fetchPlans,
+  planRowsOf,
   type PlansListResponse,
 } from "@/lib/api/operations/coordPlans";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
@@ -226,7 +227,7 @@ export default function CoordSpawnPage() {
     });
   }, [fetchData]);
 
-  const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
+  const plans = useMemo(() => planRowsOf(data), [data]);
   const loaded = data !== null;
   // R6 — "not fetched" includes "fetched and FAILED", and every surface derived
   // from the list has to consult it, the `empty=` slot included.

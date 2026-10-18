@@ -59,10 +59,11 @@ import {
   type FoldedBodySignal,
   type PlanBodySignalBlock,
 } from "@/components/admin/coord/planBodySignal";
-import type {
-  PlansListResponse,
-  WalkCursor,
-  WorkUnitOverview,
+import {
+  planRowsOf,
+  type PlansListResponse,
+  type WalkCursor,
+  type WorkUnitOverview,
 } from "@/lib/api/operations/coordPlans";
 import type { SortKey } from "./planSort";
 
@@ -157,10 +158,6 @@ export type FetchPlansPage = (
   query: URLSearchParams
 ) => Promise<PlansListResponse>;
 
-function rowsOf(body: PlansListResponse | null | undefined): CoordPlanRow[] {
-  return body?.work_units ?? body?.plans ?? [];
-}
-
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -221,7 +218,7 @@ export async function walkWorkUnits(
   };
 
   const first = await fetchPage(pageQuery(null));
-  const firstRows = rowsOf(first);
+  const firstRows = planRowsOf(first);
   // One block per page read, folded at every exit — see `WalkCommon`.
   const signals: Array<PlanBodySignalBlock | undefined> = [first?.body_signal];
 
@@ -276,7 +273,7 @@ export async function walkWorkUnits(
       };
     }
     pages += 1;
-    add(rowsOf(body));
+    add(planRowsOf(body));
     signals.push(body?.body_signal);
     const next = body?.next_cursor ?? null;
     if (next && visited.has(cursorKey(next))) {

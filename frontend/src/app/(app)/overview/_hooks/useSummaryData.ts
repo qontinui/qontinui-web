@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchPlans } from "@/lib/api/operations/coordPlans";
+import { fetchPlans, planRowsOf } from "@/lib/api/operations/coordPlans";
 import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   useResourceList,
@@ -61,7 +61,7 @@ async function loadProgress(): Promise<Progress> {
     exclude_slug_prefix: SHEPHERD_SLUG_PREFIX,
   });
   const body = await fetchPlans(qs);
-  const rows = body.work_units ?? body.plans ?? [];
+  const rows = planRowsOf(body);
   return summarizeProgress(rows, { fetchLimit: PLAN_FETCH_LIMIT });
 }
 

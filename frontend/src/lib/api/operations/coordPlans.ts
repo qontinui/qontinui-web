@@ -74,6 +74,18 @@ export interface PlansListResponse {
 }
 
 /**
+ * The rows of one {@link fetchPlans} page: `work_units`, else the legacy
+ * `plans`, else none. Every caller reads rows through this, because a caller
+ * that read `plans` alone rendered the coord history page empty for as long
+ * as `list_coord_plans` has sent only `work_units`.
+ */
+export function planRowsOf(
+  body: PlansListResponse | null | undefined
+): CoordPlanRow[] {
+  return body?.work_units ?? body?.plans ?? [];
+}
+
+/**
  * `get_coord_plans_overview` — the fields of coord's
  * `GET /coord/work-units/overview` the work-units page reads.
  *
