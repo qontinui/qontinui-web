@@ -244,6 +244,13 @@ export type MergeStatusToken =
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
+  /** A `coord:stacked-on=` / `coord:downstream-of=` edge names an upstream PR
+   *  that is CLOSED and did not land — an edge that can never clear on its
+   *  own. coord's `BlockReason::DependencyUpstreamClosed` wire code, given its
+   *  own token by qontinui-coord#2819 so it stops reading as an ordinary
+   *  cross-repo wait. The move is the author's: re-anchor the label onto the
+   *  successor PR, or remove it if the upstream's content already landed. */
+  | "dependency-upstream-closed"
   /** Green + CLEAN + open, and the train's only proposal at this head is
    *  TERMINAL and HELD — coord will not re-cut it (already-landed,
    *  merge-resolution-discarded, reap-hardcap, superseded-empty candidate,
