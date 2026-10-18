@@ -328,6 +328,7 @@
   "tests/test_operations_tenant_transcript_sync_proxy.py": 9.6,
   "tests/test_operations_tenants_proxy.py": 23.2,
   "tests/test_operations_unfinished_sessions_proxy.py": 9.1,
+  "tests/test_operations_verification_metrics_proxy.py": 13.6,
   "tests/test_oplog_age_idx_01_migration.py": 9.9,
   "tests/test_ops_split_transform.py": 1.4,
   "tests/test_organization_service.py": 0.3,
