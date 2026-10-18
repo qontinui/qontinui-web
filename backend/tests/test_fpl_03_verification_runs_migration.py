@@ -181,8 +181,9 @@ _needs_pg = pytest.mark.skipif(
     not can_connect(admin_database_url()),
     reason=(
         "Postgres not reachable at the conftest URL. CI provisions a "
-        "postgres service; locally, point DATABASE_URL at a dev Postgres "
-        "before running this test."
+        "postgres service; locally, set QONTINUI_TEST_PG=host:port (or "
+        "QONTINUI_TEST_PG_DSN), because conftest.py derives DATABASE_URL "
+        "from them and overwrites a hand-set one."
     ),
 )
 
