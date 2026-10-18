@@ -29,7 +29,10 @@ reproduces today's behaviour for every repository.
 * ``repo`` — the lowercased ``owner/name``. The CHECK pins that spelling: a
   GitHub owner (letters, digits, hyphens, not starting with a hyphen), one
   slash, a repository name (letters, digits, ``.``, ``_``, ``-``), all lower
-  case. coord lowercases the name before it binds or looks one up (plan D5),
+  case. It is a spelling guard, not GitHub's full grammar: it admits some
+  names GitHub would never create (``a/..``, ``a--b/x``, over-length names),
+  which is harmless because a binding for a name that cannot exist binds
+  nothing. coord lowercases the name before it binds or looks one up (plan D5),
   so a mixed-case spelling can never become a second binding for the same
   repository.
 * ``tenant_id`` — the governing tenant. ``ON DELETE CASCADE``: deleting the
@@ -37,7 +40,8 @@ reproduces today's behaviour for every repository.
   The same delete cascades that tenant's ``coord.tenant_repos`` rows, so the
   org's tenant holds no owner row for the repository until its next full-list
   enrollment pass (an enroll-now, or the next ``installation`` event).
-* ``bound_by`` — who bound it (an operator or principal id). Never empty.
+* ``bound_by`` — who bound it (an operator or principal id). Never empty or
+  whitespace-only (the same non-whitespace rule as ``reason``).
 * ``reason`` — why. The CHECK refuses an empty or whitespace-only reason: it
   requires one non-whitespace character. The plan spells it
   ``btrim(reason) <> ''``, but ``btrim`` with no character list strips only
@@ -101,7 +105,7 @@ def upgrade() -> None:
             repo         TEXT        PRIMARY KEY
                 CHECK (repo = lower(repo) AND repo ~ '^[a-z0-9][a-z0-9-]*/[a-z0-9._-]+$'),
             tenant_id    UUID        NOT NULL REFERENCES coord.tenants(tenant_id) ON DELETE CASCADE,
-            bound_by     TEXT        NOT NULL CHECK (bound_by <> ''),
+            bound_by     TEXT        NOT NULL CHECK (bound_by ~ '\S'),
             reason       TEXT        NOT NULL CHECK (reason ~ '\S'),
             decision_ref TEXT        NULL,
             created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),

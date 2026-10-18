@@ -24,7 +24,7 @@ With a database (skipped when none is reachable):
    the primary key is exactly ``(repo)``; ``tenant_id`` references
    ``coord.tenants`` ``ON DELETE CASCADE``; the tenant index is on exactly
    ``(tenant_id)``; the CHECK set is exactly the three column CHECKs; and the
-   table has a replica identity (its primary key).
+   table has a primary key, which is its replica identity.
 4. **Valid bindings insert**, including one for a repository that does not
    exist yet, and the defaults stamp.
 5. **Each CHECK refuses what it exists to refuse**, by constraint name: a
@@ -379,15 +379,9 @@ def test_the_key_the_foreign_key_and_the_index(upgraded: Engine) -> None:
         }
     assert checks == _EXPECTED_CHECKS, sorted(checks)
 
-    # 'd' (DEFAULT) identifies rows by the primary key asserted above.
-    assert (
-        scalar(
-            upgraded,
-            "SELECT relreplident FROM pg_class WHERE oid = to_regclass(:rel)",
-            rel=_QUALIFIED,
-        )
-        == "d"
-    )
+    # Replica identity is the primary key asserted above: a fresh table's
+    # relreplident is 'd' (DEFAULT) with or without one, so that column proves
+    # nothing here and is deliberately not asserted.
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +457,8 @@ def test_valid_bindings_insert_and_stamp_their_defaults(upgraded: Engine) -> Non
         pytest.param({"reason": "\t"}, _REASON_CHECK, id="tab-only-reason"),
         pytest.param({"reason": "\n \r\n"}, _REASON_CHECK, id="newline-only-reason"),
         pytest.param({"bound_by": ""}, _BOUND_BY_CHECK, id="empty-bound-by"),
+        pytest.param({"bound_by": "   "}, _BOUND_BY_CHECK, id="spaces-only-bound-by"),
+        pytest.param({"bound_by": "\t"}, _BOUND_BY_CHECK, id="tab-only-bound-by"),
     ],
 )
 def test_a_check_refuses_the_value_it_exists_to_refuse(
