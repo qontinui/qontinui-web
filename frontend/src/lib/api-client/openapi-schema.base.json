@@ -29798,6 +29798,14 @@
         "title": "LLMMetrics",
         "type": "object"
       },
+      "LabelKind": {
+        "enum": [
+          "class",
+          "false_finish"
+        ],
+        "title": "LabelKind",
+        "type": "string"
+      },
       "LearnedWorkflowResponse": {
         "description": "Schema for learned workflow response.",
         "properties": {
@@ -34735,6 +34743,15 @@
         "title": "OpenFollowupResponse",
         "type": "object"
       },
+      "OperatorLabel": {
+        "enum": [
+          "A",
+          "B",
+          "E"
+        ],
+        "title": "OperatorLabel",
+        "type": "string"
+      },
       "OrganizationCreate": {
         "description": "Schema for creating a new organization.",
         "properties": {
@@ -34995,6 +35012,36 @@
           "success"
         ],
         "title": "Outcome",
+        "type": "object"
+      },
+      "OverlordLabelRequest": {
+        "additionalProperties": false,
+        "description": "``extra='forbid'``: a stray ``label_source`` is a 422, not ignored.",
+        "properties": {
+          "intervention_id": {
+            "format": "uuid",
+            "title": "Intervention Id",
+            "type": "string"
+          },
+          "label_kind": {
+            "$ref": "#/components/schemas/LabelKind"
+          },
+          "operator_label": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatorLabel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "intervention_id",
+          "label_kind"
+        ],
+        "title": "OverlordLabelRequest",
         "type": "object"
       },
       "OverviewSettingsRead": {
@@ -67674,6 +67721,53 @@
         ]
       }
     },
+    "/api/v1/admin/coord/overlord/labels": {
+      "post": {
+        "description": "Append the operator's label to an intervention; return coord's new row.",
+        "operationId": "api_v1_admin_coord_overlord_labels_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverlordLabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Overlord Label Api V1 Admin Coord Overlord Labels Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Overlord Label",
+        "tags": [
+          "overlord"
+        ]
+      }
+    },
     "/api/v1/admin/prompt-injections": {
       "get": {
         "description": "List prompt-injection events via coord's\n``GET /coord/prompt-injections``.\n\nForwards the ``limit`` / ``source`` / ``session_name`` /\n``agent_session_id`` / ``since`` filters as query params. ``limit``\n(1..500) is validated by FastAPI before forwarding. Returns coord's\n``{\"events\": [...], \"count\": N}`` envelope verbatim.",
@@ -98093,6 +98187,58 @@
           }
         ],
         "summary": "Post Coord Tenant Member",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/verification/metrics": {
+      "get": {
+        "description": "Return coord's verification metrics object for the operator's tenant.\n\nThe tenant is coord's to resolve from the forwarded bearer; nothing from\nthe request names it. The body is coord's, verbatim \u2014 including the\n``degraded: true`` answer, which the page renders as \"could not look\".",
+        "operationId": "api_v1_operations_coord_verification_metrics_get",
+        "parameters": [
+          {
+            "description": "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim \u2014 coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim \u2014 coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through.",
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Verification Metrics Api V1 Operations Coord Verification Metrics Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Verification Metrics",
         "tags": [
           "operations"
         ]

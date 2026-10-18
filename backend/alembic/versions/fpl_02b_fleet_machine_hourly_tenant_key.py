@@ -1,7 +1,7 @@
 """coord.fleet_machine_hourly - key rows by tenant, machine and hour
 
 Revision ID: fpl_02b
-Revises: replident_01
+Revises: coord_repo_tenant_bindings_01
 Create Date: 2026-10-17
 
 Phase 3 of plan ``2026-10-17-fleet-work-placement-minimizes-time-to-merged-pr``
@@ -63,7 +63,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fpl_02b"
-down_revision: str | Sequence[str] | None = "replident_01"
+down_revision: str | Sequence[str] | None = "coord_repo_tenant_bindings_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
