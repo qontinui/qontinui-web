@@ -454,6 +454,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/coord/overlord/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Overlord Label
+         * @description Append the operator's label to an intervention; return coord's new row.
+         */
+        post: operations["api_v1_admin_coord_overlord_labels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/download-analytics": {
         parameters: {
             query?: never;
@@ -12191,6 +12211,30 @@ export interface paths {
          *     Rate-limited per caller — see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.
          */
         post: operations["api_v1_operations_coord_tenant_members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/verification/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Verification Metrics
+         * @description Return coord's verification metrics object for the operator's tenant.
+         *
+         *     The tenant is coord's to resolve from the forwarded bearer; nothing from
+         *     the request names it. The body is coord's, verbatim — including the
+         *     ``degraded: true`` answer, which the page renders as "could not look".
+         */
+        get: operations["api_v1_operations_coord_verification_metrics_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -39836,6 +39880,11 @@ export interface components {
             tokens_total?: number | null;
         };
         /**
+         * LabelKind
+         * @enum {string}
+         */
+        LabelKind: "class" | "false_finish";
+        /**
          * LearnedWorkflowResponse
          * @description Schema for learned workflow response.
          */
@@ -42375,6 +42424,11 @@ export interface components {
             truncated: boolean | null;
         };
         /**
+         * OperatorLabel
+         * @enum {string}
+         */
+        OperatorLabel: "A" | "B" | "E";
+        /**
          * OrganizationCreate
          * @description Schema for creating a new organization.
          */
@@ -42520,6 +42574,19 @@ export interface components {
             retry_count: number;
             /** Success */
             success: boolean;
+        };
+        /**
+         * OverlordLabelRequest
+         * @description ``extra='forbid'``: a stray ``label_source`` is a 422, not ignored.
+         */
+        OverlordLabelRequest: {
+            /**
+             * Intervention Id
+             * Format: uuid
+             */
+            intervention_id: string;
+            label_kind: components["schemas"]["LabelKind"];
+            operator_label?: components["schemas"]["OperatorLabel"] | null;
         };
         /**
          * OverviewSettingsRead
@@ -56922,6 +56989,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_admin_coord_overlord_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverlordLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -74829,6 +74929,38 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_verification_metrics_get: {
+        parameters: {
+            query?: {
+                /** @description ``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through. */
+                window?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
