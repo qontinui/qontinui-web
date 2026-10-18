@@ -304,9 +304,9 @@ def check_signature(kind: str, data: bytes) -> bool:
     return False
 
 
-def _refuse(status: int, error: str, message: str) -> HTTPException:
+def _refuse(status: int, error: str, message: str, **extra: Any) -> HTTPException:
     return HTTPException(
-        status_code=status, detail={"error": error, "message": message}
+        status_code=status, detail={"error": error, "message": message, **extra}
     )
 
 
@@ -469,10 +469,14 @@ async def upload_file(
 
 
 def _too_large() -> HTTPException:
+    # ``max_bytes`` makes this the same 413 body BodyLimitMiddleware sends when
+    # it refuses the request first (app.middleware.body_limit): a client meets
+    # one shape whichever layer refused.
     return _refuse(
         413,
         "file_too_large",
         f"Files can be at most {MAX_FILE_BYTES // (1024 * 1024)} MB.",
+        max_bytes=MAX_FILE_BYTES,
     )
 
 
@@ -491,13 +495,20 @@ async def _check_quota(db: AsyncSession, tenant_id: UUID, size: int) -> None:
         )
     ).scalar_one()
     if int(used) + size > MAX_PROJECT_BYTES:
-        raise _refuse(
-            413,
-            "project_storage_full",
-            "This project has used its "
-            f"{MAX_PROJECT_BYTES // (1024 * 1024 * 1024)} GB of file storage. "
-            "Delete files it no longer needs to make room.",
-        )
+        raise _storage_full()
+
+
+def _storage_full() -> HTTPException:
+    # The same 413 body as _too_large(): max_bytes is the maximum the message
+    # names — here the project's storage, there one file's size.
+    return _refuse(
+        413,
+        "project_storage_full",
+        "This project has used its "
+        f"{MAX_PROJECT_BYTES // (1024 * 1024 * 1024)} GB of file storage. "
+        "Delete files it no longer needs to make room.",
+        max_bytes=MAX_PROJECT_BYTES,
+    )
 
 
 async def _discard(storage_key: str) -> None:

@@ -249,6 +249,12 @@ _VALIDATED_LOCALLY: dict[str, str] = {
     "app.api.v1.endpoints.digital_twin": (
         "subspaces keys its cache on _effective_tenant_id(identity, header)"
     ),
+    "app.api.v1.endpoints.taste": (
+        "reads it only for get_can_label's _effective_tenant_roles, which "
+        "matches it against identity.tenants (a non-member selection degrades "
+        "to home); every row is scoped by the tenant get_memory_tenant / "
+        "require_coord_tenant_admin_target resolve, never by the raw value"
+    ),
 }
 
 # Routes in modules that name a resolver or the header but which, read by a

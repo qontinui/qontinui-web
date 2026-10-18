@@ -131,7 +131,7 @@ Please note that this project is released with a [Code of Conduct](CODE_OF_CONDU
 
 ## License
 
-Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE) for full terms. Contributions are accepted under the Developer Certificate of Origin (DCO) — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later). See [LICENSE](LICENSE) for full terms. [NOTICE](NOTICE) adds an AGPL section 7 permission to combine this program with Remotion (only `remotion` and `@remotion/player`), which is under its own, non-AGPL licence. Contributions are accepted under the Developer Certificate of Origin (DCO) — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contact
 

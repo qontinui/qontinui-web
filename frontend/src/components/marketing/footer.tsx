@@ -9,8 +9,8 @@ export function Footer() {
           <div>
             <h3 className="text-lg font-bold text-primary mb-4">Qontinui</h3>
             <p className="text-sm text-muted-foreground">
-              Open-source AI development platform with orchestrated workflows,
-              verification loops, and visual feedback.
+              Open-source software factory: AI agents that plan, implement, test
+              and land changes on your own codebase.
             </p>
           </div>
 
