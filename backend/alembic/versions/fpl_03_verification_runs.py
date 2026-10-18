@@ -1,7 +1,7 @@
 """coord.verification_runs - one row per Rust verification-wrapper invocation
 
 Revision ID: fpl_03
-Revises: replident_01
+Revises: fpl_02b
 Create Date: 2026-10-17
 
 Phase 4 of plan
@@ -93,9 +93,11 @@ revision.
 Head resolution
 ===============
 
-``down_revision = "replident_01"`` - the single head of
-qontinui-web ``origin/main`` after the 2026-10-17 merge of ``replident_01`` (re-chained
-from ``taste_inbox_01``, ``fpl_01`` and ``fpl_02`` as main moved), measured by parsing
+``down_revision = "fpl_02b"`` - plan Phase 3's ``coord.fleet_machine_hourly``
+tenant-key revision (qontinui-web#1939), which itself chains off ``replident_01``.
+This PR is STACKED on #1939 and must land after it (re-chained from
+``taste_inbox_01``, ``fpl_01``, ``fpl_02`` and ``replident_01`` as main moved). Heads
+were measured by parsing
 every file in ``backend/alembic/versions`` (multi-line tuple
 ``down_revision`` values included) and taking the one ``revision`` no file
 names as a parent. If main moves before this lands, re-chain onto the live
@@ -109,7 +111,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fpl_03"
-down_revision: str | Sequence[str] | None = "replident_01"
+down_revision: str | Sequence[str] | None = "fpl_02b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
