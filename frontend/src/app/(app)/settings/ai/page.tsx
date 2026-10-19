@@ -148,7 +148,7 @@ export default function AiSettingsPage() {
             </button>
           </span>
         )}
-        <Button onClick={handleSave} disabled={saving || !loaded}>
+        <Button onClick={handleSave} disabled={saving || !loaded || loading}>
           {saving && <Loader2 className="size-4 animate-spin" />}
           {saving ? "Saving..." : "Save Settings"}
         </Button>

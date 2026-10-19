@@ -166,7 +166,9 @@ export function useAiSettings() {
       claudeCli.account_selection_pinned !== baseline.account_selection_pinned);
 
   const handleSave = async () => {
-    if (!loaded) return;
+    // Not while a (re)load is in flight: its response lands in the form and
+    // baseline mid-PUT and would leave the pair inconsistent.
+    if (!loaded || loading) return;
     try {
       setSaving(true);
       // Roster keys are sent only when edited: an absent key keeps the stored
