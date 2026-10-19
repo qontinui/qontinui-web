@@ -426,3 +426,27 @@ describe("preview", () => {
     );
   });
 });
+
+describe("save while a reload is in flight", () => {
+  it("handleSave is a no-op while a (re)load is pending", async () => {
+    const hook = await loaded();
+    let resolveReload!: (v: unknown) => void;
+    getAiSettings.mockReturnValueOnce(
+      new Promise((r) => {
+        resolveReload = r;
+      }),
+    );
+    act(() => {
+      void hook.result.current.retryLoad();
+    });
+    await waitFor(() => expect(hook.result.current.loading).toBe(true));
+    await act(async () => {
+      await hook.result.current.handleSave();
+    });
+    expect(saveAiSettings).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveReload(view());
+    });
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  });
+});
