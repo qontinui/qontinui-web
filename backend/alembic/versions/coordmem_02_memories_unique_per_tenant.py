@@ -30,7 +30,7 @@ What changes
 * ``idx_memories_name_latest (name, version DESC)`` is dropped. Every reader
   and writer now filters on ``name`` AND ``tenant_id``, so the new key serves
   the next-version probe, the history read and the version read, and the old
-  index is a pure write cost. Nothing names it in coord, web or the runner (searched at vet).
+  index is a pure write cost. Nothing in qontinui-web names it (`git grep`); the plan's vet reported the same of coord and the runner.
 
 Mechanism
 =========
