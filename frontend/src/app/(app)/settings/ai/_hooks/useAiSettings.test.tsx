@@ -176,6 +176,7 @@ describe("derived read-out", () => {
         config={result.current.claudeCli}
         onChange={() => {}}
         derived={result.current.derived}
+        previewEnabled
       />
     );
     expect(screen.getByTestId("effective-mode").textContent).toContain(
@@ -183,7 +184,7 @@ describe("derived read-out", () => {
     );
     expect(screen.getByTestId("source").textContent).toContain("unknown");
     expect(screen.getByTestId("fleet-mode").textContent).toContain("unknown");
-    expect(screen.queryByTestId("preview")).toBeNull();
+    expect(screen.getByTestId("preview").textContent).toContain("unknown");
   });
 
   it("fleet null reads no fleet opinion; fleet source says managed by fleet policy", async () => {
@@ -196,6 +197,7 @@ describe("derived read-out", () => {
         config={result.current.claudeCli}
         onChange={() => {}}
         derived={result.current.derived}
+        previewEnabled
       />
     );
     expect(screen.getByTestId("fleet-mode").textContent).toContain(
@@ -204,7 +206,28 @@ describe("derived read-out", () => {
     expect(screen.getByTestId("source").textContent).toBe(
       "Managed by fleet policy"
     );
-    expect(screen.queryByTestId("preview")).toBeNull();
+    expect(screen.getByTestId("preview").textContent).toContain(
+      "Would apply after save: least_usage"
+    );
+  });
+
+  it("fleet absent but pinned: preview is the local mode", async () => {
+    const old: Record<string, unknown> = view({
+      account_selection_pinned: true,
+    });
+    delete old.fleet_account_selection_mode;
+    const { result } = await loaded(old as ReturnType<typeof view>);
+    render(
+      <ClaudeCliSettings
+        config={result.current.claudeCli}
+        onChange={() => {}}
+        derived={result.current.derived}
+        previewEnabled
+      />
+    );
+    expect(screen.getByTestId("preview").textContent).toContain(
+      "Would apply after save: least_usage"
+    );
   });
 });
 
@@ -291,6 +314,7 @@ describe("request sequencing", () => {
       resolvers[0](view({}, { effective_account_selection_mode: "stale" }))
     );
     expect(result.current.derived.effective).toBe("new");
+    expect(result.current.loading).toBe(false);
   });
 });
 
@@ -309,6 +333,63 @@ describe("post-save refresh sequencing", () => {
       void result.current.retryLoad();
     });
     await waitFor(() => expect(resolvers.length).toBe(2)); // newer load
+    await act(async () =>
+      resolvers[1](view({}, { effective_account_selection_mode: "new" }))
+    );
+    await waitFor(() => expect(result.current.derived.effective).toBe("new"));
+    await act(async () =>
+      resolvers[0](view({}, { effective_account_selection_mode: "stale" }))
+    );
+    expect(result.current.derived.effective).toBe("new");
+  });
+});
+
+describe("save racing a reload", () => {
+  it("a reload that resolves while a save is in flight is not overwritten by the saved snapshot", async () => {
+    const { result } = await loaded();
+    let release!: () => void;
+    saveAiSettings.mockImplementationOnce(
+      () => new Promise<void>((r) => (release = r))
+    );
+    act(() =>
+      result.current.setClaudeCli({
+        ...result.current.claudeCli,
+        account_selection_mode: "manual",
+      })
+    );
+    let saving!: Promise<void>;
+    act(() => {
+      saving = result.current.handleSave();
+    });
+    getAiSettings.mockResolvedValue(
+      view({ account_selection_mode: "highest_expected_usage" })
+    );
+    await act(() => result.current.retryLoad());
+    expect(result.current.claudeCli.account_selection_mode).toBe(
+      "highest_expected_usage"
+    );
+    await act(async () => {
+      release();
+      await saving;
+    });
+    expect(result.current.rosterDirty).toBe(false);
+    await act(() => result.current.handleSave());
+    for (const k of ROSTER) expect(k in lastBody().claude_cli).toBe(false);
+  });
+
+  it("overlapping saves with out-of-order refreshes keep the newer derived", async () => {
+    const { result } = await loaded();
+    const resolvers: Array<(v: unknown) => void> = [];
+    getAiSettings.mockImplementation(
+      () => new Promise((r) => resolvers.push(r))
+    );
+    await act(async () => {
+      void result.current.handleSave();
+    });
+    await act(async () => {
+      void result.current.handleSave();
+    });
+    await waitFor(() => expect(resolvers.length).toBe(2));
     await act(async () =>
       resolvers[1](view({}, { effective_account_selection_mode: "new" }))
     );

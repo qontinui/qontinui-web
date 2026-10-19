@@ -185,18 +185,26 @@ export function useAiSettings() {
         auto_refine_video_after_iterations: autoRefineVideoIterations,
         interactive_sessions_enabled: interactiveSessionsEnabled,
       };
+      // A load that starts while the PUT is in flight carries newer form and
+      // baseline than this save's snapshot, so detect it by the counter as it
+      // stood BEFORE the request.
+      const loadSeqAtSave = requestSeq.current;
       await runnerApi.saveAiSettings(settings);
+      const loadSupersededSave = requestSeq.current !== loadSeqAtSave;
       // The snapshot that was SENT: an edit made while the save was in flight
       // differs from it, so it stays dirty and is resent next time.
-      setBaseline(rosterOf(claudeCli));
+      if (!loadSupersededSave) setBaseline(rosterOf(claudeCli));
       toast.success("AI settings saved");
       // Refresh only the derived read-out (the effective mode may have moved);
       // the form is left alone. Best effort: a failure keeps the old read-out.
-      const loadAt = requestSeq.current;
       const token = ++refreshSeq.current;
       try {
+        if (loadSupersededSave) return;
         const refreshed = await runnerApi.getAiSettings();
-        if (token === refreshSeq.current && loadAt === requestSeq.current) {
+        if (
+          token === refreshSeq.current &&
+          loadSeqAtSave === requestSeq.current
+        ) {
           setDerived(readDerived(refreshed));
         }
       } catch {
