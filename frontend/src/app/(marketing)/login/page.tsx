@@ -4,6 +4,7 @@ import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { useAuth } from "@/contexts/auth-context";
+import { sameOriginNext } from "@/lib/safe-next";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +18,14 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
 
-  const next = searchParams?.get("next") || "";
+  // Only a destination that stays on this origin is honoured.
+  const next = sameOriginNext(searchParams?.get("next"));
 
   // If already authenticated, skip the form.
   useEffect(() => {
     if (loading) return;
     if (!user) return;
-    if (next && next.startsWith("/")) {
+    if (next) {
       router.replace(next);
     } else {
       // Coord-centric product: the Coord Console is the post-login home.
@@ -44,7 +46,7 @@ function LoginPageContent() {
           </p>
         </div>
 
-        <AuthForm next={next && next.startsWith("/") ? next : undefined} />
+        <AuthForm next={next ?? undefined} />
 
         {/*
           Qontinui is invite-only during the beta — self-service registration

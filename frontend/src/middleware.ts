@@ -51,7 +51,11 @@ export function middleware(request: NextRequest) {
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = "/login";
   loginUrl.search = "";
-  const nextTarget = `${pathname}${search}`;
+  // A request path can begin with several slashes; carried verbatim, it
+  // would make `next` a protocol-relative reference to another host. The
+  // login page refuses such a `next` anyway (`sameOriginNext`); this keeps
+  // the middleware from emitting one.
+  const nextTarget = `${pathname.replace(/^\/+/, "/")}${search}`;
   if (nextTarget && nextTarget !== "/login") {
     loginUrl.searchParams.set("next", nextTarget);
   }
