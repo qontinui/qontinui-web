@@ -63,6 +63,14 @@ function realInventory() {
     placements,
     publishedFiles: new Set(fs.readdirSync(publishDir)),
     authoredSvgs: IMAGE_SLOT_AUTHORED_SVG,
+    publishedSvgs: fs
+      .readdirSync(publishDir)
+      .filter((name) => name.endsWith(".svg"))
+      .map((name) => ({
+        name,
+        text: fs.readFileSync(path.join(publishDir, name), "utf8"),
+      })),
+    parse: (text) => new DOMParser().parseFromString(text, "image/svg+xml"),
     render: (slot) =>
       renderToStaticMarkup(<SlotImage slot={slot as ImageSlotId} />),
   });
@@ -87,6 +95,28 @@ describe("image-slot inventory of this app", () => {
     expect(
       inventory.rows.flatMap((row) => row.placements).length
     ).toBeGreaterThan(0);
+  });
+
+  it("serves image-slot files with a sandboxing CSP", async () => {
+    const mod = await import(
+      /* @vite-ignore */ path.join(FRONTEND, "next.config.mjs")
+    );
+    const config = (
+      mod as {
+        default: {
+          headers: () => Promise<
+            { source: string; headers: { key: string; value: string }[] }[]
+          >;
+        };
+      }
+    ).default;
+    const entry = (await config.headers()).find(
+      (h) => h.source === "/image-slots/:path*"
+    );
+    expect(entry?.headers).toContainEqual({
+      key: "Content-Security-Policy",
+      value: "script-src 'none'; sandbox",
+    });
   });
 
   it("reports the listing when CI asks for it", () => {

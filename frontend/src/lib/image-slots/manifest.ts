@@ -60,6 +60,14 @@ export interface StudioManifest {
   slots: Record<string, StudioSlotEntry>;
 }
 
+/** An agent-authored inline SVG as the generator compiled it: checked
+ *  against the SVG allowlist (`svg-allowlist.ts`) and re-serialised from the
+ *  parsed tree. Only a `current` one renders. */
+export interface AuthoredSvg {
+  status: "current" | "stale" | "unmarked";
+  markup: string;
+}
+
 /** A manifest as read: parsed, or unreadable with the reason. */
 export type ManifestRead =
   | { ok: true; manifest: StudioManifest }
@@ -137,7 +145,12 @@ export type PlaceholderReason =
   | "alt_text_missing"
   /** Both an authored `image-slots/<slot>.svg` and a manifest entry bind the
    *  slot. A slot has one route, so neither is shown over the other. */
-  | "asset_conflict";
+  | "asset_conflict"
+  /** The authored SVG was drawn for an earlier version of the spec: its
+   *  `data-slot-spec-sha256` is not the spec's content hash. */
+  | "authored_stale"
+  /** The authored SVG carries no IPTC AI-generated marker. */
+  | "authored_unmarked";
 
 /** Why a placeholder renders, in words, for listings and notices. */
 export const PLACEHOLDER_REASON_TEXT: Readonly<
@@ -152,6 +165,10 @@ export const PLACEHOLDER_REASON_TEXT: Readonly<
     "its alt is `required` and its binding records no alt_text, so the asset is withheld",
   asset_conflict:
     "both an authored image-slots/<slot>.svg and a manifest entry bind it; a slot has one route",
+  authored_stale:
+    "its authored image-slots/<slot>.svg was drawn for an earlier version of the spec",
+  authored_unmarked:
+    "its authored image-slots/<slot>.svg carries no IPTC AI-generated marker",
 };
 
 export interface SlotSource {
@@ -248,7 +265,7 @@ export function resolveSlotImage(
   slot: string,
   spec: ImageSlotSpec,
   manifest: ManifestRead,
-  authoredSvg?: string
+  authoredSvg?: AuthoredSvg
 ): SlotResolution {
   // Own keys only: a slot named after an Object.prototype member
   // (`constructor`, `toString`) must not resolve to the inherited value.
@@ -262,10 +279,16 @@ export function resolveSlotImage(
     }
     // The authored SVG is source in this repo, not a manifest file, so it
     // does not depend on the manifest being readable.
+    if (authoredSvg.status === "unmarked") {
+      return { kind: "placeholder", reason: "authored_unmarked" };
+    }
+    if (authoredSvg.status === "stale") {
+      return { kind: "placeholder", reason: "authored_stale" };
+    }
     const alt = altText(spec);
     return alt === null
       ? { kind: "placeholder", reason: "alt_text_missing" }
-      : { kind: "inline_svg", markup: authoredSvg, alt };
+      : { kind: "inline_svg", markup: authoredSvg.markup, alt };
   }
   if (!manifest.ok) {
     return { kind: "placeholder", reason: "manifest_unreadable" };

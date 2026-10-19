@@ -13,9 +13,11 @@
  *   Deliberately NOT `next/image`: its optimizer re-encodes the file and drops
  *   the IPTC "AI-generated" marker each model-made derivative carries;
  * - **an agent-authored SVG, inline**, when `frontend/image-slots/<slot>.svg`
- *   exists (studio's `svg` route): only inline SVG inherits `currentColor`
- *   and the page's `--qontinui-*` custom properties, and the markup keeps the
- *   IPTC marker in its `<metadata>`;
+ *   exists (studio's `svg` route) and is current and marked: only inline SVG
+ *   inherits `currentColor` and the page's `--qontinui-*` custom properties.
+ *   What renders is the generator's allowlist-checked re-serialisation,
+ *   carrying the canonical IPTC marker; a stale or unmarked one renders the
+ *   placeholder;
  * - **otherwise a correctly sized, explicitly marked placeholder**, reserving
  *   the spec's preferred `aspect-ratio` so the layout does not move when the
  *   asset arrives.
@@ -115,9 +117,11 @@ export function SlotImage({
           "block overflow-hidden [&>svg]:block [&>svg]:h-full [&>svg]:w-full",
           className
         )}
-        // Repo source, refused at generation if it carries anything that runs,
-        // fetches or links (src/lib/image-slots/codegen.ts SVG_FORBIDDEN), on
-        // top of studio's drawing-elements-only validator.
+        // Never the authored text: markup the generator REBUILT from an XML
+        // parse that passed the SVG allowlist (src/lib/image-slots/
+        // svg-allowlist.ts): SVG-namespace drawing elements, allowlisted
+        // attributes with grammar-checked values, escaped text, and the
+        // canonical IPTC marker in place of the original <metadata>.
         dangerouslySetInnerHTML={{ __html: resolution.markup }}
       />
     );
