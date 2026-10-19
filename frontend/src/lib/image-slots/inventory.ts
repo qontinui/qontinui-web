@@ -144,6 +144,8 @@ export interface InventoryInput {
   placements: readonly SlotPlacement[];
   /** File names present in `public/image-slots/`. */
   publishedFiles: ReadonlySet<string>;
+  /** Agent-authored inline SVGs (`image-slots/<slot>.svg`), by slot id. */
+  authoredSvgs: Readonly<Record<string, string>>;
   /** `<SlotImage slot>`'s markup, rendered for real. */
   render: (slot: string) => string;
 }
@@ -192,7 +194,18 @@ export function buildInventory(input: InventoryInput): Inventory {
 
   const rows = [...declared].sort().map((slot): InventoryRow => {
     const spec = input.specs[slot] as ImageSlotSpec;
-    const resolution = resolveSlotImage(slot, spec, input.manifest);
+    const authored = Object.hasOwn(input.authoredSvgs, slot)
+      ? input.authoredSvgs[slot]
+      : undefined;
+    const resolution = resolveSlotImage(slot, spec, input.manifest, authored);
+    if (
+      resolution.kind === "placeholder" &&
+      resolution.reason === "asset_conflict"
+    ) {
+      defects.push(
+        `slot "${slot}" is bound twice: image-slots/${slot}.svg and a manifest entry. A slot has one route; remove one`
+      );
+    }
     const rendered = readRenderedMarker(input.render(slot));
     if (rendered.slot !== slot) {
       defects.push(
@@ -227,6 +240,12 @@ export function shippedPlaceholders(inventory: Inventory): InventoryRow[] {
   );
 }
 
+const RENDERS: Readonly<Record<SlotResolution["kind"], string>> = {
+  asset: "asset",
+  inline_svg: "authored inline SVG",
+  placeholder: "placeholder",
+};
+
 function where(row: InventoryRow): string {
   return row.placements.length === 0
     ? "not placed"
@@ -246,7 +265,7 @@ export function renderMarkdown(inventory: Inventory): string {
     "| --- | --- | --- | --- | --- |",
     ...inventory.rows.map(
       (row) =>
-        `| \`${row.slot}\` | ${row.role} | ${row.rendered.placeholder ? "placeholder" : "asset"} | ${row.rendered.reason ?? ""} | ${where(row)} |`
+        `| \`${row.slot}\` | ${row.role} | ${RENDERS[row.resolution.kind]} | ${row.rendered.reason ?? ""} | ${where(row)} |`
     ),
   ];
   if (inventory.defects.length > 0) {

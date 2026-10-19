@@ -29,7 +29,7 @@ const frontend = path.resolve(
 const specDir = path.join(frontend, SPEC_DIR);
 const sources = fs
   .readdirSync(specDir)
-  .filter((name) => name.endsWith(".yaml"))
+  .filter((name) => name.endsWith(".yaml") || name.endsWith(".svg"))
   .sort()
   .map((name) => ({
     name,

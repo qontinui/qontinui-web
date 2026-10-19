@@ -93,6 +93,10 @@ describe("resolveSlotImage", () => {
   it.each<[string, StudioSlotEntry]>([
     ["an unknown format", { files: { gif: "s.gif" }, sha256: { gif: A } }],
     [
+      "the extension instead of studio's format key",
+      { files: { jpg: "s.jpg" }, sha256: { jpg: A } },
+    ],
+    [
       "a path for a file name",
       { files: { png: "../s.png" }, sha256: { png: A } },
     ],

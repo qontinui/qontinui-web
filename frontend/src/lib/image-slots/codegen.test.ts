@@ -19,7 +19,7 @@ describe("specs.generated.ts", () => {
     const dir = path.join(FRONTEND, SPEC_DIR);
     const sources = fs
       .readdirSync(dir)
-      .filter((name) => name.endsWith(".yaml"))
+      .filter((name) => name.endsWith(".yaml") || name.endsWith(".svg"))
       .map((name) => ({
         name,
         text: fs.readFileSync(path.join(dir, name), "utf8"),
@@ -76,5 +76,62 @@ describe("renderSpecRegistry", () => {
     expect(() =>
       renderSpecRegistry([{ name: "a.yml", text: MINIMAL("a") }])
     ).toThrow(/named <slot>\.yaml/);
+  });
+});
+
+describe("authored inline SVGs", () => {
+  const SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><path d="M0 0" stroke="currentColor"/></svg>';
+
+  it("compiles <slot>.svg beside its spec, prologue removed", () => {
+    const text = renderSpecRegistry([
+      { name: "a.yaml", text: MINIMAL("a") },
+      { name: "a.svg", text: `<?xml version="1.0"?>\n${SVG}\n` },
+    ]);
+    expect(text).toContain(`"a": ${JSON.stringify(SVG)},`);
+  });
+
+  it("emits an empty map when no slot is authored", () => {
+    expect(
+      renderSpecRegistry([{ name: "a.yaml", text: MINIMAL("a") }])
+    ).toContain(
+      "IMAGE_SLOT_AUTHORED_SVG: Readonly<Record<string, string>> = {};"
+    );
+  });
+
+  it("refuses an SVG no spec declares", () => {
+    expect(() =>
+      renderSpecRegistry([
+        { name: "a.yaml", text: MINIMAL("a") },
+        { name: "b.svg", text: SVG },
+      ])
+    ).toThrow(/no b\.yaml declares this slot/);
+  });
+
+  it("refuses a file whose root is not <svg>", () => {
+    expect(() =>
+      renderSpecRegistry([
+        { name: "a.yaml", text: MINIMAL("a") },
+        { name: "a.svg", text: "<div></div>" },
+      ])
+    ).toThrow(/root element is <svg>/);
+  });
+
+  it.each([
+    ["<script>", "<script>alert(1)</script>"],
+    ["<style>", "<style>*{}</style>"],
+    ["<foreignObject>", "<foreignObject></foreignObject>"],
+    ["an event handler", '<path onclick="x()"/>'],
+    ["an href", '<use href="#a"/>'],
+    ["an xlink:href", '<use xlink:href="#a"/>'],
+    ["a javascript: URL", '<path d="javascript:x"/>'],
+    ["a DTD", "<!DOCTYPE svg>"],
+  ])("refuses an inline SVG carrying %s", (_, inner) => {
+    expect(() =>
+      renderSpecRegistry([
+        { name: "a.yaml", text: MINIMAL("a") },
+        { name: "a.svg", text: SVG.replace("</svg>", `${inner}</svg>`) },
+      ])
+    ).toThrow(/is rendered inline and carries/);
   });
 });
