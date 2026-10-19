@@ -7,8 +7,9 @@ repos:
         # The OpenAPI snapshots are generated artifacts kept authoritative by
         # the backend-ci drift check; size is inherent (600+ paths), not waste.
         # generated-types.ts is generated from them and drift-gated in
-        # frontend-ci.yml.
-        exclude: 'tests/spec-ci/schemas\.json$|frontend/src/lib/api-client/openapi-schema(\.base)?\.json$|frontend/src/lib/api-client/generated-types\.ts$'
+        # frontend-ci.yml. The vendored studio scene package is an npm
+        # tarball pinned by SHA-256 (frontend/vendor/README.md).
+        exclude: 'tests/spec-ci/schemas\.json$|frontend/src/lib/api-client/openapi-schema(\.base)?\.json$|frontend/src/lib/api-client/generated-types\.ts$|frontend/vendor/qontinui-studio-scenes-[0-9.]+\.tgz$'
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit

@@ -41,7 +41,7 @@ export type CommandSafetyRewriteLevel =
 export const ACCOUNT_SELECTION_DOMAIN = "account_selection_mode";
 
 /**
- * The levels this console offers. The last three are the runner's
+ * The levels this console offers. The last five are the runner's
  * `AccountSelectionMode::as_str` wire spellings, byte for byte; `off` is how
  * the console spells **no fleet opinion** — coord's own no-row fallback for an
  * unlisted domain, which the runner's `normalize_account_selection_level`
@@ -53,6 +53,8 @@ export const ACCOUNT_SELECTION_LEVELS = [
   "manual",
   "least_usage",
   "highest_expected_usage",
+  "weighted_random",
+  "alternating_handoff",
 ] as const;
 export type AccountSelectionLevel = (typeof ACCOUNT_SELECTION_LEVELS)[number];
 
@@ -67,7 +69,7 @@ export const ACCOUNT_SELECTION_DEFAULT_LEVEL: AccountSelectionLevel = "off";
  * Normalise a served level the way the runner does — trimmed, ASCII
  * case-insensitive (it matches the runner for every realistic input; JS
  * `trim()` also strips U+FEFF, which Rust's `str::trim` does not) — and
- * return it only when it is one of the four known
+ * return it only when it is one of the six known
  * levels. Anything else is `null`: UNKNOWN, never a guessed level (a guessed
  * mode is exactly what a runner would force-apply over every unpinned
  * machine).

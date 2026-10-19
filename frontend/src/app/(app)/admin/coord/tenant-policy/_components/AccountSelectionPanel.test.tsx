@@ -82,7 +82,7 @@ describe("AccountSelectionPanel", () => {
     );
   });
 
-  it("offers all four levels and writes the one clicked", () => {
+  it("offers all six levels and writes the one clicked", () => {
     const state = leastTenant();
     usePolicyMock.mockReturnValue(state);
     render(<AccountSelectionPanel />);
@@ -92,12 +92,54 @@ describe("AccountSelectionPanel", () => {
       "manual",
       "least_usage",
       "highest_expected_usage",
+      "weighted_random",
+      "alternating_handoff",
     ]) {
       expect(screen.getByTestId(`account-selection-${level}`)).toBeTruthy();
     }
     fireEvent.click(screen.getByTestId("account-selection-manual"));
     expect(state.setLevel).toHaveBeenCalledWith("manual");
+    fireEvent.click(screen.getByTestId("account-selection-weighted_random"));
+    expect(state.setLevel).toHaveBeenCalledWith("weighted_random");
+    fireEvent.click(
+      screen.getByTestId("account-selection-alternating_handoff")
+    );
+    expect(state.setLevel).toHaveBeenCalledWith("alternating_handoff");
   });
+
+  it.each([
+    [
+      "weighted_random",
+      "Weighted random",
+      /at random among the accounts still under their expected weekly pace.*expected usage × \(expected − actual\)/,
+    ],
+    [
+      "alternating_handoff",
+      "Alternating handoff",
+      /alternates session handoffs between the first account and each of the others in turn \(1, 2, 1, 3, 1, 4, 1, 2, …\).*last 3 hours.*goes to the first account/,
+    ],
+  ] as const)(
+    "labels and describes the %s level when it resolves",
+    (level, label, blurb) => {
+      usePolicyMock.mockReturnValue(
+        hookState(
+          { ...LEAST_TENANT, effective_level: level },
+          { displayLevel: level }
+        )
+      );
+      render(<AccountSelectionPanel />);
+
+      const badge = screen.getByTestId("account-selection-effective");
+      expect(badge.textContent).toBe(label);
+      expect(badge.getAttribute("data-level")).toBe(level);
+      expect(screen.getByTestId(`account-selection-${level}`).textContent).toBe(
+        label
+      );
+      expect(screen.getByTestId("account-selection-blurb").textContent).toMatch(
+        blurb
+      );
+    }
+  );
 
   it("shows the resolved level and band", () => {
     usePolicyMock.mockReturnValue(leastTenant());
@@ -161,7 +203,13 @@ describe("AccountSelectionPanel", () => {
     const offClass = screen
       .getByTestId("account-selection-off")
       .getAttribute("class");
-    for (const level of ["manual", "least_usage", "highest_expected_usage"]) {
+    for (const level of [
+      "manual",
+      "least_usage",
+      "highest_expected_usage",
+      "weighted_random",
+      "alternating_handoff",
+    ]) {
       expect(
         screen.getByTestId(`account-selection-${level}`).getAttribute("class")
       ).toBe(offClass);

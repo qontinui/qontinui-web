@@ -3,7 +3,13 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
-import { resolveSubspaces, summarize } from "../_lib/resolve";
+import { useTwinCatalog } from "../_hooks/useTwinCatalog";
+import {
+  allProbesRestricted,
+  resolveSubspaces,
+  summarize,
+  unlistedDeclaredProbes,
+} from "../_lib/resolve";
 import {
   COUNT_FILLS,
   RESTRICTED_COUNT_MEANING,
@@ -28,7 +34,6 @@ function Gauge({
   label,
   barClassName,
   pending = false,
-  restricted = 0,
   testId,
 }: {
   value: number;
@@ -38,12 +43,6 @@ function Gauge({
   barClassName: string;
   /** The count has no verdict yet (its probe is in flight). */
   pending?: boolean;
-  /**
-   * Cells coord refused for this tenant. Outside `total` (an access decision is
-   * not an observer that failed to answer), so they are named beside the count
-   * instead of reading as missing answers.
-   */
-  restricted?: number;
   testId: string;
 }) {
   const pct = !pending && total > 0 ? Math.round((value / total) * 100) : 0;
@@ -59,15 +58,6 @@ function Gauge({
           </span>
         )}
         <span className="text-sm text-muted-foreground">{label}</span>
-        {restricted > 0 && (
-          <span
-            data-slot="gauge-restricted"
-            className="text-sm text-muted-foreground"
-            title={RESTRICTED_COUNT_MEANING}
-          >
-            · {restricted} restricted
-          </span>
-        )}
       </div>
       <div className="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
         <div
@@ -82,17 +72,23 @@ function Gauge({
 
 export function CoverageMatrix() {
   const { data, isLoading, isError, error } = useDigitalTwinSubspaces();
+  // coord's declaration of what the twin probes: the matrix joins the manifest
+  // to it, so a row coord declares is live and one it does not is not.
+  const { data: catalog } = useTwinCatalog();
   const [selected, setSelected] = useState<ResolvedSubspace | null>(null);
 
   const rows = useMemo(
-    () => resolveSubspaces(data?.subspaces, isLoading),
-    [data?.subspaces, isLoading]
+    () => resolveSubspaces(data?.subspaces, isLoading, catalog),
+    [data?.subspaces, isLoading, catalog]
   );
   const summary = useMemo(() => summarize(rows), [rows]);
+  const unlisted = useMemo(() => unlistedDeclaredProbes(catalog), [catalog]);
 
   const tiers: (1 | 2 | 3)[] = [1, 2, 3];
 
-  if (data?.restricted) return <TwinAccessRestricted />;
+  // The whole-view notice only when EVERY probe was refused; a single refused
+  // sub-space renders as its own `restricted` cell.
+  if (allProbesRestricted(data)) return <TwinAccessRestricted />;
 
   return (
     <div className="space-y-6">
@@ -100,9 +96,8 @@ export function CoverageMatrix() {
         <Gauge
           testId="digital-twin-gauge-live"
           value={summary.responding}
-          total={summary.snapshotTotal}
+          total={summary.graded}
           pending={summary.pending > 0}
-          restricted={summary.restricted}
           label="live observers responding (this tenant)"
           barClassName={COUNT_FILLS.live}
         />
@@ -115,7 +110,30 @@ export function CoverageMatrix() {
           label="sub-spaces built (manifest claim)"
           barClassName={COUNT_FILLS.claim}
         />
+        {(summary.served > 0 || summary.restricted > 0) && (
+          <p
+            data-testid="digital-twin-gauge-notes"
+            title={RESTRICTED_COUNT_MEANING}
+            className="text-xs text-muted-foreground"
+          >
+            Also probed, outside the live count: {summary.served} served (a
+            report, not graded) · {summary.restricted} restricted (not yours to
+            read)
+          </p>
+        )}
       </div>
+
+      {unlisted.length > 0 && (
+        <p
+          data-testid="digital-twin-unlisted-probes"
+          className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground"
+        >
+          Declared by coord, not in this page&apos;s taxonomy:{" "}
+          <code>{unlisted.join(", ")}</code> — probed by coord&apos;s
+          declaration, but the manifest has no row to show{" "}
+          {unlisted.length === 1 ? "it" : "them"} in.
+        </p>
+      )}
 
       {isError && <CoordUnreachableBanner error={error} />}
 
