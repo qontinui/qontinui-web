@@ -43,9 +43,9 @@ const geistMono = Geist_Mono({
 // in `(marketing)/`).
 export const metadata: Metadata = {
   metadataBase: new URL("https://qontinui.io"),
-  title: "Qontinui - Open Source AI Development Platform",
+  title: "Qontinui - Open-Source Software Factory for AI Agents",
   description:
-    "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring. Multi-provider support for Claude and Gemini.",
+    "An open-source software factory: a fleet of AI agents plans, implements, tests and lands changes on your own codebase, against a digital twin of your development process, so they answer their own questions instead of asking you.",
 };
 
 export default function RootLayout({

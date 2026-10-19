@@ -1,14 +1,22 @@
-"""Regression guard: the REAL cron-dispatch sweeper must not run during tests.
+"""Regression guard: the app's REAL scheduler must not run during tests.
 
 `app.core.scheduler.scheduler` is a module-level singleton and the FastAPI
 lifespan calls `scheduler.start()` on it. `tests/conftest.py::booted_app` is
 **session-scoped and autouse** and enters `TestClient(app)` as a context manager,
-which runs that lifespan — so the app's scheduler ticks every 30s for the WHOLE
-session, in every run. (Before that fixture existed, boot happened whenever the
-first test pulled the lazy `test_client` fixture, so whether the scheduler ran at
-all depended on the collected file set.)
+which runs that lifespan — so, left alone, the app's scheduler would tick for the
+WHOLE session on the TestClient portal thread, concurrently with every test.
+`booted_app` therefore stops it straight after boot, and
+`test_app_scheduler_loop_is_stopped_for_the_session` below pins that.
 
-The dangerous task in that set is `scheduled_dispatch`. It calls
+Why it matters, measured: the loop's `asyncio.sleep(next_due - now)` was
+recorded by a process-wide `asyncio.sleep` mock in
+`test_coord_proxy_contract.py` as `0.7789, 0.7788, ...` (qontinui-web#1718, CI
+run 37519038790, shard 6/6; coord finding 171089df) — the mock returned at once,
+so the loop spun with each delay a few microseconds shorter. (That mock is now
+scoped to coord_proxy by `tests/_coord_proxy_sleep.py`.) And the sweeper race
+below.
+
+The most dangerous task in the set is `scheduled_dispatch`. It calls
 `poll_and_dispatch_due()`, which claims due rows `FOR UPDATE SKIP LOCKED` from
 whatever `app.db.session.async_engine` points at — and `test_scheduler_db.py`
 repoints that module global at the test engine. The sweeper then races those
@@ -20,8 +28,9 @@ the file is run alone — and it used to be order-dependent as well (did a
 `test_client` test run earlier?). It reddened unrelated PRs on
 `TestDispatchFailure` and `TestNextFireAdvance` while `main` was green.
 
-`tests/conftest.py` therefore sets
-`QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0`.
+Stopping the loop in `booted_app` is the fix; `tests/conftest.py` ALSO sets
+`QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0` as defense in depth, so the
+task that claims rows other tests seeded stays off if the stop ever regresses.
 
 Two deliberate constraints on how this file tests that, both learned the hard
 way by measuring:
@@ -29,17 +38,22 @@ way by measuring:
 1. **It must not use the app-client fixture.** Back when `test_client` owned the
    lifespan, pulling it from a NEW file changed when app startup happened
    relative to everything else. Startup did real DB work, and moving it made
-   `test_memory_api_db.py` fail a varying 1-5 tests per run. Baseline was green
+   `test_memory_api_db.py` fail a varying 1-5 tests per run (history from the
+   old `test_client`-owned startup, not re-measured since). Baseline was green
    across two full runs; adding a `test_client`-dependent guard here was the
    only difference. Boot is now pinned (autouse) and its DB-touching side
    effects are gated on `TESTING` — see `app.main._boot_side_effects_disabled` —
    but the rule stands: a guard asserts against the flags and module state the
-   app reads, never against a booted app. See
+   app reads, never against a booted app (through its client). Reading the
+   scheduler singleton's own state, as
+   `test_app_scheduler_loop_is_stopped_for_the_session` does, is module state.
+   See
    `test_app_boot_side_effects_inert_in_tests.py` for the boot-inertness half.
-2. **It must not reach for the GLOBAL `QONTINUI_SCHEDULER_ENABLED`.** Killing
-   the whole scheduler also stops `memory_reindex` / `memory_consolidate` /
-   `memory_bridge_sync`, which reds `test_memory_api_db.py` for a different
-   reason. Only the one task gets disabled.
+2. **It must not reach for the GLOBAL `QONTINUI_SCHEDULER_ENABLED`.** That
+   switch is read by EVERY `SchedulerService.start()`, including the private
+   instances `tests/test_scheduler.py` builds to exercise the loop, so setting
+   it suite-wide reds those tests. The singleton is stopped by `booted_app`
+   instead, which touches no other instance.
 """
 
 from __future__ import annotations
@@ -74,16 +88,35 @@ def test_dispatch_sweeper_is_disabled_for_the_suite() -> None:
 
 
 def test_global_scheduler_switch_is_left_alone() -> None:
-    """The GLOBAL switch must stay on — other tests depend on the other jobs.
+    """The GLOBAL switch must stay on — `tests/test_scheduler.py` needs it.
 
-    Pinned because "just disable the scheduler" is the tempting broader fix, and
-    it silently reds `test_memory_api_db.py`'s hybrid-query tests.
+    Every `SchedulerService.start()` reads it, including the private instances
+    the scheduler unit tests start; with it off they never launch a loop.
     """
     assert _env_flag("QONTINUI_SCHEDULER_ENABLED", default=True) is True, (
-        "The global scheduler kill switch is off. That also stops "
-        "memory_reindex/memory_consolidate/memory_bridge_sync, which "
-        "test_memory_api_db.py relies on. Disable only the dispatch task."
+        "The global scheduler kill switch is off. That disables every "
+        "SchedulerService the scheduler unit tests start. The app singleton is "
+        "stopped by conftest.py::booted_app instead."
     )
+
+
+def test_app_scheduler_loop_is_stopped_for_the_session() -> None:
+    """The app singleton's loop must not be running while tests run.
+
+    `booted_app` (autouse, session-scoped) boots the app — whose lifespan calls
+    `scheduler.start()` — and then stops the singleton. If that stop regresses,
+    the loop ticks for the whole session on the TestClient portal thread and
+    every `asyncio.sleep` it awaits lands in any process-wide sleep mock a test
+    installs, and every job it fires races the tests for shared rows.
+    """
+    from app.core.scheduler import scheduler
+
+    assert not scheduler.running, (
+        "The app's scheduler loop is running during the test session. "
+        "tests/conftest.py::booted_app must stop it after boot."
+    )
+    in_flight = sorted(t.get_name() for t in scheduler._runners)
+    assert not in_flight, f"Scheduled job runs are still in flight: {in_flight}"
 
 
 def test_dispatch_task_stays_registered() -> None:

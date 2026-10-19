@@ -118,6 +118,13 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // dashboard caller is the taste inbox (plan
   // 2026-10-13-image-generation-and-visual-judgment, Phases 13 and 23).
   "/api/v1/image-assets",
+  // The taste inbox — the same `get_memory_tenant` operator arm for the queue
+  // read and the pair push, and `require_coord_tenant_admin_target` for label
+  // writes: every `web.taste_pairs` row is the selected project's, so without
+  // the header a multi-tenant operator would label (and read) the home
+  // project's queue under another project's name. Plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
+  "/api/v1/taste/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.
@@ -140,6 +147,11 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // `/api/v1/public/build-records/…`, which resolves no tenant. Plan
   // 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
   "/api/v1/build-records/",
+  // Overlord operator labels — `require_coord_tenant_admin` gates the write, so
+  // admin is checked in the SELECTED project, not the home one. Plan
+  // 2026-10-01-overlord-session-supervisor-classifies-stops-and-absorbs-
+  // avoidable-escalations, Phase 2b.
+  "/api/v1/admin/coord/overlord/",
 ];
 
 function readActiveTenantId(): string | null {

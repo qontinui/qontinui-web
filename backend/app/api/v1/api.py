@@ -86,6 +86,7 @@ from app.api.v1.endpoints import (
     notifications,
     operations,
     organizations,
+    overlord_labels,
     overview,
     pair_codes,
     phase_results,
@@ -129,6 +130,7 @@ from app.api.v1.endpoints import (
     state_discovery_results,
     state_machine_configs,
     task_runs,
+    taste,
     template_capture,
     training,
     training_datasets,
@@ -488,6 +490,11 @@ api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
 api_router.include_router(
     image_assets.router, prefix="/image-assets", tags=["image-assets"]
 )
+# The taste inbox — web.taste_pairs + web.taste_settings: pairwise image labels
+# over the image store, read and pushed under the same device-JWT tenant,
+# labelled by coord-tenant admins (plan
+# 2026-10-13-image-generation-and-visual-judgment, Phase 23).
+api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
 # Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries
@@ -544,6 +551,11 @@ api_router.include_router(
 # path is /api/v1/admin-dev/overview (it must NOT inherit agent_sessions'
 # /admin prefix).
 api_router.include_router(admin_dev.router, tags=["admin-dev"])
+# Operator label write for the overlord intervention ledger (plan
+# 2026-10-01-overlord-session-supervisor-..., Phase 2b).
+api_router.include_router(
+    overlord_labels.router, prefix="/admin/coord/overlord", tags=["overlord"]
+)
 
 # Cloud-control extension hook — no-op when no cloud-control package has
 # registered any route extensions. Cloud-control's

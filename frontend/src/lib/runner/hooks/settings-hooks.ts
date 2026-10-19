@@ -3,7 +3,7 @@
 import { useRunnerQuery } from "../api-client";
 import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type {
-  AiSettings,
+  AiSettingsView,
   AgenticSettings,
   GeneralSettings,
   DebugSettings,
@@ -18,7 +18,7 @@ import type {
 } from "../types/settings";
 
 export function useAiSettings() {
-  return useRunnerQuery<AiSettings>(useRunnerTarget(), "/settings/ai");
+  return useRunnerQuery<AiSettingsView>(useRunnerTarget(), "/settings/ai");
 }
 
 export function useAgenticSettings() {

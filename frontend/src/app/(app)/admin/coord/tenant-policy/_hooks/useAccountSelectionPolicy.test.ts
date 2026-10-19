@@ -88,11 +88,19 @@ describe("parseAccountSelectionLevel", () => {
       "highest_expected_usage"
     );
     expect(parseAccountSelectionLevel("off")).toBe("off");
+    expect(parseAccountSelectionLevel("Weighted_Random")).toBe(
+      "weighted_random"
+    );
+    expect(parseAccountSelectionLevel(" ALTERNATING_HANDOFF ")).toBe(
+      "alternating_handoff"
+    );
   });
 
   it("returns null — UNKNOWN — for anything else", () => {
     expect(parseAccountSelectionLevel("round_robin")).toBeNull();
     expect(parseAccountSelectionLevel("least-usage")).toBeNull();
+    expect(parseAccountSelectionLevel("weighted-random")).toBeNull();
+    expect(parseAccountSelectionLevel("alternating handoff")).toBeNull();
     expect(parseAccountSelectionLevel("")).toBeNull();
     expect(parseAccountSelectionLevel(null)).toBeNull();
     expect(parseAccountSelectionLevel(undefined)).toBeNull();
@@ -163,6 +171,23 @@ describe("useAccountSelectionPolicy", () => {
     expect(result.current.displayLevel).toBe("highest_expected_usage");
     expect(result.current.isDefaulted).toBe(false);
   });
+
+  it.each(["weighted_random", "alternating_handoff"] as const)(
+    "reports a %s tenant row as that level, not as UNKNOWN",
+    async (level) => {
+      getMock.mockResolvedValue({
+        ...NO_ROW,
+        effective_level: level,
+        resolved_scope: "tenant",
+      });
+      const { result } = renderHook(() => useAccountSelectionPolicy());
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.displayLevel).toBe(level);
+      expect(result.current.isDefaulted).toBe(false);
+      expect(result.current.unrecognizedLevel).toBeNull();
+    }
+  );
 
   it("has no level at all before a read succeeds", async () => {
     getMock.mockRejectedValue(new Error("HTTP 502"));
