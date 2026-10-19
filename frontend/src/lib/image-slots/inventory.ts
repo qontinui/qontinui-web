@@ -29,9 +29,11 @@
 import ts from "typescript";
 import type { ImageSlotSpec } from "@qontinui/shared-types";
 import {
+  PLACEHOLDER_REASON_TEXT,
   resolveSlotImage,
   servableFiles,
   type ManifestRead,
+  type PlaceholderReason,
   type SlotResolution,
 } from "./manifest";
 
@@ -258,12 +260,18 @@ export function renderMarkdown(inventory: Inventory): string {
   return `${lines.join("\n")}\n`;
 }
 
+function reasonText(reason: string | null): string {
+  return reason !== null && Object.hasOwn(PLACEHOLDER_REASON_TEXT, reason)
+    ? PLACEHOLDER_REASON_TEXT[reason as PlaceholderReason]
+    : "the placeholder marker names no reason this inventory knows";
+}
+
 /** One GitHub Actions `::notice` per placement of a placeholder slot. */
 export function renderAnnotations(inventory: Inventory): string[] {
   return shippedPlaceholders(inventory).flatMap((row) =>
     row.placements.map(
       (p) =>
-        `::notice file=frontend/${p.file},line=${p.line},title=Image slot ships a placeholder::slot "${row.slot}" (${row.role}) renders its placeholder (${row.rendered.reason}); no asset is bound in public/image-slots/studio-manifest.json`
+        `::notice file=frontend/${p.file},line=${p.line},title=Image slot ships a placeholder::slot "${row.slot}" (${row.role}) renders its placeholder (${row.rendered.reason}): ${reasonText(row.rendered.reason)}`
     )
   );
 }

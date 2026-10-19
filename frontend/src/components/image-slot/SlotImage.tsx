@@ -72,6 +72,12 @@ export function SlotImage({
         data-ui-bridge-placeholder="true"
         data-ui-bridge-placeholder-reason={resolution.reason}
         // A placeholder carries no information for anyone, sighted or not.
+        // OPEN FOR PHASE 15 (plan 2026-10-13-image-generation-and-visual-
+        // judgment): aria-hidden may also hide this element from UI Bridge
+        // capture and media discovery, which Phase 15's placeholder detection
+        // (via Phase 5/7's `placeholder` media field) reads. Phase 15 must
+        // settle it, e.g. `role="img"` plus `aria-label` for `alt: text`
+        // slots, rather than this comment being read as a decision.
         aria-hidden="true"
         style={box}
         className={cn(
