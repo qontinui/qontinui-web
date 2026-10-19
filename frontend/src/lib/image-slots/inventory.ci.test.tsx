@@ -24,7 +24,11 @@ import {
   type SlotPlacement,
 } from "./inventory";
 import { SLOT_MANIFEST } from "./manifest";
-import { IMAGE_SLOT_SPECS, type ImageSlotId } from "./specs.generated";
+import {
+  IMAGE_SLOT_AUTHORED_SVG,
+  IMAGE_SLOT_SPECS,
+  type ImageSlotId,
+} from "./specs.generated";
 
 const FRONTEND = path.resolve(__dirname, "../../..");
 
@@ -58,6 +62,7 @@ function realInventory() {
     manifest: SLOT_MANIFEST,
     placements,
     publishedFiles: new Set(fs.readdirSync(publishDir)),
+    authoredSvgs: IMAGE_SLOT_AUTHORED_SVG,
     render: (slot) =>
       renderToStaticMarkup(<SlotImage slot={slot as ImageSlotId} />),
   });

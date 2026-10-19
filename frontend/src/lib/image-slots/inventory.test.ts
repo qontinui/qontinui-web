@@ -44,6 +44,7 @@ function input(overrides: Partial<InventoryInput> = {}): InventoryInput {
       { file: "src/a.tsx", line: 3, slot: "s.one", expression: '"s.one"' },
     ],
     publishedFiles: new Set(["studio-manifest.json"]),
+    authoredSvgs: {},
     render: (slot) => PLACEHOLDER(slot),
     ...overrides,
   };
@@ -263,5 +264,40 @@ describe("the report", () => {
     expect(renderMarkdown(inventory)).toContain(
       "### Defects (these fail the run)"
     );
+  });
+});
+
+describe("authored inline SVGs in the inventory", () => {
+  const SVG = '<svg viewBox="0 0 1 1"></svg>';
+  const INLINE = (slot: string) =>
+    `<div data-ui-bridge-id="image-slot.${slot}" data-ui-bridge-image-slot="${slot}" aria-hidden="true" style="aspect-ratio:1/1">${SVG}</div>`;
+
+  it("lists an authored slot as rendering its inline SVG, not a placeholder", () => {
+    const inventory = buildInventory(
+      input({
+        authoredSvgs: { "s.one": SVG },
+        render: (slot) => (slot === "s.one" ? INLINE(slot) : PLACEHOLDER(slot)),
+      })
+    );
+    expect(inventory.defects).toEqual([]);
+    expect(shippedPlaceholders(inventory)).toEqual([]);
+    expect(renderMarkdown(inventory)).toContain(
+      "| `s.one` | empty_state | authored inline SVG |  | `src/a.tsx:3` |"
+    );
+  });
+
+  it("fails on a slot bound both by an authored SVG and a manifest entry", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: BOUND,
+        publishedFiles: new Set(["studio-manifest.json", "s.one.png"]),
+        authoredSvgs: { "s.one": SVG },
+        render: (slot) =>
+          PLACEHOLDER(slot, slot === "s.one" ? "asset_conflict" : "no_asset"),
+      })
+    );
+    expect(inventory.defects).toEqual([
+      'slot "s.one" is bound twice: image-slots/s.one.svg and a manifest entry. A slot has one route; remove one',
+    ]);
   });
 });

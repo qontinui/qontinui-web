@@ -12,11 +12,15 @@
  *   one: a `<picture>` of the published derivatives, served byte for byte.
  *   Deliberately NOT `next/image`: its optimizer re-encodes the file and drops
  *   the IPTC "AI-generated" marker each model-made derivative carries;
+ * - **an agent-authored SVG, inline**, when `frontend/image-slots/<slot>.svg`
+ *   exists (studio's `svg` route): only inline SVG inherits `currentColor`
+ *   and the page's `--qontinui-*` custom properties, and the markup keeps the
+ *   IPTC marker in its `<metadata>`;
  * - **otherwise a correctly sized, explicitly marked placeholder**, reserving
  *   the spec's preferred `aspect-ratio` so the layout does not move when the
  *   asset arrives.
  *
- * Both carry `data-ui-bridge-image-slot="<slot>"` and `data-ui-bridge-id`
+ * All three carry `data-ui-bridge-image-slot="<slot>"` and `data-ui-bridge-id`
  * (only that attribute, or an interactive role, registers an element with the
  * UI Bridge). The placeholder alone carries `data-ui-bridge-placeholder="true"`
  * and `data-ui-bridge-placeholder-reason`. A shipped placeholder is a finding
@@ -31,6 +35,7 @@ import { ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveSlotImage, SLOT_MANIFEST } from "@/lib/image-slots/manifest";
 import {
+  imageSlotAuthoredSvg,
   imageSlotSpec,
   type ImageSlotId,
 } from "@/lib/image-slots/specs.generated";
@@ -60,7 +65,12 @@ export function SlotImage({
   loading = "lazy",
 }: SlotImageProps) {
   const spec = imageSlotSpec(slot);
-  const resolution = resolveSlotImage(slot, spec, SLOT_MANIFEST);
+  const resolution = resolveSlotImage(
+    slot,
+    spec,
+    SLOT_MANIFEST,
+    imageSlotAuthoredSvg(slot)
+  );
   // `W/H` is the spec's spelling and CSS `aspect-ratio` syntax both.
   const box: CSSProperties = { aspectRatio: spec.aspect.preferred };
 
@@ -89,6 +99,27 @@ export function SlotImage({
       >
         {placeholder ?? <ImageIcon className="size-1/4 max-h-8 max-w-8" />}
       </div>
+    );
+  }
+
+  if (resolution.kind === "inline_svg") {
+    return (
+      <div
+        data-ui-bridge-id={slotUiBridgeId(slot)}
+        data-ui-bridge-image-slot={slot}
+        {...(resolution.alt === ""
+          ? { "aria-hidden": true }
+          : { role: "img", "aria-label": resolution.alt })}
+        style={box}
+        className={cn(
+          "block overflow-hidden [&>svg]:block [&>svg]:h-full [&>svg]:w-full",
+          className
+        )}
+        // Repo source, refused at generation if it carries anything that runs,
+        // fetches or links (src/lib/image-slots/codegen.ts SVG_FORBIDDEN), on
+        // top of studio's drawing-elements-only validator.
+        dangerouslySetInnerHTML={{ __html: resolution.markup }}
+      />
     );
   }
 

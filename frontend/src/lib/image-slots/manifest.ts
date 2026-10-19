@@ -7,18 +7,31 @@
  * path writes into a site's `publish_dir` beside the files it places (Phase 19
  * names it as the one manifest format, extended there with the slot-spec
  * hash). For this app that directory is `public/image-slots/`, served at
- * `/image-slots/`. Its shape, per studio's `_manifest_entry` (`publish.py`):
+ * `/image-slots/`. Its shape, per studio's `_manifest_entry` (`publish.py`)
+ * plus the fields `studio compile` adds (`compiler/run.py`), keyed by slot id:
  *
  *   { "generated_by": "qontinui-studio",
- *     "slots": { "<slot>": { "files":  { "<format>": "<file name>" },
- *                            "sha256": { "<format>": "<hex digest>" },
- *                            "ai_generated": true, … } } }
+ *     "slots": { "<slot>": {
+ *        "files":  { "<format>": "<file name>" },   format: avif | webp | png
+ *        "sha256": { "<format>": "<hex digest>" },          | jpeg | svg
+ *        "binding": { …ImageSlotProvenance, "alt_text"?: "…" },
+ *        "alt_text"?: "…",   (the same text, when the slot's alt is required)
+ *        "slot_id", "slot_spec_sha256", "route", "ai_generated", … } } }
  *
- * `sha256` is what a site appends to each file URL as `?sha=`: a cache-buster,
- * and the proof studio's D7 gate checks that the page shows THIS batch's bytes.
+ * Studio writes AVIF + WebP + PNG for a diffusion slot, PNG alone for an
+ * og:image, and SVG + PNG for a traced one. `sha256` is what a site appends to
+ * each file URL as `?sha=`: a cache-buster, and the proof studio's D7 gate
+ * checks that the page shows THIS batch's bytes. The test fixtures under
+ * `test-fixtures/image-slots/studio/` are manifests studio itself wrote.
+ *
+ * The third shape a slot's art takes is an AGENT-AUTHORED INLINE SVG
+ * (studio's `svg` route): studio writes no file and no manifest entry for it;
+ * the session writes `image-slots/<slot>.svg` beside the spec, and it renders
+ * inline, because only inline SVG inherits `currentColor` and the page's
+ * `--qontinui-*` custom properties.
  *
  * Resolution is pure and total: every slot resolves to exactly one of an
- * asset or a placeholder WITH THE REASON, and the inventory
+ * asset, an inline SVG, or a placeholder WITH THE REASON, and the inventory
  * (`npm run image-slots:inventory`) reports exactly what `<SlotImage>`
  * renders because both call {@link resolveSlotImage}.
  */
@@ -34,6 +47,10 @@ export const SLOT_PUBLIC_PATH = "/image-slots";
 export interface StudioSlotEntry {
   files: Record<string, string>;
   sha256: Record<string, string>;
+  /** The slot's `ImageSlotProvenance`, as `studio compile` records it. */
+  binding?: { alt_text?: unknown; [field: string]: unknown };
+  /** The binding's alt text again, written for an `alt: required` slot. */
+  alt_text?: unknown;
   ai_generated?: boolean;
   [field: string]: unknown;
 }
@@ -48,17 +65,19 @@ export type ManifestRead =
   | { ok: true; manifest: StudioManifest }
   | { ok: false; error: string };
 
-/** The formats studio publishes (`SLOT_FILE_EXTS`), with their MIME types,
- *  most widely decodable first: that order picks the `<img src>` fallback. */
+/** Studio's format keys (`sites.py` `ExportFormat`; a JPEG is keyed `jpeg`
+ *  and written as `.jpg`), with their MIME types, most widely decodable
+ *  first: that order picks the `<img src>` fallback. */
 const FORMATS: ReadonlyArray<readonly [format: string, mime: string]> = [
   ["png", "image/png"],
-  ["jpg", "image/jpeg"],
+  ["jpeg", "image/jpeg"],
   ["webp", "image/webp"],
   ["avif", "image/avif"],
+  ["svg", "image/svg+xml"],
 ];
 
-/** `<source>` order: the most efficient encoding first. */
-const SOURCE_ORDER = ["avif", "webp"];
+/** `<source>` order: a vector first, then the most efficient encoding. */
+const SOURCE_ORDER = ["svg", "avif", "webp"];
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -115,7 +134,10 @@ export type PlaceholderReason =
   | "asset_unusable"
   /** The slot's alt is `required`, and its binding records no `alt_text`:
    *  an image without its text alternative is not shipped. */
-  | "alt_text_missing";
+  | "alt_text_missing"
+  /** Both an authored `image-slots/<slot>.svg` and a manifest entry bind the
+   *  slot. A slot has one route, so neither is shown over the other. */
+  | "asset_conflict";
 
 /** Why a placeholder renders, in words, for listings and notices. */
 export const PLACEHOLDER_REASON_TEXT: Readonly<
@@ -128,6 +150,8 @@ export const PLACEHOLDER_REASON_TEXT: Readonly<
   asset_unusable: "its manifest entry names no file this app can serve",
   alt_text_missing:
     "its alt is `required` and its binding records no alt_text, so the asset is withheld",
+  asset_conflict:
+    "both an authored image-slots/<slot>.svg and a manifest entry bind it; a slot has one route",
 };
 
 export interface SlotSource {
@@ -142,6 +166,13 @@ export type SlotResolution =
       sources: SlotSource[];
       /** The `<img src>`: the most widely decodable format published. */
       src: string;
+      /** `""` for a decorative slot. */
+      alt: string;
+    }
+  | {
+      kind: "inline_svg";
+      /** The authored SVG document, rendered inline. */
+      markup: string;
       /** `""` for a decorative slot. */
       alt: string;
     }
@@ -188,30 +219,57 @@ export function servableFiles(entry: StudioSlotEntry): ServableFile[] {
   return out;
 }
 
-function altText(spec: ImageSlotSpec): string | null {
+function nonBlank(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+/** The text alternative, or `null` when an `alt: required` slot has none.
+ *  For a required slot it is the binding studio wrote (`binding.alt_text`,
+ *  repeated as the entry's `alt_text`), else a binding authored inline in
+ *  the spec (`provenance.alt_text`). */
+function altText(spec: ImageSlotSpec, entry?: StudioSlotEntry): string | null {
   switch (spec.alt.kind) {
     case "decorative":
       return "";
     case "text":
       return spec.alt.text;
     case "required":
-      return spec.provenance?.alt_text ?? null;
+      return (
+        nonBlank(entry?.binding?.alt_text) ??
+        nonBlank(entry?.alt_text) ??
+        nonBlank(spec.provenance?.alt_text)
+      );
   }
 }
 
-/** What `<SlotImage slot>` renders: the chosen asset, or the placeholder. */
+/** What `<SlotImage slot>` renders: the chosen asset, the authored inline
+ *  SVG, or the placeholder. */
 export function resolveSlotImage(
   slot: string,
   spec: ImageSlotSpec,
-  manifest: ManifestRead
+  manifest: ManifestRead,
+  authoredSvg?: string
 ): SlotResolution {
+  // Own keys only: a slot named after an Object.prototype member
+  // (`constructor`, `toString`) must not resolve to the inherited value.
+  const entry =
+    manifest.ok && Object.hasOwn(manifest.manifest.slots, slot)
+      ? manifest.manifest.slots[slot]
+      : undefined;
+  if (authoredSvg !== undefined) {
+    if (entry !== undefined) {
+      return { kind: "placeholder", reason: "asset_conflict" };
+    }
+    // The authored SVG is source in this repo, not a manifest file, so it
+    // does not depend on the manifest being readable.
+    const alt = altText(spec);
+    return alt === null
+      ? { kind: "placeholder", reason: "alt_text_missing" }
+      : { kind: "inline_svg", markup: authoredSvg, alt };
+  }
   if (!manifest.ok) {
     return { kind: "placeholder", reason: "manifest_unreadable" };
   }
-  // Own keys only: a slot named after an Object.prototype member
-  // (`constructor`, `toString`) must not resolve to the inherited value.
-  const { slots } = manifest.manifest;
-  const entry = Object.hasOwn(slots, slot) ? slots[slot] : undefined;
   if (entry === undefined) {
     return { kind: "placeholder", reason: "no_asset" };
   }
@@ -219,7 +277,7 @@ export function resolveSlotImage(
   if (fallback === undefined) {
     return { kind: "placeholder", reason: "asset_unusable" };
   }
-  const alt = altText(spec);
+  const alt = altText(spec, entry);
   if (alt === null) {
     return { kind: "placeholder", reason: "alt_text_missing" };
   }
