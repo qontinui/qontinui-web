@@ -1,10 +1,14 @@
 import type { ImageSlotSpec } from "@qontinui/shared-types";
 import { createHash } from "crypto";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { describe, expect, it } from "vitest";
 
 import {
   buildInventory,
   findPlacements,
+  readPublishDir,
   readRenderedMarker,
   renderAnnotations,
   renderMarkdown,
@@ -440,5 +444,41 @@ describe("lucide entries in the inventory", () => {
     expect(inventory.defects).toEqual([
       'the manifest\'s slot "s.one" names lucide-react component CircleUser, which the generated registry does not hold: the installed lucide-react does not export it, or `npm run image-slots:generate` was not run',
     ]);
+  });
+});
+
+describe("readPublishDir", () => {
+  it("reads files, skips the manifest, and reports a subdirectory instead of reading it", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "image-slots-"));
+    try {
+      fs.writeFileSync(path.join(dir, "studio-manifest.json"), "{}");
+      fs.writeFileSync(path.join(dir, "s.one.png"), "png bytes");
+      fs.mkdirSync(path.join(dir, "nested"));
+      const entries = readPublishDir(dir).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      expect(
+        entries.map((e) => [
+          e.name,
+          e.bytes === null ? null : Buffer.from(e.bytes).toString("utf8"),
+        ])
+      ).toEqual([
+        ["nested", null],
+        ["s.one.png", "png bytes"],
+      ]);
+      const inventory = buildInventory(
+        input({
+          manifest: BOUND,
+          published: entries,
+          render: (slot) =>
+            slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot),
+        })
+      );
+      expect(inventory.defects).toEqual([
+        "public/image-slots/nested is not a file: the publish dir holds only the files studio publishes",
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
