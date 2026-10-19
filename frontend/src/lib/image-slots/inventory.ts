@@ -7,7 +7,9 @@
  * a merge (decision D4). So a placeholder row is listed, in the job's step
  * summary and as a `::notice`, and fails nothing. What DOES fail is a defect
  * in the inventory's own inputs, because a listing built on it would be wrong:
- * an unreadable manifest, a manifest entry or file nobody declared, a
+ * an unreadable manifest, a manifest entry or file nobody declared, a file
+ * whose bytes do not hash to the digest the manifest records for it, an SVG
+ * the SVG allowlist refuses, a
  * placement the inventory cannot attribute to a slot, or a rendered marker
  * that contradicts the resolution.
  *
@@ -26,6 +28,7 @@
  * should.
  */
 
+import { createHash } from "crypto";
 import ts from "typescript";
 import type { ImageSlotSpec } from "@qontinui/shared-types";
 import {
@@ -149,14 +152,14 @@ export interface InventoryInput {
   specs: Readonly<Record<string, ImageSlotSpec>>;
   manifest: ManifestRead;
   placements: readonly SlotPlacement[];
-  /** File names present in `public/image-slots/`. */
-  publishedFiles: ReadonlySet<string>;
+  /** Every file in `public/image-slots/` except the manifest, with its
+   *  bytes: each must be one a manifest entry names, with the digest that
+   *  entry records, and every SVG among them (any case of `.svg`) must pass
+   *  the SVG allowlist (published profile) and carry the IPTC marker, since
+   *  it is a same-origin document when opened directly. */
+  published: ReadonlyArray<{ name: string; bytes: Uint8Array }>;
   /** Agent-authored inline SVGs (`image-slots/<slot>.svg`), by slot id. */
   authoredSvgs: Readonly<Record<string, AuthoredSvg>>;
-  /** Every `public/image-slots/*.svg`, which is a same-origin document when
-   *  opened directly: each must pass the SVG allowlist (published profile)
-   *  and carry the IPTC marker. */
-  publishedSvgs: ReadonlyArray<{ name: string; text: string }>;
   /** The XML parser the SVG allowlist checks with. */
   parse: XmlParse;
   /** The lucide-react components the generated registry holds. */
@@ -168,6 +171,13 @@ export interface InventoryInput {
 export function buildInventory(input: InventoryInput): Inventory {
   const defects: string[] = [];
   const declared = new Set(Object.keys(input.specs));
+  const digests = new Map(
+    input.published.map(({ name, bytes }) => [
+      name,
+      createHash("sha256").update(bytes).digest("hex"),
+    ])
+  );
+  const named = new Set<string>();
 
   if (!input.manifest.ok) {
     defects.push(
@@ -180,10 +190,16 @@ export function buildInventory(input: InventoryInput): Inventory {
           `the manifest binds slot "${slot}", which no image-slots/${slot}.yaml declares`
         );
       }
-      for (const file of Object.values(entry.files)) {
-        if (!input.publishedFiles.has(file)) {
+      for (const [format, file] of Object.entries(entry.files)) {
+        named.add(file);
+        const actual = digests.get(file);
+        if (actual === undefined) {
           defects.push(
             `the manifest's slot "${slot}" names public/image-slots/${file}, which does not exist`
+          );
+        } else if (entry.sha256[format] !== actual) {
+          defects.push(
+            `public/image-slots/${file} does not hash to the sha256 the manifest's slot "${slot}" records for ${format}`
           );
         }
       }
@@ -202,7 +218,14 @@ export function buildInventory(input: InventoryInput): Inventory {
     }
   }
 
-  for (const { name, text } of input.publishedSvgs) {
+  for (const { name, bytes } of input.published) {
+    if (input.manifest.ok && !named.has(name)) {
+      defects.push(`public/image-slots/${name} is named by no manifest entry`);
+    }
+    if (!/\.svg$/i.test(name)) {
+      continue;
+    }
+    const text = new TextDecoder().decode(bytes);
     try {
       if (!checkSvg(text, PUBLISHED_PROFILE, input.parse).marked) {
         defects.push(

@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * `<SlotImage slot="…">` — every image placement in this app renders through a
  * declared slot.
@@ -38,16 +36,17 @@
  * `<img>` carry `data-media-id="studio-picture-<slot>"` and
  * `"studio-img-<slot>"`, every URL is `/image-slots/<file>?sha=<digest>` on
  * the page's own origin, and on a preview load (`?studio_batch=`) the image
- * is never `lazy` ({@link useStudioPreview}).
+ * is never `lazy`, decided in the server render (`SlotImg`).
  *
- * A client component only for that URL read; it holds no state.
+ * Not a client component: only the `<img>` (`SlotImg`) reads the URL, so a
+ * server component that renders a slot keeps its spec data on the server.
  */
 
 import type { CSSProperties, ReactNode } from "react";
 import { ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SlotImg } from "./SlotImg";
 import { resolveSlotImage, SLOT_MANIFEST } from "@/lib/image-slots/manifest";
-import { useStudioPreview } from "@/lib/image-slots/studio-preview";
 import {
   IMAGE_SLOT_LUCIDE,
   imageSlotAuthoredSvg,
@@ -64,8 +63,10 @@ export interface SlotImageProps {
   /** What the placeholder shows inside its reserved box until an asset is
    *  chosen. Defaults to a neutral bordered box with an image glyph. */
   placeholder?: ReactNode;
-  /** `eager` for an image above the fold; `lazy` otherwise. A studio
-   *  preview load (`?studio_batch=`) is always eager. */
+  /** The asset's `loading` (default `lazy`; pass `eager` for an image above
+   *  the fold). It is rendered as given in the server HTML, except on a
+   *  studio preview load (`?studio_batch=`) or where the URL cannot be read,
+   *  which are always `eager`. */
   loading?: "eager" | "lazy";
 }
 
@@ -89,7 +90,6 @@ export function SlotImage({
   placeholder,
   loading = "lazy",
 }: SlotImageProps) {
-  const preview = useStudioPreview();
   const spec = imageSlotSpec(slot);
   const resolution = resolveSlotImage(
     slot,
@@ -179,17 +179,13 @@ export function SlotImage({
       {resolution.sources.map((source) => (
         <source key={source.type} type={source.type} srcSet={source.srcSet} />
       ))}
-      <img
-        data-media-id={media.img}
-        data-ui-bridge-id={slotUiBridgeId(slot)}
-        data-ui-bridge-image-slot={slot}
+      <SlotImg
         src={resolution.src}
         alt={resolution.alt}
-        // A preview is never lazy; while the URL is unknown (server render)
-        // `loading` is omitted, the browser's eager default.
-        loading={preview === null ? undefined : preview ? "eager" : loading}
-        decoding="async"
-        className="block h-full w-full object-cover"
+        loading={loading}
+        mediaId={media.img}
+        uiBridgeId={slotUiBridgeId(slot)}
+        slot={slot}
       />
     </picture>
   );

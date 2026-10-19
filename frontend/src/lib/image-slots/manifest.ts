@@ -117,12 +117,14 @@ export type ManifestRead =
 /** Studio's format keys (`sites.py` `ExportFormat`; a JPEG is keyed `jpeg`
  *  and written as `.jpg`), with their MIME types, most widely decodable
  *  first: that order picks the `<img src>` fallback. */
-const FORMATS: ReadonlyArray<readonly [format: string, mime: string]> = [
-  ["png", "image/png"],
-  ["jpeg", "image/jpeg"],
-  ["webp", "image/webp"],
-  ["avif", "image/avif"],
-  ["svg", "image/svg+xml"],
+export const FORMATS: ReadonlyArray<
+  readonly [format: string, mime: string, extension: string]
+> = [
+  ["png", "image/png", "png"],
+  ["jpeg", "image/jpeg", "jpg"],
+  ["webp", "image/webp", "webp"],
+  ["avif", "image/avif", "avif"],
+  ["svg", "image/svg+xml", "svg"],
 ];
 
 /** `<source>` order: a vector first, then the most efficient encoding. */

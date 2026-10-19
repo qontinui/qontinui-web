@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { middleware } from "./middleware";
+import { FORMATS } from "@/lib/image-slots/manifest";
+import { config, middleware } from "./middleware";
 
 /** An anonymous request, as a link-preview crawler sends it: no cookies. */
 function anonymous(path: string) {
@@ -82,4 +83,36 @@ describe("middleware — a qontinui-studio preview load", () => {
     );
     expect(next).toBe(PREVIEW);
   });
+});
+
+describe("middleware — image-slot files", () => {
+  // Every format studio publishes, by the extension it writes. A gated one
+  // breaks <picture> for every logged-out visitor: the browser takes the
+  // first <source> whose type it supports, follows the redirect, and does
+  // not fall back to the next source.
+  const EXTENSIONS = FORMATS.map(([, , extension]) => extension);
+
+  it("covers every format the slot reader serves", () => {
+    expect(EXTENSIONS.sort()).toEqual(["avif", "jpg", "png", "svg", "webp"]);
+  });
+
+  it.each(EXTENSIONS)(
+    "lets an anonymous request for a .%s slot file through",
+    (ext) => {
+      const res = anonymous(
+        `/image-slots/runs.active.idle.${ext}?sha=${"a".repeat(64)}`
+      );
+      expect(res.headers.get("location")).toBeNull();
+      expect(res.headers.get("x-middleware-next")).toBe("1");
+    }
+  );
+
+  it.each(EXTENSIONS)(
+    "keeps .%s files out of the middleware altogether",
+    (ext) => {
+      const matcher = new RegExp(`^${config.matcher[0]}$`);
+      expect(matcher.test(`/image-slots/x.${ext}`)).toBe(false);
+      expect(matcher.test("/runs/active")).toBe(true);
+    }
+  );
 });
