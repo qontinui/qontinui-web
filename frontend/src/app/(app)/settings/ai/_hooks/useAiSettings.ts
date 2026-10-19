@@ -72,6 +72,9 @@ export function useAiSettings() {
   // Last CALL wins: every load and post-save refresh takes a token, and a
   // response whose token is no longer current is ignored.
   const requestSeq = useRef(0);
+  // Post-save refreshes sequence separately: bumping requestSeq there would
+  // strand an in-flight load's `loading` flag, which only its own call clears.
+  const refreshSeq = useRef(0);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -189,10 +192,13 @@ export function useAiSettings() {
       toast.success("AI settings saved");
       // Refresh only the derived read-out (the effective mode may have moved);
       // the form is left alone. Best effort: a failure keeps the old read-out.
-      const token = ++requestSeq.current;
+      const loadAt = requestSeq.current;
+      const token = ++refreshSeq.current;
       try {
         const refreshed = await runnerApi.getAiSettings();
-        if (token === requestSeq.current) setDerived(readDerived(refreshed));
+        if (token === refreshSeq.current && loadAt === requestSeq.current) {
+          setDerived(readDerived(refreshed));
+        }
       } catch {
         /* keep the previous derived values */
       }
