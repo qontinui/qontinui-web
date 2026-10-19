@@ -61,6 +61,6 @@ export function middleware(request: NextRequest) {
 // Skip static assets, image optimization, and Next.js internals.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sw.js|sitemap.xml|robots.txt|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|json|js|css|map|woff|woff2|ttf|otf)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|sitemap.xml|robots.txt|.*\\.(?:png|jpg|jpeg|gif|svg|webp|avif|ico|json|js|css|map|woff|woff2|ttf|otf)$).*)",
   ],
 };

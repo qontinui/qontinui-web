@@ -1,4 +1,5 @@
 import type { ImageSlotSpec } from "@qontinui/shared-types";
+import { createHash } from "crypto";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,13 +26,20 @@ const EMPTY: ManifestRead = {
   ok: true,
   manifest: { generated_by: "qontinui-studio", slots: {} },
 };
+const bytes = (text: string) => new TextEncoder().encode(text);
+const sha256 = (data: Uint8Array) =>
+  createHash("sha256").update(data).digest("hex");
+const PNG = bytes("png bytes");
 const BOUND: ManifestRead = {
   ok: true,
   manifest: {
     generated_by: "qontinui-studio",
-    slots: { "s.one": { files: { png: "s.one.png" }, sha256: { png: A } } },
+    slots: {
+      "s.one": { files: { png: "s.one.png" }, sha256: { png: sha256(PNG) } },
+    },
   },
 };
+const PUBLISHED_PNG = [{ name: "s.one.png", bytes: PNG }];
 
 function input(overrides: Partial<InventoryInput> = {}): InventoryInput {
   return {
@@ -43,9 +51,8 @@ function input(overrides: Partial<InventoryInput> = {}): InventoryInput {
     placements: [
       { file: "src/a.tsx", line: 3, slot: "s.one", expression: '"s.one"' },
     ],
-    publishedFiles: new Set(["studio-manifest.json"]),
+    published: [],
     authoredSvgs: {},
-    publishedSvgs: [],
     lucideComponents: new Set(["CircleUser"]),
     parse: (text) => new DOMParser().parseFromString(text, "image/svg+xml"),
     render: (slot) => PLACEHOLDER(slot),
@@ -141,7 +148,7 @@ describe("buildInventory", () => {
     const inventory = buildInventory(
       input({
         manifest: BOUND,
-        publishedFiles: new Set(["studio-manifest.json", "s.one.png"]),
+        published: PUBLISHED_PNG,
         render: (slot) => (slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot)),
       })
     );
@@ -170,7 +177,7 @@ describe("buildInventory", () => {
             },
           },
         },
-        publishedFiles: new Set(["g.png"]),
+        published: [{ name: "g.png", bytes: PNG }],
       },
       'the manifest binds slot "s.ghost", which no image-slots/s.ghost.yaml declares',
     ],
@@ -293,7 +300,7 @@ describe("authored inline SVGs in the inventory", () => {
     const inventory = buildInventory(
       input({
         manifest: BOUND,
-        publishedFiles: new Set(["studio-manifest.json", "s.one.png"]),
+        published: PUBLISHED_PNG,
         authoredSvgs: { "s.one": SVG },
         render: (slot) =>
           PLACEHOLDER(slot, slot === "s.one" ? "asset_conflict" : "no_asset"),
@@ -305,37 +312,81 @@ describe("authored inline SVGs in the inventory", () => {
   });
 });
 
-describe("published SVGs in the inventory", () => {
+describe("published files in the inventory", () => {
   const NS = "http://www.w3.org/2000/svg";
   const MARKED =
     `<svg xmlns="${NS}" viewBox="0 0 1 1"><metadata><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
     '<rdf:Description rdf:about="" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" Iptc4xmpExt:DigitalSourceType="http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"/>' +
     '</rdf:RDF></x:xmpmeta></metadata><path d="M0 0" fill="#123456"/></svg>';
+  // A traced slot: studio publishes the SVG and a PNG beside it.
+  const traced = (svgName: string, svgText: string) =>
+    input({
+      manifest: {
+        ok: true,
+        manifest: {
+          generated_by: "qontinui-studio",
+          slots: {
+            "s.one": {
+              files: { svg: svgName, png: "s.one.png" },
+              sha256: { svg: sha256(bytes(svgText)), png: sha256(PNG) },
+            },
+          },
+        },
+      },
+      published: [
+        { name: svgName, bytes: bytes(svgText) },
+        { name: "s.one.png", bytes: PNG },
+      ],
+      render: (slot) => (slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot)),
+    });
 
-  it("passes a marked trace", () => {
-    expect(
-      buildInventory(
-        input({ publishedSvgs: [{ name: "t.svg", text: MARKED }] })
-      ).defects
-    ).toEqual([]);
+  it("passes a marked trace the manifest names with its digests", () => {
+    expect(buildInventory(traced("s.one.svg", MARKED)).defects).toEqual([]);
   });
 
-  it("fails on one the allowlist refuses", () => {
+  it("fails on an SVG the allowlist refuses", () => {
     const text = MARKED.replace("<path", '<path onclick="x()"');
-    expect(
-      buildInventory(input({ publishedSvgs: [{ name: "t.svg", text }] }))
-        .defects
-    ).toEqual([
-      "public/image-slots/t.svg is refused by the SVG allowlist: <path> attribute onclick is not allowed",
+    expect(buildInventory(traced("s.one.svg", text)).defects).toEqual([
+      "public/image-slots/s.one.svg is refused by the SVG allowlist: <path> attribute onclick is not allowed",
     ]);
   });
 
-  it("fails on an unmarked one", () => {
+  it("checks an SVG whatever the case of its extension", () => {
+    const text = MARKED.replace("<path", '<path onclick="x()"');
+    expect(buildInventory(traced("s.one.SVG", text)).defects).toEqual([
+      "public/image-slots/s.one.SVG is refused by the SVG allowlist: <path> attribute onclick is not allowed",
+    ]);
+  });
+
+  it("fails on an unmarked SVG", () => {
     const text = MARKED.replace(/<metadata>.*<\/metadata>/, "");
-    expect(
-      buildInventory(input({ publishedSvgs: [{ name: "t.svg", text }] }))
-        .defects
-    ).toEqual(["public/image-slots/t.svg carries no IPTC AI-generated marker"]);
+    expect(buildInventory(traced("s.one.svg", text)).defects).toEqual([
+      "public/image-slots/s.one.svg carries no IPTC AI-generated marker",
+    ]);
+  });
+
+  it("fails on a file that does not hash to the digest the manifest records", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: BOUND,
+        published: [{ name: "s.one.png", bytes: bytes("other bytes") }],
+        render: (slot) => (slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot)),
+      })
+    );
+    expect(inventory.defects).toEqual([
+      'public/image-slots/s.one.png does not hash to the sha256 the manifest\'s slot "s.one" records for png',
+    ]);
+  });
+
+  it("fails on a file no manifest entry names, whatever its type", () => {
+    for (const name of ["stray.png", "stray.SVG", "notes.txt"]) {
+      const inventory = buildInventory(
+        input({ published: [{ name, bytes: bytes(MARKED) }] })
+      );
+      expect(inventory.defects).toContain(
+        `public/image-slots/${name} is named by no manifest entry`
+      );
+    }
   });
 });
 

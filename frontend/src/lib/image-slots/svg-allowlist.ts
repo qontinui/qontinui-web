@@ -314,7 +314,14 @@ function checkMetadata(metadata: Element): boolean {
   const rdf = rdfs[0] as Element;
   declarationsOnly(rdf);
   let marked = false;
-  for (const description of only(rdf, RDF_NS, "Description")) {
+  const descriptions = only(rdf, RDF_NS, "Description");
+  if (descriptions.length !== 1) {
+    throw new SvgRefused("rdf:RDF holds exactly one rdf:Description");
+  }
+  for (const description of descriptions) {
+    if (description.getAttributeNS(RDF_NS, "about") !== "") {
+      throw new SvgRefused('the rdf:Description carries rdf:about=""');
+    }
     for (const node of Array.from(description.childNodes)) {
       if (node.nodeType !== TEXT_NODE || (node.nodeValue ?? "").trim() !== "") {
         throw new SvgRefused("rdf:Description holds nothing");
@@ -366,6 +373,9 @@ function checkElement(
     throw new SvgRefused("a nested <svg> is not allowed");
   }
   if (name === "metadata") {
+    if (el.parentNode !== el.ownerDocument.documentElement) {
+      throw new SvgRefused("<metadata> is a direct child of the root <svg>");
+    }
     if (state.metadata > 0) {
       throw new SvgRefused("one <metadata> at most");
     }

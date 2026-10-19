@@ -244,6 +244,39 @@ describe("the allowlist refuses", () => {
       refuses(meta(inner));
     });
 
+    const packet = (descriptions: string) =>
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+      descriptions +
+      "</rdf:RDF></x:xmpmeta>";
+    const DESCRIPTION = `<rdf:Description rdf:about="" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" Iptc4xmpExt:DigitalSourceType="${DIGITAL_SOURCE_TYPE}"/>`;
+
+    it.each<[string, string, RegExp]>([
+      ["no rdf:Description", meta(packet("")), /exactly one rdf:Description/],
+      [
+        "two rdf:Descriptions",
+        meta(packet(DESCRIPTION + DESCRIPTION)),
+        /exactly one rdf:Description/,
+      ],
+      [
+        "an rdf:Description without rdf:about",
+        meta(packet(DESCRIPTION.replace('rdf:about="" ', ""))),
+        /carries rdf:about=""/,
+      ],
+      [
+        "<metadata> nested below the root",
+        `<svg xmlns="${SVG_NS}" viewBox="0 0 4 3"><g><metadata>${packet(DESCRIPTION)}</metadata></g></svg>`,
+        /direct child of the root/,
+      ],
+    ])("refuses %s, for that reason", (_, text, reason) => {
+      expect(() => checkSvg(text, AUTHORED, parse)).toThrow(reason);
+    });
+
+    it("accepts the one-Description packet at the root", () => {
+      expect(checkSvg(meta(packet(DESCRIPTION)), AUTHORED, parse).marked).toBe(
+        true
+      );
+    });
+
     it("refuses a second <metadata>", () => {
       refuses(doc(MARKER));
     });
