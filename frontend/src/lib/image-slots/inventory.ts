@@ -29,6 +29,8 @@
  */
 
 import { createHash } from "crypto";
+import fs from "fs";
+import path from "path";
 import ts from "typescript";
 import type { ImageSlotSpec } from "@qontinui/shared-types";
 import {
@@ -148,6 +150,27 @@ export interface Inventory {
   defects: string[];
 }
 
+/** One entry of `public/image-slots/`: a file's bytes, or `null` for
+ *  anything that is not a regular file (a directory, a socket, …). */
+export interface PublishedEntry {
+  name: string;
+  bytes: Uint8Array | null;
+}
+
+/** Every entry of the publish dir but the manifest, read without assuming
+ *  each is a file: a subdirectory is reported, never read. */
+export function readPublishDir(dir: string): PublishedEntry[] {
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.name !== "studio-manifest.json")
+    .map((entry) => ({
+      name: entry.name,
+      bytes: entry.isFile()
+        ? new Uint8Array(fs.readFileSync(path.join(dir, entry.name)))
+        : null,
+    }));
+}
+
 export interface InventoryInput {
   specs: Readonly<Record<string, ImageSlotSpec>>;
   manifest: ManifestRead;
@@ -157,7 +180,7 @@ export interface InventoryInput {
    *  entry records, and every SVG among them (any case of `.svg`) must pass
    *  the SVG allowlist (published profile) and carry the IPTC marker, since
    *  it is a same-origin document when opened directly. */
-  published: ReadonlyArray<{ name: string; bytes: Uint8Array }>;
+  published: ReadonlyArray<PublishedEntry>;
   /** Agent-authored inline SVGs (`image-slots/<slot>.svg`), by slot id. */
   authoredSvgs: Readonly<Record<string, AuthoredSvg>>;
   /** The XML parser the SVG allowlist checks with. */
@@ -171,12 +194,16 @@ export interface InventoryInput {
 export function buildInventory(input: InventoryInput): Inventory {
   const defects: string[] = [];
   const declared = new Set(Object.keys(input.specs));
-  const digests = new Map(
-    input.published.map(({ name, bytes }) => [
-      name,
-      createHash("sha256").update(bytes).digest("hex"),
-    ])
-  );
+  const digests = new Map<string, string>();
+  for (const { name, bytes } of input.published) {
+    if (bytes === null) {
+      defects.push(
+        `public/image-slots/${name} is not a file: the publish dir holds only the files studio publishes`
+      );
+    } else {
+      digests.set(name, createHash("sha256").update(bytes).digest("hex"));
+    }
+  }
   const named = new Set<string>();
 
   if (!input.manifest.ok) {
@@ -219,6 +246,9 @@ export function buildInventory(input: InventoryInput): Inventory {
   }
 
   for (const { name, bytes } of input.published) {
+    if (bytes === null) {
+      continue;
+    }
     if (input.manifest.ok && !named.has(name)) {
       defects.push(`public/image-slots/${name} is named by no manifest entry`);
     }

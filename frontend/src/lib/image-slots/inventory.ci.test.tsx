@@ -19,6 +19,7 @@ import { SlotImage } from "@/components/image-slot/SlotImage";
 import {
   buildInventory,
   findPlacements,
+  readPublishDir,
   renderAnnotations,
   renderMarkdown,
   type SlotPlacement,
@@ -62,14 +63,7 @@ function realInventory() {
     specs: IMAGE_SLOT_SPECS,
     manifest: SLOT_MANIFEST,
     placements,
-    // Everything in the publish dir but the manifest itself.
-    published: fs
-      .readdirSync(publishDir)
-      .filter((name) => name !== "studio-manifest.json")
-      .map((name) => ({
-        name,
-        bytes: new Uint8Array(fs.readFileSync(path.join(publishDir, name))),
-      })),
+    published: readPublishDir(publishDir),
     authoredSvgs: IMAGE_SLOT_AUTHORED_SVG,
     parse: (text) => new DOMParser().parseFromString(text, "image/svg+xml"),
     lucideComponents: new Set(Object.keys(IMAGE_SLOT_LUCIDE)),

@@ -93,7 +93,13 @@ describe("middleware — image-slot files", () => {
   const EXTENSIONS = FORMATS.map(([, , extension]) => extension);
 
   it("covers every format the slot reader serves", () => {
-    expect(EXTENSIONS.sort()).toEqual(["avif", "jpg", "png", "svg", "webp"]);
+    expect([...EXTENSIONS].sort()).toEqual([
+      "avif",
+      "jpg",
+      "png",
+      "svg",
+      "webp",
+    ]);
   });
 
   it.each(EXTENSIONS)(
