@@ -31,6 +31,7 @@ export default function AiSettingsPage() {
     loadError,
     retryLoad,
     derived,
+    rosterDirty,
     saving,
     testing,
     provider,
@@ -93,6 +94,7 @@ export default function AiSettingsPage() {
           config={claudeCli}
           onChange={setClaudeCli}
           derived={derived}
+          previewEnabled={rosterDirty}
           canReachAdmin={isCoordAdmin}
         />
       )}

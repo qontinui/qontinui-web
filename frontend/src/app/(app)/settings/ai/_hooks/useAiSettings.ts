@@ -67,7 +67,11 @@ export function useAiSettings() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [derived, setDerived] = useState<DerivedAccountSelection>({});
-  const baselineRef = useRef<RosterBaseline>({});
+  // Loaded/saved roster values: a key is sent only when the form differs.
+  const [baseline, setBaseline] = useState<RosterBaseline>({});
+  // Last CALL wins: every load and post-save refresh takes a token, and a
+  // response whose token is no longer current is ignored.
+  const requestSeq = useRef(0);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -109,13 +113,15 @@ export function useAiSettings() {
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState("");
 
   const loadSettings = useCallback(async () => {
+    const token = ++requestSeq.current;
     try {
       setLoading(true);
       const view = await runnerApi.getAiSettings();
+      if (token !== requestSeq.current) return;
       // Derived keys live beside the stored document, never inside it.
       const settings: AiSettings = view;
       setDerived(readDerived(view));
-      baselineRef.current = rosterOf(settings.claude_cli);
+      setBaseline(rosterOf(settings.claude_cli));
       setProvider(settings.provider);
       setClaudeCli(settings.claude_cli);
       setClaudeApi(settings.claude_api);
@@ -128,16 +134,18 @@ export function useAiSettings() {
         runnerApi.hasAiApiKey("claude_api").catch(() => ({ has_key: false })),
         runnerApi.hasAiApiKey("gemini_api").catch(() => ({ has_key: false })),
       ]);
+      if (token !== requestSeq.current) return;
       setClaudeApiKeyConfigured(claudeKeyResult.has_key);
       setGeminiApiKeyConfigured(geminiKeyResult.has_key);
       setLoaded(true);
       setLoadError(null);
     } catch (err) {
+      if (token !== requestSeq.current) return;
       const msg = runnerFailureMessage(err, "Failed to load AI settings");
       setLoadError(msg);
       toast.error(msg);
     } finally {
-      setLoading(false);
+      if (token === requestSeq.current) setLoading(false);
     }
   }, [runnerApi]);
 
@@ -147,6 +155,13 @@ export function useAiSettings() {
     }
   }, [isOffline, loadSettings]);
 
+  // The account-selection edits the form holds that the runner has not seen.
+  const rosterDirty =
+    (claudeCli.account_selection_mode !== undefined &&
+      claudeCli.account_selection_mode !== baseline.account_selection_mode) ||
+    (claudeCli.account_selection_pinned !== undefined &&
+      claudeCli.account_selection_pinned !== baseline.account_selection_pinned);
+
   const handleSave = async () => {
     if (!loaded) return;
     try {
@@ -155,7 +170,6 @@ export function useAiSettings() {
       // value, while an explicit null CLEARS it, so an unedited key is deleted
       // from the body rather than sent as undefined/null.
       const cli: Record<string, unknown> = { ...claudeCli };
-      const baseline = baselineRef.current;
       for (const k of ROSTER_KEYS) {
         if (!(k in cli) || cli[k] === baseline[k]) delete cli[k];
       }
@@ -169,12 +183,16 @@ export function useAiSettings() {
         interactive_sessions_enabled: interactiveSessionsEnabled,
       };
       await runnerApi.saveAiSettings(settings);
-      baselineRef.current = rosterOf(claudeCli);
+      // The snapshot that was SENT: an edit made while the save was in flight
+      // differs from it, so it stays dirty and is resent next time.
+      setBaseline(rosterOf(claudeCli));
       toast.success("AI settings saved");
       // Refresh only the derived read-out (the effective mode may have moved);
       // the form is left alone. Best effort: a failure keeps the old read-out.
+      const token = ++requestSeq.current;
       try {
-        setDerived(readDerived(await runnerApi.getAiSettings()));
+        const refreshed = await runnerApi.getAiSettings();
+        if (token === requestSeq.current) setDerived(readDerived(refreshed));
       } catch {
         /* keep the previous derived values */
       }
@@ -242,6 +260,7 @@ export function useAiSettings() {
     loadError,
     retryLoad: loadSettings,
     derived,
+    rosterDirty,
     saving,
     testing,
 

@@ -21,8 +21,9 @@ vi.mock("@/lib/runner-api", () => {
     runnerFailureMessage: (_e: unknown, fallback: string) => fallback,
   };
 });
+const auth = vi.hoisted(() => ({ isCoordAdmin: false }));
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: false }),
+  useAuth: () => ({ isCoordAdmin: auth.isCoordAdmin }),
 }));
 vi.mock("@/hooks/usePageSpecs", () => ({ usePageSpecs: () => {} }));
 vi.mock("@/lib/ui-bridge/use-discovered-specs", () => ({
@@ -72,6 +73,7 @@ const VIEW = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.isCoordAdmin = false;
   saveAiSettings.mockResolvedValue(undefined);
 });
 
@@ -110,4 +112,24 @@ describe("AiSettingsPage", () => {
     fireEvent.click(save);
     expect(saveAiSettings).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])(
+    "fleet source link for isCoordAdmin=%s renders an anchor: %s",
+    async (isAdmin, anchor) => {
+      auth.isCoordAdmin = isAdmin;
+      getAiSettings.mockResolvedValue(VIEW);
+      render(<AiSettingsPage />);
+      const src = await screen.findByTestId("source");
+      expect(src.textContent).toBe("Managed by fleet policy");
+      const a = src.querySelector("a");
+      if (anchor) {
+        expect(a?.getAttribute("href")).toBe("/admin/coord/tenant-policy");
+      } else {
+        expect(a).toBeNull();
+      }
+    }
+  );
 });
