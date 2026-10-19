@@ -24,8 +24,9 @@ function capitalise(s: string): string {
  * `policy_write` and `policy_upstream` on prompt documents;
  * `command_safety_rewrite`, `permission_prompt_capture`,
  * `account_selection_mode` and `image_generation` on tenant policy;
- * `github_hosted_ci` on Dev Ops ▸ CI). Each domain's hook binds `domain` + `label` and layers its own level vocabulary on top
- * (a no-row default, a fail-closed parse), so the honesty properties below are
+ * `github_hosted_ci` on Dev Ops ▸ CI). Each domain's hook binds `domain` +
+ * `label` and layers its own level vocabulary on top (a no-row default, a
+ * fail-closed parse), so the honesty properties below are
  * stated and tested once rather than drifting between copies — the four used
  * to be hand-copied, and the refresh-vs-write race fix reached only two.
  *

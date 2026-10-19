@@ -35,9 +35,12 @@ export type CommandSafetyRewriteLevel =
  *
  * When `on`, a runner registers a capture hook in the settings carrier it
  * hands each Claude Code session, and records every permission prompt that
- * session raises — the prompt's reason text, the tool, and a redacted command
- * excerpt — as a finding in this tenant's coord findings, which the findings
- * steward folds into one dossier per prompt class. A separate consent from
+ * session raises — the tool and its first command word, counts, first/last
+ * seen, permission modes and redacted command excerpts, once an hour per
+ * kind of prompt and per machine (the prompt's own wording is not in any hook
+ * payload, plan Phase 0) — as a finding in this tenant's coord findings,
+ * which the findings steward folds into one dossier per prompt class. A
+ * separate consent from
  * {@link COMMAND_SAFETY_REWRITE_DOMAIN} because it sends command text. Like
  * that dial, the runner decides at spawn, so a change reaches only terminals
  * and agent sessions started after it. Plan

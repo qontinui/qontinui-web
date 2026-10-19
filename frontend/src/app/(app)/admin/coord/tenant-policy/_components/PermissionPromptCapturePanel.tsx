@@ -104,27 +104,35 @@ export function PermissionPromptCapturePanel() {
               className="mt-2 max-w-2xl text-xs text-muted-foreground"
               data-testid="permission-prompt-capture-what-is-sent"
             >
-              <p>What is sent for each prompt:</p>
+              <p>
+                What is sent, at most once an hour per kind of prompt and per
+                machine:
+              </p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 <li>
-                  the prompt&apos;s reason text, as it appears in the prompt;
-                </li>
-                <li>the tool it was raised for;</li>
-                <li>
-                  a redacted excerpt of the command, at most 300 characters:
-                  known secret patterns (keys, tokens, bearer values) and the
-                  values of <code>VAR=value</code> assignments are redacted, but
-                  a secret of an unusual shape can get through;
-                </li>
-                <li>
-                  the working directory, reduced to its last two path
-                  components;
+                  the tool and the command&apos;s first word, which name the
+                  kind of prompt;
                 </li>
                 <li>
                   how often it happened, when it was first and last seen, and
-                  the permission modes it was seen under, per machine.
+                  the permission modes it was seen under;
+                </li>
+                <li>
+                  up to 3 redacted command excerpts, at most 300 characters
+                  each: known secret patterns (keys, tokens, bearer values) and
+                  the values of <code>VAR=value</code> assignments are redacted,
+                  but a secret of an unusual shape can get through;
+                </li>
+                <li>
+                  the working directory, reduced to its last two path
+                  components.
                 </li>
               </ul>
+              <p className="mt-1">
+                The prompt&apos;s own wording is not visible to the runner; it
+                is recorded only when someone pastes it with{" "}
+                <code>/permission-prompts record</code>.
+              </p>
               <p className="mt-1">
                 Where it goes: this tenant&apos;s coord findings, where the
                 findings steward folds them into one dossier per kind of prompt.
@@ -219,7 +227,7 @@ export function PermissionPromptCapturePanel() {
               No policy row answered for this tenant, so nobody chose this
               level. This read returned <code>{current}</code>
               {current === "off"
-                ? ", which is also what this console shows when coord reports no level at all; coord's own default for this setting, for a tenant with no row, is on"
+                ? ", which is also what this console shows when coord reports no level at all; coord builds carrying this plan's Phase 1 change default this setting to on"
                 : ""}
               . Pick a level to write an explicit row.
             </p>

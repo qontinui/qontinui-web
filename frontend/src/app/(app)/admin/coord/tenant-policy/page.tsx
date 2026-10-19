@@ -16,8 +16,8 @@
  *   Phase 4);
  * * permission-prompt capture — the `permission_prompt_capture` fleet-policy
  *   dial that decides whether runners hand new sessions the hook that records
- *   each permission prompt (reason text, tool, a redacted command excerpt) in
- *   this tenant's coord findings (plan
+ *   each permission prompt (tool, first command word, counts, redacted command
+ *   excerpts) in this tenant's coord findings (plan
  *   `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`
  *   Phase 5);
  * * account selection — the `account_selection_mode` fleet-policy dial that

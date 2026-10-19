@@ -57,10 +57,18 @@ describe("PermissionPromptCapturePanel", () => {
     const sent =
       screen.getByTestId("permission-prompt-capture-what-is-sent")
         .textContent ?? "";
-    expect(sent).toMatch(/reason text, as it appears in the prompt/);
-    expect(sent).toMatch(/the tool it was raised for/);
     expect(sent).toMatch(
-      /redacted excerpt of the command, at most 300\s+characters/
+      /at most once an hour per kind of prompt and per\s+machine/
+    );
+    // Phase 0: no hook payload carries the prompt's reason text, so the
+    // panel must not claim to send it.
+    expect(sent).not.toMatch(/reason text/);
+    expect(sent).toMatch(/the tool and the command.s first word/);
+    expect(sent).toMatch(
+      /how often it happened, when it was first and last seen, and\s+the permission modes it was seen under/
+    );
+    expect(sent).toMatch(
+      /up to 3 redacted command excerpts, at most 300 characters\s+each/
     );
     // Redaction is pattern-based, and the copy must not promise more.
     expect(sent).toMatch(
@@ -72,7 +80,7 @@ describe("PermissionPromptCapturePanel", () => {
       /working directory, reduced to its last two\s+path\s+components/
     );
     expect(sent).toMatch(
-      /how often it happened, when it was first and last seen, and\s+the permission modes it was seen under, per machine/
+      /own wording is not visible to the runner.*\/permission-prompts record/
     );
     expect(sent).toMatch(/this tenant.s coord findings/);
     expect(sent).toMatch(/dossier/);
@@ -116,7 +124,7 @@ describe("PermissionPromptCapturePanel", () => {
     const copy = screen.getByTestId("permission-prompt-capture-no-row");
     expect(copy.querySelector("code")?.textContent).toBe("on");
     expect(copy.textContent).toMatch(/nobody chose this level/);
-    expect(copy.textContent).not.toMatch(/coord's own default/);
+    expect(copy.textContent).not.toMatch(/default this setting to on/);
   });
 
   it("does not attribute a no-row `off` to coord — it may be the display floor", () => {
@@ -133,7 +141,7 @@ describe("PermissionPromptCapturePanel", () => {
     expect(copy.querySelector("code")?.textContent).toBe("off");
     expect(copy.textContent).not.toMatch(/coord reports as/);
     expect(copy.textContent).toMatch(
-      /coord's own default for this setting, for a tenant with no row, is on/
+      /coord builds carrying this plan's Phase 1 change default this setting to on/
     );
   });
 
