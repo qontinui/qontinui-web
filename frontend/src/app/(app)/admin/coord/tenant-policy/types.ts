@@ -1,6 +1,7 @@
 /**
  * Level vocabularies for the tenant-policy page's fleet-policy dials (the
- * command-safety rewrite, the account-selection mode and image generation).
+ * command-safety rewrite, permission-prompt capture, the account-selection
+ * mode and image generation).
  * The wire shapes — the fleet-policy view and the transcript-sync consent
  * proxy — live with their client in `@/lib/api/operations/tenantPolicy`.
  */
@@ -23,6 +24,30 @@ export const COMMAND_SAFETY_REWRITE_DOMAIN = "command_safety_rewrite";
 export const COMMAND_SAFETY_REWRITE_LEVELS = ["on", "off"] as const;
 export type CommandSafetyRewriteLevel =
   (typeof COMMAND_SAFETY_REWRITE_LEVELS)[number];
+
+// ─────────────────────── permission-prompt capture dial ───────────────────────
+
+/**
+ * The fleet-policy domain the permission-prompt capture toggle writes. Levels:
+ * `on` | `off`; coord's no-row default is `on` (qontinui-coord
+ * `PERMISSION_PROMPT_CAPTURE_DEFAULT`).
+ *
+ * When `on`, a runner registers a capture hook in the settings carrier it
+ * hands each Claude Code session, and records every permission prompt that
+ * session raises — the prompt's reason text, the tool, and a redacted command
+ * excerpt — as a finding in this tenant's coord findings, which the findings
+ * steward folds into one dossier per prompt class. A separate consent from
+ * {@link COMMAND_SAFETY_REWRITE_DOMAIN} because it sends command text. Like
+ * that dial, the runner decides at spawn, so a change reaches only terminals
+ * and agent sessions started after it. Plan
+ * `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`
+ * D6/D7.
+ */
+export const PERMISSION_PROMPT_CAPTURE_DOMAIN = "permission_prompt_capture";
+
+export const PERMISSION_PROMPT_CAPTURE_LEVELS = ["on", "off"] as const;
+export type PermissionPromptCaptureLevel =
+  (typeof PERMISSION_PROMPT_CAPTURE_LEVELS)[number];
 
 // ───────────────────────── account-selection mode dial ─────────────────────────
 
