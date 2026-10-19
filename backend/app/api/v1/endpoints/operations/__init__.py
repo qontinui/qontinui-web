@@ -1265,9 +1265,12 @@ async def set_pr_hold(
     """
     held = body.get("held")
     if not isinstance(held, bool):
-        raise HTTPException(
-            status_code=400,
-            detail="hold body requires a boolean `held` field",
+        raise refusal_error(
+            400,
+            RefusalCode.invalid_request,
+            NextActionKind.fix_request,
+            "hold body requires a boolean `held` field",
+            discriminator="pr_hold_held_not_bool",
         )
     forwarded: dict[str, Any] = {"held": held}
     for key in _PR_HOLD_FORWARDED_KEYS[1:]:
@@ -1275,9 +1278,12 @@ async def set_pr_hold(
         if value is None:
             continue
         if not isinstance(value, str):
-            raise HTTPException(
-                status_code=400,
-                detail=f"hold body field `{key}` must be a string",
+            raise refusal_error(
+                400,
+                RefusalCode.invalid_request,
+                NextActionKind.fix_request,
+                f"hold body field `{key}` must be a string",
+                discriminator="pr_hold_field_not_string",
             )
         forwarded[key] = value
     return await _proxy_coord_post(
