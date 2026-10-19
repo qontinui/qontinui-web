@@ -5,6 +5,7 @@
 // 2026-10-13-image-generation-and-visual-judgment, Phase 14.
 
 import type { ImageSlotSpec } from "@qontinui/shared-types";
+import type { AuthoredSvg } from "./manifest";
 
 /** Every declared image slot's spec, keyed by slot id. */
 export const IMAGE_SLOT_SPECS = {
@@ -81,11 +82,12 @@ export function imageSlotSpec(slot: ImageSlotId): ImageSlotSpec {
 }
 
 /** Agent-authored inline SVGs (`image-slots/<slot>.svg`, studio's `svg`
- *  route), keyed by slot id. */
-export const IMAGE_SLOT_AUTHORED_SVG: Readonly<Record<string, string>> = {};
+ *  route), keyed by slot id: checked against the SVG allowlist and
+ *  re-serialised from the parsed tree at generation, never passed through. */
+export const IMAGE_SLOT_AUTHORED_SVG: Readonly<Record<string, AuthoredSvg>> = {};
 
 /** A slot's authored inline SVG, when it has one. */
-export function imageSlotAuthoredSvg(slot: string): string | undefined {
+export function imageSlotAuthoredSvg(slot: string): AuthoredSvg | undefined {
   return Object.hasOwn(IMAGE_SLOT_AUTHORED_SVG, slot)
     ? IMAGE_SLOT_AUTHORED_SVG[slot]
     : undefined;

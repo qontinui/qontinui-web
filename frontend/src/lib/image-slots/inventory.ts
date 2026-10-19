@@ -32,10 +32,17 @@ import {
   PLACEHOLDER_REASON_TEXT,
   resolveSlotImage,
   servableFiles,
+  type AuthoredSvg,
   type ManifestRead,
   type PlaceholderReason,
   type SlotResolution,
 } from "./manifest";
+import {
+  PUBLISHED_PROFILE,
+  SvgRefused,
+  checkSvg,
+  type XmlParse,
+} from "./svg-allowlist";
 
 /** One `<SlotImage>` element in the app's source. */
 export interface SlotPlacement {
@@ -145,7 +152,13 @@ export interface InventoryInput {
   /** File names present in `public/image-slots/`. */
   publishedFiles: ReadonlySet<string>;
   /** Agent-authored inline SVGs (`image-slots/<slot>.svg`), by slot id. */
-  authoredSvgs: Readonly<Record<string, string>>;
+  authoredSvgs: Readonly<Record<string, AuthoredSvg>>;
+  /** Every `public/image-slots/*.svg`, which is a same-origin document when
+   *  opened directly: each must pass the SVG allowlist (published profile)
+   *  and carry the IPTC marker. */
+  publishedSvgs: ReadonlyArray<{ name: string; text: string }>;
+  /** The XML parser the SVG allowlist checks with. */
+  parse: XmlParse;
   /** `<SlotImage slot>`'s markup, rendered for real. */
   render: (slot: string) => string;
 }
@@ -177,6 +190,23 @@ export function buildInventory(input: InventoryInput): Inventory {
           `the manifest's slot "${slot}" names no file this app can serve`
         );
       }
+    }
+  }
+
+  for (const { name, text } of input.publishedSvgs) {
+    try {
+      if (!checkSvg(text, PUBLISHED_PROFILE, input.parse).marked) {
+        defects.push(
+          `public/image-slots/${name} carries no IPTC AI-generated marker`
+        );
+      }
+    } catch (e) {
+      if (!(e instanceof SvgRefused)) {
+        throw e;
+      }
+      defects.push(
+        `public/image-slots/${name} is refused by the SVG allowlist: ${e.message}`
+      );
     }
   }
 

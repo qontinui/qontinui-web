@@ -23,7 +23,16 @@
  * and the drift test share it without either touching the other's I/O.
  */
 
+import { createHash } from "crypto";
 import { parseDocument } from "yaml";
+
+import {
+  authoredProfile,
+  checkSvg,
+  serializeSvg,
+  SvgRefused,
+  type XmlParse,
+} from "./svg-allowlist";
 
 /** One file as read from `frontend/image-slots/`: a spec, or a slot's
  *  agent-authored inline SVG. */
@@ -52,41 +61,71 @@ export const SPEC_DIR = "image-slots";
 const SPEC_FILE = /^(.+)\.yaml$/;
 const SVG_FILE = /^(.+)\.svg$/;
 
-/** What an authored SVG must not carry, whatever studio's validator said:
- *  it is rendered INLINE, into the page's own DOM. Studio's `svg` route
- *  (`compiler/selected.py`) admits only drawing elements, so none of these
- *  appears in an SVG studio accepted; this is the web side's own floor. */
-const SVG_FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
-  [/<!DOCTYPE|<!ENTITY/i, "a DTD or entity declaration"],
-  [/<\s*script\b/i, "a <script> element"],
-  [/<\s*style\b/i, "a <style> element"],
-  [/<\s*foreignObject\b/i, "a <foreignObject> element"],
-  [/\son[a-z]+\s*=/i, "an event-handler attribute"],
-  [/\b(?:xlink:)?href\s*=/i, "an href (nothing inline may fetch or link)"],
-  [/javascript:/i, "a javascript: URL"],
-];
+/** An authored SVG's state, decided at generation:
+ *  - `current`: marked, and made for the spec as it stands;
+ *  - `stale`: its `data-slot-spec-sha256` is not the spec's content hash
+ *    (the spec changed since it was drawn, as studio's `authored_stale`);
+ *  - `unmarked`: no IPTC AI-generated marker in its `<metadata>`.
+ *  Only a `current` one renders; the others render the placeholder. */
+export type AuthoredSvgStatus = "current" | "stale" | "unmarked";
 
-/** The SVG document, prologue removed, or a refusal. */
-function parseAuthoredSvg(source: SpecSource): [string, string] {
-  const slot = SVG_FILE.exec(source.name)?.[1] as string;
-  const markup = source.text
-    .replace(/^\uFEFF?\s*(<\?xml[^>]*\?>\s*)?/, "")
-    .trimEnd();
-  if (!/^<svg[\s>]/.test(markup)) {
-    throw new SpecSourceError(
-      source.name,
-      "an authored SVG's root element is <svg>"
+/** The spec's content address, as qontinui-schemas'
+ *  `ImageSlotSpec::content_sha256` computes it: sha256 of its RFC 8785
+ *  canonical JSON, `provenance` left out and absent optional fields omitted.
+ *  For the values a spec holds (strings, finite numbers, booleans, lists and
+ *  maps) JavaScript's own `JSON.stringify` of a number and a string IS the
+ *  RFC 8785 form, and the default sort orders keys by UTF-16 code units. */
+export function specContentSha256(spec: Record<string, unknown>): string {
+  const canonical = (value: unknown): string => {
+    if (Array.isArray(value)) {
+      return `[${value.map(canonical).join(",")}]`;
+    }
+    if (value !== null && typeof value === "object") {
+      const entries = Object.entries(value as Record<string, unknown>)
+        .filter(([, v]) => v !== null && v !== undefined)
+        .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+      return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
+    }
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new Error(`${value} has no RFC 8785 form`);
+    }
+    return JSON.stringify(value);
+  };
+  const { provenance: _provenance, ...authored } = spec;
+  return createHash("sha256").update(canonical(authored), "utf8").digest("hex");
+}
+
+/** Check, re-serialise and classify one authored SVG. */
+export function compileAuthoredSvg(
+  file: string,
+  text: string,
+  spec: Record<string, unknown>,
+  parse: XmlParse
+): { status: AuthoredSvgStatus; markup: string } {
+  const textInImage = (spec.text_in_image as { kind?: unknown } | undefined)
+    ?.kind;
+  let checked;
+  try {
+    checked = checkSvg(
+      text,
+      authoredProfile(textInImage !== "forbidden"),
+      parse
     );
-  }
-  for (const [pattern, what] of SVG_FORBIDDEN) {
-    if (pattern.test(markup)) {
+  } catch (e) {
+    if (e instanceof SvgRefused) {
       throw new SpecSourceError(
-        source.name,
-        `is rendered inline and carries ${what}`
+        file,
+        `is rendered inline and is refused: ${e.message}`
       );
     }
+    throw e;
   }
-  return [slot, markup];
+  const status: AuthoredSvgStatus = !checked.marked
+    ? "unmarked"
+    : checked.specSha256 !== specContentSha256(spec)
+      ? "stale"
+      : "current";
+  return { status, markup: serializeSvg(checked) };
 }
 
 function parseSpec(source: SpecSource): [string, Record<string, unknown>] {
@@ -126,29 +165,31 @@ const bySlot = <T>([a]: [string, T], [b]: [string, T]) =>
   a < b ? -1 : a > b ? 1 : 0;
 
 /** The text of `specs.generated.ts` for these files. */
-export function renderSpecRegistry(sources: readonly SpecSource[]): string {
+export function renderSpecRegistry(
+  sources: readonly SpecSource[],
+  parse: XmlParse
+): string {
   const entries = sources
     .filter((source) => !SVG_FILE.test(source.name))
     .map(parseSpec)
     .sort(bySlot);
-  const declared = new Set(entries.map(([slot]) => slot));
+  const specs = new Map(entries);
   const svgs = sources
     .filter((source) => SVG_FILE.test(source.name))
-    .map(parseAuthoredSvg)
+    .map((source): [string, { status: AuthoredSvgStatus; markup: string }] => {
+      const slot = SVG_FILE.exec(source.name)?.[1] as string;
+      const spec = specs.get(slot);
+      if (spec === undefined) {
+        throw new SpecSourceError(
+          source.name,
+          `no ${slot}.yaml declares this slot`
+        );
+      }
+      return [slot, compileAuthoredSvg(source.name, source.text, spec, parse)];
+    })
     .sort(bySlot);
-  for (const [slot] of svgs) {
-    if (!declared.has(slot)) {
-      throw new SpecSourceError(
-        `${slot}.svg`,
-        `no ${slot}.yaml declares this slot`
-      );
-    }
-  }
   const svgBody = svgs
-    .map(
-      ([slot, markup]) =>
-        `  ${JSON.stringify(slot)}: ${JSON.stringify(markup)},`
-    )
+    .map(([slot, svg]) => `  ${JSON.stringify(slot)}: ${JSON.stringify(svg)},`)
     .join("\n");
   const body = entries
     .map(([slot, spec]) => {
@@ -163,6 +204,7 @@ export function renderSpecRegistry(sources: readonly SpecSource[]): string {
 // 2026-10-13-image-generation-and-visual-judgment, Phase 14.
 
 import type { ImageSlotSpec } from "@qontinui/shared-types";
+import type { AuthoredSvg } from "./manifest";
 
 /** Every declared image slot's spec, keyed by slot id. */
 export const IMAGE_SLOT_SPECS = {
@@ -181,11 +223,12 @@ export function imageSlotSpec(slot: ImageSlotId): ImageSlotSpec {
 }
 
 /** Agent-authored inline SVGs (\`${SPEC_DIR}/<slot>.svg\`, studio's \`svg\`
- *  route), keyed by slot id. */
-export const IMAGE_SLOT_AUTHORED_SVG: Readonly<Record<string, string>> = {${svgBody === "" ? "" : `\n${svgBody}\n`}};
+ *  route), keyed by slot id: checked against the SVG allowlist and
+ *  re-serialised from the parsed tree at generation, never passed through. */
+export const IMAGE_SLOT_AUTHORED_SVG: Readonly<Record<string, AuthoredSvg>> = {${svgBody === "" ? "" : `\n${svgBody}\n`}};
 
 /** A slot's authored inline SVG, when it has one. */
-export function imageSlotAuthoredSvg(slot: string): string | undefined {
+export function imageSlotAuthoredSvg(slot: string): AuthoredSvg | undefined {
   return Object.hasOwn(IMAGE_SLOT_AUTHORED_SVG, slot)
     ? IMAGE_SLOT_AUTHORED_SVG[slot]
     : undefined;

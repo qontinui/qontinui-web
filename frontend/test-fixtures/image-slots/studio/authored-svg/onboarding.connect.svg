@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" data-slot-spec-sha256="0000000000000000000000000000000000000000000000000000000000000000">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" data-slot-spec-sha256="aacea8bc264a9fcf9345f5b711c5f6351705af329a031910f2a3af717226c808">
+<!-- Hand-written test input, NOT studio output: studio writes no file for an
+     authored SVG (its svg route validates what the session writes). Shaped to
+     studio's contract (compiler/selected.py), current for the spec beside it. -->
 <metadata><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" Iptc4xmpExt:DigitalSourceType="http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"/></rdf:RDF></x:xmpmeta></metadata>
 <path d="M0 0 L10 10" stroke="currentColor" fill="none"/>
 <circle cx="5" cy="5" r="2" fill="var(--qontinui-brand-primary)"/>

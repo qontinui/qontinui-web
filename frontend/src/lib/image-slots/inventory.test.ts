@@ -45,6 +45,8 @@ function input(overrides: Partial<InventoryInput> = {}): InventoryInput {
     ],
     publishedFiles: new Set(["studio-manifest.json"]),
     authoredSvgs: {},
+    publishedSvgs: [],
+    parse: (text) => new DOMParser().parseFromString(text, "image/svg+xml"),
     render: (slot) => PLACEHOLDER(slot),
     ...overrides,
   };
@@ -299,5 +301,39 @@ describe("authored inline SVGs in the inventory", () => {
     expect(inventory.defects).toEqual([
       'slot "s.one" is bound twice: image-slots/s.one.svg and a manifest entry. A slot has one route; remove one',
     ]);
+  });
+});
+
+describe("published SVGs in the inventory", () => {
+  const NS = "http://www.w3.org/2000/svg";
+  const MARKED =
+    `<svg xmlns="${NS}" viewBox="0 0 1 1"><metadata><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+    '<rdf:Description rdf:about="" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" Iptc4xmpExt:DigitalSourceType="http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"/>' +
+    '</rdf:RDF></x:xmpmeta></metadata><path d="M0 0" fill="#123456"/></svg>';
+
+  it("passes a marked trace", () => {
+    expect(
+      buildInventory(
+        input({ publishedSvgs: [{ name: "t.svg", text: MARKED }] })
+      ).defects
+    ).toEqual([]);
+  });
+
+  it("fails on one the allowlist refuses", () => {
+    const text = MARKED.replace("<path", '<path onclick="x()"');
+    expect(
+      buildInventory(input({ publishedSvgs: [{ name: "t.svg", text }] }))
+        .defects
+    ).toEqual([
+      "public/image-slots/t.svg is refused by the SVG allowlist: <path> attribute onclick is not allowed",
+    ]);
+  });
+
+  it("fails on an unmarked one", () => {
+    const text = MARKED.replace(/<metadata>.*<\/metadata>/, "");
+    expect(
+      buildInventory(input({ publishedSvgs: [{ name: "t.svg", text }] }))
+        .defects
+    ).toEqual(["public/image-slots/t.svg carries no IPTC AI-generated marker"]);
   });
 });

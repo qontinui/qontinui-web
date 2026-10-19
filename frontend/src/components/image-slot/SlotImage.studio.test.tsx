@@ -13,7 +13,14 @@
  * | diffusion-alt-required | test_an_alt_required_slot_waits_for_its_alt_text_then_publishes |
  * | traced                 | test_a_traced_slot_lands_as_a_marked_svg                       |
  * | og-card                | test_an_og_card_is_one_png_checked_by_fetch                    |
- * | authored-svg           | test_an_svg_slot_is_authored_by_the_session_and_validated      |
+ *
+ * EXCEPT `authored-svg/onboarding.connect.svg`, which is HAND-WRITTEN, not
+ * studio output: studio writes no file for an authored SVG (its `svg` route
+ * only validates what the session writes). It is shaped to studio's contract
+ * (`compiler/selected.py`) and current for the spec beside it, which studio's
+ * `test_an_svg_slot_is_authored_by_the_session_and_validated` wrote. It is
+ * compiled here exactly as `npm run image-slots:generate` compiles one
+ * (`compileAuthoredSvg`, the SVG allowlist and re-serialisation).
  *
  * Re-dump them when studio's manifest shape changes, so this test keeps
  * reading what studio actually writes.
@@ -26,8 +33,10 @@ import { parse } from "yaml";
 import type { ImageSlotSpec } from "@qontinui/shared-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { compileAuthoredSvg } from "@/lib/image-slots/codegen";
 import {
   readStudioManifest,
+  type AuthoredSvg,
   type ManifestRead,
   type StudioManifest,
 } from "@/lib/image-slots/manifest";
@@ -41,7 +50,7 @@ const FIXTURES = path.resolve(
 const state = vi.hoisted(() => ({
   manifest: null as ManifestRead | null,
   spec: null as ImageSlotSpec | null,
-  svg: undefined as string | undefined,
+  svg: undefined as AuthoredSvg | undefined,
 }));
 vi.mock("@/lib/image-slots/manifest", async (importOriginal) => {
   const actual =
@@ -69,7 +78,14 @@ function load(caseName: string, slot: string): StudioManifest | null {
     version: "1.2",
   }) as ImageSlotSpec;
   const svg = path.join(dir, `${slot}.svg`);
-  state.svg = fs.existsSync(svg) ? fs.readFileSync(svg, "utf8") : undefined;
+  state.svg = fs.existsSync(svg)
+    ? compileAuthoredSvg(
+        `${slot}.svg`,
+        fs.readFileSync(svg, "utf8"),
+        state.spec as unknown as Record<string, unknown>,
+        (text) => new DOMParser().parseFromString(text, "image/svg+xml")
+      )
+    : undefined;
   const manifestPath = path.join(dir, "studio-manifest.json");
   if (!fs.existsSync(manifestPath)) {
     state.manifest = {
@@ -235,4 +251,41 @@ describe("<SlotImage> renders what studio compile wrote", () => {
     expect(el.getAttribute("aria-label")).toBe("Connect a runner");
     expect(el.hasAttribute("aria-hidden")).toBe(false);
   });
+
+  it.each<[string, (text: string) => string, string]>([
+    [
+      "stale (drawn for another spec version)",
+      (t) =>
+        t.replace(
+          /data-slot-spec-sha256="[0-9a-f]+"/,
+          `data-slot-spec-sha256="${"0".repeat(64)}"`
+        ),
+      "authored_stale",
+    ],
+    [
+      "unmarked",
+      (t) => t.replace(/<metadata>[\s\S]*<\/metadata>/, ""),
+      "authored_unmarked",
+    ],
+  ])(
+    "an authored SVG that is %s renders the placeholder",
+    (_, mutate, reason) => {
+      const slot = "onboarding.connect";
+      load("authored-svg", slot);
+      const text = fs.readFileSync(
+        path.join(FIXTURES, "authored-svg", `${slot}.svg`),
+        "utf8"
+      );
+      state.svg = compileAuthoredSvg(
+        `${slot}.svg`,
+        mutate(text),
+        state.spec as unknown as Record<string, unknown>,
+        (t) => new DOMParser().parseFromString(t, "image/svg+xml")
+      );
+      const el = renderSlot(slot);
+      expect(el.getAttribute("data-ui-bridge-placeholder")).toBe("true");
+      expect(el.getAttribute("data-ui-bridge-placeholder-reason")).toBe(reason);
+      expect(el.innerHTML).not.toContain("--qontinui-brand-primary");
+    }
+  );
 });
