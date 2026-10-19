@@ -323,6 +323,73 @@ def test_an_invalid_leftover_index_is_rebuilt(parent: str) -> None:
         assert indexes[_NEW_KEY][1] is True
 
 
+def _exec(engine: Engine, *statements: str) -> None:
+    with engine.begin() as conn:
+        for statement in statements:
+            conn.execute(text(statement))
+
+
+def test_a_valid_new_index_without_its_constraint_is_promoted(parent: str) -> None:
+    """A run that died after the index build, before the constraint swap."""
+    with clone_of(parent, "coordmem_02_p1") as (engine, url):
+        _exec(
+            engine,
+            f"CREATE UNIQUE INDEX {_NEW_KEY} ON coord.memories (tenant_id, name, version)",
+        )
+        _upgrade(url)
+        constraints, indexes = _key_state(engine)
+        assert constraints.get(_NEW_KEY) == _NEW_KEY_DEF
+        assert _OLD_KEY not in constraints
+        assert _NAME_INDEX not in indexes
+
+
+def test_both_constraints_present_leaves_only_the_per_tenant_one(parent: str) -> None:
+    with clone_of(parent, "coordmem_02_p2") as (engine, url):
+        _exec(
+            engine,
+            f"CREATE UNIQUE INDEX {_NEW_KEY} ON coord.memories (tenant_id, name, version)",
+            f"ALTER TABLE coord.memories ADD CONSTRAINT {_NEW_KEY} "
+            f"UNIQUE USING INDEX {_NEW_KEY}",
+        )
+        assert _OLD_KEY in _constraints(engine)
+        _upgrade(url)
+        constraints, indexes = _key_state(engine)
+        assert constraints.get(_NEW_KEY) == _NEW_KEY_DEF
+        assert _OLD_KEY not in constraints
+        assert _NAME_INDEX not in indexes
+
+
+def test_a_lingering_name_index_after_the_swap_is_dropped(parent: str) -> None:
+    with clone_of(parent, "coordmem_02_p3") as (engine, url):
+        _upgrade(url)
+        _exec(
+            engine,
+            f"CREATE INDEX {_NAME_INDEX} ON coord.memories (name, version DESC)",
+        )
+        run_alembic(backend_root(), url, "stamp", _PARENT_REVISION_ID)
+        _upgrade(url)
+        assert _NAME_INDEX not in _indexes(engine)
+        assert _constraints(engine).get(_NEW_KEY) == _NEW_KEY_DEF
+
+
+def test_an_invalid_leftover_name_index_is_rebuilt_by_the_downgrade(
+    parent: str,
+) -> None:
+    with clone_of(parent, "coordmem_02_p4") as (engine, url):
+        _upgrade(url)
+        _exec(
+            engine,
+            f"CREATE INDEX {_NAME_INDEX} ON coord.memories (name, version DESC)",
+            "UPDATE pg_index SET indisvalid = false "
+            f"WHERE indexrelid = 'coord.{_NAME_INDEX}'::regclass",
+        )
+        assert _indexes(engine)[_NAME_INDEX][1] is False
+        _downgrade(url)
+        definition, valid = _indexes(engine)[_NAME_INDEX]
+        assert valid is True
+        assert definition == _NAME_INDEX_DEF
+
+
 def test_a_retry_after_the_swap_is_a_no_op(parent: str) -> None:
     with clone_of(parent, "coordmem_02_retry") as (engine, url):
         _upgrade(url)

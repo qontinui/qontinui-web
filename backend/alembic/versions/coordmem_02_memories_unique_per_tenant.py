@@ -30,7 +30,7 @@ What changes
 * ``idx_memories_name_latest (name, version DESC)`` is dropped. Every reader
   and writer now filters on ``name`` AND ``tenant_id``, so the new key serves
   the next-version probe, the history read and the version read, and the old
-  index is a pure write cost. Nothing names it in coord, web or the runner.
+  index is a pure write cost. Nothing names it in coord, web or the runner (searched at vet).
 
 Mechanism
 =========
@@ -77,9 +77,11 @@ first, re-point ``down_revision``, the ``Revises:`` line above and
 ``_PARENT_REVISION_ID`` in the companion test together. No ``alembic merge``.
 """
 
-from collections.abc import Sequence
+import contextlib
+from collections.abc import Iterator, Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "coordmem_02"
@@ -95,6 +97,7 @@ NAME_INDEX = "idx_memories_name_latest"
 #: The per-tenant key's columns, and the old global key's.
 NEW_KEY_COLUMNS = "tenant_id, name, version"
 OLD_KEY_COLUMNS = "name, version"
+NAME_INDEX_COLUMNS = "name, version DESC"
 
 _LOCK = "SET LOCAL lock_timeout = '3s'"
 
@@ -125,48 +128,66 @@ def _has_constraint(name: str) -> bool:
     return bool(_scalar(_CONSTRAINT_EXISTS, name))
 
 
-def _build_unique_index(name: str, columns: str) -> None:
-    """Build a unique index concurrently, replacing an INVALID leftover.
+def _build_index(name: str, columns: str, *, unique: bool) -> None:
+    """Build an index concurrently, replacing an INVALID leftover.
 
     ``IF NOT EXISTS`` keeps an index an interrupted build left INVALID, and an
-    INVALID unique index enforces nothing, so the constraint built on it would
+    INVALID unique index enforces nothing, so a constraint built on it would
     be a lie. Dropping it first makes the build real.
     """
     if _scalar(_INDEX_VALID, name) is False:
         op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS coord.{name}")
+    kind = "UNIQUE INDEX" if unique else "INDEX"
     op.execute(
-        f"CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {TABLE} ({columns})"
+        f"CREATE {kind} CONCURRENTLY IF NOT EXISTS {name} ON {TABLE} ({columns})"
     )
 
 
 def _swap_constraint(add: str, drop: str) -> None:
-    """Promote ``add``'s index to a constraint and drop ``drop``, in one short transaction."""
-    if _has_constraint(add):
-        if _has_constraint(drop):
-            op.execute("BEGIN")
-            op.execute(_LOCK)
-            op.execute(f"ALTER TABLE {TABLE} DROP CONSTRAINT {drop}")
-            op.execute("COMMIT")
-        return
-    op.execute("BEGIN")
-    op.execute(_LOCK)
-    op.execute(f"ALTER TABLE {TABLE} ADD CONSTRAINT {add} UNIQUE USING INDEX {add}")
+    """Promote ``add``'s index to a constraint and drop ``drop``, in one short transaction.
+
+    The catalog is read first, then ONE multi-statement string runs, so a
+    failure (the 3s lock timeout) rolls the whole transaction back on the
+    server instead of leaving the session inside an aborted block.
+    """
+    statements = []
+    if not _has_constraint(add):
+        statements.append(
+            f"ALTER TABLE {TABLE} ADD CONSTRAINT {add} UNIQUE USING INDEX {add}"
+        )
     if _has_constraint(drop):
-        op.execute(f"ALTER TABLE {TABLE} DROP CONSTRAINT {drop}")
-    op.execute("COMMIT")
+        statements.append(f"ALTER TABLE {TABLE} DROP CONSTRAINT {drop}")
+    if statements:
+        op.execute("BEGIN; " + _LOCK + "; " + "; ".join(statements) + "; COMMIT")
+
+
+@contextlib.contextmanager
+def _bounded_waits() -> Iterator[None]:
+    """Bound the waits of the CONCURRENTLY statements, which sit outside the 3s transaction.
+
+    They wait for every older transaction on the database, so an idle-in-
+    transaction session would stall a deploy with no error. A timeout here fails
+    the run; the INVALID-leftover handling and the catalog-decided steps make a
+    re-run safe.
+    """
+    op.execute("SET lock_timeout = '60s'")
+    try:
+        yield
+    finally:
+        op.execute("RESET lock_timeout")
 
 
 def upgrade() -> None:
     """Swap the global key for a per-tenant one, then drop the name index."""
-    with op.get_context().autocommit_block():
-        _build_unique_index(NEW_KEY, NEW_KEY_COLUMNS)
+    with op.get_context().autocommit_block(), _bounded_waits():
+        _build_index(NEW_KEY, NEW_KEY_COLUMNS, unique=True)
         _swap_constraint(add=NEW_KEY, drop=OLD_KEY)
         op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS coord.{NAME_INDEX}")
 
 
 def downgrade() -> None:
     """Restore the global key and the name index, refusing over shared (name, version)."""
-    with op.get_context().autocommit_block():
+    with op.get_context().autocommit_block(), _bounded_waits():
         shared = int(_scalar(_SHARED_VERSIONS) or 0)
         if shared:
             raise RuntimeError(
@@ -178,9 +199,6 @@ def downgrade() -> None:
                 + " cannot be rebuilt over this data. Rename or delete the colliding"
                 + " memories of all but one tenant, then downgrade again."
             )
-        op.execute(
-            f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {NAME_INDEX} "
-            f"ON {TABLE} (name, version DESC)"
-        )
-        _build_unique_index(OLD_KEY, OLD_KEY_COLUMNS)
+        _build_index(NAME_INDEX, NAME_INDEX_COLUMNS, unique=False)
+        _build_index(OLD_KEY, OLD_KEY_COLUMNS, unique=True)
         _swap_constraint(add=OLD_KEY, drop=NEW_KEY)
