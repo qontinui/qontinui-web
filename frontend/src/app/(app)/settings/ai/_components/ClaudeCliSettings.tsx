@@ -13,10 +13,13 @@ import { Terminal } from "lucide-react";
 import type { DerivedAccountSelection } from "../_hooks/useAiSettings";
 import { EXECUTION_MODES, type ClaudeCliConfig } from "../types";
 
-const LOCAL_MODES = [
+/** The runner's local `account_selection_mode` values, in display order. */
+export const LOCAL_MODES = [
   { value: "manual", label: "Manual" },
   { value: "least_usage", label: "Least usage" },
   { value: "highest_expected_usage", label: "Highest expected usage" },
+  { value: "weighted_random", label: "Weighted random" },
+  { value: "alternating_handoff", label: "Alternating handoff" },
 ] as const;
 
 /**
