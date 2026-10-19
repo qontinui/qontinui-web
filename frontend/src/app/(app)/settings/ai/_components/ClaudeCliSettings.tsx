@@ -49,6 +49,8 @@ interface ClaudeCliSettingsProps {
   derived?: DerivedAccountSelection;
   /** Whether the viewer can reach /admin (plain text otherwise). */
   canReachAdmin?: boolean;
+  /** Show the preview only while the pin / local mode has unsaved edits. */
+  previewEnabled?: boolean;
 }
 
 export function ClaudeCliSettings({
@@ -56,6 +58,7 @@ export function ClaudeCliSettings({
   onChange,
   derived = {},
   canReachAdmin = false,
+  previewEnabled = false,
 }: ClaudeCliSettingsProps) {
   const preview = previewAccountSelection(
     config.account_selection_mode,
@@ -190,9 +193,11 @@ export function ClaudeCliSettings({
             </Label>
           </div>
 
-          <p className="text-sm text-muted-foreground" data-testid="preview">
-            Would apply after save: <strong>{preview ?? "unknown"}</strong>
-          </p>
+          {previewEnabled && (
+            <p className="text-sm text-muted-foreground" data-testid="preview">
+              Would apply after save: <strong>{preview ?? "unknown"}</strong>
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
