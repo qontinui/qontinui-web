@@ -192,6 +192,10 @@ TARGET_ERROR_CODES = frozenset(
         # cannot read its drain state. Refused before any grant is spent.
         "device_drained",
         "drain_unreadable",
+        # The same deferral when the target's coord DISPATCH ROLE (``ci_node``
+        # / ``bench``) closes its agent lane with the drain itself clear
+        # (``DeferClass::RoleClosed``; qontinui-runner#2289).
+        "role_closes_agent_lane",
     }
 )
 
