@@ -38,6 +38,12 @@ vi.mock("./_components/TestConnection", () => ({ TestConnection: () => null }));
 
 import AiSettingsPage from "./page";
 
+// Called as a function inside a component so the page's hooks run in this
+// wrapper's render: the test enters through AiSettingsPage itself.
+function PageUnderTest() {
+  return AiSettingsPage();
+}
+
 const VIEW = {
   provider: "claude_cli",
   claude_cli: {
@@ -72,7 +78,7 @@ beforeEach(() => {
 describe("AiSettingsPage", () => {
   it("page save without edits sends none of the roster keys", async () => {
     getAiSettings.mockResolvedValue(VIEW);
-    render(<AiSettingsPage />);
+    render(<PageUnderTest />);
     const save = await screen.findByRole("button", { name: /save settings/i });
     await waitFor(() => expect(save).not.toBeDisabled());
     fireEvent.click(save);
@@ -95,7 +101,7 @@ describe("AiSettingsPage", () => {
 
   it("page save is disabled after a failed load", async () => {
     getAiSettings.mockRejectedValue(new Error("boom"));
-    render(<AiSettingsPage />);
+    render(<PageUnderTest />);
     const save = await screen.findByRole("button", { name: /save settings/i });
     expect(save).toBeDisabled();
     expect((await screen.findByRole("alert")).textContent).toMatch(
