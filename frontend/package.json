@@ -27,6 +27,8 @@
     "analyze": "node scripts/inject-build-id.mjs pre && npx cross-env ANALYZE=true next build && node scripts/inject-build-id.mjs post",
     "generate-api-types": "tsx scripts/generate-api-types.ts",
     "generate-api-types:local": "tsx scripts/generate-api-types.ts --local",
+    "image-slots:generate": "tsx scripts/generate-image-slots.ts",
+    "image-slots:inventory": "vitest run src/lib/image-slots/inventory.ci.test.tsx",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
