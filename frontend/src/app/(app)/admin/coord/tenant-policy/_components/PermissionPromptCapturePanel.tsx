@@ -5,6 +5,7 @@ import { AlertTriangle, Loader2, RefreshCw, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UNKNOWN_AMBER } from "@/components/console";
 import { cn } from "@/lib/utils";
 import { usePermissionPromptCapturePolicy } from "../_hooks/usePermissionPromptCapturePolicy";
 import {
@@ -19,7 +20,7 @@ const LEVEL_COPY: Record<
   on: {
     label: "On",
     blurb:
-      "New sessions record each permission prompt they raise in this tenant's coord findings. The prompt itself still appears exactly as before.",
+      "New sessions record each permission prompt they raise in this tenant's coord findings. The prompt itself still appears exactly as before. Runner builds without capture support ignore this setting.",
   },
   off: {
     label: "Off",
@@ -105,13 +106,23 @@ export function PermissionPromptCapturePanel() {
             >
               <p>What is sent for each prompt:</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                <li>the prompt&apos;s reason text;</li>
+                <li>
+                  the prompt&apos;s reason text, as it appears in the prompt;
+                </li>
                 <li>the tool it was raised for;</li>
                 <li>
-                  a redacted excerpt of the command — secrets and the values of{" "}
-                  <code>VAR=value</code> assignments stripped, at most 300
-                  characters, and the working directory reduced to its last two
-                  path components.
+                  a redacted excerpt of the command, at most 300 characters:
+                  known secret patterns (keys, tokens, bearer values) and the
+                  values of <code>VAR=value</code> assignments are redacted, but
+                  a secret of an unusual shape can get through;
+                </li>
+                <li>
+                  the working directory, reduced to its last two path
+                  components;
+                </li>
+                <li>
+                  how often it happened, when it was first and last seen, and
+                  the permission modes it was seen under, per machine.
                 </li>
               </ul>
               <p className="mt-1">
@@ -164,9 +175,13 @@ export function PermissionPromptCapturePanel() {
             ))}
             <div className="ml-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               <span>Runners resolve</span>
+              {/* An unread or unrecognised level is UNKNOWN, so it takes R3's
+                  ignorance floor, never the calm `off` look. */}
               <Badge
                 variant={current === "on" ? "default" : "outline"}
+                className={recognised ? undefined : UNKNOWN_AMBER}
                 data-testid="permission-prompt-capture-effective"
+                data-unknown={recognised ? undefined : "true"}
               >
                 {current ?? "unknown"}
               </Badge>
@@ -204,7 +219,7 @@ export function PermissionPromptCapturePanel() {
               No policy row answered for this tenant, so nobody chose this
               level. This read returned <code>{current}</code>
               {current === "off"
-                ? ", which is also what this console shows when coord reports no level at all; this setting's default for a tenant with no row is on"
+                ? ", which is also what this console shows when coord reports no level at all; coord's own default for this setting, for a tenant with no row, is on"
                 : ""}
               . Pick a level to write an explicit row.
             </p>

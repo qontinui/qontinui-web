@@ -29,8 +29,9 @@ export type CommandSafetyRewriteLevel =
 
 /**
  * The fleet-policy domain the permission-prompt capture toggle writes. Levels:
- * `on` | `off`; coord's no-row default is `on` (qontinui-coord
- * `PERMISSION_PROMPT_CAPTURE_DEFAULT`).
+ * `on` | `off`; coord's no-row default is `on` — set by coord's Phase 1
+ * change of this plan (`PERMISSION_PROMPT_CAPTURE_DEFAULT`, not on coord's
+ * main yet; this console's PR is ordered after it).
  *
  * When `on`, a runner registers a capture hook in the settings carrier it
  * hands each Claude Code session, and records every permission prompt that

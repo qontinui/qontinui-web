@@ -8,7 +8,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { UNKNOWN_AMBER } from "@/components/console";
 
 const usePolicyMock = vi.fn();
 vi.mock("../_hooks/usePermissionPromptCapturePolicy", () => ({
@@ -56,12 +57,23 @@ describe("PermissionPromptCapturePanel", () => {
     const sent =
       screen.getByTestId("permission-prompt-capture-what-is-sent")
         .textContent ?? "";
-    expect(sent).toMatch(/reason text/);
+    expect(sent).toMatch(/reason text, as it appears in the prompt/);
     expect(sent).toMatch(/the tool it was raised for/);
-    expect(sent).toMatch(/redacted excerpt of the command/);
-    expect(sent).toMatch(/secrets and the values of VAR=value assignments/);
-    expect(sent).toMatch(/at most 300\s+characters/);
-    expect(sent).toMatch(/last two\s+path components/);
+    expect(sent).toMatch(
+      /redacted excerpt of the command, at most 300\s+characters/
+    );
+    // Redaction is pattern-based, and the copy must not promise more.
+    expect(sent).toMatch(
+      /known secret patterns \(keys, tokens, bearer values\)/
+    );
+    expect(sent).toMatch(/values of\s+VAR=value assignments/);
+    expect(sent).toMatch(/a secret of an unusual shape can get through/);
+    expect(sent).toMatch(
+      /working directory, reduced to its last two\s+path\s+components/
+    );
+    expect(sent).toMatch(
+      /how often it happened, when it was first and last seen, and\s+the permission modes it was seen under, per machine/
+    );
     expect(sent).toMatch(/this tenant.s coord findings/);
     expect(sent).toMatch(/dossier/);
 
@@ -70,6 +82,9 @@ describe("PermissionPromptCapturePanel", () => {
     expect(text).toMatch(
       /applies to terminals and agent sessions started after it/
     );
+    expect(
+      screen.getByTestId("permission-prompt-capture-blurb").textContent
+    ).toMatch(/Runner builds without capture support ignore this setting/);
     // Capture observes; it never changes the prompt (plan D1).
     expect(text).toMatch(/Recording never\s+changes the prompt/);
   });
@@ -101,7 +116,7 @@ describe("PermissionPromptCapturePanel", () => {
     const copy = screen.getByTestId("permission-prompt-capture-no-row");
     expect(copy.querySelector("code")?.textContent).toBe("on");
     expect(copy.textContent).toMatch(/nobody chose this level/);
-    expect(copy.textContent).not.toMatch(/default for a tenant with no row/);
+    expect(copy.textContent).not.toMatch(/coord's own default/);
   });
 
   it("does not attribute a no-row `off` to coord — it may be the display floor", () => {
@@ -117,7 +132,9 @@ describe("PermissionPromptCapturePanel", () => {
     const copy = screen.getByTestId("permission-prompt-capture-no-row");
     expect(copy.querySelector("code")?.textContent).toBe("off");
     expect(copy.textContent).not.toMatch(/coord reports as/);
-    expect(copy.textContent).toMatch(/default for a tenant with no row is on/);
+    expect(copy.textContent).toMatch(
+      /coord's own default for this setting, for a tenant with no row, is on/
+    );
   });
 
   it("explains that a system-band answer means a tenant write takes effect", () => {
@@ -167,6 +184,25 @@ describe("PermissionPromptCapturePanel", () => {
   });
 
   it("reports an unrecognised level as unknown, never as on or off", () => {
+    // The selected variant's class, read off a recognised `on` render.
+    usePolicyMock.mockReturnValue(hookState(ON_TENANT));
+    const first = render(<PermissionPromptCapturePanel />);
+    const selectedClass = screen
+      .getByTestId("permission-prompt-capture-on")
+      .getAttribute("class");
+    const calmOffBadgeClass = (() => {
+      first.unmount();
+      usePolicyMock.mockReturnValue(
+        hookState({ ...ON_TENANT, effective_level: "off" })
+      );
+      const off = render(<PermissionPromptCapturePanel />);
+      const cls = screen
+        .getByTestId("permission-prompt-capture-effective")
+        .getAttribute("class");
+      off.unmount();
+      return cls;
+    })();
+
     usePolicyMock.mockReturnValue(
       hookState({ ...ON_TENANT, effective_level: "maybe" })
     );
@@ -178,19 +214,69 @@ describe("PermissionPromptCapturePanel", () => {
     expect(
       screen.getByTestId("permission-prompt-capture-blurb").textContent
     ).toMatch(/neither on nor off.*unknown/);
-    // Neither button is shown as the current level.
+    // Neither button carries the selected variant's class.
     for (const level of ["on", "off"]) {
       expect(
         screen
           .getByTestId(`permission-prompt-capture-${level}`)
           .getAttribute("class")
-      ).toBe(
-        screen
-          .getByTestId(
-            `permission-prompt-capture-${level === "on" ? "off" : "on"}`
-          )
-          .getAttribute("class")
-      );
+      ).not.toBe(selectedClass);
+    }
+    // Unknown takes R3's ignorance floor, never the calm `off` look.
+    const badge = screen.getByTestId("permission-prompt-capture-effective");
+    expect(badge.getAttribute("data-unknown")).toBe("true");
+    expect(badge.getAttribute("class")).not.toBe(calmOffBadgeClass);
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(badge.className).toContain(cls);
+    }
+  });
+
+  it("paints a recognised level calm, with no unknown marker", () => {
+    usePolicyMock.mockReturnValue(
+      hookState({ ...ON_TENANT, effective_level: "off" })
+    );
+    render(<PermissionPromptCapturePanel />);
+    const badge = screen.getByTestId("permission-prompt-capture-effective");
+    expect(badge.getAttribute("data-unknown")).toBeNull();
+    expect(badge.className).not.toContain("bg-amber-");
+  });
+
+  it("spins only the button whose write is in flight", async () => {
+    let finish: (v: boolean) => void = () => {};
+    const setLevel = vi.fn(
+      () => new Promise<boolean>((resolve) => (finish = resolve))
+    );
+    usePolicyMock.mockReturnValue(hookState(ON_TENANT, { setLevel }));
+    const view = render(<PermissionPromptCapturePanel />);
+
+    fireEvent.click(screen.getByTestId("permission-prompt-capture-off"));
+    expect(setLevel).toHaveBeenCalledWith("off");
+    // The hook now reports the write in flight.
+    usePolicyMock.mockReturnValue(
+      hookState(ON_TENANT, { setLevel, saving: true })
+    );
+    view.rerender(<PermissionPromptCapturePanel />);
+
+    const spinnerIn = (level: string) =>
+      screen
+        .getByTestId(`permission-prompt-capture-${level}`)
+        .querySelector(".animate-spin");
+    expect(spinnerIn("off")).not.toBeNull();
+    expect(spinnerIn("on")).toBeNull();
+
+    await act(async () => {
+      finish(true);
+    });
+    expect(spinnerIn("off")).toBeNull();
+  });
+
+  it("renders an unread level with the unknown floor too", () => {
+    usePolicyMock.mockReturnValue(hookState(null, { error: "HTTP 502" }));
+    render(<PermissionPromptCapturePanel />);
+    const badge = screen.getByTestId("permission-prompt-capture-effective");
+    expect(badge.getAttribute("data-unknown")).toBe("true");
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(badge.className).toContain(cls);
     }
   });
 
