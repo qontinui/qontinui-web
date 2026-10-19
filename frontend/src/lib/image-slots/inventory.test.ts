@@ -46,6 +46,7 @@ function input(overrides: Partial<InventoryInput> = {}): InventoryInput {
     publishedFiles: new Set(["studio-manifest.json"]),
     authoredSvgs: {},
     publishedSvgs: [],
+    lucideComponents: new Set(["CircleUser"]),
     parse: (text) => new DOMParser().parseFromString(text, "image/svg+xml"),
     render: (slot) => PLACEHOLDER(slot),
     ...overrides,
@@ -335,5 +336,58 @@ describe("published SVGs in the inventory", () => {
       buildInventory(input({ publishedSvgs: [{ name: "t.svg", text }] }))
         .defects
     ).toEqual(["public/image-slots/t.svg carries no IPTC AI-generated marker"]);
+  });
+});
+
+describe("lucide entries in the inventory", () => {
+  const LUCIDE: ManifestRead = {
+    ok: true,
+    manifest: {
+      generated_by: "qontinui-studio",
+      slots: {
+        "s.one": {
+          route: "lucide",
+          files: {},
+          sha256: {},
+          lucide: {
+            package: "lucide-react",
+            icon: "circle-user",
+            component: "CircleUser",
+          },
+        },
+      },
+    },
+  };
+  const ICON = (slot: string) =>
+    `<div data-ui-bridge-id="image-slot.${slot}" data-ui-bridge-image-slot="${slot}" aria-hidden="true"><svg></svg></div>`;
+
+  it("lists a lucide slot as rendering its icon, with no file defect", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: LUCIDE,
+        render: (slot) => (slot === "s.one" ? ICON(slot) : PLACEHOLDER(slot)),
+      })
+    );
+    expect(inventory.defects).toEqual([]);
+    expect(renderMarkdown(inventory)).toContain(
+      "| `s.one` | empty_state | lucide icon |"
+    );
+  });
+
+  it("fails on a component the generated registry does not hold", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: LUCIDE,
+        lucideComponents: new Set(),
+        render: (slot) =>
+          PLACEHOLDER(
+            slot,
+            slot === "s.one" ? "lucide_unavailable" : "no_asset"
+          ),
+      })
+    );
+    expect(inventory.defects).toEqual([
+      'the manifest\'s slot "s.one" names lucide-react component CircleUser, which the generated registry does not hold: the installed lucide-react does not export it, or `npm run image-slots:generate` was not run',
+    ]);
   });
 });

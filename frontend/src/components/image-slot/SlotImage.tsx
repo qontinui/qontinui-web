@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * `<SlotImage slot="…">` — every image placement in this app renders through a
  * declared slot.
@@ -18,25 +20,36 @@
  *   What renders is the generator's allowlist-checked re-serialisation,
  *   carrying the canonical IPTC marker; a stale or unmarked one renders the
  *   placeholder;
+ * - **a lucide-react icon**, when the manifest's entry is a `lucide` one
+ *   (studio's `lucide` route) and the generated registry holds its
+ *   component;
  * - **otherwise a correctly sized, explicitly marked placeholder**, reserving
  *   the spec's preferred `aspect-ratio` so the layout does not move when the
  *   asset arrives.
  *
- * All three carry `data-ui-bridge-image-slot="<slot>"` and `data-ui-bridge-id`
+ * All four carry `data-ui-bridge-image-slot="<slot>"` and `data-ui-bridge-id`
  * (only that attribute, or an interactive role, registers an element with the
  * UI Bridge). The placeholder alone carries `data-ui-bridge-placeholder="true"`
  * and `data-ui-bridge-placeholder-reason`. A shipped placeholder is a finding
  * the image-slot inventory (`npm run image-slots:inventory`) lists, never a
  * build failure.
  *
- * Usable from server and client components alike: it holds no state.
+ * Studio's D7 preview contract (Phase 19): the asset's `<picture>` and
+ * `<img>` carry `data-media-id="studio-picture-<slot>"` and
+ * `"studio-img-<slot>"`, every URL is `/image-slots/<file>?sha=<digest>` on
+ * the page's own origin, and on a preview load (`?studio_batch=`) the image
+ * is never `lazy` ({@link useStudioPreview}).
+ *
+ * A client component only for that URL read; it holds no state.
  */
 
 import type { CSSProperties, ReactNode } from "react";
 import { ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveSlotImage, SLOT_MANIFEST } from "@/lib/image-slots/manifest";
+import { useStudioPreview } from "@/lib/image-slots/studio-preview";
 import {
+  IMAGE_SLOT_LUCIDE,
   imageSlotAuthoredSvg,
   imageSlotSpec,
   type ImageSlotId,
@@ -51,8 +64,18 @@ export interface SlotImageProps {
   /** What the placeholder shows inside its reserved box until an asset is
    *  chosen. Defaults to a neutral bordered box with an image glyph. */
   placeholder?: ReactNode;
-  /** `eager` for an image above the fold; `lazy` otherwise. */
+  /** `eager` for an image above the fold; `lazy` otherwise. A studio
+   *  preview load (`?studio_batch=`) is always eager. */
   loading?: "eager" | "lazy";
+}
+
+const LUCIDE_COMPONENTS: ReadonlySet<string> = new Set(
+  Object.keys(IMAGE_SLOT_LUCIDE)
+);
+
+/** Studio's D7 ids for a slot's `<picture>` and `<img>`. */
+export function studioMediaIds(slot: string): { picture: string; img: string } {
+  return { picture: `studio-picture-${slot}`, img: `studio-img-${slot}` };
 }
 
 /** The UI Bridge id of a slot's element. */
@@ -66,12 +89,14 @@ export function SlotImage({
   placeholder,
   loading = "lazy",
 }: SlotImageProps) {
+  const preview = useStudioPreview();
   const spec = imageSlotSpec(slot);
   const resolution = resolveSlotImage(
     slot,
     spec,
     SLOT_MANIFEST,
-    imageSlotAuthoredSvg(slot)
+    imageSlotAuthoredSvg(slot),
+    LUCIDE_COMPONENTS
   );
   // `W/H` is the spec's spelling and CSS `aspect-ratio` syntax both.
   const box: CSSProperties = { aspectRatio: spec.aspect.preferred };
@@ -127,17 +152,42 @@ export function SlotImage({
     );
   }
 
+  if (resolution.kind === "lucide") {
+    const Icon = IMAGE_SLOT_LUCIDE[resolution.component];
+    return (
+      <div
+        data-ui-bridge-id={slotUiBridgeId(slot)}
+        data-ui-bridge-image-slot={slot}
+        {...(resolution.alt === ""
+          ? { "aria-hidden": true }
+          : { role: "img", "aria-label": resolution.alt })}
+        style={box}
+        className={cn("block overflow-hidden", className)}
+      >
+        {Icon && <Icon aria-hidden="true" className="block h-full w-full" />}
+      </div>
+    );
+  }
+
+  const media = studioMediaIds(slot);
   return (
-    <picture style={box} className={cn("block overflow-hidden", className)}>
+    <picture
+      data-media-id={media.picture}
+      style={box}
+      className={cn("block overflow-hidden", className)}
+    >
       {resolution.sources.map((source) => (
         <source key={source.type} type={source.type} srcSet={source.srcSet} />
       ))}
       <img
+        data-media-id={media.img}
         data-ui-bridge-id={slotUiBridgeId(slot)}
         data-ui-bridge-image-slot={slot}
         src={resolution.src}
         alt={resolution.alt}
-        loading={loading}
+        // A preview is never lazy; while the URL is unknown (server render)
+        // `loading` is omitted, the browser's eager default.
+        loading={preview === null ? undefined : preview ? "eager" : loading}
         decoding="async"
         className="block h-full w-full object-cover"
       />

@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { parse as parseYaml } from "yaml";
+import * as lucide from "lucide-react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,6 +9,7 @@ import {
   SPEC_DIR,
   SpecSourceError,
   compileAuthoredSvg,
+  lucideComponentExports,
   renderSpecRegistry as render,
   specContentSha256,
   type SpecSource,
@@ -16,8 +18,12 @@ import { DIGITAL_SOURCE_TYPE, SVG_NS } from "./svg-allowlist";
 
 const parse = (text: string) =>
   new DOMParser().parseFromString(text, "image/svg+xml");
-const renderSpecRegistry = (sources: readonly SpecSource[]) =>
-  render(sources, parse);
+const LUCIDE_EXPORTS = lucideComponentExports(lucide);
+const EMPTY_MANIFEST = { generated_by: "qontinui-studio", slots: {} };
+const renderSpecRegistry = (
+  sources: readonly SpecSource[],
+  manifest: unknown = EMPTY_MANIFEST
+) => render(sources, { parse, manifest, lucideExports: LUCIDE_EXPORTS });
 
 const FRONTEND = path.resolve(__dirname, "../../..");
 
@@ -39,7 +45,13 @@ describe("specs.generated.ts", () => {
       path.join(FRONTEND, REGISTRY_PATH),
       "utf8"
     );
-    expect(committed).toBe(renderSpecRegistry(sources));
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(FRONTEND, "public/image-slots/studio-manifest.json"),
+        "utf8"
+      )
+    );
+    expect(committed).toBe(renderSpecRegistry(sources, manifest));
   });
 });
 
@@ -185,5 +197,56 @@ describe("authored inline SVGs", () => {
     ).toThrow(
       /a\.svg: is rendered inline and is refused: <path> attribute onclick/
     );
+  });
+});
+
+describe("lucide components", () => {
+  const lucideEntry = (component: string) => ({
+    route: "lucide",
+    files: {},
+    sha256: {},
+    lucide: { package: "lucide-react", icon: "x", component },
+  });
+  const manifest = (...components: string[]) => ({
+    generated_by: "qontinui-studio",
+    slots: Object.fromEntries(
+      components.map((c, i) => [`s.${i}`, lucideEntry(c)])
+    ),
+  });
+
+  it("reads the installed lucide-react's icon components, not its helpers", () => {
+    expect(LUCIDE_EXPORTS.has("CircleUser")).toBe(true);
+    expect(LUCIDE_EXPORTS.has("Inbox")).toBe(true);
+    for (const helper of ["Icon", "icons", "createLucideIcon", "DynamicIcon"]) {
+      expect(LUCIDE_EXPORTS.has(helper)).toBe(false);
+    }
+  });
+
+  it("imports exactly the components the manifest names, once, sorted", () => {
+    const text = renderSpecRegistry(
+      [{ name: "a.yaml", text: MINIMAL("a") }],
+      manifest("Inbox", "CircleUser", "Inbox")
+    );
+    expect(text).toContain('import { CircleUser, Inbox } from "lucide-react";');
+    expect(text).toContain(
+      "IMAGE_SLOT_LUCIDE: Readonly<Record<string, LucideIcon>> = { CircleUser, Inbox };"
+    );
+  });
+
+  it("leaves out a component the installed lucide-react does not export", () => {
+    const text = renderSpecRegistry(
+      [{ name: "a.yaml", text: MINIMAL("a") }],
+      manifest("NotAnIcon", "Inbox")
+    );
+    expect(text).toContain("= { Inbox };");
+    expect(text).not.toContain("NotAnIcon");
+  });
+
+  it("imports nothing when no entry is a lucide one", () => {
+    const text = renderSpecRegistry([{ name: "a.yaml", text: MINIMAL("a") }]);
+    expect(text).toContain(
+      "IMAGE_SLOT_LUCIDE: Readonly<Record<string, LucideIcon>> = {};"
+    );
+    expect(text).not.toMatch(/^import \{ .* \} from "lucide-react";$/m);
   });
 });

@@ -60,3 +60,26 @@ describe("middleware — anonymous requests", () => {
     }
   });
 });
+
+describe("middleware — a qontinui-studio preview load", () => {
+  // Studio's D7 gate (plan 2026-10-13-image-generation-and-visual-judgment,
+  // Phase 19) loads a page with these two params and reads them back; the
+  // page must keep them on every path the middleware takes.
+  const PREVIEW = "/runs/active?studio_batch=b-20261019&studio_attempt=2";
+
+  it("passes an authenticated preview through with its query intact", () => {
+    const req = new NextRequest(`https://qontinui.io${PREVIEW}`);
+    req.cookies.set("access_token", "x");
+    const res = middleware(req);
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("carries both params through the login bounce", () => {
+    const res = anonymous(PREVIEW);
+    const next = new URL(res.headers.get("location") ?? "").searchParams.get(
+      "next"
+    );
+    expect(next).toBe(PREVIEW);
+  });
+});

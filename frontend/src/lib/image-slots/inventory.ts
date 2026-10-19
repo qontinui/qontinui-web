@@ -159,6 +159,8 @@ export interface InventoryInput {
   publishedSvgs: ReadonlyArray<{ name: string; text: string }>;
   /** The XML parser the SVG allowlist checks with. */
   parse: XmlParse;
+  /** The lucide-react components the generated registry holds. */
+  lucideComponents: ReadonlySet<string>;
   /** `<SlotImage slot>`'s markup, rendered for real. */
   render: (slot: string) => string;
 }
@@ -185,7 +187,14 @@ export function buildInventory(input: InventoryInput): Inventory {
           );
         }
       }
-      if (declared.has(slot) && servableFiles(entry).length === 0) {
+      if (entry.route === "lucide") {
+        const component = entry.lucide?.component;
+        if (component !== undefined && !input.lucideComponents.has(component)) {
+          defects.push(
+            `the manifest's slot "${slot}" names lucide-react component ${component}, which the generated registry does not hold: the installed lucide-react does not export it, or \`npm run image-slots:generate\` was not run`
+          );
+        }
+      } else if (declared.has(slot) && servableFiles(entry).length === 0) {
         defects.push(
           `the manifest's slot "${slot}" names no file this app can serve`
         );
@@ -227,7 +236,13 @@ export function buildInventory(input: InventoryInput): Inventory {
     const authored = Object.hasOwn(input.authoredSvgs, slot)
       ? input.authoredSvgs[slot]
       : undefined;
-    const resolution = resolveSlotImage(slot, spec, input.manifest, authored);
+    const resolution = resolveSlotImage(
+      slot,
+      spec,
+      input.manifest,
+      authored,
+      input.lucideComponents
+    );
     if (
       resolution.kind === "placeholder" &&
       resolution.reason === "asset_conflict"
@@ -273,6 +288,7 @@ export function shippedPlaceholders(inventory: Inventory): InventoryRow[] {
 const RENDERS: Readonly<Record<SlotResolution["kind"], string>> = {
   asset: "asset",
   inline_svg: "authored inline SVG",
+  lucide: "lucide icon",
   placeholder: "placeholder",
 };
 
