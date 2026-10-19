@@ -13,6 +13,7 @@
  * | diffusion-alt-required | test_an_alt_required_slot_waits_for_its_alt_text_then_publishes |
  * | traced                 | test_a_traced_slot_lands_as_a_marked_svg                       |
  * | og-card                | test_an_og_card_is_one_png_checked_by_fetch                    |
+ * | lucide                 | test_a_lucide_slot_names_its_component_and_writes_nothing (at 9c3426d) |
  *
  * EXCEPT `authored-svg/onboarding.connect.svg`, which is HAND-WRITTEN, not
  * studio output: studio writes no file for an authored SVG (its `svg` route
@@ -68,6 +69,10 @@ vi.mock("@/lib/image-slots/specs.generated", async (importOriginal) => {
   return {
     ...actual,
     imageSlotSpec: () => state.spec,
+    // The registry the generator compiles for the lucide fixture's entry.
+    IMAGE_SLOT_LUCIDE: {
+      CircleUser: (await import("lucide-react")).CircleUser,
+    },
     imageSlotAuthoredSvg: () => state.svg,
   };
 });
@@ -288,4 +293,49 @@ describe("<SlotImage> renders what studio compile wrote", () => {
       expect(el.innerHTML).not.toContain("--qontinui-brand-primary");
     }
   );
+
+  it("a lucide entry renders the named lucide-react component", () => {
+    const slot = "sessions.avatar";
+    const m = load("lucide", slot);
+    expect(m?.slots[slot]?.route).toBe("lucide");
+    const el = renderSlot(slot);
+    expect(el.tagName).toBe("DIV");
+    expect(el.getAttribute("data-ui-bridge-image-slot")).toBe(slot);
+    expect(el.hasAttribute("data-ui-bridge-placeholder")).toBe(false);
+    expect(el.getAttribute("aria-hidden")).toBe("true"); // decorative
+    expect(el.querySelector("svg")?.getAttribute("class")).toContain(
+      "lucide-circle-user"
+    );
+    expect(el.querySelector("img")).toBeNull();
+  });
+
+  it("a lucide entry for an alt: required slot is an img labelled from the binding", () => {
+    const slot = "sessions.avatar";
+    const m = load("lucide", slot);
+    const entry = m?.slots[slot];
+    if (!entry?.binding) {
+      throw new Error("fixture has no binding");
+    }
+    entry.binding.alt_text = "Your account";
+    state.spec = {
+      ...(state.spec as ImageSlotSpec),
+      alt: { kind: "required" },
+    };
+    const el = renderSlot(slot);
+    expect(el.getAttribute("role")).toBe("img");
+    expect(el.getAttribute("aria-label")).toBe("Your account");
+  });
+
+  it("a lucide entry naming a component the registry lacks renders the placeholder", () => {
+    const slot = "sessions.avatar";
+    const m = load("lucide", slot);
+    const entry = m?.slots[slot];
+    if (!entry?.lucide) {
+      throw new Error("fixture has no lucide ref");
+    }
+    entry.lucide.component = "NotAnIcon";
+    expect(
+      renderSlot(slot).getAttribute("data-ui-bridge-placeholder-reason")
+    ).toBe("lucide_unavailable");
+  });
 });

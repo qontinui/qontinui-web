@@ -216,3 +216,99 @@ describe("resolveSlotImage", () => {
     });
   });
 });
+
+describe("a lucide entry", () => {
+  const LUCIDE = {
+    route: "lucide",
+    files: {},
+    sha256: {},
+    lucide: {
+      package: "lucide-react",
+      icon: "circle-user",
+      component: "CircleUser",
+    },
+    binding: { source: "selected", ai_generated: false },
+  };
+
+  it("is read", () => {
+    const raw = {
+      generated_by: "qontinui-studio",
+      slots: { "runs.active.idle": LUCIDE },
+    };
+    expect(readStudioManifest(raw)).toEqual({ ok: true, manifest: raw });
+  });
+
+  it.each([
+    ["no lucide object", { ...LUCIDE, lucide: undefined }],
+    [
+      "another package",
+      { ...LUCIDE, lucide: { ...LUCIDE.lucide, package: "react-icons" } },
+    ],
+    [
+      "a component that is not an export name",
+      { ...LUCIDE, lucide: { ...LUCIDE.lucide, component: "circle-user" } },
+    ],
+    [
+      "an icon that is not a lucide name",
+      { ...LUCIDE, lucide: { ...LUCIDE.lucide, icon: "CircleUser" } },
+    ],
+  ])("is refused with %s", (_, entry) => {
+    expect(
+      readStudioManifest({ generated_by: "x", slots: { s: entry } })
+    ).toMatchObject({ ok: false });
+  });
+
+  const manifestOf = (entry: StudioSlotEntry): ManifestRead =>
+    manifestWith(entry);
+  const entry = LUCIDE as unknown as StudioSlotEntry;
+
+  it("renders the component the registry holds, decorative", () => {
+    expect(
+      resolveSlotImage(
+        "runs.active.idle",
+        SPEC,
+        manifestOf(entry),
+        undefined,
+        new Set(["CircleUser"])
+      )
+    ).toEqual({ kind: "lucide", component: "CircleUser", alt: "" });
+  });
+
+  it("renders the placeholder for a component the registry does not hold", () => {
+    expect(
+      resolveSlotImage(
+        "runs.active.idle",
+        SPEC,
+        manifestOf(entry),
+        undefined,
+        new Set(["Inbox"])
+      )
+    ).toEqual({ kind: "placeholder", reason: "lucide_unavailable" });
+  });
+
+  it("takes a required slot's alt text from the binding", () => {
+    const required: ImageSlotSpec = { ...SPEC, alt: { kind: "required" } };
+    const withAlt = {
+      ...LUCIDE,
+      binding: { ...LUCIDE.binding, alt_text: "Your account" },
+    } as unknown as StudioSlotEntry;
+    expect(
+      resolveSlotImage(
+        "runs.active.idle",
+        required,
+        manifestOf(withAlt),
+        undefined,
+        new Set(["CircleUser"])
+      )
+    ).toEqual({ kind: "lucide", component: "CircleUser", alt: "Your account" });
+    expect(
+      resolveSlotImage(
+        "runs.active.idle",
+        required,
+        manifestOf(entry),
+        undefined,
+        new Set(["CircleUser"])
+      )
+    ).toEqual({ kind: "placeholder", reason: "alt_text_missing" });
+  });
+});

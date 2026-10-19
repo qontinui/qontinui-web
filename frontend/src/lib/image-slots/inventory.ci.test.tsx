@@ -26,6 +26,7 @@ import {
 import { SLOT_MANIFEST } from "./manifest";
 import {
   IMAGE_SLOT_AUTHORED_SVG,
+  IMAGE_SLOT_LUCIDE,
   IMAGE_SLOT_SPECS,
   type ImageSlotId,
 } from "./specs.generated";
@@ -71,6 +72,7 @@ function realInventory() {
         text: fs.readFileSync(path.join(publishDir, name), "utf8"),
       })),
     parse: (text) => new DOMParser().parseFromString(text, "image/svg+xml"),
+    lucideComponents: new Set(Object.keys(IMAGE_SLOT_LUCIDE)),
     render: (slot) =>
       renderToStaticMarkup(<SlotImage slot={slot as ImageSlotId} />),
   });

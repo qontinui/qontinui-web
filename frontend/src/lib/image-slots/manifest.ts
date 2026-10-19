@@ -24,7 +24,18 @@
  * checks that the page shows THIS batch's bytes. The test fixtures under
  * `test-fixtures/image-slots/studio/` are manifests studio itself wrote.
  *
- * The third shape a slot's art takes is an AGENT-AUTHORED INLINE SVG
+ * A `lucide` entry (studio's `lucide` route) names an icon instead of files:
+ *
+ *   { "route": "lucide", "files": {}, "sha256": {},
+ *     "lucide": { "package": "lucide-react", "icon": "<kebab-name>",
+ *                 "component": "<PascalCase export>" },
+ *     "binding": { "source": "selected", "ai_generated": false, … }, … }
+ *
+ * and renders that lucide-react component, provided the generated registry
+ * holds it (`IMAGE_SLOT_LUCIDE`, compiled from the installed lucide-react's
+ * exports); otherwise the placeholder.
+ *
+ * The other shape a slot's art takes is an AGENT-AUTHORED INLINE SVG
  * (studio's `svg` route): studio writes no file and no manifest entry for it;
  * the session writes `image-slots/<slot>.svg` beside the spec, and it renders
  * inline, because only inline SVG inherits `currentColor` and the page's
@@ -52,7 +63,37 @@ export interface StudioSlotEntry {
   /** The binding's alt text again, written for an `alt: required` slot. */
   alt_text?: unknown;
   ai_generated?: boolean;
+  /** `diffusion`, `traced`, `lucide`, …; absent on a pre-compile entry. */
+  route?: unknown;
+  /** The icon a `lucide` entry names. */
+  lucide?: StudioLucideRef;
   [field: string]: unknown;
+}
+
+/** The icon a `lucide` manifest entry names. */
+export interface StudioLucideRef {
+  package: "lucide-react";
+  /** Lucide's kebab-case icon name (`inbox`). */
+  icon: string;
+  /** The lucide-react export that renders it (`Inbox`). */
+  component: string;
+}
+
+const LUCIDE_ICON = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const LUCIDE_COMPONENT = /^[A-Z][A-Za-z0-9]*$/;
+
+function isLucideRef(value: unknown): value is StudioLucideRef {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const { package: pkg, icon, component } = value as Record<string, unknown>;
+  return (
+    pkg === "lucide-react" &&
+    typeof icon === "string" &&
+    LUCIDE_ICON.test(icon) &&
+    typeof component === "string" &&
+    LUCIDE_COMPONENT.test(component)
+  );
 }
 
 export interface StudioManifest {
@@ -123,6 +164,12 @@ export function readStudioManifest(raw: unknown): ManifestRead {
         error: `slots.${slot} lacks string maps \`files\` and \`sha256\``,
       };
     }
+    if (fields.route === "lucide" && !isLucideRef(fields.lucide)) {
+      return {
+        ok: false,
+        error: `slots.${slot} is a lucide entry without a valid \`lucide\` {package: "lucide-react", icon, component}`,
+      };
+    }
   }
   return { ok: true, manifest: raw as StudioManifest };
 }
@@ -150,7 +197,10 @@ export type PlaceholderReason =
    *  `data-slot-spec-sha256` is not the spec's content hash. */
   | "authored_stale"
   /** The authored SVG carries no IPTC AI-generated marker. */
-  | "authored_unmarked";
+  | "authored_unmarked"
+  /** A `lucide` entry names a component the generated registry does not
+   *  hold: the installed lucide-react does not export it. */
+  | "lucide_unavailable";
 
 /** Why a placeholder renders, in words, for listings and notices. */
 export const PLACEHOLDER_REASON_TEXT: Readonly<
@@ -169,6 +219,8 @@ export const PLACEHOLDER_REASON_TEXT: Readonly<
     "its authored image-slots/<slot>.svg was drawn for an earlier version of the spec",
   authored_unmarked:
     "its authored image-slots/<slot>.svg carries no IPTC AI-generated marker",
+  lucide_unavailable:
+    "its manifest entry names a lucide-react component the installed lucide-react does not export",
 };
 
 export interface SlotSource {
@@ -183,6 +235,13 @@ export type SlotResolution =
       sources: SlotSource[];
       /** The `<img src>`: the most widely decodable format published. */
       src: string;
+      /** `""` for a decorative slot. */
+      alt: string;
+    }
+  | {
+      kind: "lucide";
+      /** The lucide-react export to render. */
+      component: string;
       /** `""` for a decorative slot. */
       alt: string;
     }
@@ -265,7 +324,8 @@ export function resolveSlotImage(
   slot: string,
   spec: ImageSlotSpec,
   manifest: ManifestRead,
-  authoredSvg?: AuthoredSvg
+  authoredSvg?: AuthoredSvg,
+  lucideComponents: ReadonlySet<string> = new Set()
 ): SlotResolution {
   // Own keys only: a slot named after an Object.prototype member
   // (`constructor`, `toString`) must not resolve to the inherited value.
@@ -295,6 +355,16 @@ export function resolveSlotImage(
   }
   if (entry === undefined) {
     return { kind: "placeholder", reason: "no_asset" };
+  }
+  if (entry.route === "lucide") {
+    const component = entry.lucide?.component;
+    if (component === undefined || !lucideComponents.has(component)) {
+      return { kind: "placeholder", reason: "lucide_unavailable" };
+    }
+    const alt = altText(spec, entry);
+    return alt === null
+      ? { kind: "placeholder", reason: "alt_text_missing" }
+      : { kind: "lucide", component, alt };
   }
   const [fallback, ...rest] = servableFiles(entry);
   if (fallback === undefined) {
