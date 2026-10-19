@@ -52,15 +52,10 @@ def _spec_files() -> list[Path]:
 
 
 def _fixtures(kind: str) -> list[Path]:
-    found = sorted((_FIXTURES / kind).glob("*.yaml"))
-    # An absent fixture directory would make every parametrized case vanish
-    # and the module read green having checked nothing.
-    assert found, (
-        f"no {kind} fixtures under {_FIXTURES}: the qontinui-schemas checkout the "
-        "path dependency resolves to does not carry the image-slot fixtures, so "
-        "the validator's agreement with Rust is UNKNOWN"
-    )
-    return found
+    # May be empty: an absent fixture directory is reported by ONE test,
+    # test_the_schemas_fixtures_are_present, rather than an import-time error
+    # that would break collection for the whole backend suite.
+    return sorted((_FIXTURES / kind).glob("*.yaml"))
 
 
 def _header(path: Path, key: str) -> str | None:
@@ -113,6 +108,17 @@ def test_backend_ci_runs_this_module_on_a_spec_only_change() -> None:
 # ---------------------------------------------------------------------------
 # The validator against qontinui-schemas' golden fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["valid", "invalid"])
+def test_the_schemas_fixtures_are_present(kind: str) -> None:
+    """Without them every fixture case below is an empty parameter set and the
+    module would read green having checked nothing."""
+    assert _fixtures(kind), (
+        f"no {kind} fixtures under {_FIXTURES}: the qontinui-schemas checkout the "
+        "path dependency resolves to does not carry the image-slot fixtures, so "
+        "the validator's agreement with Rust is UNKNOWN"
+    )
 
 
 @pytest.mark.parametrize("path", _fixtures("valid"), ids=lambda p: p.stem)
@@ -224,8 +230,12 @@ def test_lax_coercion_is_not_accepted() -> None:
 
 
 def test_each_cross_field_rule_reports_its_path() -> None:
-    """One mutation per rule on a valid spec, each reported where Rust
-    reports it; the fixtures cover the rest."""
+    """Each spec-level rule, and each edge of a compound one, broken once on a
+    valid spec and reported where Rust reports it. The obligations of a
+    CURRENT binding (alt text, exemplar and LoRA digests, logo, screenshot)
+    need a spec whose hash its binding records, and are covered by the
+    qontinui-schemas ``rule`` fixtures above. Every rule's mutant, removed
+    from the mirror, turns this module red (22 mutants, measured 2026-10-19)."""
     base = load_yaml12(
         (_SPEC_DIR / "runs.active.idle.yaml").read_text(encoding="utf-8")
     )
@@ -274,3 +284,36 @@ def test_each_cross_field_rule_reports_its_path() -> None:
             }
         )
     ) == [("thresholds", "MinAboveMax")]
+    assert problems(lambda s: s["contexts"].update(dpr=[1, 1])) == [
+        ("contexts.dpr", "NotAscending")
+    ]
+    assert problems(
+        lambda s: s["content"]["must"].append(
+            " A CALM, IDLE MOTIF, SUCH AS AN EMPTY TRAY OR A RESTING PIPELINE"
+        )
+    ) == [("content.must[1]", "Duplicate")]
+    assert problems(lambda s: s["focal"]["region"].update(y=0.5)) == [
+        ("focal.region", "RegionOutsideBox")
+    ]
+    assert problems(lambda s: s["focal"]["region"].update(height=0)) == [
+        ("focal.region", "RegionOutsideBox")
+    ]
+
+    def generated_binding(missing: str) -> Any:
+        binding = {
+            "asset_sha256": "a" * 64,
+            # Not this spec's hash: a STALE binding, so only the binding's own
+            # consistency is checked and nothing else can report.
+            "spec_sha256": "b" * 64,
+            "source": "generated",
+            "ai_generated": True,
+            "recipe_sha256": "c" * 64,
+            "imagery_sha256": "d" * 64,
+        }
+        del binding[missing]
+        return lambda s: s.update(provenance=binding)
+
+    for digest in ("recipe_sha256", "imagery_sha256"):
+        assert problems(generated_binding(digest)) == [
+            (f"provenance.{digest}", "MissingInputDigest")
+        ]

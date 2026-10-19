@@ -231,7 +231,30 @@ describe("the report", () => {
     );
     expect(markdown).not.toContain("Defects");
     expect(renderAnnotations(inventory)).toEqual([
-      '::notice file=frontend/src/a.tsx,line=3,title=Image slot ships a placeholder::slot "s.one" (empty_state) renders its placeholder (no_asset); no asset is bound in public/image-slots/studio-manifest.json',
+      '::notice file=frontend/src/a.tsx,line=3,title=Image slot ships a placeholder::slot "s.one" (empty_state) renders its placeholder (no_asset): no asset is bound to it in public/image-slots/studio-manifest.json',
+    ]);
+  });
+
+  it.each([
+    [
+      "manifest_unreadable",
+      "public/image-slots/studio-manifest.json could not be read",
+    ],
+    ["asset_unusable", "its manifest entry names no file this app can serve"],
+    [
+      "alt_text_missing",
+      "its alt is `required` and its binding records no alt_text, so the asset is withheld",
+    ],
+    [
+      "not_a_reason",
+      "the placeholder marker names no reason this inventory knows",
+    ],
+  ])("says what a %s placeholder means", (reason, text) => {
+    const inventory = buildInventory(
+      input({ render: (slot) => PLACEHOLDER(slot, reason) })
+    );
+    expect(renderAnnotations(inventory)).toEqual([
+      `::notice file=frontend/src/a.tsx,line=3,title=Image slot ships a placeholder::slot "s.one" (empty_state) renders its placeholder (${reason}): ${text}`,
     ]);
   });
 

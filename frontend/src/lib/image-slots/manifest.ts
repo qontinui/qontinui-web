@@ -19,7 +19,7 @@
  *
  * Resolution is pure and total: every slot resolves to exactly one of an
  * asset or a placeholder WITH THE REASON, and the inventory
- * (`scripts/image-slots.ts inventory`) reports exactly what `<SlotImage>`
+ * (`npm run image-slots:inventory`) reports exactly what `<SlotImage>`
  * renders because both call {@link resolveSlotImage}.
  */
 
@@ -117,6 +117,19 @@ export type PlaceholderReason =
    *  an image without its text alternative is not shipped. */
   | "alt_text_missing";
 
+/** Why a placeholder renders, in words, for listings and notices. */
+export const PLACEHOLDER_REASON_TEXT: Readonly<
+  Record<PlaceholderReason, string>
+> = {
+  no_asset:
+    "no asset is bound to it in public/image-slots/studio-manifest.json",
+  manifest_unreadable:
+    "public/image-slots/studio-manifest.json could not be read",
+  asset_unusable: "its manifest entry names no file this app can serve",
+  alt_text_missing:
+    "its alt is `required` and its binding records no alt_text, so the asset is withheld",
+};
+
 export interface SlotSource {
   type: string;
   srcSet: string;
@@ -195,7 +208,10 @@ export function resolveSlotImage(
   if (!manifest.ok) {
     return { kind: "placeholder", reason: "manifest_unreadable" };
   }
-  const entry = manifest.manifest.slots[slot];
+  // Own keys only: a slot named after an Object.prototype member
+  // (`constructor`, `toString`) must not resolve to the inherited value.
+  const { slots } = manifest.manifest;
+  const entry = Object.hasOwn(slots, slot) ? slots[slot] : undefined;
   if (entry === undefined) {
     return { kind: "placeholder", reason: "no_asset" };
   }

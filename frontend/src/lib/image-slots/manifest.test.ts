@@ -73,6 +73,16 @@ describe("resolveSlotImage", () => {
     });
   });
 
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
+    "does not resolve a slot named %s to an inherited property",
+    (slot) => {
+      expect(resolveSlotImage(slot, { ...SPEC, slot }, SLOT_MANIFEST)).toEqual({
+        kind: "placeholder",
+        reason: "no_asset",
+      });
+    }
+  );
+
   it("renders the placeholder while no asset is bound", () => {
     expect(resolveSlotImage("runs.active.idle", SPEC, SLOT_MANIFEST)).toEqual({
       kind: "placeholder",
