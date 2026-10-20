@@ -23,3 +23,7 @@ test-fixtures/vga/canonical-state-machine.json
 # `npm run generate-api-types:local` in frontend-ci.yml — prettier would
 # reformat it and turn the gate red.
 src/lib/api-client/generated-types.ts
+
+# Generated from image-slots/*.yaml by `npm run image-slots:generate`,
+# drift-gated byte-for-byte by src/lib/image-slots/codegen.test.ts.
+src/lib/image-slots/specs.generated.ts

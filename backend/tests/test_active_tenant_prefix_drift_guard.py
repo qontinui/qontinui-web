@@ -243,11 +243,22 @@ _FORWARDED_TO_COORD: dict[str, str] = {
 # selection degrades to home) before using it for anything local, such as a
 # cache key. They also forward it to coord.
 _VALIDATED_LOCALLY: dict[str, str] = {
+    "app.api.v1.endpoints.overlord_labels": (
+        "never forwards the client's raw value: it sends the tenant "
+        "require_coord_tenant_admin resolved, which is membership-checked "
+        "against the caller's coord operator roles"
+    ),
     "app.api.v1.endpoints.admin_dev": (
         "_capture_bearer_best_effort matches the selection against identity.tenants"
     ),
     "app.api.v1.endpoints.digital_twin": (
         "subspaces keys its cache on _effective_tenant_id(identity, header)"
+    ),
+    "app.api.v1.endpoints.taste": (
+        "reads it only for get_can_label's _effective_tenant_roles, which "
+        "matches it against identity.tenants (a non-member selection degrades "
+        "to home); every row is scoped by the tenant get_memory_tenant / "
+        "require_coord_tenant_admin_target resolve, never by the raw value"
     ),
 }
 

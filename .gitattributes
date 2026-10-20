@@ -40,3 +40,5 @@
 *.zip binary
 *.gz binary
 *.tar binary
+*.tgz binary
+*.woff2 binary
