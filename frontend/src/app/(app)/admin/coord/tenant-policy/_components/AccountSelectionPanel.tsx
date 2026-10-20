@@ -33,6 +33,16 @@ const LEVEL_COPY: Record<
     blurb:
       "Every unpinned runner picks, among the accounts still under their expected pace, the one expected to use the most. A machine with fewer than two accounts is unaffected.",
   },
+  weighted_random: {
+    label: "Weighted random",
+    blurb:
+      "Every unpinned runner picks at random among the accounts still under their expected weekly pace, favouring accounts expected to use more and those furthest behind their pace (weight: expected usage × (expected − actual)). A machine with fewer than two accounts is unaffected. Runners that predate this mode keep their local mode.",
+  },
+  alternating_handoff: {
+    label: "Alternating handoff",
+    blurb:
+      "Every unpinned runner ranks the accounts still under their expected weekly pace by expected usage, highest first, and alternates session handoffs between the first account and each of the others in turn (1, 2, 1, 3, 1, 4, 1, 2, …), counting handoffs from the last 3 hours. With no handoffs in that window, the next one goes to the first account. A machine with fewer than two accounts is unaffected. This is also the mode a runner uses on its own when no mode is set on the machine. Runners that predate this mode keep their local mode.",
+  },
 };
 
 /**
