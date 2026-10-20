@@ -5,7 +5,7 @@
  *
  * Phase 3 of plan
  * `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls` (§3.6).
- * It carries five switches:
+ * It carries five switches and one designation:
  *
  * * transcript sync — the per-tenant consent gate coord applies to
  *   session-output ingest (qontinui-coord#2480);
@@ -27,12 +27,18 @@
  *   Phase 3);
  * * image generation — the `image_generation` fleet-policy dial Studio is to
  *   read before each image request (no Studio build reads it yet) (`on` | `local_only` | `off`), with per-repo
- *   overrides (plan `2026-10-13-image-generation-and-visual-judgment` Phase 12).
+ *   overrides (plan `2026-10-13-image-generation-and-visual-judgment` Phase 12);
+ * * secrets broker device — the device coord accepts secrets-broker reports
+ *   from (`coord.fleet_runtime_policy.secrets_broker_device_id` on the
+ *   `secrets_broker` domain's tenant row), written through its own
+ *   `PUT /operations/secrets-broker/device` door, which proves the device is
+ *   bound to the tenant first (plan
+ *   `2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them` Phase 3).
  *
  * Authz: like every `/admin/coord` page, any tenant member may VIEW it; the
  * write is gated by coord-tenant admin on the backend
- * (`require_coord_tenant_admin_target` for transcript sync,
- * `require_coord_tenant_admin` on the shared `PUT /operations/fleet-policy`
+ * (`require_coord_tenant_admin_target` for transcript sync and the secrets
+ * broker device, `require_coord_tenant_admin` on the shared `PUT /operations/fleet-policy`
  * door for the four fleet-policy dials) and again by coord (`rbac::is_tenant_admin`), and
  * only reflected here via `can_edit`.
  *
@@ -44,6 +50,7 @@ import { AccountSelectionPanel } from "./_components/AccountSelectionPanel";
 import { CommandSafetyRewritePanel } from "./_components/CommandSafetyRewritePanel";
 import { ImageGenerationPanel } from "./_components/ImageGenerationPanel";
 import { PermissionPromptCapturePanel } from "./_components/PermissionPromptCapturePanel";
+import { SecretsBrokerDevicePanel } from "./_components/SecretsBrokerDevicePanel";
 import { TranscriptSyncPanel } from "./_components/TranscriptSyncPanel";
 
 export default function TenantPolicyPage() {
@@ -54,6 +61,7 @@ export default function TenantPolicyPage() {
       <PermissionPromptCapturePanel />
       <AccountSelectionPanel />
       <ImageGenerationPanel />
+      <SecretsBrokerDevicePanel />
     </div>
   );
 }

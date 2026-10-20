@@ -1,6 +1,7 @@
 /**
- * Tenant-band policy routes: coord's fleet-policy dials (`/fleet-policy`) and
- * the transcript-sync consent flag (`/tenant-policy/transcript-sync`).
+ * Tenant-band policy routes: coord's fleet-policy dials (`/fleet-policy`), the
+ * transcript-sync consent flag (`/tenant-policy/transcript-sync`) and the
+ * tenant's designated secrets-broker device (`/secrets-broker/device`).
  *
  * Part of the typed `/operations` client (plan
  * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`,
@@ -190,4 +191,74 @@ export async function patchTranscriptSyncPolicy(
     idempotent: false,
   });
   return readJson<TranscriptSyncWriteResult>(res, `PATCH ${url}`);
+}
+
+// ─────────────────────────────── secrets broker ────────────────────────────────
+
+/**
+ * Mirrors `SecretsBrokerDeviceView` (`get_secrets_broker_device`, proxying
+ * coord's `GET /coord/fleet-policy?domain=secrets_broker`). Plan
+ * `2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them` Phase 3.
+ *
+ * The device is an AUTHORIZATION: coord accepts secrets-broker reports only
+ * from a device JWT whose `device_id` equals it.
+ */
+export interface SecretsBrokerDeviceView {
+  /**
+   * The designated broker device, or `null` when none is designated — coord
+   * then refuses every broker report. Meaningful only when `reported`.
+   */
+  device_id: string | null;
+  /**
+   * `false` — coord's answer carried no such field (a coord predating the
+   * column's reader) or one the backend could not parse. UNKNOWN, never
+   * "no broker designated".
+   */
+  reported: boolean;
+  /** The `secrets_broker` domain's resolved level (`off` under a disabled master). */
+  effective_level: string;
+  master_enabled: boolean;
+  /** `"tenant" | "system" | "repo"`, or `"none"` when no row exists. */
+  resolved_scope: string;
+  /** Effective-tenant admin (or superuser). UI gating only; coord re-checks. */
+  can_edit: boolean;
+}
+
+/** Mirrors `SecretsBrokerDeviceWriteResult` (`put_secrets_broker_device`). */
+export interface SecretsBrokerDeviceWriteResult {
+  ok: boolean;
+  written_device_id: string | null;
+  versioned: boolean | null;
+  version: number | null;
+  updated_by: string | null;
+  /** A SECOND, fresh read. `null` + `readback_error` = UNKNOWN, not "applied". */
+  effective: SecretsBrokerDeviceView | null;
+  readback_error: string | null;
+}
+
+/** `GET /secrets-broker/device` (`get_secrets_broker_device`). */
+export async function fetchSecretsBrokerDevice(): Promise<SecretsBrokerDeviceView> {
+  const url = `${OPERATIONS_BASE}/secrets-broker/device`;
+  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  return readJson<SecretsBrokerDeviceView>(res, `GET ${url}`);
+}
+
+/**
+ * `PUT /secrets-broker/device` (`put_secrets_broker_device`) — designate the
+ * tenant's broker device, or clear it with `null`. The backend writes ONLY the
+ * device (coord's `PUT /coord/fleet-policy/secrets-broker-device`); no level is
+ * sent. Declared `idempotent: false`: the write is versioned coord-side, and a
+ * 504 (coord's answer lost) is reported as UNKNOWN by the caller, which a
+ * silent retry would paper over.
+ */
+export async function putSecretsBrokerDevice(
+  deviceId: string | null
+): Promise<SecretsBrokerDeviceWriteResult> {
+  const url = `${OPERATIONS_BASE}/secrets-broker/device`;
+  const res = await httpClient.fetch(url, {
+    method: "PUT",
+    body: JSON.stringify({ device_id: deviceId }),
+    idempotent: false,
+  });
+  return readJson<SecretsBrokerDeviceWriteResult>(res, `PUT ${url}`);
 }

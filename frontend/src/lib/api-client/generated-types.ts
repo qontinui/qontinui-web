@@ -15937,6 +15937,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/secrets-broker/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Secrets Broker Device
+         * @description Read the tenant's designated secrets-broker device.
+         *
+         *     ``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the
+         *     superuser bypass), the same rule ``require_coord_tenant_admin`` applies to
+         *     this door's PUT, which writes through coord's device-only
+         *     ``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).
+         *     ``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be
+         *     wrong.
+         */
+        get: operations["api_v1_operations_secrets_broker_device_get"];
+        /**
+         * Put Secrets Broker Device
+         * @description Designate (or clear) the tenant's secrets-broker device, then READ BACK.
+         *
+         *     Tenant-admin gated web-side; coord re-checks admin and the device's tenant
+         *     binding. The order is: prove the binding, write the device column alone,
+         *     re-read. A failed proof writes nothing; nothing but the device is ever
+         *     sent, so no level is read, carried or overwritten. A coord without the
+         *     route (404/405) is an error, never "written". A failed re-read after a
+         *     landed write is UNKNOWN (``readback_error``), not "applied".
+         */
+        put: operations["api_v1_operations_secrets_broker_device_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/sessions": {
         parameters: {
             query?: never;
@@ -48052,6 +48090,58 @@ export interface components {
             similarity_score: number;
         };
         /**
+         * SecretsBrokerDevicePut
+         * @description Closed body for the broker-device write.
+         *
+         *     ``device_id: null`` clears the designation (every broker report is then
+         *     refused). The field is REQUIRED, so an empty body is a 422 rather than a
+         *     silent clear.
+         */
+        SecretsBrokerDevicePut: {
+            /** Device Id */
+            device_id: string | null;
+        };
+        /**
+         * SecretsBrokerDeviceView
+         * @description The tenant's designated secrets-broker device, as coord resolves it.
+         */
+        SecretsBrokerDeviceView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Device Id */
+            device_id?: string | null;
+            /** Effective Level */
+            effective_level: string;
+            /** Master Enabled */
+            master_enabled: boolean;
+            /** Reported */
+            reported: boolean;
+            /** Resolved Scope */
+            resolved_scope: string;
+        };
+        /**
+         * SecretsBrokerDeviceWriteResult
+         * @description What was written, and, separately, what coord now resolves.
+         *
+         *     ``effective`` is ``None`` with ``readback_error`` set when the write landed
+         *     but the re-read failed. That is UNKNOWN, not "applied".
+         */
+        SecretsBrokerDeviceWriteResult: {
+            effective?: components["schemas"]["SecretsBrokerDeviceView"] | null;
+            /** Ok */
+            ok: boolean;
+            /** Readback Error */
+            readback_error?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+            /** Version */
+            version?: number | null;
+            /** Versioned */
+            versioned?: boolean | null;
+            /** Written Device Id */
+            written_device_id: string | null;
+        };
+        /**
          * SectionDrift
          * @description Per-section rollup of key deltas.
          */
@@ -78602,6 +78692,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretsBrokerDevicePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceWriteResult"];
                 };
             };
             /** @description Validation Error */
