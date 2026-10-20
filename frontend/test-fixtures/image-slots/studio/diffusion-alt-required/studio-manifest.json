@@ -1,0 +1,214 @@
+{
+  "generated_by": "qontinui-studio",
+  "slots": {
+    "marketing.home.hero": {
+      "ai_generated": true,
+      "alt_text": "A person at a desk watches a run finish.",
+      "asset_uid": "compile-web-marketing--home--hero-20261009T120000-v0-0",
+      "batch_id": "compile-web-marketing--home--hero-20261009T120000",
+      "binding": {
+        "ai_generated": true,
+        "alt_text": "A person at a desk watches a run finish.",
+        "asset_sha256": "b7b4a6537f980264fe31f4a845c1e32fe9bc2736e34258d7486be35bb46fa783",
+        "imagery_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recipe_sha256": "153b788fa27b24bf8d89e51065d16a3e91bdb731620082d86fbf52c7bdd7057f",
+        "source": "generated",
+        "spec_sha256": "d64ae005aadc6cd95d812d1fc067f24ff630489b09694c9be1a2145f8a9f3bf7"
+      },
+      "digital_source_type": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+      "files": {
+        "avif": "marketing.home.hero.avif",
+        "png": "marketing.home.hero.png",
+        "webp": "marketing.home.hero.webp"
+      },
+      "label": "AI-generated image",
+      "licence": {
+        "commercial_use": "yes",
+        "source": "https://example.test/tos#commercial",
+        "tos_reviewed": "2026-10-09"
+      },
+      "model": "fake-v1",
+      "pick": {
+        "asset_sha256": "b7b4a6537f980264fe31f4a845c1e32fe9bc2736e34258d7486be35bb46fa783",
+        "index": 0,
+        "model": "fake-v1",
+        "of": 2,
+        "pick": "unjudged (Phase 20 not landed)",
+        "provider": "fake"
+      },
+      "provenance": {
+        "avif": {
+          "ai_generated": true,
+          "batch_id": "compile-web-marketing--home--hero-20261009T120000",
+          "brief_id": "compile-web-marketing--home--hero",
+          "c2pa": {
+            "reason": "no C2PA signing credential is configured; the IPTC marker is the mandatory part",
+            "signed": false
+          },
+          "created_at": "2026-10-09T12:00:05+00:00",
+          "digital_source_type": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "file": {
+            "derived_from": "b7b4a6537f980264fe31f4a845c1e32fe9bc2736e34258d7486be35bb46fa783",
+            "name": "compile-web-marketing--home--hero-20261009T120000-v0-0--web--marketing.home.avif",
+            "role": "derivative",
+            "sha256": "3a84f0523aff7bbaade8d6abce529babe24186b642d9e216b876497cbd238a99",
+            "transform": {
+              "focal": [
+                0.5,
+                0.5
+              ],
+              "format": "avif",
+              "height": 180,
+              "remove_background": false,
+              "site": "web",
+              "slot": "marketing.home.hero",
+              "width": 320
+            }
+          },
+          "job_id": "compile-web-marketing--home--hero-20261009T120000-v0",
+          "model": "fake-v1",
+          "negative_prompt": null,
+          "prompt": "Show a calm automation run so a visitor reads that it takes work off their hands. Depict: a laptop showing a workflow canvas. The image carries no text. Place the subject in the middle centre of the frame, wholly inside that area, so every crop keeps it. It is shown on a dark page.\n\nAvoid: third-party logos, text, letters, words",
+          "provider": {
+            "adapter": "fake",
+            "id": "fake",
+            "name": "Fake generator"
+          },
+          "recipe": null,
+          "references": [],
+          "schema": "qontinui-studio/provenance/v1",
+          "seed": null,
+          "terms": {
+            "automation_allowed": "yes",
+            "commercial_use": "yes",
+            "commercial_use_source": "https://example.test/tos#commercial",
+            "operator_override": null,
+            "provider": "fake",
+            "provider_name": "Fake generator",
+            "tos_reviewed": "2026-10-09",
+            "watermark": "none",
+            "watermark_visible": false
+          }
+        },
+        "png": {
+          "ai_generated": true,
+          "batch_id": "compile-web-marketing--home--hero-20261009T120000",
+          "brief_id": "compile-web-marketing--home--hero",
+          "c2pa": {
+            "reason": "no C2PA signing credential is configured; the IPTC marker is the mandatory part",
+            "signed": false
+          },
+          "created_at": "2026-10-09T12:00:05+00:00",
+          "digital_source_type": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "file": {
+            "derived_from": "b7b4a6537f980264fe31f4a845c1e32fe9bc2736e34258d7486be35bb46fa783",
+            "name": "compile-web-marketing--home--hero-20261009T120000-v0-0--web--marketing.home.png",
+            "role": "derivative",
+            "sha256": "950e3457b535005c938c1fcb64a49f2f4e177589713c1d4abf6af385a6373fff",
+            "transform": {
+              "focal": [
+                0.5,
+                0.5
+              ],
+              "format": "png",
+              "height": 180,
+              "remove_background": false,
+              "site": "web",
+              "slot": "marketing.home.hero",
+              "width": 320
+            }
+          },
+          "job_id": "compile-web-marketing--home--hero-20261009T120000-v0",
+          "model": "fake-v1",
+          "negative_prompt": null,
+          "prompt": "Show a calm automation run so a visitor reads that it takes work off their hands. Depict: a laptop showing a workflow canvas. The image carries no text. Place the subject in the middle centre of the frame, wholly inside that area, so every crop keeps it. It is shown on a dark page.\n\nAvoid: third-party logos, text, letters, words",
+          "provider": {
+            "adapter": "fake",
+            "id": "fake",
+            "name": "Fake generator"
+          },
+          "recipe": null,
+          "references": [],
+          "schema": "qontinui-studio/provenance/v1",
+          "seed": null,
+          "terms": {
+            "automation_allowed": "yes",
+            "commercial_use": "yes",
+            "commercial_use_source": "https://example.test/tos#commercial",
+            "operator_override": null,
+            "provider": "fake",
+            "provider_name": "Fake generator",
+            "tos_reviewed": "2026-10-09",
+            "watermark": "none",
+            "watermark_visible": false
+          }
+        },
+        "webp": {
+          "ai_generated": true,
+          "batch_id": "compile-web-marketing--home--hero-20261009T120000",
+          "brief_id": "compile-web-marketing--home--hero",
+          "c2pa": {
+            "reason": "no C2PA signing credential is configured; the IPTC marker is the mandatory part",
+            "signed": false
+          },
+          "created_at": "2026-10-09T12:00:05+00:00",
+          "digital_source_type": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "file": {
+            "derived_from": "b7b4a6537f980264fe31f4a845c1e32fe9bc2736e34258d7486be35bb46fa783",
+            "name": "compile-web-marketing--home--hero-20261009T120000-v0-0--web--marketing.home.webp",
+            "role": "derivative",
+            "sha256": "5001b41bf7a25ae1bd953d77e479f5eeee6ba45c060c9402d0e86e4ba3e928bf",
+            "transform": {
+              "focal": [
+                0.5,
+                0.5
+              ],
+              "format": "webp",
+              "height": 180,
+              "remove_background": false,
+              "site": "web",
+              "slot": "marketing.home.hero",
+              "width": 320
+            }
+          },
+          "job_id": "compile-web-marketing--home--hero-20261009T120000-v0",
+          "model": "fake-v1",
+          "negative_prompt": null,
+          "prompt": "Show a calm automation run so a visitor reads that it takes work off their hands. Depict: a laptop showing a workflow canvas. The image carries no text. Place the subject in the middle centre of the frame, wholly inside that area, so every crop keeps it. It is shown on a dark page.\n\nAvoid: third-party logos, text, letters, words",
+          "provider": {
+            "adapter": "fake",
+            "id": "fake",
+            "name": "Fake generator"
+          },
+          "recipe": null,
+          "references": [],
+          "schema": "qontinui-studio/provenance/v1",
+          "seed": null,
+          "terms": {
+            "automation_allowed": "yes",
+            "commercial_use": "yes",
+            "commercial_use_source": "https://example.test/tos#commercial",
+            "operator_override": null,
+            "provider": "fake",
+            "provider_name": "Fake generator",
+            "tos_reviewed": "2026-10-09",
+            "watermark": "none",
+            "watermark_visible": false
+          }
+        }
+      },
+      "provider": "fake",
+      "published_at": "2026-10-09T12:00:05+00:00",
+      "recipe": "hero",
+      "route": "diffusion",
+      "sha256": {
+        "avif": "3a84f0523aff7bbaade8d6abce529babe24186b642d9e216b876497cbd238a99",
+        "png": "950e3457b535005c938c1fcb64a49f2f4e177589713c1d4abf6af385a6373fff",
+        "webp": "5001b41bf7a25ae1bd953d77e479f5eeee6ba45c060c9402d0e86e4ba3e928bf"
+      },
+      "slot_id": "marketing.home.hero",
+      "slot_spec_sha256": "d64ae005aadc6cd95d812d1fc067f24ff630489b09694c9be1a2145f8a9f3bf7",
+      "watermark": "none"
+    }
+  }
+}

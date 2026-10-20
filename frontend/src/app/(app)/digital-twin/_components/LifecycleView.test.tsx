@@ -9,7 +9,11 @@
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SubspaceProbe, SubspacesProbeResponse } from "../_lib/types";
+import type {
+  SubspaceProbe,
+  SubspacesProbeResponse,
+  TwinCatalogResponse,
+} from "../_lib/types";
 
 const state = vi.hoisted(() => ({
   probe: {
@@ -18,6 +22,8 @@ const state = vi.hoisted(() => ({
     isError: false,
     error: null as unknown,
   },
+  /** coord's served catalog; `undefined` = not read (the manifest stands in). */
+  catalog: undefined as TwinCatalogResponse | undefined,
   /** The UI Bridge registry: mounted element + label per id. */
   registry: new Map<string, { el: HTMLElement; label?: string }>(),
   /** Ids registered by two mounted elements at once. */
@@ -26,6 +32,14 @@ const state = vi.hoisted(() => ({
 
 vi.mock("../_hooks/useDigitalTwinSubspaces", () => ({
   useDigitalTwinSubspaces: () => state.probe,
+}));
+vi.mock("../_hooks/useTwinCatalog", () => ({
+  useTwinCatalog: () => ({
+    data: state.catalog,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
 }));
 vi.mock("../_hooks/useSubspaceRaw", () => ({
   useSubspaceRaw: () => ({
@@ -54,6 +68,7 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 
 import { LIFECYCLE_STAGES } from "../_lib/lifecycle";
 import { manifest } from "../_lib/resolve";
+import { catalogDeclaring } from "../_lib/test-catalog";
 import { LifecycleView } from "./LifecycleView";
 
 /** The snapshot sub-spaces coord refuses to a non-system tenant (per qontinui-coord#3128). */
@@ -97,6 +112,7 @@ beforeEach(() => {
     isError: false,
     error: null,
   };
+  state.catalog = undefined;
   state.registry.clear();
   state.duplicates = [];
 });
@@ -268,9 +284,127 @@ describe("LifecycleView", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the access notice instead of the stages when restricted", () => {
+  it("renders one refused sub-space as its own Restricted cell, keeping the stages", () => {
     state.probe = {
-      data: { subspaces: [], probed: 0, restricted: true },
+      data: probeAll({ release: "restricted" }),
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    const { container } = render(<LifecycleView />);
+    expect(screen.queryByText("Access restricted")).toBeNull();
+    expect(
+      container.querySelectorAll('section[data-testid^="digital-twin-stage-"]')
+    ).toHaveLength(LIFECYCLE_STAGES.length);
+    const release = screen.getByTestId(
+      "digital-twin-stage-release-cell-release"
+    );
+    expect(release).toHaveTextContent("Restricted");
+    expect(release).not.toHaveTextContent("Error");
+    // A tenant-scoped cell beside it still answers.
+    expect(
+      screen.getByTestId("digital-twin-stage-learn-cell-memory")
+    ).toHaveTextContent("Live");
+    // The refused probe is its own bar segment, never "not answering", and it
+    // leaves the stage's denominator: 6 of the 6 it may read answer.
+    const stage = stageSection("release");
+    expect(stage.querySelectorAll('[title*="not answering"]')).toHaveLength(0);
+    expect(
+      stage.querySelector('[title="1 restricted (not yours to read)"]')
+    ).not.toBeNull();
+    expect(
+      within(stage).getByText("live-probed").parentElement
+    ).toHaveTextContent("6/6");
+  });
+
+  it("says a twin is all restricted for you, never 0/0", () => {
+    const environmentProbes = manifest.subspaces
+      .filter((s) => s.query_kind === "snapshot" && s.twin === "environment")
+      .map((s) => [s.id, "restricted" as const]);
+    expect(environmentProbes.length).toBeGreaterThan(0);
+    state.probe = {
+      data: probeAll(Object.fromEntries(environmentProbes)),
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    const { container } = render(<LifecycleView />);
+    expect(screen.getByText(/all restricted for you/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/(^|\D)0\/0(\D|$)/);
+  });
+
+  it("still says no probe is answering when a served report sits beside a silent one", () => {
+    // implement: deps (blind — gradable, not answering) + worktree (a report).
+    state.probe = {
+      data: probeAll({ deps: "blind", worktree: "served" }),
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<LifecycleView />);
+    expect(
+      within(stageSection("implement")).getByText(
+        "No live probe answering at this stage."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("counts a served report as its own segment, never as not answering", () => {
+    state.probe = {
+      data: probeAll({ worktree: "served" }),
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<LifecycleView />);
+    const stage = stageSection("implement");
+    expect(
+      screen.getByTestId("digital-twin-stage-implement-cell-worktree")
+    ).toHaveTextContent("Served");
+    expect(stage.querySelectorAll('[title*="not answering"]')).toHaveLength(0);
+    expect(
+      stage.querySelector('[title="1 live-probed, a report (not graded)"]')
+    ).not.toBeNull();
+  });
+
+  it("live-probes a row coord declares and says Not served by coord for one it does not", () => {
+    const declared = manifest.subspaces
+      .filter((s) => s.query_kind === "snapshot" && s.id !== "schema")
+      .map((s) => s.id);
+    state.catalog = catalogDeclaring(declared);
+    state.probe = {
+      data: {
+        subspaces: declared.map((id) => ({ id, status: "implemented" })),
+        probed: declared.length,
+        restricted: false,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<LifecycleView />);
+    expect(
+      screen.getByTestId("digital-twin-stage-release-cell-schema")
+    ).toHaveTextContent("Not served by coord");
+    expect(
+      screen.getByTestId("digital-twin-stage-operate-cell-outbound")
+    ).toHaveTextContent("Live");
+    // release: 7 snapshot rows, schema no longer declared — 6 of 6 live.
+    expect(
+      within(stageSection("release")).getByText("live-probed").parentElement
+    ).toHaveTextContent("6/6");
+  });
+
+  it("shows the access notice instead of the stages only when every probe was refused", () => {
+    const refused = probeAll(
+      Object.fromEntries(
+        manifest.subspaces
+          .filter((s) => s.query_kind === "snapshot")
+          .map((s) => [s.id, "restricted" as const])
+      )
+    );
+    state.probe = {
+      data: { ...refused, restricted: true },
       isLoading: false,
       isError: false,
       error: null,
@@ -302,22 +436,16 @@ describe("LifecycleView restriction (the split per qontinui-coord#3128)", () => 
     // Every snapshot row at the release stage is SystemTenant-scoped.
     const release = stageSection("release");
     expect(release).toHaveTextContent(
-      "Every live probe at this stage is restricted for this tenant."
+      "Every live probe at this stage is restricted for you."
     );
-    expect(release).toHaveTextContent("live-probed · 7 restricted");
-    // No probe answered because none was allowed to: the live count is a dash,
-    // never a 0 that reads as "nothing answered".
-    const liveCount = within(release)
-      .getByText("live-probed · 7 restricted")
-      .parentElement!.querySelector("dd")!;
-    expect(liveCount).toHaveTextContent(/^—$/);
-    expect(liveCount).not.toHaveTextContent("0");
     expect(release).not.toHaveTextContent("No live probe answering");
     // The access legend entry shows only when something is restricted.
-    expect(screen.getByText("restricted (access)")).toBeInTheDocument();
-    // Twin cards: the environment twin is wholly refused; the process twin's
-    // two probes answer, with nothing restricted to report.
-    expect(screen.getByText(/^9 restricted · /)).toBeInTheDocument();
-    expect(screen.getByText(/^2\/2 live-probed · /)).toBeInTheDocument();
+    expect(
+      screen.getByText("restricted (not yours to read)")
+    ).toBeInTheDocument();
+    // Twin cards: the environment twin is wholly refused, and says so rather
+    // than reading "0/0"; the process twin's probes answer.
+    expect(screen.getByText(/^all restricted for you · /)).toBeInTheDocument();
+    expect(screen.getByText(/^\d+\/\d+ live-probed · /)).toBeInTheDocument();
   });
 });

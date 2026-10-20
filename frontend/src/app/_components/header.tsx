@@ -47,6 +47,13 @@ export function Header({ user, router, openSignIn }: HeaderProps) {
           </Button>
           <Button
             variant="ghost"
+            onClick={() => router.push("/how-it-works")}
+            className="hover:bg-primary/10"
+          >
+            How it works
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => router.push("/docs")}
             className="hover:bg-primary/10"
           >

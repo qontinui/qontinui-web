@@ -2064,6 +2064,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             f"{API_PREFIX}": {
                 **corpus_filter,
                 "intent_ref": "success_metric/development-speed",
+                "spec_ref": "REQ-0001",
                 "cursor": list_fingerprint(
                     org,
                     kind="plan",
@@ -2074,6 +2075,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
                     work_unit_slug="any-stem",
                     intent_ref="success_metric/development-speed",
                     slug="any-slug",
+                    spec_ref="REQ-0001",
                 ).encode(position),
                 "limit": "5",
             },

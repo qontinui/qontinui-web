@@ -8,6 +8,7 @@ import { Boxes } from "lucide-react";
 import { CoverageMatrix } from "./_components/CoverageMatrix";
 import { LifecycleView } from "./_components/LifecycleView";
 import { TwinCatalog } from "./_components/TwinCatalog";
+import { TwinFidelityHeader } from "./_components/TwinFidelityHeader";
 import { AskTheTwin } from "./_components/AskTheTwin";
 import { DeliveryVerdictCard } from "./_components/DeliveryVerdictCard";
 import { UiBridgePanel } from "./_components/UiBridgePanel";
@@ -23,11 +24,13 @@ import {
  * serve.
  *
  * Four tabs:
- *  - Completeness (default) — every observation sub-space (Ξ) by tier: which
- *    are live, partial, blind or unbuilt for this tenant, with the credibility
- *    envelope each live probe reports, kept visibly apart from rows that are
- *    only manifest claims; plus coord's queryable-surface catalog and "Ask the
- *    Twin" (your connected AI answers questions from the same tools).
+ *  - Completeness (default) — the twin's self-fidelity (coord's fidelity
+ *    report, UNKNOWN until coord serves it), then every observation
+ *    sub-space (Ξ) by tier: which are live, partial, blind or unbuilt for this
+ *    tenant, with the credibility envelope each live probe reports, kept
+ *    visibly apart from rows that are only manifest claims; plus coord's
+ *    queryable-surface catalog and "Ask the Twin" (your connected AI answers
+ *    questions from the same tools).
  *  - Lifecycle — the same sub-spaces laid over the lifecycle (intent → plan →
  *    implement → verify → integrate → release → operate → learn), per stage
  *    saying how much is live-probed, how much is only claimed, and what is
@@ -121,6 +124,7 @@ export default function DigitalTwinPage() {
           <ScrollArea className="min-h-0 flex-1">
             <TabsContent value="completeness" className="mt-0">
               <div className="space-y-6 px-6 py-4">
+                <TwinFidelityHeader />
                 <CoverageMatrix />
                 <TwinCatalog />
                 <AskTheTwin

@@ -1223,44 +1223,74 @@ async def get_pr_merge_prs(
     )
 
 
-@router.post("/prs/{owner}/{repo}/{number}/draft-state")
-async def set_pr_draft_state(
+# Body keys the hold proxy forwards to coord. coord's ``HoldBody`` is
+# ``deny_unknown_fields``, so anything else would be a 400 there; dropping it
+# here keeps the wire body exactly coord's contract.
+_PR_HOLD_FORWARDED_KEYS: tuple[str, ...] = ("held", "reason", "kind", "gate_id")
+
+
+@router.post("/prs/{owner}/{repo}/{number}/hold")
+async def set_pr_hold(
     owner: str,
     repo: str,
     number: int,
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Set a PR's GitHub draft state (operator release valve).
+    """Place or release a coord hold on a PR (the operator's hold control).
 
-    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-    (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-    ``false`` marks the PR ready-for-review (releasing it to the merge train),
-    ``true`` converts it back to draft (the documented hold mechanism).
+    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+    (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+    the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+    so it works on private repos on GitHub Free, which have no draft PRs.
 
-    Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-    bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-    fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-    server-side. Releasing a draft-required (security-surface) PR is an operator
-    judgment, so this is operator-authed — never an agent JWT.
+    Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+    ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+    ``held: false`` releases. Release authority is coord's: the holder, or an
+    admin-role operator for any hold; a ``security_tier`` hold is the
+    operator's alone.
 
-    Only the ``draft`` boolean is forwarded; any other keys the client sends are
-    dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-    coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-    via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-    / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-    502 github_draft_state_failed, 500 internal).
+    Auth mirrors the gate-action stack: the operator's Cognito bearer is
+    forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+    derives the tenant, role and repo authority server-side. Only the four
+    contract keys are forwarded.
+
+    ``structured_errors=True``: coord's typed refusal object (``{"error",
+    "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+    ``http_exception_handler`` splices into the top level of its envelope, so
+    the browser receives ``error`` as coord's code (400 invalid_input,
+    403 not_holder / security_tier_operator_only, 404 not_found,
+    500 internal) rather than a JSON string inside ``message``. A coord error
+    body that is not a JSON object still falls back to its text.
     """
-    draft = body.get("draft")
-    if not isinstance(draft, bool):
-        raise HTTPException(
-            status_code=400,
-            detail="draft-state body requires a boolean `draft` field",
+    held = body.get("held")
+    if not isinstance(held, bool):
+        raise refusal_error(
+            400,
+            RefusalCode.invalid_request,
+            NextActionKind.fix_request,
+            "hold body requires a boolean `held` field",
+            discriminator="pr_hold_held_not_bool",
         )
+    forwarded: dict[str, Any] = {"held": held}
+    for key in _PR_HOLD_FORWARDED_KEYS[1:]:
+        value = body.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise refusal_error(
+                400,
+                RefusalCode.invalid_request,
+                NextActionKind.fix_request,
+                f"hold body field `{key}` must be a string",
+                discriminator="pr_hold_field_not_string",
+            )
+        forwarded[key] = value
     return await _proxy_coord_post(
-        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state",
-        {"draft": draft},
+        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/hold",
+        forwarded,
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -13640,6 +13670,83 @@ async def get_coord_findings(
             "unavailable_kind": "unprovisioned",
         }
     return body
+
+
+# ---------------------------------------------------------------------------
+# Verification metrics — `GET /operations/coord/verification/metrics`
+#                      → coord `GET /coord/verification/metrics`
+#
+# Backs the overview's "Can I trust 'done'?" tile and its drill-down at
+# `/admin/coord/verification`. Plan
+# `2026-09-20-trust-calibration-and-independent-verification-coverage-are-measured-continuously`,
+# Phase 5 (web half).
+#
+# **A pass-through that never manufactures an answer.** coord's body is ONE
+# object — trust calibration (Wilson+fpc), independent-verification coverage,
+# unknowns, the pre-land review record beside coverage, the sampling posture,
+# the lane's freshness and a 12-week series — and its "could not look" answer
+# is already a body of its own (`200 {"degraded": true, "reason", …}` with
+# every number `null`). Both are forwarded byte-for-byte. Every NON-2xx is an
+# error here too, never a `200` with an empty or zeroed body: a tile that read
+# `{}` as "no verifications" would render the stale-green this surface exists
+# to rule out. That is the opposite of the findings proxy above, which
+# converts an absent coord into a `200` degrade envelope; this page renders
+# its own "could not look" from the error instead, so no envelope is needed
+# and none can be mistaken for data.
+#
+# One status IS rewritten: coord's `401` / `403`. The web backend forwards the
+# operator's Cognito bearer, and qontinui-coord 3088dc5d mounted this door on
+# a `require_jwt` sub-router (device / agent JWT only), which refuses that
+# bearer. Passed through as a `401`, the frontend http client would treat it
+# as a spent session and run its token-refresh branch on every tile read. It
+# is re-raised as a `502` whose detail names the refusal, so the page says
+# "could not look — coord refused the operator's credential" and nothing about
+# the user's own session changes.
+# ---------------------------------------------------------------------------
+
+_COORD_VERIFICATION_METRICS_PATH = "/coord/verification/metrics"
+
+
+@router.get("/coord/verification/metrics")
+async def get_coord_verification_metrics(
+    window: str | None = Query(
+        default=None,
+        description=(
+            "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord "
+            "owns the default (28d) and answers a malformed value with a "
+            "typed 422, which is passed through."
+        ),
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's verification metrics object for the operator's tenant.
+
+    The tenant is coord's to resolve from the forwarded bearer; nothing from
+    the request names it. The body is coord's, verbatim — including the
+    ``degraded: true`` answer, which the page renders as "could not look".
+    """
+    params = {"window": window} if window is not None else None
+    try:
+        return await _proxy_coord_get(
+            _COORD_VERIFICATION_METRICS_PATH, params=params, tenant_id=tenant_id
+        )
+    except CoordTransportUnavailable:
+        raise
+    except HTTPException as exc:
+        if exc.status_code in (401, 403):
+            raise refusal_error(
+                502,
+                RefusalCode.credential_rejected,
+                NextActionKind.report_defect,
+                (
+                    f"coord refused the operator's credential on "
+                    f"{_COORD_VERIFICATION_METRICS_PATH} (HTTP {exc.status_code}): "
+                    f"{exc.detail}"
+                ),
+                discriminator="coord_verification_metrics_credential_refused",
+                glossary_terms=[GlossaryTerm.coord],
+            ) from exc
+        raise
 
 
 @router.put("/coord/policies/system/{system_rule_id}/override")

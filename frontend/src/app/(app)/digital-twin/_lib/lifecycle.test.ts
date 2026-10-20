@@ -6,13 +6,20 @@ import {
   LIFECYCLE_STAGES,
   TWIN_PLANTS,
   coverageOf,
+  gradedOf,
   inLifecycleOrder,
   rowsForStage,
   stageSummary,
   twinSummary,
 } from "./lifecycle";
-import { manifest, resolveSubspaces } from "./resolve";
-import type { LifecycleStage, ResolvedSubspace, TwinPlant } from "./types";
+import { declaredProbes, manifest, resolveSubspaces } from "./resolve";
+import type {
+  LifecycleStage,
+  ResolvedSubspace,
+  SubspacesProbeResponse,
+  TwinCatalogResponse,
+  TwinPlant,
+} from "./types";
 
 const STAGE_IDS: LifecycleStage[] = LIFECYCLE_STAGES.map((s) => s.id);
 const TWIN_IDS: TwinPlant[] = TWIN_PLANTS.map((t) => t.id);
@@ -20,52 +27,40 @@ const TWIN_IDS: TwinPlant[] = TWIN_PLANTS.map((t) => t.id);
 /** `src/app` — this file lives in `frontend/src/app/(app)/digital-twin/_lib`. */
 const APP_DIR = join(__dirname, "..", "..", "..");
 
-/** The backend module whose `_PROBEABLE_SUBSPACES` the page's probe fans out over. */
-const PROBE_MODULE = join(
+/**
+ * The page's Spec CI spec. Its catalog route stub is the stubbed copy of what
+ * coord's `GET /coord/twin/catalog` serves; the backend test
+ * (`backend/tests/test_digital_twin_subspaces.py`) pins the same stub against
+ * the matrix stub, because each side's CI runs only on its own paths.
+ */
+const SPEC_FILE = join(
   APP_DIR,
   "..",
   "..",
-  "..",
-  "backend",
-  "app",
-  "api",
-  "v1",
-  "endpoints",
-  "digital_twin.py"
+  "specs",
+  "pages",
+  "digital-twin",
+  "state-machine.derived.json"
 );
 
 /**
- * The ids the backend live-probes, parsed from the `_PROBEABLE_SUBSPACES`
- * literal in `backend/app/api/v1/endpoints/digital_twin.py` — read, not
- * copied, so the manifest is pinned to the tuple itself. (The tuple in turn is
- * a hand copy of coord `twin_routes.rs` `subspace_tool`, which no test in this
- * repo can read.) The backend test pins the same equality from its side by
- * reading the manifest, because each side's CI runs only on its own paths.
- *
- * Fails closed: a tuple it cannot find, a line it cannot parse, or an empty
- * list throws rather than comparing the manifest against nothing.
+ * The body the spec stubs `urlPattern` with. Fails closed: a missing stub
+ * throws rather than joining the manifest to nothing.
  */
-function backendProbeableSubspaces(): string[] {
-  const source = readFileSync(PROBE_MODULE, "utf-8");
-  const literal =
-    /^_PROBEABLE_SUBSPACES: tuple\[str, \.\.\.\] = \(\r?\n([\s\S]*?)^\)/m.exec(
-      source
-    );
-  if (!literal) {
-    throw new Error(`no _PROBEABLE_SUBSPACES tuple in ${PROBE_MODULE}`);
-  }
-  const ids: string[] = [];
-  for (const line of literal[1].split(/\r?\n/)) {
-    const item = line.replace(/#.*$/, "").trim();
-    if (item === "") continue;
-    const id = /^"([a-z0-9_]+)",?$/.exec(item)?.[1];
-    if (!id) {
-      throw new Error(`unparseable _PROBEABLE_SUBSPACES entry: ${line.trim()}`);
-    }
-    ids.push(id);
-  }
-  if (ids.length === 0) throw new Error("_PROBEABLE_SUBSPACES parsed empty");
-  return ids;
+function stubBody(urlPattern: string): unknown {
+  const spec = JSON.parse(readFileSync(SPEC_FILE, "utf-8")) as {
+    metadata: { routeStubs: { urlPattern: string; body: unknown }[] };
+  };
+  const stub = spec.metadata.routeStubs.find(
+    (s) => s.urlPattern === urlPattern
+  );
+  if (!stub) throw new Error(`no ${urlPattern} route stub in ${SPEC_FILE}`);
+  return stub.body;
+}
+
+/** The catalog body the spec stubs `/api/v1/digital-twin/catalog` with. */
+function stubbedCatalog(): TwinCatalogResponse {
+  return stubBody("**/api/v1/digital-twin/catalog") as TwinCatalogResponse;
 }
 
 /** Whether `href` resolves to a page under `src/app` or one of its route groups. */
@@ -150,16 +145,45 @@ describe("manifest twin + lifecycle fields", () => {
     }
   });
 
-  it("marks a row snapshot only when the backend probes it, and probes only snapshot rows", () => {
-    // A `snapshot` row outside the tuple resolves to `error` forever; a probed
-    // id with no snapshot row is a probe nothing renders.
+  it("joins every snapshot row to a probe coord's catalog declares, and back", () => {
+    // The manifest's snapshot rows are the probes the page expects; the
+    // stubbed catalog's declared probes are what coord serves. A snapshot row
+    // coord does not declare renders "not served by coord"; a declared probe
+    // with no manifest row is a live cell nothing renders.
+    const declared = declaredProbes(stubbedCatalog());
+    if (!declared) throw new Error("the stubbed catalog declares nothing");
     const snapshotIds = manifest.subspaces
       .filter((s) => s.query_kind === "snapshot")
       .map((s) => s.id)
       .sort();
-    const probed = backendProbeableSubspaces();
-    expect(new Set(probed).size, "duplicate probe id").toBe(probed.length);
-    expect(snapshotIds).toEqual([...probed].sort());
+    expect(snapshotIds).toEqual([...declared.keys()].sort());
+    // The matrix stub Spec CI renders probes exactly what the catalog stub
+    // declares (the backend test pins the same pair from its side).
+    const matrix = stubBody(
+      "**/api/v1/digital-twin/subspaces"
+    ) as SubspacesProbeResponse;
+    expect(matrix.subspaces.map((s) => s.id).sort()).toEqual(
+      [...declared.keys()].sort()
+    );
+    // Every declared probe is live-probed once the catalog is joined.
+    const rows = resolveSubspaces([], false, stubbedCatalog());
+    for (const id of declared.keys()) {
+      expect(rows.find((r) => r.id === id)?.liveProbed, id).toBe(true);
+    }
+  });
+
+  it("renders a snapshot row coord stops declaring as not served by coord", () => {
+    const catalog = stubbedCatalog();
+    const dropped = "memory";
+    const without: TwinCatalogResponse = {
+      ...catalog,
+      entries: catalog.entries.filter((e) => e.subspace !== dropped),
+    };
+    const row = resolveSubspaces([], false, without).find(
+      (r) => r.id === dropped
+    )!;
+    expect(row.cellStatus).toBe("not-served");
+    expect(row.liveProbed).toBe(false);
   });
 
   it("keeps every description to one line of at most 160 characters", () => {
@@ -193,6 +217,7 @@ function row(
     coord_query_tool: query_kind === "none" ? null : `coord_query_${id}`,
     observer_module: null,
     cellStatus,
+    liveProbed: query_kind === "snapshot",
   };
 }
 
@@ -240,6 +265,8 @@ describe("stageSummary", () => {
       restricted: 0,
       live: 2, // implemented + partial answer; blind does not
       pending: 0,
+      served: 0,
+      restricted: 0,
       manifestBuilt: 2, // the parameterized and the none row — claims
       interactive: 1,
       planned: 1,
@@ -254,6 +281,8 @@ describe("stageSummary", () => {
       restricted: 0,
       live: 0,
       pending: 0,
+      served: 0,
+      restricted: 0,
       manifestBuilt: 0,
       interactive: 0,
       planned: 0,
@@ -271,21 +300,22 @@ describe("stageSummary", () => {
     expect(counts).toMatchObject({ probed: 3, live: 1, pending: 1 });
   });
 
-  it("keeps a restricted probe out of the live denominator — an access decision, not silence", () => {
-    // Once qontinui-coord#3128 lands, coord refuses SystemTenant sub-spaces per cell to a
-    // non-system tenant; those cells must not read as "probed, not answering".
+  it("counts a served report and a refused probe apart from the silent ones", () => {
     const counts = coverageOf([
-      row("refused_a", ["release"], "snapshot", "implemented", "restricted"),
-      row("refused_b", ["release"], "snapshot", "implemented", "restricted"),
-      row("answered", ["release"], "snapshot", "implemented", "implemented"),
+      row("report", ["operate"], "snapshot", "implemented", "served"),
+      row("internal", ["operate"], "snapshot", "implemented", "restricted"),
+      row("answered", ["operate"], "snapshot", "implemented", "implemented"),
+      row("silent", ["operate"], "snapshot", "partial", "error"),
     ]);
     expect(counts).toMatchObject({
-      probed: 1,
-      restricted: 2,
+      probed: 4,
       live: 1,
+      served: 1,
+      restricted: 1,
       pending: 0,
-      total: 3,
     });
+    // Only the report-free, unrefused probes can answer with a verdict.
+    expect(gradedOf(counts)).toBe(2);
   });
 
   it("puts every real row of every stage in exactly one bucket", () => {

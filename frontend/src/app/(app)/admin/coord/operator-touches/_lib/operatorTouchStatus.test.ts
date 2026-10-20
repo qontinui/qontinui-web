@@ -154,7 +154,27 @@ describe("deriveTouchesHealth — R1, derived from the payload on the page", () 
       constraint_verdict: { ...UNKNOWN_VERDICT, verdict: "machines" },
     });
     expect(h.headline).toBe("Not yet measured — the touch emitter has not run");
-    expect(h.detail).toContain("Machines are the constraint");
+    expect(h.detail).toContain(
+      "Machines are the constraint (the touch input is not yet measured)"
+    );
+  });
+
+  it("an unknown measurement word does not hide a capacity verdict either", () => {
+    for (const verdict of ["machines", "tokens"] as const) {
+      const h = health({
+        ...NOT_YET_MEASURED,
+        measurement: "estimated",
+        constraint_verdict: { ...UNKNOWN_VERDICT, verdict },
+      });
+      expect(h.headline).toBe(
+        "Unknown — coord reported a measurement this page does not know"
+      );
+      expect(h.detail).toMatch(/are the constraint \(the touch input is unknown\)/);
+      expect(h.detail).toContain("no count can be stated");
+    }
+    // No capacity verdict: the unknown arm says nothing about capacity.
+    const plain = health({ ...NOT_YET_MEASURED, measurement: "estimated" });
+    expect(plain.detail).not.toMatch(/constraint/);
   });
 
   it("names every unknown input in the verdict badge", () => {

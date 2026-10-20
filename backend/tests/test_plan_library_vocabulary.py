@@ -28,6 +28,7 @@ from app.models.work_artifact import (
     WORK_ARTIFACT_RELATIONS,
 )
 from app.schemas.plan_library import (
+    SPEC_KIND_STATUS_LITERALS,
     CapturedBy,
     DifficultyLevel,
     DifficultySource,
@@ -58,6 +59,13 @@ _LITERALS: dict[str, tuple[Any, dict[str, str]]] = {
     "size_class": (FollowupSizeClass, vocab.SIZE_CLASS_MEANINGS),
     "size_class_source": (FollowupSizeClassSource, vocab.SIZE_CLASS_SOURCE_MEANINGS),
     "resolution": (FollowupTransitionTarget, vocab.RESOLUTION_MEANINGS),
+    **{
+        vocab.spec_status_field_name(kind): (
+            literal,
+            vocab.SPEC_STATUS_MEANINGS[kind],
+        )
+        for kind, literal in SPEC_KIND_STATUS_LITERALS.items()
+    },
 }
 
 
