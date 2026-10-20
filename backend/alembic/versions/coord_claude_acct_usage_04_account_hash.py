@@ -60,11 +60,20 @@ production BEFORE that coord binary ships.
 
 The nullable ``ADD COLUMN`` with no default is metadata-only on PG >= 11. Every
 statement is a static literal guarded on absence (``IF NOT EXISTS`` /
-``IF EXISTS``), so a partial apply re-runs cleanly and the file stays
+``IF EXISTS``), so the column step re-runs cleanly and the file stays
 offline-safe (no ``op.get_bind()``). The index is built ``CONCURRENTLY`` inside
 ``autocommit_block()`` because the table is live and pre-existing — coord's
 ``migration_classifier`` rejects a non-concurrent index on a table this file
 does not create.
+
+A killed ``CONCURRENTLY`` build leaves an INVALID index that ``IF NOT EXISTS``
+skips, so a re-run does NOT repair it. Recovery is a follow-up revision doing
+``DROP INDEX CONCURRENTLY IF EXISTS`` then this CREATE again, never a re-run.
+Verify after deploy (must read ``indisvalid = true``)::
+
+    SELECT c.relname, i.indisvalid
+      FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+     WHERE c.relname = 'ix_claude_account_usage_tenant_account_hash';
 """
 
 from collections.abc import Sequence
@@ -113,4 +122,3 @@ def downgrade() -> None:
     op.execute(
         "ALTER TABLE coord.claude_account_usage DROP COLUMN IF EXISTS account_hash"
     )
-    op.execute("RESET lock_timeout")
