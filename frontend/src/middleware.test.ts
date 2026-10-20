@@ -122,3 +122,13 @@ describe("middleware — image-slot files", () => {
     }
   );
 });
+
+describe("middleware — the login bounce's next", () => {
+  it("never emits a next that begins with more than one slash", () => {
+    const res = anonymous("//elsewhere.example/build/workflows?x=1");
+    const next = new URL(res.headers.get("location") ?? "").searchParams.get(
+      "next"
+    );
+    expect(next).toBe("/elsewhere.example/build/workflows?x=1");
+  });
+});
