@@ -9,9 +9,12 @@ import { AlertTriangle, Lock } from "lucide-react";
  */
 
 /**
- * coord's twin tenant gate denied this operator (home tenant outside the
- * configured internal-tenant allowlist). Rendered INSTEAD of the view rather
- * than an all-"error" grid — it's an access decision, not an outage.
+ * coord's coarse twin tenant gate denied this operator (home tenant outside
+ * the configured internal-tenant allowlist): EVERY probe was refused
+ * (`resolve.ts` `allProbesRestricted`). Rendered INSTEAD of the view rather
+ * than an all-"error" grid — it's an access decision, not an outage. A single
+ * refused sub-space never reaches here; it renders as its own `restricted`
+ * cell, so this copy stays true whenever it shows.
  */
 export function TwinAccessRestricted() {
   return (

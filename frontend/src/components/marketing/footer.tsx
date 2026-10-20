@@ -28,6 +28,14 @@ export function Footer() {
               </li>
               <li>
                 <Link
+                  href="/how-it-works"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  How it works
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/docs"
                   className="text-sm text-muted-foreground hover:text-primary transition-colors"
                 >

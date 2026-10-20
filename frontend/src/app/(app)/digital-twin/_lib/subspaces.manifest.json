@@ -1,6 +1,6 @@
 {
-  "$comment": "Digital Twin sub-space taxonomy — the DENOMINATOR for the completeness matrix and the lifecycle view. It lists the research + coord sub-spaces of the twin of the software-development process as of 2026-10-11 (three coupled twins: environment = the system being built and run; process = work in flight; intent = what the operator wants), including planned and not-yet-built ones so the gap is explicit; it is not every research candidate (qontinui-research open-questions/missing-twin-sub-spaces.md parks more). The live numerator (per-tenant observer status) comes from GET /api/v1/digital-twin/subspaces and is joined by `id`. query_kind: 'snapshot' = live-probed by this page through coord's twin verdict route (the backend probes exactly _PROBEABLE_SUBSPACES in backend/app/api/v1/endpoints/digital_twin.py, a hand copy of coord twin_routes.rs subspace_tool); 'parameterized' = a coord tool answers it (with or without arguments) but this page does not probe it — its ask_via says where on this page, if anywhere, it can be asked; 'none' = no coord query tool. Statuses on 'none' / 'parameterized' rows are MANIFEST CLAIMS, not live verdicts. stages = the lifecycle stages a row observes (intent, plan, implement, verify, integrate, release, operate, learn); plan = the qontinui-dev-notes plan slug that builds a planned / partial row; ask_via (parameterized rows only) = where on this page the row's coord tool can be asked — 'ask-the-twin', 'delivery-tab' or 'not-on-this-page' (Ask the Twin runs on the runner's device credential, so it reaches only the tools coord grants a device session: agent_tool_access.rs device_default_allow_set). Every coord_query_tool was re-verified to exist on qontinui-coord origin/main on 2026-10-11. research_doc paths are qontinui-research paths, checked on its origin/master on 2026-10-11 except three: theory/process-twin.md, theory/intent-twin.md and theory/interventional-twin.md arrive in the companion qontinui-research PR, as the two 2026-10-11 plan slugs arrive in the companion qontinui-dev-notes PR. Keep coord_query_tool / observer_module in sync with coord src.",
-  "version": "2.0.0",
+  "$comment": "Digital Twin sub-space taxonomy — the DENOMINATOR for the completeness matrix and the lifecycle view. It lists the research + coord sub-spaces of the twin of the software-development process as of 2026-10-11 (three coupled twins: environment = the system being built and run; process = work in flight; intent = what the operator wants), including planned and not-yet-built ones so the gap is explicit; it is not every research candidate (qontinui-research open-questions/missing-twin-sub-spaces.md parks more). The live numerator (per-tenant observer status) comes from GET /api/v1/digital-twin/subspaces and is joined by `id`. query_kind: 'snapshot' = a row this page expects coord to DECLARE probeable — the backend probes exactly what coord's served catalog declares (GET /coord/twin/catalog: rows with snapshot:true, plus the envelope-shaped admin outbound door), and the page joins this manifest to that catalog by id, so a 'snapshot' row coord does not declare renders 'Not served by coord' and a row coord declares is live-probed whatever its query_kind (plan 2026-10-11-twin-honesty-and-reachability Phase 9; resolve.ts); 'parameterized' = a coord tool answers it (with or without arguments) but this page does not probe it — its ask_via says where on this page, if anywhere, it can be asked; 'none' = no coord query tool. Statuses on 'none' / 'parameterized' rows are MANIFEST CLAIMS, not live verdicts. stages = the lifecycle stages a row observes (intent, plan, implement, verify, integrate, release, operate, learn); plan = the qontinui-dev-notes plan slug that builds a planned / partial row; ask_via (parameterized rows only) = where on this page the row's coord tool can be asked — 'ask-the-twin', 'delivery-tab' or 'not-on-this-page' (Ask the Twin runs on the runner's device credential, so it reaches only the tools coord grants a device session: agent_tool_access.rs device_default_allow_set). Every coord_query_tool was re-verified to exist on qontinui-coord origin/main on 2026-10-11. research_doc paths are qontinui-research paths, checked on its origin/master on 2026-10-11 except three: theory/process-twin.md, theory/intent-twin.md and theory/interventional-twin.md arrive in the companion qontinui-research PR, as the two 2026-10-11 plan slugs arrive in the companion qontinui-dev-notes PR. Keep coord_query_tool / observer_module in sync with coord src.",
+  "version": "2.1.0",
   "subspaces": [
     {
       "id": "dom",
@@ -451,6 +451,20 @@
       "ask_via": "ask-the-twin"
     },
     {
+      "id": "train_activity",
+      "symbol": "Ξ_MergeTrain",
+      "tier": 2,
+      "layer": "coord",
+      "twin": "process",
+      "stages": ["integrate"],
+      "description": "Fleet-wide merge-train enumeration — one row per coord-authority repo, including repos with no merge proposals, with open-PR counts and triage.",
+      "research_status": "implemented",
+      "research_doc": "theory/process-twin.md",
+      "query_kind": "snapshot",
+      "coord_query_tool": "coord_query_train_activity",
+      "observer_module": "pr_merge/train_activity.rs"
+    },
+    {
       "id": "merge_economics",
       "symbol": "Ξ_MergeEconomics",
       "tier": 2,
@@ -460,10 +474,9 @@
       "description": "Per-repo merge economics — candidate-CI duration T, land rate λ, λ·T pressure, CI minutes per land, a data-driven stuck threshold.",
       "research_status": "implemented",
       "research_doc": "theory/process-twin.md",
-      "query_kind": "parameterized",
+      "query_kind": "snapshot",
       "coord_query_tool": "coord_query_merge_economics",
-      "observer_module": "pr_merge/economics.rs",
-      "ask_via": "ask-the-twin"
+      "observer_module": "pr_merge/economics.rs"
     },
     {
       "id": "scheduler_trace",
@@ -475,10 +488,9 @@
       "description": "Merge-scheduler decision traces — what each tick and land outcome decided and why (landed / waiting_ci / deferred / budget backoff).",
       "research_status": "implemented",
       "research_doc": "theory/process-twin.md",
-      "query_kind": "parameterized",
+      "query_kind": "snapshot",
       "coord_query_tool": "coord_query_scheduler_trace",
-      "observer_module": "scheduler_trace.rs",
-      "ask_via": "ask-the-twin"
+      "observer_module": "scheduler_trace.rs"
     },
     {
       "id": "workers",
@@ -490,10 +502,9 @@
       "description": "Background-worker loop liveness per (worker, replica): last tick, outcome and error streak — alive / stale / dead / not_leader_here.",
       "research_status": "implemented",
       "research_doc": "theory/process-twin.md",
-      "query_kind": "parameterized",
+      "query_kind": "snapshot",
       "coord_query_tool": "coord_query_workers",
-      "observer_module": "worker_ledger.rs",
-      "ask_via": "ask-the-twin"
+      "observer_module": "worker_ledger.rs"
     },
     {
       "id": "webhook_pulse",
@@ -505,10 +516,9 @@
       "description": "Whether GitHub is still delivering webhooks: per-(repo, event type) counters and a gap verdict when CI-bearing events go silent.",
       "research_status": "implemented",
       "research_doc": "theory/process-twin.md",
-      "query_kind": "parameterized",
+      "query_kind": "snapshot",
       "coord_query_tool": "coord_query_webhook_pulse",
-      "observer_module": "webhook_pulse.rs",
-      "ask_via": "ask-the-twin"
+      "observer_module": "webhook_pulse.rs"
     },
     {
       "id": "outbound",
@@ -520,10 +530,9 @@
       "description": "Coord's own outbound-dependency budget and health — GitHub quota burn, cool-down, stale-serve doom-loop.",
       "research_status": "implemented",
       "research_doc": "theory/process-twin.md",
-      "query_kind": "parameterized",
+      "query_kind": "snapshot",
       "coord_query_tool": "coord_query_outbound_budget",
-      "observer_module": "outbound_budget_observer.rs",
-      "ask_via": "ask-the-twin"
+      "observer_module": "outbound_budget_observer.rs"
     },
     {
       "id": "action_expectations",

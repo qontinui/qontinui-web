@@ -6,10 +6,14 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  describeCapacity,
+  describeEffectNotApplied,
+  describeLiveSessions,
   describeRole,
   describeRoleEffect,
   describeRoleWriteError,
   parseDispatchRoles,
+  parseEffectsNotApplied,
   parseLane,
   parseRoleMachine,
   validateRoleForm,
@@ -70,6 +74,7 @@ describe("parseDispatchRoles", () => {
       machines: [],
       omitted: null,
       unidentifiable: null,
+      rosterTruncated: null,
       notice: null,
     });
   });
@@ -86,6 +91,31 @@ describe("parseDispatchRoles", () => {
     expect(read.unidentifiable).toBe(1);
   });
 
+  it("carries roster_truncated as served; absent is null", () => {
+    const t = parseDispatchRoles({
+      state: "known",
+      machines: [],
+      roster_truncated: true,
+    });
+    if (t.state !== "known") throw new Error("expected known");
+    expect(t.rosterTruncated).toBe(true);
+    const f = parseDispatchRoles({
+      state: "known",
+      machines: [],
+      roster_truncated: false,
+    });
+    if (f.state !== "known") throw new Error("expected known");
+    expect(f.rosterTruncated).toBe(false);
+    // Not served (or not a bool) is UNKNOWN, never "whole".
+    const u = parseDispatchRoles({
+      state: "known",
+      machines: [],
+      roster_truncated: "yes",
+    });
+    if (u.state !== "known") throw new Error("expected known");
+    expect(u.rosterTruncated).toBeNull();
+  });
+
   it("reads workstation and ci_host rows, sorted by name", () => {
     const read = parseDispatchRoles({
       state: "known",
@@ -99,17 +129,17 @@ describe("parseDispatchRoles", () => {
           name: "dell-2020",
           registration: "assigned_not_registered",
           role: roleRow("ci_node"),
-          // Coord's real shape: both keys, role layer `open` over no devices.
+          // Coord's real shape (qontinui-coord#3015): `not_registered`.
           lanes: {
             agent: {
-              effective: "unknown",
-              role: "open",
-              drain: { state: "none" },
+              effective: "not_registered",
+              role: "not_registered",
+              drain: { state: "none", total_devices: 0 },
             },
             ci: {
-              effective: "unknown",
-              role: "open",
-              drain: { state: "none" },
+              effective: "not_registered",
+              role: "not_registered",
+              drain: { state: "none", total_devices: 0 },
             },
           },
         }),
@@ -121,8 +151,9 @@ describe("parseDispatchRoles", () => {
     expect(dell.registered).toBe(false);
     expect(dell.hostOnly).toBe(true);
     expect(dell.key).toBe("host:dell-2020");
-    // No device rows: no lane state, whatever the lane keys say.
-    expect(dell.lanes).toBeNull();
+    // No device rows: every lane reads not_registered.
+    expect(dell.lanes?.agent.effective).toBe("not_registered");
+    expect(dell.lanes?.ci.role).toBe("not_registered");
     expect(msi.role).toBe("bench");
     expect(msi.version).toBe(2);
     expect(msi.updatedBy).toBe("op@example.com");
@@ -130,6 +161,39 @@ describe("parseDispatchRoles", () => {
 });
 
 describe("parseRoleMachine", () => {
+  it("an unregistered machine reads not_registered even if a lane says open", () => {
+    const m = parseRoleMachine(
+      machine({
+        registration: "assigned_not_registered",
+        role: roleRow("ci_node"),
+        lanes: {
+          agent: {
+            effective: "unknown",
+            role: "open",
+            drain: { state: "none" },
+          },
+          ci: { effective: "unknown", role: "open", drain: { state: "none" } },
+        },
+      })
+    );
+    expect(m?.lanes?.ci.role).toBe("not_registered");
+    expect(m?.lanes?.ci.effective).toBe("not_registered");
+  });
+
+  it("a redacted operator email is kept as served", () => {
+    const m = parseRoleMachine(
+      machine({ role: { ...roleRow("bench"), updated_by: "[redacted]" } })
+    );
+    expect(m?.updatedBy).toBe("[redacted]");
+    expect(
+      parseLane({
+        effective: "closed_by_drain",
+        role: "open",
+        drain: { state: "drained", drained_by: "[redacted]" },
+      }).drain
+    ).toMatchObject({ drainedBy: "[redacted]" });
+  });
+
   it("a null role row is unassigned", () => {
     expect(parseRoleMachine(machine())?.role).toBeNull();
     expect(parseRoleMachine(machine())?.unrecognisedRole).toBeNull();
@@ -255,6 +319,15 @@ describe("parseLane — role and drain kept apart", () => {
       }).drain
     ).toEqual({ state: "partial", drainedDevices: 2, totalDevices: 13 });
   });
+  it("not_registered is read, not coerced to unknown", () => {
+    const l = parseLane({
+      effective: "not_registered",
+      role: "not_registered",
+      drain: { state: "none", total_devices: 0 },
+    });
+    expect(l.role).toBe("not_registered");
+    expect(l.effective).toBe("not_registered");
+  });
   it("anything unrecognised is unknown", () => {
     const l = parseLane({
       effective: "x",
@@ -294,8 +367,19 @@ describe("describeRoleWriteError", () => {
           error: "last_open_lane",
           detail: "pass `force: true` to apply it anyway",
           lanes: [
-            { lane: "agent", remaining: [], offline_only: false },
-            { lane: "ci", remaining: ["msi"], offline_only: true },
+            // A workstation target: both lanes weigh workstations.
+            {
+              lane: "agent",
+              capacity: "workstations",
+              remaining: [],
+              offline_only: false,
+            },
+            {
+              lane: "ci",
+              capacity: "workstations",
+              remaining: ["msi"],
+              offline_only: true,
+            },
           ],
         },
       })
@@ -303,7 +387,30 @@ describe("describeRoleWriteError", () => {
     expect(r.kind).toBe("last_open_lane");
     if (r.kind !== "last_open_lane") throw new Error("unreachable");
     expect(r.lanes).toEqual(["agent", "ci"]);
-    expect(r.message).toContain("agent sessions or CI");
+    expect(r.capacities).toEqual({ agent: "workstations", ci: "workstations" });
+    expect(r.message).toContain(
+      "no heartbeat-fresh workstation would take agent sessions"
+    );
+    expect(r.message).toContain("no heartbeat-fresh workstation would take CI");
+    // A CI-host target: only CI, weighed over GitHub runner hosts.
+    const host = describeRoleWriteError(
+      409,
+      JSON.stringify({
+        error: "last_open_lane",
+        lanes: [
+          {
+            lane: "ci",
+            capacity: "github_runner_hosts",
+            remaining: [],
+            offline_only: false,
+          },
+        ],
+      })
+    );
+    if (host.kind !== "last_open_lane") throw new Error("unreachable");
+    expect(host.message).toContain(
+      "no heartbeat-fresh GitHub runner host would take CI"
+    );
     expect(r.message).toContain("only offline msi");
     expect(r.message).toContain("Force");
   });
@@ -461,6 +568,62 @@ describe("describeRoleWriteError", () => {
   });
   it("a 504 says the change may have applied", () => {
     expect(describeRoleWriteError(504, "").message).toContain("MAY");
+  });
+});
+
+describe("capacity, effects and live sessions", () => {
+  it("names each capacity; an unknown one verbatim; a missing one generically", () => {
+    expect(describeCapacity("workstations")).toBe("workstation");
+    expect(describeCapacity("github_runner_hosts")).toBe("GitHub runner host");
+    expect(describeCapacity("gpu_boxes")).toContain("gpu_boxes");
+    expect(describeCapacity(null)).toBe("machine");
+    const r = describeRoleWriteError(
+      409,
+      JSON.stringify({
+        error: "last_open_lane",
+        lanes: [{ lane: "ci", remaining: [], offline_only: false }],
+      })
+    );
+    if (r.kind !== "last_open_lane") throw new Error("unreachable");
+    expect(r.capacities).toEqual({ ci: null });
+    expect(r.message).toContain("no heartbeat-fresh machine would take CI");
+  });
+  it("reads effects_not_applied, including linked_ci_host_fanout", () => {
+    const e = parseEffectsNotApplied([
+      { effect: "github_routing_labels", plan_phase: 4, detail: "x" },
+      { effect: "linked_ci_host_fanout", plan_phase: 3, detail: "y" },
+      { effect: "something_new", plan_phase: 9, detail: "coord words" },
+    ]);
+    expect(e?.map((x) => x.effect)).toEqual([
+      "github_routing_labels",
+      "linked_ci_host_fanout",
+      "something_new",
+    ]);
+    expect(describeEffectNotApplied(e![0])).toBe(
+      "GitHub routing labels were not changed [plan phase 4] (coord: x)"
+    );
+    expect(describeEffectNotApplied(e![1])).toContain("linked CI hosts");
+    expect(describeEffectNotApplied(e![1])).toContain("(coord: y)");
+    expect(describeEffectNotApplied(e![2])).toBe(
+      "something_new [plan phase 9] (coord: coord words)"
+    );
+    expect(
+      describeEffectNotApplied({
+        effect: "ci_node_config_enabled",
+        detail: null,
+        planPhase: null,
+      })
+    ).toBe("the runner's own CI-node switch was not changed");
+    expect(parseEffectsNotApplied(undefined)).toBeNull();
+    expect(parseEffectsNotApplied([])).toEqual([]);
+  });
+  it("null live sessions read unknown, never 0", () => {
+    expect(describeLiveSessions("unknown")).toBe(
+      "live sessions on it: unknown"
+    );
+    expect(describeLiveSessions(0)).toBe("0 live sessions on it now");
+    expect(describeLiveSessions(1)).toBe("1 live session on it now");
+    expect(describeLiveSessions(undefined)).toBeNull();
   });
 });
 

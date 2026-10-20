@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   useRunnerHealth,
   useRunnerApi,
   runnerFailureMessage,
   type AiSettings,
+  type AiSettingsView,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
 import type {
@@ -14,11 +15,66 @@ import type {
   GeminiApiConfig,
 } from "../types";
 
+/** The three roster keys a save sends only when the user edited them. */
+const ROSTER_KEYS = [
+  "config_dir",
+  "account_selection_mode",
+  "account_selection_pinned",
+] as const;
+type RosterKey = (typeof ROSTER_KEYS)[number];
+type RosterBaseline = Partial<Record<RosterKey, unknown>>;
+
+/**
+ * Read-only keys the runner derives and serves beside the stored settings.
+ * Each is tracked on its own: an absent key is UNKNOWN (older runner), and
+ * `fleet === null` means "the fleet has no opinion" — different things.
+ */
+export interface DerivedAccountSelection {
+  effective?: string;
+  source?: "fleet" | "local" | "pinned";
+  /** undefined = key absent (UNKNOWN); null = no fleet opinion. */
+  fleet?: string | null;
+}
+
+function readDerived(view: AiSettingsView): DerivedAccountSelection {
+  const d: DerivedAccountSelection = {};
+  if (typeof view.effective_account_selection_mode === "string")
+    d.effective = view.effective_account_selection_mode;
+  if (
+    view.account_selection_source === "fleet" ||
+    view.account_selection_source === "local" ||
+    view.account_selection_source === "pinned"
+  )
+    d.source = view.account_selection_source;
+  if ("fleet_account_selection_mode" in view)
+    d.fleet = view.fleet_account_selection_mode ?? null;
+  return d;
+}
+
+function rosterOf(cli: Record<string, unknown>): RosterBaseline {
+  const out: RosterBaseline = {};
+  for (const k of ROSTER_KEYS) if (k in cli) out[k] = cli[k];
+  return out;
+}
+
 export function useAiSettings() {
   const runnerApi = useRunnerApi();
   const { isLoading: healthLoading, isOffline } = useRunnerHealth();
 
   const [loading, setLoading] = useState(true);
+  // True only after getAiSettings succeeded: a save from defaults would
+  // overwrite the stored document with values the user never saw.
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [derived, setDerived] = useState<DerivedAccountSelection>({});
+  // Loaded/saved roster values: a key is sent only when the form differs.
+  const [baseline, setBaseline] = useState<RosterBaseline>({});
+  // Last CALL wins: every load and post-save refresh takes a token, and a
+  // response whose token is no longer current is ignored.
+  const requestSeq = useRef(0);
+  // Post-save refreshes sequence separately: bumping requestSeq there would
+  // strand an in-flight load's `loading` flag, which only its own call clears.
+  const refreshSeq = useRef(0);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -60,9 +116,15 @@ export function useAiSettings() {
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState("");
 
   const loadSettings = useCallback(async () => {
+    const token = ++requestSeq.current;
     try {
       setLoading(true);
-      const settings = await runnerApi.getAiSettings();
+      const view = await runnerApi.getAiSettings();
+      if (token !== requestSeq.current) return;
+      // Derived keys live beside the stored document, never inside it.
+      const settings: AiSettings = view;
+      setDerived(readDerived(view));
+      setBaseline(rosterOf(settings.claude_cli));
       setProvider(settings.provider);
       setClaudeCli(settings.claude_cli);
       setClaudeApi(settings.claude_api);
@@ -75,12 +137,18 @@ export function useAiSettings() {
         runnerApi.hasAiApiKey("claude_api").catch(() => ({ has_key: false })),
         runnerApi.hasAiApiKey("gemini_api").catch(() => ({ has_key: false })),
       ]);
+      if (token !== requestSeq.current) return;
       setClaudeApiKeyConfigured(claudeKeyResult.has_key);
       setGeminiApiKeyConfigured(geminiKeyResult.has_key);
+      setLoaded(true);
+      setLoadError(null);
     } catch (err) {
-      toast.error(runnerFailureMessage(err, "Failed to load AI settings"));
+      if (token !== requestSeq.current) return;
+      const msg = runnerFailureMessage(err, "Failed to load AI settings");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
-      setLoading(false);
+      if (token === requestSeq.current) setLoading(false);
     }
   }, [runnerApi]);
 
@@ -90,20 +158,60 @@ export function useAiSettings() {
     }
   }, [isOffline, loadSettings]);
 
+  // The account-selection edits the form holds that the runner has not seen.
+  const rosterDirty =
+    (claudeCli.account_selection_mode !== undefined &&
+      claudeCli.account_selection_mode !== baseline.account_selection_mode) ||
+    (claudeCli.account_selection_pinned !== undefined &&
+      claudeCli.account_selection_pinned !== baseline.account_selection_pinned);
+
   const handleSave = async () => {
+    // Not while a (re)load is in flight: its response lands in the form and
+    // baseline mid-PUT and would leave the pair inconsistent.
+    if (!loaded || loading) return;
     try {
       setSaving(true);
+      // Roster keys are sent only when edited: an absent key keeps the stored
+      // value, while an explicit null CLEARS it, so an unedited key is deleted
+      // from the body rather than sent as undefined/null.
+      const cli: Record<string, unknown> = { ...claudeCli };
+      for (const k of ROSTER_KEYS) {
+        if (!(k in cli) || cli[k] === baseline[k]) delete cli[k];
+      }
       const settings: AiSettings = {
         provider,
-        claude_cli: claudeCli,
+        claude_cli: cli as AiSettings["claude_cli"],
         claude_api: claudeApi,
         gemini_cli: geminiCli,
         gemini_api: geminiApi,
         auto_refine_video_after_iterations: autoRefineVideoIterations,
         interactive_sessions_enabled: interactiveSessionsEnabled,
       };
+      // A load that starts while the PUT is in flight carries newer form and
+      // baseline than this save's snapshot, so detect it by the counter as it
+      // stood BEFORE the request.
+      const loadSeqAtSave = requestSeq.current;
       await runnerApi.saveAiSettings(settings);
+      const loadSupersededSave = requestSeq.current !== loadSeqAtSave;
+      // The snapshot that was SENT: an edit made while the save was in flight
+      // differs from it, so it stays dirty and is resent next time.
+      if (!loadSupersededSave) setBaseline(rosterOf(claudeCli));
       toast.success("AI settings saved");
+      // Refresh only the derived read-out (the effective mode may have moved);
+      // the form is left alone. Best effort: a failure keeps the old read-out.
+      const token = ++refreshSeq.current;
+      try {
+        if (loadSupersededSave) return;
+        const refreshed = await runnerApi.getAiSettings();
+        if (
+          token === refreshSeq.current &&
+          loadSeqAtSave === requestSeq.current
+        ) {
+          setDerived(readDerived(refreshed));
+        }
+      } catch {
+        /* keep the previous derived values */
+      }
     } catch (err) {
       toast.error(runnerFailureMessage(err, "Failed to save AI settings"));
     } finally {
@@ -164,6 +272,11 @@ export function useAiSettings() {
     healthLoading,
     isOffline,
     loading,
+    loaded,
+    loadError,
+    retryLoad: loadSettings,
+    derived,
+    rosterDirty,
     saving,
     testing,
 
