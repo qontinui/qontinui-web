@@ -215,8 +215,9 @@ export default function CoordDevOpsPage() {
         devices,
         loading: fleet.loading,
         error: fleet.error,
+        answered: fleet.data !== null,
       }),
-    [devices, fleet.loading, fleet.error]
+    [devices, fleet.loading, fleet.error, fleet.data]
   );
 
   /**
@@ -382,7 +383,10 @@ export default function CoordDevOpsPage() {
         badges={[
           {
             key: "machines",
-            label: `machines ${liveness.total}`,
+            label:
+              liveness.total === null
+                ? "machines unknown — not read yet"
+                : `machines ${liveness.total}`,
             tone: "muted",
             "data-testid": "coord-devops-machines-badge",
           },

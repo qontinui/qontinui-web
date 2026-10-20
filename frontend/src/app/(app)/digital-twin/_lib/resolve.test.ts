@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { manifest, resolveSubspaces, summarize } from "./resolve";
-import type { CellStatus, SubspaceProbe } from "./types";
+import {
+  allProbesRestricted,
+  declaredProbes,
+  manifest,
+  resolveSubspaces,
+  summarize,
+  unlistedDeclaredProbes,
+} from "./resolve";
+import type {
+  CellStatus,
+  SubspaceProbe,
+  TwinCatalogEntry,
+  TwinCatalogResponse,
+} from "./types";
 
 /** The snapshot sub-spaces coord refuses to a non-system tenant (per qontinui-coord#3128). */
 const SYSTEM_TENANT_SUBSPACES = new Set([
@@ -185,6 +197,7 @@ describe("resolveSubspaces", () => {
       "implemented",
       "partial",
       "blind",
+      "served",
       "error",
       "probing",
       "restricted",
@@ -231,20 +244,22 @@ describe("summarize", () => {
 
   it("excludes restricted observers from the responding denominator and counts them apart", () => {
     // The split per qontinui-coord#3128 for a non-system tenant: the nine
-    // SystemTenant sub-spaces are refused, worktree and memory answer. The
-    // gauge must read 2/2 responding · 9 restricted, never 2/11.
-    const probes: SubspaceProbe[] = manifest.subspaces
+    // SystemTenant sub-spaces are refused and every other snapshot row
+    // answers. A refused row is never "not responding": the graded
+    // denominator excludes it.
+    const snapshotIds = manifest.subspaces
       .filter((s) => s.query_kind === "snapshot")
-      .map((s) => ({
-        id: s.id,
-        status: SYSTEM_TENANT_SUBSPACES.has(s.id)
-          ? "restricted"
-          : "implemented",
-      }));
+      .map((s) => s.id);
+    const probes: SubspaceProbe[] = snapshotIds.map((id) => ({
+      id,
+      status: SYSTEM_TENANT_SUBSPACES.has(id) ? "restricted" : "implemented",
+    }));
+    const answering = snapshotIds.length - SYSTEM_TENANT_SUBSPACES.size;
     const s = summarize(resolveSubspaces(probes, false));
-    expect(s.responding).toBe(2);
-    expect(s.snapshotTotal).toBe(2);
-    expect(s.restricted).toBe(9);
+    expect(s.responding).toBe(answering);
+    expect(s.graded).toBe(answering);
+    expect(s.snapshotTotal).toBe(snapshotIds.length);
+    expect(s.restricted).toBe(SYSTEM_TENANT_SUBSPACES.size);
     expect(s.pending).toBe(0);
   });
 
@@ -255,5 +270,239 @@ describe("summarize", () => {
     ).length;
     expect(summarize(resolveSubspaces([], false)).built).toBe(claimed);
     expect(summarize(resolveSubspaces(undefined, true)).built).toBe(claimed);
+  });
+});
+
+/** One served-catalog row (coord `twin_probe_door.rs` `served_entry` shape). */
+function catalogEntry(
+  subspace: string,
+  overrides: Partial<TwinCatalogEntry> = {}
+): TwinCatalogEntry {
+  return {
+    id: subspace,
+    subspace,
+    symbol: `Ξ_${subspace}`,
+    twin: "process",
+    stages: ["operate"],
+    description: subspace,
+    query_tool: `coord_query_${subspace}`,
+    kind: "snapshot",
+    declared_status: "live",
+    params: [],
+    snapshot: true,
+    access: "system_tenant",
+    door: `/coord/twin/${subspace}/verdict`,
+    door_shape: "verdict_wrapper",
+    observed: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A stubbed catalog declaring `release` and `worktree` (report-shaped) on the
+ * twin door, `workers` (a manifest `snapshot` row) and the admin `outbound`
+ * envelope door; `delivery` has a door but is neither a snapshot nor an
+ * envelope. `schema` — a manifest snapshot row — is NOT declared.
+ */
+function stubCatalog(): TwinCatalogResponse {
+  const entries = [
+    catalogEntry("release"),
+    catalogEntry("worktree", { door_shape: "report", access: "tenant" }),
+    catalogEntry("workers", { access: "coord_internal" }),
+    catalogEntry("outbound", {
+      snapshot: false,
+      door: "/admin/coord/outbound-budget",
+      door_shape: "envelope",
+      access: null,
+    }),
+    catalogEntry("delivery", {
+      kind: "parameterized",
+      snapshot: false,
+      access: "tenant",
+    }),
+  ];
+  return { entries, total: entries.length };
+}
+
+function rowById(rows: ReturnType<typeof resolveSubspaces>, id: string) {
+  const row = rows.find((r) => r.id === id);
+  if (!row) throw new Error(`no manifest row ${id}`);
+  return row;
+}
+
+describe("declaredProbes", () => {
+  it("declares the snapshot entries and the envelope door, keyed by sub-space", () => {
+    const declared = declaredProbes(stubCatalog());
+    expect([...(declared?.keys() ?? [])].sort()).toEqual([
+      "outbound",
+      "release",
+      "workers",
+      "worktree",
+    ]);
+  });
+
+  it("is UNKNOWN (null) without a declaration, never an empty declaration", () => {
+    expect(declaredProbes(undefined)).toBeNull();
+    expect(
+      declaredProbes({ entries: [], total: 0, coord_error: "coord down" })
+    ).toBeNull();
+    // A coord predating the declaration serves no `snapshot` flag at all.
+    const legacy = {
+      entries: [{ id: "release", description: "x", query_tool: "t" }],
+      total: 1,
+    } as unknown as TwinCatalogResponse;
+    expect(declaredProbes(legacy)).toBeNull();
+  });
+});
+
+describe("resolveSubspaces joined to coord's catalog", () => {
+  const probes: SubspaceProbe[] = [
+    { id: "release", status: "implemented", door_shape: "verdict_wrapper" },
+    { id: "worktree", status: "served", door_shape: "report" },
+    { id: "workers", status: "partial", door_shape: "verdict_wrapper" },
+    {
+      id: "outbound",
+      status: "partial",
+      door_shape: "envelope",
+      metrics: {
+        coverage: 0.6,
+        credibility: 0.9,
+        posterior: null,
+        staleness_seconds: null,
+        provenance: "outbound_budget_observations",
+        drift_class: "none",
+      },
+    },
+  ];
+
+  it("live-probes exactly the rows coord declares", () => {
+    const rows = resolveSubspaces(probes, false, stubCatalog());
+    const live = rows.filter((r) => r.liveProbed).map((r) => r.id);
+    expect(live.sort()).toEqual(["outbound", "release", "workers", "worktree"]);
+  });
+
+  it("renders a manifest snapshot row coord does not declare as not served by coord", () => {
+    const schema = rowById(
+      resolveSubspaces(probes, false, stubCatalog()),
+      "schema"
+    );
+    expect(schema.query_kind).toBe("snapshot");
+    expect(schema.liveProbed).toBe(false);
+    expect(schema.cellStatus).toBe("not-served");
+  });
+
+  it("reads the envelope door's cell like any other verdict", () => {
+    const outbound = rowById(
+      resolveSubspaces(probes, false, stubCatalog()),
+      "outbound"
+    );
+    expect(outbound.cellStatus).toBe("partial");
+    expect(outbound.doorShape).toBe("envelope");
+    expect(outbound.metrics?.coverage).toBe(0.6);
+  });
+
+  it("keeps a report door's cell served — neither healthy nor partial", () => {
+    const worktree = rowById(
+      resolveSubspaces(probes, false, stubCatalog()),
+      "worktree"
+    );
+    expect(worktree.cellStatus).toBe("served");
+    expect(worktree.doorShape).toBe("report");
+  });
+
+  it("keeps a declared row the probe has not answered probing, then error", () => {
+    expect(
+      rowById(resolveSubspaces(undefined, true, stubCatalog()), "workers")
+        .cellStatus
+    ).toBe("probing");
+    expect(
+      rowById(resolveSubspaces([], false, stubCatalog()), "workers").cellStatus
+    ).toBe("error");
+  });
+
+  it("maps a per-cell 403 to the restricted status, never error", () => {
+    const refused: SubspaceProbe[] = [
+      ...probes.filter((p) => p.id !== "release"),
+      { id: "release", status: "restricted" },
+    ];
+    const release = rowById(
+      resolveSubspaces(refused, false, stubCatalog()),
+      "release"
+    );
+    expect(release.cellStatus).toBe("restricted");
+  });
+
+  it("counts a served report as live-probed but not responding", () => {
+    const summary = summarize(resolveSubspaces(probes, false, stubCatalog()));
+    expect(summary.snapshotTotal).toBe(4);
+    // release + workers + outbound answer a verdict; worktree is a report.
+    expect(summary.responding).toBe(3);
+    // ...so the live gauge's denominator leaves the report out.
+    expect(summary.served).toBe(1);
+    expect(summary.graded).toBe(3);
+  });
+
+  it("falls back to the manifest's snapshot rows, and any probed row, without a catalog", () => {
+    const rows = resolveSubspaces(
+      [{ id: "metrics", status: "implemented" }],
+      false
+    );
+    expect(rowById(rows, "schema").liveProbed).toBe(true);
+    // A probe came back for a row the manifest calls parameterized: the
+    // backend probed it because coord declared it, so it is live here too.
+    expect(rowById(rows, "metrics").liveProbed).toBe(true);
+    expect(rowById(rows, "metrics").cellStatus).toBe("implemented");
+  });
+});
+
+describe("unlistedDeclaredProbes", () => {
+  it("names the probes coord declares that the manifest has no row for", () => {
+    const catalog = stubCatalog();
+    catalog.entries.push(
+      catalogEntry("zz_new_probe"),
+      catalogEntry("aa_other")
+    );
+    expect(unlistedDeclaredProbes(catalog)).toEqual([
+      "aa_other",
+      "zz_new_probe",
+    ]);
+    // Every declared probe the manifest lists is not "unlisted".
+    expect(unlistedDeclaredProbes(stubCatalog())).toEqual([]);
+    expect(unlistedDeclaredProbes(undefined)).toEqual([]);
+  });
+});
+
+describe("allProbesRestricted", () => {
+  it("is true only when every probe was refused", () => {
+    expect(
+      allProbesRestricted({
+        subspaces: [
+          { id: "release", status: "restricted" },
+          { id: "memory", status: "restricted" },
+        ],
+        probed: 2,
+        restricted: true,
+      })
+    ).toBe(true);
+    // A backend that flagged a matrix with one refused cell is not trusted to
+    // hide the cells that answered.
+    expect(
+      allProbesRestricted({
+        subspaces: [
+          { id: "release", status: "restricted" },
+          { id: "memory", status: "implemented" },
+        ],
+        probed: 2,
+        restricted: true,
+      })
+    ).toBe(false);
+    expect(
+      allProbesRestricted({
+        subspaces: [{ id: "release", status: "restricted" }],
+        probed: 1,
+        restricted: false,
+      })
+    ).toBe(false);
+    expect(allProbesRestricted(undefined)).toBe(false);
   });
 });
