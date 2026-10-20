@@ -29,7 +29,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "tenant_policies_03_drop_transcript_sync_enabled"
-_PARENT_REVISION_ID = "fleet_policy_egress_01_transcript_sync"
+_PARENT_REVISION_ID = "kernel_gauges_01"
 _PATH: Path = backend_root() / "alembic" / "versions" / f"{_REVISION_ID}.py"
 
 _DB_SKIP = pytest.mark.skipif(

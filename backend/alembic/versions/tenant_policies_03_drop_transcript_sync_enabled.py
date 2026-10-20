@@ -1,7 +1,7 @@
 """coord.tenant_policies — drop ``transcript_sync_enabled`` (retired into the egress fleet-policy family)
 
 Revision ID: tenant_policies_03_drop_transcript_sync_enabled
-Revises: fleet_policy_egress_01_transcript_sync
+Revises: kernel_gauges_01
 Create Date: 2026-10-10
 
 Phase 6 step 3(d) of plan
@@ -50,7 +50,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "tenant_policies_03_drop_transcript_sync_enabled"
-down_revision: str | Sequence[str] | None = "fleet_policy_egress_01_transcript_sync"
+down_revision: str | Sequence[str] | None = "kernel_gauges_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
