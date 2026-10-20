@@ -254,8 +254,8 @@ export interface MergePipelineData {
     body?: Record<string, unknown>
   ) => void;
   /**
-   * Debounced manual refresh. Per-row operator actions (e.g. the draft-state
-   * toggle) call it after a successful mutation to pull the pipeline forward,
+   * Debounced manual refresh. Per-row operator actions (e.g. the hold
+   * control) call it after a successful mutation to pull the pipeline forward,
    * so the row follows the twin once the reconciling webhook lands. Stable
    * identity — safe to pass through the row tree without re-binding children.
    */
@@ -913,7 +913,7 @@ export function useMergePipelineData(
     suggestionBusy,
     onSuggestionAction,
     // Debounced manual refresh — used by per-row operator actions (e.g. the
-    // draft-state toggle) to pull the pipeline forward after a mutation. Stable
+    // hold control) to pull the pipeline forward after a mutation. Stable
     // identity (reads only refs), so passing it down never re-binds children.
     refetch: scheduleRefetch,
   };

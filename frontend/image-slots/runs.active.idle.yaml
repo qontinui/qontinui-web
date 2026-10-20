@@ -1,0 +1,44 @@
+# The illustration of the Active Runs page's idle state, rendered by
+# <SlotImage slot="runs.active.idle"> in
+# src/app/(app)/runs/active/_components/EmptyStates.tsx.
+#
+# One file per slot, named after its `slot` id. The contract is qontinui-schemas'
+# ImageSlotSpec (rust/src/image_slot.rs); backend/tests/test_image_slot_specs.py
+# validates every file here in CI, and `npm run image-slots:generate` compiles
+# them into src/lib/image-slots/specs.generated.ts for the component.
+#
+# Unbound: no asset has been chosen yet, so the page ships the slot's
+# placeholder and the image-slot inventory lists it.
+slot: runs.active.idle
+role: empty_state
+job: >-
+  Tell an operator whose runner has no workflow running that nothing is wrong,
+  and lead the eye to the two ways on: run a workflow, or read the run history.
+audience: audience_profile/external-operator
+contexts:
+  breakpoints: [360, 768, 1280, 1920]
+  themes: [dark]
+  dpr: [1, 2]
+aspect:
+  preferred: 1/1
+  allowed: []
+safe_areas:
+  kind: derived
+focal:
+  region: {x: 0.1, y: 0.1, width: 0.8, height: 0.8}
+  must_survive_crop: true
+style:
+  imagery: domain_spec/visual-system#imagery
+content:
+  must:
+    - a calm, idle motif, such as an empty tray or a resting pipeline
+  must_not:
+    - people
+    - third-party logos
+    - warning or error symbols
+text_in_image:
+  kind: forbidden
+alt:
+  kind: decorative
+thresholds:
+  kind: from_visual_system
