@@ -95,7 +95,7 @@ Head resolution
 
 ``down_revision = "fpl_02b"`` - plan Phase 3's ``coord.fleet_machine_hourly``
 tenant-key revision (qontinui-web#1939), which itself chains off
-``coord_repo_tenant_bindings_01``.
+``pr_fix_ctx_head_sha_01``.
 This PR is STACKED on #1939 and must land after it (re-chained from
 ``taste_inbox_01``, ``fpl_01``, ``fpl_02`` and ``replident_01`` as main moved). Heads
 were measured by parsing
