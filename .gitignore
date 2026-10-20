@@ -76,6 +76,7 @@ frontend/scripts/*
 !frontend/scripts/check-doc-code-refs.mjs
 !frontend/scripts/export-test-coverage.mjs
 !frontend/scripts/generate-api-types.ts
+!frontend/scripts/generate-image-slots.mjs
 !frontend/scripts/lighthouse-marketing.mjs
 # Full Lighthouse reports; only the summaries beside them are committed.
 frontend/docs/lighthouse/*.reports/
