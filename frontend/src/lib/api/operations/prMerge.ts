@@ -38,6 +38,7 @@ import type {
   SuggestionRow,
   TrainHealth,
 } from "@/components/operations/mergeTypes";
+import type { OperatorTouchSlo } from "@/components/operations/operatorTouchSlo";
 import { OPERATIONS_BASE, readJson } from "./base";
 
 // ----------------------------------------------------------------------------
@@ -236,6 +237,13 @@ export interface TenantReposResponse {
 // Phase 9 D9.6 — SLO dashboard wire types
 // ----------------------------------------------------------------------------
 
+/**
+ * One repo's 7d/30d window. Two of these fields are STRUCTURALLY ZERO on
+ * current coord (`operator_override_rate`, `escalation_rate` — no live writer
+ * produces them); coord names them in {@link SloResponse.structurally_zero}
+ * and `SloRepoCard` labels them so. The live interruption rate is tenant-level
+ * ({@link SloResponse.operator_touch}), because touches carry no repo.
+ */
 interface SloWindowMetrics {
   auto_merge_success_rate: number | null;
   escalation_rate: number | null;
@@ -269,6 +277,14 @@ export interface SloResponse {
   repos: RepoSlo[];
   kill_switch_history_last_30d: KillSwitchHistoryRow[];
   generated_at: string;
+  /**
+   * Plan `2026-08-27-operator-touch-read-and-surface` C3: the tenant-level
+   * operator-touch rate over the same 7d/30d windows. Optional because a coord
+   * predating it omits it — which renders as unknown, never as zero.
+   */
+  operator_touch?: OperatorTouchSlo | null;
+  /** `SloWindowMetrics` field names with no live writer (always 0). */
+  structurally_zero?: string[] | null;
 }
 
 // `MergeEnabledResponse` (mergeTypes.ts) is the shared body of both
@@ -781,24 +797,28 @@ export async function reevaluatePr(
 }
 
 /**
- * `POST /prs/{owner}/{repo}/{number}/draft-state` — `set_pr_draft_state`
- * (plan `2026-07-23-operator-set-pr-draft-state`). `draft: false` marks the
- * PR ready for review (releasing it to the merge train), `true` converts it
- * back to draft (the documented hold). The backend forwards to coord's
- * `POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state`.
- * Nothing reads the echo, so a 2xx whose body does not parse resolves `null`.
- * Not re-sent on a 5xx (`idempotent: false`).
+ * `POST /prs/{owner}/{repo}/{number}/hold` — `set_pr_hold` (plan
+ * `2026-10-04-coord-pr-hold-without-github-drafts`, Phase 4). `held: true`
+ * places a coord hold with a REQUIRED `reason`; `held: false` releases this
+ * caller's hold (or, for an admin operator, any hold). The backend forwards to
+ * coord's `POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold`.
+ * `reason` is omitted from the body when null. Nothing reads the echo, so a
+ * 2xx whose body does not parse resolves `null`. Not re-sent on a 5xx
+ * (`idempotent: false`).
  */
-export async function setPrDraftState(
+export async function setPrHold(
   owner: string,
   repo: string,
   prNumber: number,
-  draft: boolean
+  held: boolean,
+  reason: string | null
 ): Promise<unknown> {
-  const url = `${OPERATIONS_BASE}/prs/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${prNumber}/draft-state`;
+  const url = `${OPERATIONS_BASE}/prs/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${prNumber}/hold`;
+  const body: { held: boolean; reason?: string } = { held };
+  if (reason !== null) body.reason = reason;
   const res = await httpClient.fetch(url, {
     method: "POST",
-    body: JSON.stringify({ draft }),
+    body: JSON.stringify(body),
     idempotent: false,
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });

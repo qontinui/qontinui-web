@@ -1,9 +1,81 @@
 /**
- * Level vocabularies for the tenant-policy page's fleet-policy dials (the
- * command-safety rewrite, the account-selection mode and image generation).
- * The wire shapes — the fleet-policy view and the transcript-sync consent
- * proxy — live with their client in `@/lib/api/operations/tenantPolicy`.
+ * Level vocabularies for the tenant-policy page's fleet-policy dials: the
+ * egress switches, the command-safety rewrite, permission-prompt capture, the
+ * account-selection mode and image generation. All are coord fleet-policy
+ * domains; the wire shape — the fleet-policy view — lives with its client in
+ * `@/lib/api/operations/tenantPolicy`.
  */
+
+// ────────────────────────────── egress switches ──────────────────────────────
+
+/**
+ * The six outbound data flows a runner can send off its machine, each a
+ * tenant-band coord fleet-policy domain with levels `on` | `off` (plan
+ * `2026-10-10-spec-front-end-phase-9-generic-boundary`, C4). Coord's no-row
+ * default is `on` for a hosted deployment and `off` for a coord started with
+ * `COORD_DEPLOYMENT_PROFILE=self_hosted`; the read's `default_source` says
+ * which.
+ *
+ * The runner enforces each switch where the flow's bytes would leave (C5), so a
+ * flow that is off sends nothing — coord's ingest refusal is only a second
+ * line. `appliesAtNextStart` marks the flows a runner reads at boot.
+ */
+export const EGRESS_FLOWS = [
+  {
+    flow: "transcript_sync",
+    domain: "egress_transcript_sync",
+    label: "Transcript sync",
+    description:
+      "Claude Code session transcripts, and the tenant memory sync and memory queries that ride the same consent, are sent from each runner to this project's coord.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "code_mirror",
+    domain: "egress_code_mirror",
+    label: "Code mirror",
+    description:
+      "Each runner pushes its agents' working branches to coord's git mirror about every five minutes. Turning this off also removes that protection against losing unpushed work with a machine.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "terminal_stream",
+    domain: "egress_terminal_stream",
+    label: "Terminal streaming",
+    description:
+      "Live terminal output from runner sessions is streamed to coord and to this web console, and the console can attach to a runner's terminal.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "telemetry",
+    domain: "egress_telemetry",
+    label: "Telemetry",
+    description:
+      "Crash reports, OpenTelemetry traces and UI error reports are sent from runners to the configured error-reporting and tracing services.",
+    appliesAtNextStart: true,
+  },
+  {
+    flow: "update_check",
+    domain: "egress_update_check",
+    label: "Update check",
+    description:
+      "Runners ask GitHub's release feed whether a newer runner version exists, at startup and when asked.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "skill_mirror",
+    domain: "egress_skill_mirror",
+    label: "Skill mirror",
+    description:
+      "Runners fetch the latest Claude skills and commands from the public qontinui-claude-config repository on GitHub; when off they serve the bundle built into the runner.",
+    appliesAtNextStart: false,
+  },
+] as const;
+
+export type EgressFlow = (typeof EGRESS_FLOWS)[number]["flow"];
+export type EgressFlowSpec = (typeof EGRESS_FLOWS)[number];
+
+export const EGRESS_LEVELS = ["on", "off"] as const;
+export type EgressLevel = (typeof EGRESS_LEVELS)[number];
 
 // ──────────────────────── command-safety rewrite dial ────────────────────────
 
@@ -24,6 +96,34 @@ export const COMMAND_SAFETY_REWRITE_LEVELS = ["on", "off"] as const;
 export type CommandSafetyRewriteLevel =
   (typeof COMMAND_SAFETY_REWRITE_LEVELS)[number];
 
+// ─────────────────────── permission-prompt capture dial ───────────────────────
+
+/**
+ * The fleet-policy domain the permission-prompt capture toggle writes. Levels:
+ * `on` | `off`; coord's no-row default is `on` — set by coord's Phase 1
+ * change of this plan (`PERMISSION_PROMPT_CAPTURE_DEFAULT`, not on coord's
+ * main yet; this console's PR is ordered after it).
+ *
+ * When `on`, a runner registers a capture hook in the settings carrier it
+ * hands each Claude Code session, and records every permission prompt that
+ * session raises — the tool and its first command word, counts, first/last
+ * seen, permission modes and redacted command excerpts, once an hour per
+ * kind of prompt and per machine (the prompt's own wording is not in any hook
+ * payload, plan Phase 0) — as a finding in this tenant's coord findings,
+ * which the findings steward folds into one dossier per prompt class. A
+ * separate consent from
+ * {@link COMMAND_SAFETY_REWRITE_DOMAIN} because it sends command text. Like
+ * that dial, the runner decides at spawn, so a change reaches only terminals
+ * and agent sessions started after it. Plan
+ * `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`
+ * D6/D7.
+ */
+export const PERMISSION_PROMPT_CAPTURE_DOMAIN = "permission_prompt_capture";
+
+export const PERMISSION_PROMPT_CAPTURE_LEVELS = ["on", "off"] as const;
+export type PermissionPromptCaptureLevel =
+  (typeof PERMISSION_PROMPT_CAPTURE_LEVELS)[number];
+
 // ───────────────────────── account-selection mode dial ─────────────────────────
 
 /**
@@ -41,7 +141,7 @@ export type CommandSafetyRewriteLevel =
 export const ACCOUNT_SELECTION_DOMAIN = "account_selection_mode";
 
 /**
- * The levels this console offers. The last three are the runner's
+ * The levels this console offers. The last five are the runner's
  * `AccountSelectionMode::as_str` wire spellings, byte for byte; `off` is how
  * the console spells **no fleet opinion** — coord's own no-row fallback for an
  * unlisted domain, which the runner's `normalize_account_selection_level`
@@ -53,6 +153,8 @@ export const ACCOUNT_SELECTION_LEVELS = [
   "manual",
   "least_usage",
   "highest_expected_usage",
+  "weighted_random",
+  "alternating_handoff",
 ] as const;
 export type AccountSelectionLevel = (typeof ACCOUNT_SELECTION_LEVELS)[number];
 
@@ -67,7 +169,7 @@ export const ACCOUNT_SELECTION_DEFAULT_LEVEL: AccountSelectionLevel = "off";
  * Normalise a served level the way the runner does — trimmed, ASCII
  * case-insensitive (it matches the runner for every realistic input; JS
  * `trim()` also strips U+FEFF, which Rust's `str::trim` does not) — and
- * return it only when it is one of the four known
+ * return it only when it is one of the six known
  * levels. Anything else is `null`: UNKNOWN, never a guessed level (a guessed
  * mode is exactly what a runner would force-apply over every unpinned
  * machine).

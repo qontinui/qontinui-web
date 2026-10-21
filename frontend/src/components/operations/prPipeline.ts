@@ -1101,8 +1101,8 @@ const TERMINAL: ReadonlySet<ProposalStatus> = new Set(["merged", "cancelled"]);
  * the operator's point of view the attempt has not gone away.
  *
  * Exported for callers that only have a bare status string — `PrRow` carries
- * `proposal_status` but no `ProposalDetail` — notably `PrDraftStateControl`,
- * which must warn that drafting a PR does NOT stop a live merge attempt.
+ * `proposal_status` but no `ProposalDetail` — notably `PrHoldControl`, which
+ * warns that a merge attempt already pushing cannot be recalled by a hold.
  * A null/absent status means no proposal at all, which is not active.
  */
 export function proposalIsActive(status: string | null | undefined): boolean {

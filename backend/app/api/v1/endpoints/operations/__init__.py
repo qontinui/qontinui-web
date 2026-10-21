@@ -1223,44 +1223,74 @@ async def get_pr_merge_prs(
     )
 
 
-@router.post("/prs/{owner}/{repo}/{number}/draft-state")
-async def set_pr_draft_state(
+# Body keys the hold proxy forwards to coord. coord's ``HoldBody`` is
+# ``deny_unknown_fields``, so anything else would be a 400 there; dropping it
+# here keeps the wire body exactly coord's contract.
+_PR_HOLD_FORWARDED_KEYS: tuple[str, ...] = ("held", "reason", "kind", "gate_id")
+
+
+@router.post("/prs/{owner}/{repo}/{number}/hold")
+async def set_pr_hold(
     owner: str,
     repo: str,
     number: int,
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Set a PR's GitHub draft state (operator release valve).
+    """Place or release a coord hold on a PR (the operator's hold control).
 
-    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-    (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-    ``false`` marks the PR ready-for-review (releasing it to the merge train),
-    ``true`` converts it back to draft (the documented hold mechanism).
+    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+    (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+    the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+    so it works on private repos on GitHub Free, which have no draft PRs.
 
-    Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-    bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-    fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-    server-side. Releasing a draft-required (security-surface) PR is an operator
-    judgment, so this is operator-authed — never an agent JWT.
+    Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+    ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+    ``held: false`` releases. Release authority is coord's: the holder, or an
+    admin-role operator for any hold; a ``security_tier`` hold is the
+    operator's alone.
 
-    Only the ``draft`` boolean is forwarded; any other keys the client sends are
-    dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-    coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-    via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-    / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-    502 github_draft_state_failed, 500 internal).
+    Auth mirrors the gate-action stack: the operator's Cognito bearer is
+    forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+    derives the tenant, role and repo authority server-side. Only the four
+    contract keys are forwarded.
+
+    ``structured_errors=True``: coord's typed refusal object (``{"error",
+    "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+    ``http_exception_handler`` splices into the top level of its envelope, so
+    the browser receives ``error`` as coord's code (400 invalid_input,
+    403 not_holder / security_tier_operator_only, 404 not_found,
+    500 internal) rather than a JSON string inside ``message``. A coord error
+    body that is not a JSON object still falls back to its text.
     """
-    draft = body.get("draft")
-    if not isinstance(draft, bool):
-        raise HTTPException(
-            status_code=400,
-            detail="draft-state body requires a boolean `draft` field",
+    held = body.get("held")
+    if not isinstance(held, bool):
+        raise refusal_error(
+            400,
+            RefusalCode.invalid_request,
+            NextActionKind.fix_request,
+            "hold body requires a boolean `held` field",
+            discriminator="pr_hold_held_not_bool",
         )
+    forwarded: dict[str, Any] = {"held": held}
+    for key in _PR_HOLD_FORWARDED_KEYS[1:]:
+        value = body.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise refusal_error(
+                400,
+                RefusalCode.invalid_request,
+                NextActionKind.fix_request,
+                f"hold body field `{key}` must be a string",
+                discriminator="pr_hold_field_not_string",
+            )
+        forwarded[key] = value
     return await _proxy_coord_post(
-        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state",
-        {"draft": draft},
+        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/hold",
+        forwarded,
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -3038,6 +3068,14 @@ async def get_pr_merge_slo(
     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
     the last two existed to justify exiting.
 
+    Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+    fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+    — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+    ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+    with no live writer (``operator_override_rate``, ``escalation_rate``).
+    This proxy returns coord's JSON as-is (no response model reshapes it), so
+    both reach the frontend without a change here.
+
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """
     return await _proxy_coord_get(
@@ -3081,8 +3119,14 @@ async def _proxy_coord_passthrough(
     *,
     tenant_id: UUID,
     body: Any = None,
+    params: dict[str, Any] | None = None,
 ) -> JSONResponse:
     """Proxy to coord, forwarding its status code and JSON body VERBATIM.
+
+    ``params`` is the query string of a GET (ignored for a POST, whose input
+    is its ``body``). ``None`` puts nothing on the wire — callers build it
+    from their declared ``Query`` parameters and omit the unset ones, so an
+    absent filter reaches coord as absent rather than as an empty value.
 
     Unlike :func:`_proxy_coord_get` / :func:`_proxy_coord_post`, a coord 4xx is
     NOT re-raised as an ``HTTPException`` — it is returned as-is. That keeps
@@ -3109,7 +3153,7 @@ async def _proxy_coord_passthrough(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             if is_get:
-                resp = await client.get(url, headers=headers)
+                resp = await client.get(url, params=params, headers=headers)
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
@@ -4444,6 +4488,109 @@ async def get_pull_decisions(
         params["since"] = since
     return await _proxy_coord_get(
         "/coord/policies/resolutions", tenant_id=tenant_id, params=params
+    )
+
+
+# ---- Operator touches (the operator-touch read + constraint verdict) -----
+#
+# Plan ``2026-08-27-operator-touch-read-and-surface`` Phase C3 (C3a item 3).
+# coord's ``GET /coord/operator-touches`` is the FIRST read door over
+# ``coord.operator_touches``: one payload carrying the window aggregate
+# (per-disposition totals, reason classes ranked by share), a keyset page of
+# touches, and the constraint verdict — computed once in coord and served on
+# both routes below so the ``/admin/coord/operator-touches`` health strip is
+# DERIVED from the page's own payload rather than separately fetched (C3c).
+#
+# Error posture: ``_proxy_coord_passthrough``, not ``_proxy_coord_get``. coord
+# answers an unreadable store with a typed ``503 {"error":
+# "schema_migration_pending"|"db_unavailable", "detail"}`` and a bad query
+# with ``400 {"error": "bad_request", "detail"}``; the page renders those as
+# "unknown", never as an empty-but-healthy store, so the browser needs coord's
+# ``error`` key intact rather than folded into this module's generic envelope.
+#
+# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set;
+# this edge adds no validation of its own. coord answers a bad query in two
+# shapes, and both pass through verbatim:
+#
+# * a VALUE error it validates itself — ``window_days`` not 7|30, an unknown
+#   ``disposition``, a malformed ``before`` cursor — is its typed
+#   ``400 {"error": "bad_request", "detail"}``; ``limit`` out of range is
+#   clamped, not refused;
+# * a TYPE error caught by axum's plain ``Query<...>`` extractor before coord's
+#   handler runs — ``window_days=abc``, ``open_only=yes``, a ``limit`` that
+#   overflows ``i64`` — is axum's PLAIN-TEXT 400, which
+#   ``_proxy_coord_passthrough`` wraps as ``{"error": "<axum's text>"}``.
+#
+# Typing the params here would instead answer a FastAPI 422 of a third shape,
+# which the page would misattribute to coord.
+
+
+@router.get("/coord/operator-touches")
+async def get_operator_touches(
+    window_days: str | None = Query(default=None),
+    disposition: str | None = Query(default=None),
+    open_only: str | None = Query(default=None),
+    actionable_only: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    before: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+    ``aggregate_included`` (``false`` on a ``before`` page, where every
+    aggregate field and ``constraint_verdict`` are ``null``),
+    ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+    ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+    ``touches``, ``next_cursor`` and ``constraint_verdict``.
+
+    Every parameter is declared as a STRING and forwarded unchanged. coord
+    clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+    ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+    an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+    passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+    Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+    which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+    answer, not a failure; coord's 400/503 bodies pass through verbatim.
+    """
+    candidates = {
+        "window_days": window_days,
+        "disposition": disposition,
+        "open_only": open_only,
+        "actionable_only": actionable_only,
+        "limit": limit,
+        "before": before,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/operator-touches/constraint-verdict")
+async def get_operator_touch_constraint_verdict(
+    window_days: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+
+    The standalone form of the ``constraint_verdict`` object the touch read
+    carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+    reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+    verdict, never a default. Error bodies pass through verbatim.
+    """
+    params: dict[str, Any] | None = (
+        {"window_days": window_days} if window_days else None
+    )
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches/constraint-verdict",
+        tenant_id=tenant_id,
+        params=params,
     )
 
 
@@ -10413,6 +10560,15 @@ class FleetPolicyView(BaseModel):
     #: not read whole — a list missing one entry would claim to be complete
     #: while hiding an override that is in force.
     repo_overrides: list[FleetPolicyRepoOverride] | None = None
+    #: Where a NO-ROW answer's level came from, as coord reports it:
+    #: ``"deployment_profile"`` (a self-hosted coord's egress default) or
+    #: ``"product"`` (the product's own per-domain default). ``None`` when a row
+    #: decided (``resolved_scope`` is a real band) or when coord predates the
+    #: field. Declared here because pydantic drops an undeclared key, and without
+    #: it the console could never tell a deployment default from a product
+    #: default (plan ``2026-10-10-spec-front-end-phase-9-generic-boundary``
+    #: Phase 8).
+    default_source: str | None = None
 
 
 class FleetPolicyPut(BaseModel):
@@ -10578,6 +10734,7 @@ def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPol
     level = body.get("effective_level")
     scope = body.get("resolved_scope")
     master = body.get("master_enabled")
+    default_source = body.get("default_source")
     return FleetPolicyView(
         # Echo the domain we ASKED for, not the one coord echoed: they are the
         # same today, and pinning it means a future coord that echoes the
@@ -10593,6 +10750,7 @@ def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPol
         keys_not_shown=not_shown,
         keys_not_shown_source=source,
         repo_overrides=_fleet_policy_repo_overrides(body.get("repo_overrides")),
+        default_source=default_source if isinstance(default_source, str) else None,
     )
 
 
@@ -10887,143 +11045,6 @@ async def get_ci_hosting(
     return _ci_hosting_view(payload, can_edit=can_edit)
 
 
-# ---- Tenant transcript-sync consent proxy -------------------------------
-#
-# Plan ``2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls``
-# Phase 3 (§3.6). Coord gates session-output ingest on
-# ``coord.tenant_policies.transcript_sync_enabled`` (qontinui-coord#2480): while
-# it is ``false`` coord refuses every chunk, on both the ``pty`` and the
-# ``transcript`` stream. This is the console's door onto that one flag.
-#
-# It proxies coord's ``GET``/``PATCH /tenant-policy`` — but deliberately exposes
-# only the transcript-sync SLICE of the policy, under a path that says so.
-# ``session_coordination_enabled`` (the Phase 10 cutover flag) rides the same
-# GET, and coord keeps it off the HTTP write surface on purpose; showing it on a
-# page with a toggle beside it would invite reading it as editable.
-#
-# Two coord wire facts this encodes once:
-#
-# 1. Coord's GET requires ``?tenant_id=`` and 403s unless it EQUALS the
-#    principal's tenant — which coord resolves AFTER applying the forwarded
-#    ``X-Qontinui-Active-Tenant`` override. ``get_tenant_id`` returns the HOME
-#    tenant, so passing it here would 403 every operator who has switched
-#    project. The query param is therefore the EFFECTIVE tenant.
-# 2. Coord's PATCH body is ``#[serde(deny_unknown_fields)]`` and carries no
-#    ``tenant_id`` at all: the write lands in the operator's own (effective)
-#    tenant by construction. The body is assembled here from a closed model.
-
-
-class TenantTranscriptSyncView(BaseModel):
-    """The tenant's transcript-sync consent, as coord resolves it."""
-
-    #: ``None`` when coord's answer carried no such field (a coord that predates
-    #: qontinui-coord#2480). That is UNKNOWN — it is NOT "on", even though the
-    #: column defaults to ``true``, because a coord that cannot report the flag
-    #: also does not enforce it.
-    transcript_sync_enabled: bool | None
-    #: ``True`` when coord read the flag as ``false`` only because its column is
-    #: not provisioned yet (the fail-closed deploy-ordering stand-in) — so an
-    #: "off" here was not an admin's decision.
-    column_missing: bool = False
-    #: Whether the caller may write — the SAME effective-tenant rule
-    #: ``require_coord_tenant_admin`` applies to the PATCH. UI gating only;
-    #: coord re-checks with ``rbac::is_tenant_admin``.
-    can_edit: bool
-
-
-class TenantTranscriptSyncPatch(BaseModel):
-    """Closed body for the transcript-sync write — see wire fact 2 above."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    transcript_sync_enabled: bool
-
-
-class TenantTranscriptSyncWriteResult(BaseModel):
-    """What was written, and — separately — what coord now reads back.
-
-    ``effective`` is ``None`` with ``readback_error`` set when coord accepted
-    the write but did not return the policy it re-read (its own post-upsert
-    SELECT failed). That is UNKNOWN, not "applied".
-    """
-
-    written: bool
-    effective: TenantTranscriptSyncView | None = None
-    readback_error: str | None = None
-
-
-def _transcript_sync_view(payload: Any, *, can_edit: bool) -> TenantTranscriptSyncView:
-    """Project coord's ``TenantPolicy`` body onto the transcript-sync slice."""
-    body = payload if isinstance(payload, dict) else {}
-    enabled = body.get("transcript_sync_enabled")
-    return TenantTranscriptSyncView(
-        transcript_sync_enabled=enabled if isinstance(enabled, bool) else None,
-        # Coord serves the marker only while it is true.
-        column_missing=body.get("transcript_sync_column_missing") is True,
-        can_edit=can_edit,
-    )
-
-
-@router.get("/tenant-policy/transcript-sync", response_model=TenantTranscriptSyncView)
-async def get_tenant_transcript_sync(
-    request: Request,
-    home_tenant_id: UUID = Depends(get_tenant_id),
-) -> TenantTranscriptSyncView:
-    """Read whether coord accepts session output for the caller's tenant.
-
-    ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
-    ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
-    that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
-    authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
-    is not an admin of this tenant is refused ``admin_required`` — an enabled
-    button would promise a write coord will not take.
-    """
-    identity = await get_coord_identity(request)
-    active = request.headers.get(ACTIVE_TENANT_HEADER)
-    effective = _effective_tenant_id(identity, active) or home_tenant_id
-    payload = await _proxy_coord_get(
-        "/tenant-policy",
-        params={"tenant_id": str(effective)},
-        tenant_id=effective,
-    )
-    can_edit = "admin" in _effective_tenant_roles(identity, active)
-    return _transcript_sync_view(payload, can_edit=can_edit)
-
-
-@router.patch(
-    "/tenant-policy/transcript-sync",
-    response_model=TenantTranscriptSyncWriteResult,
-)
-async def patch_tenant_transcript_sync(
-    body: TenantTranscriptSyncPatch,
-    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
-) -> TenantTranscriptSyncWriteResult:
-    """Turn transcript sync on or off for the caller's effective tenant.
-
-    Tenant-admin gated web-side; coord re-checks and answers 403
-    ``admin_required`` otherwise, and 503 ``column_not_present`` while the
-    column's migration has not reached its database — both pass through
-    verbatim. Coord re-reads the policy after its upsert and returns it, so no
-    second round trip is needed for the read-back.
-    """
-    answer = await _proxy_coord_patch(
-        "/tenant-policy",
-        body.model_dump(),
-        tenant_id=tenant_id,
-    )
-    if isinstance(answer, dict) and isinstance(
-        answer.get("transcript_sync_enabled"), bool
-    ):
-        # The caller passed `require_coord_tenant_admin`, so `can_edit` is
-        # settled without another `/admin/coord/me` read.
-        return TenantTranscriptSyncWriteResult(
-            written=True, effective=_transcript_sync_view(answer, can_edit=True)
-        )
-    readback_error = "coord accepted the write but did not return the policy it re-read"
-    logger.warning("tenant_policy.readback_failed", detail=readback_error)
-    return TenantTranscriptSyncWriteResult(written=True, readback_error=readback_error)
-
-
 # ---- Unfinished sessions + auto-resume toggle proxy ---------------------
 #
 # Plan ``2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed``
@@ -11195,8 +11216,9 @@ async def get_tenant_resume_unfinished(
     request: Request,
     home_tenant_id: UUID = Depends(get_tenant_id),
 ) -> TenantResumeUnfinishedView:
-    """Read the tenant's automatic-resume flag (effective tenant, as for
-    ``transcript-sync`` -- see wire fact 1 above)."""
+    """Read the tenant's automatic-resume flag, for the EFFECTIVE tenant (the
+    switched-to tenant when the caller holds a role there, else the home
+    tenant) -- the tenant coord's ``GET /tenant-policy`` is asked about."""
     identity = await get_coord_identity(request)
     active = request.headers.get(ACTIVE_TENANT_HEADER)
     effective = _effective_tenant_id(identity, active) or home_tenant_id
@@ -13523,6 +13545,83 @@ async def get_coord_findings(
             "unavailable_kind": "unprovisioned",
         }
     return body
+
+
+# ---------------------------------------------------------------------------
+# Verification metrics — `GET /operations/coord/verification/metrics`
+#                      → coord `GET /coord/verification/metrics`
+#
+# Backs the overview's "Can I trust 'done'?" tile and its drill-down at
+# `/admin/coord/verification`. Plan
+# `2026-09-20-trust-calibration-and-independent-verification-coverage-are-measured-continuously`,
+# Phase 5 (web half).
+#
+# **A pass-through that never manufactures an answer.** coord's body is ONE
+# object — trust calibration (Wilson+fpc), independent-verification coverage,
+# unknowns, the pre-land review record beside coverage, the sampling posture,
+# the lane's freshness and a 12-week series — and its "could not look" answer
+# is already a body of its own (`200 {"degraded": true, "reason", …}` with
+# every number `null`). Both are forwarded byte-for-byte. Every NON-2xx is an
+# error here too, never a `200` with an empty or zeroed body: a tile that read
+# `{}` as "no verifications" would render the stale-green this surface exists
+# to rule out. That is the opposite of the findings proxy above, which
+# converts an absent coord into a `200` degrade envelope; this page renders
+# its own "could not look" from the error instead, so no envelope is needed
+# and none can be mistaken for data.
+#
+# One status IS rewritten: coord's `401` / `403`. The web backend forwards the
+# operator's Cognito bearer, and qontinui-coord 3088dc5d mounted this door on
+# a `require_jwt` sub-router (device / agent JWT only), which refuses that
+# bearer. Passed through as a `401`, the frontend http client would treat it
+# as a spent session and run its token-refresh branch on every tile read. It
+# is re-raised as a `502` whose detail names the refusal, so the page says
+# "could not look — coord refused the operator's credential" and nothing about
+# the user's own session changes.
+# ---------------------------------------------------------------------------
+
+_COORD_VERIFICATION_METRICS_PATH = "/coord/verification/metrics"
+
+
+@router.get("/coord/verification/metrics")
+async def get_coord_verification_metrics(
+    window: str | None = Query(
+        default=None,
+        description=(
+            "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord "
+            "owns the default (28d) and answers a malformed value with a "
+            "typed 422, which is passed through."
+        ),
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's verification metrics object for the operator's tenant.
+
+    The tenant is coord's to resolve from the forwarded bearer; nothing from
+    the request names it. The body is coord's, verbatim — including the
+    ``degraded: true`` answer, which the page renders as "could not look".
+    """
+    params = {"window": window} if window is not None else None
+    try:
+        return await _proxy_coord_get(
+            _COORD_VERIFICATION_METRICS_PATH, params=params, tenant_id=tenant_id
+        )
+    except CoordTransportUnavailable:
+        raise
+    except HTTPException as exc:
+        if exc.status_code in (401, 403):
+            raise refusal_error(
+                502,
+                RefusalCode.credential_rejected,
+                NextActionKind.report_defect,
+                (
+                    f"coord refused the operator's credential on "
+                    f"{_COORD_VERIFICATION_METRICS_PATH} (HTTP {exc.status_code}): "
+                    f"{exc.detail}"
+                ),
+                discriminator="coord_verification_metrics_credential_refused",
+                glossary_terms=[GlossaryTerm.coord],
+            ) from exc
+        raise
 
 
 @router.put("/coord/policies/system/{system_rule_id}/override")
