@@ -706,6 +706,9 @@ export const GROUPS: NavGroup[] = [
         // the `command_safety_rewrite` fleet-policy dial runners read at
         // spawn (plan
         // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`),
+        // the `permission_prompt_capture` dial deciding whether those sessions
+        // record their permission prompts as coord findings (plan
+        // `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`),
         // the `account_selection_mode` dial runners force-apply unless the
         // machine is pinned (plan
         // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),

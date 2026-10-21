@@ -15811,7 +15811,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
+    "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
         parameters: {
             query?: never;
             header?: never;
@@ -15821,28 +15821,34 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Set Pr Draft State
-         * @description Set a PR's GitHub draft state (operator release valve).
+         * Set Pr Hold
+         * @description Place or release a coord hold on a PR (the operator's hold control).
          *
-         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-         *     (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-         *     ``false`` marks the PR ready-for-review (releasing it to the merge train),
-         *     ``true`` converts it back to draft (the documented hold mechanism).
+         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+         *     (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+         *     the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+         *     so it works on private repos on GitHub Free, which have no draft PRs.
          *
-         *     Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-         *     bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-         *     fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-         *     server-side. Releasing a draft-required (security-surface) PR is an operator
-         *     judgment, so this is operator-authed — never an agent JWT.
+         *     Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+         *     ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+         *     ``held: false`` releases. Release authority is coord's: the holder, or an
+         *     admin-role operator for any hold; a ``security_tier`` hold is the
+         *     operator's alone.
          *
-         *     Only the ``draft`` boolean is forwarded; any other keys the client sends are
-         *     dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-         *     coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-         *     via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-         *     / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-         *     502 github_draft_state_failed, 500 internal).
+         *     Auth mirrors the gate-action stack: the operator's Cognito bearer is
+         *     forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+         *     derives the tenant, role and repo authority server-side. Only the four
+         *     contract keys are forwarded.
+         *
+         *     ``structured_errors=True``: coord's typed refusal object (``{"error",
+         *     "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+         *     ``http_exception_handler`` splices into the top level of its envelope, so
+         *     the browser receives ``error`` as coord's code (400 invalid_input,
+         *     403 not_holder / security_tier_operator_only, 404 not_found,
+         *     500 internal) rather than a JSON string inside ``message``. A coord error
+         *     body that is not a JSON object still falls back to its text.
          */
-        post: operations["api_v1_operations_prs_owner_repo_number_draft_state_post"];
+        post: operations["api_v1_operations_prs_owner_repo_number_hold_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16423,8 +16429,9 @@ export interface paths {
         };
         /**
          * Get Tenant Resume Unfinished
-         * @description Read the tenant's automatic-resume flag (effective tenant, as for
-         *     ``transcript-sync`` -- see wire fact 1 above).
+         * @description Read the tenant's automatic-resume flag, for the EFFECTIVE tenant (the
+         *     switched-to tenant when the caller holds a role there, else the home
+         *     tenant) -- the tenant coord's ``GET /tenant-policy`` is asked about.
          */
         get: operations["api_v1_operations_tenant_policy_resume_unfinished_get"];
         put?: never;
@@ -16437,43 +16444,6 @@ export interface paths {
          * @description Turn automatic resume on or off for the caller's effective tenant.
          */
         patch: operations["api_v1_operations_tenant_policy_resume_unfinished_patch"];
-        trace?: never;
-    };
-    "/api/v1/operations/tenant-policy/transcript-sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Tenant Transcript Sync
-         * @description Read whether coord accepts session output for the caller's tenant.
-         *
-         *     ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
-         *     ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
-         *     that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
-         *     authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
-         *     is not an admin of this tenant is refused ``admin_required`` — an enabled
-         *     button would promise a write coord will not take.
-         */
-        get: operations["api_v1_operations_tenant_policy_transcript_sync_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Patch Tenant Transcript Sync
-         * @description Turn transcript sync on or off for the caller's effective tenant.
-         *
-         *     Tenant-admin gated web-side; coord re-checks and answers 403
-         *     ``admin_required`` otherwise, and 503 ``column_not_present`` while the
-         *     column's migration has not reached its database — both pass through
-         *     verbatim. Coord re-reads the policy after its upsert and returns it, so no
-         *     second round trip is needed for the read-back.
-         */
-        patch: operations["api_v1_operations_tenant_policy_transcript_sync_patch"];
         trace?: never;
     };
     "/api/v1/operations/tenants": {
@@ -37550,6 +37520,8 @@ export interface components {
         FleetPolicyView: {
             /** Can Edit */
             can_edit: boolean;
+            /** Default Source */
+            default_source?: string | null;
             /** Domain */
             domain: string;
             /** Effective Level */
@@ -51888,44 +51860,6 @@ export interface components {
         /** TenantResumeUnfinishedWriteResult */
         TenantResumeUnfinishedWriteResult: {
             effective?: components["schemas"]["TenantResumeUnfinishedView"] | null;
-            /** Readback Error */
-            readback_error?: string | null;
-            /** Written */
-            written: boolean;
-        };
-        /**
-         * TenantTranscriptSyncPatch
-         * @description Closed body for the transcript-sync write — see wire fact 2 above.
-         */
-        TenantTranscriptSyncPatch: {
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean;
-        };
-        /**
-         * TenantTranscriptSyncView
-         * @description The tenant's transcript-sync consent, as coord resolves it.
-         */
-        TenantTranscriptSyncView: {
-            /** Can Edit */
-            can_edit: boolean;
-            /**
-             * Column Missing
-             * @default false
-             */
-            column_missing: boolean;
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean | null;
-        };
-        /**
-         * TenantTranscriptSyncWriteResult
-         * @description What was written, and — separately — what coord now reads back.
-         *
-         *     ``effective`` is ``None`` with ``readback_error`` set when coord accepted
-         *     the write but did not return the policy it re-read (its own post-upsert
-         *     SELECT failed). That is UNKNOWN, not "applied".
-         */
-        TenantTranscriptSyncWriteResult: {
-            effective?: components["schemas"]["TenantTranscriptSyncView"] | null;
             /** Readback Error */
             readback_error?: string | null;
             /** Written */
@@ -78418,7 +78352,7 @@ export interface operations {
             };
         };
     };
-    api_v1_operations_prs_owner_repo_number_draft_state_post: {
+    api_v1_operations_prs_owner_repo_number_hold_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -79130,59 +79064,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantResumeUnfinishedWriteResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncView"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TenantTranscriptSyncPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncWriteResult"];
                 };
             };
             /** @description Validation Error */
