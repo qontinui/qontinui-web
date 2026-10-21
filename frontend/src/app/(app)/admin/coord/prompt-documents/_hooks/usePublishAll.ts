@@ -14,6 +14,7 @@ import {
 } from "./usePromptDocumentPublications";
 import type {
   AutoPublishStatusEntry,
+  AutoPublishStatusResponse,
   PromptDocumentKind,
   PublishAllArmedResponse,
   PublishAllCandidate,
@@ -138,6 +139,10 @@ export function usePublishAll() {
   const [publishingEnabled, setPublishingEnabled] = useState<
     boolean | undefined
   >(undefined);
+  const [worker, setWorker] = useState<
+    AutoPublishStatusResponse["worker"] | undefined
+  >(undefined);
+  const [statusSettled, setStatusSettled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [previewing, setPreviewing] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -211,8 +216,17 @@ export function usePublishAll() {
           ? data.count
           : (data.candidates ?? []).length
       );
+      // The OBSERVED worker (plan 2026-10-17 D5). Absent from an older coord,
+      // and `undefined` renders UNKNOWN — the dial never infers a healthy loop
+      // from the switch being on.
+      setWorker(data.worker ?? undefined);
+      setStatusSettled(true);
     } catch (err) {
       if (request !== statusRequest.current) return;
+      // A failed read observes nothing, so a previously read worker must not
+      // linger as if it were current: drop it, and the dial reads UNKNOWN.
+      setWorker(undefined);
+      setStatusSettled(true);
       // Silent by the same rule as the latch above, and one step further: a
       // failed status read costs an ADVISORY badge. Every non-system tenant
       // fails it on every page load, and nothing an operator can do depends on
@@ -376,6 +390,18 @@ export function usePublishAll() {
      */
     publishingEnabled,
     /**
+     * What coord observed of the auto-publish loops, from the same status read
+     * (plan `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4).
+     * `undefined` is UNKNOWN: not served, not read yet, or the read failed.
+     */
+    worker,
+    /**
+     * True once a status read has settled — answered or failed. Before that
+     * the observation is not yet a fact either way, so the dial says nothing
+     * rather than flashing UNKNOWN on every page load.
+     */
+    statusSettled,
+    /**
      * N for the "Publish all changed (N)" button — the status read's candidate
      * count, which coord builds from the same `publication_candidates` helper
      * the dry run uses. See the module docs for the assumption and its failure
@@ -403,3 +429,6 @@ export function usePublishAll() {
     publishAll,
   };
 }
+
+/** Everything {@link usePublishAll} returns — the shape the page hands down. */
+export type PublishAllState = ReturnType<typeof usePublishAll>;

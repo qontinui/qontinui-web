@@ -24914,6 +24914,17 @@
             "title": "Can Edit",
             "type": "boolean"
           },
+          "default_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Source"
+          },
           "domain": {
             "title": "Domain",
             "type": "string"
@@ -28831,8 +28842,16 @@
         "type": "object"
       },
       "KindForkGroup": {
-        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.",
+        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.\n\n``family`` names which kind family forked: ``\"spec\"`` (the specification\nkinds) or ``\"plan\"`` (every other kind). Kinds are counted within one\nfamily, so a key forked in BOTH families is two groups sharing\n``(slug, source_repo)``; ``family`` is what tells them apart.",
         "properties": {
+          "family": {
+            "enum": [
+              "spec",
+              "plan"
+            ],
+            "title": "Family",
+            "type": "string"
+          },
           "kinds": {
             "items": {
               "type": "string"
@@ -28874,6 +28893,7 @@
         "required": [
           "slug",
           "source_repo",
+          "family",
           "kinds",
           "variant_count",
           "resolvable",
@@ -29788,6 +29808,14 @@
         },
         "title": "LLMMetrics",
         "type": "object"
+      },
+      "LabelKind": {
+        "enum": [
+          "class",
+          "false_finish"
+        ],
+        "title": "LabelKind",
+        "type": "string"
       },
       "LearnedWorkflowResponse": {
         "description": "Schema for learned workflow response.",
@@ -34726,6 +34754,15 @@
         "title": "OpenFollowupResponse",
         "type": "object"
       },
+      "OperatorLabel": {
+        "enum": [
+          "A",
+          "B",
+          "E"
+        ],
+        "title": "OperatorLabel",
+        "type": "string"
+      },
       "OrganizationCreate": {
         "description": "Schema for creating a new organization.",
         "properties": {
@@ -34986,6 +35023,36 @@
           "success"
         ],
         "title": "Outcome",
+        "type": "object"
+      },
+      "OverlordLabelRequest": {
+        "additionalProperties": false,
+        "description": "``extra='forbid'``: a stray ``label_source`` is a 422, not ignored.",
+        "properties": {
+          "intervention_id": {
+            "format": "uuid",
+            "title": "Intervention Id",
+            "type": "string"
+          },
+          "label_kind": {
+            "$ref": "#/components/schemas/LabelKind"
+          },
+          "operator_label": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatorLabel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "intervention_id",
+          "label_kind"
+        ],
+        "title": "OverlordLabelRequest",
         "type": "object"
       },
       "OverviewSettingsRead": {
@@ -57101,87 +57168,6 @@
         "title": "TenantResumeUnfinishedWriteResult",
         "type": "object"
       },
-      "TenantTranscriptSyncPatch": {
-        "additionalProperties": false,
-        "description": "Closed body for the transcript-sync write \u2014 see wire fact 2 above.",
-        "properties": {
-          "transcript_sync_enabled": {
-            "title": "Transcript Sync Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "transcript_sync_enabled"
-        ],
-        "title": "TenantTranscriptSyncPatch",
-        "type": "object"
-      },
-      "TenantTranscriptSyncView": {
-        "description": "The tenant's transcript-sync consent, as coord resolves it.",
-        "properties": {
-          "can_edit": {
-            "title": "Can Edit",
-            "type": "boolean"
-          },
-          "column_missing": {
-            "default": false,
-            "title": "Column Missing",
-            "type": "boolean"
-          },
-          "transcript_sync_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Transcript Sync Enabled"
-          }
-        },
-        "required": [
-          "transcript_sync_enabled",
-          "can_edit"
-        ],
-        "title": "TenantTranscriptSyncView",
-        "type": "object"
-      },
-      "TenantTranscriptSyncWriteResult": {
-        "description": "What was written, and \u2014 separately \u2014 what coord now reads back.\n\n``effective`` is ``None`` with ``readback_error`` set when coord accepted\nthe write but did not return the policy it re-read (its own post-upsert\nSELECT failed). That is UNKNOWN, not \"applied\".",
-        "properties": {
-          "effective": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TenantTranscriptSyncView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "readback_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Readback Error"
-          },
-          "written": {
-            "title": "Written",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "written"
-        ],
-        "title": "TenantTranscriptSyncWriteResult",
-        "type": "object"
-      },
       "TestRunComplete": {
         "description": "Request schema for completing a test run.",
         "properties": {
@@ -63549,6 +63535,17 @@
             ],
             "title": "Source Repo"
           },
+          "spec_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Ref"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -63590,6 +63587,7 @@
           "kind",
           "kind_locked",
           "slug",
+          "spec_ref",
           "title",
           "status",
           "content_sha256",
@@ -63677,7 +63675,12 @@
               "supersedes",
               "depends_on",
               "spawned_followup",
-              "refutes"
+              "refutes",
+              "derives_from",
+              "refines",
+              "implements",
+              "verifies",
+              "traces_to"
             ],
             "title": "Relation",
             "type": "string"
@@ -63861,7 +63864,13 @@
               "investigation_report",
               "handoff",
               "plan",
-              "diagnostic"
+              "diagnostic",
+              "request",
+              "requirement",
+              "interface_mapping",
+              "story",
+              "test_case",
+              "doc_correction"
             ],
             "title": "Kind",
             "type": "string"
@@ -64196,6 +64205,17 @@
             ],
             "title": "Source Repo"
           },
+          "spec_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Ref"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -64230,6 +64250,7 @@
           "kind",
           "kind_locked",
           "slug",
+          "spec_ref",
           "title",
           "status",
           "content_sha256",
@@ -64317,7 +64338,13 @@
               "investigation_report",
               "handoff",
               "plan",
-              "diagnostic"
+              "diagnostic",
+              "request",
+              "requirement",
+              "interface_mapping",
+              "story",
+              "test_case",
+              "doc_correction"
             ],
             "title": "Kind",
             "type": "string"
@@ -67621,6 +67648,53 @@
         "summary": "Get Agent Session Lineage",
         "tags": [
           "admin-agent-sessions"
+        ]
+      }
+    },
+    "/api/v1/admin/coord/overlord/labels": {
+      "post": {
+        "description": "Append the operator's label to an intervention; return coord's new row.",
+        "operationId": "api_v1_admin_coord_overlord_labels_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverlordLabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Overlord Label Api V1 Admin Coord Overlord Labels Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Overlord Label",
+        "tags": [
+          "overlord"
         ]
       }
     },
@@ -81436,7 +81510,7 @@
     },
     "/api/v1/digital-twin/subspaces": {
       "get": {
-        "description": "Live numerator for the completeness matrix: a per-sub-space probe of\nevery fleet-wide snapshot twin observer.\n\nPer-tenant: the tenant is resolved best-effort (and the caller's Cognito\nbearer **plus their tenant-switcher selection** captured for forwarding).\nThe matrix reflects what coord can observe for *their* tenant \u2014 flag-gated\n/ tenant-scoped observers legitimately read ``blind`` for some tenants. If\ncoord/the tenant is unavailable we DEGRADE to an all-error matrix (HTTP\n200), never 5xx.\n\nTenant selection (plan\n``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``\nPhase 3). This route captures the caller's context INLINE rather than via\n``Depends(get_tenant_id)`` like its siblings, and used to set only\n``_caller_bearer`` \u2014 so ``_tenant_headers`` found ``_caller_active_tenant``\nat its ``None`` default and dropped ``X-Qontinui-Active-Tenant``, silently\nserving a tenant-switched operator their HOME tenant's matrix. It now calls\nthe same ``capture_caller_bearer`` the siblings reach through, which sets\nboth.\n\nForwarding the header alone would be worse than the bug: the fan-out result\nis cached, so a matrix coord scoped to the SELECTED tenant would land under\nthe HOME tenant's key and later be served to a request that selected home \u2014\na cached cross-tenant read. The cache is therefore keyed on the EFFECTIVE\ntenant (``_effective_tenant_id``: the selection when the operator is a\nmember of it, else home \u2014 mirroring coord's own\n``apply_active_tenant_override``, which degrades a non-member selection to\nhome rather than widening).",
+        "description": "Live numerator for the completeness matrix: a per-sub-space probe of\nevery sub-space coord's served catalog declares probeable.\n\nPer-tenant: the tenant is resolved best-effort (and the caller's Cognito\nbearer **plus their tenant-switcher selection** captured for forwarding).\nThe matrix reflects what coord can observe for *their* tenant \u2014 flag-gated\n/ tenant-scoped observers legitimately read ``blind`` for some tenants, and\na Qontinui-internal sub-space reads ``restricted`` for another tenant. If\ncoord, the tenant or the catalog is unavailable we DEGRADE (HTTP 200, see\n``_degraded_matrix``), never 5xx.\n\nTenant selection (plan\n``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``\nPhase 3). This route captures the caller's context INLINE rather than via\n``Depends(get_tenant_id)`` like its siblings, and used to set only\n``_caller_bearer`` \u2014 so ``_tenant_headers`` found ``_caller_active_tenant``\nat its ``None`` default and dropped ``X-Qontinui-Active-Tenant``, silently\nserving a tenant-switched operator their HOME tenant's matrix. It now calls\nthe same ``capture_caller_bearer`` the siblings reach through, which sets\nboth.\n\nForwarding the header alone would be worse than the bug: the fan-out result\nis cached, so a matrix coord scoped to the SELECTED tenant would land under\nthe HOME tenant's key and later be served to a request that selected home \u2014\na cached cross-tenant read. The cache is therefore keyed on the EFFECTIVE\ntenant (``_effective_tenant_id``: the selection when the operator is a\nmember of it, else home \u2014 mirroring coord's own\n``apply_active_tenant_override``, which degrades a non-member selection to\nhome rather than widening).",
         "operationId": "api_v1_digital_twin_subspaces_get",
         "responses": {
           "200": {
@@ -98048,6 +98122,58 @@
         ]
       }
     },
+    "/api/v1/operations/coord/verification/metrics": {
+      "get": {
+        "description": "Return coord's verification metrics object for the operator's tenant.\n\nThe tenant is coord's to resolve from the forwarded bearer; nothing from\nthe request names it. The body is coord's, verbatim \u2014 including the\n``degraded: true`` answer, which the page renders as \"could not look\".",
+        "operationId": "api_v1_operations_coord_verification_metrics_get",
+        "parameters": [
+          {
+            "description": "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim \u2014 coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim \u2014 coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through.",
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Verification Metrics Api V1 Operations Coord Verification Metrics Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Verification Metrics",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/deploys": {
       "get": {
         "description": "List recent declared deploys + their latest verification from coord.\n\nForwards the optional ``service`` / ``environment`` filters and the\n``limit`` cap to coord.",
@@ -103601,10 +103727,10 @@
         ]
       }
     },
-    "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
+    "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
       "post": {
-        "description": "Set a PR's GitHub draft state (operator release valve).\n\nProxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``\n(plan 2026-07-23-operator-set-pr-draft-state). The body is ``{\"draft\": bool}``:\n``false`` marks the PR ready-for-review (releasing it to the merge train),\n``true`` converts it back to draft (the documented hold mechanism).\n\nAuth mirrors the gate-action stack (approve/reject): the operator's Cognito\nbearer is forwarded (``require_coord_tenant_admin`` \u2192 ``tenant_id=`` \u2192\nfleet-auth P2/D6) and coord derives the tenant + validates repo authority\nserver-side. Releasing a draft-required (security-surface) PR is an operator\njudgment, so this is operator-authed \u2014 never an agent JWT.\n\nOnly the ``draft`` boolean is forwarded; any other keys the client sends are\ndropped so the wire body to coord is exactly its ``{\"draft\": bool}`` contract.\ncoord's status codes + ``{\"error\", \"message\"}`` bodies pass through verbatim\nvia ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant\n/ pr_not_found, 429 rate_limited, 503 github_app_unconfigured,\n502 github_draft_state_failed, 500 internal).",
-        "operationId": "api_v1_operations_prs_owner_repo_number_draft_state_post",
+        "description": "Place or release a coord hold on a PR (the operator's hold control).\n\nProxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``\n(plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced\nthe ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),\nso it works on private repos on GitHub Free, which have no draft PRs.\n\nBody: ``{\"held\": bool, \"reason\"?: str, \"kind\"?: str, \"gate_id\"?: str}``.\n``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;\n``held: false`` releases. Release authority is coord's: the holder, or an\nadmin-role operator for any hold; a ``security_tier`` hold is the\noperator's alone.\n\nAuth mirrors the gate-action stack: the operator's Cognito bearer is\nforwarded (``require_coord_tenant_admin`` \u2192 ``tenant_id=``) and coord\nderives the tenant, role and repo authority server-side. Only the four\ncontract keys are forwarded.\n\n``structured_errors=True``: coord's typed refusal object (``{\"error\",\n\"message\"}``) becomes the ``HTTPException.detail`` dict, which the app's\n``http_exception_handler`` splices into the top level of its envelope, so\nthe browser receives ``error`` as coord's code (400 invalid_input,\n403 not_holder / security_tier_operator_only, 404 not_found,\n500 internal) rather than a JSON string inside ``message``. A coord error\nbody that is not a JSON object still falls back to its text.",
+        "operationId": "api_v1_operations_prs_owner_repo_number_hold_post",
         "parameters": [
           {
             "in": "path",
@@ -103651,7 +103777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Set Pr Draft State Api V1 Operations Prs  Owner   Repo   Number  Draft State Post"
+                  "title": "Response Set Pr Hold Api V1 Operations Prs  Owner   Repo   Number  Hold Post"
                 }
               }
             },
@@ -103673,7 +103799,7 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Set Pr Draft State",
+        "summary": "Set Pr Hold",
         "tags": [
           "operations"
         ]
@@ -104788,6 +104914,311 @@
         ]
       }
     },
+    "/api/v1/operations/spawns": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/spawns`` (tenant-scoped), verbatim.\n\nReturns ``{available: true, items: [SpawnRow], shown, total, truncated,\nnext_cursor, as_of}``, or ``{available: false, reason}`` while coord's\nledger tables are absent. A ``SpawnRow`` carries the request's class and\norigin, its timestamps (``requested_at`` is the first moment coord tried to\nplace it), its state, attempts and deferrals, its pinned / preferred /\ncurrent / spawned device, its placement basis, the started session's id,\naccount and outcome, ``history_complete`` (``false`` on a backfilled row)\nand ``wait_seconds`` (``null`` until it started).",
+        "operationId": "api_v1_operations_spawns_get",
+        "parameters": [
+          {
+            "description": "Only requests of this admission class.",
+            "in": "query",
+            "name": "class",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "autofix",
+                    "continuation",
+                    "local",
+                    "attended"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests of this admission class.",
+              "title": "Class"
+            }
+          },
+          {
+            "description": "Only requests currently in one of these states \u2014 a comma list, e.g. ``queued,dispatched,deferred``.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:queued|dispatched|deferred|spawned|failed|expired|cancelled|superseded)(?:,(?:queued|dispatched|deferred|spawned|failed|expired|cancelled|superseded))*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests currently in one of these states \u2014 a comma list, e.g. ``queued,dispatched,deferred``.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Only requests placed on, or started on, this coord device.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests placed on, or started on, this coord device.",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "Only requests first requested at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests first requested at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Only requests first requested before this instant (offset required).",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests first requested before this instant (offset required).",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first).",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first).",
+              "title": "Order"
+            }
+          },
+          {
+            "description": "coord's opaque ``next_cursor`` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "coord's opaque ``next_cursor`` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size; coord's default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 200,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size; coord's default is 50.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawns",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/spawns/stats": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/spawns/stats`` (tenant-scoped), verbatim.\n\nReturns ``{available: true, window, window_start, as_of, overall,\nper_device, local_report_counts}``, or ``{available: false, reason}``.\nEvery share and percentile in ``overall`` is ``null`` when its\ndenominator is empty \u2014 coord's UNKNOWN, which this proxy never turns into\na ``0``.",
+        "operationId": "api_v1_operations_spawns_stats_get",
+        "parameters": [
+          {
+            "description": "Aggregation window; coord's default is ``7d``.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "24h",
+                    "7d",
+                    "30d"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Aggregation window; coord's default is ``7d``.",
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawn Stats",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/spawns/{spawn_id}": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/spawns/{id}`` (tenant-scoped), verbatim.\n\nReturns ``{available: true, request: SpawnRow, events: [{at, kind,\ndevice_id, reason, detail}]}`` \u2014 the request and its device history\n(placed, dispatched, deferred, refused, rerouted, \u2026), oldest first \u2014 or\n``{available: false, reason}``. ``spawn_id`` is validated as a UUID here so\na malformed id is a 422 at the web edge and never reaches coord as an\narbitrary path segment.",
+        "operationId": "api_v1_operations_spawns_spawn_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "spawn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Spawn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawn",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/symbol-claims": {
       "get": {
         "description": "Proxy ``GET /coord/claims/list?kind=symbol`` for the dashboard.\n\nResponse shape (coord ``ListResponse``):\n\n    {\n        \"kind\": \"symbol\",\n        \"prefix\": \"<echo>\",\n        \"holders\": [\n            {\n                \"kind\": \"symbol\",\n                \"resource_key\": \"<repo>:<file>:<symbol>\",\n                \"machine_id\": \"<uuid>\",\n                \"ttl_seconds\": <int>\n            },\n            ...\n        ],\n        \"truncated\": <bool>\n    }\n\nOptional ``machine_id`` filter is applied client-side after coord\nreturns (coord's ``/coord/claims/list`` doesn't accept a machine\nfilter directly \u2014 prefix matches on resource_key, not on holder).\nThe dashboard groups client-side anyway; this filter is for\ntargeted CLI / curl consumers.",
@@ -104860,7 +105291,7 @@
     },
     "/api/v1/operations/tenant-policy/resume-unfinished": {
       "get": {
-        "description": "Read the tenant's automatic-resume flag (effective tenant, as for\n``transcript-sync`` -- see wire fact 1 above).",
+        "description": "Read the tenant's automatic-resume flag, for the EFFECTIVE tenant (the\nswitched-to tenant when the caller holds a role there, else the home\ntenant) -- the tenant coord's ``GET /tenant-policy`` is asked about.",
         "operationId": "api_v1_operations_tenant_policy_resume_unfinished_get",
         "responses": {
           "200": {
@@ -104920,73 +105351,6 @@
           }
         ],
         "summary": "Patch Tenant Resume Unfinished",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/operations/tenant-policy/transcript-sync": {
-      "get": {
-        "description": "Read whether coord accepts session output for the caller's tenant.\n\n``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see\n``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike\nthat route it carries NO superuser bypass: coord's ``patch_tenant_policy``\nauthorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who\nis not an admin of this tenant is refused ``admin_required`` \u2014 an enabled\nbutton would promise a write coord will not take.",
-        "operationId": "api_v1_operations_tenant_policy_transcript_sync_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantTranscriptSyncView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Tenant Transcript Sync",
-        "tags": [
-          "operations"
-        ]
-      },
-      "patch": {
-        "description": "Turn transcript sync on or off for the caller's effective tenant.\n\nTenant-admin gated web-side; coord re-checks and answers 403\n``admin_required`` otherwise, and 503 ``column_not_present`` while the\ncolumn's migration has not reached its database \u2014 both pass through\nverbatim. Coord re-reads the policy after its upsert and returns it, so no\nsecond round trip is needed for the read-back.",
-        "operationId": "api_v1_operations_tenant_policy_transcript_sync_patch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TenantTranscriptSyncPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantTranscriptSyncWriteResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Patch Tenant Transcript Sync",
         "tags": [
           "operations"
         ]
@@ -108314,6 +108678,24 @@
               ],
               "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
               "title": "Intent Ref"
+            }
+          },
+          {
+            "description": "Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization.",
+            "in": "query",
+            "name": "spec_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization.",
+              "title": "Spec Ref"
             }
           },
           {

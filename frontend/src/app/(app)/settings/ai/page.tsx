@@ -6,6 +6,7 @@ import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 import { useAiSettings } from "./_hooks/useAiSettings";
 import { ProviderSelector } from "./_components/ProviderSelector";
 import { ClaudeCliSettings } from "./_components/ClaudeCliSettings";
@@ -19,15 +20,18 @@ import { ProviderHealthStatus } from "./_components/ProviderHealthStatus";
 export default function AiSettingsPage() {
   const discoveredSpec = useDiscoveredSpec("ai-settings");
   usePageSpecs(
-    discoveredSpec
-      ? { "ai-settings": discoveredSpec.config as SpecConfig }
-      : {}
+    discoveredSpec ? { "ai-settings": discoveredSpec.config as SpecConfig } : {}
   );
 
   const {
     healthLoading,
     isOffline,
     loading,
+    loaded,
+    loadError,
+    retryLoad,
+    derived,
+    rosterDirty,
     saving,
     testing,
     provider,
@@ -58,6 +62,8 @@ export default function AiSettingsPage() {
     handleDeleteApiKey,
   } = useAiSettings();
 
+  const { isCoordAdmin } = useAuth();
+
   if (isOffline) {
     return <RunnerOfflineState />;
   }
@@ -84,7 +90,13 @@ export default function AiSettingsPage() {
       <ProviderSelector provider={provider} onProviderChange={setProvider} />
 
       {provider === "claude_cli" && (
-        <ClaudeCliSettings config={claudeCli} onChange={setClaudeCli} />
+        <ClaudeCliSettings
+          config={claudeCli}
+          onChange={setClaudeCli}
+          derived={derived}
+          previewEnabled={rosterDirty}
+          canReachAdmin={isCoordAdmin}
+        />
       )}
 
       {provider === "claude_api" && (
@@ -126,8 +138,17 @@ export default function AiSettingsPage() {
 
       <TestConnection testing={testing} onTest={handleTestConnection} />
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
+      <div className="flex items-center justify-end gap-3">
+        {!loaded && (
+          <span className="text-sm text-destructive" role="alert">
+            Settings failed to load{loadError ? ` (${loadError})` : ""} — Save
+            is disabled.{" "}
+            <button type="button" className="underline" onClick={retryLoad}>
+              Retry
+            </button>
+          </span>
+        )}
+        <Button onClick={handleSave} disabled={saving || !loaded || loading}>
           {saving && <Loader2 className="size-4 animate-spin" />}
           {saving ? "Saving..." : "Save Settings"}
         </Button>

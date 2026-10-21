@@ -19,9 +19,11 @@ export interface StatusStyle {
  * render as hollow rings and never reuse the green / amber live vocabulary.
  * Solid neutral zinc marks a row with no verdict to show: the roadmap
  * (`planned`, `not-built`), a probe still in flight (`probing`) and an access
- * refusal (`restricted`). `restricted` takes the far end of that scale
- * (zinc-700, zinc-200 in dark mode) so a refused cell never reads as a
- * roadmap row or an in-flight probe, which share zinc-400.
+ * refusal (`restricted`). A solid violet dot is a live answer that is not a
+ * verdict (`served`: coord answered with its own report), so it is neither the
+ * healthy green nor the amber/red of a degraded or failed read. A hollow red
+ * ring is drift between the manifest and coord (`not-served`): no probe ran,
+ * so it never reuses the solid live vocabulary.
  */
 export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   implemented: {
@@ -43,6 +45,20 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     border: "border-l-sky-500",
     meaning:
       "Observer exists but is disabled / unconfigured for this tenant — not the same as unbuilt.",
+  },
+  served: {
+    label: "Served",
+    dot: "bg-violet-500",
+    border: "border-l-violet-500",
+    meaning:
+      "coord answered live, with its own report rather than a verdict — served, not graded: neither healthy nor broken. Open the drawer for the report.",
+  },
+  "not-served": {
+    label: "Not served by coord",
+    dot: "border border-red-500 bg-transparent",
+    border: "border-l-red-300 dark:border-l-red-800",
+    meaning:
+      "This page's manifest expects a live probe here, but coord's catalog does not declare one — the manifest and coord have drifted. Nothing was probed.",
   },
   interactive: {
     label: "Built · ask it",
@@ -75,7 +91,7 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     dot: "bg-zinc-700 dark:bg-zinc-200",
     border: "border-l-zinc-700 dark:border-l-zinc-200",
     meaning:
-      "coord refused this sub-space for this tenant — an access decision, not a silent or failed observer.",
+      "coord refused this sub-space to you: it is Qontinui-internal (readable only by Qontinui's own operators), or, for the outbound budget, admin-only. Your other sub-spaces are unaffected.",
   },
   error: {
     label: "Error",
@@ -138,11 +154,22 @@ export function presentStatus(
  * means here (the detail drawer's "On this page" field). The raw `query_kind`
  * would mislead — `parameterized` means "a coord tool answers it, but this
  * page does not probe it", even for a tool coord's own catalog lists as kind
- * `snapshot` (twin_fidelity, workers, cost).
+ * `snapshot` (twin_fidelity, cost).
+ *
+ * A resolved row's `liveProbed` (coord's declaration, joined in `resolve.ts`)
+ * outranks the manifest's `query_kind` when present: a row coord declares is
+ * live-probed whatever the manifest says, and a manifest `snapshot` row coord
+ * does not declare is not.
  */
 export function pageAccessLabel(
-  row: Pick<ResolvedSubspace, "query_kind" | "ask_via">
+  row: Pick<ResolvedSubspace, "query_kind" | "ask_via"> & {
+    liveProbed?: boolean;
+  }
 ): string {
+  if (row.liveProbed === true) return "Live-probed";
+  if (row.liveProbed === false && row.query_kind === "snapshot") {
+    return "Not served by coord";
+  }
   switch (row.query_kind) {
     case "snapshot":
       return "Live-probed";

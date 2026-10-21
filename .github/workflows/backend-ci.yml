@@ -31,6 +31,12 @@ on:
       # PR that drops a prefix must run the guard that catches it. The module
       # asserts this entry appears in BOTH filters.
       - 'frontend/src/services/http-client.ts'
+      # The image-slot specs tests/test_image_slot_specs.py validates (plan
+      # 2026-10-13-image-generation-and-visual-judgment, Phase 14): the
+      # frontend's TypeScript binding is declarations only, so this module is
+      # the ONE gate that refuses a malformed spec, and a spec-only PR must run
+      # it. The module asserts this entry appears in BOTH filters.
+      - 'frontend/image-slots/**'
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
@@ -98,6 +104,7 @@ on:
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'frontend/src/services/http-client.ts'
+      - 'frontend/image-slots/**'
       - 'scripts/ci/**'
       # See the pull_request filter above (gate lane rosters).
       - '.github/workflows/web-guards.yml'

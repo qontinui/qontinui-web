@@ -65,6 +65,7 @@ import typing
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID, uuid5
 
 from sqlalchemy import (
@@ -86,6 +87,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, load_only
@@ -96,12 +98,15 @@ from app.models.work_artifact import (
     NOTE_TRIM_CHARS,
     OPEN_FOLLOWUP_SQL,
     SEARCH_TSVECTOR_SQL,
+    SPEC_ARTIFACT_KINDS,
     TERMINAL_STATUSES,
     UNCLAIMED_FOLLOWUP_SQL,
     WorkArtifact,
     WorkArtifactEdge,
     WorkArtifactEdgeAnchor,
+    WorkArtifactSpecRefCounter,
     WorkArtifactVersion,
+    format_spec_ref,
 )
 from app.services.plan_difficulty import RUBRIC_VERSION, compute_difficulty
 
@@ -237,6 +242,133 @@ class AmbiguousArtifactKind(Exception):
             f"{len(candidates)} rows with kinds {self.candidate_kinds} and no "
             "single kind_locked row to prefer"
         )
+
+
+class SpecFamilyBoundary(Exception):
+    """A write would cross the specification-family boundary.
+
+    A specification artifact's ``spec_ref`` prefix names its kind
+    (``REQ-0042`` is a requirement), and the ref is the artifact's stable
+    identity — so its kind is fixed for life, a non-spec artifact cannot
+    become one either, and a write of the other family may not update one.
+    Raised before anything is written; surfaced as a 409. Two cases, told
+    apart by ``reason`` so the caller gets the sentence that fits:
+
+    * ``"kind_change"`` — a kind correction (``PATCH .../kind``, or a kind
+      move on the upsert path) into, out of, or within the spec family. A
+      different kind of thing is a NEW artifact linked by ``derives_from`` /
+      ``refines``.
+    * ``"key_resolves_to_other_family"`` — an upsert whose target row is of
+      the other family. The heuristic scan path filters its candidates to the
+      incoming kind's family first (:func:`_same_family`), so a scanned plan
+      sharing a spec row's ``(org, slug, source_repo)`` lands on its own plan
+      row; this arm is the backstop for any path that still resolves across.
+    """
+
+    def __init__(
+        self,
+        *,
+        from_kind: str,
+        to_kind: str,
+        spec_ref: str | None,
+        reason: Literal["kind_change", "key_resolves_to_other_family"] = "kind_change",
+    ) -> None:
+        self.from_kind = from_kind
+        self.to_kind = to_kind
+        self.spec_ref = spec_ref
+        self.reason = reason
+        ref = f" ({spec_ref})" if spec_ref else ""
+        if reason == "key_resolves_to_other_family":
+            if is_spec_kind(from_kind):
+                message = (
+                    f"this key resolves to a specification artifact{ref}, a "
+                    f"{from_kind!r}; a {to_kind!r} write cannot update it. "
+                    "Write the artifact under a different slug or source_repo"
+                )
+            else:
+                message = (
+                    f"this key resolves to a non-specification artifact, a "
+                    f"{from_kind!r}; a {to_kind!r} write cannot update it. "
+                    "Create the specification artifact under its own slug"
+                )
+        else:
+            message = (
+                f"cannot change kind {from_kind!r} -> {to_kind!r}: a "
+                f"specification artifact's kind is fixed by its stable "
+                f"spec_ref{ref}, and no other artifact can become one; create "
+                "a new artifact and link it with derives_from or refines instead"
+            )
+        super().__init__(message)
+
+
+def is_spec_kind(kind: str) -> bool:
+    """Whether ``kind`` is in the specification family."""
+    return kind in SPEC_ARTIFACT_KINDS
+
+
+def _same_family(rows: list[WorkArtifact], kind: str) -> list[WorkArtifact]:
+    """Only the rows in ``kind``'s family (spec or non-spec).
+
+    Applied to the heuristic scan's kind-less candidates BEFORE
+    :func:`resolve_scan_target`: a scanned plan that shares a spec row's
+    ``(org, slug, source_repo)`` must neither land on that row nor count it
+    toward an ambiguity — it lands on, or inserts, its own plan row. The
+    identity index includes ``kind``, so the two rows coexist.
+    """
+    spec = is_spec_kind(kind)
+    return [row for row in rows if is_spec_kind(row.kind) == spec]
+
+
+def _check_key_family(existing: WorkArtifact, kind: str) -> None:
+    """Backstop: refuse an upsert whose resolved row is of the other family."""
+    if is_spec_kind(existing.kind) != is_spec_kind(kind):
+        raise SpecFamilyBoundary(
+            from_kind=existing.kind,
+            to_kind=kind,
+            spec_ref=existing.spec_ref,
+            reason="key_resolves_to_other_family",
+        )
+
+
+def _check_spec_family_boundary(row: WorkArtifact, kind: str) -> None:
+    """Raise :class:`SpecFamilyBoundary` for a kind change the family forbids.
+
+    Unchanged kinds always pass. Between two non-spec kinds — the scanner's
+    heuristic correction space — always passes. Anything touching a spec kind
+    on either side is refused.
+    """
+    if row.kind == kind:
+        return
+    if is_spec_kind(row.kind) or is_spec_kind(kind):
+        raise SpecFamilyBoundary(
+            from_kind=row.kind, to_kind=kind, spec_ref=row.spec_ref
+        )
+
+
+async def allocate_spec_ref(db: AsyncSession, *, org_id: UUID | None, kind: str) -> str:
+    """Hand out the next ``spec_ref`` for ``kind`` in ``org_id``'s scope.
+
+    One atomic statement — ``INSERT … ON CONFLICT (organization_scope, kind)
+    DO UPDATE SET last_number = last_number + 1 RETURNING last_number`` — so
+    two concurrent creates serialize on the counter row and can never draw
+    the same number. The counter only moves forward, which is what makes a
+    ref never reused: a deleted ``REQ-0042`` leaves 42 spent. It runs in the
+    CALLER's transaction, so a create that rolls back un-spends its number
+    along with everything else (a later commit-then-delete does not).
+    """
+    scope = org_id if org_id is not None else NIL_ORGANIZATION_ID
+    counter = WorkArtifactSpecRefCounter.__table__
+    stmt = (
+        pg_insert(counter)
+        .values(organization_scope=scope, kind=kind, last_number=1)
+        .on_conflict_do_update(
+            index_elements=[counter.c.organization_scope, counter.c.kind],
+            set_={"last_number": counter.c.last_number + 1},
+        )
+        .returning(counter.c.last_number)
+    )
+    number = int((await db.execute(stmt)).scalar_one())
+    return format_spec_ref(kind, number)
 
 
 class ArtifactKindConflict(Exception):
@@ -465,6 +597,7 @@ def _apply_filters(
     work_unit_slug: str | None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    spec_ref: str | None = None,
 ) -> Select:
     """Apply the shared list/count filters to a statement.
 
@@ -521,6 +654,10 @@ def _apply_filters(
         )
     if slug is not None:
         stmt = stmt.where(WorkArtifact.slug == slug)
+    if spec_ref is not None:
+        # Exact; ``uq_work_artifacts_spec_ref`` makes it at most one row per
+        # organization scope.
+        stmt = stmt.where(WorkArtifact.spec_ref == spec_ref)
     return stmt
 
 
@@ -536,6 +673,7 @@ async def list_artifacts(
     work_unit_slug: str | None = None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    spec_ref: str | None = None,
     after: KeysetPosition | None = None,
     limit: int = 50,
 ) -> tuple[list[WorkArtifact], int]:
@@ -566,6 +704,7 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
     )
 
     count_stmt = _apply_filters(
@@ -579,6 +718,7 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
     )
     if after is not None:
         # The row comparison IS the sort: ``(created_at, id) < (k, i)`` under
@@ -1083,8 +1223,12 @@ async def upsert_artifact(
     digest = compute_content_sha256(body)
 
     if kind_is_heuristic:
-        matches = await list_by_scan_identity(
-            db, org_id=org_id, slug=slug, source_repo=source_repo
+        # Own family only — see ``_same_family``.
+        matches = _same_family(
+            await list_by_scan_identity(
+                db, org_id=org_id, slug=slug, source_repo=source_repo
+            ),
+            kind,
         )
         # Raises AmbiguousArtifactKind on an unresolvable fork — deliberately
         # NOT caught here: no row is touched and the endpoint 409s.
@@ -1099,6 +1243,13 @@ async def upsert_artifact(
             organization_id=org_id,
             created_by_user_id=user_id,
             kind=kind,
+            # Spent BEFORE the flush, in this transaction: the race arm below
+            # rolls back and so returns the number along with the row.
+            spec_ref=(
+                await allocate_spec_ref(db, org_id=org_id, kind=kind)
+                if is_spec_kind(kind)
+                else None
+            ),
             # A heuristic kind is a guess and must stay correctable; an
             # explicit one is an assertion and locks immediately.
             kind_locked=not kind_is_heuristic,
@@ -1127,8 +1278,11 @@ async def upsert_artifact(
             await db.rollback()
             if kind_is_heuristic:
                 existing = resolve_scan_target(
-                    await list_by_scan_identity(
-                        db, org_id=org_id, slug=slug, source_repo=source_repo
+                    _same_family(
+                        await list_by_scan_identity(
+                            db, org_id=org_id, slug=slug, source_repo=source_repo
+                        ),
+                        kind,
                     ),
                     slug=slug,
                     source_repo=source_repo,
@@ -1155,6 +1309,13 @@ async def upsert_artifact(
             return artifact, True, True
 
     assert existing is not None  # narrowed by both branches above
+
+    # Backstop. The scan path already resolves within the incoming kind's
+    # family (``_same_family``) and the exact-identity path cannot return
+    # another kind, so this should never fire — but if any path resolved
+    # across, ``kind_locked`` would keep the kind while the write overwrote a
+    # spec row's status, title, body and source_path. Refuse before writing.
+    _check_key_family(existing, kind)
 
     metadata = _HeadMetadata(
         title=title,
@@ -1192,6 +1353,9 @@ async def upsert_artifact(
     may_move_kind = not (kind_is_heuristic and existing.kind_locked)
 
     if may_move_kind and existing.kind != kind:
+        # Cross-family writes were refused above; this catches a move
+        # between two spec kinds (a spec row's kind is fixed by its ref).
+        _check_spec_family_boundary(existing, kind)
         # Only reachable on the heuristic path against an UNLOCKED row: the
         # exact-identity lookup can never hand back a differing kind. Moving
         # onto a kind another row already occupies would violate
@@ -1415,6 +1579,9 @@ async def set_artifact_kind(
     # in-memory NULLs, writes nothing, and leaves that rating on a row that
     # is no longer a plan. The lock also serializes this against an upsert.
     await db.refresh(artifact, with_for_update=True)
+    # Before the identity check: a forbidden move is refused whatever the
+    # target identity holds.
+    _check_spec_family_boundary(artifact, kind)
     if artifact.kind != kind:
         clash = await get_by_identity(
             db,
@@ -2078,6 +2245,13 @@ async def find_kind_forks(
 
     Returns ``(slug, source_repo, rows)`` with ``rows`` ordered locked-first so
     the operator can see immediately whether a winner already exists.
+
+    Kinds are counted WITHIN one family (spec / non-spec). A spec artifact and
+    a plan that share ``(slug, source_repo)`` are a legitimate pair, not a
+    fork: the scanner resolves within its own family (``_same_family``), so
+    the pair never makes a scan ambiguous, and neither row is a misfiled copy
+    of the other. A key whose rows fork inside one family is reported with
+    that family's rows only (and twice, once per family, if both fork).
     """
     # ONE Label object reused across SELECT / GROUP BY / ORDER BY. Spelling
     # ``coalesce(source_repo, '')`` three times instead would emit three
@@ -2086,23 +2260,25 @@ async def find_kind_forks(
     # GROUP BY copy and the query fails with "source_repo must appear in the
     # GROUP BY clause". (Observed, not theorised.)
     repo_key = func.coalesce(WorkArtifact.source_repo, "").label("repo_key")
+    # Same single-Label discipline for the family key.
+    is_spec = WorkArtifact.kind.in_(SPEC_ARTIFACT_KINDS).label("is_spec")
     group_stmt = (
-        select(WorkArtifact.slug, repo_key)
+        select(WorkArtifact.slug, repo_key, is_spec)
         .where(_org_scope(org_id))
-        .group_by(WorkArtifact.slug, repo_key)
+        .group_by(WorkArtifact.slug, repo_key, is_spec)
         .having(func.count(func.distinct(WorkArtifact.kind)) > 1)
-        .order_by(WorkArtifact.slug, repo_key)
+        .order_by(WorkArtifact.slug, repo_key, is_spec)
     )
     groups = list((await db.execute(group_stmt)).all())
     if not groups:
         return []
 
-    keys = {(g.slug, g.repo_key) for g in groups}
+    keys = {(g.slug, g.repo_key, bool(g.is_spec)) for g in groups}
     rows_stmt = (
         select(WorkArtifact)
         .where(
             _org_scope(org_id),
-            WorkArtifact.slug.in_({s for s, _ in keys}),
+            WorkArtifact.slug.in_({s for s, _, _ in keys}),
         )
         .order_by(
             WorkArtifact.slug,
@@ -2113,15 +2289,18 @@ async def find_kind_forks(
     )
     rows = (await db.execute(rows_stmt)).scalars().all()
 
-    buckets: dict[tuple[str, str], list[WorkArtifact]] = {k: [] for k in keys}
+    buckets: dict[tuple[str, str, bool], list[WorkArtifact]] = {k: [] for k in keys}
     for row in rows:
-        # The slug IN-list can pull in a (slug, repo) pair that is not itself
-        # forked; keep only the real groups.
-        bucket = buckets.get((row.slug, row.source_repo or ""))
+        # The slug IN-list can pull in a (slug, repo, family) that is not
+        # itself forked; keep only the real groups.
+        bucket = buckets.get((row.slug, row.source_repo or "", is_spec_kind(row.kind)))
         if bucket is not None:
             bucket.append(row)
 
-    return [(g.slug, g.repo_key or None, buckets[(g.slug, g.repo_key)]) for g in groups]
+    return [
+        (g.slug, g.repo_key or None, buckets[(g.slug, g.repo_key, bool(g.is_spec))])
+        for g in groups
+    ]
 
 
 # ===========================================================================

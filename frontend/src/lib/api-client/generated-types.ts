@@ -454,6 +454,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/coord/overlord/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Overlord Label
+         * @description Append the operator's label to an intervention; return coord's new row.
+         */
+        post: operations["api_v1_admin_coord_overlord_labels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/download-analytics": {
         parameters: {
             query?: never;
@@ -6079,14 +6099,15 @@ export interface paths {
         /**
          * Get Twin Subspaces
          * @description Live numerator for the completeness matrix: a per-sub-space probe of
-         *     every fleet-wide snapshot twin observer.
+         *     every sub-space coord's served catalog declares probeable.
          *
          *     Per-tenant: the tenant is resolved best-effort (and the caller's Cognito
          *     bearer **plus their tenant-switcher selection** captured for forwarding).
          *     The matrix reflects what coord can observe for *their* tenant — flag-gated
-         *     / tenant-scoped observers legitimately read ``blind`` for some tenants. If
-         *     coord/the tenant is unavailable we DEGRADE to an all-error matrix (HTTP
-         *     200), never 5xx.
+         *     / tenant-scoped observers legitimately read ``blind`` for some tenants, and
+         *     a Qontinui-internal sub-space reads ``restricted`` for another tenant. If
+         *     coord, the tenant or the catalog is unavailable we DEGRADE (HTTP 200, see
+         *     ``_degraded_matrix``), never 5xx.
          *
          *     Tenant selection (plan
          *     ``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``
@@ -12197,6 +12218,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/verification/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Verification Metrics
+         * @description Return coord's verification metrics object for the operator's tenant.
+         *
+         *     The tenant is coord's to resolve from the forwarded bearer; nothing from
+         *     the request names it. The body is coord's, verbatim — including the
+         *     ``degraded: true`` answer, which the page renders as "could not look".
+         */
+        get: operations["api_v1_operations_coord_verification_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/deploys": {
         parameters: {
             query?: never;
@@ -15766,7 +15811,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
+    "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
         parameters: {
             query?: never;
             header?: never;
@@ -15776,28 +15821,34 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Set Pr Draft State
-         * @description Set a PR's GitHub draft state (operator release valve).
+         * Set Pr Hold
+         * @description Place or release a coord hold on a PR (the operator's hold control).
          *
-         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-         *     (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-         *     ``false`` marks the PR ready-for-review (releasing it to the merge train),
-         *     ``true`` converts it back to draft (the documented hold mechanism).
+         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+         *     (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+         *     the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+         *     so it works on private repos on GitHub Free, which have no draft PRs.
          *
-         *     Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-         *     bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-         *     fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-         *     server-side. Releasing a draft-required (security-surface) PR is an operator
-         *     judgment, so this is operator-authed — never an agent JWT.
+         *     Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+         *     ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+         *     ``held: false`` releases. Release authority is coord's: the holder, or an
+         *     admin-role operator for any hold; a ``security_tier`` hold is the
+         *     operator's alone.
          *
-         *     Only the ``draft`` boolean is forwarded; any other keys the client sends are
-         *     dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-         *     coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-         *     via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-         *     / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-         *     502 github_draft_state_failed, 500 internal).
+         *     Auth mirrors the gate-action stack: the operator's Cognito bearer is
+         *     forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+         *     derives the tenant, role and repo authority server-side. Only the four
+         *     contract keys are forwarded.
+         *
+         *     ``structured_errors=True``: coord's typed refusal object (``{"error",
+         *     "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+         *     ``http_exception_handler`` splices into the top level of its envelope, so
+         *     the browser receives ``error`` as coord's code (400 invalid_input,
+         *     403 not_holder / security_tier_operator_only, 404 not_found,
+         *     500 internal) rather than a JSON string inside ``message``. A coord error
+         *     body that is not a JSON object still falls back to its text.
          */
-        post: operations["api_v1_operations_prs_owner_repo_number_draft_state_post"];
+        post: operations["api_v1_operations_prs_owner_repo_number_hold_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16326,6 +16377,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/spawns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawns
+         * @description Proxy coord's ``GET /coord/spawns`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, items: [SpawnRow], shown, total, truncated,
+         *     next_cursor, as_of}``, or ``{available: false, reason}`` while coord's
+         *     ledger tables are absent. A ``SpawnRow`` carries the request's class and
+         *     origin, its timestamps (``requested_at`` is the first moment coord tried to
+         *     place it), its state, attempts and deferrals, its pinned / preferred /
+         *     current / spawned device, its placement basis, the started session's id,
+         *     account and outcome, ``history_complete`` (``false`` on a backfilled row)
+         *     and ``wait_seconds`` (``null`` until it started).
+         */
+        get: operations["api_v1_operations_spawns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn Stats
+         * @description Proxy coord's ``GET /coord/spawns/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, window, window_start, as_of, overall,
+         *     per_device, local_report_counts}``, or ``{available: false, reason}``.
+         *     Every share and percentile in ``overall`` is ``null`` when its
+         *     denominator is empty — coord's UNKNOWN, which this proxy never turns into
+         *     a ``0``.
+         */
+        get: operations["api_v1_operations_spawns_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/{spawn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn
+         * @description Proxy coord's ``GET /coord/spawns/{id}`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, request: SpawnRow, events: [{at, kind,
+         *     device_id, reason, detail}]}`` — the request and its device history
+         *     (placed, dispatched, deferred, refused, rerouted, …), oldest first — or
+         *     ``{available: false, reason}``. ``spawn_id`` is validated as a UUID here so
+         *     a malformed id is a 422 at the web edge and never reaches coord as an
+         *     arbitrary path segment.
+         */
+        get: operations["api_v1_operations_spawns_spawn_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/symbol-claims": {
         parameters: {
             query?: never;
@@ -16378,8 +16511,9 @@ export interface paths {
         };
         /**
          * Get Tenant Resume Unfinished
-         * @description Read the tenant's automatic-resume flag (effective tenant, as for
-         *     ``transcript-sync`` -- see wire fact 1 above).
+         * @description Read the tenant's automatic-resume flag, for the EFFECTIVE tenant (the
+         *     switched-to tenant when the caller holds a role there, else the home
+         *     tenant) -- the tenant coord's ``GET /tenant-policy`` is asked about.
          */
         get: operations["api_v1_operations_tenant_policy_resume_unfinished_get"];
         put?: never;
@@ -16392,43 +16526,6 @@ export interface paths {
          * @description Turn automatic resume on or off for the caller's effective tenant.
          */
         patch: operations["api_v1_operations_tenant_policy_resume_unfinished_patch"];
-        trace?: never;
-    };
-    "/api/v1/operations/tenant-policy/transcript-sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Tenant Transcript Sync
-         * @description Read whether coord accepts session output for the caller's tenant.
-         *
-         *     ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
-         *     ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
-         *     that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
-         *     authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
-         *     is not an admin of this tenant is refused ``admin_required`` — an enabled
-         *     button would promise a write coord will not take.
-         */
-        get: operations["api_v1_operations_tenant_policy_transcript_sync_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Patch Tenant Transcript Sync
-         * @description Turn transcript sync on or off for the caller's effective tenant.
-         *
-         *     Tenant-admin gated web-side; coord re-checks and answers 403
-         *     ``admin_required`` otherwise, and 503 ``column_not_present`` while the
-         *     column's migration has not reached its database — both pass through
-         *     verbatim. Coord re-reads the policy after its upsert and returns it, so no
-         *     second round trip is needed for the read-back.
-         */
-        patch: operations["api_v1_operations_tenant_policy_transcript_sync_patch"];
         trace?: never;
     };
     "/api/v1/operations/tenants": {
@@ -37505,6 +37602,8 @@ export interface components {
         FleetPolicyView: {
             /** Can Edit */
             can_edit: boolean;
+            /** Default Source */
+            default_source?: string | null;
             /** Domain */
             domain: string;
             /** Effective Level */
@@ -39472,8 +39571,18 @@ export interface components {
          *     ``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` —
          *     the scanner can then unambiguously prefer that row and the fork will heal
          *     itself. ``False`` means an operator must pick, via ``PATCH .../kind``.
+         *
+         *     ``family`` names which kind family forked: ``"spec"`` (the specification
+         *     kinds) or ``"plan"`` (every other kind). Kinds are counted within one
+         *     family, so a key forked in BOTH families is two groups sharing
+         *     ``(slug, source_repo)``; ``family`` is what tells them apart.
          */
         KindForkGroup: {
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "spec" | "plan";
             /** Kinds */
             kinds: string[];
             /** Resolvable */
@@ -39825,6 +39934,11 @@ export interface components {
              */
             tokens_total?: number | null;
         };
+        /**
+         * LabelKind
+         * @enum {string}
+         */
+        LabelKind: "class" | "false_finish";
         /**
          * LearnedWorkflowResponse
          * @description Schema for learned workflow response.
@@ -42365,6 +42479,11 @@ export interface components {
             truncated: boolean | null;
         };
         /**
+         * OperatorLabel
+         * @enum {string}
+         */
+        OperatorLabel: "A" | "B" | "E";
+        /**
          * OrganizationCreate
          * @description Schema for creating a new organization.
          */
@@ -42510,6 +42629,19 @@ export interface components {
             retry_count: number;
             /** Success */
             success: boolean;
+        };
+        /**
+         * OverlordLabelRequest
+         * @description ``extra='forbid'``: a stray ``label_source`` is a 422, not ignored.
+         */
+        OverlordLabelRequest: {
+            /**
+             * Intervention Id
+             * Format: uuid
+             */
+            intervention_id: string;
+            label_kind: components["schemas"]["LabelKind"];
+            operator_label?: components["schemas"]["OperatorLabel"] | null;
         };
         /**
          * OverviewSettingsRead
@@ -51816,44 +51948,6 @@ export interface components {
             written: boolean;
         };
         /**
-         * TenantTranscriptSyncPatch
-         * @description Closed body for the transcript-sync write — see wire fact 2 above.
-         */
-        TenantTranscriptSyncPatch: {
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean;
-        };
-        /**
-         * TenantTranscriptSyncView
-         * @description The tenant's transcript-sync consent, as coord resolves it.
-         */
-        TenantTranscriptSyncView: {
-            /** Can Edit */
-            can_edit: boolean;
-            /**
-             * Column Missing
-             * @default false
-             */
-            column_missing: boolean;
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean | null;
-        };
-        /**
-         * TenantTranscriptSyncWriteResult
-         * @description What was written, and — separately — what coord now reads back.
-         *
-         *     ``effective`` is ``None`` with ``readback_error`` set when coord accepted
-         *     the write but did not return the policy it re-read (its own post-upsert
-         *     SELECT failed). That is UNKNOWN, not "applied".
-         */
-        TenantTranscriptSyncWriteResult: {
-            effective?: components["schemas"]["TenantTranscriptSyncView"] | null;
-            /** Readback Error */
-            readback_error?: string | null;
-            /** Written */
-            written: boolean;
-        };
-        /**
          * TestRunComplete
          * @description Request schema for completing a test run.
          */
@@ -54966,6 +55060,8 @@ export interface components {
             source_path: string | null;
             /** Source Repo */
             source_repo: string | null;
+            /** Spec Ref */
+            spec_ref: string | null;
             /** Status */
             status: string;
             status_currency: components["schemas"]["StatusCurrency"];
@@ -55026,7 +55122,7 @@ export interface components {
              * Relation
              * @enum {string}
              */
-            relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes";
+            relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes" | "derives_from" | "refines" | "implements" | "verifies" | "traces_to";
             /** Size Class */
             size_class?: ("trivial" | "small" | "plan_sized") | null;
             /** To Id */
@@ -55085,7 +55181,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic";
+            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic" | "request" | "requirement" | "interface_mapping" | "story" | "test_case" | "doc_correction";
         };
         /**
          * WorkArtifactListResponse
@@ -55227,6 +55323,8 @@ export interface components {
             source_path: string | null;
             /** Source Repo */
             source_repo: string | null;
+            /** Spec Ref */
+            spec_ref: string | null;
             /** Status */
             status: string;
             status_currency: components["schemas"]["StatusCurrency"];
@@ -55269,7 +55367,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic";
+            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic" | "request" | "requirement" | "interface_mapping" | "story" | "test_case" | "doc_correction";
             /**
              * Kind Is Heuristic
              * @default false
@@ -56908,6 +57006,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_admin_coord_overlord_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverlordLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -74828,6 +74959,38 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_verification_metrics_get: {
+        parameters: {
+            query?: {
+                /** @description ``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through. */
+                window?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_deploys_get: {
         parameters: {
             query?: {
@@ -78271,7 +78434,7 @@ export interface operations {
             };
         };
     };
-    api_v1_operations_prs_owner_repo_number_draft_state_post: {
+    api_v1_operations_prs_owner_repo_number_hold_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -78910,6 +79073,115 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_spawns_get: {
+        parameters: {
+            query?: {
+                /** @description Only requests of this admission class. */
+                class?: ("autofix" | "continuation" | "local" | "attended") | null;
+                /** @description Only requests currently in one of these states — a comma list, e.g. ``queued,dispatched,deferred``. */
+                state?: string | null;
+                /** @description Only requests placed on, or started on, this coord device. */
+                device?: string | null;
+                /** @description Only requests first requested at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only requests first requested before this instant (offset required). */
+                until?: string | null;
+                /** @description Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first). */
+                order?: ("asc" | "desc") | null;
+                /** @description coord's opaque ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_stats_get: {
+        parameters: {
+            query?: {
+                /** @description Aggregation window; coord's default is ``7d``. */
+                window?: ("24h" | "7d" | "30d") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_spawn_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_symbol_claims_get: {
         parameters: {
             query?: {
@@ -78983,59 +79255,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantResumeUnfinishedWriteResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncView"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TenantTranscriptSyncPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncWriteResult"];
                 };
             };
             /** @description Validation Error */
@@ -81028,6 +81247,8 @@ export interface operations {
                 slug?: string | null;
                 /** @description Exact member of intent_refs[] — a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page. */
                 intent_ref?: string | null;
+                /** @description Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization. */
+                spec_ref?: string | null;
                 /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
                 cursor?: string | null;
                 limit?: number;

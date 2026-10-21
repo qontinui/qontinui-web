@@ -11,13 +11,43 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTwinCatalog } from "../_hooks/useTwinCatalog";
+import type { TwinCatalogEntry } from "../_lib/types";
+
+/**
+ * The computed `observed` bit, from coord's newest twin-fidelity report.
+ * `null` is UNKNOWN — no report yet, or the report does not measure this
+ * row — and renders as such, never as "no".
+ */
+function ObservedBadge({
+  observed,
+}: {
+  observed: TwinCatalogEntry["observed"];
+}) {
+  if (observed === null) {
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        UNKNOWN
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant={observed ? "default" : "destructive"}>
+      {observed ? "observed" : "blind"}
+    </Badge>
+  );
+}
 
 /**
  * Queryable surface — coord's authoritative catalog of the `coord_query_*` twin
  * observers. This is the single source of truth for *which* surfaces are
  * queryable (the same list the agent Q&A meta-answer expands into its
- * `{{twin-catalog}}` token); the completeness matrix above joins the live
- * per-tenant probe onto the checked-in taxonomy for the research denominator.
+ * `{{twin-catalog}}` token) and for which of them the matrix above probes.
+ *
+ * Two availability columns, never one: `declared_status` is what the catalog
+ * DECLARES ("live" for a wired observer — a declaration, not an observation),
+ * and `observed` is what coord's newest twin-fidelity report COMPUTED. A row
+ * the report does not measure, or any row before a report exists, reads
+ * UNKNOWN.
  */
 export function TwinCatalog() {
   const { data, isLoading, isError, error } = useTwinCatalog();
@@ -68,7 +98,8 @@ export function TwinCatalog() {
                 <TableHead className="w-[14rem]">Query tool</TableHead>
                 <TableHead className="w-[10rem]">Params</TableHead>
                 <TableHead className="w-[7rem]">Kind</TableHead>
-                <TableHead className="w-[6rem]">Status</TableHead>
+                <TableHead className="w-[6rem]">Declared</TableHead>
+                <TableHead className="w-[6rem]">Observed</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -85,27 +116,38 @@ export function TwinCatalog() {
                     <code className="text-xs">{entry.query_tool}</code>
                   </TableCell>
                   <TableCell>
-                    {entry.params.length === 0 ? (
+                    {!entry.params || entry.params.length === 0 ? (
                       <span className="text-xs text-muted-foreground">—</span>
                     ) : (
                       <code className="text-xs">{entry.params.join(", ")}</code>
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant={
-                        entry.kind === "snapshot" ? "secondary" : "outline"
-                      }
-                    >
-                      {entry.kind}
-                    </Badge>
+                    {entry.kind === null ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : (
+                      <Badge
+                        variant={
+                          entry.kind === "snapshot" ? "secondary" : "outline"
+                        }
+                      >
+                        {entry.kind}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={entry.status === "live" ? "default" : "outline"}
+                      variant={
+                        entry.declared_status === "live"
+                          ? "secondary"
+                          : "outline"
+                      }
                     >
-                      {entry.status}
+                      {entry.declared_status}
                     </Badge>
+                  </TableCell>
+                  <TableCell data-testid={`catalog-observed-${entry.id}`}>
+                    <ObservedBadge observed={entry.observed} />
                   </TableCell>
                 </TableRow>
               ))}

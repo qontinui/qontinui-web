@@ -102,6 +102,9 @@ EVIDENCE_POSTURE_PLAN: Final = (
     "2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-"
     "its-vocabulary-and-a-correction-verb"
 )
+#: Owns the specification family on the plan library — its per-kind
+#: ``status`` lifecycles are checked by a model validator, not an enum.
+SPEC_FRONT_END_PLAN: Final = "2026-10-09-spec-front-end-of-the-software-factory"
 #: Owns plan-library artifact soft-delete (qontinui-web #1545).
 JUNK_ROW_PLAN: Final = (
     "2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent"
@@ -300,6 +303,14 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
     # ── plan library ────────────────────────────────────────────────────
     ("POST", f"{_V1}/plan-library"): Evidence(
         closed_fields=("captured_by", "kind"),
+        # ``status`` is CLOSED for a spec kind only (its per-kind lifecycle,
+        # checked by ``WorkArtifactUpsert._spec_kind_rules``) and opaque for
+        # every other kind, so the request BODY SCHEMA cannot carry it as one
+        # enum — hence "unserved" in this table's sense. The per-kind sets are
+        # still readable before writing: they are served on
+        # ``GET /plan-library/vocabulary`` as ``status[kind=<kind>]``, not in
+        # the body schema.
+        unserved_closed_fields=(("status", SPEC_FRONT_END_PLAN),),
         correction=AppendOnlyByDesign(
             "the body is a version log — a changed body appends a new version "
             "and never rewrites an old one, so a wrong body is corrected by "
