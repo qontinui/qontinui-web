@@ -212,5 +212,7 @@ def test_downgrade_refuses_a_profile_coord_would_refuse(
         )
         assert result.returncode != 0
         assert "must be `hosted` or `self_hosted`" in result.stderr
-        # Refused before anything was written: the column is still gone.
+        # Refused and nothing persisted: the column is still gone. (This does not
+        # prove the parse precedes the ALTER; the downgrade's transaction would roll
+        # either back. The ordering is in the migration itself.)
         assert column_info(engine, "tenant_policies", "transcript_sync_enabled") is None
