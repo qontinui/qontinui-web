@@ -183,12 +183,34 @@ def test_self_hosted_downgrade_restores_off_for_tenants_with_no_rows(
         run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
         defaulted = _tenant(engine, policy_row=True)
         turned_on = _tenant(engine, policy_row=True)
+        # One domain on, the other left at the self-hosted default (off): the
+        # column governed both streams, so it must come back false.
+        half_on = _tenant(engine, policy_row=True)
         for domain in ("egress_transcript_sync", "egress_terminal_stream"):
             _row(engine, turned_on, domain, "tenant", "on", True)
+        _row(engine, half_on, "egress_transcript_sync", "tenant", "on", True)
         run_alembic(root, url, "upgrade", _REVISION_ID)
         monkeypatch.setenv("COORD_DEPLOYMENT_PROFILE", "self_hosted")
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
-        assert _sync_flags(engine, {defaulted, turned_on}) == {
+        assert _sync_flags(engine, {defaulted, turned_on, half_on}) == {
             defaulted: False,
             turned_on: True,
+            half_on: False,
         }
+
+
+@_DB_SKIP
+def test_downgrade_refuses_a_profile_coord_would_refuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = backend_root()
+    with ephemeral_database(admin_database_url(), "tp03_bad_profile") as (engine, url):
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        monkeypatch.setenv("COORD_DEPLOYMENT_PROFILE", "selfhosted")
+        result = run_alembic(
+            root, url, "downgrade", _PARENT_REVISION_ID, expect_success=False
+        )
+        assert result.returncode != 0
+        assert "must be `hosted` or `self_hosted`" in result.stderr
+        # Refused before anything was written: the column is still gone.
+        assert column_info(engine, "tenant_policies", "transcript_sync_enabled") is None
