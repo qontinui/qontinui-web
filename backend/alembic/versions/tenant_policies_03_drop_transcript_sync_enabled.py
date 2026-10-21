@@ -37,7 +37,7 @@ coord's own resolution: the tenant-band row if there is one (off when its level
 is not ``on`` or its master is off), else the system-band row, else the
 deployment default, which is ``off`` only when this process runs with
 ``COORD_DEPLOYMENT_PROFILE=self_hosted`` (the migration cannot see coord's
-setting any other way). A tenant with no ``tenant_policies`` row gets one
+setting any other way; a value coord would refuse is refused here too). A tenant with no ``tenant_policies`` row gets one
 (``INSERT … ON CONFLICT (tenant_id) DO UPDATE``), so its ``off`` is not lost to
 the column's ``true`` default.
 """
@@ -55,6 +55,25 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _self_hosted_profile() -> bool:
+    """Read ``COORD_DEPLOYMENT_PROFILE`` the way coord's ``DeploymentProfile::parse`` does.
+
+    Unset or ``hosted`` is hosted and ``self_hosted`` is self-hosted. Any other
+    value is refused rather than read as hosted, because coord itself refuses
+    to start on it, and guessing hosted would re-enable egress for every
+    tenant with no policy row.
+    """
+    raw = os.environ.get("COORD_DEPLOYMENT_PROFILE")
+    if raw is None or raw == "hosted":
+        return False
+    if raw == "self_hosted":
+        return True
+    raise RuntimeError(
+        f"COORD_DEPLOYMENT_PROFILE must be `hosted` or `self_hosted` (got {raw!r}); "
+        "refusing to guess which egress default the restored column should carry"
+    )
+
+
 def upgrade() -> None:
     """Drop ``coord.tenant_policies.transcript_sync_enabled``."""
     op.drop_column("tenant_policies", "transcript_sync_enabled", schema="coord")
@@ -62,6 +81,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Re-add the column and restore ``false`` for every tenant whose egress resolves off."""
+    # Resolved before any DDL, so a profile coord would refuse changes nothing.
+    self_hosted = _self_hosted_profile()
     op.execute(
         """
         ALTER TABLE coord.tenant_policies
@@ -69,7 +90,6 @@ def downgrade() -> None:
                 BOOLEAN NOT NULL DEFAULT true
         """
     )
-    self_hosted = os.environ.get("COORD_DEPLOYMENT_PROFILE") == "self_hosted"
     op.get_bind().execute(
         sa.text(
             """
