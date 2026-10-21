@@ -1,7 +1,7 @@
 """coord.commit_observations + coord.fs_observations — keyset indexes for the oplog page reads
 
 Revision ID: oplog_keyset_01
-Revises: plan_library_10_keyset_walk_indexes
+Revises: kernel_gauges_01
 Create Date: 2026-10-09
 
 Phase 5 of plan
@@ -72,9 +72,10 @@ key order, validity, the no-Sort plan for both production statements (first
 page and cursor page), the keyset resume across an ``observed_at`` tie, and the
 downgrade.
 
-``down_revision`` is stacked on web#1801's ``plan_library_10_keyset_walk_indexes``
-(which itself revises main's head ``coord_sessions_fleet_idx_01``), so the two
-Phase 4/5 index revisions form one linear chain instead of forking main.
+``down_revision`` is ``kernel_gauges_01``, the single alembic head of
+``origin/main`` when this revision was last rebased (2026-10-21). web#1801's
+``plan_library_10_keyset_walk_indexes`` landed earlier and sits below it on the
+same linear chain.
 """
 
 from collections.abc import Sequence
@@ -83,7 +84,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "oplog_keyset_01"
-down_revision: str | Sequence[str] | None = "plan_library_10_keyset_walk_indexes"
+down_revision: str | Sequence[str] | None = "kernel_gauges_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
