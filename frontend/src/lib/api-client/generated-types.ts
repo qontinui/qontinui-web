@@ -16377,6 +16377,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/spawns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawns
+         * @description Proxy coord's ``GET /coord/spawns`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, items: [SpawnRow], shown, total, truncated,
+         *     next_cursor, as_of}``, or ``{available: false, reason}`` while coord's
+         *     ledger tables are absent. A ``SpawnRow`` carries the request's class and
+         *     origin, its timestamps (``requested_at`` is the first moment coord tried to
+         *     place it), its state, attempts and deferrals, its pinned / preferred /
+         *     current / spawned device, its placement basis, the started session's id,
+         *     account and outcome, ``history_complete`` (``false`` on a backfilled row)
+         *     and ``wait_seconds`` (``null`` until it started).
+         */
+        get: operations["api_v1_operations_spawns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn Stats
+         * @description Proxy coord's ``GET /coord/spawns/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, window, window_start, as_of, overall,
+         *     per_device, local_report_counts}``, or ``{available: false, reason}``.
+         *     Every share and percentile in ``overall`` is ``null`` when its
+         *     denominator is empty — coord's UNKNOWN, which this proxy never turns into
+         *     a ``0``.
+         */
+        get: operations["api_v1_operations_spawns_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/{spawn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn
+         * @description Proxy coord's ``GET /coord/spawns/{id}`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, request: SpawnRow, events: [{at, kind,
+         *     device_id, reason, detail}]}`` — the request and its device history
+         *     (placed, dispatched, deferred, refused, rerouted, …), oldest first — or
+         *     ``{available: false, reason}``. ``spawn_id`` is validated as a UUID here so
+         *     a malformed id is a 422 at the web edge and never reaches coord as an
+         *     arbitrary path segment.
+         */
+        get: operations["api_v1_operations_spawns_spawn_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/symbol-claims": {
         parameters: {
             query?: never;
@@ -78970,6 +79052,115 @@ export interface operations {
                 };
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_get: {
+        parameters: {
+            query?: {
+                /** @description Only requests of this admission class. */
+                class?: ("autofix" | "continuation" | "local" | "attended") | null;
+                /** @description Only requests currently in one of these states — a comma list, e.g. ``queued,dispatched,deferred``. */
+                state?: string | null;
+                /** @description Only requests placed on, or started on, this coord device. */
+                device?: string | null;
+                /** @description Only requests first requested at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only requests first requested before this instant (offset required). */
+                until?: string | null;
+                /** @description Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first). */
+                order?: ("asc" | "desc") | null;
+                /** @description coord's opaque ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_stats_get: {
+        parameters: {
+            query?: {
+                /** @description Aggregation window; coord's default is ``7d``. */
+                window?: ("24h" | "7d" | "30d") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_spawn_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

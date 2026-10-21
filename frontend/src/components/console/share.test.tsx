@@ -150,6 +150,74 @@ describe("<ShareList>", () => {
     expect(screen.getByText("nothing measured")).toBeInTheDocument();
   });
 
+  it("names the count with the list's unit", () => {
+    render(
+      <ShareList
+        data-testid="list"
+        total={10}
+        unit="placed"
+        items={[{ key: "x", label: "X", count: 3 }]}
+      />
+    );
+    expect(screen.getByTestId("list")).toHaveTextContent("3 placed");
+  });
+
+  it("titles a truncating detail with detailTitle, else with its own text — never with the label's title", () => {
+    render(
+      <ShareList
+        data-testid="list"
+        total={6}
+        items={[
+          {
+            key: "x",
+            label: "X",
+            count: 3,
+            title: "wire_token_x",
+            detail: "p50 unknown · 3/0/0 started/refused/deferred",
+            detailTitle: "X — the whole sentence",
+          },
+          {
+            key: "y",
+            label: "Y",
+            count: 3,
+            title: "wire_token_y",
+            detail: "2 reached you · 1 agent",
+          },
+        ]}
+      />
+    );
+    expect(
+      screen.getByText("p50 unknown · 3/0/0 started/refused/deferred")
+    ).toHaveAttribute("title", "X — the whole sentence");
+    expect(screen.getByText("2 reached you · 1 agent")).toHaveAttribute(
+      "title",
+      "2 reached you · 1 agent"
+    );
+    expect(screen.getByText("Y")).toHaveAttribute("title", "wire_token_y");
+  });
+
+  it("says unknown — never 0 — for a line with no count, and ranks it last", () => {
+    render(
+      <ShareList
+        data-testid="list"
+        total={4}
+        unit="placed"
+        items={[
+          { key: "unread", label: "Unread", count: null },
+          { key: "some", label: "Some", count: 4 },
+        ]}
+      />
+    );
+    const lines = within(screen.getByTestId("list")).getAllByRole("listitem");
+    expect(lines.map((l) => l.getAttribute("data-share-key"))).toEqual([
+      "some",
+      "unread",
+    ]);
+    expect(lines[1]).toHaveTextContent("unknown");
+    expect(lines[1]).not.toHaveTextContent("0 placed");
+    expect(lines[1]).toHaveTextContent(SHARE_UNKNOWN);
+  });
+
   it("has no per-line action — an aggregate is read, not acted on", () => {
     render(
       <ShareList

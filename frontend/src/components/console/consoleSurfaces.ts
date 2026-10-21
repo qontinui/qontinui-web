@@ -217,6 +217,14 @@ import {
   SERVICE_AUTHOR_GLYPH_KINDS,
   SERVICE_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
+// The spawn ledger — plan
+// `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+// Phase 5. Its shared kinds take the gate-continuation table's own entries.
+import {
+  SPAWN_ATTENTION_BY_KIND,
+  SPAWN_AUTHOR_GLYPH_KINDS,
+  SPAWN_KIND_CLASS,
+} from "@/app/(app)/admin/coord/spawns/_lib/spawnStatus";
 // GitHub-hosted CI on the Dev Ops ▸ CI page — plan
 // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
 import {
@@ -684,6 +692,19 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: SERVICE_BADGE_CLASS,
       authorGlyphKinds: SERVICE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- the spawn ledger --------------------------------------------------
+  {
+    // The gates page's continuation vocabulary plus the two ledger-only
+    // states (`queued`, `superseded`), so both surfaces paint a shared word
+    // the same way.
+    surface: "spawn requests (/admin/coord/spawns)",
+    module: "app/(app)/admin/coord/spawns/_lib/spawnStatus.ts",
+    attentionByKind: SPAWN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SPAWN_KIND_CLASS,
+      authorGlyphKinds: SPAWN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- GitHub-hosted CI (Dev Ops) ----------------------------------------
