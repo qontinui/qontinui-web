@@ -126,6 +126,7 @@ from app.api.v1.endpoints import (
     settings,
     skills,
     snapshots,
+    spawn_ledger,
     state_discovery,
     state_discovery_results,
     state_machine_configs,
@@ -252,6 +253,14 @@ api_router.include_router(internal.router, prefix="/internal", tags=["internal"]
 # Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` 4b.
 api_router.include_router(
     repo_followup_dials.router, prefix="/operations", tags=["operations"]
+)
+# Spawn ledger reads — every spawn coord was asked to place, where it went,
+# how long it waited and how it ended. Under `/operations` beside the reads the
+# Spawns page uses with it; a sibling module so the operations package's hub
+# file is untouched. Plan
+# `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration` Phase 5.
+api_router.include_router(
+    spawn_ledger.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
