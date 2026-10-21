@@ -107078,6 +107078,311 @@
         ]
       }
     },
+    "/api/v1/operations/spawns": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/spawns`` (tenant-scoped), verbatim.\n\nReturns ``{available: true, items: [SpawnRow], shown, total, truncated,\nnext_cursor, as_of}``, or ``{available: false, reason}`` while coord's\nledger tables are absent. A ``SpawnRow`` carries the request's class and\norigin, its timestamps (``requested_at`` is the first moment coord tried to\nplace it), its state, attempts and deferrals, its pinned / preferred /\ncurrent / spawned device, its placement basis, the started session's id,\naccount and outcome, ``history_complete`` (``false`` on a backfilled row)\nand ``wait_seconds`` (``null`` until it started).",
+        "operationId": "api_v1_operations_spawns_get",
+        "parameters": [
+          {
+            "description": "Only requests of this admission class.",
+            "in": "query",
+            "name": "class",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "autofix",
+                    "continuation",
+                    "local",
+                    "attended"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests of this admission class.",
+              "title": "Class"
+            }
+          },
+          {
+            "description": "Only requests currently in one of these states \u2014 a comma list, e.g. ``queued,dispatched,deferred``.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:queued|dispatched|deferred|spawned|failed|expired|cancelled|superseded)(?:,(?:queued|dispatched|deferred|spawned|failed|expired|cancelled|superseded))*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests currently in one of these states \u2014 a comma list, e.g. ``queued,dispatched,deferred``.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Only requests placed on, or started on, this coord device.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests placed on, or started on, this coord device.",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "Only requests first requested at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests first requested at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Only requests first requested before this instant (offset required).",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only requests first requested before this instant (offset required).",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first).",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first).",
+              "title": "Order"
+            }
+          },
+          {
+            "description": "coord's opaque ``next_cursor`` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "coord's opaque ``next_cursor`` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size; coord's default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 200,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size; coord's default is 50.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawns",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/spawns/stats": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/spawns/stats`` (tenant-scoped), verbatim.\n\nReturns ``{available: true, window, window_start, as_of, overall,\nper_device, local_report_counts}``, or ``{available: false, reason}``.\nEvery share and percentile in ``overall`` is ``null`` when its\ndenominator is empty \u2014 coord's UNKNOWN, which this proxy never turns into\na ``0``.",
+        "operationId": "api_v1_operations_spawns_stats_get",
+        "parameters": [
+          {
+            "description": "Aggregation window; coord's default is ``7d``.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "24h",
+                    "7d",
+                    "30d"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Aggregation window; coord's default is ``7d``.",
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawn Stats",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/spawns/{spawn_id}": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/spawns/{id}`` (tenant-scoped), verbatim.\n\nReturns ``{available: true, request: SpawnRow, events: [{at, kind,\ndevice_id, reason, detail}]}`` \u2014 the request and its device history\n(placed, dispatched, deferred, refused, rerouted, \u2026), oldest first \u2014 or\n``{available: false, reason}``. ``spawn_id`` is validated as a UUID here so\na malformed id is a 422 at the web edge and never reaches coord as an\narbitrary path segment.",
+        "operationId": "api_v1_operations_spawns_spawn_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "spawn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Spawn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Spawn",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/symbol-claims": {
       "get": {
         "description": "Proxy ``GET /coord/claims/list?kind=symbol`` for the dashboard.\n\nResponse shape (coord ``ListResponse``):\n\n    {\n        \"kind\": \"symbol\",\n        \"prefix\": \"<echo>\",\n        \"holders\": [\n            {\n                \"kind\": \"symbol\",\n                \"resource_key\": \"<repo>:<file>:<symbol>\",\n                \"machine_id\": \"<uuid>\",\n                \"ttl_seconds\": <int>\n            },\n            ...\n        ],\n        \"truncated\": <bool>\n    }\n\nOptional ``machine_id`` filter is applied client-side after coord\nreturns (coord's ``/coord/claims/list`` doesn't accept a machine\nfilter directly \u2014 prefix matches on resource_key, not on holder).\nThe dashboard groups client-side anyway; this filter is for\ntargeted CLI / curl consumers.",
