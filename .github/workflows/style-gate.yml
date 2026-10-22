@@ -20,8 +20,9 @@ name: Style Gate (shadow)
 #     move this pass's exit code. This is the broad,
 #     day-one signal: it works the moment a snapshot+frame exist. Invoked with
 #     `--analyzer all --fail-on critical`, so it exits 2 iff a finding is at/above
-#     CRITICAL (and 0 otherwise — without --fail-on the bin always exits 0, so the
-#     flag is what gives us a gate signal at all).
+#     CRITICAL or an analyzer's verdict is BLOCKED (and 0 otherwise — without
+#     --fail-on the bin always exits 0, so the flag is what gives us a gate signal
+#     at all).
 #
 #   * `assert` — runs the committed invariant specs (Phase 2). These are precise
 #     but thin on day one: most DSL assertions (no_overlap, contrast_meets_wcag,
@@ -890,8 +891,8 @@ jobs:
       #
       #   * analyze — page-wide, NO element ids / NO spec needed. Invoked with
       #       analyze --snapshot S --frame F --scale-factor 1 --analyzer all --fail-on critical
-      #     so it exits 2 iff a finding is at/above CRITICAL (without --fail-on
-      #     the bin always exits 0). Needs only snapshot+frame to run; the broad
+      #     so it exits 2 iff a finding is at/above CRITICAL or an analyzer's
+      #     verdict is BLOCKED (without --fail-on the bin always exits 0). Needs only snapshot+frame to run; the broad
       #     day-one signal.
       #   * assert — the committed invariant spec ($SPEC_DIR/<id>.json). Pass
       #     --baseline-dir ONLY when a per-route baseline exists (else

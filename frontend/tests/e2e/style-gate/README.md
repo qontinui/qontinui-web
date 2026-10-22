@@ -204,11 +204,12 @@ summary with one row per route and a labeled cell for each pass
 - **`analyze`** — the broad, **day-one** signal. Runs all 5 page-wide analyzers
   (layout, elements, typography, color, image) with **no element ids and no
   specs needed** — it works the moment a snapshot+frame exist. `image` emits
-  per-image values and Info findings only, so it never changes the exit code. Invoked as
+  per-image values and Info findings only, and is BLOCKED only without a frame
+  (which this gate always passes), so it does not move the exit code. Invoked as
   `analyze --snapshot <id>.json --frame <id>.png --analyzer all --fail-on critical`,
-  so it exits `2` iff a finding is at/above CRITICAL (and `0` otherwise — without
-  `--fail-on` the bin always exits `0`, so the flag is what produces a gate
-  signal at all).
+  so it exits `2` iff a finding is at/above CRITICAL or an analyzer's verdict is
+  BLOCKED (and `0` otherwise — without `--fail-on` the bin always exits `0`, so
+  the flag is what produces a gate signal at all).
 - **`assert`** — the committed invariant specs (Phase 2). Precise but **thin on
   day one**: most DSL assertions (`no_overlap`, `contrast_meets_wcag`,
   `text_fits_container`) need specific element ids that aren't known until real
