@@ -1,7 +1,7 @@
 """coord: tenant_device_unbinds tombstones and devices.membership_autobind
 
 Revision ID: tdunbind_01
-Revises: overlord_02_four_class_vocabulary
+Revises: spawnledger_01_spawn_requests
 Create Date: 2026-10-18
 
 Phase 1 of plan ``2026-10-17-runner-credential-for-every-account-tenant``.
@@ -34,7 +34,7 @@ What changes
   ``coord.tenant_devices.paired_by_user_id``: attribution must not block on
   the user lifecycle. Both FKs cascade, so a deleted tenant or device takes
   its tombstones with it. The device-side index serves the per-device skip
-  read, which walks the primary key backwards.
+  read, which the primary key cannot serve.
 * ``coord.devices.membership_autobind`` (design decision D2): the standing
   consent for the unattended bind. ``created`` (the default, applied to every
   existing device) lets it bind tenants the device owner created; ``off``
@@ -47,7 +47,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "tdunbind_01"
-down_revision: str | Sequence[str] | None = "overlord_02_four_class_vocabulary"
+down_revision: str | Sequence[str] | None = "spawnledger_01_spawn_requests"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -59,6 +59,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Create coord.tenant_device_unbinds and add coord.devices.membership_autobind."""
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.tenant_device_unbinds (
@@ -123,6 +124,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop coord.devices.membership_autobind and coord.tenant_device_unbinds."""
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
         ALTER TABLE coord.devices

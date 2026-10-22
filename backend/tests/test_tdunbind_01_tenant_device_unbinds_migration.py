@@ -53,7 +53,7 @@ from tests._alembic_harness import (
 # `_PARENT_REVISION_ID` MUST equal the revision's own `down_revision`; the
 # first test enforces it. Re-point both together if main moves before landing.
 _REVISION_ID = "tdunbind_01"
-_PARENT_REVISION_ID = "overlord_02_four_class_vocabulary"
+_PARENT_REVISION_ID = "spawnledger_01_spawn_requests"
 _REVISION_FILENAME = "tdunbind_01_tenant_device_unbinds_and_membership_autobind.py"
 
 _SCHEMA = "coord"
