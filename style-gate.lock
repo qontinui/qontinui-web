@@ -1,5 +1,5 @@
 {
-  "qontinui_schemas_sha": "9f4c7204d8238da8eabf31a36deeb6b8d7e1aee0",
+  "qontinui_schemas_sha": "58cfe6ccadcb547c9c6dd5762a8187af25a6ad10",
   "crate": "rust-vision-core",
   "bin": "vision-audit",
   "note": "Pins the qontinui-schemas commit the `vision-audit` analyzer is built from for the CI style gate (.github/workflows/style-gate.yml reads this file to know what to checkout). Bump = its own reviewable PR; the gate never changes behavior silently under a green check."
