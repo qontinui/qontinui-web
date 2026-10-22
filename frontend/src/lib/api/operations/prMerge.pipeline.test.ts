@@ -3,7 +3,7 @@ import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 
 /**
  * Pins each Phase 7 batch 7 `prMerge` function's exact request — the merge
- * pipeline, train, recovery and draft-state routes: the RELATIVE URL written
+ * pipeline, train, recovery and hold routes: the RELATIVE URL written
  * out as a LITERAL (so a change to the shared base cannot move every
  * expectation with it), the method, the body's exact bytes, and the retry
  * policy the route walker cannot see. `toEqual` on the whole init keeps them
@@ -34,7 +34,7 @@ const {
   fetchTrainHealth,
   patchTenantAutoFixPr,
   reevaluatePr,
-  setPrDraftState,
+  setPrHold,
 } = await import("./prMerge");
 
 function answer(body: unknown, status = 200): Response {
@@ -232,12 +232,28 @@ describe("prMerge pipeline + recovery client", () => {
     ]);
   });
 
-  it("setPrDraftState POSTs {draft} to /prs/.../draft-state, never re-sent on a 5xx", async () => {
+  it("setPrHold POSTs {held, reason} to /prs/.../hold, never re-sent on a 5xx", async () => {
     fetchMock.mockResolvedValueOnce(new Response("not json", { status: 200 }));
-    await expect(setPrDraftState("o", "r", 4, true)).resolves.toBe(null);
+    await expect(setPrHold("o", "r", 4, true, "waiting on web#1")).resolves.toBe(
+      null
+    );
     expect(fetchMock.mock.calls[0]).toEqual([
-      "/api/v1/operations/prs/o/r/4/draft-state",
-      { method: "POST", body: '{"draft":true}', idempotent: false },
+      "/api/v1/operations/prs/o/r/4/hold",
+      {
+        method: "POST",
+        body: '{"held":true,"reason":"waiting on web#1"}',
+        idempotent: false,
+      },
     ]);
+  });
+
+  it("setPrHold omits reason on a release", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    await setPrHold("o", "r", 4, false, null);
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      method: "POST",
+      body: '{"held":false}',
+      idempotent: false,
+    });
   });
 });

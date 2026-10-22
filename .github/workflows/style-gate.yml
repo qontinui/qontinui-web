@@ -261,9 +261,12 @@ jobs:
             echo "Mode: SHADOW (Stage A) — report-only, gate findings do NOT fail this check."
           fi
 
-      # The qontinui-schemas repo is public (AGPL) — mirrors the unauthenticated
+      # The qontinui-schemas repo is public — mirrors the unauthenticated
       # clone convention in backend-ci.yml / migrate.yml. Clone into a sibling of
       # the workspace (../qontinui-schemas) and check out the pinned SHA.
+      # Licensing: the repo is AGPL-3.0-or-later, but the analyzer this job builds
+      # (the rust-vision-core crate and its `vision-audit` binary) is MIT — see
+      # rust-vision-core/LICENSE in qontinui-schemas.
       - name: Checkout pinned qontinui-schemas (analyzer source)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:

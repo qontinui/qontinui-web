@@ -5,15 +5,17 @@ import Link from "next/link";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { cn } from "@/lib/utils";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
+import { useTwinCatalog } from "../_hooks/useTwinCatalog";
 import {
   LIFECYCLE_STAGES,
   TWIN_PLANTS,
+  gradedOf,
   rowsForStage,
   stageSummary,
   twinSummary,
 } from "../_lib/lifecycle";
 import type { CoverageCounts, LifecycleStageInfo } from "../_lib/lifecycle";
-import { resolveSubspaces } from "../_lib/resolve";
+import { allProbesRestricted, resolveSubspaces } from "../_lib/resolve";
 import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
 import { SubspaceCell } from "./SubspaceCell";
@@ -25,15 +27,26 @@ import {
 
 /**
  * Honesty-bar segments, in order. Only the first is a live verdict; then come
- * probes still in flight (no verdict yet), probes that did not answer, probes
- * coord refused for this tenant (an access decision, not silence), manifest
- * claims, and the roadmap.
+ * reports coord served (an answer, not a verdict), probes coord refused to
+ * this operator, probes still in flight (no verdict yet), probes that did not
+ * answer, manifest claims, and the roadmap. A served report and a refused
+ * sub-space are never counted as "not answering".
  */
 const SEGMENTS = [
   {
     key: "live",
     label: "live-probed, answering",
     className: COUNT_FILLS.live,
+  },
+  {
+    key: "served",
+    label: "live-probed, a report (not graded)",
+    className: "bg-violet-500",
+  },
+  {
+    key: "restricted",
+    label: "restricted (not yours to read)",
+    className: STATUS_STYLES.restricted.dot,
   },
   {
     key: "pending",
@@ -44,11 +57,6 @@ const SEGMENTS = [
     key: "silent",
     label: "probed, not answering",
     className: "bg-sky-500",
-  },
-  {
-    key: "restricted",
-    label: "restricted (access)",
-    className: STATUS_STYLES.restricted.dot,
   },
   {
     key: "claim",
@@ -67,9 +75,10 @@ type SegmentKey = (typeof SEGMENTS)[number]["key"];
 function segmentValues(c: CoverageCounts): Record<SegmentKey, number> {
   return {
     live: c.live,
-    pending: c.pending,
-    silent: c.probed - c.live - c.pending,
+    served: c.served,
     restricted: c.restricted,
+    pending: c.pending,
+    silent: c.probed - c.live - c.pending - c.served - c.restricted,
     claim: c.manifestBuilt,
     unbuilt: c.planned + c.notBuilt,
   };
@@ -178,19 +187,9 @@ function StageCounts({ counts }: { counts: CoverageCounts }) {
   return (
     <dl className="grid grid-cols-3 gap-2">
       <CountItem
-        label={
-          counts.restricted > 0
-            ? `live-probed · ${counts.restricted} restricted`
-            : "live-probed"
-        }
-        value={
-          probing
-            ? "probing"
-            : counts.probed === 0 && counts.restricted > 0
-              ? "none"
-              : counts.live
-        }
-        of={!probing && counts.probed > 0 ? counts.probed : undefined}
+        label="live-probed"
+        value={probing ? "probing" : counts.live}
+        of={!probing && gradedOf(counts) > 0 ? gradedOf(counts) : undefined}
       />
       <CountItem label="built (claim)" value={counts.manifestBuilt} />
       <CountItem
@@ -203,25 +202,30 @@ function StageCounts({ counts }: { counts: CoverageCounts }) {
 
 /** Say in words when nothing at a stage is live-verified. */
 function liveProbeNote(counts: CoverageCounts): string | null {
-  if (counts.probed === 0 && counts.restricted > 0) {
-    return "Every live probe at this stage is restricted for this tenant.";
-  }
   if (counts.probed === 0) {
     return "No live probe at this stage — every status here is a manifest claim.";
   }
   // While a probe is in flight the live-probed count itself reads "probing…".
   if (counts.pending > 0 || counts.live > 0) return null;
-  return "No live probe answering at this stage.";
+  // A served report beside it does not make a silent verdict probe answer.
+  if (gradedOf(counts) > 0) return "No live probe answering at this stage.";
+  if (counts.served === 0) {
+    return "Every live probe at this stage is restricted for you.";
+  }
+  return null;
 }
 
 /** A twin card's live-probe count — in words while it has no verdict yet. */
 function liveProbeSummary(counts: CoverageCounts): string {
   if (counts.pending > 0) return "probing…";
-  const restricted =
-    counts.restricted > 0 ? `${counts.restricted} restricted` : null;
-  if (counts.probed === 0) return restricted ?? "no live probe";
-  const live = `${counts.live}/${counts.probed} live-probed`;
-  return restricted ? `${live} · ${restricted}` : live;
+  if (counts.probed === 0) return "no live probe";
+  // Nothing here can answer this operator with a verdict: say why, never "0/0".
+  if (gradedOf(counts) === 0) {
+    return counts.served > 0
+      ? `${counts.served} served (not graded)`
+      : "all restricted for you";
+  }
+  return `${counts.live}/${gradedOf(counts)} live-probed`;
 }
 
 interface StageSectionProps {
@@ -338,18 +342,23 @@ function StageSection({
  */
 export function LifecycleView() {
   const { data, isLoading, isError, error } = useDigitalTwinSubspaces();
+  // coord's declaration of what the twin probes: the matrix joins the manifest
+  // to it, so a row coord declares is live and one it does not is not.
+  const { data: catalog } = useTwinCatalog();
   const [selected, setSelected] = useState<ResolvedSubspace | null>(null);
 
   const rows = useMemo(
-    () => resolveSubspaces(data?.subspaces, isLoading),
-    [data?.subspaces, isLoading]
+    () => resolveSubspaces(data?.subspaces, isLoading, catalog),
+    [data?.subspaces, isLoading, catalog]
   );
   const byStage = useMemo(() => stageSummary(rows), [rows]);
   const byTwin = useMemo(() => twinSummary(rows), [rows]);
   const probing = rows.some((r) => r.cellStatus === "probing");
   const anyRestricted = rows.some((r) => r.cellStatus === "restricted");
 
-  if (data?.restricted) return <TwinAccessRestricted />;
+  // The whole-view notice only when EVERY probe was refused; a single refused
+  // sub-space renders as its own `restricted` cell.
+  if (allProbesRestricted(data)) return <TwinAccessRestricted />;
 
   return (
     <div className="space-y-6">

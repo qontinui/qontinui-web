@@ -203,10 +203,11 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     isSuperuser = true;
     expect(devops()?.children?.map((c) => c.label)).toContain("Runner Drain");
     expect(devops()?.children?.map((c) => c.label)).toContain("Computers");
-    expect(devops()?.children).toHaveLength(15);
+    expect(devops()?.children?.map((c) => c.label)).toContain("Spawns");
+    expect(devops()?.children).toHaveLength(16);
   });
 
-  it("shows Computers to an admin of the ACTIVE tenant who is not staff, and nothing operator-only", () => {
+  it("shows Computers and Spawns to an admin of the ACTIVE tenant who is not staff, and nothing operator-only", () => {
     coordIsAdmin = true;
     tenants = [{ id: "t-a", slug: "a", name: "A", roles: ["admin"] }];
     activeTenantId = "t-a";
@@ -217,6 +218,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
       "Overview",
       "CI",
       "Computers",
+      "Spawns",
     ]);
   });
 

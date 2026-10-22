@@ -10,12 +10,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-const {
-  fetchFleetPolicy,
-  putFleetPolicy,
-  fetchTranscriptSyncPolicy,
-  patchTranscriptSyncPolicy,
-} = await import("./tenantPolicy");
+const { fetchFleetPolicy, putFleetPolicy } = await import("./tenantPolicy");
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
@@ -77,35 +72,6 @@ describe("tenantPolicy", () => {
       })
     ).rejects.toThrow(
       'PUT /api/v1/operations/fleet-policy failed: 400 - {"error":"repo_not_in_tenant"}'
-    );
-  });
-
-  it("fetchTranscriptSyncPolicy GETs /tenant-policy/transcript-sync", async () => {
-    fetchMock.mockResolvedValueOnce(json({ transcript_sync_enabled: true }));
-    await fetchTranscriptSyncPolicy();
-    expect(fetchMock.mock.calls[0]).toEqual([
-      "/api/v1/operations/tenant-policy/transcript-sync",
-      { method: "GET", idempotent: true },
-    ]);
-  });
-
-  it("patchTranscriptSyncPolicy PATCHes only the flag and is never retried", async () => {
-    fetchMock.mockResolvedValueOnce(json({ written: true, effective: null }));
-    await patchTranscriptSyncPolicy(false);
-    expect(fetchMock.mock.calls[0]).toEqual([
-      "/api/v1/operations/tenant-policy/transcript-sync",
-      {
-        method: "PATCH",
-        body: '{"transcript_sync_enabled":false}',
-        idempotent: false,
-      },
-    ]);
-  });
-
-  it("a 504 keeps the failed-504 text the hook reads as UNKNOWN", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("timeout", { status: 504 }));
-    await expect(patchTranscriptSyncPolicy(true)).rejects.toThrow(
-      "PATCH /api/v1/operations/tenant-policy/transcript-sync failed: 504 - timeout"
     );
   });
 });

@@ -22,10 +22,11 @@
  *    red bar on "the biggest class" would spend the loudest signal on "big".
  *    An UNKNOWN share draws an empty dashed track, never an empty solid one —
  *    an empty solid track reads as a measured 0.
- * 3. **`ShareList` ranks by count itself** (descending, stable on ties), so the
- *    order is a property of the primitive rather than a hope about the caller's
- *    input. Its lines are NOT buttons: an aggregate is read, not acted on per
- *    line — a per-line action is what R5's `RecordRow` is for.
+ * 3. **`ShareList` ranks by count itself** (descending, stable on ties, an
+ *    unknown count last), so the order is a property of the primitive rather
+ *    than a hope about the caller's input. Its lines are NOT buttons: an
+ *    aggregate is read, not acted on per line — a per-line action is what
+ *    R5's `RecordRow` is for.
  *
  * Presentation only — no fetch, no route (see the barrel's doc).
  */
@@ -106,12 +107,24 @@ export interface ShareListItem {
   key: string;
   /** Human label — R8: never the wire enum. Truncates; its `title` is `title`. */
   label: ReactNode;
-  /** This line's part of the whole. */
-  count: number;
+  /**
+   * This line's part of the whole. `null` = coord sent no usable count: the
+   * line says `unknown`, its bar is the dashed unknown track, and it ranks
+   * after every known line — never a `0`, which would assert a measured
+   * absence.
+   */
+  count: number | null;
   /** Full-text tooltip for the label (the wire token belongs here, not on screen). */
   title?: string;
   /** Short secondary text, shown from `sm` up (e.g. a per-line split). */
   detail?: ReactNode;
+  /**
+   * Tooltip for the detail, which truncates at 28ch — so what the ellipsis
+   * cuts stays reachable. Defaults to the detail's own text when that is a
+   * string. Separate from `title` on purpose: a caller's `title` can be a wire
+   * token (R8) that names the LABEL, and must not reappear on the detail.
+   */
+  detailTitle?: string;
   "data-testid"?: string;
 }
 
@@ -124,15 +137,33 @@ export interface ShareListProps {
   total: number | null;
   /** Rendered when there are no items. The caller's words — name the question. */
   empty?: ReactNode;
+  /**
+   * What the count counts, rendered after it (`30 placed`). A bare number
+   * beside a name is ambiguous by construction (served policy `ux-priorities`
+   * `a-label-names-one-referent-and-a-quantity-names-its-unit`); pass this
+   * unless the list's heading already names the unit.
+   */
+  unit?: string;
   className?: string;
   "data-testid"?: string;
 }
 
-/** `items`, ranked by count descending, stable on ties. Pure. */
-export function rankShares<T extends { count: number }>(items: T[]): T[] {
+/**
+ * `items`, ranked by count descending, stable on ties, with an unknown
+ * (`null`) count after every known one. Pure.
+ */
+export function rankShares<T extends { count: number | null }>(
+  items: T[]
+): T[] {
+  const rank = (c: number | null) =>
+    c === null ? Number.NEGATIVE_INFINITY : c;
   return items
     .map((item, index) => ({ item, index }))
-    .sort((a, b) => b.item.count - a.item.count || a.index - b.index)
+    .sort((a, b) => {
+      const ra = rank(a.item.count);
+      const rb = rank(b.item.count);
+      return ra === rb ? a.index - b.index : rb > ra ? 1 : -1;
+    })
     .map(({ item }) => item);
 }
 
@@ -140,6 +171,7 @@ export function ShareList({
   items,
   total,
   empty,
+  unit,
   className,
   "data-testid": testId,
 }: ShareListProps) {
@@ -162,12 +194,25 @@ export function ShareList({
             {item.label}
           </span>
           {item.detail != null && (
-            <span className="hidden sm:inline shrink-0 truncate max-w-[28ch] text-xs text-muted-foreground">
+            <span
+              className="hidden sm:inline shrink-0 truncate max-w-[28ch] text-xs text-muted-foreground"
+              title={
+                item.detailTitle ??
+                (typeof item.detail === "string" ? item.detail : undefined)
+              }
+            >
               {item.detail}
             </span>
           )}
-          <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
-            {item.count}
+          <span
+            className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
+            data-share-count={item.count === null ? "unknown" : item.count}
+          >
+            {item.count === null
+              ? "unknown"
+              : unit
+                ? `${item.count} ${unit}`
+                : item.count}
           </span>
           <ShareBar numerator={item.count} denominator={total} />
         </li>
