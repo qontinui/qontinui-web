@@ -645,6 +645,104 @@ describe("enrichElement — stacking, visibility and text overflow", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Visibility detail — `visibility_reason` / `occluded_pct` (plan
+// 2026-10-13-image-generation-and-visual-judgment, Phase 15)
+// ---------------------------------------------------------------------------
+
+// (name, SDK `state` fields, expected {visibility_reason, occluded_pct} with
+// absent keys meaning OMITTED). The SAME table is in the Python projector's
+// suite (`qontinui-claude-config/scripts/test-uibridge-to-elementsnapshot.py`,
+// VISIBILITY_DETAIL_CASES); a row changed here belongs there too. Without
+// these fields the image analyzer cannot tell an image that paints nothing
+// (`hidden`, `no-layout`) from one that is painted but covered or scrolled
+// away, and reads every `visible: false` image as unreadable.
+const VISIBILITY_DETAIL_CASES: Array<
+  [string, Record<string, unknown>, Record<string, unknown>]
+> = [
+  [
+    "fully occluded",
+    { visible: false, visibilityReason: "occluded", occludedPct: 100 },
+    { visibility_reason: "occluded", occluded_pct: 100 },
+  ],
+  ["hidden", { visible: false, visibilityReason: "hidden" }, { visibility_reason: "hidden" }],
+  [
+    "no-layout",
+    { visible: false, visibilityReason: "no-layout" },
+    { visibility_reason: "no-layout" },
+  ],
+  [
+    "off-screen",
+    { visible: false, visibilityReason: "off-screen" },
+    { visibility_reason: "off-screen" },
+  ],
+  [
+    "an unknown reason is kept verbatim",
+    { visible: false, visibilityReason: "clipped" },
+    { visibility_reason: "clipped" },
+  ],
+  [
+    "partial occlusion: still visible, pct carried, no reason",
+    { visible: true, occludedBy: "div#toast", occludedPct: 37 },
+    { occluded_pct: 37 },
+  ],
+  ["a measured zero is kept, not dropped", { visible: true, occludedPct: 0 }, { occluded_pct: 0 }],
+  ["a fractional pct passes through unrounded", { occludedPct: 12.5 }, { occluded_pct: 12.5 }],
+  ["absent stays absent", { visible: true }, {}],
+  ["an empty reason is omitted", { visibilityReason: "" }, {}],
+  ["a non-string reason is omitted", { visibilityReason: 42 }, {}],
+  ["a null reason is omitted", { visibilityReason: null }, {}],
+  ["a boolean pct is omitted, never read as 1", { occludedPct: true }, {}],
+  ["a string pct is omitted", { occludedPct: "50" }, {}],
+  ["a negative pct is omitted, never clamped", { occludedPct: -1 }, {}],
+  ["a pct over 100 is omitted, never clamped", { occludedPct: 101 }, {}],
+  ["a NaN pct is omitted", { occludedPct: NaN }, {}],
+  ["an infinite pct is omitted", { occludedPct: Infinity }, {}],
+  ["a null pct is omitted", { occludedPct: null }, {}],
+];
+
+describe("enrichElement — visibility detail", () => {
+  it.each(VISIBILITY_DETAIL_CASES)("%s", (_name, state, want) => {
+    const el: Record<string, unknown> = { id: "img", tagName: "div", state };
+    enrichElement(el);
+    const got: Record<string, unknown> = {};
+    for (const k of ["visibility_reason", "occluded_pct"]) {
+      if (k in el) got[k] = el[k];
+    }
+    expect(got).toEqual(want);
+    // The serialized snapshot is what vision-core reads: same values, and no
+    // key that JSON would turn into `null`.
+    const wire = JSON.parse(JSON.stringify(el)) as Record<string, unknown>;
+    for (const k of ["visibility_reason", "occluded_pct"]) {
+      if (k in want) expect(wire[k]).toEqual(want[k]);
+      else expect(k in wire).toBe(false);
+    }
+  });
+
+  it("explains visible / occluded_by without replacing them", () => {
+    const el: Record<string, unknown> = {
+      id: "x",
+      state: { visible: true, occludedBy: "div#toast", occludedPct: 37 },
+    };
+    enrichElement(el);
+    expect(el.visible).toBe(true);
+    expect(el.occluded_by).toBe("div#toast");
+    expect(el.occluded_pct).toBe(37);
+  });
+
+  it("does not clobber values a snapshot source already set", () => {
+    const el: Record<string, unknown> = {
+      id: "pre",
+      visibility_reason: "hidden",
+      occluded_pct: 5,
+      state: { visibilityReason: "occluded", occludedPct: 90 },
+    };
+    enrichElement(el);
+    expect(el.visibility_reason).toBe("hidden");
+    expect(el.occluded_pct).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Media — the vision-core `Element.media` record (plan
 // 2026-10-13-image-generation-and-visual-judgment, Phase 7)
 // ---------------------------------------------------------------------------

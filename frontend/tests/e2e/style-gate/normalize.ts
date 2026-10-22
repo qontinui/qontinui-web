@@ -19,8 +19,10 @@
  * `inertReason` / `inert_reason`, `parseCssColor` / `parse_color`,
  * `parsePx` / `parse_px`, `parseOpacity` / `parse_opacity`,
  * `projectMedia` / `project_media` (with `srcDigest` / `src_digest`), the
- * media-row text rule, the absence of any `z_index` projection, and the bbox
- * origin/extent sign rules in `normalizeBboxes` / `project_element`.
+ * `visibility_reason` / `occluded_pct` rule in `enrichElement` /
+ * `project_visibility_detail`, the media-row text rule, the absence of any
+ * `z_index` projection, and the bbox origin/extent sign rules in
+ * `normalizeBboxes` / `project_element`.
  *
  * SOURCE shape (per element from `/control/snapshot`, see
  * ui-bridge/packages/ui-bridge/src/server/handlers.ts `materializeElements`):
@@ -53,6 +55,8 @@
  *   font_family   string               (computed fontFamily, if present)
  *   line_height_px f32                 (computed lineHeight, px)
  *   visible / occluded_by / scroll_width_px / text_overflow
+ *   visibility_reason string           (SDK visibilityReason, verbatim)
+ *   occluded_pct  f32                  (SDK occludedPct, 0-100 only)
  *   media         ElementMedia         (media rows; see `projectMedia`)
  * and NOT `z_index`, which no CSS value can supply (see `enrichElement`).
  */
@@ -864,6 +868,31 @@ export function enrichElement(el: Record<string, unknown>): void {
     }
     if (el.occluded_by === undefined && typeof state.occludedBy === "string") {
       el.occluded_by = state.occludedBy;
+    }
+
+    // visibility_reason / occluded_pct — WHY `visible` is false, and how much
+    // of the element the hit-test found covered. Without them a
+    // `visible: false` element is ambiguous: `hidden` and `no-layout` paint
+    // nothing, while `off-screen` and `occluded` may be fully painted (an
+    // image under a transparent overlay is still readable). The reason is
+    // carried VERBATIM, an unknown one included — vision-core keeps it as
+    // `Other` rather than rejecting it. `occluded_pct` is the SDK's 0-100
+    // share of hit-test samples another element owned; anything that is not
+    // a finite number in that range is no measurement and is omitted, never
+    // clamped. Absent stays absent: vision-core reads absence as "not said",
+    // never as 0. Mirrors `project_visibility_detail` in the Python projector.
+    if (
+      el.visibility_reason === undefined &&
+      typeof state.visibilityReason === "string" &&
+      state.visibilityReason !== ""
+    ) {
+      el.visibility_reason = state.visibilityReason;
+    }
+    if (el.occluded_pct === undefined) {
+      const pct = state.occludedPct;
+      if (typeof pct === "number" && Number.isFinite(pct) && pct >= 0 && pct <= 100) {
+        el.occluded_pct = pct;
+      }
     }
 
     // scroll_width_px — laid-out content width. This is what makes
