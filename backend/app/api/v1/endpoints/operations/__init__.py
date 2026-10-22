@@ -7255,6 +7255,7 @@ async def _proxy_coord_delete(
     params: dict[str, Any] | None = None,
     body: Any | None = None,
     tenant_id: UUID | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
 
@@ -7271,6 +7272,9 @@ async def _proxy_coord_delete(
     ``client.request("DELETE", ..., json=body)``; ``client.delete`` does
     not accept ``json=``, so this branches. The bearer header is attached
     on both paths.
+
+    ``structured_errors`` — pass coord's typed JSON refusal object through
+    verbatim on a ≥400, the same opt-in as ``_proxy_coord_put``'s flag.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
@@ -7287,7 +7291,10 @@ async def _proxy_coord_delete(
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     # Coord may return 204 No Content for delete; tolerate empty bodies.
     if resp.status_code == 204 or not resp.content:
         return {"status": "ok"}
@@ -11043,6 +11050,124 @@ async def get_ci_hosting(
         or current_user.is_superuser
     )
     return _ci_hosting_view(payload, can_edit=can_edit)
+
+
+# ---- Tenant GitHub host proxy -------------------------------------------
+#
+# Plan ``2026-10-10-spec-front-end-phase-9-generic-boundary`` Phase 3 (parent
+# ``2026-10-09-spec-front-end-of-the-software-factory`` Phase 9 item 4): the
+# console's door onto coord's ``/coord/tenant/github-host``, which reads and
+# writes the caller's tenant's row in ``coord.tenant_github_hosts`` (qontinui-web
+# alembic ``coord_tenant_github_hosts_01``). No row means github.com.
+#
+# Coord authorizes on the operator bearer (``RequiredOperatorContext``) and
+# re-checks tenant admin on the PUT; its typed refusals —
+# ``invalid_github_host`` (400), ``admin_required`` (403),
+# ``repos_registered_on_another_host`` (409, with the offending ``repos``) and
+# ``schema_migration_pending`` (503) — pass through as structured ``detail``
+# objects so the panel can name them.
+
+
+class TenantGithubHostView(BaseModel):
+    """The tenant's effective GitHub host, as coord resolves it.
+
+    ``configured`` is ``None`` when coord's answer did not carry it — UNKNOWN,
+    never "the github.com default". The bases are ``None`` on the same terms.
+    """
+
+    api_base: str | None
+    web_base: str | None
+    graphql_url: str | None
+    configured: bool | None
+    #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
+    can_edit: bool
+
+
+class TenantGithubHostPut(BaseModel):
+    """Body of ``PUT /tenant/github-host`` — coord's ``PutGithubHostRequest``.
+
+    Coord validates the shape (https, a host, no credentials, query, fragment;
+    ``web_base`` an origin) and that the host is public; the console does not
+    pre-judge either, so coord's ``invalid_github_host`` detail is the one
+    message the operator sees.
+    """
+
+    api_base: str = Field(..., min_length=1)
+    web_base: str = Field(..., min_length=1)
+
+
+def _tenant_github_host_view(payload: Any, *, can_edit: bool) -> TenantGithubHostView:
+    body = payload if isinstance(payload, dict) else {}
+
+    def _text(key: str) -> str | None:
+        value = body.get(key)
+        return value if isinstance(value, str) and value else None
+
+    configured = body.get("configured")
+    return TenantGithubHostView(
+        api_base=_text("api_base"),
+        web_base=_text("web_base"),
+        graphql_url=_text("graphql_url"),
+        configured=configured if isinstance(configured, bool) else None,
+        can_edit=can_edit,
+    )
+
+
+@router.get("/tenant/github-host", response_model=TenantGithubHostView)
+async def get_tenant_github_host(
+    request: Request,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> TenantGithubHostView:
+    """Read the tenant's effective GitHub host (github.com when unconfigured).
+
+    ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+    roles in the EFFECTIVE tenant plus the superuser bypass — because the
+    writes go through ``require_coord_tenant_admin``.
+    """
+    payload = await _proxy_coord_get("/coord/tenant/github-host", tenant_id=tenant_id)
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _tenant_github_host_view(payload, can_edit=can_edit)
+
+
+@router.put("/tenant/github-host", response_model=TenantGithubHostView)
+async def put_tenant_github_host(
+    body: TenantGithubHostPut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> TenantGithubHostView:
+    """Set the tenant's GitHub host (GitHub Enterprise Server or GHE.com).
+
+    Tenant-admin gated web-side; coord re-checks and answers the typed
+    refusals listed above, which pass through as structured ``detail``.
+    Coord's echo is the stored row, so it is returned rather than re-read.
+    """
+    written = await _proxy_coord_put(
+        "/coord/tenant/github-host",
+        body.model_dump(),
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+    return _tenant_github_host_view(written, can_edit=True)
+
+
+@router.delete("/tenant/github-host", response_model=TenantGithubHostView)
+async def delete_tenant_github_host(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> TenantGithubHostView:
+    """Return the tenant to github.com. Idempotent.
+
+    Coord refuses with ``repos_registered_on_another_host`` (409) while the
+    tenant still has repos enrolled on the configured host.
+    """
+    reset = await _proxy_coord_delete(
+        "/coord/tenant/github-host", tenant_id=tenant_id, structured_errors=True
+    )
+    return _tenant_github_host_view(reset, can_edit=True)
 
 
 # ---- Unfinished sessions + auto-resume toggle proxy ---------------------
