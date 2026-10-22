@@ -10251,8 +10251,8 @@ export interface paths {
          * Get Continuation Delivery Mode
          * @description Read what coord resolves for one repo's continuation-delivery mode.
          *
-         *     See :class:`ContinuationDeliveryModeView` ``provenance_known`` for why
-         *     this is a resolver answer and not a stored value.
+         *     See :class:`ContinuationDeliveryModeView` ``resolved_scope`` for what
+         *     coord says about where ``mode`` came from.
          */
         get: operations["api_v1_operations_continuation_delivery_mode_get"];
         /**
@@ -31054,7 +31054,7 @@ export interface components {
         };
         /**
          * ContinuationDeliveryModeView
-         * @description What coord's resolver returns for one repo's continuation delivery.
+         * @description One repo's continuation-delivery mode and where coord says it came from.
          */
         ContinuationDeliveryModeView: {
             /** Can Edit */
@@ -31071,6 +31071,10 @@ export interface components {
             provenance_known: boolean;
             /** Repo */
             repo: string;
+            /** Resolved Scope */
+            resolved_scope?: ("repo" | "default" | "unrecognized") | null;
+            /** Stored Value */
+            stored_value?: string | null;
         };
         /**
          * ContinuationDeliveryModeWriteResult

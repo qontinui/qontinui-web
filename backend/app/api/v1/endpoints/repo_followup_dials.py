@@ -42,13 +42,21 @@ unreadable preference to the permissive default. This proxy keeps that: a 503
 stays a 503, and a 200 whose body carries no recognisable ``scope`` is a 502
 here, never a guessed ``all``.
 
-The continuation-delivery READ is weaker, and this module says so rather than
-hiding it: coord's ``GET /coord/continuation-delivery-mode`` resolves
-fail-open (``continuation_delivery::get_continuation_delivery_mode`` returns
-the default on a missing row, a missing column AND a failed read) and always
-reports ``resolved_scope: "repo"``. So its answer is "what coord's resolver
-returns", not "what is stored"; :class:`ContinuationDeliveryModeView` carries
-``provenance_known: False`` so the UI cannot present it as a stored setting.
+The continuation-delivery READ carries provenance: coord's
+``GET /coord/continuation-delivery-mode`` reports ``resolved_scope`` as
+``"repo"`` (a row declares a recognised value), ``"default"`` (no row, or a
+NULL one) or ``"unrecognized"`` (a stored string coord does not understand, with
+``stored_value`` beside it and ``effective_level`` the default dispatch will
+actually use). An unreadable read is a 503 that this proxy passes through, never
+a default. :class:`ContinuationDeliveryModeView` mirrors the field; a body with
+no recognisable ``resolved_scope`` leaves it ``None`` = UNKNOWN, and the UI must
+not present ``mode`` as a confirmed stored setting.
+
+This relies on coord containing qontinui-coord ``81512b707``. A coord build
+BEFORE it sent ``resolved_scope: "repo"`` as a constant over a fail-open read,
+which this proxy cannot tell apart from a real ``"repo"`` answer; that build is
+not the one served (checked against coord's ``/health`` ``build_sha`` when this
+landed), so do not roll coord back past it without reverting this reading.
 """
 
 from __future__ import annotations
@@ -330,16 +338,22 @@ async def put_post_merge_followup_scope(
 
 
 class ContinuationDeliveryModeView(BaseModel):
-    """What coord's resolver returns for one repo's continuation delivery."""
+    """One repo's continuation-delivery mode and where coord says it came from."""
 
     repo: str
     mode: DeliveryMode
-    #: Always ``False`` today. Coord's read is fail-open — a missing row, a
-    #: missing column and a failed read ALL resolve to the default
-    #: ``in_session_with_spawn_fallback`` — and its ``resolved_scope`` is the
-    #: constant ``"repo"``. So "set for this repo" and "default because the
-    #: read failed" are indistinguishable from this answer, and the UI must
-    #: not present ``mode`` as a confirmed stored setting.
+    #: ``"repo"`` — a row for this repo declares ``mode``. ``"default"`` — no
+    #: row declares one and ``mode`` is the default dispatch uses.
+    #: ``"unrecognized"`` — a row stores a value coord does not understand
+    #: (``stored_value``) and ``mode`` is the default it falls back to.
+    #: ``None`` — coord sent no recognisable value, which is UNKNOWN, never a
+    #: guess at any of those.
+    resolved_scope: Literal["repo", "default", "unrecognized"] | None = None
+    #: The raw stored string, present only for ``resolved_scope="unrecognized"``.
+    stored_value: str | None = None
+    #: ``True`` only when ``resolved_scope`` is ``"repo"`` or ``"default"``:
+    #: coord read the row and said which. ``unrecognized`` and UNKNOWN are
+    #: ``False``, so the UI never presents ``mode`` as a confirmed setting then.
     provenance_known: bool = False
     can_edit: bool
 
@@ -360,7 +374,20 @@ def _delivery_view(
                 "the continuation-delivery mode for this repo is unknown"
             ),
         )
-    return ContinuationDeliveryModeView(repo=repo, mode=level, can_edit=can_edit)
+    resolved = body.get("resolved_scope")
+    if resolved not in ("repo", "default", "unrecognized"):
+        resolved = None
+    stored = body.get("stored_value")
+    return ContinuationDeliveryModeView(
+        repo=repo,
+        mode=level,
+        resolved_scope=resolved,
+        stored_value=stored
+        if resolved == "unrecognized" and isinstance(stored, str)
+        else None,
+        provenance_known=resolved in ("repo", "default"),
+        can_edit=can_edit,
+    )
 
 
 class ContinuationDeliveryModePut(BaseModel):
@@ -396,8 +423,8 @@ async def get_continuation_delivery_mode(
 ) -> ContinuationDeliveryModeView:
     """Read what coord resolves for one repo's continuation-delivery mode.
 
-    See :class:`ContinuationDeliveryModeView` ``provenance_known`` for why
-    this is a resolver answer and not a stored value.
+    See :class:`ContinuationDeliveryModeView` ``resolved_scope`` for what
+    coord says about where ``mode`` came from.
     """
     try:
         key = _check_repo(repo)

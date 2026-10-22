@@ -11700,7 +11700,7 @@
         "type": "object"
       },
       "ContinuationDeliveryModeView": {
-        "description": "What coord's resolver returns for one repo's continuation delivery.",
+        "description": "One repo's continuation-delivery mode and where coord says it came from.",
         "properties": {
           "can_edit": {
             "title": "Can Edit",
@@ -11723,6 +11723,33 @@
           "repo": {
             "title": "Repo",
             "type": "string"
+          },
+          "resolved_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "repo",
+                  "default",
+                  "unrecognized"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Scope"
+          },
+          "stored_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stored Value"
           }
         },
         "required": [
@@ -93750,7 +93777,7 @@
     },
     "/api/v1/operations/continuation-delivery-mode": {
       "get": {
-        "description": "Read what coord resolves for one repo's continuation-delivery mode.\n\nSee :class:`ContinuationDeliveryModeView` ``provenance_known`` for why\nthis is a resolver answer and not a stored value.",
+        "description": "Read what coord resolves for one repo's continuation-delivery mode.\n\nSee :class:`ContinuationDeliveryModeView` ``resolved_scope`` for what\ncoord says about where ``mode`` came from.",
         "operationId": "api_v1_operations_continuation_delivery_mode_get",
         "parameters": [
           {
