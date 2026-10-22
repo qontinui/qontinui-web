@@ -202,8 +202,9 @@ summary with one row per route and a labeled cell for each pass
 (`| Route | analyze | assert |`):
 
 - **`analyze`** — the broad, **day-one** signal. Runs all 5 page-wide analyzers
-  (layout, elements, typography, color) with **no element ids and no specs
-  needed** — it works the moment a snapshot+frame exist. Invoked as
+  (layout, elements, typography, color, image) with **no element ids and no
+  specs needed** — it works the moment a snapshot+frame exist. `image` emits
+  per-image values and Info findings only, so it never changes the exit code. Invoked as
   `analyze --snapshot <id>.json --frame <id>.png --analyzer all --fail-on critical`,
   so it exits `2` iff a finding is at/above CRITICAL (and `0` otherwise — without
   `--fail-on` the bin always exits `0`, so the flag is what produces a gate
