@@ -132,6 +132,20 @@ jobs:
         working-directory: ./frontend
         run: npm test
 
+      # The image-slot placeholder inventory (plan
+      # 2026-10-13-image-generation-and-visual-judgment, Phase 14 step 4): every
+      # declared slot, and whether it ships a placeholder where it is placed,
+      # in this job's step summary plus one ::notice per such placement. A
+      # placeholder is a FINDING, never a failure (images are reversible, and
+      # only promoted checks gate). The only red this step can produce is a
+      # defect in the inventory's own inputs, which `npm test` above already
+      # asserted, so it adds the listing rather than a second gate.
+      - name: Image-slot placeholder inventory
+        working-directory: ./frontend
+        env:
+          IMAGE_SLOT_INVENTORY_REPORT: "1"
+        run: npm run image-slots:inventory
+
       # ADVISORY, last, bounded, and unable to fail the job: has schemas main
       # moved past fleet-nouns.pin.toml? A drift is a ::warning:: with the bump
       # recipe — the pin exists so that a vocabulary edit is adopted by a

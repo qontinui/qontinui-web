@@ -38,6 +38,7 @@ import type {
 import type {
   GeneralSettings,
   AiSettings,
+  AiSettingsView,
   AgenticSettings,
   DebugSettings,
   PlaywrightSettings,
@@ -846,7 +847,7 @@ export function createRunnerApi(target: RunnerTarget) {
       }),
 
     // AI Settings
-    getAiSettings: () => runnerFetch<AiSettings>(target, "/settings/ai"),
+    getAiSettings: () => runnerFetch<AiSettingsView>(target, "/settings/ai"),
     saveAiSettings: (settings: AiSettings) =>
       runnerFetch<void>(target, "/settings/ai", {
         method: "PUT",

@@ -59,11 +59,17 @@ export interface PostMergeFollowupScopeWrite {
   code_paths?: string[];
 }
 
+export type DeliveryResolvedScope = "repo" | "default" | "unrecognized";
+
 /** Mirrors `ContinuationDeliveryModeView` (`get_continuation_delivery_mode`). */
 export interface ContinuationDeliveryModeView {
   repo: string;
   mode: DeliveryMode;
-  /** Always `false` today — coord's read is fail-open. */
+  /** Where `mode` came from; `null` = coord did not say (UNKNOWN). */
+  resolved_scope: DeliveryResolvedScope | null;
+  /** The raw stored string, only for `resolved_scope: "unrecognized"`. */
+  stored_value: string | null;
+  /** `true` only for `repo` / `default`. */
   provenance_known: boolean;
   can_edit: boolean;
 }
