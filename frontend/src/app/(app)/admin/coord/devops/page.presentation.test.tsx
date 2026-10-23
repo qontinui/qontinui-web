@@ -116,6 +116,7 @@ vi.mock("sonner", () => ({
 import CoordDevOpsPage from "./page";
 import {
   FixedPresentationMode,
+  NAVIGATION_ONLY_ATTRIBUTE,
   sessionMachineAliases,
   type CaptionKey,
   type PresentationScopeState,
@@ -404,6 +405,15 @@ function mockRoutes(fixture: Fixture = {}) {
             device_id: null,
             ci_host_name: CI_HOST_LABEL,
           },
+          // A CI-host role set under machine A's own name: machine A's row
+          // carries the twin note, which names it.
+          {
+            ...rolesMachine("", HOST_A),
+            kind: "ci_host",
+            machine_key: `host:${HOST_A}`,
+            device_id: null,
+            ci_host_name: HOST_A,
+          },
         ],
         roster_truncated: false,
       });
@@ -476,8 +486,50 @@ function mockRoutes(fixture: Fixture = {}) {
     if (u.includes("fleet/health")) {
       return Promise.resolve({
         devices: [
-          { device_id: DEV_A, hostname: HOST_A, state: "healthy" },
-          { device_id: DEV_B, hostname: HOST_B, state: "degraded" },
+          {
+            device_id: DEV_A,
+            hostname: HOST_A,
+            state: "healthy",
+            // The runner's own reports: an open stall, and a mechanism whose
+            // reason quotes a checkout path.
+            wedge_incidents: [
+              { kind: "backend_wedged", began_at: NOW_ISO(), ended_at: null },
+            ],
+            capability: [
+              {
+                mechanism: "cargo_sweep",
+                state: "INOPERATIVE-ON-THIS-MACHINE",
+                reason:
+                  "no cargo target under D:/work/acme-partner/secret-repo",
+                written_at: NOW_ISO(),
+              },
+            ],
+            runner_reports: {
+              wedge_incidents: {
+                absent_reason: null,
+                received_at: NOW_ISO(),
+                stale: false,
+                dropped_entries: 0,
+              },
+              capability: {
+                absent_reason: null,
+                received_at: NOW_ISO(),
+                stale: false,
+                dropped_entries: 0,
+              },
+              stale_after_secs: 900,
+            },
+          },
+          {
+            device_id: DEV_B,
+            hostname: HOST_B,
+            state: "degraded",
+            // Coord's dark scan named it, with a reason naming the host.
+            credential_dark: {
+              dark: true,
+              reason: `device-JWT for ${HOST_B} expired and could not be re-minted`,
+            },
+          },
           {
             device_id: DEV_CI,
             hostname: CI_HOST,
@@ -485,6 +537,40 @@ function mockRoutes(fixture: Fixture = {}) {
             ci_runner_status: "idle",
           },
         ],
+        credential_dark_scrape_up: true,
+        // A question waiting on the operator, and a deliberate setting whose
+        // free-text summary names a machine and a person.
+        conditions: {
+          open: 3,
+          claimed: 1,
+          unclaimed: 2,
+          unclaimed_oldest_age_secs: 600,
+          unclaimed_by_domain: {
+            merge_train: 1,
+            dev_ops: 1,
+            cleanup: 0,
+            return_to_main: 0,
+            pr_fix: 0,
+            red_main_fix: 0,
+            gate_owner: 0,
+            plan_owner: 0,
+          },
+          awaiting_operator: 1,
+          awaiting_operator_question_ids: ["q-1"],
+          awaiting_operator_alerts: 1,
+          awaiting_operator_unasked: 0,
+          awaiting_operator_answered_uncleared: 0,
+          settings_in_effect: [
+            {
+              alert_id: 12,
+              kind: "fleet_device_drained",
+              since: NOW_ISO(),
+              summary: `${HOST_A} drained by ${OPERATOR_EMAIL}: rebuild for Acme Corp`,
+            },
+          ],
+          settings_in_effect_count: 1,
+          scrape_up: true,
+        },
       });
     }
     return Promise.reject(new Error(`unexpected GET ${u}`));
@@ -635,7 +721,7 @@ async function settle() {
     ).toBeGreaterThanOrEqual(4)
   );
   await waitFor(() =>
-    expect(screen.getAllByTestId("fleet-roles-row").length).toBe(3)
+    expect(screen.getAllByTestId("fleet-roles-row").length).toBe(4)
   );
   // The device list is the spine: A and B from the slot read, and the CI
   // device, which the slot read does not list, as an UNKNOWN row.
@@ -724,6 +810,22 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     });
     await settle();
 
+    // The live controls that ARE on this page are each navigation-only — and
+    // they are here, so the check below is not passing on a page that
+    // rendered none of them.
+    for (const testId of [
+      "coord-devops-credential-dark-badge",
+      "coord-devops-conditions-awaiting-badge",
+      "fleet-resource-refresh",
+      "fleet-worktree-slots-refresh",
+    ]) {
+      // The strip's badges sit inside the button that carries the mark.
+      expect(
+        screen.getByTestId(testId).closest("button"),
+        testId
+      ).toHaveAttribute(NAVIGATION_ONLY_ATTRIBUTE);
+    }
+
     checkBehindEveryDisclosure(() =>
       expectPresentationSafe(view, { captions: DEVOPS_CAPTIONS })
     );
@@ -763,6 +865,16 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       screen.queryByRole("button", { name: /^(drain|undrain)\b/i })
     ).toBeNull();
     expect(screen.queryByRole("button", { name: /^rename\b/i })).toBeNull();
+    // The operator's orientation notes — where to act, what the list is
+    // keyed on, the mirror's window — are not rendered for an outsider.
+    for (const testId of [
+      "coord-devops-hosted-ci-link-line",
+      "coord-devops-join-note",
+      "coord-devops-computers-note",
+      "ci-runner-mirror-freshness",
+    ]) {
+      expect(screen.queryByTestId(testId), testId).toBeNull();
+    }
 
     // What remains is the drain STATE, read-only: the drained machine says
     // so, with no actor and no reason.
@@ -782,6 +894,20 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
     await settle();
 
+    // Every free-text carrier the fixture feeds IS on the page — so their
+    // identifiers' absence below is redaction, not an empty render: the
+    // runner's reports (as counts), the dark credential, the setting in
+    // effect.
+    expect(
+      screen.getAllByTestId("devops-runner-wedges-presented")[0]
+    ).toHaveTextContent("1 open");
+    expect(
+      document.querySelector('[data-operations-coord-credential="dark"]')
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId("coord-devops-conditions-setting-12")
+    ).toBeTruthy();
+
     checkBehindEveryDisclosure(() => {
       // `innerHTML` is text AND every attribute: a `data-hostname`, a
       // `title`, a row key or an `href` leaks exactly as visible text does.
@@ -791,6 +917,18 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
         []
       );
     });
+
+    // Machine A's workstation row notes the CI-host role set under its own
+    // name — without the name. (The list orders its rows itself, so each one
+    // is opened in turn.)
+    const twins: string[] = [];
+    for (const row of screen.getAllByTestId("fleet-roles-row")) {
+      fireEvent.click(toggleOf(row));
+      const twin = screen.queryByTestId("fleet-roles-host-row-twin");
+      if (twin) twins.push(twin.textContent ?? "");
+    }
+    expect(twins).toHaveLength(1);
+    expect(twins[0]).toContain("this machine's name");
   });
 
   it("names a kill switch's repository only when the scope clears it — coord's `repo:` scope included", async () => {
@@ -1059,6 +1197,18 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
       if (d.getAttribute("data-device-drain") === "no_device") continue;
       expect(d.getAttribute("data-device-drain")).toBe("unknown");
       expect(d).toHaveTextContent(/drain state has not been read/i);
+    }
+    // The runner inventory did not answer, so its counts are UNKNOWN — never
+    // "Runners 0 · Healthy 0".
+    for (const label of [
+      "Runners",
+      "Healthy",
+      "Running Tasks",
+      "CC Sessions",
+    ]) {
+      const stat = screen.getByText(label, { exact: true, selector: "span" })
+        .parentElement as HTMLElement;
+      expect(stat, label).toHaveTextContent(`${label}unknown`);
     }
     // Each read that failed is dated UNKNOWN — a failed poll never makes the
     // section look current — while coord's fleet health, which answered, is
