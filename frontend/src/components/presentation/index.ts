@@ -6,7 +6,8 @@
  * routes and the same data hooks, rendered with captions on, provenance on,
  * density down, controls off and redaction on. This barrel is every piece of
  * that lens. The pieces compose the console primitives
- * (`@/components/console`); nothing here fetches (D3.4).
+ * (`@/components/console`); nothing here fetches except the scope loader,
+ * once, while presenting (D3.4).
  *
  * | Export | What it is |
  * |---|---|
@@ -20,6 +21,7 @@
  * | `SectionCaption` | a section's caption plus one provenance chip per source behind its numbers |
  * | `OperatorOnly` | the boundary every write control sits inside (D3.2) |
  * | `RedactedText`, `useRedactor`, `PresentationScopeProvider` | free text only when provably first-party (D3.3); fails closed while the scope is unknown |
+ * | `usePresentationScope`, `defaultPresentationScopeStore` | the tenant's scope, read from `GET /api/v1/presentation/scope` only while presenting — the lens's one read (D3.4) |
  * | `MachineName`, `useMachineName`, `useMachineAliaser` | "Machine A, B…" — one alias per machine across every panel and page (D3.3) |
  * | `CostFigure` | the only component that may render a per-task cost; never in presentation mode (D3.1) |
  * | `NAVIGATION_ONLY_PROPS` | marks a control whose press only changes what is displayed (D3.2) |
@@ -139,6 +141,21 @@ export type {
   PresentationScopeProviderProps,
   PresentationScopeState,
 } from "./presentationScope";
+
+export {
+  PRESENTATION_SCOPE_MAX_AGE_MS,
+  PRESENTATION_SCOPE_RETRY_MS,
+  createPresentationScopeStore,
+  defaultPresentationScopeStore,
+  presentationScopeStateOf,
+  usePresentationScope,
+  usePresentationScopeSnapshot,
+} from "./presentationScopeLoader";
+export type {
+  PresentationScopeSnapshot,
+  PresentationScopeStore,
+  PresentationScopeStoreOptions,
+} from "./presentationScopeLoader";
 
 export {
   WITHHELD,

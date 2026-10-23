@@ -799,6 +799,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/fleet/test-targets/dev-1/web",
     "https://api.test/api/v1/build-records/products",
     "https://api.test/api/v1/build-records/my-product/publish",
+    // The presentation scope: its row is the selected project's, so a missing
+    // entry would redact a presentation of one project by another's lists.
+    "https://api.test/api/v1/presentation/scope",
   ];
 
   for (const url of SCOPED_URLS) {
