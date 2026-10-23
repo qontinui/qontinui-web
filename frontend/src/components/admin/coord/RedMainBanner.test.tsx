@@ -17,6 +17,11 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 import {
+  FixedPresentationMode,
+  PresentationScopeProvider,
+} from "@/components/presentation";
+import {
+  WITHHELD_REPOSITORY,
   RedMainBanner,
   compactPrincipal,
   parseAlertClaim,
@@ -890,5 +895,84 @@ describe("<RedMainBanner> reachability", () => {
     }
     // An outage in the READ path is not evidence that main went green.
     expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
+  });
+});
+
+describe("<RedMainBanner> in presentation mode (plan 2026-10-23-console-presentation-spaces)", () => {
+  const FIRST_PARTY = "qontinui/qontinui-web";
+  const FOREIGN = "client-org/portal";
+
+  function row(repo: string, workflows: string[]) {
+    return {
+      id: 1,
+      alert_key: `red_main:${repo}`,
+      severity: "critical",
+      kind: "red_main",
+      summary: `Main CI for ${repo} is RED`,
+      first_seen_at: "2026-07-06T01:00:00Z",
+      detail: { repo, workflows, blocked_pr_count: 1, fix_session: "none" },
+    };
+  }
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  it("still says a main is red, but withholds whose while the scope is unknown", async () => {
+    getMock.mockResolvedValue([row(FIRST_PARTY, ["CI"])]);
+    const { container } = render(
+      <FixedPresentationMode presenting>
+        <RedMainBanner />
+      </FixedPresentationMode>
+    );
+
+    const banner = await screen.findByTestId("red-main-banner-row");
+    expect(banner).toHaveAttribute("data-redacted", "true");
+    expect(banner).toHaveTextContent(`${WITHHELD_REPOSITORY} main is RED`);
+    expect(screen.queryByTestId("red-main-workflows")).toBeNull();
+    expect(container.innerHTML).not.toContain("qontinui-web");
+  });
+
+  it("names a first-party repository the scope clears, and still withholds a foreign one", async () => {
+    getMock.mockResolvedValue([
+      row(FIRST_PARTY, ["CI"]),
+      row(FOREIGN, ["deploy"]),
+    ]);
+    const { container } = render(
+      <FixedPresentationMode presenting>
+        <PresentationScopeProvider
+          state={{
+            status: "ready",
+            scope: { firstPartyOwners: ["qontinui"], confidentialTerms: [] },
+          }}
+        >
+          <RedMainBanner />
+        </PresentationScopeProvider>
+      </FixedPresentationMode>
+    );
+
+    const rows = await screen.findAllByTestId("red-main-banner-row");
+    const shown = rows.find((r) => r.getAttribute("data-redacted") === "false");
+    const withheld = rows.find(
+      (r) => r.getAttribute("data-redacted") === "true"
+    );
+    expect(shown).toHaveTextContent(`${FIRST_PARTY} main is RED`);
+    expect(shown).toHaveTextContent("failing: CI");
+    expect(withheld).toHaveTextContent(`${WITHHELD_REPOSITORY} main is RED`);
+    expect(container.innerHTML).not.toContain("client-org");
+    expect(container.innerHTML).not.toContain("deploy");
+  });
+
+  it("renders every repository for the operator", async () => {
+    getMock.mockResolvedValue([row(FOREIGN, ["deploy"])]);
+    render(
+      <FixedPresentationMode presenting={false}>
+        <RedMainBanner />
+      </FixedPresentationMode>
+    );
+    const banner = await screen.findByTestId("red-main-banner-row");
+    expect(banner).toHaveTextContent(`${FOREIGN} main is RED`);
+    expect(banner).not.toHaveAttribute("data-redacted");
   });
 });
