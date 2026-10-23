@@ -7,7 +7,7 @@
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -71,7 +71,9 @@ describe("every <GlossaryTerm id> in the tree", () => {
       const attrs = m[1];
       const id = ID_ATTR.exec(attrs);
       usages.push({
-        file: relative(SRC, file),
+        // Forward slashes on every OS: the adoption sites below are written
+        // that way, and `relative` yields `\` on Windows.
+        file: relative(SRC, file).split(sep).join("/"),
         id: id ? (id[1] ?? id[2] ?? null) : null,
         raw: m[0],
       });

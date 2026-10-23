@@ -49,12 +49,30 @@
  * Coord's own remediation state (`detail.fix_session`) is still shown, read
  * only, when one is active — an auto-rerun or a spawned fix session is a fact
  * about the episode an operator should not have to go looking for.
+ *
+ * ## In presentation mode the repository is redacted, not the red main
+ *
+ * The banner is layout chrome, so it renders on every console page — every
+ * lens surface — in presentation mode too (plan
+ * `2026-10-23-console-presentation-spaces`). A red main is a true fact an
+ * evaluator may see; WHOSE repository it is may not be, when it is not the
+ * tenant's own (D3.3, "no foreign identity"). So in presentation mode each
+ * row's repository and its workflow names render only when
+ * `redactionVerdict` clears them against the tenant's presentation scope;
+ * otherwise the row says {@link WITHHELD_REPOSITORY} and lists no workflows.
+ * The verdict fails closed while the scope is unknown.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { fetchOpenAlertsOfKind } from "@/lib/api/operations/alerts";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import {
+  redactionVerdict,
+  usePresentationMode,
+  usePresentationScopeState,
+  type PresentationScopeState,
+} from "@/components/presentation";
 
 /**
  * An agent's lease on one alert, as coord serves it on `/coord/alerts` rows
@@ -133,6 +151,9 @@ const STALE_AFTER_MS = 2 * POLL_INTERVAL_MS;
 
 const RUNNING_LABEL = "fix session running";
 const SELF_HEAL_LABEL = "auto-rerun in flight";
+
+/** A row's repository in presentation mode when the scope does not clear it. */
+export const WITHHELD_REPOSITORY = "A repository";
 
 /**
  * Normalized view of a red-main episode's remediation, parsed from the
@@ -539,7 +560,32 @@ function RemediationNote({ fixSession }: { fixSession: FixSessionState }) {
   }
 }
 
+/**
+ * The row as presentation mode may show it: unchanged in operator mode, and in
+ * presentation mode with the repository and its workflow names withheld unless
+ * the scope clears them (see the module doc).
+ */
+function presentableRow(
+  a: RedMainAlert,
+  presenting: boolean,
+  scope: PresentationScopeState
+): { row: RedMainAlert; withheld: boolean } {
+  if (!presenting) return { row: a, withheld: false };
+  const verdict = redactionVerdict(
+    { text: [a.repo, ...a.workflows].join(" "), repo: a.repo },
+    scope
+  );
+  return verdict.show
+    ? { row: a, withheld: false }
+    : {
+        row: { ...a, repo: WITHHELD_REPOSITORY, workflows: [] },
+        withheld: true,
+      };
+}
+
 export function RedMainBanner() {
+  const { presenting } = usePresentationMode();
+  const presentationScope = usePresentationScopeState();
   const [reds, setReds] = useState<RedMainAlert[]>([]);
   /**
    * Consecutive polls that came back with no `red_main` row. See
@@ -662,63 +708,71 @@ export function RedMainBanner() {
 
   return (
     <div data-testid="red-main-banner" className="shrink-0">
-      {reds.map((a) => (
-        <div
-          key={a.alertKey}
-          role="alert"
-          data-testid="red-main-banner-row"
-          data-baseline-freshness={a.baselineFreshness}
-          // Deep-red bar + white text (~10:1, passes WCAG AAA), NOT
-          // `bg-destructive text-destructive-foreground`: this app's theme
-          // has no `--destructive-foreground` token (see globals.css — the
-          // design system dropped it, which is why shadcn's own Badge
-          // destructive variant hardcodes `text-white`), so that class
-          // resolved to nothing and the headline fell back to whatever it
-          // inherited — unreadable against the red fill. White on the raw
-          // `--destructive` (#e5534b) is only 3.7:1 and fails AA for 14px
-          // text anyway, so the surface is darkened rather than just
-          // re-colouring the text. The bright border + icon keep it loud.
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2 bg-red-900 text-white border-b-2 border-red-500"
-        >
-          <AlertTriangle
-            className="h-4 w-4 shrink-0 text-red-300"
-            aria-hidden
-          />
-          <span className="text-sm font-semibold">
-            {redMainHeadline(a, nowMs)}
-          </span>
-          {a.workflows.length > 0 && (
-            <span
-              className="text-xs font-mono text-red-100"
-              data-testid="red-main-workflows"
-            >
-              {/* When newer passing runs contradict every red push baseline,
+      {reds.map((episode) => {
+        const { row: a, withheld } = presentableRow(
+          episode,
+          presenting,
+          presentationScope
+        );
+        return (
+          <div
+            key={a.alertKey}
+            role="alert"
+            data-testid="red-main-banner-row"
+            data-baseline-freshness={a.baselineFreshness}
+            data-redacted={presenting ? String(withheld) : undefined}
+            // Deep-red bar + white text (~10:1, passes WCAG AAA), NOT
+            // `bg-destructive text-destructive-foreground`: this app's theme
+            // has no `--destructive-foreground` token (see globals.css — the
+            // design system dropped it, which is why shadcn's own Badge
+            // destructive variant hardcodes `text-white`), so that class
+            // resolved to nothing and the headline fell back to whatever it
+            // inherited — unreadable against the red fill. White on the raw
+            // `--destructive` (#e5534b) is only 3.7:1 and fails AA for 14px
+            // text anyway, so the surface is darkened rather than just
+            // re-colouring the text. The bright border + icon keep it loud.
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-6 py-2 bg-red-900 text-white border-b-2 border-red-500"
+          >
+            <AlertTriangle
+              className="h-4 w-4 shrink-0 text-red-300"
+              aria-hidden
+            />
+            <span className="text-sm font-semibold">
+              {redMainHeadline(a, nowMs)}
+            </span>
+            {a.workflows.length > 0 && (
+              <span
+                className="text-xs font-mono text-red-100"
+                data-testid="red-main-workflows"
+              >
+                {/* When newer passing runs contradict every red push baseline,
                   coord's evidence says these workflows are NOT currently
                   failing — label them as the stale baseline, never "failing". */}
-              {a.baselineFreshness === "all_contradicted"
-                ? "red push baseline"
-                : "failing"}
-              : {a.workflows.join(", ")}
+                {a.baselineFreshness === "all_contradicted"
+                  ? "red push baseline"
+                  : "failing"}
+                : {a.workflows.join(", ")}
+              </span>
+            )}
+            {stale && lastSuccessAt !== null && (
+              // The banner stays up on a read outage BY DESIGN, but it must not
+              // pass an unconfirmed claim off as a live one.
+              <span
+                className="text-xs text-red-200 italic"
+                data-testid="red-main-stale"
+                title="coord has not confirmed this alert since then — the read path is failing, so the banner is showing its last known state"
+              >
+                (as of{" "}
+                {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)} ago)
+              </span>
+            )}
+            <RemediationNote fixSession={a.fixSession} />
+            <span className="ml-auto">
+              <ClaimBadge claim={a.claim} />
             </span>
-          )}
-          {stale && lastSuccessAt !== null && (
-            // The banner stays up on a read outage BY DESIGN, but it must not
-            // pass an unconfirmed claim off as a live one.
-            <span
-              className="text-xs text-red-200 italic"
-              data-testid="red-main-stale"
-              title="coord has not confirmed this alert since then — the read path is failing, so the banner is showing its last known state"
-            >
-              (as of {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)}{" "}
-              ago)
-            </span>
-          )}
-          <RemediationNote fixSession={a.fixSession} />
-          <span className="ml-auto">
-            <ClaimBadge claim={a.claim} />
-          </span>
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
