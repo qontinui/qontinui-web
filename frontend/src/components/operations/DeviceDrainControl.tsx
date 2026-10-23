@@ -45,6 +45,17 @@
  * no `truncate`, no `whitespace-nowrap` and no fixed height anywhere in this
  * component, and `DeviceDrainControl.test.tsx` asserts that structurally so a
  * later tidy-up cannot quietly reintroduce one.
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 7)
+ *
+ * An evaluator sees whether the machine is in service — drained until when,
+ * back in service, or UNKNOWN — and nothing else: no lever, no dialog, no
+ * target line (it names the coord hostname and device id), and no
+ * `drained by` or reason (an operator's identity and free text). The block
+ * carries `data-testid="device-drain-status"` rather than the operator's
+ * `device-drain`, so "no drain control on the page" is checkable by testid.
+ * The lever and its dialog sit inside `OperatorOnly` as well, so they are
+ * unmounted even if this branch were ever bypassed.
  */
 
 import { useCallback, useState } from "react";
@@ -68,6 +79,7 @@ import {
 } from "@/components/admin/coord/CoordAdminOnly";
 import { createLogger } from "@/lib/logger";
 import { absoluteTime } from "@/components/console/time";
+import { OperatorOnly, usePresentationMode } from "@/components/presentation";
 import {
   DRAIN_PRESETS,
   MAX_DRAIN_DAYS,
@@ -176,6 +188,93 @@ function DrainTargetLine({
   );
 }
 
+/**
+ * The drain STATE as an external evaluator sees it: in service, out of
+ * service until when, or unknown. No lever, no target line, no actor and no
+ * reason (see the module doc). Every arm still says what is true — a read that
+ * failed is UNKNOWN in words, never "in service".
+ */
+function PresentedDrainState({
+  target,
+  drain,
+  stateKey,
+  clock,
+}: {
+  target: DrainTarget;
+  drain: DeviceDrainState;
+  stateKey: string;
+  clock: number;
+}) {
+  const line = (() => {
+    if (target.state === "no_device") {
+      return (
+        <DrainNotice tone="muted" headline="No drain state">
+          This machine is not linked to a coordination-service device, so it has
+          no drain state to show.
+        </DrainNotice>
+      );
+    }
+    if (drain.state === "unknown") {
+      return (
+        <DrainNotice tone="waiting" headline="Drain state unknown">
+          {drain.reason} This machine may or may not be taking new work — this
+          is a statement about the read, not about the machine.
+        </DrainNotice>
+      );
+    }
+    if (drain.state === "drained") {
+      return (
+        <div
+          className="rounded-md border border-amber-500/50 bg-amber-500/5 px-2 py-1.5"
+          role="status"
+        >
+          <div className="flex items-center gap-1.5">
+            <PowerOff className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
+            <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+              Out of service
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] leading-snug break-words text-muted-foreground">
+            Drained until{" "}
+            <span className="font-medium text-foreground">
+              {absoluteTime(drain.entry.until)}
+            </span>{" "}
+            ({formatDrainRemaining(drain.entry.until, clock)}). No new work is
+            sent to it until then; anything already running on it keeps running.
+          </p>
+        </div>
+      );
+    }
+    if (drain.state === "expired") {
+      return (
+        <p className="text-[11px] leading-snug break-words text-muted-foreground">
+          Back in service — its last drain expired{" "}
+          {formatDrainRemaining(drain.entry.until, clock)} and it was released
+          automatically.
+        </p>
+      );
+    }
+    return (
+      <p className="text-[11px] leading-snug break-words text-muted-foreground">
+        In service — new work may be sent to it.
+      </p>
+    );
+  })();
+
+  return (
+    <div
+      className="space-y-1.5"
+      data-testid="device-drain-status"
+      data-device-drain={stateKey}
+    >
+      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        Drain
+      </h4>
+      <div data-testid="device-drain-state">{line}</div>
+    </div>
+  );
+}
+
 export function DeviceDrainControl({
   target,
   drain,
@@ -183,6 +282,7 @@ export function DeviceDrainControl({
   onActed,
   now,
 }: DeviceDrainControlProps) {
+  const { presenting } = usePresentationMode();
   const [mode, setMode] = useState<"drain" | "undrain" | null>(null);
   const [untilLocal, setUntilLocal] = useState("");
   const [reason, setReason] = useState("");
@@ -276,6 +376,19 @@ export function DeviceDrainControl({
   const stateKey = target.state === "no_device" ? "no_device" : drain.state;
   const actable = target.state === "identified" && drain.state !== "unknown";
 
+  // Presentation mode: the state, read-only — no lever, no dialog, no target
+  // line, no actor, no reason (the module doc's "Presentation mode").
+  if (presenting) {
+    return (
+      <PresentedDrainState
+        target={target}
+        drain={drain}
+        stateKey={stateKey}
+        clock={clock}
+      />
+    );
+  }
+
   const stateLine = (() => {
     if (target.state === "no_device") {
       return (
@@ -363,185 +476,188 @@ export function DeviceDrainControl({
 
       <div data-testid="device-drain-state">{stateLine}</div>
 
-      <CoordAdminOnly fallback={<ReadOnlyNotice />}>
-        <div className="flex flex-wrap items-center gap-2">
-          {drain.state === "drained" ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!actable || busy}
-              title={actable ? undefined : disabledReason(target, drain)}
-              onClick={() => setMode("undrain")}
-              data-testid="device-drain-undrain"
-            >
-              <PlayCircle className="h-3.5 w-3.5" />
-              Undrain
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!actable || busy}
-              title={actable ? undefined : disabledReason(target, drain)}
-              onClick={() => {
-                setUntilLocal("");
-                setReason("");
-                setMode("drain");
-              }}
-              data-testid="device-drain-open"
-            >
-              <PowerOff className="h-3.5 w-3.5" />
-              Drain…
-            </Button>
-          )}
-          {!actable && (
-            <span
-              className="text-[11px] break-words text-muted-foreground"
-              data-testid="device-drain-disabled-reason"
-            >
-              {disabledReason(target, drain)}
-            </span>
-          )}
-        </div>
-      </CoordAdminOnly>
-
-      <Dialog
-        open={mode !== null}
-        onOpenChange={(open) => {
-          if (!open) close();
-        }}
-      >
-        <DialogContent data-testid="device-drain-dialog">
-          <DialogHeader>
-            <DialogTitle>
-              {mode === "undrain"
-                ? `Release ${rowHostname} back into the fleet?`
-                : `Drain ${rowHostname}?`}
-            </DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-2 text-sm">
-                <p className="break-words">
-                  {mode === "undrain"
-                    ? "Coord may send this machine new work again as soon as this lands."
-                    : "Coord will stop sending this machine NEW work — CI jobs, builds, agent-session spawns and continuations. Work already running on it is not stopped, and no session is moved."}
-                </p>
-                {deviceId !== null && (
-                  <p className="break-words">
-                    This acts on coord device{" "}
-                    <span className="font-mono break-all">{deviceId}</span>
-                    {target.state === "identified" && target.coordHostname
-                      ? ` (${target.coordHostname})`
-                      : ""}
-                    . A machine can hold more than one coord registration — a
-                    workstation and its self-hosted CI runner are separate
-                    devices — and draining one does nothing to the other.
-                  </p>
-                )}
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            {mode === "drain" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="device-drain-until">
-                  Expiry (required)
-                </Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {DRAIN_PRESETS.map((preset) => (
-                    <Button
-                      key={preset.key}
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        setUntilLocal(
-                          toLocalInputValue(
-                            Date.now() + preset.hours * 3_600_000
-                          )
-                        )
-                      }
-                      data-testid={`device-drain-preset-${preset.key}`}
-                    >
-                      {preset.label}
-                    </Button>
-                  ))}
-                </div>
-                <Input
-                  id="device-drain-until"
-                  type="datetime-local"
-                  value={untilLocal}
-                  disabled={busy}
-                  onChange={(e) => setUntilLocal(e.target.value)}
-                  data-testid="device-drain-until"
-                />
-                <p className="text-[11px] text-muted-foreground break-words">
-                  Required, and there is no &ldquo;no expiry&rdquo; option: a
-                  drain without a deadline is how a machine silently leaves the
-                  fleet forever. Coord rejects anything further out than{" "}
-                  {MAX_DRAIN_DAYS} days — re-drain instead.
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label htmlFor="device-drain-reason">Reason (required)</Label>
-              <Textarea
-                id="device-drain-reason"
-                rows={2}
-                value={reason}
-                disabled={busy}
-                placeholder={
-                  mode === "undrain"
-                    ? "e.g. rebuild finished"
-                    : "e.g. rebuilding the runner"
-                }
-                onChange={(e) => setReason(e.target.value)}
-                data-testid="device-drain-reason"
-              />
-              <p className="text-[11px] text-muted-foreground break-words">
-                Recorded on coord&apos;s audit row and raised as an alert other
-                operators see, so it is what tells them why the machine is out.
-              </p>
-            </div>
-
-            {mode === "drain" && !check.ok && (
-              <p
-                className="text-[11px] break-words text-amber-600 dark:text-amber-500"
-                role="status"
-                data-testid="device-drain-error"
+      {/* The lever and its consent dialog are write controls: never mounted
+          in presentation mode (D3.2). */}
+      <OperatorOnly>
+        <CoordAdminOnly fallback={<ReadOnlyNotice />}>
+          <div className="flex flex-wrap items-center gap-2">
+            {drain.state === "drained" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!actable || busy}
+                title={actable ? undefined : disabledReason(target, drain)}
+                onClick={() => setMode("undrain")}
+                data-testid="device-drain-undrain"
               >
-                {check.message}
-              </p>
+                <PlayCircle className="h-3.5 w-3.5" />
+                Undrain
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!actable || busy}
+                title={actable ? undefined : disabledReason(target, drain)}
+                onClick={() => {
+                  setUntilLocal("");
+                  setReason("");
+                  setMode("drain");
+                }}
+                data-testid="device-drain-open"
+              >
+                <PowerOff className="h-3.5 w-3.5" />
+                Drain…
+              </Button>
+            )}
+            {!actable && (
+              <span
+                className="text-[11px] break-words text-muted-foreground"
+                data-testid="device-drain-disabled-reason"
+              >
+                {disabledReason(target, drain)}
+              </span>
             )}
           </div>
+        </CoordAdminOnly>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={busy}
-              onClick={close}
-              data-testid="device-drain-cancel"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={
-                busy ||
-                deviceId === null ||
-                (mode === "drain" ? !check.ok : reason.trim() === "")
-              }
-              onClick={() => void submit()}
-              data-testid="device-drain-submit"
-            >
-              {mode === "undrain" ? "Release" : "Drain machine"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <Dialog
+          open={mode !== null}
+          onOpenChange={(open) => {
+            if (!open) close();
+          }}
+        >
+          <DialogContent data-testid="device-drain-dialog">
+            <DialogHeader>
+              <DialogTitle>
+                {mode === "undrain"
+                  ? `Release ${rowHostname} back into the fleet?`
+                  : `Drain ${rowHostname}?`}
+              </DialogTitle>
+              <DialogDescription asChild>
+                <div className="space-y-2 text-sm">
+                  <p className="break-words">
+                    {mode === "undrain"
+                      ? "Coord may send this machine new work again as soon as this lands."
+                      : "Coord will stop sending this machine NEW work — CI jobs, builds, agent-session spawns and continuations. Work already running on it is not stopped, and no session is moved."}
+                  </p>
+                  {deviceId !== null && (
+                    <p className="break-words">
+                      This acts on coord device{" "}
+                      <span className="font-mono break-all">{deviceId}</span>
+                      {target.state === "identified" && target.coordHostname
+                        ? ` (${target.coordHostname})`
+                        : ""}
+                      . A machine can hold more than one coord registration — a
+                      workstation and its self-hosted CI runner are separate
+                      devices — and draining one does nothing to the other.
+                    </p>
+                  )}
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              {mode === "drain" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="device-drain-until">Expiry (required)</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DRAIN_PRESETS.map((preset) => (
+                      <Button
+                        key={preset.key}
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          setUntilLocal(
+                            toLocalInputValue(
+                              Date.now() + preset.hours * 3_600_000
+                            )
+                          )
+                        }
+                        data-testid={`device-drain-preset-${preset.key}`}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <Input
+                    id="device-drain-until"
+                    type="datetime-local"
+                    value={untilLocal}
+                    disabled={busy}
+                    onChange={(e) => setUntilLocal(e.target.value)}
+                    data-testid="device-drain-until"
+                  />
+                  <p className="text-[11px] text-muted-foreground break-words">
+                    Required, and there is no &ldquo;no expiry&rdquo; option: a
+                    drain without a deadline is how a machine silently leaves
+                    the fleet forever. Coord rejects anything further out than{" "}
+                    {MAX_DRAIN_DAYS} days — re-drain instead.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="device-drain-reason">Reason (required)</Label>
+                <Textarea
+                  id="device-drain-reason"
+                  rows={2}
+                  value={reason}
+                  disabled={busy}
+                  placeholder={
+                    mode === "undrain"
+                      ? "e.g. rebuild finished"
+                      : "e.g. rebuilding the runner"
+                  }
+                  onChange={(e) => setReason(e.target.value)}
+                  data-testid="device-drain-reason"
+                />
+                <p className="text-[11px] text-muted-foreground break-words">
+                  Recorded on coord&apos;s audit row and raised as an alert
+                  other operators see, so it is what tells them why the machine
+                  is out.
+                </p>
+              </div>
+
+              {mode === "drain" && !check.ok && (
+                <p
+                  className="text-[11px] break-words text-amber-600 dark:text-amber-500"
+                  role="status"
+                  data-testid="device-drain-error"
+                >
+                  {check.message}
+                </p>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={close}
+                data-testid="device-drain-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  busy ||
+                  deviceId === null ||
+                  (mode === "drain" ? !check.ok : reason.trim() === "")
+                }
+                onClick={() => void submit()}
+                data-testid="device-drain-submit"
+              >
+                {mode === "undrain" ? "Release" : "Drain machine"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </OperatorOnly>
     </div>
   );
 }

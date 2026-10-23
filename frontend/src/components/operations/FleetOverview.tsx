@@ -29,6 +29,8 @@ import {
 } from "./utils";
 import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
+import { SectionCaption, usePresentationMode } from "@/components/presentation";
+import { DEVOPS_SOURCES } from "./devOpsHeadline";
 import {
   resolveMachineVolumes,
   tightestVolume,
@@ -342,6 +344,24 @@ function buildMachineGroups(
 // Stat badge component
 // ============================================================================
 
+/**
+ * A runner-inventory count, or `unknown` when the inventory has not been read.
+ *
+ * These badges used to read `fleet?.total_runners ?? 0`, which rendered an
+ * unread (or failed) inventory as "Runners 0 · Healthy 0" — UNKNOWN wearing a
+ * zero, the one thing a fleet page must never show (plan
+ * `2026-10-23-console-presentation-spaces` Phase 7: "UNKNOWN never zero on
+ * every figure"). A failed latest read KEEPS the last inventory, so this is
+ * `unknown` only while nothing has been read at all; the "partial error" badge
+ * beside the row already says a retained one may be stale.
+ */
+function inventoryCount(
+  fleet: FleetStatus | null,
+  pick: (f: FleetStatus) => number
+): number | string {
+  return fleet ? pick(fleet) : "unknown";
+}
+
 function StatBadge({
   icon: Icon,
   label,
@@ -647,21 +667,48 @@ export function FleetOverview({
     [tasks]
   );
 
+  // The presentation lens (plan `2026-10-23-console-presentation-spaces`
+  // Phase 7). The section caption states the as-of of each read the rows join
+  // — the runner inventory, coord's device health and the CI-runner mirror —
+  // and renders in every branch below, so an outsider is told what this list
+  // is even while it loads or has failed. Nothing here renders for the
+  // operator.
+  const { presenting } = usePresentationMode();
+  const caption = (
+    <SectionCaption
+      id="dev-ops.machines"
+      sources={[
+        {
+          source: DEVOPS_SOURCES.runnerInventory,
+          asOf: lastUpdated,
+        },
+        { source: DEVOPS_SOURCES.fleetHealth, asOf: health.fetchedAtMs },
+        {
+          source: DEVOPS_SOURCES.ciRunnerMirror,
+          asOf: ciRunnerMirror.state === "ok" ? ciRunnerMirror.asOf : null,
+        },
+      ]}
+    />
+  );
+
   // ---- Loading state ----
   if (loading) {
     return (
-      <div className="space-y-6 p-6">
-        <div className="flex items-center gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-40 rounded-lg" />
-          ))}
+      <>
+        {caption}
+        <div className="space-y-6 p-6">
+          <div className="flex items-center gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-40 rounded-lg" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-48 rounded-xl" />
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 rounded-xl" />
-          ))}
-        </div>
-      </div>
+      </>
     );
   }
 
@@ -673,6 +720,7 @@ export function FleetOverview({
   if (error && !fleet && coordDevices.length === 0) {
     return (
       <TooltipProvider delayDuration={200}>
+        {caption}
         <div className="space-y-6">
           <div className="flex flex-col items-center justify-center gap-4 py-12 text-muted-foreground">
             <WifiOff className="h-12 w-12 opacity-40" />
@@ -698,6 +746,7 @@ export function FleetOverview({
 
   return (
     <TooltipProvider delayDuration={200}>
+      {caption}
       <CollapsiblePanel
         data-testid="coord-devops-machines"
         storageKey="devops:machines"
@@ -766,14 +815,19 @@ export function FleetOverview({
               read of GitHub, and a page that implies otherwise will one day
               tell an operator a delabelled host is fine. When the read failed,
               the same line says the label state is UNKNOWN — never that a host
-              advertises nothing. */}
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="ci-runner-mirror-freshness"
-            data-ci-runner-mirror={ciRunnerMirror.state}
-          >
-            {describeMirrorFreshness(ciRunnerMirror)}
-          </p>
+              advertises nothing. In presentation mode the section caption's
+              CI-runner-mirror chip states the same read's as-of instead, and
+              this operator sentence (coord's window constant, its row-count
+              faults) is not rendered. */}
+          {!presenting && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="ci-runner-mirror-freshness"
+              data-ci-runner-mirror={ciRunnerMirror.state}
+            >
+              {describeMirrorFreshness(ciRunnerMirror)}
+            </p>
+          )}
 
           {/* Machine cards grid */}
           {isEmpty ? (
@@ -843,27 +897,31 @@ export function FleetOverview({
             <StatBadge
               icon={Server}
               label="Runners"
-              value={fleet?.total_runners ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_runners)}
             />
             <StatBadge
               icon={HeartPulse}
               label="Healthy"
-              value={fleet?.total_healthy ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_healthy)}
+              // No inventory is neither healthy nor short: outline, never the
+              // green a fleet with every runner healthy earns.
               variant={
-                fleet && fleet.total_healthy < fleet.total_runners
-                  ? "warning"
-                  : "success"
+                fleet === null
+                  ? "outline"
+                  : fleet.total_healthy < fleet.total_runners
+                    ? "warning"
+                    : "success"
               }
             />
             <StatBadge
               icon={Play}
               label="Running Tasks"
-              value={fleet?.total_running_tasks ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_running_tasks)}
             />
             <StatBadge
               icon={Terminal}
               label="CC Sessions"
-              value={fleet?.total_claude_sessions ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_claude_sessions)}
             />
             {totalCiRunners > 0 && (
               <StatBadge

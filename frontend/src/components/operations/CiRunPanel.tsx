@@ -28,10 +28,19 @@
  *
  * Occupancy is read from the SAME rows the strip renders and the CI
  * dispatcher ranks on — not derived a second way.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces`
+ * Phase 7) a runner service is named by its position ("service 2") rather
+ * than its `"$RUNNER_NAME/<repo>"` instance, which names a machine and a
+ * repository, and the machine column reads its alias (D3.3).
  */
 
 import { useMemo } from "react";
 import { Server } from "lucide-react";
+import {
+  useMachineAliaser,
+  usePresentationMode,
+} from "@/components/presentation";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -91,6 +100,8 @@ export function CiRunPanel({
   sinceFetchSecs = 0,
   error,
 }: CiRunPanelProps) {
+  const { presenting } = usePresentationMode();
+  const machineName = useMachineAliaser();
   const hostnames = useMemo(() => {
     const m = new Map<string, string>();
     for (const d of devices) {
@@ -188,7 +199,7 @@ export function CiRunPanel({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {rows.map((r, index) => {
                   const freshness = classifyFreshness(r, sinceFetchSecs);
                   const occupancy = safeRatio(
                     r.build_slots_busy,
@@ -202,23 +213,31 @@ export function CiRunPanel({
                       data-freshness={freshness}
                     >
                       <td className="py-1.5 pr-3 font-mono text-[11px]">
-                        {r.lane_instance ?? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="text-muted-foreground underline decoration-dotted">
-                                sole publisher
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-[20rem] text-[11px]">
-                              This lane has no <code>lane_instance</code>,
-                              meaning one publisher owns the whole pool (the
-                              runner/supervisor case).
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
+                        {r.lane_instance && presenting
+                          ? `service ${index + 1}`
+                          : (r.lane_instance ?? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-muted-foreground underline decoration-dotted">
+                                    sole publisher
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-[20rem] text-[11px]">
+                                  This lane has no <code>lane_instance</code>,
+                                  meaning one publisher owns the whole pool (the
+                                  runner/supervisor case).
+                                </TooltipContent>
+                              </Tooltip>
+                            ))}
                       </td>
                       <td className="py-1.5 pr-3 font-mono text-[11px]">
-                        {hostnames.get(r.device_id) ?? r.device_id}
+                        {machineName(
+                          {
+                            deviceId: r.device_id,
+                            hostname: hostnames.get(r.device_id),
+                          },
+                          hostnames.get(r.device_id) ?? r.device_id
+                        )}
                       </td>
                       <td className="py-1.5 pr-3">
                         <Badge

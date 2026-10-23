@@ -16,6 +16,8 @@
  * | `Caption` + `./captions` | captions from ONE registry composed of one file per lens surface (D5) |
  * | `LENS_SURFACES`, `TOUR_SURFACE` | the five lens pages in tour order, and the tour |
  * | `Provenance` | source + as-of beside a number; UNKNOWN when either is unknown |
+ * | `HeadlineFigures` | a lens page's few screen-share-sized figures, each known with its as-of or UNKNOWN with the reason |
+ * | `SectionCaption` | a section's caption plus one provenance chip per source behind its numbers |
  * | `OperatorOnly` | the boundary every write control sits inside (D3.2) |
  * | `RedactedText`, `useRedactor`, `PresentationScopeProvider` | free text only when provably first-party (D3.3); fails closed while the scope is unknown |
  * | `MachineName`, `useMachineName`, `useMachineAliaser` | "Machine A, B…" — one alias per machine across every panel and page (D3.3) |
@@ -113,6 +115,16 @@ export {
   PRESENTATION_CLOCK_TICK_MS,
   usePresentationClock,
 } from "./presentationClock";
+
+export { HeadlineFigures } from "./HeadlineFigures";
+export type {
+  HeadlineFigure,
+  HeadlineFiguresProps,
+  HeadlineValue,
+} from "./HeadlineFigures";
+
+export { SectionCaption } from "./SectionCaption";
+export type { SectionCaptionProps, SectionSource } from "./SectionCaption";
 
 export { OperatorOnly } from "./OperatorOnly";
 export type { OperatorOnlyProps } from "./OperatorOnly";

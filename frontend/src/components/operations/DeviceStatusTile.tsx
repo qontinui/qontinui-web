@@ -8,6 +8,12 @@ import {
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Activity, AlertTriangle, RefreshCw, WifiOff } from "lucide-react";
+import { NAVIGATION_ONLY_PROPS } from "@/components/console";
+import {
+  MachineName,
+  RedactedText,
+  usePresentationMode,
+} from "@/components/presentation";
 import { formatStallAge, relativeTime } from "./utils";
 import type { DeviceStatus, StalledSession } from "./types";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
@@ -94,22 +100,25 @@ function StalledBadge({
   mostStalled: StalledSession | null | undefined;
   count: number | undefined;
 }) {
+  const { presenting } = usePresentationMode();
   if (!mostStalled || !count || count < 1) return null;
 
   const isUnstarted = mostStalled.kind === "expected_unstarted";
   const age = formatStallAge(mostStalled.stall_age_secs);
   const label = isUnstarted ? `never started ${age}` : `stalled ${age}`;
   const extra = count > 1 ? ` +${count - 1}` : "";
+  // The gate id, work-unit slug and topic name the operator's plans; an
+  // outsider gets the stall and its age (D3.3).
   const tip = isUnstarted
     ? `Dispatched continuation never started (${age} ago)` +
-      (mostStalled.continuation_gate_id
+      (!presenting && mostStalled.continuation_gate_id
         ? ` — gate ${mostStalled.continuation_gate_id}`
         : "") +
-      (mostStalled.work_unit_slug
+      (!presenting && mostStalled.work_unit_slug
         ? ` — work unit ${mostStalled.work_unit_slug}`
         : "")
     : `Session heartbeating but not progressing for ${age}` +
-      (mostStalled.correlation_topic
+      (!presenting && mostStalled.correlation_topic
         ? ` — topic ${mostStalled.correlation_topic}`
         : "");
 
@@ -140,6 +149,77 @@ function StalledBadge({
   );
 }
 
+/** A row's staleness in plain words — the presented task descriptor's status. */
+const STALENESS_WORD: Record<Staleness, string> = {
+  fresh: "current",
+  warn: "quiet",
+  stale: "stale",
+};
+
+/**
+ * One device-status row as an outsider sees it (plan
+ * `2026-10-23-console-presentation-spaces` D3.3): the machine's alias, its
+ * task only when provably the tenant's own (otherwise a descriptor), any
+ * stall, and the age. No device id in any attribute or tooltip, no repository
+ * or branch, no free text, and no jump button — its target is keyed on the
+ * hostname, which presentation mode does not put in the page.
+ */
+function PresentedStatusRow({
+  row,
+  staleness,
+}: {
+  row: DeviceStatus;
+  staleness: Staleness;
+}) {
+  return (
+    <li
+      data-ui-bridge-id="operations.device-status-row"
+      data-staleness={staleness}
+      className={`grid grid-cols-[10rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm ${rowTintClass(staleness)} ${rowTextClass(staleness)}`}
+    >
+      <span
+        className="font-medium truncate"
+        data-ui-bridge-id="operations.device-status-identity"
+      >
+        <MachineName
+          identity={{ deviceId: row.device_id, hostname: row.hostname }}
+        />
+      </span>
+      <span
+        className="truncate text-foreground/90"
+        data-ui-bridge-id="operations.device-status-task"
+      >
+        {row.current_task ? (
+          <RedactedText
+            text={row.current_task}
+            repo={row.current_repo}
+            descriptor={{
+              kind: "Task",
+              status: STALENESS_WORD[staleness],
+              at: row.updated_at,
+            }}
+          />
+        ) : (
+          <span className="text-muted-foreground italic">idle</span>
+        )}
+      </span>
+      <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+        <StalledBadge
+          mostStalled={row.most_stalled_session}
+          count={row.stalled_session_count}
+        />
+        <span
+          className="tabular-nums"
+          data-ui-bridge-id="operations.device-status-updated-at"
+          title={new Date(row.updated_at).toLocaleString()}
+        >
+          {relativeTime(row.updated_at)}
+        </span>
+      </div>
+    </li>
+  );
+}
+
 /**
  * Bottom-of-page device-status list. Renders the SAME tenant-scoped
  * stream the Dev Ops page holds (`useDeviceStatusStream` —
@@ -165,6 +245,7 @@ export function DeviceStatusTile({
   stream: UseDeviceStatusStreamResult;
 }) {
   const { byHostname, connected, error, seeded, refetch } = stream;
+  const { presenting } = usePresentationMode();
   const [, setNowTick] = useState(0);
 
   // Tick every 15s so the relative-time labels and staleness tints
@@ -223,6 +304,8 @@ export function DeviceStatusTile({
             </Badge>
           )}
           <button
+            // A re-read: it changes only what is displayed (D3.2).
+            {...NAVIGATION_ONLY_PROPS}
             type="button"
             onClick={() => void refetch()}
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30"
@@ -251,6 +334,15 @@ export function DeviceStatusTile({
         >
           {sortedRows.map((row) => {
             const staleness = classifyAge(row.updated_at);
+            if (presenting) {
+              return (
+                <PresentedStatusRow
+                  key={row.device_id}
+                  row={row}
+                  staleness={staleness}
+                />
+              );
+            }
             const repoBranch = repoBranchLabel(row);
             const identity = identityLabel(row);
             return (

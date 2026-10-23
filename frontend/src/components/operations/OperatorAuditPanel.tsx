@@ -40,6 +40,17 @@
  *    `audit_mutation` swallowed the FK violation in a fire-and-forget warn. The
  *    plan's §6 guardrail exists because that failure is otherwise invisible;
  *    this is where it becomes visible.
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 7)
+ *
+ * The feed says what happened and when, in fixed words (`auditPresentation`):
+ * a row's resource renders as the machine's alias when it is one of the
+ * fleet's devices, and otherwise through `RedactedText` with a structured
+ * descriptor; the actor is an alias when it is a machine and withheld when it
+ * is a person; the reason is a descriptor; blast-radius values are counts,
+ * aliases or redacted; and the raw metadata is not rendered. The view filters
+ * and Refresh only change what is shown, so they are marked navigation-only;
+ * the resource-key search (it takes device ids) is not rendered.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -47,14 +58,32 @@ import { useAuth } from "@/contexts/auth-context";
 import { AlertTriangle, ScrollText } from "lucide-react";
 import {
   CollapsiblePanel,
+  NAVIGATION_ONLY_PROPS,
   RecordDetail,
   RecordList,
   RecordRow,
   RowTime,
 } from "@/components/console";
+import {
+  MachineName,
+  RedactedText,
+  SectionCaption,
+  usePresentationMode,
+} from "@/components/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchCoordAuditRecent } from "@/lib/api/operations/coordAudit";
+import {
+  auditActorMachine,
+  auditAreaWord,
+  auditListCount,
+  auditListValues,
+  auditResourceKindWord,
+  auditResourceMachine,
+  indexDevices,
+} from "./auditPresentation";
+import { DEVOPS_SOURCES } from "./devOpsHeadline";
+import type { FleetDeviceRef } from "./fleetResources";
 import {
   AUDIT_FILTERS,
   DEFAULT_AUDIT_FILTER_ID,
@@ -67,6 +96,7 @@ import {
   resolveAuditFilter,
   type AuditRead,
   type AuditRow,
+  type BlastRadiusItem,
 } from "./operatorAudit";
 
 /** Enough to reach back through an incident without scanning the table. */
@@ -226,9 +256,220 @@ function AuditRowView({
   );
 }
 
-export function OperatorAuditPanel() {
+/**
+ * One promoted blast-radius value as an outsider sees it: a count instead of
+ * tenant ids, an alias instead of a device id, repositories only when
+ * provably first-party, and an operator never.
+ */
+function PresentedBlastValue({
+  row,
+  item,
+  byId,
+}: {
+  row: AuditRow;
+  item: BlastRadiusItem;
+  byId: ReturnType<typeof indexDevices>;
+}) {
+  switch (item.key) {
+    case "affected_tenant_ids": {
+      const n = auditListCount(row, item.key);
+      return (
+        <>{n === null ? "unknown" : n === 1 ? "1 tenant" : `${n} tenants`}</>
+      );
+    }
+    case "affected_repos":
+    case "scope_key": {
+      const repos =
+        item.key === "affected_repos"
+          ? auditListValues(row, item.key)
+          : [item.value];
+      return (
+        <RedactedText
+          text={item.value}
+          repo={repos}
+          descriptor={{
+            kind: item.key === "affected_repos" ? "Repositories" : "Scope",
+            status: "recorded",
+            at: row.occurred_at,
+          }}
+        />
+      );
+    }
+    case "device_id": {
+      const known = byId.get(item.value.trim().toLowerCase());
+      return (
+        <MachineName
+          identity={{
+            deviceId: item.value,
+            hostname: known?.hostname ?? null,
+          }}
+        />
+      );
+    }
+    case "target_operator_id":
+      return <>an operator — withheld in presentation mode</>;
+    default:
+      // Drained / released, an expiry, a writer, a policy name, a level, a
+      // version, a commit prefix: fixed vocabulary, times and numbers.
+      return <>{item.value}</>;
+  }
+}
+
+/** The presentation-mode audit row (see the module doc). */
+function PresentedAuditRow({
+  row,
+  byId,
+  expanded,
+  onToggle,
+}: {
+  row: AuditRow;
+  byId: ReturnType<typeof indexDevices>;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const blast = blastRadiusOf(row);
+  const reason = reasonOf(row);
+  const actionLabel = describeAuditAction(row.action);
+  const machine = auditResourceMachine(row, byId);
+  const actor = auditActorMachine(row, byId);
+  return (
+    <RecordRow
+      rowKey={row.audit_id}
+      data-testid={`audit-row-${row.audit_id}`}
+      identity={
+        <span
+          className={actionLabel.mapped ? undefined : "font-mono"}
+          data-audit-action-mapped={actionLabel.mapped ? "true" : "false"}
+        >
+          {actionLabel.label}
+        </span>
+      }
+      label={
+        machine ? (
+          <MachineName identity={machine} />
+        ) : row.resource_key ? (
+          <RedactedText
+            text={row.resource_key}
+            repo={row.resource_key}
+            descriptor={{
+              kind: auditResourceKindWord(row.resource_kind),
+              area: auditAreaWord(row.action),
+              status: actionLabel.label,
+              at: row.occurred_at,
+            }}
+          />
+        ) : (
+          <span className="text-muted-foreground">no resource named</span>
+        )
+      }
+      status={
+        <Badge
+          variant="outline"
+          className={`text-[10px]${blast.unstated ? " text-muted-foreground" : ""}`}
+          data-testid={
+            blast.unstated ? "audit-blast-unstated" : "audit-blast-stated"
+          }
+        >
+          {blast.unstated
+            ? "reach not stated"
+            : `${blast.items.length} recorded`}
+        </Badge>
+      }
+      time={<RowTime at={row.occurred_at} verb="At" />}
+      expanded={expanded}
+      onToggle={onToggle}
+    >
+      <RecordDetail
+        data-testid={`audit-detail-${row.audit_id}`}
+        why={
+          <div className="space-y-1">
+            <p className="text-xs">
+              <span className="text-muted-foreground">Operator: </span>
+              {actor ? (
+                <MachineName identity={actor} />
+              ) : isNilOperator(row) ? (
+                <OperatorCell row={row} />
+              ) : row.operator_id ? (
+                <span className="text-muted-foreground">
+                  an operator — withheld in presentation mode
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  no operator on row
+                </span>
+              )}
+            </p>
+            <p className="text-xs">
+              <span className="text-muted-foreground">Reason: </span>
+              {reason ? (
+                <RedactedText
+                  text={reason}
+                  repo={null}
+                  descriptor={{
+                    kind: "Reason",
+                    status: "recorded",
+                    at: row.occurred_at,
+                  }}
+                />
+              ) : (
+                <span className="italic text-muted-foreground">
+                  none stated on this row
+                </span>
+              )}
+            </p>
+          </div>
+        }
+        problems={
+          <div data-testid={`audit-blast-${row.audit_id}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Blast radius
+            </p>
+            {blast.unstated ? (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Not stated — how far this change reached is{" "}
+                <strong>unknown</strong> from this row, not zero.
+              </p>
+            ) : (
+              <dl className="mt-0.5 space-y-0.5 text-xs">
+                {blast.items.map((item) => (
+                  <div key={item.key} className="flex gap-2">
+                    <dt className="shrink-0 text-muted-foreground">
+                      {item.label}
+                    </dt>
+                    <dd className="break-all">
+                      <PresentedBlastValue row={row} item={item} byId={byId} />
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </div>
+        }
+      />
+    </RecordRow>
+  );
+}
+
+/** Stable identity for the default, so the device index is built once. */
+const NO_DEVICES: readonly FleetDeviceRef[] = [];
+
+export function OperatorAuditPanel({
+  devices = NO_DEVICES,
+}: {
+  /**
+   * The fleet's devices (the page's `/fleet/health` spine), so presentation
+   * mode can recognise a row whose resource or actor is a machine and name it
+   * by its alias. Unused in operator mode.
+   */
+  devices?: readonly FleetDeviceRef[];
+} = {}) {
+  const { presenting } = usePresentationMode();
+  const byId = useMemo(() => indexDevices(devices), [devices]);
   const [filterId, setFilterId] = useState(DEFAULT_AUDIT_FILTER_ID);
   const [read, setRead] = useState<AuditRead>({ state: "loading" });
+  // When the current `ok` read arrived — the presentation chip's as-of. The
+  // route serves no timestamp of its own.
+  const [fetchedAtMs, setFetchedAtMs] = useState<number | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const filter = useMemo(() => resolveAuditFilter(filterId), [filterId]);
 
@@ -280,7 +521,9 @@ export function OperatorAuditPanel() {
         resource_key: resourceKeyFilter,
       });
       if (seq !== requestSeq.current) return;
-      setRead(parseAuditPayload(body));
+      const parsed = parseAuditPayload(body);
+      setRead(parsed);
+      if (parsed.state === "ok") setFetchedAtMs(Date.now());
     } catch (err) {
       if (seq !== requestSeq.current) return;
       setRead({
@@ -307,202 +550,242 @@ export function OperatorAuditPanel() {
     : allRows;
 
   return (
-    <CollapsiblePanel
-      data-testid="operator-audit-panel"
-      storageKey="devops:operator-audit"
-      defaultOpen={false}
-      icon={<ScrollText className="h-4 w-4" />}
-      title="Operator audit"
-      summary={
-        read.state === "ok" ? (
-          <Badge variant="outline" className="text-[10px]">
-            {visibleRows.length}
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="text-[10px]">
-            &ndash;
-          </Badge>
-        )
-      }
-      headerActions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void load()}
-          data-testid="operator-audit-refresh"
-        >
-          Refresh
-        </Button>
-      }
-    >
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Every operator write coord stamped for this tenant, newest first —
-          including the machine drains set from the rows above. The drain lever
-          shows what is in force now; this is the durable answer to &ldquo;who
-          took this host out, when, and why&rdquo;.
-        </p>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label
-            htmlFor="operator-audit-filter"
-            className="text-xs text-muted-foreground"
-          >
-            Showing
-          </label>
-          <select
-            id="operator-audit-filter"
-            className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-            value={filterId}
-            onChange={(e) => setFilterId(e.target.value)}
-            data-testid="operator-audit-filter"
-          >
-            {AUDIT_FILTERS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-          <span className="text-[11px] text-muted-foreground">
-            {filter.hint}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={hideAuthChecks}
-              onChange={(e) => setHideAuthChecks(e.target.checked)}
-              data-testid="operator-audit-hide-auth-checks"
-            />
-            Hide authorization checks
-            {hiddenAuthChecks > 0 ? ` (${hiddenAuthChecks} hidden)` : ""}
-          </label>
-        </div>
-
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setResourceKeyFilter(resourceKeyInput.trim());
-          }}
-        >
-          <label
-            htmlFor="operator-audit-resource-key"
-            className="text-xs text-muted-foreground"
-          >
-            Resource key
-          </label>
-          <input
-            id="operator-audit-resource-key"
-            type="text"
-            className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-            placeholder="e.g. a device id — who touched THIS host"
-            value={resourceKeyInput}
-            onChange={(e) => setResourceKeyInput(e.target.value)}
-            data-testid="operator-audit-resource-key"
-          />
+    <>
+      <SectionCaption
+        id="dev-ops.audit"
+        sources={[
+          {
+            source: DEVOPS_SOURCES.operatorAudit,
+            asOf: read.state === "ok" ? fetchedAtMs : null,
+          },
+        ]}
+      />
+      <CollapsiblePanel
+        data-testid="operator-audit-panel"
+        storageKey="devops:operator-audit"
+        defaultOpen={false}
+        icon={<ScrollText className="h-4 w-4" />}
+        title="Operator audit"
+        summary={
+          read.state === "ok" ? (
+            <Badge variant="outline" className="text-[10px]">
+              {visibleRows.length}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px]">
+              &ndash;
+            </Badge>
+          )
+        }
+        headerActions={
           <Button
-            type="submit"
+            // A re-read of an append-only feed: it changes only what is
+            // displayed (D3.2).
+            {...NAVIGATION_ONLY_PROPS}
             variant="outline"
             size="sm"
-            data-testid="operator-audit-resource-key-apply"
+            onClick={() => void load()}
+            data-testid="operator-audit-refresh"
           >
-            Apply
+            Refresh
           </Button>
-          {resourceKeyFilter ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setResourceKeyInput("");
-                setResourceKeyFilter("");
-              }}
-              data-testid="operator-audit-resource-key-clear"
-            >
-              Clear
-            </Button>
-          ) : null}
-        </form>
+        }
+      >
+        <div className="space-y-3">
+          {/* Operator orientation (the lever it points at is not mounted for
+            an outsider); the section caption says what this feed is. */}
+          {!presenting && (
+            <p className="text-xs text-muted-foreground">
+              Every operator write coord stamped for this tenant, newest first —
+              including the machine drains set from the rows above. The drain
+              lever shows what is in force now; this is the durable answer to
+              &ldquo;who took this host out, when, and why&rdquo;.
+            </p>
+          )}
 
-        {confirmedNonAdmin ? (
-          <p
-            className="text-xs text-muted-foreground"
-            role="status"
-            data-testid="operator-audit-admin-only"
-          >
-            The operator audit feed is readable by coord admins only, so it was
-            not requested for this account. That is a statement about access,
-            not about whether anyone changed anything.
-          </p>
-        ) : read.state === "unavailable" ? (
-          <div
-            className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2"
-            role="status"
-            data-testid="operator-audit-error"
-          >
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
-                Audit feed unreadable
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                The console could not read the audit feed &mdash; {read.reason}{" "}
-                This says nothing about whether anyone changed anything; it is a
-                statement about the request. Coord gates this route on the{" "}
-                <code className="font-mono">admin</code> role, so a 403 here
-                means the account lacks it, not that the feed is empty.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label
+              htmlFor="operator-audit-filter"
+              className="text-xs text-muted-foreground"
+            >
+              Showing
+            </label>
+            <select
+              // A view filter: it changes which rows are shown (D3.2).
+              {...NAVIGATION_ONLY_PROPS}
+              id="operator-audit-filter"
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+              value={filterId}
+              onChange={(e) => setFilterId(e.target.value)}
+              data-testid="operator-audit-filter"
+            >
+              {AUDIT_FILTERS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-muted-foreground">
+              {filter.hint}
+            </span>
           </div>
-        ) : (
-          <RecordList
-            items={visibleRows}
-            loaded={read.state === "ok"}
-            itemKey={(row, i) => row.audit_id || `audit-${i}`}
-            expandedKey={openKey}
-            onExpandedKeyChange={setOpenKey}
-            empty={
-              allRows.length > 0 ? (
-                <p
-                  className="text-xs text-muted-foreground"
-                  data-testid="operator-audit-all-hidden"
-                >
-                  All {allRows.length} row(s) in this window are authorization
-                  checks (<span className="font-mono">http.route</span>), hidden
-                  by &ldquo;Hide authorization checks&rdquo; above &mdash; not a
-                  real write. Turn it off to see them.
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No <span className="font-mono">{filter.action ?? "*"}</span>{" "}
-                  {filter.via ? (
-                    <>
-                      with{" "}
-                      <span className="font-mono">via: {filter.via}</span>{" "}
-                    </>
-                  ) : null}
-                  rows for this tenant at all &mdash; coord applies the filter
-                  BEFORE the {AUDIT_LIMIT}-row limit, so this is zero matches,
-                  not &ldquo;none in the last {AUDIT_LIMIT}&rdquo;. The read
-                  succeeded; this is a measurement, not a failed look. Widen the
-                  filter to see whether anything else was written.
-                </p>
-              )
-            }
-            renderRow={(row, ctx) => (
-              <AuditRowView
-                key={row.audit_id}
-                row={row}
-                expanded={ctx.expanded}
-                onToggle={ctx.onToggle}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <input
+                // A view filter: it changes which rows are shown (D3.2).
+                {...NAVIGATION_ONLY_PROPS}
+                type="checkbox"
+                checked={hideAuthChecks}
+                onChange={(e) => setHideAuthChecks(e.target.checked)}
+                data-testid="operator-audit-hide-auth-checks"
               />
-            )}
-          />
-        )}
-      </div>
-    </CollapsiblePanel>
+              Hide authorization checks
+              {hiddenAuthChecks > 0 ? ` (${hiddenAuthChecks} hidden)` : ""}
+            </label>
+          </div>
+
+          {/* The resource-key search takes device ids and repository names —
+            identifiers the presentation view never shows — so it is the
+            operator's alone. */}
+          {!presenting && (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setResourceKeyFilter(resourceKeyInput.trim());
+              }}
+            >
+              <label
+                htmlFor="operator-audit-resource-key"
+                className="text-xs text-muted-foreground"
+              >
+                Resource key
+              </label>
+              <input
+                id="operator-audit-resource-key"
+                type="text"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                placeholder="e.g. a device id — who touched THIS host"
+                value={resourceKeyInput}
+                onChange={(e) => setResourceKeyInput(e.target.value)}
+                data-testid="operator-audit-resource-key"
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                data-testid="operator-audit-resource-key-apply"
+              >
+                Apply
+              </Button>
+              {resourceKeyFilter ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setResourceKeyInput("");
+                    setResourceKeyFilter("");
+                  }}
+                  data-testid="operator-audit-resource-key-clear"
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </form>
+          )}
+
+          {confirmedNonAdmin ? (
+            <p
+              className="text-xs text-muted-foreground"
+              role="status"
+              data-testid="operator-audit-admin-only"
+            >
+              The operator audit feed is readable by coord admins only, so it
+              was not requested for this account. That is a statement about
+              access, not about whether anyone changed anything.
+            </p>
+          ) : read.state === "unavailable" ? (
+            <div
+              className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2"
+              role="status"
+              data-testid="operator-audit-error"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                  Audit feed unreadable
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  The console could not read the audit feed &mdash;{" "}
+                  {read.reason} This says nothing about whether anyone changed
+                  anything; it is a statement about the request. Coord gates
+                  this route on the <code className="font-mono">admin</code>{" "}
+                  role, so a 403 here means the account lacks it, not that the
+                  feed is empty.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <RecordList
+              items={visibleRows}
+              loaded={read.state === "ok"}
+              itemKey={(row, i) => row.audit_id || `audit-${i}`}
+              expandedKey={openKey}
+              onExpandedKeyChange={setOpenKey}
+              empty={
+                allRows.length > 0 ? (
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="operator-audit-all-hidden"
+                  >
+                    All {allRows.length} row(s) in this window are authorization
+                    checks (<span className="font-mono">http.route</span>),
+                    hidden by &ldquo;Hide authorization checks&rdquo; above
+                    &mdash; not a real write. Turn it off to see them.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No <span className="font-mono">{filter.action ?? "*"}</span>{" "}
+                    {filter.via ? (
+                      <>
+                        with{" "}
+                        <span className="font-mono">
+                          via: {filter.via}
+                        </span>{" "}
+                      </>
+                    ) : null}
+                    rows for this tenant at all &mdash; coord applies the filter
+                    BEFORE the {AUDIT_LIMIT}-row limit, so this is zero matches,
+                    not &ldquo;none in the last {AUDIT_LIMIT}&rdquo;. The read
+                    succeeded; this is a measurement, not a failed look. Widen
+                    the filter to see whether anything else was written.
+                  </p>
+                )
+              }
+              renderRow={(row, ctx) =>
+                presenting ? (
+                  <PresentedAuditRow
+                    key={row.audit_id}
+                    row={row}
+                    byId={byId}
+                    expanded={ctx.expanded}
+                    onToggle={ctx.onToggle}
+                  />
+                ) : (
+                  <AuditRowView
+                    key={row.audit_id}
+                    row={row}
+                    expanded={ctx.expanded}
+                    onToggle={ctx.onToggle}
+                  />
+                )
+              }
+            />
+          )}
+        </div>
+      </CollapsiblePanel>
+    </>
   );
 }

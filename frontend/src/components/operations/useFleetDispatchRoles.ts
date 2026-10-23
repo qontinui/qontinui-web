@@ -39,11 +39,20 @@ const LOADING: DispatchRolesRead = { state: "loading" };
 
 export interface UseFleetDispatchRolesResult {
   read: DispatchRolesRead;
+  /**
+   * `Date.now()` when the read last came back `known`, or `null` before it
+   * ever has. The route serves no timestamp, so this is what the presentation
+   * lens's provenance chip dates the roles by (plan
+   * `2026-10-23-console-presentation-spaces` Phase 7). An `unknown` read
+   * never moves it.
+   */
+  fetchedAtMs: number | null;
   refresh: () => Promise<void>;
 }
 
 export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   const [read, setRead] = useState<DispatchRolesRead>(LOADING);
+  const [fetchedAtMs, setFetchedAtMs] = useState<number | null>(null);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: DispatchRolesRead;
@@ -82,11 +91,13 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
         };
       }
     }
-    if (isCurrent()) setRead(next);
+    if (!isCurrent()) return;
+    setRead(next);
+    if (next.state === "known") setFetchedAtMs(Date.now());
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DISPATCH_ROLES_POLL_MS);
-  return { read, refresh };
+  return { read, fetchedAtMs, refresh };
 }
 
 export type RoleWriteResult =

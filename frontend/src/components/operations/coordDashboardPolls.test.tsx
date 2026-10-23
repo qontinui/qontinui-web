@@ -171,7 +171,13 @@ function FleetOverviewHost(): ReactElement {
   const noop = async () => {};
   return (
     <FleetOverview
-      health={{ data: null, loading: true, error: null, refresh: noop }}
+      health={{
+        data: null,
+        loading: true,
+        error: null,
+        fetchedAtMs: null,
+        refresh: noop,
+      }}
       ciMachines={{ state: "loading" }}
       drain={{ read: { state: "loading" }, refresh: noop }}
       deviceStatus={{

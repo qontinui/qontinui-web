@@ -32,16 +32,20 @@
  * 2026-09-19 plan ("Dev Ops renders coord's verdicts, it does not recompute
  * them") this section does not invent one.
  *
- * ## Independent poll, sibling component
+ * ## The page owns the poll
  *
- * This owns its own `useFleetWorktreeSlots` poll rather than folding into
- * `FleetResourcesSection`: that section already owns ONE poll
- * (`/fleet/resource-samples`) shared by two panels reading the SAME rows;
- * worktree-slot occupancy is a second, independent fact from a different
- * coord route, and merging its poll into that section's would make one
- * `useEffect` own two unrelated cadences for no shared benefit. See
- * `devops/page.tsx`'s header comment for the fleet-wide "one route, one
- * poll" rationale this mirrors.
+ * The section used to open its own `useFleetWorktreeSlots` poll. Plan
+ * `2026-10-23-console-presentation-spaces` Phase 7 lifted it to the Dev Ops
+ * page, because the presentation headline's "agent workspaces in use" figure
+ * reads the same answer: one route, one poll (see `devops/page.tsx`'s header
+ * comment), and the join both readers use is `fleetWorktreeSlots.ts`'s.
+ *
+ * ## Presentation mode
+ *
+ * The section opens with its caption and the read's as-of; each machine reads
+ * as its alias, and carries no device id in its attributes; an occupant's
+ * repository renders through `RedactedText` and its worktree path not at all,
+ * because a path names repositories and agents an outsider may not see.
  */
 
 import { useMemo } from "react";
@@ -55,52 +59,30 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { CollapsiblePanel } from "@/components/console";
+import { CollapsiblePanel, NAVIGATION_ONLY_PROPS } from "@/components/console";
+import {
+  RedactedText,
+  SectionCaption,
+  useMachineAliaser,
+  usePresentationMode,
+} from "@/components/presentation";
+import { DEVOPS_SOURCES } from "./devOpsHeadline";
 import { formatAge } from "./fleetResources";
 import type { FleetDeviceRef } from "./fleetResources";
-import { useFleetWorktreeSlots } from "./useFleetWorktreeSlots";
+import { buildWorktreeSlotRows, slotRowIsKnown } from "./fleetWorktreeSlots";
 import type {
+  UseFleetWorktreeSlotsResult,
   WorktreeSlotDevice,
   WorktreeSlotOccupantRow,
 } from "./useFleetWorktreeSlots";
 
-interface WorktreeSlotRow {
-  deviceId: string;
-  displayName: string;
-  /** `null` when this device has no entry in coord's response — UNKNOWN,
-   * never dropped. */
-  entry: WorktreeSlotDevice | null;
-}
-
 /**
- * Join coord's device list (the spine) to the worktree-slots response.
- * Exported for the page test's direct coverage of the join's edge cases.
+ * When an occupant was allocated, from coord's `age_secs` — the descriptor's
+ * age in presentation mode. `null` (age unknown) when coord sent none.
  */
-export function buildWorktreeSlotRows(
-  devices: FleetDeviceRef[],
-  data: { devices: WorktreeSlotDevice[] } | null
-): WorktreeSlotRow[] {
-  const byDevice = new Map<string, WorktreeSlotDevice>();
-  for (const d of data?.devices ?? []) byDevice.set(d.device_id, d);
-
-  const known = new Map<string, FleetDeviceRef>();
-  for (const d of devices) known.set(d.device_id, d);
-  // A device the response names that the caller's device list does not is
-  // still rendered — dropping it would be the same class of lie as
-  // discarding a machine that is publishing resource samples.
-  for (const deviceId of byDevice.keys()) {
-    if (!known.has(deviceId)) known.set(deviceId, { device_id: deviceId });
-  }
-
-  const rows: WorktreeSlotRow[] = [];
-  for (const [deviceId, device] of known) {
-    rows.push({
-      deviceId,
-      displayName: device.hostname || deviceId,
-      entry: byDevice.get(deviceId) ?? null,
-    });
-  }
-  return rows;
+function allocatedAt(ageSecs: number | null): string | null {
+  if (ageSecs === null || !Number.isFinite(ageSecs)) return null;
+  return new Date(Date.now() - Math.max(0, ageSecs) * 1_000).toISOString();
 }
 
 function OccupantsDisclosure({
@@ -108,6 +90,7 @@ function OccupantsDisclosure({
 }: {
   occupants: WorktreeSlotDevice["occupants"];
 }) {
+  const { presenting } = usePresentationMode();
   if (occupants.total === 0) {
     return (
       <span className="text-[11px] text-muted-foreground italic">
@@ -130,12 +113,32 @@ function OccupantsDisclosure({
     >
       <ul className="space-y-1 text-[11px]">
         {occupants.rows.map((row: WorktreeSlotOccupantRow, i: number) => (
-          <li key={`${row.repo}:${row.worktree_path}:${i}`}>
-            <span className="font-medium">{row.repo}</span>{" "}
-            <span className="text-muted-foreground">{row.worktree_path}</span>{" "}
-            <span className="text-muted-foreground">
-              {formatAge(row.age_secs)}
-            </span>
+          <li key={presenting ? i : `${row.repo}:${row.worktree_path}:${i}`}>
+            {presenting ? (
+              // The repository only when it is provably the tenant's own; the
+              // path never — it names repositories and agents (D3.3). The
+              // descriptor carries the age, so it is not repeated beside it.
+              <RedactedText
+                className="font-medium"
+                text={row.repo}
+                repo={row.repo}
+                descriptor={{
+                  kind: "Agent workspace",
+                  status: row.building ? "building" : "allocated",
+                  at: allocatedAt(row.age_secs),
+                }}
+              />
+            ) : (
+              <>
+                <span className="font-medium">{row.repo}</span>{" "}
+                <span className="text-muted-foreground">
+                  {row.worktree_path}
+                </span>{" "}
+                <span className="text-muted-foreground">
+                  {formatAge(row.age_secs)}
+                </span>
+              </>
+            )}
             {row.building && (
               <Badge variant="outline" className="ml-1 text-[10px]">
                 building
@@ -156,13 +159,18 @@ function OccupantsDisclosure({
 
 export function FleetWorktreeSlotsSection({
   devices,
+  slots,
 }: {
   /** Coord's device list, from the page's existing `/fleet/health` poll —
    * same prop shape `FleetResourcesSection` takes, so both sections agree
    * about which machines exist. */
   devices: FleetDeviceRef[];
+  /** The page's one `/fleet/worktree-slots` poll (`useFleetWorktreeSlots`). */
+  slots: UseFleetWorktreeSlotsResult;
 }) {
-  const { data, loading, error, refresh } = useFleetWorktreeSlots();
+  const { data, loading, error, fetchedAtMs, refresh } = slots;
+  const { presenting } = usePresentationMode();
+  const machineName = useMachineAliaser();
 
   const rows = useMemo(
     () => buildWorktreeSlotRows(devices, data),
@@ -173,7 +181,7 @@ export function FleetWorktreeSlotsSection({
     let atCapCount = 0;
     let unknownCount = 0;
     for (const row of rows) {
-      if (row.entry === null || row.entry.census_recent_rows === 0) {
+      if (!slotRowIsKnown(row)) {
         unknownCount += 1;
       } else if (row.entry.active_worktrees === row.entry.max_worktrees) {
         atCapCount += 1;
@@ -184,6 +192,10 @@ export function FleetWorktreeSlotsSection({
 
   return (
     <TooltipProvider delayDuration={100}>
+      <SectionCaption
+        id="dev-ops.worktree-slots"
+        sources={[{ source: DEVOPS_SOURCES.worktreeSlots, asOf: fetchedAtMs }]}
+      />
       <CollapsiblePanel
         data-testid="fleet-worktree-slots-section"
         storageKey="fleet:worktree-slots"
@@ -217,9 +229,12 @@ export function FleetWorktreeSlotsSection({
         }
         headerActions={
           <Button
+            // A re-read: it changes only what is displayed (D3.2).
+            {...NAVIGATION_ONLY_PROPS}
             variant="ghost"
             size="sm"
             onClick={refresh}
+            aria-label="Refresh worktree slots"
             data-testid="fleet-worktree-slots-refresh"
           >
             <RefreshCw className="h-3 w-3" />
@@ -274,8 +289,7 @@ export function FleetWorktreeSlotsSection({
               <tbody>
                 {rows.map((row) => {
                   const entry = row.entry;
-                  const isUnknown =
-                    entry === null || entry.census_recent_rows === 0;
+                  const isUnknown = !slotRowIsKnown(row);
                   const atCapRow =
                     !isUnknown &&
                     entry!.active_worktrees === entry!.max_worktrees;
@@ -284,12 +298,18 @@ export function FleetWorktreeSlotsSection({
                       key={row.deviceId}
                       className="border-t border-border/50"
                       data-testid="fleet-worktree-slots-row"
-                      data-device-id={row.deviceId}
+                      // No device id in front of an outsider (D3.3).
+                      data-device-id={presenting ? undefined : row.deviceId}
                       data-worktree-slots-state={
                         isUnknown ? "unknown" : "known"
                       }
                     >
-                      <td className="py-1.5 pr-3">{row.displayName}</td>
+                      <td className="py-1.5 pr-3">
+                        {machineName(
+                          { deviceId: row.deviceId, hostname: row.hostname },
+                          row.displayName
+                        )}
+                      </td>
                       <td className="py-1.5 pr-3 tabular-nums text-[11px]">
                         {isUnknown ? (
                           <Tooltip>
