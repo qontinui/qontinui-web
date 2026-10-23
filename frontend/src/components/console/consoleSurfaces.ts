@@ -755,8 +755,7 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     attentionByKind: APP_PRESENCE_ATTENTION_BY_KIND,
     palette: {
       badgeClass: APP_PRESENCE_BADGE_CLASS,
-      authorGlyphKinds:
-        APP_PRESENCE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      authorGlyphKinds: APP_PRESENCE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the spawn ledger --------------------------------------------------

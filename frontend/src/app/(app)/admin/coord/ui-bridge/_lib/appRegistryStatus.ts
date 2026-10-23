@@ -140,7 +140,9 @@ export function mergeAppRegistries(
       onRunner,
       updateStrategy: text(w?.update_strategy) ?? text(r?.update_strategy),
       lastSeenAtMs:
-        typeof lastSeen === "number" && Number.isFinite(lastSeen) && lastSeen > 0
+        typeof lastSeen === "number" &&
+        Number.isFinite(lastSeen) &&
+        lastSeen > 0
           ? lastSeen
           : null,
       uiBridgeUrl: text(r?.ui_bridge_url),

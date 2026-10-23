@@ -127,7 +127,9 @@ export function SpecGraphPanel({
   const graphIssue: SourceIssue | null =
     graph.state === "failed" ? graph.issue : null;
   const bothAlike =
-    listIssue !== null && graphIssue !== null && sameIssue(listIssue, graphIssue);
+    listIssue !== null &&
+    graphIssue !== null &&
+    sameIssue(listIssue, graphIssue);
 
   return (
     <DashboardPanel
@@ -138,8 +140,8 @@ export function SpecGraphPanel({
           className="text-xs text-muted-foreground"
           data-testid="coord-ui-bridge-spec-summary"
         >
-          {summary ? summary.pages : "–"} screens · {summary ? summary.states : "–"}{" "}
-          states
+          {summary ? summary.pages : "–"} screens ·{" "}
+          {summary ? summary.states : "–"} states
         </span>
       }
       data-testid="coord-ui-bridge-spec"
@@ -228,7 +230,9 @@ export function SpecGraphPanel({
                 {
                   key: "screens",
                   label: "screens ",
-                  value: summary?.pages ?? (list.state === "ok" ? list.value.specs?.length : null),
+                  value:
+                    summary?.pages ??
+                    (list.state === "ok" ? list.value.specs?.length : null),
                 },
                 { key: "states", label: "states ", value: summary?.states },
                 {
@@ -265,8 +269,7 @@ export function SpecGraphPanel({
                     repo={repo}
                     descriptor={{
                       kind: "Screen",
-                      status:
-                        s.states === null ? null : `${s.states} states`,
+                      status: s.states === null ? null : `${s.states} states`,
                     }}
                   />
                 ),

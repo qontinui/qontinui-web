@@ -45,7 +45,11 @@ import type { ReadState } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import { sourceIssueText, type BuildReading } from "../_lib/relaySource";
 import { DashboardPanel } from "./DashboardPanel";
-import { RunnerReadUnknown, SourceUnknown, StaleReadNote } from "./SourceUnknown";
+import {
+  RunnerReadUnknown,
+  SourceUnknown,
+  StaleReadNote,
+} from "./SourceUnknown";
 
 export interface PageHealthPanelProps {
   pageHealth: ReadState<PageHealthReading>;
@@ -58,7 +62,13 @@ export interface PageHealthPanelProps {
   noRunner: string | null;
 }
 
-function HealthBadge({ kind, reason }: { kind: PageHealthKind; reason?: string }) {
+function HealthBadge({
+  kind,
+  reason,
+}: {
+  kind: PageHealthKind;
+  reason?: string;
+}) {
   return (
     <StatusBadge
       status={{
@@ -80,7 +90,11 @@ function FindingLine({
   presenting: boolean;
 }) {
   const quotes = finding.quoted
-    ? [...finding.quoted.errors, ...finding.quoted.loading, ...finding.quoted.empty]
+    ? [
+        ...finding.quoted.errors,
+        ...finding.quoted.loading,
+        ...finding.quoted.empty,
+      ]
     : [];
   return (
     <li
@@ -94,7 +108,9 @@ function FindingLine({
         <span className="text-sm font-medium">{finding.label}</span>
         <span className="text-xs text-muted-foreground">
           {finding.summary ??
-            (presenting ? "No readable figures." : finding.runnerDetail ?? "No readable figures.")}
+            (presenting
+              ? "No readable figures."
+              : (finding.runnerDetail ?? "No readable figures."))}
         </span>
       </div>
       {!presenting && quotes.length > 0 && (
@@ -126,14 +142,21 @@ function Heatmap({ rows }: { rows: readonly string[] }) {
       className="inline-grid gap-px rounded-sm border border-border bg-border p-px"
       style={{ gridTemplateColumns: `repeat(${width}, 0.5rem)` }}
       role="img"
-      aria-label={`Where elements sit on the screen: ${rows.join("").split("").filter((c) => c === "#").length} of ${rows.length * width} cells hold an element`}
+      aria-label={`Where elements sit on the screen: ${
+        rows
+          .join("")
+          .split("")
+          .filter((c) => c === "#").length
+      } of ${rows.length * width} cells hold an element`}
       data-testid="coord-ui-bridge-health-heatmap"
     >
       {rows.flatMap((row, y) =>
         [...row.padEnd(width, ".")].map((cell, x) => (
           <span
             key={`${y}-${x}`}
-            className={cell === "#" ? "h-2 w-2 bg-foreground/50" : "h-2 w-2 bg-card"}
+            className={
+              cell === "#" ? "h-2 w-2 bg-foreground/50" : "h-2 w-2 bg-card"
+            }
           />
         ))
       )}
@@ -189,7 +212,9 @@ export function PageHealthPanel({
   return (
     <DashboardPanel
       captionId="ui-bridge.page-health"
-      icon={<Stethoscope className="h-4 w-4 text-muted-foreground" aria-hidden />}
+      icon={
+        <Stethoscope className="h-4 w-4 text-muted-foreground" aria-hidden />
+      }
       summary={
         report ? (
           <HealthBadge kind={report.summary} />
@@ -239,12 +264,15 @@ export function PageHealthPanel({
           className="m-0 text-sm text-muted-foreground"
           data-testid="coord-ui-bridge-health-idle"
         >
-          Not run yet — page health and the occlusion sweep read the runner&apos;s
-          live window, so they run only when asked.
+          Not run yet — page health and the occlusion sweep read the
+          runner&apos;s live window, so they run only when asked.
         </p>
       ) : (
         <>
-          <section className="space-y-2" data-testid="coord-ui-bridge-health-report">
+          <section
+            className="space-y-2"
+            data-testid="coord-ui-bridge-health-report"
+          >
             {pageHealth.state === "loading" ? (
               <p className="m-0 text-sm text-muted-foreground">Checking…</p>
             ) : pageHealth.state === "failed" ? (
@@ -287,7 +315,11 @@ export function PageHealthPanel({
                 <div className="flex flex-wrap items-start gap-4">
                   <ul className="m-0 min-w-0 flex-1 list-none space-y-2 p-0">
                     {report.findings.map((f) => (
-                      <FindingLine key={f.key} finding={f} presenting={presenting} />
+                      <FindingLine
+                        key={f.key}
+                        finding={f}
+                        presenting={presenting}
+                      />
                     ))}
                   </ul>
                   {report.heatmap && <Heatmap rows={report.heatmap} />}
@@ -296,7 +328,10 @@ export function PageHealthPanel({
             ) : null}
           </section>
 
-          <section className="space-y-2" data-testid="coord-ui-bridge-occlusion-section">
+          <section
+            className="space-y-2"
+            data-testid="coord-ui-bridge-occlusion-section"
+          >
             {occlusion.state === "loading" ? (
               <p className="m-0 text-sm text-muted-foreground">
                 Sweeping for occlusion…

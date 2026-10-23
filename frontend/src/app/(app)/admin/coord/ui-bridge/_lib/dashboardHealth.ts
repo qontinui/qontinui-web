@@ -92,8 +92,7 @@ export function deriveDashboardHealth(
     {
       key: "undeclared",
       label: `undeclared ${counts?.undeclared ?? "–"}`,
-      tone:
-        counts === null || counts.undeclared > 0 ? "waiting" : "default",
+      tone: counts === null || counts.undeclared > 0 ? "waiting" : "default",
       title:
         "Actions whose author declared no effect — counted as undeclared, never as reads",
       "data-testid": "coord-ui-bridge-health-undeclared",

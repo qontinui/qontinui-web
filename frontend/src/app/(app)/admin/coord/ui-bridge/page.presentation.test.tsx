@@ -18,7 +18,10 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunnerTarget } from "@/lib/runner/target";
-import { sessionMachineAliases, type CaptionKey } from "@/components/presentation";
+import {
+  sessionMachineAliases,
+  type CaptionKey,
+} from "@/components/presentation";
 import {
   expectPresentationSafe,
   renderInPresentationMode,
@@ -55,7 +58,8 @@ vi.mock("@/services/service-factory", () => ({
       return state.relay.fetch(url, init);
     },
     get: async (url: string) => {
-      if (url !== "/api/v1/fleet/apps") throw new Error(`unexpected GET ${url}`);
+      if (url !== "/api/v1/fleet/apps")
+        throw new Error(`unexpected GET ${url}`);
       return FLEET_APPS;
     },
   },
@@ -175,7 +179,9 @@ describe("the UI Bridge dashboard while presenting", () => {
       screen
         .getAllByTestId("coord-ui-bridge-component-row")
         .map((r) =>
-          r.querySelector("[data-status-kind]")?.getAttribute("data-status-kind")
+          r
+            .querySelector("[data-status-kind]")
+            ?.getAttribute("data-status-kind")
         )
     ).toEqual(["undeclared", "undeclared", "read"]);
     expect(screen.getByTestId("coord-ui-bridge-occlusion")).toHaveAttribute(
@@ -196,7 +202,9 @@ describe("the UI Bridge dashboard while presenting", () => {
     ).toBe(true);
     // The free-text app picker and the raw snapshot are operator-only.
     expect(screen.queryByTestId("coord-ui-bridge-spec-app")).toBeNull();
-    expect(screen.getByTestId("coord-ui-bridge-spec-app-shown")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-ui-bridge-spec-app-shown")
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("coord-ui-bridge-snapshot-raw")).toBeNull();
     expect(screen.queryByTestId("coord-ui-bridge-health-quotes")).toBeNull();
   });

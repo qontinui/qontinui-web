@@ -301,8 +301,16 @@ export const FLEET_APPS = [
 export const SPEC_LIST_BODY = {
   ok: true,
   specs: [
-    { specId: "terminal", appName: "Qontinui Runner", config: { version: "1" } },
-    { specId: "settings", appName: "Qontinui Runner", config: { version: "1" } },
+    {
+      specId: "terminal",
+      appName: "Qontinui Runner",
+      config: { version: "1" },
+    },
+    {
+      specId: "settings",
+      appName: "Qontinui Runner",
+      config: { version: "1" },
+    },
   ],
 };
 
@@ -330,7 +338,11 @@ export const SNAPSHOT_BODY = {
       { id: "title", type: "heading", label: "Sessions of Partner A" },
     ],
     components: [{ id: "terminal-tabs", name: "Terminal tabs" }],
-    page: { url: "http://tauri.localhost/", pathname: "/", title: "Qontinui Runner" },
+    page: {
+      url: "http://tauri.localhost/",
+      pathname: "/",
+      title: "Qontinui Runner",
+    },
     appId: "qontinui-runner",
     route: "/",
   },

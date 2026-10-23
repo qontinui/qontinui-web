@@ -181,9 +181,14 @@ export function fetchRunnerComponents(deviceId: string): Promise<unknown> {
  * `pageHealthStatus.ts`.
  */
 export function fetchRunnerPageHealth(deviceId: string): Promise<unknown> {
-  return runnerProxyPost<unknown>(deviceId, RUNNER_ROUTES.pageHealth.path, {}, {
-    timeoutMs: PAGE_HEALTH_TIMEOUT_MS,
-  });
+  return runnerProxyPost<unknown>(
+    deviceId,
+    RUNNER_ROUTES.pageHealth.path,
+    {},
+    {
+      timeoutMs: PAGE_HEALTH_TIMEOUT_MS,
+    }
+  );
 }
 
 /**
@@ -193,7 +198,12 @@ export function fetchRunnerPageHealth(deviceId: string): Promise<unknown> {
  * anyway. Read by `occlusionStatus.ts`.
  */
 export function fetchRunnerVisibility(deviceId: string): Promise<unknown> {
-  return runnerProxyPost<unknown>(deviceId, RUNNER_ROUTES.visibility.path, {}, {
-    timeoutMs: VISIBILITY_TIMEOUT_MS,
-  });
+  return runnerProxyPost<unknown>(
+    deviceId,
+    RUNNER_ROUTES.visibility.path,
+    {},
+    {
+      timeoutMs: VISIBILITY_TIMEOUT_MS,
+    }
+  );
 }

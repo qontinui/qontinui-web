@@ -26,7 +26,11 @@ import {
   type RunnerPosture,
 } from "../_lib/runnerHealth";
 import { DashboardPanel } from "./DashboardPanel";
-import { RunnerReadUnknown, SourceUnknown, StaleReadNote } from "./SourceUnknown";
+import {
+  RunnerReadUnknown,
+  SourceUnknown,
+  StaleReadNote,
+} from "./SourceUnknown";
 
 export interface SdkPosturePanelProps {
   health: ReadState<RunnerPosture>;
@@ -47,7 +51,9 @@ export function SdkPosturePanel({
   return (
     <DashboardPanel
       captionId="ui-bridge.sdk-posture"
-      icon={<ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden />}
+      icon={
+        <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden />
+      }
       summary={
         <span
           className="text-xs text-muted-foreground"
@@ -80,7 +86,10 @@ export function SdkPosturePanel({
       ) : (
         <>
           {health.stale && (
-            <StaleReadNote asOf={asOf} data-testid="coord-ui-bridge-sdk-stale" />
+            <StaleReadNote
+              asOf={asOf}
+              data-testid="coord-ui-bridge-sdk-stale"
+            />
           )}
           <p
             className="m-0 text-xs text-muted-foreground"
@@ -104,7 +113,10 @@ export function SdkPosturePanel({
             .
           </p>
 
-          <section className="space-y-2" data-testid="coord-ui-bridge-sdk-features">
+          <section
+            className="space-y-2"
+            data-testid="coord-ui-bridge-sdk-features"
+          >
             <div className="flex flex-wrap items-center gap-2">
               <StatCluster
                 stats={[
@@ -138,7 +150,10 @@ export function SdkPosturePanel({
             )}
           </section>
 
-          <section className="space-y-2" data-testid="coord-ui-bridge-sdk-binding">
+          <section
+            className="space-y-2"
+            data-testid="coord-ui-bridge-sdk-binding"
+          >
             {binding === null ? (
               <SourceUnknown
                 text="This runner build reports no relay registration binding, so how it checks who may register an app is unknown."
@@ -155,7 +170,8 @@ export function SdkPosturePanel({
                         label: "binding ",
                         value: bindingModeLabel(binding.mode),
                         tone: binding.mode === null ? "warning" : "default",
-                        title: "The binding mode this runner is configured with",
+                        title:
+                          "The binding mode this runner is configured with",
                       },
                       {
                         key: "active",

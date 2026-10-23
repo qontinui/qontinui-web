@@ -51,7 +51,12 @@ describe("readStateOf", () => {
       }),
       (d) => d
     );
-    expect(r).toEqual({ state: "ok", value: { n: 1 }, stale: true, asOf: 1000 });
+    expect(r).toEqual({
+      state: "ok",
+      value: { n: 1 },
+      stale: true,
+      asOf: 1000,
+    });
   });
 
   it("fails with its reason when nothing was ever read", () => {
@@ -67,7 +72,10 @@ describe("readStateOf", () => {
 
   it("fails as UNREADABLE for an answer the page cannot read", () => {
     expect(
-      readStateOf(queryView({ ...base, data: "x", dataUpdatedAt: 5 }), () => null)
+      readStateOf(
+        queryView({ ...base, data: "x", dataUpdatedAt: 5 }),
+        () => null
+      )
     ).toEqual({ state: "failed", issue: UNREADABLE_ANSWER });
   });
 });

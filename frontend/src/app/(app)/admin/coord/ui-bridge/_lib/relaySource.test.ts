@@ -94,10 +94,14 @@ describe("sourceIssueText", () => {
   });
 
   it("still says the build is unknown, and why, when health did not answer", () => {
-    const text = sourceIssueText({ kind: "not-carried" }, RUNNER_ROUTES.pageHealth, {
-      state: "unknown",
-      reason: "its health did not answer",
-    });
+    const text = sourceIssueText(
+      { kind: "not-carried" },
+      RUNNER_ROUTES.pageHealth,
+      {
+        state: "unknown",
+        reason: "its health did not answer",
+      }
+    );
     expect(text).toContain(
       "a build this page could not read (its health did not answer)"
     );
@@ -106,7 +110,10 @@ describe("sourceIssueText", () => {
   it("words the other arms as sentences", () => {
     expect(
       sourceIssueText(
-        { kind: "withheld", message: "Terminal streaming is off for this project" },
+        {
+          kind: "withheld",
+          message: "Terminal streaming is off for this project",
+        },
         RUNNER_ROUTES.snapshot,
         BUILD
       )
@@ -115,7 +122,11 @@ describe("sourceIssueText", () => {
     );
     expect(
       sourceIssueText(
-        { kind: "failed", cause: "The relay answered HTTP 504.", requestId: null },
+        {
+          kind: "failed",
+          cause: "The relay answered HTTP 504.",
+          requestId: null,
+        },
         RUNNER_ROUTES.components,
         BUILD
       )
@@ -149,10 +160,16 @@ describe("buildLabel", () => {
 describe("noRunnerReason", () => {
   it("is null for a runner target and a reason for every other", () => {
     expect(
-      noRunnerReason({ kind: "runner", runner: { id: "d" }, locality: "unknown" })
+      noRunnerReason({
+        kind: "runner",
+        runner: { id: "d" },
+        locality: "unknown",
+      })
     ).toBeNull();
     expect(noRunnerReason({ kind: "pending" })).toMatch(/has not answered/);
-    expect(noRunnerReason({ kind: "default_local" })).toMatch(/no runner is paired/);
+    expect(noRunnerReason({ kind: "default_local" })).toMatch(
+      /no runner is paired/
+    );
     expect(
       noRunnerReason({ kind: "unavailable", reason: "no_eligible_runner" })
     ).toMatch(/none of your runners/);
@@ -180,7 +197,9 @@ describe("sameIssue", () => {
         { kind: "failed", cause: "d", requestId: null }
       )
     ).toBe(false);
-    expect(sameIssue({ kind: "not-carried" }, { kind: "not-carried" })).toBe(true);
+    expect(sameIssue({ kind: "not-carried" }, { kind: "not-carried" })).toBe(
+      true
+    );
     expect(
       sameIssue({ kind: "not-carried" }, { kind: "withheld", message: null })
     ).toBe(false);

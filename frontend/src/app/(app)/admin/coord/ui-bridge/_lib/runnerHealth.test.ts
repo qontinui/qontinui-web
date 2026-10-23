@@ -19,18 +19,20 @@ describe("readRunnerPosture", () => {
     expect(p?.buildId).toBe(BUILD_ID);
     expect(p?.gitSha).toBe(GIT_SHA);
     expect(p?.unstamped).toBe(false);
-    expect(p?.sdkFeatures).toEqual(["softNavigate", "snapshotF3", "componentTree"]);
+    expect(p?.sdkFeatures).toEqual([
+      "softNavigate",
+      "snapshotF3",
+      "componentTree",
+    ]);
     expect(p?.binding?.mode).toBe("shadow");
     expect(p?.binding?.activeMode).toBe("shadow");
     expect(p?.binding?.registryFullRefusals).toBe(0);
   });
 
   it("orders the rules naturally, R2 before R10", () => {
-    expect(readRunnerPosture(HEALTH_BODY)?.binding?.rules.map((r) => r.rule)).toEqual([
-      "R1",
-      "R2",
-      "R10",
-    ]);
+    expect(
+      readRunnerPosture(HEALTH_BODY)?.binding?.rules.map((r) => r.rule)
+    ).toEqual(["R1", "R2", "R10"]);
   });
 
   it("reads a body whose envelope was unwrapped as carrying no inventory — UNKNOWN", () => {

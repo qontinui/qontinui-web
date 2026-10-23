@@ -50,7 +50,11 @@ import type { ReadState } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import { sourceIssueText, type BuildReading } from "../_lib/relaySource";
 import { DashboardPanel } from "./DashboardPanel";
-import { RunnerReadUnknown, SourceUnknown, StaleReadNote } from "./SourceUnknown";
+import {
+  RunnerReadUnknown,
+  SourceUnknown,
+  StaleReadNote,
+} from "./SourceUnknown";
 
 export interface ComponentActionsPanelProps {
   components: ReadState<ComponentsReading>;
@@ -70,9 +74,7 @@ const FILTERS: ReadonlyArray<{ id: ComponentFilter; label: string }> = [
 ];
 
 function matches(component: ComponentRecord, filter: ComponentFilter): boolean {
-  return (
-    filter === "all" || component.actions.some((a) => a.effect === filter)
-  );
+  return filter === "all" || component.actions.some((a) => a.effect === filter);
 }
 
 const isoOf = (ms: number | null): string | null =>
@@ -120,8 +122,8 @@ function ActionLine({
       )}
       {!presenting && action.unrecognisedEffect !== undefined && (
         <span className="text-xs text-muted-foreground">
-          (declares “{action.unrecognisedEffect}”, which is not an effect
-          class, so it counts as undeclared)
+          (declares “{action.unrecognisedEffect}”, which is not an effect class,
+          so it counts as undeclared)
         </span>
       )}
     </li>
@@ -164,7 +166,10 @@ export function ComponentActionsPanel({
     <DashboardPanel
       captionId="ui-bridge.component-actions"
       icon={
-        <MousePointerClick className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <MousePointerClick
+          className="h-4 w-4 text-muted-foreground"
+          aria-hidden
+        />
       }
       summary={
         <span
@@ -293,7 +298,9 @@ export function ComponentActionsPanel({
                   identity={presenting ? "component" : (component.id ?? "–")}
                   label={
                     <RedactedText
-                      text={component.name ?? component.id ?? "unnamed component"}
+                      text={
+                        component.name ?? component.id ?? "unnamed component"
+                      }
                       repo={null}
                       descriptor={{
                         kind: "Component",
@@ -308,7 +315,9 @@ export function ComponentActionsPanel({
                       }}
                     />
                   }
-                  status={kind === null ? undefined : <EffectBadge kind={kind} />}
+                  status={
+                    kind === null ? undefined : <EffectBadge kind={kind} />
+                  }
                   reason={actionSplitText(component)}
                   attention={
                     kind === null ? undefined : EFFECT_ATTENTION_BY_KIND[kind]
@@ -334,7 +343,9 @@ export function ComponentActionsPanel({
                       ) : undefined
                     }
                     problems={
-                      component.actions.some((a) => a.effect === "undeclared") ? (
+                      component.actions.some(
+                        (a) => a.effect === "undeclared"
+                      ) ? (
                         <p
                           className="m-0 text-xs"
                           data-testid="coord-ui-bridge-component-undeclared"
@@ -344,9 +355,9 @@ export function ComponentActionsPanel({
                               (a) => a.effect === "undeclared"
                             ).length
                           }{" "}
-                          of its actions declare no effect, so an automated
-                          walk must treat them as unknown — they are counted
-                          as undeclared, never as reads.
+                          of its actions declare no effect, so an automated walk
+                          must treat them as unknown — they are counted as
+                          undeclared, never as reads.
                         </p>
                       ) : undefined
                     }
@@ -377,8 +388,9 @@ export function ComponentActionsPanel({
                       presenting ? undefined : (
                         <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
                           component {component.id ?? "–"} · actions{" "}
-                          {component.actions.map((a) => a.id ?? "–").join(", ") ||
-                            "none"}
+                          {component.actions
+                            .map((a) => a.id ?? "–")
+                            .join(", ") || "none"}
                         </p>
                       )
                     }

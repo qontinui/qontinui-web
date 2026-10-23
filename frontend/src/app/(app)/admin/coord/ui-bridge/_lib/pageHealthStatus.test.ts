@@ -83,7 +83,9 @@ describe("readPageHealth", () => {
   it("labels a check it does not know without inventing a reading", () => {
     const r = readPageHealth({
       summary: "OK",
-      findings: [{ check: "brand_new", severity: "OK", detail: "x=1", data: {} }],
+      findings: [
+        { check: "brand_new", severity: "OK", detail: "x=1", data: {} },
+      ],
     });
     expect(r?.findings[0].label).toBe(OTHER_CHECK_LABEL);
     expect(r?.findings[0].summary).toBeNull();

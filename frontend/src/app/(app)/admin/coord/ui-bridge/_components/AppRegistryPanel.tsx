@@ -45,7 +45,11 @@ import type { ReadState } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import type { BuildReading } from "../_lib/relaySource";
 import { DashboardPanel } from "./DashboardPanel";
-import { RunnerReadUnknown, SourceUnknown, StaleReadNote } from "./SourceUnknown";
+import {
+  RunnerReadUnknown,
+  SourceUnknown,
+  StaleReadNote,
+} from "./SourceUnknown";
 
 export interface AppRegistryPanelProps {
   web: ReadState<readonly WebAppConfig[]>;
@@ -137,7 +141,10 @@ export function AppRegistryPanel({
       </div>
 
       {web.state === "failed" && (
-        <div className="space-y-1" data-testid="coord-ui-bridge-apps-web-unknown">
+        <div
+          className="space-y-1"
+          data-testid="coord-ui-bridge-apps-web-unknown"
+        >
           <SourceUnknown text="The web's app registry could not be read." />
           <BackendErrorMessage
             error={operationsErrorReading(webError)}
@@ -146,7 +153,10 @@ export function AppRegistryPanel({
         </div>
       )}
       {web.state === "ok" && web.stale && (
-        <StaleReadNote asOf={web.asOf} data-testid="coord-ui-bridge-apps-web-stale" />
+        <StaleReadNote
+          asOf={web.asOf}
+          data-testid="coord-ui-bridge-apps-web-stale"
+        />
       )}
       {runner.state === "failed" && (
         <RunnerReadUnknown
@@ -160,7 +170,10 @@ export function AppRegistryPanel({
       <RecordList
         items={rows ?? []}
         itemKey={(row) => row.appId}
-        loaded={rows !== null || (web.state === "failed" && runner.state !== "loading")}
+        loaded={
+          rows !== null ||
+          (web.state === "failed" && runner.state !== "loading")
+        }
         expandedKey={expandedKey}
         onExpandedKeyChange={setExpandedKey}
         empty={
@@ -169,7 +182,8 @@ export function AppRegistryPanel({
               className="m-0 text-sm text-muted-foreground italic"
               data-testid="coord-ui-bridge-apps-none-read"
             >
-              Neither registry answered, so which apps exist is unknown — not none.
+              Neither registry answered, so which apps exist is unknown — not
+              none.
             </p>
           ) : (
             <p

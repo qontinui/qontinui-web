@@ -75,9 +75,9 @@ describe("the dashboard's relay call sites", () => {
     expect(url).toBe(relayUrl("ui-bridge/control/page-health"));
     expect(init.method).toBe("POST");
     expect(init.body).toBe("{}");
-    expect(
-      (init.headers as Record<string, string>)["Content-Type"]
-    ).toBe("application/json");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "application/json"
+    );
     expect(payload.summary).toBe("WARNING");
   });
 

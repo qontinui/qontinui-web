@@ -208,7 +208,11 @@ export default function UiBridgeDashboardPage() {
         appIds={appIds}
         noRunner={noRunner}
       />
-      <LiveSnapshotPanel deviceId={deviceId} build={build} noRunner={noRunner} />
+      <LiveSnapshotPanel
+        deviceId={deviceId}
+        build={build}
+        noRunner={noRunner}
+      />
       <SdkPosturePanel health={health} build={build} noRunner={noRunner} />
       <ComponentActionsPanel
         components={components}

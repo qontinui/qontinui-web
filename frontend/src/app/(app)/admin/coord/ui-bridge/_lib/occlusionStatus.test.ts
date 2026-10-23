@@ -48,7 +48,8 @@ describe("readOcclusion — clear only when occlusion data was observed", () => 
   it("does not let a truthy non-boolean stand in for `true`", () => {
     for (const observed of ["true", 1, "yes", {}]) {
       expect(
-        readOcclusion({ verdict: "clear", occlusionDataObserved: observed }).kind,
+        readOcclusion({ verdict: "clear", occlusionDataObserved: observed })
+          .kind,
         String(observed)
       ).toBe("unknown");
     }

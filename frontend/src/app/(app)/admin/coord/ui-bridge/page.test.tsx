@@ -66,7 +66,8 @@ vi.mock("@/services/service-factory", () => ({
       return state.relay.fetch(url, init);
     },
     get: (url: string) => {
-      if (url !== "/api/v1/fleet/apps") throw new Error(`unexpected GET ${url}`);
+      if (url !== "/api/v1/fleet/apps")
+        throw new Error(`unexpected GET ${url}`);
       return state.fleetApps();
     },
   },
@@ -122,8 +123,8 @@ describe("every panel renders the runner's answers", () => {
     // Each component row's badge is its most consequential action.
     const rows = screen.getAllByTestId("coord-ui-bridge-component-row");
     expect(rows).toHaveLength(3);
-    const kinds = rows.map(
-      (r) => r.querySelector("[data-status-kind]")?.getAttribute("data-status-kind")
+    const kinds = rows.map((r) =>
+      r.querySelector("[data-status-kind]")?.getAttribute("data-status-kind")
     );
     expect(kinds).toEqual(["undeclared", "undeclared", "read"]);
 
@@ -178,7 +179,9 @@ describe("every panel renders the runner's answers", () => {
     // Presence needs both registries, so neither row claims "web only".
     for (const row of screen.getAllByTestId("coord-ui-bridge-app-row")) {
       expect(
-        row.querySelector("[data-status-kind]")?.getAttribute("data-status-kind")
+        row
+          .querySelector("[data-status-kind]")
+          ?.getAttribute("data-status-kind")
       ).toBe("unknown");
     }
   });
@@ -190,7 +193,9 @@ describe("every panel renders the runner's answers", () => {
     expect(counts).toHaveTextContent("screens 2");
     expect(counts).toHaveTextContent("transitions 2");
     expect(
-      screen.getAllByTestId("coord-ui-bridge-spec-screen").map((s) => s.textContent)
+      screen
+        .getAllByTestId("coord-ui-bridge-spec-screen")
+        .map((s) => s.textContent)
     ).toEqual([
       expect.stringContaining("terminal"),
       expect.stringContaining("settings"),
@@ -208,7 +213,9 @@ describe("a runner whose build predates the dashboard's relay entries", () => {
 
   it("renders the component actions as UNKNOWN naming the build — not an empty list, not a zero", async () => {
     renderPage();
-    const unknown = await screen.findByTestId("coord-ui-bridge-actions-unknown");
+    const unknown = await screen.findByTestId(
+      "coord-ui-bridge-actions-unknown"
+    );
     await waitFor(() => expect(unknown).toHaveTextContent(BUILD_ID));
     expect(unknown).toHaveTextContent("UNKNOWN");
     expect(unknown).toHaveTextContent(
@@ -217,9 +224,9 @@ describe("a runner whose build predates the dashboard's relay entries", () => {
     expect(
       screen.queryByTestId("coord-ui-bridge-actions-empty")
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("coord-ui-bridge-actions-summary")).toHaveTextContent(
-      "– actions · – undeclared"
-    );
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-summary")
+    ).toHaveTextContent("– actions · – undeclared");
     const strip = screen.getByTestId("coord-ui-bridge-health-strip");
     expect(strip).toHaveTextContent("component actions are UNKNOWN");
     expect(strip).toHaveTextContent("undeclared –");
@@ -231,8 +238,12 @@ describe("a runner whose build predates the dashboard's relay entries", () => {
     fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
     const health = await screen.findByTestId("coord-ui-bridge-health-unknown");
     expect(health).toHaveTextContent(BUILD_ID);
-    expect(health).toHaveTextContent("predates the relay entries this page reads");
-    const sweep = await screen.findByTestId("coord-ui-bridge-occlusion-unknown");
+    expect(health).toHaveTextContent(
+      "predates the relay entries this page reads"
+    );
+    const sweep = await screen.findByTestId(
+      "coord-ui-bridge-occlusion-unknown"
+    );
     expect(sweep).toHaveTextContent(
       `No runner's relay carries the occlusion sweep yet, so this runner (build ${BUILD_ID}) answered HTTP 403.`
     );
@@ -256,7 +267,9 @@ describe("an unreachable runner", () => {
     const sdk = await screen.findByTestId("coord-ui-bridge-sdk-unknown");
     await waitFor(() => expect(sdk).toHaveTextContent("UNKNOWN"));
     expect(sdk).toHaveTextContent("could not be read");
-    expect(sdk).toHaveTextContent(/held a relay session until .*then dropped it/);
+    expect(sdk).toHaveTextContent(
+      /held a relay session until .*then dropped it/
+    );
     expect(sdk).toHaveTextContent("request req-503");
     expect(
       await screen.findByTestId("coord-ui-bridge-actions-unknown")
@@ -264,9 +277,13 @@ describe("an unreachable runner", () => {
     // The list and the graph failed alike, so they say it once.
     expect(
       await screen.findByTestId("coord-ui-bridge-spec-unknown")
-    ).toHaveTextContent("app's screens, states and transitions could not be read");
+    ).toHaveTextContent(
+      "app's screens, states and transitions could not be read"
+    );
     const strip = screen.getByTestId("coord-ui-bridge-health-strip");
-    expect(strip).toHaveTextContent("did not answer, so every runner panel is UNKNOWN");
+    expect(strip).toHaveTextContent(
+      "did not answer, so every runner panel is UNKNOWN"
+    );
     expect(strip).toHaveAttribute("data-health-level", "amber");
   });
 
@@ -315,9 +332,9 @@ describe("occlusion honesty", () => {
     expect(row).toHaveTextContent("nothing was observed");
     // …and the strip does not fold that UNKNOWN into its green.
     await waitFor(() =>
-      expect(screen.getByTestId("coord-ui-bridge-health-strip")).toHaveTextContent(
-        "occlusion is UNKNOWN"
-      )
+      expect(
+        screen.getByTestId("coord-ui-bridge-health-strip")
+      ).toHaveTextContent("occlusion is UNKNOWN")
     );
   });
 
@@ -336,12 +353,13 @@ describe("occlusion honesty", () => {
     });
     const row = await runPageHealth();
     expect(row).toHaveAttribute("data-occlusion", "hides-text");
-    expect(row).toHaveTextContent("2 occlusions across 47 elements, 1 hiding text.");
+    expect(row).toHaveTextContent(
+      "2 occlusions across 47 elements, 1 hiding text."
+    );
     await waitFor(() =>
-      expect(screen.getByTestId("coord-ui-bridge-health-strip")).toHaveAttribute(
-        "data-health-level",
-        "red"
-      )
+      expect(
+        screen.getByTestId("coord-ui-bridge-health-strip")
+      ).toHaveAttribute("data-health-level", "red")
     );
   });
 
@@ -350,7 +368,9 @@ describe("occlusion honesty", () => {
       visibility: () => json(200, VISIBILITY_CLEAR_OBSERVED),
     });
     await runPageHealth();
-    const findings = await screen.findAllByTestId("coord-ui-bridge-health-finding");
+    const findings = await screen.findAllByTestId(
+      "coord-ui-bridge-health-finding"
+    );
     expect(findings.map((f) => f.getAttribute("data-check"))).toEqual([
       "spatial_coverage",
       "layout_regions",
@@ -359,11 +379,13 @@ describe("occlusion honesty", () => {
       "interactive_readiness",
       "visual_anomalies",
     ]);
-    expect(screen.getByTestId("coord-ui-bridge-health-heatmap")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-heatmap")
+    ).toBeInTheDocument();
     // Operator mode shows the text the check quoted from the window.
-    expect(screen.getByTestId("coord-ui-bridge-health-quotes")).toHaveTextContent(
-      "Loading sessions for Partner A"
-    );
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-quotes")
+    ).toHaveTextContent("Loading sessions for Partner A");
   });
 });
 
@@ -374,8 +396,12 @@ describe("on-demand reads", () => {
     const asked = () => state.relay?.requests ?? [];
     expect(asked()).not.toContain("GET ui-bridge/control/snapshot");
     expect(asked()).not.toContain("POST ui-bridge/control/page-health");
-    expect(screen.getByTestId("coord-ui-bridge-snapshot-idle")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-ui-bridge-health-idle")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-ui-bridge-snapshot-idle")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-idle")
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
     const counts = await screen.findByTestId("coord-ui-bridge-snapshot-counts");
@@ -410,12 +436,14 @@ describe("no runner", () => {
       expect(screen.getAllByTestId("coord-ui-bridge-app-row")).toHaveLength(2)
     );
     expect(state.relay?.requests).toEqual([]);
-    expect(screen.getByTestId("coord-ui-bridge-actions-unknown")).toHaveTextContent(
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-unknown")
+    ).toHaveTextContent(
       "Nothing was asked for the runner's component actions: none of your runners is available right now."
     );
-    expect(screen.getByTestId("coord-ui-bridge-health-strip")).toHaveTextContent(
-      "No runner to read"
-    );
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-strip")
+    ).toHaveTextContent("No runner to read");
     await act(async () => {
       fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
     });

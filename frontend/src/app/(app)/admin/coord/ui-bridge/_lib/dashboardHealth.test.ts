@@ -111,19 +111,30 @@ describe("deriveDashboardHealth", () => {
   it("is red for a page reported broken, or for hidden text", () => {
     expect(
       deriveDashboardHealth(
-        input({ pageHealth: { state: "ok", value: "critical", stale: false, asOf: 1 } })
+        input({
+          pageHealth: { state: "ok", value: "critical", stale: false, asOf: 1 },
+        })
       ).level
     ).toBe("red");
     expect(
       deriveDashboardHealth(
-        input({ occlusion: { state: "ok", value: "hides-text", stale: false, asOf: 1 } })
+        input({
+          occlusion: {
+            state: "ok",
+            value: "hides-text",
+            stale: false,
+            asOf: 1,
+          },
+        })
       ).level
     ).toBe("red");
   });
 
   it("never folds an UNKNOWN occlusion into a green — nor reads it as hidden text", () => {
     const h = deriveDashboardHealth(
-      input({ occlusion: { state: "ok", value: "unknown", stale: false, asOf: 1 } })
+      input({
+        occlusion: { state: "ok", value: "unknown", stale: false, asOf: 1 },
+      })
     );
     expect(h.level).toBe("amber");
     expect(h.headline).toBe(
