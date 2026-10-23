@@ -14,7 +14,11 @@
  *
  * Presentation mode: the app picker is operator-only (it is free text); the
  * audience sees which app is shown, and screen names only for the runner's
- * own app (D3.3).
+ * own app (D3.3). An app id typed before presenting began must not surface
+ * through a reason either: it is in the spec reads' paths and in the
+ * runner's `app-not-found` answer, so those reasons quote (`relaySource.ts`)
+ * and are withheld while presenting, and so is "not a valid app id", which
+ * quotes the id itself.
  */
 
 import { useMemo, useState } from "react";
@@ -40,6 +44,7 @@ import { appRepoOf } from "../_lib/firstParty";
 import { queryView, readStateOf } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import {
+  INVALID_APP_ID_STATUS,
   sameIssue,
   sourceIssueText,
   type BuildReading,
@@ -192,6 +197,7 @@ export function SpecGraphPanel({
       ) : !valid ? (
         <SourceUnknown
           text={`"${appId}" is not a valid app id, so it was not sent to the runner. App ids are ${APP_ID_RULE}.`}
+          withheldStatus={INVALID_APP_ID_STATUS}
           data-testid="coord-ui-bridge-spec-invalid"
         />
       ) : (

@@ -36,7 +36,10 @@ export const json = (status: number, body: unknown): Response =>
     headers: { "Content-Type": "application/json" },
   });
 
-const DEFAULTS: Record<RelayRoute, () => Response> = {
+/** A route's answer; it is handed the runner path, for a test that varies by app. */
+export type RelayAnswer = (path: string) => Response;
+
+const DEFAULTS: Record<RelayRoute, RelayAnswer> = {
   health: () => json(200, HEALTH_BODY),
   components: () => json(200, COMPONENTS_BODY),
   apps: () => json(403, NOT_CARRIED_BODY),
@@ -78,7 +81,7 @@ function deviceOf(init: RequestInit | undefined): string {
 }
 
 export function relayFake(
-  overrides: Partial<Record<RelayRoute, () => Response>> = {}
+  overrides: Partial<Record<RelayRoute, RelayAnswer>> = {}
 ): RelayFake {
   const requests: string[] = [];
   const requestsFor: string[] = [];
@@ -94,7 +97,7 @@ export function relayFake(
       requestsFor.push(`${method} ${path} for ${deviceOf(init)}`);
       const route = routeOf(path);
       if (route === null) return json(404, { detail: "no such route" });
-      return (overrides[route] ?? DEFAULTS[route])();
+      return (overrides[route] ?? DEFAULTS[route])(path);
     },
   };
 }

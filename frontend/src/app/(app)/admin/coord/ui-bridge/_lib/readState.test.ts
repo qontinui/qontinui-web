@@ -66,7 +66,7 @@ describe("readStateOf", () => {
     );
     expect(r).toEqual({
       state: "failed",
-      issue: { kind: "failed", cause: "boom", requestId: null },
+      issue: { kind: "failed", cause: "boom", requestId: null, quotes: true },
     });
   });
 

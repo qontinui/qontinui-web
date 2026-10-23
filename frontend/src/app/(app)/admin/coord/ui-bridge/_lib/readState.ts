@@ -46,6 +46,8 @@ export const UNREADABLE_ANSWER: SourceIssue = {
   kind: "failed",
   cause: "the runner answered, but not in the shape this page reads",
   requestId: null,
+  // The page's own sentence: it quotes nothing the answer said.
+  quotes: false,
 };
 
 /**

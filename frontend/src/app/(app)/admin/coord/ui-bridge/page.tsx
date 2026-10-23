@@ -51,10 +51,11 @@ import { HealthStrip, RefreshButton } from "@/components/console";
 import {
   Caption,
   MachineName,
+  Provenance,
   useMachineName,
 } from "@/components/presentation";
 import { useRunnerApps } from "@/app/(app)/digital-twin/_hooks/useUiBridge";
-import { mergeAppRegistries } from "./_lib/appRegistryStatus";
+import { appTotalOf, mergeAppRegistries } from "./_lib/appRegistryStatus";
 import { countEffects, readComponents } from "./_lib/componentEffectStatus";
 import { deriveDashboardHealth } from "./_lib/dashboardHealth";
 import { readOcclusion } from "./_lib/occlusionStatus";
@@ -79,6 +80,10 @@ import { SpecGraphPanel } from "./_components/SpecGraphPanel";
 
 const mapRead = <T, U>(read: ReadState<T>, f: (v: T) => U): ReadState<U> =>
   read.state === "ok" ? { ...read, value: f(read.value) } : read;
+
+/** When a read's figures were read — null unless it answered. */
+const asOfOf = (read: ReadState<unknown>): number | null =>
+  read.state === "ok" ? read.asOf : null;
 
 export default function UiBridgeDashboardPage() {
   const queryClient = useQueryClient();
@@ -124,6 +129,10 @@ export default function UiBridgeDashboardPage() {
     () => (appRows ?? []).map((row) => row.appId),
     [appRows]
   );
+  const apps = appTotalOf(appRows, {
+    web: webApps !== null,
+    runner: runnerAppList !== null,
+  });
 
   const strip = deriveDashboardHealth({
     machine,
@@ -132,7 +141,7 @@ export default function UiBridgeDashboardPage() {
     components: mapRead(components, (c) => countEffects(c.components)),
     pageHealth: mapRead(pageHealth, (p) => p.summary),
     occlusion: mapRead(occlusion, (o) => o.kind),
-    apps: appRows?.length ?? null,
+    apps,
     sdkFeatures:
       health.state === "ok" ? (health.value.sdkFeatures?.length ?? null) : null,
     componentsRoute: RUNNER_ROUTES.components,
@@ -194,6 +203,25 @@ export default function UiBridgeDashboardPage() {
             <>No runner is read: {noRunner}.</>
           )}
         </p>
+        {/* Where the strip's figures come from, and when — presentation
+            mode only (Provenance renders nothing for the operator). One chip
+            per read behind a badge: the component counts, the SDK feature
+            count and the build, and the app total's two registries. */}
+        <span
+          className="contents"
+          data-testid="coord-ui-bridge-strip-provenance"
+        >
+          <Provenance
+            source="the runner's component registry"
+            asOf={asOfOf(components)}
+          />
+          <Provenance source="the runner's health" asOf={asOfOf(health)} />
+          <Provenance source="web app registry" asOf={asOfOf(web)} />
+          <Provenance
+            source="this runner's app list"
+            asOf={asOfOf(runnerApps)}
+          />
+        </span>
       </div>
 
       <AppRegistryPanel

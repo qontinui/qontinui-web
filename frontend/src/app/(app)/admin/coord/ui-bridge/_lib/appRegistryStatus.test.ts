@@ -10,6 +10,9 @@ import { FLEET_APPS } from "../__fixtures__/runnerBodies";
 import {
   APP_PRESENCE_ATTENTION_BY_KIND,
   APP_PRESENCE_PALETTE,
+  appTotalMeaning,
+  appTotalOf,
+  appTotalValue,
   mergeAppRegistries,
   presenceCounts,
   updateStrategyLabel,
@@ -96,6 +99,63 @@ describe("mergeAppRegistries", () => {
       "runner-only": 1,
       unknown: 0,
     });
+  });
+});
+
+describe("appTotalOf — the apps across both registries", () => {
+  const both = { web: true, runner: true };
+
+  it("is exact when both registries answered, zero included", () => {
+    const rows = mergeAppRegistries(FLEET_APPS, RUNNER_APPS);
+    const total = appTotalOf(rows, both);
+    expect(total).toEqual({ kind: "exact", count: 3 });
+    expect(appTotalValue(total)).toBe(3);
+    expect(appTotalMeaning(total)).toBe(
+      "Applications across the web and runner registries"
+    );
+    // Both answered with nothing: a measured zero.
+    const none = appTotalOf(mergeAppRegistries([], []), both);
+    expect(none).toEqual({ kind: "exact", count: 0 });
+    expect(appTotalValue(none)).toBe(0);
+  });
+
+  it("is a floor, written ≥N, when one registry did not answer", () => {
+    const total = appTotalOf(mergeAppRegistries(FLEET_APPS, null), {
+      web: true,
+      runner: false,
+    });
+    expect(total).toEqual({ kind: "floor", count: 2, unread: "runner" });
+    expect(appTotalValue(total)).toBe("≥2");
+    expect(appTotalMeaning(total)).toBe(
+      "At least 2: this runner's app list was not read, so an app only it records is not counted"
+    );
+    const webUnread = appTotalOf(mergeAppRegistries(null, RUNNER_APPS), {
+      web: false,
+      runner: true,
+    });
+    expect(appTotalValue(webUnread)).toBe("≥2");
+    expect(appTotalMeaning(webUnread)).toMatch(/^At least 2: the web registry/);
+  });
+
+  it("is UNKNOWN — a dash, not 0 — when the one registry that answered records none", () => {
+    const total = appTotalOf(mergeAppRegistries([], null), {
+      web: true,
+      runner: false,
+    });
+    expect(total).toEqual({ kind: "unknown", unread: "runner" });
+    expect(appTotalValue(total)).toBeNull();
+    expect(appTotalMeaning(total)).toBe(
+      "The web registry records none and this runner's app list was not read, so how many apps exist is unknown — not none"
+    );
+  });
+
+  it("is UNKNOWN when neither registry answered", () => {
+    const total = appTotalOf(null, { web: false, runner: false });
+    expect(total).toEqual({ kind: "unknown", unread: "both" });
+    expect(appTotalValue(total)).toBeNull();
+    expect(appTotalMeaning(total)).toBe(
+      "Neither registry answered, so how many apps exist is unknown"
+    );
   });
 });
 

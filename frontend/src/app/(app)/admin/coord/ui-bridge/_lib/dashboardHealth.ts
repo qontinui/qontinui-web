@@ -21,6 +21,11 @@
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
+import {
+  appTotalMeaning,
+  appTotalValue,
+  type AppTotal,
+} from "./appRegistryStatus";
 import type { EffectCounts } from "./componentEffectStatus";
 import type { OcclusionKind } from "./occlusionStatus";
 import type { PageHealthKind } from "./pageHealthStatus";
@@ -40,8 +45,8 @@ export interface DashboardHealthInput {
   readonly pageHealth: ReadState<PageHealthKind>;
   /** The occlusion verdict, once run. */
   readonly occlusion: ReadState<OcclusionKind>;
-  /** Apps across both registries, or null when neither answered. */
-  readonly apps: number | null;
+  /** Apps across both registries — exact, a floor, or unknown. */
+  readonly apps: AppTotal;
   /** The SDK feature count, or null when not served. */
   readonly sdkFeatures: number | null;
   readonly componentsRoute: RunnerRoute;
@@ -99,8 +104,8 @@ export function deriveDashboardHealth(
     },
     {
       key: "apps",
-      label: `apps ${input.apps ?? "–"}`,
-      title: "Applications across the web and runner registries",
+      label: `apps ${appTotalValue(input.apps) ?? "–"}`,
+      title: appTotalMeaning(input.apps),
       "data-testid": "coord-ui-bridge-health-apps",
     },
     {

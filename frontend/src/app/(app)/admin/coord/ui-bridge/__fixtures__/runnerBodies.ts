@@ -277,6 +277,23 @@ export const NOT_CONNECTED_BODY = {
   request_id: "req-503",
 };
 
+/**
+ * The backend relay's 404 for a device id the caller does not own — a stale
+ * pairing. Its explanation names the device id it was asked for.
+ */
+export const DEVICE_NOT_OWNED_BODY = {
+  detail: "device not found or not owned by caller",
+  device_id: DEVICE_ID,
+  request_id: "req-404",
+};
+
+/** The runner's Spec API refusing an app id it has not registered. */
+export const appNotFoundBody = (appId: string) => ({
+  ok: false,
+  reason: "app-not-found",
+  detail: { appId },
+});
+
 /** `GET /api/v1/fleet/apps`. */
 export const FLEET_APPS = [
   {

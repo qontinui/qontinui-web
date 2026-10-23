@@ -178,3 +178,81 @@ export function presenceCounts(
   for (const row of rows) out[row.presence] += 1;
   return out;
 }
+
+/** One of the two registries this page reads. */
+export type AppRegistrySide = "web" | "runner";
+
+const SIDE_NAME: Record<AppRegistrySide, string> = {
+  web: "the web registry",
+  runner: "this runner's app list",
+};
+
+/**
+ * How many apps the two registries hold between them, as this page can state
+ * it (R6's dash, and the `≥N` floor the CI dashboard uses for a count it can
+ * only bound — `ci/_lib/ciDashboardStatus.ts`):
+ *
+ * - `exact` — both registries answered: every app is counted;
+ * - `floor` — one did not: an app only the unread one records is not
+ *   counted, so N means "at least N";
+ * - `unknown` — neither answered, or the one that did records none: a floor
+ *   of zero says nothing, and "0 apps" would be a claim the unread registry
+ *   never made.
+ *
+ * Today every runner's app list is unread (no relay carries `GET /apps` —
+ * `relayReads.ts`), so this is a floor on every runner until one does.
+ */
+export type AppTotal =
+  | { readonly kind: "exact"; readonly count: number }
+  | {
+      readonly kind: "floor";
+      readonly count: number;
+      readonly unread: AppRegistrySide;
+    }
+  | { readonly kind: "unknown"; readonly unread: AppRegistrySide | "both" };
+
+/** The total of `rows`, given which registries answered. */
+export function appTotalOf(
+  rows: readonly AppRow[] | null,
+  answered: { readonly web: boolean; readonly runner: boolean }
+): AppTotal {
+  if (rows === null || (!answered.web && !answered.runner)) {
+    return { kind: "unknown", unread: "both" };
+  }
+  if (answered.web && answered.runner) {
+    return { kind: "exact", count: rows.length };
+  }
+  const unread: AppRegistrySide = answered.web ? "runner" : "web";
+  return rows.length === 0
+    ? { kind: "unknown", unread }
+    : { kind: "floor", count: rows.length, unread };
+}
+
+/** The total as a badge value: `3`, `≥3`, or null (renders `–`). */
+export function appTotalValue(total: AppTotal): number | string | null {
+  switch (total.kind) {
+    case "exact":
+      return total.count;
+    case "floor":
+      return `≥${total.count}`;
+    case "unknown":
+      return null;
+  }
+}
+
+/** What the total means, in words — its badge's title. */
+export function appTotalMeaning(total: AppTotal): string {
+  switch (total.kind) {
+    case "exact":
+      return "Applications across the web and runner registries";
+    case "floor":
+      return `At least ${total.count}: ${SIDE_NAME[total.unread]} was not read, so an app only it records is not counted`;
+    case "unknown": {
+      if (total.unread === "both") {
+        return "Neither registry answered, so how many apps exist is unknown";
+      }
+      const read = SIDE_NAME[total.unread === "web" ? "runner" : "web"];
+      return `${read.charAt(0).toUpperCase()}${read.slice(1)} records none and ${SIDE_NAME[total.unread]} was not read, so how many apps exist is unknown — not none`;
+    }
+  }
+}

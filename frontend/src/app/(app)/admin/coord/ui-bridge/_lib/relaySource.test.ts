@@ -9,7 +9,10 @@ import { RUNNER_NEEDS_LOCAL } from "@/lib/runner/api-client";
 import { RunnerRelayError } from "@/app/(app)/digital-twin/_lib/runner-relay";
 import { RUNNER_ROUTES } from "./relayReads";
 import {
+  INVALID_APP_ID_STATUS,
   buildLabel,
+  issueQuotes,
+  issueStatusWord,
   noRunnerReason,
   sameIssue,
   sourceIssueOf,
@@ -65,7 +68,95 @@ describe("sourceIssueOf", () => {
       kind: "failed",
       cause: "boom",
       requestId: null,
+      quotes: true,
     });
+  });
+});
+
+describe("which reasons quote words from outside the page (D3.3)", () => {
+  it("does not mark the relay's runner-not-connected answer: its sentences are fixed", () => {
+    const issue = sourceIssueOf(
+      new RunnerRelayError("x", 503, {
+        detail: "runner not connected",
+        wsConnectedAt: "2026-10-23T10:00:00Z",
+      })
+    );
+    expect(issue).toMatchObject({ kind: "failed", quotes: false });
+    expect(issueQuotes(issue)).toBe(false);
+  });
+
+  it("marks the relay's device-not-owned answer, which names the device id", () => {
+    const issue = sourceIssueOf(
+      new RunnerRelayError("x", 404, {
+        detail: "device not found or not owned by caller",
+        deviceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      })
+    );
+    expect(issue.kind).toBe("failed");
+    if (issue.kind !== "failed") return;
+    expect(issue.cause).toContain("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    expect(issue.quotes).toBe(true);
+    expect(issueQuotes(issue)).toBe(true);
+  });
+
+  it("marks the runner's own refusal, which can name the app it was asked for", () => {
+    const issue = sourceIssueOf(
+      new RunnerRelayError("x", 404, {}, undefined, {
+        reason: "app-not-found",
+        detail: { appId: "example-portal" },
+      })
+    );
+    expect(issue.kind).toBe("failed");
+    if (issue.kind !== "failed") return;
+    expect(issue.cause).toContain('"example-portal"');
+    expect(issue.quotes).toBe(true);
+  });
+
+  it("marks a transport failure and any other relay status — an unknown wording fails closed", () => {
+    expect(
+      issueQuotes(
+        sourceIssueOf(
+          new RunnerRelayError(
+            "Runner relay request failed (/apps/example-portal/spec/list): aborted"
+          )
+        )
+      )
+    ).toBe(true);
+    expect(
+      issueQuotes(
+        sourceIssueOf(new RunnerRelayError("x", 503, { detail: "starting up" }))
+      )
+    ).toBe(true);
+    expect(issueQuotes(sourceIssueOf(new Error("boom")))).toBe(true);
+  });
+
+  it("marks no other kind of issue: their sentences are the page's own", () => {
+    expect(issueQuotes(sourceIssueOf(notCarried()))).toBe(false);
+    expect(issueQuotes({ kind: "withheld", message: "x" })).toBe(false);
+    expect(issueQuotes({ kind: "no-runner", reason: "x" })).toBe(false);
+  });
+});
+
+describe("issueStatusWord", () => {
+  it("names why a read has no answer from a fixed vocabulary", () => {
+    expect(issueStatusWord({ kind: "no-runner", reason: "x" })).toBe(
+      "no runner read"
+    );
+    expect(issueStatusWord({ kind: "not-carried" })).toBe(
+      "not carried by the relay"
+    );
+    expect(issueStatusWord({ kind: "withheld", message: null })).toBe(
+      "withheld by the runner"
+    );
+    expect(
+      issueStatusWord({
+        kind: "failed",
+        cause: 'The runner has no app registered as "example-portal"',
+        requestId: null,
+        quotes: true,
+      })
+    ).toBe("read failed");
+    expect(INVALID_APP_ID_STATUS).toBe("not a valid app id");
   });
 });
 
@@ -126,6 +217,7 @@ describe("sourceIssueText", () => {
           kind: "failed",
           cause: "The relay answered HTTP 504.",
           requestId: null,
+          quotes: true,
         },
         RUNNER_ROUTES.components,
         BUILD
@@ -181,20 +273,37 @@ describe("noRunnerReason", () => {
       })
     ).toBe("coord said no");
   });
+
+  it("gives the fixed phrase instead of the refuser's sentence when told not to quote it", () => {
+    // The dispatch refusal names the runner the operator picked.
+    const target = {
+      kind: "unavailable" as const,
+      reason: "resolver_unavailable" as const,
+      message:
+        "Your pick Build box is not currently listed, and the device resolver did not answer.",
+    };
+    expect(noRunnerReason(target, { quoteMessage: false })).toBe(
+      "no runner is chosen and coord's device resolver did not answer"
+    );
+    expect(noRunnerReason(target)).toBe(target.message);
+    expect(noRunnerReason({ kind: "pending" }, { quoteMessage: false })).toBe(
+      "the runner list has not answered yet"
+    );
+  });
 });
 
 describe("sameIssue", () => {
   it("matches two reads that failed alike, whatever their request ids", () => {
     expect(
       sameIssue(
-        { kind: "failed", cause: "c", requestId: "1" },
-        { kind: "failed", cause: "c", requestId: "2" }
+        { kind: "failed", cause: "c", requestId: "1", quotes: true },
+        { kind: "failed", cause: "c", requestId: "2", quotes: true }
       )
     ).toBe(true);
     expect(
       sameIssue(
-        { kind: "failed", cause: "c", requestId: null },
-        { kind: "failed", cause: "d", requestId: null }
+        { kind: "failed", cause: "c", requestId: null, quotes: true },
+        { kind: "failed", cause: "d", requestId: null, quotes: true }
       )
     ).toBe(false);
     expect(sameIssue({ kind: "not-carried" }, { kind: "not-carried" })).toBe(

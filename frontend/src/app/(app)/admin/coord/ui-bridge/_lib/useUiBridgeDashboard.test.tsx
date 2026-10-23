@@ -15,6 +15,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunnerTarget } from "@/lib/runner/target";
+import { FixedPresentationMode } from "@/components/presentation";
 import { DEVICE_ID, FLEET_APPS } from "../__fixtures__/runnerBodies";
 import { relayFake, type RelayFake } from "../__fixtures__/relayResponder";
 
@@ -156,6 +157,25 @@ describe("useDashboardRunner", () => {
     expect(result.current.deviceId).toBeNull();
     expect(result.current.noRunner).toBe(
       "Every runner is drained for maintenance"
+    );
+  });
+});
+
+describe("useDashboardRunner while presenting", () => {
+  it("gives the fixed phrase, never the refusal that names the runner the operator picked", () => {
+    state.target = {
+      kind: "unavailable",
+      reason: "resolver_unavailable",
+      message:
+        "Your pick Build box is not currently listed, and the device resolver did not answer.",
+    };
+    const { result } = renderHook(() => useDashboardRunner(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <FixedPresentationMode presenting>{children}</FixedPresentationMode>
+      ),
+    });
+    expect(result.current.noRunner).toBe(
+      "no runner is chosen and coord's device resolver did not answer"
     );
   });
 });

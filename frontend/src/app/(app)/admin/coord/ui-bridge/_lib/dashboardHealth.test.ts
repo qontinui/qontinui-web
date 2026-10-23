@@ -29,7 +29,7 @@ function input(over: Partial<DashboardHealthInput> = {}): DashboardHealthInput {
     components: { state: "ok", value: COUNTS, stale: false, asOf: 1 },
     pageHealth: { state: "idle" },
     occlusion: { state: "idle" },
-    apps: 2,
+    apps: { kind: "exact", count: 2 },
     sdkFeatures: 3,
     componentsRoute: RUNNER_ROUTES.components,
     ...over,
@@ -96,7 +96,12 @@ describe("deriveDashboardHealth", () => {
         input({
           health: {
             state: "failed",
-            issue: { kind: "failed", cause: "x", requestId: null },
+            issue: {
+              kind: "failed",
+              cause: "x",
+              requestId: null,
+              quotes: true,
+            },
           },
         })
       ).headline
@@ -156,5 +161,29 @@ describe("deriveDashboardHealth", () => {
 
   it("stays green when the checks were not asked for", () => {
     expect(deriveDashboardHealth(input()).level).toBe("green");
+  });
+
+  it("states the app total exactly, as a floor, or as a dash — never a zero nobody counted", () => {
+    expect(badge(deriveDashboardHealth(input()), "apps")?.label).toBe("apps 2");
+    const floor = badge(
+      deriveDashboardHealth(
+        input({ apps: { kind: "floor", count: 2, unread: "runner" } })
+      ),
+      "apps"
+    );
+    expect(floor?.label).toBe("apps ≥2");
+    expect(floor?.title).toBe(
+      "At least 2: this runner's app list was not read, so an app only it records is not counted"
+    );
+    const unknown = badge(
+      deriveDashboardHealth(
+        input({ apps: { kind: "unknown", unread: "runner" } })
+      ),
+      "apps"
+    );
+    expect(unknown?.label).toBe("apps –");
+    expect(unknown?.title).toBe(
+      "The web registry records none and this runner's app list was not read, so how many apps exist is unknown — not none"
+    );
   });
 });

@@ -24,6 +24,7 @@ import {
   StatusBadge,
 } from "@/components/console";
 import {
+  OperatorOnly,
   Provenance,
   RedactedText,
   usePresentationMode,
@@ -34,6 +35,9 @@ import {
   APP_PRESENCE_ATTENTION_BY_KIND,
   APP_PRESENCE_LABEL,
   APP_PRESENCE_PALETTE,
+  appTotalMeaning,
+  appTotalOf,
+  appTotalValue,
   mergeAppRegistries,
   presenceCounts,
   updateStrategyLabel,
@@ -96,6 +100,10 @@ export function AppRegistryPanel({
     [webApps, runnerApps]
   );
   const counts = rows ? presenceCounts(rows) : null;
+  const total = appTotalOf(rows, {
+    web: webApps !== null,
+    runner: runnerApps !== null,
+  });
   const webAsOf = web.state === "ok" ? web.asOf : null;
   const runnerAsOf = runner.state === "ok" ? runner.asOf : null;
 
@@ -107,8 +115,9 @@ export function AppRegistryPanel({
         <span
           className="text-xs text-muted-foreground"
           data-testid="coord-ui-bridge-apps-summary"
+          title={appTotalMeaning(total)}
         >
-          {rows === null ? "–" : rows.length} apps
+          {appTotalValue(total) ?? "–"} apps
         </span>
       }
       data-testid="coord-ui-bridge-apps"
@@ -117,7 +126,13 @@ export function AppRegistryPanel({
         <StatCluster
           data-testid="coord-ui-bridge-apps-counts"
           stats={[
-            { key: "apps", label: "apps ", value: rows?.length },
+            {
+              key: "apps",
+              label: "apps ",
+              value: appTotalValue(total),
+              title: appTotalMeaning(total),
+              "data-testid": "coord-ui-bridge-apps-total",
+            },
             {
               key: "web",
               label: "in the web registry ",
@@ -146,10 +161,15 @@ export function AppRegistryPanel({
           data-testid="coord-ui-bridge-apps-web-unknown"
         >
           <SourceUnknown text="The web's app registry could not be read." />
-          <BackendErrorMessage
-            error={operationsErrorReading(webError)}
-            className="block text-xs text-muted-foreground"
-          />
+          {/* The backend's own refusal: its detail can echo request input,
+              and it can carry a copy-command button — the operator's
+              diagnosis, not the audience's. */}
+          <OperatorOnly>
+            <BackendErrorMessage
+              error={operationsErrorReading(webError)}
+              className="block text-xs text-muted-foreground"
+            />
+          </OperatorOnly>
         </div>
       )}
       {web.state === "ok" && web.stale && (

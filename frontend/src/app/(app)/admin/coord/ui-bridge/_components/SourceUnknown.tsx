@@ -9,14 +9,28 @@
  *
  * A request id, when the failure carried one, rides on the last line in the
  * raw-id style (R5) — it is what the backend log is grepped for.
+ *
+ * Most reasons are the page's own fixed sentences. A reason that QUOTES
+ * words from outside the page — a failed read's cause (`relaySource.ts` says
+ * which ones), or a sentence quoting an app id the operator typed — carries a
+ * `withheldStatus`: it then renders through `RedactedText` (plan
+ * `2026-10-23-console-presentation-spaces` D3.3) attributed to NO repository
+ * — verbatim for the operator, and always withheld while presenting, in
+ * favour of a descriptor whose status is that fixed word for WHY the read has
+ * no answer. No repository can clear such a reason: what it quotes is not the
+ * subject's own text (a reason about the runner's own app can still name a
+ * stale pairing's device id). The UNKNOWN badge renders either way.
  */
 
 import { Badge } from "@/components/ui/badge";
 import { UNKNOWN_AMBER, relativeTime } from "@/components/console";
+import { RedactedText } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import type { RunnerRoute } from "../_lib/relayReads";
 import {
   UNKNOWN_WORD,
+  issueQuotes,
+  issueStatusWord,
   sourceIssueText,
   type BuildReading,
   type SourceIssue,
@@ -25,6 +39,12 @@ import {
 export interface SourceUnknownProps {
   /** The reason, a full sentence (`sourceIssueText`). */
   text: string;
+  /**
+   * Set when the reason quotes words from outside the page: why the read has
+   * no answer, from a fixed vocabulary (`issueStatusWord`), shown in place of
+   * the reason while presenting. See the module doc.
+   */
+  withheldStatus?: string;
   requestId?: string | null;
   className?: string;
   "data-testid"?: string;
@@ -32,6 +52,7 @@ export interface SourceUnknownProps {
 
 export function SourceUnknown({
   text,
+  withheldStatus,
   requestId,
   className,
   "data-testid": testId,
@@ -52,7 +73,17 @@ export function SourceUnknown({
         {UNKNOWN_WORD}
       </Badge>
       <div className="min-w-0 space-y-0.5">
-        <p className="m-0 text-muted-foreground">{text}</p>
+        <p className="m-0 text-muted-foreground">
+          {withheldStatus !== undefined ? (
+            <RedactedText
+              text={text}
+              repo={null}
+              descriptor={{ kind: "Reason", status: withheldStatus }}
+            />
+          ) : (
+            text
+          )}
+        </p>
         {requestId && (
           <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
             request {requestId}
@@ -82,6 +113,7 @@ export function RunnerReadUnknown({
   return (
     <SourceUnknown
       text={sourceIssueText(issue, route, build)}
+      withheldStatus={issueQuotes(issue) ? issueStatusWord(issue) : undefined}
       requestId={issue.kind === "failed" ? issue.requestId : null}
       className={className}
       data-testid={testId}

@@ -30,6 +30,7 @@ import {
   BUILD_ID,
   COMPONENTS_ALL_DECLARED_BODY,
   DEVICE_ID,
+  DEVICE_NOT_OWNED_BODY,
   EGRESS_OFF_BODY,
   FLEET_APPS,
   NOT_CARRIED_BODY,
@@ -184,6 +185,35 @@ describe("every panel renders the runner's answers", () => {
           ?.getAttribute("data-status-kind")
       ).toBe("unknown");
     }
+    // …and the total is a floor: an app only the runner records is uncounted.
+    expect(screen.getByTestId("coord-ui-bridge-apps-total")).toHaveTextContent(
+      "apps ≥2"
+    );
+    expect(screen.getByTestId("coord-ui-bridge-health-apps")).toHaveTextContent(
+      "apps ≥2"
+    );
+    expect(screen.getByTestId("coord-ui-bridge-health-apps")).toHaveAttribute(
+      "title",
+      "At least 2: this runner's app list was not read, so an app only it records is not counted"
+    );
+  });
+
+  it("says the app total is unknown — not 0 — when the web registry is empty and the runner's list unread", async () => {
+    state.fleetApps = async () => [];
+    renderPage();
+    expect(
+      await screen.findByTestId("coord-ui-bridge-apps-empty")
+    ).toBeInTheDocument();
+    await screen.findByTestId("coord-ui-bridge-apps-runner-unknown");
+    expect(screen.getByTestId("coord-ui-bridge-apps-total")).toHaveTextContent(
+      "apps –"
+    );
+    expect(screen.getByTestId("coord-ui-bridge-health-apps")).toHaveTextContent(
+      "apps –"
+    );
+    expect(
+      screen.getByTestId("coord-ui-bridge-apps-summary")
+    ).toHaveTextContent("– apps");
   });
 
   it("counts the runner app's screens, states and transitions from the graph", async () => {
@@ -295,6 +325,29 @@ describe("an unreachable runner", () => {
   });
 });
 
+describe("a stale pairing", () => {
+  it("names the device id the backend does not know — to the operator", async () => {
+    const notOwned = () => json(404, DEVICE_NOT_OWNED_BODY);
+    state.relay = relayFake({
+      health: notOwned,
+      components: notOwned,
+      apps: notOwned,
+      specList: notOwned,
+      specGraph: notOwned,
+    });
+    renderPage();
+    const sdk = await screen.findByTestId("coord-ui-bridge-sdk-unknown");
+    await waitFor(() =>
+      expect(sdk).toHaveTextContent(
+        `The backend has no device (${DEVICE_ID}) registered to your account`
+      )
+    );
+    expect(sdk).toHaveTextContent("request req-404");
+    // Operator mode: the reason is the operator's, verbatim.
+    expect(sdk.querySelector("[data-redacted]")).toBeNull();
+  });
+});
+
 describe("the web registry failing", () => {
   it("renders its own UNKNOWN and keeps the page", async () => {
     state.fleetApps = async () => {
@@ -307,6 +360,10 @@ describe("the web registry failing", () => {
     expect(
       await screen.findByTestId("coord-ui-bridge-apps-none-read")
     ).toHaveTextContent("unknown — not none");
+    // The operator also reads the backend's own refusal.
+    expect(
+      screen.getByTestId("coord-ui-bridge-apps-web-unknown")
+    ).toHaveTextContent("boom");
   });
 });
 
@@ -413,6 +470,18 @@ describe("on-demand reads", () => {
     await screen.findByTestId("coord-ui-bridge-health-counts");
     expect(asked()).toContain("POST ui-bridge/control/page-health");
     expect(asked()).toContain("POST ui-bridge/control/visibility");
+  });
+
+  it("renders page health the project's egress setting withheld as UNKNOWN with its sentence", async () => {
+    state.relay = relayFake({ pageHealth: () => json(409, EGRESS_OFF_BODY) });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    expect(
+      await screen.findByTestId("coord-ui-bridge-health-unknown")
+    ).toHaveTextContent(
+      "The runner withheld the runner's page health: Terminal streaming is off for this project."
+    );
   });
 
   it("renders a snapshot the project's egress setting withheld as UNKNOWN with its sentence", async () => {

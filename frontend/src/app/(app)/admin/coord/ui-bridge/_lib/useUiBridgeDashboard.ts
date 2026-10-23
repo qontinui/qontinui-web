@@ -21,7 +21,10 @@ import { useQuery } from "@tanstack/react-query";
 import { httpClient } from "@/services/service-factory";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import { useActiveRunner } from "@/contexts/active-runner-context";
-import type { MachineIdentity } from "@/components/presentation";
+import {
+  usePresentationMode,
+  type MachineIdentity,
+} from "@/components/presentation";
 import type { WebAppConfig } from "./appRegistryStatus";
 import {
   fetchRunnerComponents,
@@ -57,8 +60,13 @@ export interface DashboardRunner {
  * else coord's), exactly as the digital twin's UI Bridge tab reads it — so a
  * device coord resolved that the web list has not caught up with still counts.
  * Its hostname and name come from the runner list when it carries the device.
+ *
+ * While presenting, the no-runner reason is the target's fixed phrase, never
+ * its refuser's sentence, which can name the runner the operator picked (D3.3;
+ * `noRunnerReason`). Every identifier in `identity` is aliased by the caller.
  */
 export function useDashboardRunner(): DashboardRunner {
+  const { presenting } = usePresentationMode();
   const target = useRunnerTarget();
   const { runners } = useActiveRunner();
   const deviceId = targetRunnerId(target);
@@ -74,7 +82,11 @@ export function useDashboardRunner(): DashboardRunner {
     }),
     [deviceId, hostname, displayName]
   );
-  return { deviceId, identity, noRunner: noRunnerReason(target) };
+  return {
+    deviceId,
+    identity,
+    noRunner: noRunnerReason(target, { quoteMessage: !presenting }),
+  };
 }
 
 /** `GET /health`, whole — the build and the SDK and trust posture. */
