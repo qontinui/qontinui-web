@@ -228,6 +228,72 @@ describe("/admin/coord/home", () => {
     expect(screen.queryByText("Nothing needs you")).not.toBeInTheDocument();
   });
 
+  // Until coord serves `GET /coord/project-state`, the first read is a 404.
+  // Both shapes the browser can receive are pinned: coord's router fallback
+  // (`404 {"error":"no_such_route",…}`, re-raised by the web proxy with
+  // coord's text as the message), and a web backend that does not mount the
+  // proxy yet. `httpClient.get` rejects with `GET <url> failed: <status> -
+  // <body>` in both cases. Each must render a labelled UNKNOWN, never a calm,
+  // empty page.
+  it.each([
+    [
+      "coord's no_such_route, relayed by the proxy",
+      JSON.stringify({
+        error: "NOT_FOUND",
+        message: JSON.stringify({
+          error: "no_such_route",
+          method: "GET",
+          path: "/coord/project-state",
+          message: "no route is registered at this path.",
+        }),
+        path: "https://api.example.test/api/v1/operations/project-state",
+      }),
+    ],
+    [
+      "a web backend without the proxy",
+      JSON.stringify({ error: "NOT_FOUND", message: "Not Found" }),
+    ],
+  ])(
+    "renders a labelled UNKNOWN, never an empty healthy page, on a 404 first read (%s)",
+    async (_shape, body) => {
+      httpGet.mockRejectedValue(
+        new Error(
+          `GET https://api.example.test/api/v1/operations/project-state failed: 404 - ${body}`
+        )
+      );
+      render(<CoordHomePage />);
+      const unread = await screen.findByTestId("coord-home.unread");
+      expect(unread).toHaveTextContent(
+        "Coord's project state could not be read: this deployment does not serve the project-state door yet — unknown."
+      );
+      expect(unread).toHaveTextContent(
+        "Every count on this page is a dash, not a zero."
+      );
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).toHaveTextContent("Cannot tell");
+      expect(
+        screen.getByTestId("coord-home.strip.needs-you")
+      ).toHaveTextContent("needs you –");
+      for (const id of REGIONS)
+        expect(screen.getByTestId(id)).toBeInTheDocument();
+      // No calm empty state, in either tense (a stale read words them in the
+      // past: "Nothing needed you …", "Nothing was degrading …").
+      expect(
+        screen.queryByTestId("coord-home.needs-you.empty")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("coord-home.degrading.empty")
+      ).not.toBeInTheDocument();
+      for (const calm of [
+        /Nothing need(s|ed) you/,
+        /Nothing (is|was) degrading/,
+        /^No work units\.$/,
+      ])
+        expect(screen.queryByText(calm)).not.toBeInTheDocument();
+    }
+  );
+
   it("never says 'Nothing needs you' over coord's not_implemented needs_me", async () => {
     await renderWith(doorBody());
     expect(screen.queryByText("Nothing needs you")).not.toBeInTheDocument();
