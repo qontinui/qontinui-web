@@ -173,7 +173,7 @@ export function workspacesInUseFigure(
       reason:
         rows.length === 0
           ? "No machine reports agent workspace slots yet."
-          : `None of the ${count(rows.length, "machine")} has a recent workspace census, so no slot count can be confirmed as live.`,
+          : `None of the ${count(rows.length, "machine")} has a slot count confirmed as live, so capacity in use cannot be stated.`,
     };
   }
   let used = 0;
@@ -184,8 +184,12 @@ export function workspacesInUseFigure(
   }
   const notes: string[] = [];
   if (uncounted > 0) {
+    // Either coord's slot read does not list the machine, or it lists one
+    // whose count no recent census corroborates: in both cases there is no
+    // live count to add, so the machine is left out rather than counted as
+    // idle.
     notes.push(
-      `${count(uncounted, "machine")} not counted, with no recent census`
+      `${count(uncounted, "machine")} not counted, with no live slot count`
     );
   }
   if (input.data.truncated) {
