@@ -72,8 +72,9 @@ writer arriving behind it on a table ~16 autonomous producers write
 continuously. Both directions bound the wait with ``SET LOCAL lock_timeout =
 '3s'`` and end with ``RESET lock_timeout``. ``env.py`` runs every revision of
 one ``upgrade`` in a single transaction, so an unreset ``SET LOCAL`` would leak
-into every later revision; ``env.py``'s ``on_version_apply=_reset_lock_timeout``
-hook now resets it after each step, which makes the in-revision ``RESET``
+into every later revision; ``env.py``'s
+``on_version_apply=_reset_revision_settings`` hook now resets it (and
+``search_path``) after each applied step, which makes the in-revision ``RESET``
 redundant belt-and-braces rather than load-bearing. It is kept for the same
 convention as ``coord_agent_questions_withdrawn`` and
 ``coord_agent_questions_audience``. No index: nothing filters or orders on
