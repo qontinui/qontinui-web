@@ -163,6 +163,8 @@ export function TwinMap() {
 
       {open && (
         <AspectDetail
+          // Keyed by aspect, so a different aspect opens unfiltered.
+          key={open}
           aspect={twinAspect(open)}
           rows={aspectRows(twinAspect(open), rows)}
           read={read}

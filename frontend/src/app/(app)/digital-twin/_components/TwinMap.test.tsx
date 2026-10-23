@@ -226,6 +226,27 @@ describe("TwinMap — each aspect with its fidelity and the plans moving it", ()
     ]);
   });
 
+  it("opens a different aspect unfiltered", async () => {
+    render(<TwinMap />);
+    const { user, detail } = await openAspect("environment");
+    await user.click(within(detail).getByTestId("digital-twin-part-schema"));
+    expect(within(detail).getByText("Plans moving schema")).toBeInTheDocument();
+
+    await user.click(
+      within(card("process")).getByRole("button", {
+        name: /show its parts and plans/i,
+      })
+    );
+    const process = screen.getByTestId("digital-twin-aspect-detail-process");
+    expect(
+      within(process).getByText("Plans moving the process twin")
+    ).toBeInTheDocument();
+    expect(within(process).queryByRole("button", { pressed: true })).toBeNull();
+    expect(
+      within(process).getAllByTestId("digital-twin-plan").length
+    ).toBeGreaterThan(0);
+  });
+
   it("names, for the operator, mapped areas that no work unit carries", async () => {
     render(<TwinMap />);
     const { detail } = await openAspect("process");
@@ -273,6 +294,28 @@ describe("TwinMap — a failed source is a labelled UNKNOWN, never zero", () => 
       expect(plans, aspect).toHaveAttribute("data-plans-state", "unknown");
       expect(plans, aspect).toHaveTextContent("UNKNOWN");
     }
+  });
+
+  it("renders a failed work-unit read in the drill-down as UNKNOWN, with no plan count", async () => {
+    state.workUnits = {
+      ...idle,
+      isError: true,
+      error: new Error("GET /api/v1/operations/plans failed: 503 - coord down"),
+      errorUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    const { detail } = await openAspect("process");
+    expect(
+      within(detail).getByTestId("digital-twin-aspect-detail-plans-unknown")
+    ).toHaveTextContent("UNKNOWN — the plans could not be read:");
+    expect(within(detail).queryAllByTestId("digital-twin-plan")).toHaveLength(
+      0
+    );
+    expect(within(detail).queryByTestId("digital-twin-plans-empty")).toBeNull();
+    // No part claims a count of plans the read never returned.
+    expect(
+      within(detail).getByTestId("digital-twin-parts")
+    ).not.toHaveTextContent(/\bplans?\b/);
   });
 
   it("marks plan counts from an incomplete read as INCOMPLETE, with why", () => {

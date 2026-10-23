@@ -12,7 +12,6 @@ import {
   PLAN_STATUS_PALETTE,
   PLAN_TIME_ABSENT,
   derivePlanStatus,
-  describePlanStatus,
   planRowTime,
 } from "@/components/admin/coord/planStatus";
 import {
@@ -26,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { partName } from "../_lib/twin-aspects";
 import {
   planProgress,
+  presentedPlanStatus,
   workUnitArea,
   workUnitHref,
   workUnitRepos,
@@ -66,10 +66,18 @@ function PlanItem({ plan, complete }: { plan: GroupPlan; complete: boolean }) {
   const text = unit?.title?.trim() || plan.slug;
   const repo = unit ? workUnitRepos(unit) : null;
   const time = unit ? planRowTime(unit) : null;
+  // coord's status is opaque text: verbatim for the operator, fixed words in
+  // presentation mode (`presentedPlanStatus`) — on the badge and in the
+  // descriptor alike, so neither can carry what the title withholds.
+  const status = unit
+    ? presenting
+      ? presentedPlanStatus(unit)
+      : derivePlanStatus(unit)
+    : null;
   const descriptor: RedactionDescriptor = {
     kind: "Plan",
     area: unit ? workUnitArea(unit) : null,
-    status: unit ? describePlanStatus(unit.status).label : null,
+    status: status?.label ?? null,
     at: time?.at ?? null,
   };
   // The link's URL carries the slug, so a plan whose text the lens withholds
@@ -91,11 +99,8 @@ function PlanItem({ plan, complete }: { plan: GroupPlan; complete: boolean }) {
       data-plan-progress={planProgress(unit)}
       className="flex min-w-0 items-center gap-2 py-1.5 text-sm"
     >
-      {unit ? (
-        <StatusBadge
-          status={derivePlanStatus(unit)}
-          palette={PLAN_STATUS_PALETTE}
-        />
+      {status ? (
+        <StatusBadge status={status} palette={PLAN_STATUS_PALETTE} />
       ) : (
         <MissingUnitBadge complete={complete} />
       )}

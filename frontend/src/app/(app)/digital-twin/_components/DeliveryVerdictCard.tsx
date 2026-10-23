@@ -51,9 +51,10 @@ import type {
  *
  * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3) the
  * lookup stays live — it is a read, and only changes what is displayed — the
- * envelope carries its source and age, a cited PR's repository renders only
- * when it is provably first-party (and loses its outbound link otherwise,
- * since the URL names it), and the raw JSON is `OperatorOnly`.
+ * envelope carries its source and age, a cited PR's repository and a deploy
+ * target render only when they are provably first-party (a PR loses its
+ * outbound link otherwise, since the URL names its repository), and the raw
+ * JSON is `OperatorOnly`.
  */
 
 /** Visual vocabulary for the canonical delivery drift classes. */
@@ -196,15 +197,37 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
 
 function EnvRow({ env }: { env: DeliveryEnv }) {
   const inSync = env.in_sync === true;
+  const redact = useRedactor();
+  // A deploy target may be named for a client, so — like a cited PR's
+  // repository — it renders only when the lens can clear it against the
+  // repository it deploys (D3.3); otherwise its descriptor does.
+  const target = env.target
+    ? redact({
+        text: env.target,
+        repo: env.repo,
+        descriptor: {
+          kind: "Deploy target",
+          status:
+            env.in_sync === null
+              ? "sync unknown"
+              : inSync
+                ? "in sync"
+                : "not in sync",
+        },
+      })
+    : null;
   return (
     <li className="flex items-center justify-between gap-2 py-1 text-sm">
       <span className="flex min-w-0 items-center gap-2">
         <span
           className={`size-2 shrink-0 rounded-full ${inSync ? "bg-emerald-500" : "bg-amber-500"}`}
         />
-        <span className="truncate font-mono text-xs">
+        <span
+          className="truncate font-mono text-xs"
+          data-testid="delivery-env-target"
+        >
           {env.surface ?? "?"}
-          {env.target ? ` · ${env.target}` : ""}
+          {target ? ` · ${target}` : ""}
         </span>
       </span>
       <span className="shrink-0 text-xs text-muted-foreground">

@@ -18,6 +18,7 @@ import {
   planReadOf,
   plansForSubspace,
   plansForSubspaces,
+  presentedPlanStatus,
   workUnitArea,
   workUnitHref,
   workUnitRepos,
@@ -273,6 +274,37 @@ describe("planProgress", () => {
         { unit: null },
       ])
     ).toEqual({ "in-flight": 1, blocked: 0, queued: 0, unknown: 1, done: 1 });
+  });
+});
+
+describe("presentedPlanStatus — the words presentation mode may show", () => {
+  it("keeps a recognised status's word and colour, and drops the free-text phase", () => {
+    const row: CoordPlanRow = {
+      slug: "a",
+      status: "in_progress",
+      current_phase: "2 — cut over for Partner A",
+    };
+    expect(presentedPlanStatus(row)).toEqual({
+      kind: "active",
+      label: "In progress",
+      reason: undefined,
+      attention: "none",
+    });
+  });
+
+  it("says an unrecognised status by its progress class — never verbatim", () => {
+    expect(presentedPlanStatus({ status: "waiting-on-partner-a" }).label).toBe(
+      "Status unknown"
+    );
+    expect(presentedPlanStatus({ status: "" }).label).toBe("Status unknown");
+    // A free-text terminal spelling coord accepts and no tag names.
+    expect(presentedPlanStatus({ status: "landed" }).label).toBe(
+      "Shipped or closed"
+    );
+    // The colour stays the console's reading of an unrecognised status.
+    expect(presentedPlanStatus({ status: "waiting-on-partner-a" }).kind).toBe(
+      "unknown"
+    );
   });
 });
 

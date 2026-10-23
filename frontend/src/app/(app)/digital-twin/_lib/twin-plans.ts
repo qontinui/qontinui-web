@@ -27,11 +27,14 @@
  */
 
 import {
+  derivePlanStatus,
   describePlanStatus,
   isTerminalPlanStatus,
   planRowTime,
   type CoordPlanRow,
+  type PlanStatusTone,
 } from "@/components/admin/coord/planStatus";
+import type { RowStatus } from "@/components/console";
 import type { WalkOutcome } from "@/app/(app)/admin/coord/work-units/planWalk";
 import { operationsErrorReading } from "@/lib/api/operations/base";
 import type { SubspaceManifestEntry } from "./types";
@@ -273,6 +276,27 @@ export function planProgress(
     case "unknown":
       return "unknown";
   }
+}
+
+/**
+ * A plan's status badge as presentation mode shows it (plan
+ * `2026-10-23-console-presentation-spaces` D3.3): words from a FIXED
+ * vocabulary only. coord's status is opaque text, and the console renders a
+ * word it does not recognise verbatim — right for the operator, who must see
+ * what coord holds, but free text an outsider must not be shown: a tenant can
+ * write anything there (`waiting-on-<client>`). So a recognised status keeps
+ * its word; an unrecognised one says its progress class instead ("Status
+ * unknown", or "Shipped or closed" for a terminal spelling such as `landed`);
+ * and the free-text phase (`current_phase`, the badge's reason) is dropped.
+ * The tone — the badge's colour — stays the console's own reading.
+ */
+export function presentedPlanStatus(
+  unit: Pick<CoordPlanRow, "status">
+): RowStatus<PlanStatusTone> {
+  const status = derivePlanStatus({ status: unit.status });
+  if (describePlanStatus(unit.status).recognised) return status;
+  const word = PLAN_PROGRESS_LABEL[planProgress(unit)];
+  return { ...status, label: word.charAt(0).toUpperCase() + word.slice(1) };
 }
 
 /** How many plans sit in each progress class. Every class is present. */

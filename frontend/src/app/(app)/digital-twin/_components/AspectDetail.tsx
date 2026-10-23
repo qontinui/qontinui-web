@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import {
   Caption,
   NAVIGATION_ONLY_PROPS,
+  Provenance,
   captionEntry,
   usePresentationMode,
 } from "@/components/presentation";
@@ -18,7 +19,7 @@ import {
   type TwinPlanRead,
 } from "../_lib/twin-plans";
 import type { ResolvedSubspace } from "../_lib/types";
-import { ASPECT_DETAIL_ID } from "./AspectCard";
+import { ASPECT_DETAIL_ID, PLAN_SOURCE } from "./AspectCard";
 import { TwinPlanList } from "./TwinPlanList";
 
 /** One part on its own line: status, and how many plans move it; a press filters the plans. */
@@ -65,7 +66,11 @@ function PartRow({
   );
 }
 
-/** The plan side of the drill-down: the read's state, then the list. */
+/**
+ * The plan side of the drill-down: the read's state, then the list. Its
+ * counts and statuses carry the read's source and age (`Provenance`), as the
+ * cards' do; a failed read is UNKNOWN with the reason and when it failed.
+ */
 function PlanPanel({
   read,
   rows,
@@ -82,20 +87,33 @@ function PlanPanel({
   }
   if (read.kind === "error") {
     return (
-      <p className="text-sm text-muted-foreground">
-        <span className="font-semibold">UNKNOWN</span> — the plans could not be
-        read: {read.reason}
-      </p>
+      <div
+        data-testid="digital-twin-aspect-detail-plans-unknown"
+        className="space-y-1"
+      >
+        <p className="text-sm text-muted-foreground">
+          <span className="font-semibold">UNKNOWN</span> — the plans could not
+          be read: {read.reason}
+        </p>
+        <Provenance source={PLAN_SOURCE} asOf={read.at} />
+      </div>
     );
   }
-  return <TwinPlanList plans={plans} complete={read.index.complete} />;
+  return (
+    <div className="space-y-2">
+      <Provenance source={PLAN_SOURCE} asOf={read.asOf} />
+      <TwinPlanList plans={plans} complete={read.index.complete} />
+    </div>
+  );
 }
 
 /**
  * The drill-down of one aspect: the parts of the factory it observes, each
  * with its status and how many plans move it, and those plans with their
  * live status — every one linking to its work unit. Pressing a part narrows
- * the plans to it; pressing it again shows the whole aspect's plans.
+ * the plans to it; pressing it again shows the whole aspect's plans. The Twin
+ * map keys this panel by aspect, so opening a different aspect starts
+ * unfiltered (no part of one aspect is a part of another's filter).
  *
  * Operator mode also names any area the manifest maps that no work unit
  * carries — drift between the manifest and the tenant's work units, shown
@@ -113,8 +131,6 @@ export function AspectDetail({
 }) {
   const { presenting } = usePresentationMode();
   const [part, setPart] = useState<string | null>(null);
-  // A different aspect starts unfiltered.
-  useEffect(() => setPart(null), [aspect.id]);
 
   const { ref } = useUIElement({
     id: ASPECT_DETAIL_ID,
