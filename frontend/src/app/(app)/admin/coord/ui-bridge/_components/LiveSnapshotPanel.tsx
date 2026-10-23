@@ -35,8 +35,13 @@ import { appRepoOf } from "../_lib/firstParty";
 import { queryView, readStateOf } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import { sourceIssueText, type BuildReading } from "../_lib/relaySource";
+import { elementTypeCounts } from "../_lib/snapshotReading";
 import { DashboardPanel } from "./DashboardPanel";
-import { RunnerReadUnknown, SourceUnknown, StaleReadNote } from "./SourceUnknown";
+import {
+  RunnerReadUnknown,
+  SourceUnknown,
+  StaleReadNote,
+} from "./SourceUnknown";
 
 export interface LiveSnapshotPanelProps {
   deviceId: string | null;
@@ -46,23 +51,6 @@ export interface LiveSnapshotPanelProps {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-/** Elements per `type`, ranked (most first); an untyped element is "untyped". */
-export function elementTypeCounts(
-  elements: readonly unknown[]
-): Array<{ type: string; count: number }> {
-  const counts = new Map<string, number>();
-  for (const el of elements) {
-    const type =
-      isRecord(el) && typeof el.type === "string" && el.type.trim()
-        ? el.type.trim()
-        : "untyped";
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([type, count]) => ({ type, count }))
-    .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
 }
 
 export function LiveSnapshotPanel({
@@ -84,7 +72,8 @@ export function LiveSnapshotPanel({
   const components =
     tree && Array.isArray(snap.components) ? snap.components : null;
   const types = elements ? elementTypeCounts(elements) : null;
-  const where = snap?.page?.title ?? snap?.page?.pathname ?? snap?.route ?? null;
+  const where =
+    snap?.page?.title ?? snap?.page?.pathname ?? snap?.route ?? null;
 
   const capture = () => {
     if (deviceId === null) return;
@@ -214,10 +203,7 @@ export function LiveSnapshotPanel({
                 { key: "types", label: "element types ", value: types?.length },
               ]}
             />
-            <Provenance
-              source="the runner's live snapshot"
-              asOf={read.asOf}
-            />
+            <Provenance source="the runner's live snapshot" asOf={read.asOf} />
           </div>
           {types && (
             <ShareList
@@ -237,7 +223,10 @@ export function LiveSnapshotPanel({
             />
           )}
           {!presenting && (
-            <details className="text-xs" data-testid="coord-ui-bridge-snapshot-raw">
+            <details
+              className="text-xs"
+              data-testid="coord-ui-bridge-snapshot-raw"
+            >
               <summary className="cursor-pointer text-muted-foreground">
                 Raw snapshot
               </summary>
