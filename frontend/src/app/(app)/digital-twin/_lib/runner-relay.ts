@@ -1,17 +1,19 @@
 /**
- * GET a path on a paired runner named only by its device id.
+ * GET or POST a path on a paired runner named only by its device id.
  *
  * Goes through the app's one runner transport resolver (`runnerRequest`,
  * `@/lib/runner/api-client`). A runner named by device id alone carries no
  * port, so it can never be proven local and the resolver always takes the
  * relay (`@/lib/runner/relay` — the one relay client), which reaches the
  * runner by device id from any origin. The runner's Spec API and live UI
- * Bridge snapshot are on its relay allowlist.
+ * Bridge snapshot are on its relay allowlist, and so are the two reads the
+ * console's UI Bridge dashboard adds (`admin/coord/ui-bridge/_lib/relayReads.ts`).
  *
  * This module keeps the digital twin's error shape: a {@link RunnerRelayError}
  * carrying the backend's relay diagnostics and, when the runner itself
  * answered, the runner's own refusal. It is also the ONE place a runner body
- * is unwrapped — see {@link runnerProxyGet}.
+ * is unwrapped — see {@link runnerProxyGet} — and the one place a relayed
+ * POST is built — see {@link runnerProxyPost}.
  */
 
 import { runnerRequest, RunnerApiError } from "@/lib/runner/api-client";
@@ -25,13 +27,21 @@ export type { RunnerRelayDiagnostics } from "@/lib/runner/relay";
 
 /**
  * The runner's own refusal — the RUNNER speaking, as opposed to the backend's
- * relay layer (whose `detail` and clocks `readRelayDiagnostics` reads). Two
- * runner dialects reach this tab:
+ * relay layer (whose `detail` and clocks `readRelayDiagnostics` reads). Three
+ * runner dialects reach these reads:
  *  - the Spec API's `SpecError`: `{ ok: false, reason, detail? }` — e.g. the
  *    404 `{ ok: false, reason: "app-not-found", detail: { appId } }` for an
  *    app id the runner has not registered;
  *  - an `ApiResponse` error: `{ success: false, error, code? }` — e.g. the
- *    snapshot route's 500 when neither the SDK nor a native capture answered.
+ *    snapshot route's 500 when neither the SDK nor a native capture answered;
+ *  - the relay's egress refusal: `409 { error: "egress_off", flow, domain,
+ *    message }` (qontinui-runner `backend_relay.rs`
+ *    `egress_off_http_response`), sent INSTEAD of the route's answer when the
+ *    project's switch for that flow is off — the snapshot and page health
+ *    follow the terminal-stream switch, because both quote the runner's own
+ *    window. It carries no `success: false`, so it is matched by its fixed
+ *    `error` token; `reason` is then `egress_off`, `message` the runner's
+ *    sentence, and `detail` the `flow` / `domain` it named.
  */
 export interface RunnerRefusal {
   /** Machine-readable cause: the Spec API's `reason`, else the `code`. */
@@ -83,12 +93,33 @@ const nonEmpty = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v : undefined;
 
 /**
+ * The fixed `error` token of the runner relay's egress refusal. A machine
+ * token, not a sentence, so matching it is the contract (the sentence beside
+ * it is `message`).
+ */
+export const EGRESS_OFF_REFUSAL = "egress_off";
+
+/**
  * The runner's refusal in `body`, or `undefined` when the body does not say
  * it failed. A body that says so (`ok: false` or `success: false`) is a
- * refusal even when it names no cause — the runner still answered "no".
+ * refusal even when it names no cause — the runner still answered "no". The
+ * relay's egress refusal says so by its `error: "egress_off"` token instead
+ * (see {@link RunnerRefusal}).
  */
 export function readRunnerRefusal(body: unknown): RunnerRefusal | undefined {
   if (!isRecord(body)) return undefined;
+  if (body.error === EGRESS_OFF_REFUSAL) {
+    const detail: Record<string, unknown> = {};
+    const flow = nonEmpty(body.flow);
+    const domain = nonEmpty(body.domain);
+    if (flow) detail.flow = flow;
+    if (domain) detail.domain = domain;
+    return {
+      reason: EGRESS_OFF_REFUSAL,
+      message: nonEmpty(body.message),
+      detail: Object.keys(detail).length > 0 ? detail : undefined,
+    };
+  }
   if (body.ok !== false && body.success !== false) return undefined;
   return {
     reason: nonEmpty(body.reason) ?? nonEmpty(body.code),
@@ -111,6 +142,32 @@ async function readJsonOrUndefined(resp: Response): Promise<unknown> {
   }
 }
 
+/** Options for one runner-proxy request. */
+export interface RunnerProxyOptions {
+  /** The caller's budget — see `RunnerRequestInit.timeoutMs`. */
+  timeoutMs?: number;
+  /**
+   * What an `ApiResponse` success envelope (`{ success: true, data }`) hands
+   * back:
+   *  - `"unwrap"` (the default) — its `data`, the payload. Right for every
+   *    route whose envelope carries nothing beside `data`.
+   *  - `"keep"` — the whole body, for a route whose envelope carries fields
+   *    BESIDE `data`. The runner's `/health` is one: its SDK feature inventory
+   *    (`sdkFeatures`), `uiBridge`, `buildId` and `provenance` sit at the top
+   *    level, so unwrapping it would silently drop the feature inventory.
+   *
+   * Either way a body that says it failed is an error, never a value.
+   */
+  envelope?: "unwrap" | "keep";
+}
+
+/** The request half that differs between {@link runnerProxyGet} and {@link runnerProxyPost}. */
+interface RunnerProxyInit {
+  method: "GET" | "POST";
+  body?: string;
+  headers?: Record<string, string>;
+}
+
 /**
  * GET `runnerPath` (e.g. `apps/qontinui-runner/spec/list`) on `deviceId`'s
  * runner and return its payload. Throws {@link RunnerRelayError} on a
@@ -121,9 +178,11 @@ async function readJsonOrUndefined(resp: Response): Promise<unknown> {
  * verbatim. Its `ApiResponse` routes wrap the payload as
  * `{ success: true, data }` (the live snapshot does); the Spec API answers
  * bare (`{ ok, specs }`, `{ ok, pages }`). The envelope is unwrapped HERE,
- * once, for every runner-proxy read — callers always receive the payload.
- * Leaving it to each caller is how the snapshot counters read the envelope's
- * top level and showed "0 elements" for a 112-element snapshot.
+ * once, for every runner-proxy read — callers always receive the payload
+ * unless they ask for the whole body (`envelope: "keep"`, see
+ * {@link RunnerProxyOptions}). Leaving it to each caller is how the snapshot
+ * counters read the envelope's top level and showed "0 elements" for a
+ * 112-element snapshot.
  *
  * `{ success: false, error }` (or the Spec API's `{ ok: false, reason }`) is
  * an ERROR even on a 2xx, never an empty success: a failed read rendered as an
@@ -132,7 +191,49 @@ async function readJsonOrUndefined(resp: Response): Promise<unknown> {
 export async function runnerProxyGet<T>(
   deviceId: string,
   runnerPath: string,
-  opts?: { timeoutMs?: number }
+  opts?: RunnerProxyOptions
+): Promise<T> {
+  return runnerProxyRequest<T>(deviceId, runnerPath, { method: "GET" }, opts);
+}
+
+/**
+ * POST `body`, JSON-encoded, to `runnerPath` on `deviceId`'s runner and return
+ * its payload — the POST twin of {@link runnerProxyGet}, with the same error
+ * and envelope contract.
+ *
+ * Some runner READS are registered as POST routes (page health takes an
+ * options body; the occlusion sweep takes a threshold), so the relay carries
+ * them as POST. The method is the route's, not a claim that the call writes:
+ * the relay carries only the `(method, path)` pairs the runner's allowlist
+ * names, and a POST outside it is refused like any other path.
+ *
+ * The body always goes as JSON with an explicit `Content-Type`, on the relay
+ * AND on loopback, so the runner's `Json` extractor never depends on the HTTP
+ * client's default header.
+ */
+export async function runnerProxyPost<T>(
+  deviceId: string,
+  runnerPath: string,
+  body: unknown,
+  opts?: RunnerProxyOptions
+): Promise<T> {
+  return runnerProxyRequest<T>(
+    deviceId,
+    runnerPath,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    },
+    opts
+  );
+}
+
+async function runnerProxyRequest<T>(
+  deviceId: string,
+  runnerPath: string,
+  init: RunnerProxyInit,
+  opts?: RunnerProxyOptions
 ): Promise<T> {
   const path = runnerPath.replace(/^\//, "");
   const target: RunnerTarget = {
@@ -144,7 +245,9 @@ export async function runnerProxyGet<T>(
   let resp: Response;
   try {
     resp = await runnerRequest(target, `/${path}`, {
-      method: "GET",
+      method: init.method,
+      body: init.body,
+      headers: init.headers,
       timeoutMs: opts?.timeoutMs,
     });
   } catch (err) {
@@ -203,7 +306,12 @@ export async function runnerProxyGet<T>(
       refused
     );
   }
-  if (isRecord(body) && body.success === true && "data" in body) {
+  if (
+    opts?.envelope !== "keep" &&
+    isRecord(body) &&
+    body.success === true &&
+    "data" in body
+  ) {
     return body.data as T;
   }
   return body as T;

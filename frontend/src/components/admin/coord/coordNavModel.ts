@@ -21,10 +21,10 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review / Taste Inbox
- *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Trees° / Launch session° /
- *             Runner Drain° / Test Targets° / Migrations° / Deploys° /
- *             Releases° / Git Ops° / Federation° / Memory° / Onboarding° /
- *             Onboarding Status°
+ *   Dev Ops ▸ Overview / CI / UI Bridge / Computers† / Spawns† / Trees° /
+ *             Launch session° / Runner Drain° / Test Targets° / Migrations° /
+ *             Deploys° / Releases° / Git Ops° / Federation° / Memory° /
+ *             Onboarding° / Onboarding Status°
  *   Access ▸  Members / Agent Registry
  *
  *   (° = operator-only; † = coord tenant admin of the active tenant, the same
@@ -52,6 +52,7 @@
 import {
   Activity,
   Anchor,
+  AppWindow,
   BadgeCheck,
   Bell,
   BellRing,
@@ -567,6 +568,23 @@ export const GROUPS: NavGroup[] = [
         label: "CI",
         icon: BadgeCheck,
         testId: "coord-nav-ci",
+      },
+      {
+        // Plan `2026-10-23-console-presentation-spaces` Phase 6: the UI Bridge
+        // dashboard — the app registry, each app's screens and states, a live
+        // element snapshot, the runner's SDK and trust posture, its component
+        // actions with their declared effects, and page health. Beside CI and
+        // member-visible like it: every read is a member's own — the web app
+        // registry (`GET /api/v1/fleet/apps`, any signed-in user) and the
+        // member's own paired runner over the relay — and "can an agent see
+        // and safely operate my runner's interface?" is a developer's question
+        // about their own machine. A group leaf rather than a sixth direct
+        // tab: it is a page opened to inspect or to present (it is lens
+        // surface 4 of the tour), not a daily destination.
+        href: "/admin/coord/ui-bridge",
+        label: "UI Bridge",
+        icon: AppWindow,
+        testId: "coord-nav-ui-bridge",
       },
       {
         // Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-

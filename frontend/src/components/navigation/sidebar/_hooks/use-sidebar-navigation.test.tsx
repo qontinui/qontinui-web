@@ -195,16 +195,20 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     expect(routes).not.toContain("/billing");
   });
 
-  it("shows a member only Overview and CI under Dev Ops, and an operator all of it", () => {
+  it("shows a member only Overview, CI and UI Bridge under Dev Ops, and an operator all of it", () => {
     const devops = () =>
       menu().visibleNavItems.find((i) => i.id === "coord-group-devops");
-    expect(devops()?.children?.map((c) => c.label)).toEqual(["Overview", "CI"]);
+    expect(devops()?.children?.map((c) => c.label)).toEqual([
+      "Overview",
+      "CI",
+      "UI Bridge",
+    ]);
 
     isSuperuser = true;
     expect(devops()?.children?.map((c) => c.label)).toContain("Runner Drain");
     expect(devops()?.children?.map((c) => c.label)).toContain("Computers");
     expect(devops()?.children?.map((c) => c.label)).toContain("Spawns");
-    expect(devops()?.children).toHaveLength(16);
+    expect(devops()?.children).toHaveLength(17);
   });
 
   it("shows Computers and Spawns to an admin of the ACTIVE tenant who is not staff, and nothing operator-only", () => {
@@ -217,6 +221,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     expect(devops?.children?.map((c) => c.label)).toEqual([
       "Overview",
       "CI",
+      "UI Bridge",
       "Computers",
       "Spawns",
     ]);
@@ -235,7 +240,11 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     const devops = menu().visibleNavItems.find(
       (i) => i.id === "coord-group-devops"
     );
-    expect(devops?.children?.map((c) => c.label)).toEqual(["Overview", "CI"]);
+    expect(devops?.children?.map((c) => c.label)).toEqual([
+      "Overview",
+      "CI",
+      "UI Bridge",
+    ]);
   });
 
   it("keeps a console section active on its detail routes", () => {
