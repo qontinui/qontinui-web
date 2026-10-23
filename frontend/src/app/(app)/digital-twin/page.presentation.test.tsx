@@ -219,6 +219,10 @@ describe("/digital-twin in presentation mode", () => {
       expect(plan.textContent).not.toMatch(/Fixture:|Process twin:/);
     }
     expect(within(detail).queryByTestId("digital-twin-area-drift")).toBeNull();
+    // The plans' counts and statuses carry their source and age.
+    expect(detail.querySelector("[data-provenance]")).toHaveTextContent(
+      "source: coord's work-unit list"
+    );
 
     // Filtering by a part is navigation, and stays safe.
     await user.click(within(detail).getByTestId("digital-twin-part-gates"));
