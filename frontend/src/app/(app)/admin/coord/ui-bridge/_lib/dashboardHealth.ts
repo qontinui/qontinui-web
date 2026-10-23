@@ -15,8 +15,9 @@
  *
  * Green therefore means something measured: the runner answered, it
  * registers at least one action and every one declares its effect, and
- * nothing that was checked came back red. A read that did not answer never
- * contributes a green.
+ * nothing that was checked came back red or UNKNOWN. A read that did not
+ * answer never contributes a green — including an occlusion sweep that
+ * observed nothing.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -174,6 +175,26 @@ export function deriveDashboardHealth(
     return {
       level: "amber",
       headline: `${input.machine} registers no component actions on its current screen, so there is nothing an agent can classify.`,
+      badges,
+    };
+  }
+  // Page health and the sweep are only ever asked for on purpose; once they
+  // were, a check that came back without an answer keeps the strip amber —
+  // an unknown is never folded into a green.
+  const unansweredChecks = [
+    input.pageHealth.state === "failed" ||
+    (input.pageHealth.state === "ok" && pageHealth === "unknown")
+      ? "page health"
+      : null,
+    input.occlusion.state === "failed" ||
+    (input.occlusion.state === "ok" && occlusion === "unknown")
+      ? "occlusion"
+      : null,
+  ].filter((c): c is string => c !== null);
+  if (unansweredChecks.length > 0) {
+    return {
+      level: "amber",
+      headline: `${input.machine}: every one of its ${counts.actions} actions declares its effect, but its ${unansweredChecks.join(" and ")} ${unansweredChecks.length === 1 ? "is" : "are"} UNKNOWN.`,
       badges,
     };
   }

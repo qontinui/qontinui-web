@@ -1,0 +1,203 @@
+/**
+ * The UI Bridge dashboard in presentation mode (plan
+ * `2026-10-23-console-presentation-spaces` D1–D3), rendered with Phase 1's
+ * helper over the REAL UI Bridge provider, every panel populated — the
+ * on-demand snapshot and page health included, so their sections are checked
+ * too.
+ *
+ * `expectPresentationSafe` fails on an enabled control that is not
+ * navigation-only, a write or undeclared UI Bridge registration, a cost
+ * figure, or a missing caption. Beyond it, this file pins D3.3 on this page:
+ * the runner is aliased, text the scope cannot clear is withheld (another
+ * app's name, component and action names, the window's own text), and the
+ * runner's own app — whose repository the scope does clear — is named.
+ */
+
+import React, { type ReactNode } from "react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RunnerTarget } from "@/lib/runner/target";
+import { sessionMachineAliases, type CaptionKey } from "@/components/presentation";
+import {
+  expectPresentationSafe,
+  renderInPresentationMode,
+} from "@/test/presentation";
+import {
+  DEVICE_ID,
+  FLEET_APPS,
+  VISIBILITY_HIDES_TEXT,
+} from "./__fixtures__/runnerBodies";
+import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
+
+const state = vi.hoisted(() => ({
+  target: { kind: "pending" } as RunnerTarget,
+  relay: null as RelayFake | null,
+}));
+
+vi.mock("@/contexts/active-runner-context", () => ({
+  useRunnerTarget: () => state.target,
+  useActiveRunner: () => ({
+    activeRunner: null,
+    runners: [
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        name: "Build box",
+        hostname: "build-host-1",
+      },
+    ],
+  }),
+}));
+vi.mock("@/services/service-factory", () => ({
+  httpClient: {
+    fetch: (url: string, init?: RequestInit) => {
+      if (!state.relay) throw new Error("relay not set");
+      return state.relay.fetch(url, init);
+    },
+    get: async (url: string) => {
+      if (url !== "/api/v1/fleet/apps") throw new Error(`unexpected GET ${url}`);
+      return FLEET_APPS;
+    },
+  },
+}));
+vi.mock("@/services/api-config", () => ({
+  ApiConfig: { API_BASE_URL: "https://api.test" },
+}));
+
+import UiBridgeDashboardPage from "./page";
+
+/** Every caption the page carries — the page's and each panel's. */
+const CAPTIONS: CaptionKey[] = [
+  "ui-bridge.page",
+  "ui-bridge.apps",
+  "ui-bridge.spec-graph",
+  "ui-bridge.snapshot",
+  "ui-bridge.sdk-posture",
+  "ui-bridge.component-actions",
+  "ui-bridge.page-health",
+];
+
+/** The tenant's scope: its own owner first-party, and one confidential term. */
+const SCOPE = {
+  status: "ready" as const,
+  scope: { firstPartyOwners: ["qontinui"], confidentialTerms: ["Partner A"] },
+};
+
+function Queries({ children }: { children: ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+async function renderPresenting() {
+  const view = renderInPresentationMode(<UiBridgeDashboardPage />, {
+    scope: SCOPE,
+    wrapper: Queries,
+  });
+  await screen.findByTestId("coord-ui-bridge-actions-counts");
+  // The on-demand reads are navigation-only, so they work while presenting —
+  // run both, so the panels they fill are checked as well.
+  fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
+  fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+  await screen.findByTestId("coord-ui-bridge-snapshot-counts");
+  await screen.findByTestId("coord-ui-bridge-health-counts");
+  await screen.findByTestId("coord-ui-bridge-occlusion");
+  await waitFor(() =>
+    expect(screen.getByTestId("coord-ui-bridge-spec-counts")).toHaveTextContent(
+      "states 4"
+    )
+  );
+  return view;
+}
+
+beforeEach(() => {
+  state.target = {
+    kind: "runner",
+    runner: { id: DEVICE_ID, name: "Build box" },
+    locality: "unknown",
+  };
+  state.relay = relayFake({
+    visibility: () => json(200, VISIBILITY_HIDES_TEXT),
+  });
+  sessionMachineAliases.reset();
+  window.sessionStorage.clear();
+});
+
+describe("the UI Bridge dashboard while presenting", () => {
+  it("is safe to show an outsider: no write control, no cost, every caption", async () => {
+    const view = await renderPresenting();
+    expectPresentationSafe(view, { captions: CAPTIONS });
+  });
+
+  it("aliases the runner and never prints its hostname or name", async () => {
+    await renderPresenting();
+    expect(screen.getByTestId("coord-ui-bridge-runner")).toHaveTextContent(
+      "Reading Machine A over the cloud relay."
+    );
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-strip")
+    ).toHaveTextContent("Machine A");
+    expect(document.body).not.toHaveTextContent("build-host-1");
+    expect(document.body).not.toHaveTextContent("Build box");
+  });
+
+  it("withholds every text the scope cannot clear, and names the runner's own app", async () => {
+    await renderPresenting();
+    const body = document.body;
+    // Another app's name: its registry row proves no owner.
+    expect(body).not.toHaveTextContent("Example Portal");
+    expect(body).not.toHaveTextContent("example-portal");
+    // Component and action names: the merged registry says nobody's.
+    expect(body).not.toHaveTextContent("Terminal tabs");
+    expect(body).not.toHaveTextContent("Delete profile");
+    // The window's own text, quoted by page health and the sweep.
+    expect(body).not.toHaveTextContent("Partner A");
+    // Local paths and URLs stay with the operator.
+    expect(body).not.toHaveTextContent("/home/dev/src");
+    expect(body).not.toHaveTextContent("127.0.0.1");
+    // The runner's own app is first-party under this scope, so it is named.
+    const rows = screen.getAllByTestId("coord-ui-bridge-app-row");
+    expect(
+      rows.some((r) => within(r).queryByText("Qontinui Runner") !== null)
+    ).toBe(true);
+    expect(
+      body.querySelectorAll('[data-redacted="true"]').length
+    ).toBeGreaterThan(0);
+  });
+
+  it("still shows the effect badges, the undeclared count and the findings", async () => {
+    await renderPresenting();
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-count-undeclared")
+    ).toHaveTextContent("undeclared 3");
+    expect(
+      screen
+        .getAllByTestId("coord-ui-bridge-component-row")
+        .map((r) =>
+          r.querySelector("[data-status-kind]")?.getAttribute("data-status-kind")
+        )
+    ).toEqual(["undeclared", "undeclared", "read"]);
+    expect(screen.getByTestId("coord-ui-bridge-occlusion")).toHaveAttribute(
+      "data-occlusion",
+      "hides-text"
+    );
+    expect(
+      screen.getAllByTestId("coord-ui-bridge-health-finding")
+    ).toHaveLength(6);
+  });
+
+  it("puts provenance beside the figures and leaves the operator's tools out", async () => {
+    await renderPresenting();
+    const chips = document.body.querySelectorAll("[data-provenance]");
+    expect(chips.length).toBeGreaterThanOrEqual(7);
+    expect(
+      [...chips].every((c) => c.getAttribute("data-provenance-known") !== null)
+    ).toBe(true);
+    // The free-text app picker and the raw snapshot are operator-only.
+    expect(screen.queryByTestId("coord-ui-bridge-spec-app")).toBeNull();
+    expect(screen.getByTestId("coord-ui-bridge-spec-app-shown")).toBeInTheDocument();
+    expect(screen.queryByTestId("coord-ui-bridge-snapshot-raw")).toBeNull();
+    expect(screen.queryByTestId("coord-ui-bridge-health-quotes")).toBeNull();
+  });
+});

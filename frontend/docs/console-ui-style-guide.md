@@ -1559,6 +1559,32 @@ things rather than shipping them silently:
 | **A count chart on a console page, built like `ThroughputPanel`, that says what it does not cover** | `spawns/_components/SpawnRateChart.tsx` | Two series inside a `CollapsiblePanel`, colours from `@/config/theme`, mirrored in an `sr-only` table, bucketed and labelled by UTC hour. Drawn from the window's request list, so it counts requests MADE in its span and when those started — a request made earlier that started inside the span is not on it, and the caption says so rather than calling the line a start rate. It starts at the first FULL hour the read covers — after the window's start, or after the oldest row loaded when the list was truncated — because the hour either falls in was only partly read; earlier hours are not drawn, never drawn as zeros. | `plans/ThroughputPanel.tsx` is the first chart on a console page and is not recorded here; this records the shape both now follow, so a third chart has something written to compose against. |
 | **A fact the wire does not serve yet, stated once for the list** | `spawns/page.tsx` (`coord-spawns-reserve-note`) | Each device's dispatch role IS served (`/fleet/dispatch-roles`) and rides on its line's label. Its current reserve and ceilings are not served until the plan's Phase 6: the `ShareList` says so ONCE above its lines, and each line's `title` repeats it for a reader hovering one device. | Repeating "not served yet" on every line is chrome that cannot vary (served policy `ux-priorities` `repeated-chrome-must-earn-its-space-by-varying`), and rendering the slot as `0` would be R6's dash rule broken. |
 
+### 3.9 The UI Bridge dashboard — recorded under §6.4
+
+`/admin/coord/ui-bridge` (plan `2026-10-23-console-presentation-spaces`
+Phase 6) composes `HealthStrip`, `CollapsiblePanel`, `StatCluster`,
+`ShareList`, `FilterTabs`, `RecordList`/`RecordRow`/`RecordDetail`,
+`StatusBadge`, `RowTime`, `RefreshButton` and `BackendErrorMessage`, with the
+presentation primitives over them (`Caption`, `Provenance`, `RedactedText`,
+`MachineName`, `OperatorOnly`), and registers four palettes in
+`CONSOLE_PALETTES` — an action's declared effect, a page-health result, an
+occlusion verdict and an app's cross-registry presence, each in its own
+`*Status.ts` module under `ui-bridge/_lib/`. It adds no primitive. Five things
+are recorded rather than shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Declared classes are calm; only the undeclared is amber** | `ui-bridge/_lib/componentEffectStatus.ts` | `read`, `write` and `destructive` render on `INERT` and differ in their words; an action that declares NO effect is `undeclared` on `UNKNOWN_AMBER`, counted on the strip, filterable, and never shown as a read (served policy `testing` `an-actions-safety-class-is-declared-not-re-derived`). | R3 says colour encodes who must act. This records the consequence for a safety class: a declared `destructive` is a fact about the control, not an alarm, and painting it red would spend red on a word. The one thing nobody can act on without its author is the missing declaration — R3's ignorance floor. |
+| **A panel-level UNKNOWN that names the producer's build** | `ui-bridge/_lib/relaySource.ts`, `_components/SourceUnknown.tsx` | A panel whose read did not answer renders the UNKNOWN badge on `UNKNOWN_AMBER` and ONE sentence: not carried by this runner's relay (naming the runner build read from its own `/health`, and whether any build carries the route yet), withheld by the project's egress switch (the runner's own sentence), or the relay's reason with the request id on a raw-id line (R5). Two reads failing alike say it once. | R6 covers a count (`–`); §3.5 and §3.6 cover a field. This is the panel-level form, and its sentence has to tell the reader what would change the answer — "rebuild this runner" for an old build, "not served by any build yet" for a route no allowlist carries. |
+| **On-demand reads behind navigation-only buttons** | `_components/LiveSnapshotPanel.tsx`, `_components/PageHealthPanel.tsx` | A read that drives the runner's live window (the snapshot, page health, the occlusion sweep) runs only from its own outline `size="sm"` button, carrying `NAVIGATION_ONLY_PROPS`, and only for the runner it was asked for; until then the panel says it has not run and why. | `RefreshButton` re-reads what a page already holds. These are first reads with a cost on the producer, so they are never fired implicitly — and they stay live in presentation mode because pressing one changes nothing but the page. |
+| **An occupancy heatmap** | `_components/PageHealthPanel.tsx` (`Heatmap`) | The runner's 20×20 `#`/`.` grid as 0.5 rem cells — `bg-foreground/50` where an element sits, `bg-card` where none does, 1 px `bg-border` gaps — `role="img"`, its label stating how many cells are filled. | No primitive draws a grid. It is neutral by construction — a measurement of the whole screen, never an attention hue — the same rule `ShareBar` holds. It moves to `console/` when a second surface needs it. |
+| **A free-text field that only changes the view** | `_components/SpecGraphPanel.tsx` | The app-id field (the registries' ids as a `datalist`) carries `NAVIGATION_ONLY_PROPS` and sits inside `OperatorOnly`; the placeholder shows the app being displayed through `RedactedText`. | The marker is true — typing changes only what is shown — but the field's VALUE is free text that may name another client (D3.3), so while presenting the page shows the redacted name instead of the input. |
+
+While presenting, every panel is held open (`CollapsiblePanel` `forceOpen`): a
+collapsed section would hide its caption and figures from the audience. Each
+panel's title is read from its caption entry, so the console header and the
+presentation headline cannot name a section two ways.
+
 ---
 
 ## 4. The attention palette
