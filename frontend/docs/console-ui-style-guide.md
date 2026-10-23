@@ -1569,7 +1569,7 @@ presentation primitives over them (`Caption`, `Provenance`, `RedactedText`,
 `MachineName`, `OperatorOnly`), and registers four palettes in
 `CONSOLE_PALETTES` — an action's declared effect, a page-health result, an
 occlusion verdict and an app's cross-registry presence, each in its own
-`*Status.ts` module under `ui-bridge/_lib/`. It adds no primitive. Five things
+`*Status.ts` module under `ui-bridge/_lib/`. It adds no primitive. Seven things
 are recorded rather than shipped silently:
 
 | Pattern | Where | What it is | Why it is not an existing rule |
@@ -1579,11 +1579,16 @@ are recorded rather than shipped silently:
 | **On-demand reads behind navigation-only buttons** | `_components/LiveSnapshotPanel.tsx`, `_components/PageHealthPanel.tsx` | A read that drives the runner's live window (the snapshot, page health, the occlusion sweep) runs only from its own outline `size="sm"` button, carrying `NAVIGATION_ONLY_PROPS`, and only for the runner it was asked for; until then the panel says it has not run and why. | `RefreshButton` re-reads what a page already holds. These are first reads with a cost on the producer, so they are never fired implicitly — and they stay live in presentation mode because pressing one changes nothing but the page. |
 | **An occupancy heatmap** | `_components/PageHealthPanel.tsx` (`Heatmap`) | The runner's 20×20 `#`/`.` grid as 0.5 rem cells — `bg-foreground/50` where an element sits, `bg-card` where none does, 1 px `bg-border` gaps — `role="img"`, its label stating how many cells are filled. | No primitive draws a grid. It is neutral by construction — a measurement of the whole screen, never an attention hue — the same rule `ShareBar` holds. It moves to `console/` when a second surface needs it. |
 | **A free-text field that only changes the view** | `_components/SpecGraphPanel.tsx` | The app-id field (the registries' ids as a `datalist`) carries `NAVIGATION_ONLY_PROPS` and sits inside `OperatorOnly`; the placeholder shows the app being displayed through `RedactedText`. | The marker is true — typing changes only what is shown — but the field's VALUE is free text that may name another client (D3.3), so while presenting the page shows the redacted name instead of the input. |
+| **A reason that quotes the outside world is the operator's** | `ui-bridge/_lib/relaySource.ts` (`quotes`, `issueStatusWord`, `noRunnerReason`), `_components/SourceUnknown.tsx` (`withheldStatus`) | A failed read's cause QUOTES on every arm but one — a stale pairing's device id, the runner's own refusal (its `app-not-found` names the app id typed), a transport error's request path, a status detail the page has never seen; only the relay's "runner not connected" is explained in fixed sentences. A quoting reason, and the page's own sentence that quotes a typed id ("not a valid app id"), renders through `RedactedText` bound to NO repository: verbatim for the operator, always withheld while presenting in favour of `Reason · … · <status word>`, the UNKNOWN badge kept. While presenting, a no-runner reason is the target's fixed phrase, never the dispatch refusal's sentence, which names the runner the operator picked; and the web backend's own refusal (`BackendErrorMessage`) is `OperatorOnly`. | D3.3 is written for titles and names. Error text is where a device id or a client's name reaches a lens page without anyone deciding to show it, so the rule is applied there as an allow-list of the one fixed arm — a new or reworded failure fails closed. No repository can clear a quoting reason: what it quotes is not the subject's own text (a reason about the runner's own app can still name a device). |
+| **A total over a source that did not answer is a floor** | `ui-bridge/_lib/appRegistryStatus.ts` (`appTotalOf`) | The app total across the web and runner registries is exact only when both answered; with one unread it is `≥N` — the spelling `ci/_lib/ciDashboardStatus.ts` uses for its refused-job floor — titled with the registry that was not read; a floor of zero, or neither registry answering, is `–`. The strip, the panel's counts and its collapsed summary read the same total. | R6 covers a count that was not fetched (`–`). This is a count that WAS fetched from one of its two sources: neither `0` nor the answered side's count is true of it, and while no relay carries the runner's own app list, it is a floor on every runner. |
 
 While presenting, every panel is held open (`CollapsiblePanel` `forceOpen`): a
 collapsed section would hide its caption and figures from the audience. Each
 panel's title is read from its caption entry, so the console header and the
-presentation headline cannot name a section two ways.
+presentation headline cannot name a section two ways. The strip's figures carry
+their provenance too: while presenting, one `Provenance` chip per read behind
+them — the component registry, the runner's health, and the two app registries
+— sits on the line under the strip, beside the runner it reads.
 
 ---
 
