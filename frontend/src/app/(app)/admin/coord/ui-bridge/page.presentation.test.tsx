@@ -162,8 +162,10 @@ describe("the UI Bridge dashboard while presenting", () => {
     expect(
       screen.getByTestId("coord-ui-bridge-health-strip")
     ).toHaveTextContent("Machine A");
-    expect(document.body).not.toHaveTextContent("build-host-1");
-    expect(document.body).not.toHaveTextContent("Build box");
+    // Not in the text, and not in any attribute either — a title or a
+    // data attribute is in front of the audience too.
+    expect(document.body.innerHTML).not.toContain("build-host-1");
+    expect(document.body.innerHTML).not.toContain("Build box");
   });
 
   it("withholds every text the scope cannot clear, and names the runner's own app", async () => {
@@ -227,6 +229,19 @@ describe("the UI Bridge dashboard while presenting", () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId("coord-ui-bridge-snapshot-raw")).toBeNull();
     expect(screen.queryByTestId("coord-ui-bridge-health-quotes")).toBeNull();
+  });
+
+  it("names both spec reads behind the screens and states", async () => {
+    await renderPresenting();
+    const panel = screen.getByTestId("coord-ui-bridge-spec");
+    expect(
+      within(panel)
+        .getAllByText(/^source: /)
+        .map((c) => c.textContent)
+    ).toEqual([
+      "source: the runner's spec list",
+      "source: the runner's spec graph",
+    ]);
   });
 
   it("names where the strip's figures come from, and when", async () => {

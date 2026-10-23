@@ -248,6 +248,13 @@ export function SpecGraphPanel({
                 },
               ]}
             />
+            {/* Two reads behind these figures: the states and transitions
+                are the graph's, and the screens count is the list's while
+                the graph has not answered. */}
+            <Provenance
+              source="the runner's spec list"
+              asOf={list.state === "ok" ? list.asOf : null}
+            />
             <Provenance
               source="the runner's spec graph"
               asOf={graph.state === "ok" ? graph.asOf : null}
