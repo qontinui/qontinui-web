@@ -106,6 +106,7 @@ vi.mock("./_components/AskTheTwin", () => ({
 vi.mock("./_components/UiBridgePanel", () => ({ UiBridgePanel: () => null }));
 
 import DigitalTwinPage from "./page";
+import { FixedPresentationMode } from "@/components/presentation";
 
 interface SpecAction {
   type: string;
@@ -314,5 +315,42 @@ describe("DigitalTwinPage drawer navigation", () => {
       await user.keyboard("{Escape}");
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     }
+  });
+});
+
+describe("DigitalTwinPage title — the presentation lens (plan 2026-10-23-console-presentation-spaces)", () => {
+  it("is its caption: the heading Spec CI asserts, and the one-liner, for the operator", () => {
+    render(<DigitalTwinPage />);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Digital Twin" })
+    ).toBeInTheDocument();
+    const caption = document.querySelector(
+      '[data-presentation-caption="digital-twin.page"]'
+    );
+    expect(
+      caption?.querySelector('[data-caption-part="one-liner"]')
+    ).not.toBeNull();
+    expect(
+      caption?.querySelector('[data-caption-part="why-it-matters"]')
+    ).toBeNull();
+    // No lens is mounted above a bare page render, so there is no toggle.
+    expect(screen.queryByText("Presentation mode")).not.toBeInTheDocument();
+  });
+
+  it("adds why it matters, and the presentation chip, in presentation mode", () => {
+    render(
+      <FixedPresentationMode presenting>
+        <DigitalTwinPage />
+      </FixedPresentationMode>
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Digital Twin" })
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-caption-part="why-it-matters"]')
+    ).not.toBeNull();
+    expect(screen.getByTestId("presentation-mode-chip")).toHaveTextContent(
+      "Presentation mode"
+    );
   });
 });

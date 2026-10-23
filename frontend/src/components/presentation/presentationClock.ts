@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * presentationClock — one shared tick that keeps every "as of 3m ago" current.
  *

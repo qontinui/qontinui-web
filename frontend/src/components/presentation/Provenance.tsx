@@ -76,8 +76,10 @@ function ProvenanceChip({
   return (
     <Badge
       variant="outline"
+      // `gap-0`: the spacing is real text (" · "), so the chip reads as one
+      // line to a screen reader, a copy-paste and a UI Bridge text snapshot.
       className={cn(
-        "gap-1 text-[11px] font-normal",
+        "gap-0 text-[11px] font-normal",
         known ? "text-muted-foreground" : UNKNOWN_AMBER,
         className
       )}
@@ -87,7 +89,7 @@ function ProvenanceChip({
       title={title}
     >
       <span>source: {sourceText ?? PROVENANCE_UNKNOWN}</span>
-      <span aria-hidden>·</span>
+      <span aria-hidden>{" · "}</span>
       <span>as of {instant ? relativeTime(instant) : PROVENANCE_UNKNOWN}</span>
     </Badge>
   );
