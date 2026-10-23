@@ -341,7 +341,7 @@
       "layer": "coord",
       "twin": "process",
       "stages": ["operate", "learn"],
-      "description": "Claude-account usage windows (5h + weekly) and CI minutes per land; per-task cost (labelled list-price equivalent) is not yet on coord main.",
+      "description": "Claude-account usage windows (5h + weekly) and CI minutes per land; the per-task cost of work is not yet on coord main.",
       "research_status": "partial",
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
