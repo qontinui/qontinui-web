@@ -1,0 +1,534 @@
+/**
+ * Presentation-mode test helper — render a surface in presentation mode, and
+ * assert it is safe to show an outsider (plan
+ * `2026-10-23-console-presentation-spaces` D3).
+ *
+ * Every lens page carries a presentation-mode render test built on this:
+ *
+ *     const view = renderInPresentationMode(<DevOpsPage />, {
+ *       scope: { status: "ready", scope: { firstPartyOwners: ["acme"], confidentialTerms: [] } },
+ *     });
+ *     await screen.findByTestId("coord-devops-health-strip");
+ *     expectPresentationSafe(view, { captions: ["dev-ops.page"] });
+ *
+ * `expectPresentationSafe` fails, listing every offender, on:
+ *
+ * - **(a) an enabled control** — a `button`, `input`, `select`, `textarea`,
+ *   `[contenteditable]` or ARIA widget that is not disabled and is not
+ *   navigation-only. Navigation-only means: carries `NAVIGATION_ONLY_PROPS`
+ *   (`data-presentation-nav`), or is a link (`a[href]`, `role="link"`), a tab
+ *   (`role="tab"`), or a pure disclosure (`aria-expanded` with no
+ *   `aria-haspopup` — opening a menu or a dialog is NOT a pure disclosure,
+ *   because what it opens can write). Hidden content is scanned too: a control
+ *   one click away is still in front of the audience.
+ * - **(b) a write registration** — a mounted UI Bridge component action, or a
+ *   connected element's custom action, whose declared `effect` is `write` or
+ *   `destructive`, or that declares NO effect: unclassified is not safe (D3.2:
+ *   "UI Bridge registrations on lens pages declare `effect`").
+ * - **(c) a cost** — `CostFigure`'s operator-mode figure, the "list-price
+ *   equivalent" label, or any currency figure (`$12`, `€0.40`, `3 USD`) in
+ *   text or in a `title` / `aria-label` / `alt` / `placeholder` / input value.
+ * - **(d) a missing caption** — each key in `options.captions` must render.
+ *
+ * ## How (b) observes the registry
+ *
+ * By default the render is wrapped in the REAL `UIBridgeProvider` and its
+ * registry is read back — which is the only way to see what an automated walk
+ * would see. A test file that mocks `@qontinui/ui-bridge/react` cannot do
+ * that, so it must say how instead: pass `uiBridge: { registry }` (a view over
+ * whatever its mock recorded) or `uiBridge: { unobservable: "<reason>" }`.
+ * Neither is defaulted, so a mocked bridge can never make (b) pass by seeing
+ * nothing.
+ *
+ * The render is a `FixedPresentationMode` lens with the given presentation
+ * scope (default UNKNOWN, as production has until a scope provider says
+ * otherwise: every `RedactedText` withholds). Supply the caller's own
+ * providers through `wrapper`, as with RTL's `render`.
+ */
+
+import type { ComponentType, ReactElement, ReactNode } from "react";
+import {
+  render,
+  type RenderOptions,
+  type RenderResult,
+} from "@testing-library/react";
+import { expect } from "vitest";
+import * as uiBridgeReact from "@qontinui/ui-bridge/react";
+import {
+  COST_EQUIVALENT_LABEL,
+  FixedPresentationMode,
+  NAVIGATION_ONLY_ATTRIBUTE,
+  PRESENTATION_SCOPE_UNKNOWN,
+  PresentationScopeProvider,
+  type CaptionKey,
+  type PresentationScopeState,
+} from "@/components/presentation";
+
+/** The part of a UI Bridge registry check (b) reads. */
+export interface UiBridgeRegistryView {
+  getAllComponents(): ReadonlyArray<{
+    readonly id: string;
+    readonly mounted?: boolean;
+    readonly actions?: ReadonlyArray<{
+      readonly id: string;
+      readonly effect?: string;
+    }>;
+  }>;
+  getAllElements(): ReadonlyArray<{
+    readonly id: string;
+    readonly element?: Element | null;
+    readonly customActions?: Readonly<
+      Record<string, { readonly id: string; readonly effect?: string }>
+    >;
+  }>;
+}
+
+/** How check (b) is to observe UI Bridge registrations. */
+export type UiBridgeObservation =
+  | "provider"
+  | { readonly registry: UiBridgeRegistryView }
+  | { readonly unobservable: string };
+
+/** What a render ended up observing for check (b). */
+export type UiBridgeObserved =
+  | { readonly registry: UiBridgeRegistryView }
+  | { readonly unobservable: string };
+
+export interface PresentationRenderOptions extends Omit<
+  RenderOptions,
+  "wrapper" | "queries"
+> {
+  /** The presentation scope. Default UNKNOWN — everything redacts. */
+  scope?: PresentationScopeState;
+  /** See the module doc. Default `"provider"`, the real SDK. */
+  uiBridge?: UiBridgeObservation;
+  /** The caller's own providers (a QueryClientProvider, a mocked context …). */
+  wrapper?: ComponentType<{ children: ReactNode }>;
+}
+
+export type PresentationRenderResult = RenderResult & {
+  readonly uiBridge: UiBridgeObserved;
+};
+
+/** What the checks read: where to look, and the registry observation. */
+export interface PresentationView {
+  readonly baseElement?: Element;
+  readonly uiBridge: UiBridgeObserved;
+}
+
+export type PresentationViolationKind =
+  | "enabled-control"
+  | "write-registration"
+  | "undeclared-registration"
+  | "cost-figure"
+  | "cost-label"
+  | "currency-figure"
+  | "missing-caption";
+
+export interface PresentationViolation {
+  readonly kind: PresentationViolationKind;
+  readonly detail: string;
+}
+
+export interface PresentationSafetyOptions {
+  /** Caption keys that must render (`data-presentation-caption`). */
+  readonly captions?: readonly CaptionKey[];
+}
+
+interface BridgeModule {
+  readonly Provider: ComponentType<{ children: ReactNode }>;
+  readonly useBridge: () => { readonly registry?: unknown } | null;
+}
+
+/** The real SDK, or `null` when the test file mocked it away. */
+function realBridge(): BridgeModule | null {
+  try {
+    const Provider = uiBridgeReact.UIBridgeProvider as unknown;
+    const useBridge = uiBridgeReact.useUIBridgeOptional as unknown;
+    if (typeof Provider !== "function" || typeof useBridge !== "function") {
+      return null;
+    }
+    return {
+      Provider: Provider as BridgeModule["Provider"],
+      useBridge: useBridge as BridgeModule["useBridge"],
+    };
+  } catch {
+    // A vitest module mock throws on an export its factory did not define.
+    return null;
+  }
+}
+
+function isRegistryView(value: unknown): value is UiBridgeRegistryView {
+  const r = value as Partial<UiBridgeRegistryView> | null;
+  return (
+    !!r &&
+    typeof r.getAllComponents === "function" &&
+    typeof r.getAllElements === "function"
+  );
+}
+
+/**
+ * Render `ui` in presentation mode. Returns RTL's result plus how check (b)
+ * observed the UI Bridge registry.
+ */
+export function renderInPresentationMode(
+  ui: ReactElement,
+  options: PresentationRenderOptions = {}
+): PresentationRenderResult {
+  const {
+    scope = PRESENTATION_SCOPE_UNKNOWN,
+    uiBridge = "provider",
+    wrapper: CallerWrapper,
+    ...renderOptions
+  } = options;
+
+  const bridge = uiBridge === "provider" ? realBridge() : null;
+  if (uiBridge === "provider" && bridge === null) {
+    throw new Error(
+      "renderInPresentationMode: @qontinui/ui-bridge/react is mocked in this test file, " +
+        "so the real registry cannot be read for check (b). Pass " +
+        "`uiBridge: { registry }` (a view over what your mock recorded) or " +
+        '`uiBridge: { unobservable: "<why>" }`.'
+    );
+  }
+
+  const probe: { registry: UiBridgeRegistryView | null } = { registry: null };
+
+  function RegistryProbe({
+    useBridge,
+  }: {
+    useBridge: BridgeModule["useBridge"];
+  }) {
+    const context = useBridge();
+    const registry = context?.registry;
+    probe.registry = isRegistryView(registry) ? registry : null;
+    return null;
+  }
+
+  function Wrapper({ children }: { children: ReactNode }) {
+    const lens = (
+      <FixedPresentationMode presenting>
+        <PresentationScopeProvider state={scope}>
+          {CallerWrapper ? <CallerWrapper>{children}</CallerWrapper> : children}
+        </PresentationScopeProvider>
+      </FixedPresentationMode>
+    );
+    if (!bridge) return lens;
+    const Provider = bridge.Provider;
+    return (
+      <Provider>
+        <RegistryProbe useBridge={bridge.useBridge} />
+        {lens}
+      </Provider>
+    );
+  }
+
+  const result = render(ui, { ...renderOptions, wrapper: Wrapper });
+
+  let observed: UiBridgeObserved;
+  if (uiBridge === "provider") {
+    if (probe.registry === null) {
+      throw new Error(
+        "renderInPresentationMode: the UIBridgeProvider exposed no registry, so check (b) " +
+          "would see nothing. Pass `uiBridge: { registry }` or `uiBridge: { unobservable }`."
+      );
+    }
+    observed = { registry: probe.registry };
+  } else {
+    observed = uiBridge;
+  }
+  return Object.assign(result, { uiBridge: observed });
+}
+
+// ---------------------------------------------------------------------------
+// (a) enabled controls
+// ---------------------------------------------------------------------------
+
+const WIDGET_ROLES = [
+  "button",
+  "link",
+  "checkbox",
+  "switch",
+  "radio",
+  "slider",
+  "spinbutton",
+  "textbox",
+  "searchbox",
+  "combobox",
+  "listbox",
+  "option",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "tab",
+  "treeitem",
+];
+
+const CONTROL_SELECTOR = [
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "summary",
+  "a[href]",
+  "[contenteditable]",
+  ...WIDGET_ROLES.map((role) => `[role="${role}"]`),
+].join(",");
+
+const READ_ONLY_INPUT_TYPES = new Set([
+  "text",
+  "search",
+  "email",
+  "url",
+  "tel",
+  "number",
+  "password",
+  "date",
+  "datetime-local",
+  "month",
+  "time",
+  "week",
+]);
+
+/** Why `el` may stay live in presentation mode, or `null` when it may not. */
+function controlAllowance(el: Element): string | null {
+  if (el.hasAttribute(NAVIGATION_ONLY_ATTRIBUTE)) return "navigation-only";
+  const tag = el.tagName.toLowerCase();
+  if (tag === "input" && (el as HTMLInputElement).type === "hidden")
+    return "hidden input";
+  if (el.matches(":disabled") || el.getAttribute("aria-disabled") === "true") {
+    return "disabled";
+  }
+  if (el.getAttribute("contenteditable") === "false") return "not editable";
+  if (
+    (tag === "textarea" && (el as HTMLTextAreaElement).readOnly) ||
+    (tag === "input" &&
+      (el as HTMLInputElement).readOnly &&
+      READ_ONLY_INPUT_TYPES.has((el as HTMLInputElement).type))
+  ) {
+    return "read-only";
+  }
+  const role = el.getAttribute("role");
+  if (role === "link" || (tag === "a" && role === null)) return "link";
+  if (role === "tab") return "tab";
+  if (tag === "summary") return "disclosure";
+  const popup = el.getAttribute("aria-haspopup");
+  if (
+    el.hasAttribute("aria-expanded") &&
+    (popup === null || popup === "false")
+  ) {
+    return "disclosure";
+  }
+  return null;
+}
+
+function describeElement(el: Element): string {
+  const tag = el.tagName.toLowerCase();
+  const role = el.getAttribute("role");
+  const name =
+    el.getAttribute("aria-label") ??
+    (el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+  const testId = el.getAttribute("data-testid");
+  return [
+    `<${tag}${role ? ` role="${role}"` : ""}>`,
+    name ? `"${name}"` : "(no name)",
+    testId ? `data-testid=${testId}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function controlViolations(root: Element): PresentationViolation[] {
+  return [...root.querySelectorAll(CONTROL_SELECTOR)]
+    .filter((el) => controlAllowance(el) === null)
+    .map((el) => ({
+      kind: "enabled-control" as const,
+      detail: `${describeElement(el)} is an enabled control that is not navigation-only`,
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// (b) UI Bridge registrations
+// ---------------------------------------------------------------------------
+
+function effectViolation(
+  owner: string,
+  actionId: string,
+  effect: string | undefined
+): PresentationViolation | null {
+  if (effect === "write" || effect === "destructive") {
+    return {
+      kind: "write-registration",
+      detail: `${owner} action "${actionId}" declares effect "${effect}"`,
+    };
+  }
+  if (effect !== "read") {
+    return {
+      kind: "undeclared-registration",
+      detail: `${owner} action "${actionId}" declares no effect — unclassified is not safe`,
+    };
+  }
+  return null;
+}
+
+function registrationViolations(
+  observed: UiBridgeObserved
+): PresentationViolation[] {
+  if (!("registry" in observed)) return [];
+  const out: PresentationViolation[] = [];
+  for (const component of observed.registry.getAllComponents()) {
+    if (component.mounted === false) continue;
+    for (const action of component.actions ?? []) {
+      const v = effectViolation(
+        `UI Bridge component "${component.id}"`,
+        action.id,
+        action.effect
+      );
+      if (v) out.push(v);
+    }
+  }
+  for (const element of observed.registry.getAllElements()) {
+    if (element.element && !element.element.isConnected) continue;
+    for (const action of Object.values(element.customActions ?? {})) {
+      const v = effectViolation(
+        `UI Bridge element "${element.id}"`,
+        action.id,
+        action.effect
+      );
+      if (v) out.push(v);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// (c) cost
+// ---------------------------------------------------------------------------
+
+const CURRENCY_CODES = "USD|EUR|GBP|JPY|CHF|CAD|AUD|INR|CNY";
+/** A currency symbol or ISO code next to a number, either order. */
+export const CURRENCY_FIGURE = new RegExp(
+  `[$€£¥₹]\\s?-?\\d|\\b(?:${CURRENCY_CODES})\\s?-?\\d|\\d\\s?(?:${CURRENCY_CODES})\\b`
+);
+const COST_LABEL_FRAGMENT = "list-price equivalent";
+
+const TEXT_ATTRIBUTES = [
+  "title",
+  "aria-label",
+  "aria-description",
+  "alt",
+  "placeholder",
+];
+
+function textNodes(root: Element): Array<{ text: string; owner: Element }> {
+  const out: Array<{ text: string; owner: Element }> = [];
+  const walker = root.ownerDocument.createTreeWalker(
+    root,
+    NodeFilter.SHOW_TEXT
+  );
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.textContent ?? "";
+    if (text.trim() && node.parentElement)
+      out.push({ text, owner: node.parentElement });
+  }
+  for (const el of root.querySelectorAll("*")) {
+    for (const attr of TEXT_ATTRIBUTES) {
+      const value = el.getAttribute(attr);
+      if (value) out.push({ text: value, owner: el });
+    }
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      if (el.value) out.push({ text: el.value, owner: el });
+    }
+  }
+  return out;
+}
+
+function costViolations(root: Element): PresentationViolation[] {
+  const out: PresentationViolation[] = [];
+  for (const el of root.querySelectorAll('[data-cost-figure="figure"]')) {
+    out.push({
+      kind: "cost-figure",
+      detail: `${describeElement(el)} is a CostFigure rendering its figure`,
+    });
+  }
+  const label = COST_LABEL_FRAGMENT.toLowerCase();
+  let anyCurrency = false;
+  for (const { text, owner } of textNodes(root)) {
+    if (
+      text.toLowerCase().includes(label) ||
+      text.includes(COST_EQUIVALENT_LABEL)
+    ) {
+      out.push({
+        kind: "cost-label",
+        detail: `${describeElement(owner)} carries the cost label "${COST_EQUIVALENT_LABEL}"`,
+      });
+    }
+    const match = CURRENCY_FIGURE.exec(text);
+    if (match) {
+      anyCurrency = true;
+      out.push({
+        kind: "currency-figure",
+        detail: `${describeElement(owner)} shows a currency figure ("${text.trim().slice(0, 60)}")`,
+      });
+    }
+  }
+  // A figure split across elements ("$" in one span, "12" in the next) is in
+  // no single text node, but it is on the screen.
+  if (!anyCurrency && CURRENCY_FIGURE.test(root.textContent ?? "")) {
+    out.push({
+      kind: "currency-figure",
+      detail: "a currency figure is rendered across adjacent elements",
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// (d) captions
+// ---------------------------------------------------------------------------
+
+function captionViolations(
+  root: Element,
+  captions: readonly CaptionKey[]
+): PresentationViolation[] {
+  return captions
+    .filter(
+      (key) => !root.querySelector(`[data-presentation-caption="${key}"]`)
+    )
+    .map((key) => ({
+      kind: "missing-caption" as const,
+      detail: `caption "${key}" did not render`,
+    }));
+}
+
+// ---------------------------------------------------------------------------
+
+/** Every way the render is not safe to show; empty when it is. */
+export function findPresentationViolations(
+  view: PresentationView,
+  options: PresentationSafetyOptions = {}
+): PresentationViolation[] {
+  const root = view.baseElement ?? document.body;
+  return [
+    ...controlViolations(root),
+    ...registrationViolations(view.uiBridge),
+    ...costViolations(root),
+    ...captionViolations(root, options.captions ?? []),
+  ];
+}
+
+/** One line per violation, for an assertion message. */
+export function describeViolation(v: PresentationViolation): string {
+  return `[${v.kind}] ${v.detail}`;
+}
+
+/** Fails the test, listing every violation, unless the render is safe to show. */
+export function expectPresentationSafe(
+  view: PresentationView,
+  options: PresentationSafetyOptions = {}
+): void {
+  expect(
+    findPresentationViolations(view, options).map(describeViolation),
+    "this presentation-mode render is not safe to show an outsider"
+  ).toEqual([]);
+}
