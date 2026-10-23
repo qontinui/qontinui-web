@@ -1,6 +1,7 @@
 "use client";
 
 import { useUIElement } from "@qontinui/ui-bridge/react";
+import { NAVIGATION_ONLY_PROPS } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import {
   formatRatio,
@@ -31,7 +32,8 @@ interface SubspaceCellProps {
  * One sub-space tile. Shows the symbol, name, twin and status; for live-probed
  * observers it also surfaces the credibility envelope (coverage /
  * credibility / staleness) — the goal-#3/#4 usefulness+accuracy signal —
- * verbatim from coord.
+ * verbatim from coord. A press only opens the read-only detail drawer, so the
+ * tile is navigation-only and stays live in presentation mode.
  */
 export function SubspaceCell({
   row,
@@ -55,6 +57,7 @@ export function SubspaceCell({
     <button
       ref={ref}
       type="button"
+      {...NAVIGATION_ONLY_PROPS}
       data-testid={id}
       onClick={() => onSelect(row)}
       title={style.meaning}

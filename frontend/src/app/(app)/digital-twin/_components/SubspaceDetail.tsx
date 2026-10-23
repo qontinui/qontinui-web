@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -18,12 +20,15 @@ import {
   Loader2,
   MessageSquare,
   Sparkles,
+  XIcon,
 } from "lucide-react";
+import { NAVIGATION_ONLY_PROPS, OperatorOnly } from "@/components/presentation";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
 import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
+import { workUnitHref } from "../_lib/twin-plans";
 import type { DriftVerdict, ResolvedSubspace } from "../_lib/types";
 
 interface SubspaceDetailProps {
@@ -50,7 +55,13 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
  * summary and credibility envelope come from the probe's own metrics. For
  * all rows it shows the twin and lifecycle stages, the backing coord tool /
  * observer module, the research doc and, while the row is still being built,
- * the plan building it.
+ * the plan building it — a link to that plan's work unit.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3.2)
+ * the drawer keeps only navigation: "Ask the Twin about this" leads to a
+ * control that starts an AI session, and the raw JSON is engineering detail
+ * an outsider is not shown, so both are `OperatorOnly`; closing the drawer
+ * and opening the Delivery tab only change what is displayed.
  */
 export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   const readsRaw = !!row && row.liveProbed && row.doorShape !== "envelope";
@@ -117,7 +128,16 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
 
   return (
     <Dialog open={!!row} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg" showCloseButton={false}>
+        {/* The shared close button, marked navigation-only: closing the
+            drawer changes only what is displayed. */}
+        <DialogClose
+          {...NAVIGATION_ONLY_PROPS}
+          className="ring-offset-background focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        >
+          <XIcon />
+          <span className="sr-only">Close</span>
+        </DialogClose>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className={`size-2.5 rounded-full ${style.dot}`} />
@@ -192,22 +212,27 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
               row.ask_via === "delivery-tab") && (
               <div className="flex justify-end pb-1">
                 {row.ask_via === "ask-the-twin" && (
-                  <Button
-                    ref={askRef}
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs"
-                    onClick={() =>
-                      navigate((nav) => nav.askTheTwin(askTheTwinQuestion(row)))
-                    }
-                  >
-                    <MessageSquare aria-hidden="true" className="size-3.5" />
-                    Ask the Twin about this
-                  </Button>
+                  <OperatorOnly>
+                    <Button
+                      ref={askRef}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1.5 text-xs"
+                      onClick={() =>
+                        navigate((nav) =>
+                          nav.askTheTwin(askTheTwinQuestion(row))
+                        )
+                      }
+                    >
+                      <MessageSquare aria-hidden="true" className="size-3.5" />
+                      Ask the Twin about this
+                    </Button>
+                  </OperatorOnly>
                 )}
                 {row.ask_via === "delivery-tab" && (
                   <Button
                     ref={openDeliveryRef}
+                    {...NAVIGATION_ONLY_PROPS}
                     variant="outline"
                     size="sm"
                     className="h-7 gap-1.5 text-xs"
@@ -267,13 +292,21 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
           {row.plan && (
             <Field
               label="Planned in"
-              value={<code className="text-xs">{row.plan}</code>}
+              value={
+                <Link
+                  href={workUnitHref(row.plan)}
+                  data-testid="digital-twin-drawer-plan-link"
+                  className="font-mono text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  {row.plan}
+                </Link>
+              }
             />
           )}
 
           {/* Raw data view — the exact JSON an AI agent receives. */}
           {readsRaw && verdict && (
-            <>
+            <OperatorOnly>
               <Separator className="my-2" />
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground">
@@ -299,7 +332,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                   {JSON.stringify(verdict, null, 2)}
                 </pre>
               )}
-            </>
+            </OperatorOnly>
           )}
         </div>
       </DialogContent>

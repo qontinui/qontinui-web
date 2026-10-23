@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useUIElement } from "@qontinui/ui-bridge/react";
+import { Provenance } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
 import { useTwinCatalog } from "../_hooks/useTwinCatalog";
@@ -17,6 +18,7 @@ import {
 import type { CoverageCounts, LifecycleStageInfo } from "../_lib/lifecycle";
 import { allProbesRestricted, resolveSubspaces } from "../_lib/resolve";
 import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
+import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
 import type { ResolvedSubspace } from "../_lib/types";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
@@ -341,7 +343,8 @@ function StageSection({
  * what is live-probed versus only claimed by the manifest.
  */
 export function LifecycleView() {
-  const { data, isLoading, isError, error } = useDigitalTwinSubspaces();
+  const { data, isLoading, isError, error, dataUpdatedAt } =
+    useDigitalTwinSubspaces();
   // coord's declaration of what the twin probes: the matrix joins the manifest
   // to it, so a row coord declares is live and one it does not is not.
   const { data: catalog } = useTwinCatalog();
@@ -379,6 +382,11 @@ export function LifecycleView() {
             runs; built (claim) counts are what the manifest says is built —
             claims, not live verdicts.
           </p>
+          {/* The live counts' source and age, in presentation mode. */}
+          <Provenance
+            source={FIDELITY_SOURCE.probe}
+            asOf={dataUpdatedAt > 0 ? dataUpdatedAt : null}
+          />
         </div>
 
         <ul className="grid grid-cols-1 gap-3 md:grid-cols-3">

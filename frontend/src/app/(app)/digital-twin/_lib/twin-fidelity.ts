@@ -18,6 +18,13 @@
 
 import type { RawVerdictResponse } from "./types";
 
+/**
+ * The sub-space whose raw read carries the twin's self-fidelity report. The
+ * Completeness header and the Twin map read it through ONE query key
+ * (`useSubspaceRaw(FIDELITY_SUBSPACE, true)`), so they cannot disagree.
+ */
+export const FIDELITY_SUBSPACE = "twin_fidelity";
+
 /** The report's numbers the header shows; `null` is UNKNOWN. */
 export interface FidelityReportView {
   observabilityRate: number | null;
@@ -130,6 +137,74 @@ export function readFidelity(
       ageSeconds,
     },
   };
+}
+
+/**
+ * When the report was computed — its `computed_at`, else `nowMs` less its
+ * `age_seconds` — or `null` when the body carries neither (the provenance
+ * chip then says UNKNOWN rather than inventing a time).
+ */
+export function reportComputedAt(
+  data: RawVerdictResponse | undefined,
+  nowMs: number
+): string | number | null {
+  const report = data?.verdict as Record<string, unknown> | undefined;
+  if (!report || typeof report !== "object") return null;
+  if (
+    typeof report.computed_at === "string" &&
+    !Number.isNaN(Date.parse(report.computed_at))
+  ) {
+    return report.computed_at;
+  }
+  const age = finiteNumber(report.age_seconds);
+  return age === null ? null : nowMs - age * 1000;
+}
+
+/**
+ * One sub-space's row of the report (coord `twin_fidelity.rs`
+ * `SubspaceFidelity`). Every field coord did not send is `null`.
+ */
+export interface SubspaceFidelityView {
+  subspace: string;
+  /** The twin currently observes this sub-space. */
+  observed: boolean | null;
+  coverage: number | null;
+  stalenessSeconds: number | null;
+  /**
+   * `false` is an honesty violation. `null` when the fold could not judge
+   * this sub-space (`honesty_evaluated: false`) — not evidence of honesty.
+   */
+  honest: boolean | null;
+}
+
+/**
+ * The report's per-sub-space rows, by sub-space id — or `null` when the body
+ * is no report or carries no `subspaces` list (a coord predating it), which
+ * is UNKNOWN rather than "no sub-space measured".
+ */
+export function reportSubspaces(
+  data: RawVerdictResponse | undefined
+): ReadonlyMap<string, SubspaceFidelityView> | null {
+  const report = data?.verdict as Record<string, unknown> | undefined;
+  if (!report || typeof report !== "object" || report.observed === false) {
+    return null;
+  }
+  if (!Array.isArray(report.subspaces)) return null;
+  const out = new Map<string, SubspaceFidelityView>();
+  for (const raw of report.subspaces as unknown[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row.subspace !== "string" || out.has(row.subspace)) continue;
+    const judged = row.honesty_evaluated !== false;
+    out.set(row.subspace, {
+      subspace: row.subspace,
+      observed: typeof row.observed === "boolean" ? row.observed : null,
+      coverage: finiteNumber(row.coverage),
+      stalenessSeconds: finiteNumber(row.staleness_seconds),
+      honest: judged && typeof row.honest === "boolean" ? row.honest : null,
+    });
+  }
+  return out;
 }
 
 /** A count, or UNKNOWN for `null`. */

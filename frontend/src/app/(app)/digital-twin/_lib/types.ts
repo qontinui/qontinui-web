@@ -86,6 +86,15 @@ export interface SubspaceManifestEntry {
   ask_via?: AskVia;
   /** The plan slug that builds a planned / partial row (shown in the drawer). */
   plan?: string | null;
+  /**
+   * The work-unit areas whose plans move this sub-space: values of coord's
+   * canonical steering key `metadata.area` (kebab-case, matched exactly — the
+   * same key coord's `area` list filter reads). The Twin map resolves a
+   * sub-space's plans as its `plan` slug ∪ every work unit whose area is
+   * listed here (`twin-plans.ts`). Absent = no area is mapped; an area here
+   * that no work unit carries is shown as drift, never as "no plans".
+   */
+  areas?: readonly string[];
 }
 
 export interface SubspaceManifest {

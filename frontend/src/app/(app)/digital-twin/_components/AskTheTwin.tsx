@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
+import { OperatorOnly } from "@/components/presentation";
 import { useDispatchTarget } from "@/contexts/active-runner-context";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 
@@ -76,7 +77,44 @@ interface AskTheTwinProps {
   onDraftApplied?: () => void;
 }
 
-export function AskTheTwin({ draft, onDraftApplied }: AskTheTwinProps = {}) {
+/**
+ * What presentation mode shows in Ask the Twin's place: what the panel is
+ * for, and nothing an outsider could press or read from a conversation.
+ */
+function AskTheTwinPresented() {
+  return (
+    <section
+      data-testid="ask-the-twin-presented"
+      className="rounded-lg border border-border bg-card p-4"
+    >
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold">
+        <MessageSquare className="size-4" /> Ask the Twin
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        An operator can ask the twin a question here and an agent session
+        answers it from the same readings; questions and answers are not shown
+        in presentation mode.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Ask the Twin, inside the presentation lens's write boundary (plan
+ * `2026-10-23-console-presentation-spaces` D3.2): asking starts an AI session
+ * on a runner, so the whole panel — its input, its Ask button, its chat
+ * socket and any conversation — is `OperatorOnly`, unmounted in presentation
+ * mode rather than hidden.
+ */
+export function AskTheTwin(props: AskTheTwinProps = {}) {
+  return (
+    <OperatorOnly placeholder={<AskTheTwinPresented />}>
+      <AskTheTwinPanel {...props} />
+    </OperatorOnly>
+  );
+}
+
+function AskTheTwinPanel({ draft, onDraftApplied }: AskTheTwinProps) {
   // Asking starts a NEW AI session, so it goes only where new work may go:
   // the user's explicit choice or coord's resolved pick — never a read
   // fallback. Otherwise coord's outcome is shown.

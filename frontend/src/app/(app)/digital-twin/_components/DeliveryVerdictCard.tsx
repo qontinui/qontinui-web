@@ -12,6 +12,15 @@ import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  NAVIGATION_ONLY_PROPS,
+  OperatorOnly,
+  Provenance,
+  redactionVerdict,
+  useRedactor,
+  usePresentationMode,
+  usePresentationScopeState,
+} from "@/components/presentation";
 import { useDeliveryVerdict } from "../_hooks/useDeliveryVerdict";
 import { isRetiredCitation } from "../_lib/delivery-citations";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
@@ -39,6 +48,12 @@ import type {
  * `anchorPresentation` keys the displayed noun off the verdict's own
  * `anchor_kind`, so a verdict coord still anchors to a plan is still labelled
  * "Plan". That is coord's data speaking, not this card's own vocabulary.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3) the
+ * lookup stays live — it is a read, and only changes what is displayed — the
+ * envelope carries its source and age, a cited PR's repository renders only
+ * when it is provably first-party (and loses its outbound link otherwise,
+ * since the URL names it), and the raw JSON is `OperatorOnly`.
  */
 
 /** Visual vocabulary for the canonical delivery drift classes. */
@@ -119,6 +134,14 @@ function anchorPresentation(components: DeliveryComponents | undefined): {
 // the old rendering.
 function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
   const merged = pr.merged;
+  const { presenting } = usePresentationMode();
+  const scope = usePresentationScopeState();
+  const redact = useRedactor();
+  const state = merged ? "merged" : retired ? "closed, never landed" : "unmerged";
+  // A repository name may be a client's: it renders, and keeps its outbound
+  // link (whose URL names it), only when the lens can clear it.
+  const repoShown =
+    !presenting || redactionVerdict({ text: pr.repo, repo: pr.repo }, scope).show;
   const dotClass = merged
     ? "bg-emerald-500"
     : retired
@@ -128,8 +151,16 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
     <li className="flex items-center justify-between gap-2 py-1 text-sm">
       <span className="flex min-w-0 items-center gap-2">
         <span className={`size-2 shrink-0 rounded-full ${dotClass}`} />
-        <span className="truncate font-mono text-xs">{pr.repo}</span>
-        {pr.pr !== null ? (
+        <span className="truncate font-mono text-xs">
+          {redact({
+            text: pr.repo,
+            repo: pr.repo,
+            descriptor: { kind: "Repository", status: state },
+          })}
+        </span>
+        {pr.pr === null ? (
+          <span className="text-xs text-muted-foreground">(no PR #)</span>
+        ) : repoShown ? (
           <a
             href={prUrl(pr.repo, pr.pr)}
             target="_blank"
@@ -140,7 +171,7 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
             <ExternalLink className="size-3" />
           </a>
         ) : (
-          <span className="text-xs text-muted-foreground">(no PR #)</span>
+          <span className="text-xs text-muted-foreground">#{pr.pr}</span>
         )}
       </span>
       <span
@@ -157,7 +188,7 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
             : undefined
         }
       >
-        {merged ? "merged" : retired ? "closed, never landed" : "unmerged"}
+        {state}
       </span>
     </li>
   );
@@ -191,7 +222,7 @@ export function DeliveryVerdictCard() {
   const [submitted, setSubmitted] = useState("");
   const [showRaw, setShowRaw] = useState(false);
 
-  const { data, isLoading, isError, error, isFetching } =
+  const { data, isLoading, isError, error, isFetching, dataUpdatedAt } =
     useDeliveryVerdict(submitted);
 
   const handleSubmit = useCallback(() => {
@@ -244,6 +275,7 @@ export function DeliveryVerdictCard() {
       <div className="flex items-center gap-2">
         <Input
           ref={inputRef}
+          {...NAVIGATION_ONLY_PROPS}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -258,6 +290,7 @@ export function DeliveryVerdictCard() {
         />
         <Button
           ref={submitRef}
+          {...NAVIGATION_ONLY_PROPS}
           onClick={handleSubmit}
           disabled={!input.trim() || isFetching}
           className="gap-1.5"
@@ -301,6 +334,10 @@ export function DeliveryVerdictCard() {
             <span className="ml-auto text-xs text-muted-foreground">
               {formatStaleness(verdict.staleness_seconds)}
             </span>
+            <Provenance
+              source="coord's delivery verdict"
+              asOf={dataUpdatedAt > 0 ? dataUpdatedAt : null}
+            />
           </div>
 
           <p>{summary.prose}</p>
@@ -361,27 +398,29 @@ export function DeliveryVerdictCard() {
             <Fact label="Source" value={verdict.provenance ?? "—"} />
           </dl>
 
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">
-              The exact JSON an AI agent receives from{" "}
-              <code>{data?.tool ?? "coord_query_delivery"}</code>.
-            </span>
-            <Button
-              ref={showRawRef}
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => setShowRaw((v) => !v)}
-            >
-              <Code2 className="size-3.5" />
-              {showRaw ? "Hide raw data" : "Show raw data"}
-            </Button>
-          </div>
-          {showRaw && (
-            <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/50 p-3 text-[11px] leading-relaxed">
-              {JSON.stringify(verdict, null, 2)}
-            </pre>
-          )}
+          <OperatorOnly>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground">
+                The exact JSON an AI agent receives from{" "}
+                <code>{data?.tool ?? "coord_query_delivery"}</code>.
+              </span>
+              <Button
+                ref={showRawRef}
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => setShowRaw((v) => !v)}
+              >
+                <Code2 className="size-3.5" />
+                {showRaw ? "Hide raw data" : "Show raw data"}
+              </Button>
+            </div>
+            {showRaw && (
+              <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/50 p-3 text-[11px] leading-relaxed">
+                {JSON.stringify(verdict, null, 2)}
+              </pre>
+            )}
+          </OperatorOnly>
         </div>
       )}
     </section>

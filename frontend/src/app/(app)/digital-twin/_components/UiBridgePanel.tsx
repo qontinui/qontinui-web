@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
+import { OperatorOnly } from "@/components/presentation";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import {
   useRunnerApps,
@@ -103,14 +104,44 @@ function SnapshotSubject({ snap }: { snap: UiBridgeSnapshot }) {
   );
 }
 
+/** What presentation mode shows in the inspector's place. */
+function UiBridgePresented() {
+  return (
+    <div
+      data-testid="ui-bridge-presented"
+      className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
+    >
+      Operators inspect the interface models behind the UI Bridge app twin here.
+      The app names, page ids and live window captures it shows are not shown in
+      presentation mode; the Twin map carries the app twin&apos;s summary.
+    </div>
+  );
+}
+
 /**
- * UI Bridge tab — the twin's UI half, split into its two natures:
+ * UI Bridge tab, inside the presentation lens's boundary (plan
+ * `2026-10-23-console-presentation-spaces` D3): the inspector reads app names
+ * and page ids a runner registered — free text the lens cannot prove
+ * first-party — and captures the runner's own window, which can show
+ * anything on the operator's screen. So the whole inspector is
+ * `OperatorOnly`; the Twin map's app-twin card is the presentable summary.
+ */
+export function UiBridgePanel() {
+  return (
+    <OperatorOnly placeholder={<UiBridgePresented />}>
+      <UiBridgeInspector />
+    </OperatorOnly>
+  );
+}
+
+/**
+ * The inspector — the twin's UI half, split into its two natures:
  *  - CACHED / processed: the runner's spec pages + state-machine graph for
  *    the App field's id, read from on-disk IR (no running app needed).
  *  - AUTOMATION-required: a live snapshot of the runner's OWN window,
  *    captured on demand. It does not follow the App field.
  */
-export function UiBridgePanel() {
+function UiBridgeInspector() {
   // The runner this tree targets (explicit choice, else coord's pick), read
   // from the target so a device the web list has not caught up with counts.
   const deviceId = targetRunnerId(useRunnerTarget());

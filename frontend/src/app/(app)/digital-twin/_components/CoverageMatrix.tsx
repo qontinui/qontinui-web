@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Provenance } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
 import { useTwinCatalog } from "../_hooks/useTwinCatalog";
@@ -15,6 +16,7 @@ import {
   RESTRICTED_COUNT_MEANING,
 } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
+import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
 import {
@@ -71,7 +73,8 @@ function Gauge({
 }
 
 export function CoverageMatrix() {
-  const { data, isLoading, isError, error } = useDigitalTwinSubspaces();
+  const { data, isLoading, isError, error, dataUpdatedAt } =
+    useDigitalTwinSubspaces();
   // coord's declaration of what the twin probes: the matrix joins the manifest
   // to it, so a row coord declares is live and one it does not is not.
   const { data: catalog } = useTwinCatalog();
@@ -121,6 +124,12 @@ export function CoverageMatrix() {
             read)
           </p>
         )}
+        {/* The live gauge's source and age, in presentation mode. The built
+            gauge is the checked-in manifest, so it has no as-of to show. */}
+        <Provenance
+          source={FIDELITY_SOURCE.probe}
+          asOf={dataUpdatedAt > 0 ? dataUpdatedAt : null}
+        />
       </div>
 
       {unlisted.length > 0 && (

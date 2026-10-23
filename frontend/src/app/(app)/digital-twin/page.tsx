@@ -12,8 +12,10 @@ import { TwinCatalog } from "./_components/TwinCatalog";
 import { TwinFidelityHeader } from "./_components/TwinFidelityHeader";
 import { AskTheTwin } from "./_components/AskTheTwin";
 import { DeliveryVerdictCard } from "./_components/DeliveryVerdictCard";
+import { TwinMap } from "./_components/TwinMap";
 import { UiBridgePanel } from "./_components/UiBridgePanel";
 import {
+  DEFAULT_TWIN_TAB,
   TwinNavigationContext,
   type TwinNavigation,
   type TwinTab,
@@ -24,8 +26,15 @@ import {
  * environment the agents act in, the process they follow and the intent they
  * serve.
  *
- * Four tabs:
- *  - Completeness (default) — the twin's self-fidelity (coord's fidelity
+ * Five tabs:
+ *  - Twin map (default) — the landing view, in plain language: one card per
+ *    aspect of the twin (the environment, process and intent twins, and the
+ *    UI Bridge app twin) with its fidelity — observed, coverage, staleness,
+ *    honesty — and the plans moving it with their live status; a card opens
+ *    the aspect's parts and plans, each plan linking to its work unit (plan
+ *    `2026-10-23-console-presentation-spaces` Phase 5). The engineering
+ *    detail behind every number stays one tab away.
+ *  - Completeness — the twin's self-fidelity (coord's fidelity
  *    report, UNKNOWN until coord serves it), then every observation
  *    sub-space (Ξ) by tier: which are live, partial, blind or unbuilt for this
  *    tenant, with the credibility envelope each live probe reports, kept
@@ -54,6 +63,11 @@ import {
  */
 export default function DigitalTwinPage() {
   // UI Bridge: stable ids so automation can switch tabs by id.
+  const { ref: tabTwinMapRef } = useUIElement({
+    id: "digital-twin-tab-twin-map",
+    label: "Digital Twin — Twin map tab",
+    type: "button",
+  });
   const { ref: tabCompletenessRef } = useUIElement({
     id: "digital-twin-tab-completeness",
     label: "Digital Twin — Completeness tab",
@@ -76,7 +90,7 @@ export default function DigitalTwinPage() {
   });
 
   // Controlled so the sub-space drawer can switch tabs (`TwinNavigation`).
-  const [tab, setTab] = useState<TwinTab>("completeness");
+  const [tab, setTab] = useState<TwinTab>(DEFAULT_TWIN_TAB);
   // A question the drawer handed to Ask the Twin, until it has been typed in.
   const [askDraft, setAskDraft] = useState<string | null>(null);
   const navigation = useMemo<TwinNavigation>(
@@ -107,6 +121,9 @@ export default function DigitalTwinPage() {
           className="flex min-h-0 flex-1 flex-col"
         >
           <TabsList className="mx-6 mt-3 w-fit shrink-0">
+            <TabsTrigger ref={tabTwinMapRef} value="twin-map">
+              Twin map
+            </TabsTrigger>
             <TabsTrigger ref={tabCompletenessRef} value="completeness">
               Completeness
             </TabsTrigger>
@@ -122,6 +139,11 @@ export default function DigitalTwinPage() {
           </TabsList>
 
           <ScrollArea className="min-h-0 flex-1">
+            <TabsContent value="twin-map" className="mt-0">
+              <div className="px-6 py-4">
+                <TwinMap />
+              </div>
+            </TabsContent>
             <TabsContent value="completeness" className="mt-0">
               <div className="space-y-6 px-6 py-4">
                 <TwinFidelityHeader />
