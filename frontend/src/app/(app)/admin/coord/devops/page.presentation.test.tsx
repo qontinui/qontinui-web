@@ -875,6 +875,10 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     ]) {
       expect(screen.queryByTestId(testId), testId).toBeNull();
     }
+    // ...nor the audit feed's note on where the lever it explains lives.
+    expect(document.body.textContent).not.toContain(
+      "Every operator write coord stamped"
+    );
 
     // What remains is the drain STATE, read-only: the drained machine says
     // so, with no actor and no reason.
@@ -917,6 +921,23 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
         []
       );
     });
+
+    // A tooltip's text is in front of the audience the moment it opens —
+    // a coord state's explanation, a stall's detail — and is not in the DOM
+    // until then. Open each one in turn and check again.
+    let opened = 0;
+    for (const trigger of document.querySelectorAll('[data-state="closed"]')) {
+      fireEvent.focus(trigger);
+      if (trigger.getAttribute("data-state")?.endsWith("open")) opened += 1;
+      const html = document.body.innerHTML;
+      expect(
+        MUST_NOT_APPEAR.filter((needle) => html.includes(needle)),
+        "identifiers behind a tooltip"
+      ).toEqual([]);
+      fireEvent.blur(trigger);
+    }
+    // The coord-state, stall and resource tooltips really opened.
+    expect(opened).toBeGreaterThan(5);
 
     // Machine A's workstation row notes the CI-host role set under its own
     // name — without the name. (The list orders its rows itself, so each one
@@ -992,6 +1013,11 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     )!;
     expect(knownRow).toHaveTextContent(aliasA);
     expect(knownRow).toHaveTextContent("3/8");
+
+    // Audit feed: the drain row's blast radius names the device by the same
+    // alias — not withheld, and not its id.
+    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-1")));
+    expect(screen.getByTestId("audit-blast-audit-1")).toHaveTextContent(aliasA);
     const unknownRow = slotRows.find(
       (r) => r.getAttribute("data-worktree-slots-state") === "unknown"
     )!;
