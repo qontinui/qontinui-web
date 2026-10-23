@@ -56,6 +56,7 @@ import {
   safeRatio,
 } from "./fleetResources";
 import type { FleetDeviceRef, ResourceSampleRow } from "./fleetResources";
+import { presentedFailureReason } from "./presentedFailure";
 
 export interface CiRunPanelProps {
   /** The same `latest` rows the strip renders. */
@@ -162,7 +163,8 @@ export function CiRunPanel({
       >
         {error && (
           <p className="text-sm text-destructive" data-testid="ci-run-error">
-            Resource samples unavailable: {error}. Occupancy below is
+            Resource samples unavailable:{" "}
+            {presentedFailureReason(error, presenting)}. Occupancy below is
             last-known, not current.
           </p>
         )}

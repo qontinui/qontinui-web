@@ -130,8 +130,10 @@
  * caption and the provenance of its numbers (`SectionCaption`), every machine
  * reads as its session alias ("Machine A"), every write control — the drain
  * lever, CI capacity, role changes, renames — is unmounted (`OperatorOnly`),
- * and free text that can carry a foreign name renders as a descriptor
- * (`RedactedText`). The operator-orientation notes below the strips say where
+ * free text that can carry a foreign name renders as a descriptor
+ * (`RedactedText`), and a failed read still says it failed but in fixed words
+ * (`presentedFailure.ts`) — its own text can quote a URL or coord's words
+ * about a machine. The operator-orientation notes below the strips say where
  * the operator acts and are not rendered for an outsider. Outside
  * presentation mode every one of those primitives renders nothing, or the
  * original, so the operator console keeps its levers and its density.
@@ -160,6 +162,7 @@ import { DevOpsHeadlineStrip } from "@/components/operations/DevOpsHeadlineStrip
 import { DEVOPS_SOURCES } from "@/components/operations/devOpsHeadline";
 import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
 import { useFleetWorktreeSlots } from "@/components/operations/useFleetWorktreeSlots";
+import { presentedFailureReason } from "@/components/operations/presentedFailure";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
@@ -182,7 +185,7 @@ import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 const EMPTY_DEVICES: FleetHealthDevice[] = [];
 
 export default function CoordDevOpsPage() {
-  const fleet = useFleetHealth();
+  const fleetRead = useFleetHealth();
   // Admin IN THE ACTIVE TENANT — what `require_coord_tenant_admin` checks on
   // the computers proxies. `useAuth().isCoordAdmin` is a union across tenants
   // and would show an admin of project A a link that 403s on project B.
@@ -216,14 +219,35 @@ export default function CoordDevOpsPage() {
   // How long faults sat before anyone who can act on them could see them —
   // the operations ratchet's perceive-stage readout (G1). Owned here, one
   // poll, like every other read on this page.
-  const faultToVisibility = useFaultToVisibility();
+  const faultToVisibilityRead = useFaultToVisibility();
   // Agent-workspace occupancy, one poll, owned here: the worktree-slots
   // section's table and the presentation headline's workspace figure read
   // the SAME answer, so they cannot disagree about which machines count.
-  const worktreeSlots = useFleetWorktreeSlots();
+  const worktreeSlotsRead = useFleetWorktreeSlots();
   // The presentation lens (plan `2026-10-23-console-presentation-spaces`).
   // Rendering only — every read above runs the same in both modes.
   const { presenting } = usePresentationMode();
+  // What a failed read says. The operator reads the read's own text; an
+  // outsider reads that it failed, in fixed words, because that text can quote
+  // a URL or coord's words about a machine (`presentedFailure.ts`, D3.3).
+  // Applied ONCE, here, to each read this page owns — so every panel handed
+  // one of them says the same thing about it in both modes.
+  const fleet = {
+    ...fleetRead,
+    error: presentedFailureReason(fleetRead.error, presenting),
+  };
+  const faultToVisibility = {
+    ...faultToVisibilityRead,
+    error: presentedFailureReason(faultToVisibilityRead.error, presenting),
+  };
+  const worktreeSlots = {
+    ...worktreeSlotsRead,
+    error: presentedFailureReason(worktreeSlotsRead.error, presenting),
+  };
+  const deviceStatusError = presentedFailureReason(
+    deviceStatus.error,
+    presenting
+  );
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
   // The page's clock, advanced independently of every read. A runner's
   // `coord_credential` report goes stale by TIME alone
@@ -354,11 +378,11 @@ export default function CoordDevOpsPage() {
       }
       if (!deviceStatus.everSeeded) {
         causes.push(
-          `No full device-status read has succeeded yet (${deviceStatus.error ?? "not loaded yet"}); runner reports that arrived since may be incomplete, so machines coord did not name dark are UNKNOWN — not healthy.`
+          `No full device-status read has succeeded yet (${deviceStatusError ?? "not loaded yet"}); runner reports that arrived since may be incomplete, so machines coord did not name dark are UNKNOWN — not healthy.`
         );
-      } else if (deviceStatus.error !== null) {
+      } else if (deviceStatusError !== null) {
         causes.push(
-          `The last device-status read failed (${deviceStatus.error}); runner reports may be stale, so a machine counted here may have reported since.`
+          `The last device-status read failed (${deviceStatusError}); runner reports may be stale, so a machine counted here may have reported since.`
         );
       }
       badges.push({
@@ -373,7 +397,7 @@ export default function CoordDevOpsPage() {
       });
     }
     return badges;
-  }, [credentials, deviceStatus.error, deviceStatus.everSeeded, navigate]);
+  }, [credentials, deviceStatusError, deviceStatus.everSeeded, navigate]);
 
   /**
    * The operations-ratchet readouts (plan

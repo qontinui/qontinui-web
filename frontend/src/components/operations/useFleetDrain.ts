@@ -59,12 +59,21 @@ const LOADING: FleetDrainRead = { state: "loading" };
 
 export interface UseFleetDrainResult {
   read: FleetDrainRead;
+  /**
+   * `Date.now()` when the read last came back `ok`, or `null` before it ever
+   * has. Coord's drain body carries no timestamp, so this is what the
+   * presentation lens's provenance chip dates the drain states by (plan
+   * `2026-10-23-console-presentation-spaces` Phase 7). An `unknown` read never
+   * moves it.
+   */
+  fetchedAtMs: number | null;
   /** Force a re-read. Wired to the control so a write is visible at once. */
   refresh: () => Promise<void>;
 }
 
 export function useFleetDrain(): UseFleetDrainResult {
   const [read, setRead] = useState<FleetDrainRead>(LOADING);
+  const [fetchedAtMs, setFetchedAtMs] = useState<number | null>(null);
 
   // Single-flight, no retries (plan
   // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5). The
@@ -109,12 +118,14 @@ export function useFleetDrain(): UseFleetDrainResult {
         };
       }
     }
-    if (isCurrent()) setRead(next);
+    if (!isCurrent()) return;
+    setRead(next);
+    if (next.state === "ok") setFetchedAtMs(Date.now());
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DRAIN_POLL_MS);
 
-  return { read, refresh };
+  return { read, fetchedAtMs, refresh };
 }
 
 /** The outcome of a drain/undrain write, as the control renders it. */

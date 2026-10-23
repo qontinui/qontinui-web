@@ -36,6 +36,11 @@ import {
   expectPresentationSafe,
   renderInPresentationMode,
 } from "@/test/presentation";
+import {
+  FAILURE_REASON_WITHHELD,
+  FAILURE_SENTENCE_WITHHELD,
+} from "@/components/operations/presentedFailure";
+import { DEVOPS_SOURCES } from "@/components/operations/devOpsHeadline";
 
 const httpGet = vi.fn();
 const httpFetch = vi.fn();
@@ -60,11 +65,13 @@ vi.mock("@/services/service-factory", () => ({
 // The page's one device-status subscription, seeded with rows that carry
 // every free-text field the tile can render.
 const deviceStatusRows = new Map<string, unknown>();
+/** The stream's failure, when a test makes it fail. */
+const deviceStatusState: { error: string | null } = { error: null };
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
     byHostname: deviceStatusRows,
     connected: false,
-    error: null,
+    error: deviceStatusState.error,
     seeded: true,
     everSeeded: true,
     refetch: vi.fn(),
@@ -134,6 +141,24 @@ const DISPLAY_NAME_A = "Acme Corp lab box";
 const OPERATOR_EMAIL = "operator@example.com";
 const OPERATOR_ID = "0f0f0f0f-0000-4000-8000-0000000000ff";
 const PARTNER_REPO = "acme-partner/secret-repo";
+/** A repository the scope below clears: its name may show. */
+const FIRST_PARTY_REPO = "qontinui/qontinui-web";
+/** A volume label someone typed, naming a client (MUST_NOT_APPEAR catches it). */
+const VOLUME_MOUNT = "/Volumes/Acme Corp share";
+/**
+ * A machine that appears ONLY inside failure text. The failure is
+ * transport-shaped (no HTTP status to parse), the shape every hook on the page
+ * passes through as its own words — so absent from the presentation DOM means
+ * the failure's own text never reached it.
+ */
+const ERROR_HOST = "hostname-delta-9001";
+const ERROR_DEVICE = "d4d4d4d4-0000-4000-8000-00000000000d";
+
+function readFailure(url: string): Error {
+  return new Error(
+    `network error reaching ${url}: device ${ERROR_DEVICE} on ${ERROR_HOST} refused the connection`
+  );
+}
 
 /**
  * Everything that must never reach the document in presentation mode. The
@@ -157,6 +182,8 @@ const MUST_NOT_APPEAR = [
   OPERATOR_ID,
   "tenant-secret",
   "gate-0000",
+  ERROR_HOST,
+  ERROR_DEVICE,
 ];
 
 const SCOPE: PresentationScopeState = {
@@ -281,11 +308,22 @@ function rolesMachine(
 interface Fixture {
   /** Reject the worktree-slots poll (the headline's UNKNOWN arm). */
   worktreeSlotsFail?: boolean;
+  /**
+   * Reject reads with `readFailure`: every one, or every one but coord's fleet
+   * health (so the machine cards render around the failures).
+   */
+  fail?: "all" | "all-but-fleet-health";
 }
 
 function mockRoutes(fixture: Fixture = {}) {
   httpGet.mockImplementation((url: unknown) => {
     const u = String(url);
+    if (
+      fixture.fail === "all" ||
+      (fixture.fail === "all-but-fleet-health" && !u.includes("fleet/health"))
+    ) {
+      return Promise.reject(readFailure(u));
+    }
     if (u.includes("resource-samples")) {
       return Promise.resolve({
         latest: [hostSample(DEV_A), ciSample(DEV_B)],
@@ -400,8 +438,39 @@ function mockRoutes(fixture: Fixture = {}) {
             },
             occurred_at: NOW_ISO(),
           },
+          // A kill switch as coord writes it (`rollout_routes.rs`): the
+          // resource key AND `metadata.scope` are `repo:<owner>/<name>`.
+          {
+            audit_id: "audit-3",
+            operator_id: OPERATOR_ID,
+            action: "pr_merge.kill_switch.activate",
+            resource_kind: "coord.tenant_rollout_overrides",
+            resource_key: `repo:${PARTNER_REPO}`,
+            metadata: {
+              previous_merge_enabled: true,
+              merge_enabled: false,
+              scope: `repo:${PARTNER_REPO}`,
+              affected_repos: [PARTNER_REPO],
+              reason: "release freeze",
+            },
+            occurred_at: NOW_ISO(),
+          },
+          // The same, on a first-party repository: the scope may show.
+          {
+            audit_id: "audit-4",
+            operator_id: OPERATOR_ID,
+            action: "pr_merge.kill_switch.activate",
+            resource_kind: "coord.tenant_rollout_overrides",
+            resource_key: `repo:${FIRST_PARTY_REPO}`,
+            metadata: {
+              scope: `repo:${FIRST_PARTY_REPO}`,
+              affected_repos: [FIRST_PARTY_REPO],
+              reason: "release freeze",
+            },
+            occurred_at: NOW_ISO(),
+          },
         ],
-        count: 2,
+        count: 4,
       });
     }
     if (u.includes("fleet/health")) {
@@ -423,6 +492,7 @@ function mockRoutes(fixture: Fixture = {}) {
 
   httpFetch.mockImplementation((url: unknown) => {
     const u = String(url);
+    if (fixture.fail) return Promise.reject(readFailure(u));
     const ok = (json: unknown) =>
       Promise.resolve({
         ok: true,
@@ -476,7 +546,25 @@ function mockRoutes(fixture: Fixture = {}) {
         total: 1,
       });
     }
-    if (u.includes("/fleet/volumes")) return ok({ devices: [] });
+    if (u.includes("/fleet/volumes")) {
+      // Machine A's one volume is mounted under a label naming a client.
+      return ok({
+        devices: [
+          {
+            device_id: DEV_A,
+            volumes: [
+              {
+                volume: VOLUME_MOUNT,
+                total_bytes: 500 * 1024 ** 3,
+                free_bytes: 120 * 1024 ** 3,
+                observed_at: NOW_ISO(),
+              },
+            ],
+          },
+        ],
+        count: 1,
+      });
+    }
     if (u.endsWith("/fleet")) {
       return ok({
         runners: [runner(HOST_A), runner(HOST_C)],
@@ -529,6 +617,7 @@ function resetEnvironment() {
   httpFetch.mockReset();
   routerPush.mockReset();
   deviceStatusRows.clear();
+  deviceStatusState.error = null;
   window.localStorage.clear();
   window.sessionStorage.clear();
   sessionMachineAliases.reset();
@@ -556,7 +645,7 @@ async function settle() {
   await waitFor(() =>
     expect(
       document.querySelectorAll('[data-testid^="audit-row-"]').length
-    ).toBe(2)
+    ).toBe(4)
   );
   await waitFor(() =>
     expect(screen.getAllByTestId("fleet-resource-row").length).toBeGreaterThan(
@@ -574,6 +663,30 @@ function toggleOf(container: Element): HTMLElement {
   if (!toggle) throw new Error("no disclosure toggle in this container");
   return toggle as HTMLElement;
 }
+
+/** The machine section's provenance chips, by the source each one names. */
+function machineSectionChips(): Map<string, Element> {
+  const section = document.querySelector(
+    '[data-presentation-section="dev-ops.machines"]'
+  );
+  if (!section) throw new Error("the machines section caption did not render");
+  const chips = new Map<string, Element>();
+  for (const chip of section.querySelectorAll("[data-provenance]")) {
+    const source = /source: (.+?) · /.exec(chip.textContent ?? "")?.[1];
+    if (source) chips.set(source, chip);
+  }
+  return chips;
+}
+
+/** Every read whose numbers the machine list shows. */
+const MACHINE_SECTION_SOURCES = [
+  DEVOPS_SOURCES.runnerInventory,
+  DEVOPS_SOURCES.fleetHealth,
+  DEVOPS_SOURCES.ciRunnerMirror,
+  DEVOPS_SOURCES.diskTelemetry,
+  DEVOPS_SOURCES.drainState,
+  DEVOPS_SOURCES.deviceStatus,
+];
 
 /**
  * Runs `check` on the page as rendered, then again after opening each
@@ -622,7 +735,8 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
     await settle();
     // A role row's write controls live in its detail: open one.
-    fireEvent.click(toggleOf(screen.getAllByTestId("fleet-roles-row")[0]));
+    // `getAllByTestId` throws on none, so the first row exists.
+    fireEvent.click(toggleOf(screen.getAllByTestId("fleet-roles-row")[0]!));
 
     // The lever, its dialog and its target line — gone, not hidden.
     for (const testId of [
@@ -679,6 +793,29 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     });
   });
 
+  it("names a kill switch's repository only when the scope clears it — coord's `repo:` scope included", async () => {
+    mockRoutes();
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+
+    // The partner's: its resource key and its `metadata.scope` are both
+    // `repo:acme-partner/secret-repo`, and neither may reach the page.
+    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-3")));
+    const partner = screen.getByTestId("audit-detail-audit-3");
+    expect(partner.textContent).not.toMatch(/acme|secret/i);
+    expect(partner).toHaveTextContent(/Repository · /);
+
+    // The tenant's own: the same row shape, and its repository shows — in
+    // the row's label and in the blast radius.
+    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-4")));
+    const own = screen.getByTestId("audit-row-audit-4");
+    expect(own).toHaveTextContent(`repo:${FIRST_PARTY_REPO}`);
+    expect(screen.getByTestId("audit-blast-audit-4")).toHaveTextContent(
+      FIRST_PARTY_REPO
+    );
+  });
+
   it("names machines by alias, and one machine by ONE alias across the machine card, the resources table and the worktree slots", async () => {
     mockRoutes();
     seedDeviceStatus();
@@ -706,6 +843,9 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       .find((s) => s.getAttribute("data-device-drain") === "drained")!
       .closest("[data-operations-machine-card]") as HTMLElement;
     expect(within(drainedCard).getByText(aliasA)).toBeTruthy();
+    // Its disk: the figure, named by its position — never by its mount.
+    expect(within(drainedCard).getByText("Volume 1")).toBeTruthy();
+    expect(drainedCard.querySelector("[data-operations-volume]")).toBeNull();
 
     // Worktree slots: machine A is the row with a live census.
     const slotRows = screen.getAllByTestId("fleet-worktree-slots-row");
@@ -760,6 +900,19 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       expect(chip).toHaveTextContent(/source: coord/);
       expect(chip).toHaveTextContent(/as of /);
     }
+
+    // The machine list names EVERY read its numbers come from — disk, drain
+    // and device-status times included — and each one answered, so each is
+    // dated.
+    await waitFor(() => {
+      const chips = machineSectionChips();
+      expect([...chips.keys()].sort()).toEqual(
+        [...MACHINE_SECTION_SOURCES].sort()
+      );
+      for (const [source, chip] of chips) {
+        expect(chip.getAttribute("data-provenance-known"), source).toBe("true");
+      }
+    });
   });
 
   it("renders a failed poll's figure UNKNOWN with its reason — never zero — and leaves the others standing", async () => {
@@ -798,6 +951,167 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
   });
 });
 
+describe("/admin/coord/devops?present=1 — a failed read says it failed, in fixed words", () => {
+  beforeEach(resetEnvironment);
+
+  /** Wait for every panel that raises its own failure to have raised it. */
+  async function settleFailures(arm: "all" | "all-but-fleet-health") {
+    await screen.findByTestId("devops-headline-strip");
+    for (const testId of [
+      "fleet-roles-unknown",
+      "operator-audit-error",
+      "fleet-resource-error",
+      "ci-run-error",
+      "fleet-worktree-slots-error",
+    ]) {
+      await waitFor(() => expect(screen.getByTestId(testId)).toBeTruthy());
+    }
+    if (arm === "all") {
+      await screen.findByText("Backend Unreachable");
+    } else {
+      await waitFor(() =>
+        expect(
+          document.querySelectorAll("[data-operations-machine-card]").length
+        ).toBeGreaterThan(0)
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-devops-credential-unknown-badge")
+        ).toBeTruthy()
+      );
+    }
+  }
+
+  /** What every arm holds: no failure's own text, and each failure stated. */
+  function expectFailuresInFixedWords() {
+    const html = document.body.innerHTML;
+    expect(html).not.toContain(ERROR_HOST);
+    expect(html).not.toContain(ERROR_DEVICE);
+    expect(screen.getByTestId("fleet-roles-unknown")).toHaveTextContent(
+      FAILURE_SENTENCE_WITHHELD
+    );
+    for (const testId of [
+      "operator-audit-error",
+      "fleet-resource-error",
+      "ci-run-error",
+      "fleet-worktree-slots-error",
+    ]) {
+      expect(screen.getByTestId(testId), testId).toHaveTextContent(
+        FAILURE_REASON_WITHHELD
+      );
+    }
+    // UNKNOWN, never zero, at the top too.
+    for (const id of ["devops-headline-workspaces", "devops-headline-ci"]) {
+      expect(
+        screen.getByTestId(id).getAttribute("data-headline-known"),
+        id
+      ).toBe("false");
+    }
+  }
+
+  it("every read fails: no failure's own text reaches the page, and every panel says it failed", async () => {
+    mockRoutes({ fail: "all" });
+    deviceStatusState.error = readFailure("/coord/device-status").message;
+    const view = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settleFailures("all");
+
+    expectFailuresInFixedWords();
+    expect(
+      screen
+        .getByTestId("devops-headline-machines")
+        .getAttribute("data-headline-known")
+    ).toBe("false");
+    // The machine inventory's own failure, and no operator next step.
+    expect(document.body).toHaveTextContent(FAILURE_SENTENCE_WITHHELD);
+    expect(document.body.textContent).not.toContain("localhost:8000");
+    // The health strip's detail and the conditions panel say it in the same
+    // fixed words.
+    expect(screen.getByTestId("coord-devops-health-strip")).toHaveTextContent(
+      FAILURE_REASON_WITHHELD
+    );
+    expect(
+      screen.getByTestId("coord-devops-conditions-panel")
+    ).toHaveTextContent(FAILURE_REASON_WITHHELD);
+    expectPresentationSafe(view, { captions: DEVOPS_CAPTIONS });
+  });
+
+  it("coord's fleet health answers and every other read fails: the machine cards say so in fixed words too", async () => {
+    mockRoutes({ fail: "all-but-fleet-health" });
+    deviceStatusState.error = readFailure("/coord/device-status").message;
+    const view = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settleFailures("all-but-fleet-health");
+
+    expectFailuresInFixedWords();
+    // The credential badge's tooltip quotes the stream's failure.
+    expect(
+      screen
+        .getByTestId("coord-devops-credential-unknown-badge")
+        .getAttribute("title")
+    ).toContain(FAILURE_REASON_WITHHELD);
+    // Every machine's drain is UNKNOWN — said, not guessed.
+    const drains = screen.getAllByTestId("device-drain-status");
+    expect(drains.length).toBeGreaterThan(0);
+    for (const d of drains) {
+      if (d.getAttribute("data-device-drain") === "no_device") continue;
+      expect(d.getAttribute("data-device-drain")).toBe("unknown");
+      expect(d).toHaveTextContent(/drain state has not been read/i);
+    }
+    // Each read that failed is dated UNKNOWN — a failed poll never makes the
+    // section look current — while coord's fleet health, which answered, is
+    // dated.
+    const chips = machineSectionChips();
+    expect(
+      chips
+        .get(DEVOPS_SOURCES.fleetHealth)
+        ?.getAttribute("data-provenance-known")
+    ).toBe("true");
+    for (const source of [
+      DEVOPS_SOURCES.runnerInventory,
+      DEVOPS_SOURCES.ciRunnerMirror,
+      DEVOPS_SOURCES.diskTelemetry,
+      DEVOPS_SOURCES.drainState,
+    ]) {
+      expect(
+        chips.get(source)?.getAttribute("data-provenance-known"),
+        source
+      ).toBe("false");
+    }
+    expectPresentationSafe(view, { captions: DEVOPS_CAPTIONS });
+  });
+
+  it("(control) the same failures DO carry their own text for the operator", async () => {
+    mockRoutes({ fail: "all-but-fleet-health" });
+    deviceStatusState.error = readFailure("/coord/device-status").message;
+    render(
+      <FixedPresentationMode presenting={false}>
+        <CoordDevOpsPage />
+      </FixedPresentationMode>
+    );
+    for (const testId of [
+      "fleet-roles-unknown",
+      "operator-audit-error",
+      "fleet-resource-error",
+      "ci-run-error",
+      "fleet-worktree-slots-error",
+    ]) {
+      // So the presentation arms above are not passing on a fixture whose
+      // failures never reached the page at all.
+      await waitFor(() =>
+        expect(screen.getByTestId(testId), testId).toHaveTextContent(ERROR_HOST)
+      );
+    }
+    expect(
+      screen
+        .getByTestId("coord-devops-credential-unknown-badge")
+        .getAttribute("title")
+    ).toContain(ERROR_HOST);
+  });
+});
+
 describe("/admin/coord/devops for the operator — the console is unchanged", () => {
   beforeEach(resetEnvironment);
 
@@ -831,6 +1145,8 @@ describe("/admin/coord/devops for the operator — the console is unchanged", ()
     // Real names: the operator's alias for machine A, and the hostnames.
     expect(screen.getAllByText(DISPLAY_NAME_A).length).toBeGreaterThan(0);
     expect(document.body.innerHTML).toContain(HOST_B);
+    // The operator still reads the volume's own mount.
+    expect(screen.getAllByText(VOLUME_MOUNT).length).toBeGreaterThan(0);
     expect(document.querySelector('[data-machine-alias="true"]')).toBeNull();
 
     expect(screen.queryByTestId("devops-headline-strip")).toBeNull();

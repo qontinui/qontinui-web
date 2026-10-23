@@ -96,7 +96,9 @@ const CASES: Array<{
     target: IDENTIFIED,
     drain: {
       state: "unknown",
-      reason: "Coord's drain state is still being read.",
+      // A reason built around coord's own free text, which can name the
+      // device: the outsider reads the fact in fixed words instead.
+      reason: `Coord's drain read reported an error: device ${DEVICE} on ${COORD_HOST} is locked`,
     },
     key: "unknown",
     says: /drain state unknown[\s\S]*may or may not be taking new work/i,

@@ -77,6 +77,7 @@ import {
   type MachineIdentity,
 } from "@/components/presentation";
 import { DEVOPS_SOURCES } from "./devOpsHeadline";
+import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
   DISPATCH_ROLES,
   LANES,
@@ -508,8 +509,11 @@ export function FleetRolesSection() {
               </span>
             </div>
             <p className="mt-1 text-[11px] break-words text-muted-foreground">
-              {read.reason} No machine is shown as unassigned, because that
-              would claim it behaves as a Workhorse.
+              {/* The reason quotes coord's own text, which can name a machine;
+                  an outsider reads that the read failed, in fixed words. */}
+              {presenting ? FAILURE_SENTENCE_WITHHELD : read.reason} No machine
+              is shown as unassigned, because that would claim it behaves as a
+              Workhorse.
             </p>
           </div>
         ) : (

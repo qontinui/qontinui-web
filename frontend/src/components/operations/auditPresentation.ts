@@ -16,6 +16,11 @@
  *   `RedactedText`, which withholds it unless it is provably first-party.
  * - **the descriptor's words** — the resource kind and the action family in
  *   the reader's words, from fixed tables, never from the row's own text.
+ * - **which repository a merge-train scope names** — coord spells a kill
+ *   switch's scope `tenant` or `repo:<owner>/<name>` (`rollout_routes.rs`
+ *   `parse_scope`), as the row's resource key and again as `metadata.scope`.
+ *   The repository is what redaction checks; `tenant` is coord's own fixed
+ *   word and shows as itself. Any other spelling is not guessed at either.
  */
 
 import type { MachineIdentity } from "@/components/presentation";
@@ -128,3 +133,54 @@ export function auditListValues(row: AuditRow, key: string): string[] {
   const value = asRecord(row.metadata)?.[key];
   return Array.isArray(value) ? value.map((v) => String(v)) : [];
 }
+
+/** Coord's word for a scope that is the whole tenant. */
+const TENANT_SCOPE = "tenant";
+
+/** What a merge-train scope (`tenant` / `repo:<owner>/<name>`) names. */
+export type AuditScope =
+  | { readonly kind: "tenant" }
+  | { readonly kind: "repo"; readonly repo: string }
+  | { readonly kind: "other" };
+
+/**
+ * Read a scope as coord spells it. Only the two spellings coord writes are
+ * recognised; anything else is `other`, which the panel withholds.
+ */
+export function auditScope(value: string | null | undefined): AuditScope {
+  const trimmed = value?.trim() ?? "";
+  if (trimmed.toLowerCase() === TENANT_SCOPE) return { kind: "tenant" };
+  const match = /^repo:(.+)$/i.exec(trimmed);
+  const repo = match?.[1]?.trim();
+  return repo ? { kind: "repo", repo } : { kind: "other" };
+}
+
+/**
+ * The repository a row's RESOURCE KEY belongs to, for redaction: the scope's
+ * repository for a `repo:` key, else the key itself (an `owner/name#12` key
+ * parses as its repository; anything else is withheld).
+ */
+export function auditResourceRepo(resourceKey: string): string {
+  const scope = auditScope(resourceKey);
+  return scope.kind === "repo" ? scope.repo : resourceKey;
+}
+
+/**
+ * The promoted blast-radius keys (`operatorAudit.ts` `BLAST_RADIUS_KEYS`)
+ * whose values are coord's fixed vocabulary, a time or a number, and so are
+ * shown as they are in presentation mode: drained / released, an expiry, a
+ * commit prefix, an escalate clearance's writer, a fleet policy's name and
+ * level, and a version. Every other key is a repository, a scope, a device, a
+ * tenant or a person, and has its own redacting arm in the panel — or, if it
+ * is ever added without one, is withheld (a blocklist fails open; this is an
+ * allowlist).
+ */
+export const VERBATIM_BLAST_KEYS: ReadonlySet<string> = new Set([
+  "drained",
+  "until",
+  "head_sha",
+  "via",
+  "domain",
+  "level",
+  "version",
+]);

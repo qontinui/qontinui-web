@@ -30,7 +30,8 @@ import {
 import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import { SectionCaption, usePresentationMode } from "@/components/presentation";
-import { DEVOPS_SOURCES } from "./devOpsHeadline";
+import { DEVOPS_SOURCES, latestInstant } from "./devOpsHeadline";
+import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
   resolveMachineVolumes,
   tightestVolume,
@@ -483,6 +484,10 @@ export function FleetOverview({
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // When the runner inventory last ANSWERED. `lastUpdated` is the refresh
+  // loop's clock — it is stamped even when the inventory read failed — so it
+  // cannot date the inventory itself; the presentation chip reads this.
+  const [inventoryAsOf, setInventoryAsOf] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // Disk telemetry is its own 30 s, single-flight, no-retry poll now — see
@@ -514,6 +519,7 @@ export function FleetOverview({
       if (fleetRes.status === "fulfilled") {
         if (!isCurrent()) return;
         setFleet(fleetRes.value);
+        setInventoryAsOf(Date.now());
         setError(null);
       } else {
         if (!isCurrent()) return;
@@ -667,26 +673,54 @@ export function FleetOverview({
     [tasks]
   );
 
+  // The as-of of the two reads whose bodies date their ROWS, not themselves:
+  // the newest disk measurement coord holds, and the newest device-status
+  // report. UNKNOWN (null) while a read has not answered or dates nothing.
+  const diskAsOf = useMemo(
+    () =>
+      volumes.state === "ok"
+        ? latestInstant(
+            [...volumes.byDevice.values()].flatMap((entry) =>
+              entry.volumes.map((v) => v.observed_at)
+            )
+          )
+        : null,
+    [volumes]
+  );
+  const deviceStatusAsOf = useMemo(
+    () =>
+      latestInstant(
+        [...deviceStatus.byHostname.values()].map((row) => row.updated_at)
+      ),
+    [deviceStatus.byHostname]
+  );
+
   // The presentation lens (plan `2026-10-23-console-presentation-spaces`
-  // Phase 7). The section caption states the as-of of each read the rows join
-  // — the runner inventory, coord's device health and the CI-runner mirror —
-  // and renders in every branch below, so an outsider is told what this list
-  // is even while it loads or has failed. Nothing here renders for the
-  // operator.
+  // Phase 7). The section caption states the source and as-of of EVERY read
+  // whose numbers this list shows — the runner inventory, coord's device
+  // health, the CI-runner mirror, the disk telemetry, the drain states and the
+  // device-status reports — and renders in every branch below, so an outsider
+  // is told what this list is even while it loads or has failed. Nothing here
+  // renders for the operator.
   const { presenting } = usePresentationMode();
   const caption = (
     <SectionCaption
       id="dev-ops.machines"
       sources={[
-        {
-          source: DEVOPS_SOURCES.runnerInventory,
-          asOf: lastUpdated,
-        },
+        { source: DEVOPS_SOURCES.runnerInventory, asOf: inventoryAsOf },
         { source: DEVOPS_SOURCES.fleetHealth, asOf: health.fetchedAtMs },
         {
           source: DEVOPS_SOURCES.ciRunnerMirror,
           asOf: ciRunnerMirror.state === "ok" ? ciRunnerMirror.asOf : null,
         },
+        { source: DEVOPS_SOURCES.diskTelemetry, asOf: diskAsOf },
+        {
+          source: DEVOPS_SOURCES.drainState,
+          // Only an answered read is dated: an unknown one is UNKNOWN as of
+          // nothing, whatever the last good read was.
+          asOf: drain.read.state === "ok" ? drain.fetchedAtMs : null,
+        },
+        { source: DEVOPS_SOURCES.deviceStatus, asOf: deviceStatusAsOf },
       ]}
     />
   );
@@ -725,12 +759,19 @@ export function FleetOverview({
           <div className="flex flex-col items-center justify-center gap-4 py-12 text-muted-foreground">
             <WifiOff className="h-12 w-12 opacity-40" />
             <p className="text-lg font-medium">Backend Unreachable</p>
-            <p className="text-sm max-w-md text-center">{error}</p>
-            <p className="text-xs">
-              Make sure the backend is running at{" "}
-              <code className="bg-muted px-1 rounded">localhost:8000</code> and
-              the operations endpoints are deployed.
+            {/* The request's own text, and the operator's next step, are not
+                for an outsider: they read that the inventory could not be
+                read (D3.3). */}
+            <p className="text-sm max-w-md text-center">
+              {presenting ? FAILURE_SENTENCE_WITHHELD : error}
             </p>
+            {!presenting && (
+              <p className="text-xs">
+                Make sure the backend is running at{" "}
+                <code className="bg-muted px-1 rounded">localhost:8000</code>{" "}
+                and the operations endpoints are deployed.
+              </p>
+            )}
           </div>
           <DeviceStatusTile stream={deviceStatus} />
         </div>
@@ -936,7 +977,11 @@ export function FleetOverview({
               label="Tightest volume"
               value={
                 worstFreeVolume
-                  ? `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
+                  ? // The mount names a path someone chose; an outsider gets
+                    // the figure without it (D3.3, as `VolumeRows` does).
+                    presenting
+                    ? `${formatBytes(worstFreeVolume.free_bytes)} free`
+                    : `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
                   : !volumesRead
                     ? "not read"
                     : volumesWarning

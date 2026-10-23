@@ -13,6 +13,7 @@ import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 import type { CiRunnerMirrorRead, CoordCiRunnerRow } from "./ciRunnerMirror";
 import {
   ciRunnersReadyFigure,
+  latestInstant,
   machinesHealthyFigure,
   workspacesInUseFigure,
 } from "./devOpsHeadline";
@@ -306,5 +307,25 @@ describe("ciRunnersReadyFigure", () => {
         ciRunnersReadyFigure(mirror([mirrorRow("a", "idle")], { asOf: null }))
       ).asOf
     ).toBeNull();
+  });
+});
+
+describe("latestInstant — the as-of of a read that dates its rows", () => {
+  it("is the newest parseable instant, as ISO-8601", () => {
+    expect(
+      latestInstant([
+        "2026-10-23T12:00:00Z",
+        "2026-10-23T12:05:00Z",
+        "2026-10-23T11:00:00Z",
+      ])
+    ).toBe("2026-10-23T12:05:00.000Z");
+  });
+
+  it("skips what cannot be dated, and is UNKNOWN (null) — never now — when nothing can", () => {
+    expect(latestInstant([null, "not a time", "2026-10-23T12:00:00Z"])).toBe(
+      "2026-10-23T12:00:00.000Z"
+    );
+    expect(latestInstant([null, undefined, "", "garbage"])).toBeNull();
+    expect(latestInstant([])).toBeNull();
   });
 });

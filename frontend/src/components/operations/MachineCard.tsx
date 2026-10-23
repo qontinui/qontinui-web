@@ -228,11 +228,19 @@ function HealthDot({
  *   a STALE marker so it is never mistaken for current.
  * - **A number that could not be computed says so.** An unusable `total_bytes`
  *   produces "unknown", not a 0 % bar.
+ *
+ * In presentation mode a volume is named by its position on the machine
+ * ("Volume 2"), never by its mount: a mount point or a volume label is a path
+ * or a name someone typed — `/home/<user>`, `/Volumes/<label>` — and can name
+ * a person or a client (plan `2026-10-23-console-presentation-spaces` D3.3).
+ * The figures and their ages are unchanged.
  */
 function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
+  const { presenting } = usePresentationMode();
   return (
     <div className="space-y-2">
       {volumes.map((v, i) => {
+        const name = presenting ? `Volume ${i + 1}` : v.volume;
         const pct = percentFree(v.free_bytes, v.total_bytes);
         const usable = pct !== null;
         const ageMs = readingAgeMs(v.observed_at);
@@ -266,9 +274,12 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
         // for one device yields two rows here. A duplicate React key logs a
         // warning and can mis-reconcile, so the index disambiguates.
         return (
-          <div key={`${i}-${v.volume}`} data-operations-volume={v.volume}>
+          <div
+            key={`${i}-${v.volume}`}
+            data-operations-volume={presenting ? undefined : v.volume}
+          >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="font-mono text-sm font-medium">{v.volume}</span>
+              <span className="font-mono text-sm font-medium">{name}</span>
               <span className={`text-sm font-semibold ${textColor}`}>
                 {formatBytes(v.free_bytes)} free
                 <span className="text-muted-foreground font-normal">
@@ -284,7 +295,7 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
               <div
                 className="mt-1 h-2 w-full rounded-full bg-muted overflow-hidden"
                 role="img"
-                aria-label={`${v.volume}: ${pct}% free`}
+                aria-label={`${name}: ${pct}% free`}
               >
                 <div
                   className={`h-full ${barColor}`}
@@ -406,9 +417,9 @@ function DiskSection({ volumes }: { volumes: MachineVolumes }) {
  * alias — so it reads as the same letter on every other panel), carries no
  * hostname or device id in any attribute, tooltip or link, and unmounts every
  * write control: the rename, the drain lever, the CI-capacity disclosure
- * (`OperatorOnly`). Runner names, session working directories and the
- * runner's free-text credential reason are not rendered; counts and states
- * are.
+ * (`OperatorOnly`). Runner names, session working directories, volume mounts
+ * and the runner's free-text credential reason are not rendered; counts,
+ * states and positions ("Runner 2", "Volume 1") are.
  */
 export function MachineCard({
   machine,

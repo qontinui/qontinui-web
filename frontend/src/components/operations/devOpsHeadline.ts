@@ -49,10 +49,35 @@ export const DEVOPS_SOURCES = {
   ciRunnerMirror: "coord CI runner mirror",
   faultToVisibility: "coord fault-to-visibility",
   runnerInventory: "runner inventory",
+  diskTelemetry: "coord disk telemetry",
+  drainState: "coord drain state",
+  deviceStatus: "coord device status",
   dispatchRoles: "coord dispatch roles",
   resourceSamples: "coord resource samples",
   operatorAudit: "coord operator audit",
 } as const;
+
+/**
+ * The newest of several instants (ISO-8601), or `null` when none parses.
+ *
+ * The as-of of a read whose body dates its ROWS rather than itself — coord's
+ * disk telemetry (`observed_at` per volume), the device-status stream
+ * (`updated_at` per machine): the time its newest measurement was true. An
+ * undatable row adds nothing, and a read with no datable row is UNKNOWN as of
+ * nothing — never "now".
+ */
+export function latestInstant(
+  values: Iterable<string | null | undefined>
+): string | null {
+  let newest: number | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const t = Date.parse(value);
+    if (Number.isNaN(t)) continue;
+    if (newest === null || t > newest) newest = t;
+  }
+  return newest === null ? null : new Date(newest).toISOString();
+}
 
 /** "1 machine" / "3 machines" — every count on the strip names its unit. */
 function count(n: number, singular: string, plural = `${singular}s`): string {

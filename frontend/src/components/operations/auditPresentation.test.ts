@@ -12,7 +12,10 @@ import {
   auditListValues,
   auditResourceKindWord,
   auditResourceMachine,
+  auditResourceRepo,
+  auditScope,
   indexDevices,
+  VERBATIM_BLAST_KEYS,
 } from "./auditPresentation";
 import type { AuditRow } from "./operatorAudit";
 
@@ -122,5 +125,58 @@ describe("promoted list values", () => {
     expect(auditListValues(row({ metadata: null }), "affected_repos")).toEqual(
       []
     );
+  });
+});
+
+describe("merge-train scopes", () => {
+  it("reads coord's two spellings, and nothing else", () => {
+    expect(auditScope("tenant")).toEqual({ kind: "tenant" });
+    expect(auditScope(" Tenant ")).toEqual({ kind: "tenant" });
+    expect(auditScope("repo:acme-partner/secret-repo")).toEqual({
+      kind: "repo",
+      repo: "acme-partner/secret-repo",
+    });
+    // Anything else is not guessed at: the panel withholds it.
+    expect(auditScope("repo:")).toEqual({ kind: "other" });
+    expect(auditScope("fleet")).toEqual({ kind: "other" });
+    expect(auditScope(null)).toEqual({ kind: "other" });
+  });
+
+  it("redacts a repo-scoped resource key by the repository it names", () => {
+    expect(auditResourceRepo("repo:qontinui/qontinui-web")).toBe(
+      "qontinui/qontinui-web"
+    );
+    // Not a scope: the key is its own repository reference.
+    expect(auditResourceRepo("acme-partner/secret-repo#12")).toBe(
+      "acme-partner/secret-repo#12"
+    );
+  });
+});
+
+describe("the blast-radius values shown as they are", () => {
+  it("vouches only for fixed vocabulary, times and numbers", () => {
+    for (const key of [
+      "drained",
+      "until",
+      "head_sha",
+      "via",
+      "domain",
+      "level",
+      "version",
+    ]) {
+      expect(VERBATIM_BLAST_KEYS.has(key), key).toBe(true);
+    }
+    // Every key that names a repository, a scope, a device, a tenant or a
+    // person has its own redacting arm — never the verbatim one.
+    for (const key of [
+      "scope",
+      "scope_key",
+      "affected_repos",
+      "affected_tenant_ids",
+      "device_id",
+      "target_operator_id",
+    ]) {
+      expect(VERBATIM_BLAST_KEYS.has(key), key).toBe(false);
+    }
   });
 });

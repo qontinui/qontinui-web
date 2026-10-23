@@ -44,7 +44,7 @@ function Host(): ReactElement {
         refresh: noop,
       }}
       ciMachines={{ state: "loading" }}
-      drain={{ read: { state: "loading" }, refresh: noop }}
+      drain={{ read: { state: "loading" }, fetchedAtMs: null, refresh: noop }}
       deviceStatus={{
         byHostname: new Map(),
         connected: false,

@@ -49,13 +49,20 @@
  * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 7)
  *
  * An evaluator sees whether the machine is in service — drained until when,
- * back in service, or UNKNOWN — and nothing else: no lever, no dialog, no
- * target line (it names the coord hostname and device id), and no
- * `drained by` or reason (an operator's identity and free text). The block
- * carries `data-testid="device-drain-status"` rather than the operator's
- * `device-drain`, so "no drain control on the page" is checkable by testid.
- * The lever and its dialog sit inside `OperatorOnly` as well, so they are
- * unmounted even if this branch were ever bypassed.
+ * back in service, or UNKNOWN — and nothing else. The block is one shell in
+ * both modes, and each thing an outsider may not see has ONE guard of its own:
+ *
+ * - the lever and its consent dialog sit inside `OperatorOnly`, which
+ *   unmounts them (D3.2);
+ * - the target line names the coord hostname and device id, so it renders for
+ *   the operator only (D3.3);
+ * - the state line is `presentedStateLine`: no `drained by` and no reason (an
+ *   operator's identity and free text), and an unknown state in fixed words,
+ *   since the read's own reason can quote coord's free text (D3.3).
+ *
+ * The block carries `data-testid="device-drain-status"` rather than the
+ * operator's `device-drain`, so "no drain control on the page" is checkable by
+ * testid.
  */
 
 import { useCallback, useState } from "react";
@@ -189,89 +196,151 @@ function DrainTargetLine({
 }
 
 /**
- * The drain STATE as an external evaluator sees it: in service, out of
- * service until when, or unknown. No lever, no target line, no actor and no
- * reason (see the module doc). Every arm still says what is true — a read that
- * failed is UNKNOWN in words, never "in service".
+ * The amber block a drained machine's state renders in, in both modes. One
+ * shell, so the operator's line and the evaluator's line cannot drift apart in
+ * how loudly they say "out of the fleet".
  */
-function PresentedDrainState({
-  target,
-  drain,
-  stateKey,
-  clock,
+function DrainedNotice({
+  headline,
+  children,
 }: {
-  target: DrainTarget;
-  drain: DeviceDrainState;
-  stateKey: string;
-  clock: number;
+  headline: string;
+  children: React.ReactNode;
 }) {
-  const line = (() => {
-    if (target.state === "no_device") {
-      return (
-        <DrainNotice tone="muted" headline="No drain state">
-          This machine is not linked to a coordination-service device, so it has
-          no drain state to show.
-        </DrainNotice>
-      );
-    }
-    if (drain.state === "unknown") {
-      return (
-        <DrainNotice tone="waiting" headline="Drain state unknown">
-          {drain.reason} This machine may or may not be taking new work — this
-          is a statement about the read, not about the machine.
-        </DrainNotice>
-      );
-    }
-    if (drain.state === "drained") {
-      return (
-        <div
-          className="rounded-md border border-amber-500/50 bg-amber-500/5 px-2 py-1.5"
-          role="status"
-        >
-          <div className="flex items-center gap-1.5">
-            <PowerOff className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
-            <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
-              Out of service
-            </span>
-          </div>
-          <p className="mt-1 text-[11px] leading-snug break-words text-muted-foreground">
-            Drained until{" "}
-            <span className="font-medium text-foreground">
-              {absoluteTime(drain.entry.until)}
-            </span>{" "}
-            ({formatDrainRemaining(drain.entry.until, clock)}). No new work is
-            sent to it until then; anything already running on it keeps running.
-          </p>
-        </div>
-      );
-    }
-    if (drain.state === "expired") {
-      return (
-        <p className="text-[11px] leading-snug break-words text-muted-foreground">
-          Back in service — its last drain expired{" "}
-          {formatDrainRemaining(drain.entry.until, clock)} and it was released
-          automatically.
-        </p>
-      );
-    }
-    return (
-      <p className="text-[11px] leading-snug break-words text-muted-foreground">
-        In service — new work may be sent to it.
-      </p>
-    );
-  })();
-
   return (
     <div
-      className="space-y-1.5"
-      data-testid="device-drain-status"
-      data-device-drain={stateKey}
+      className="rounded-md border border-amber-500/50 bg-amber-500/5 px-2 py-1.5"
+      role="status"
     >
-      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        Drain
-      </h4>
-      <div data-testid="device-drain-state">{line}</div>
+      <div className="flex items-center gap-1.5">
+        <PowerOff className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+          {headline}
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] leading-snug break-words text-muted-foreground">
+        {children}
+      </p>
     </div>
+  );
+}
+
+interface StateLineInput {
+  target: DrainTarget;
+  drain: DeviceDrainState;
+  clock: number;
+}
+
+/**
+ * The drain STATE as an external evaluator reads it: in service, out of
+ * service until when, or unknown. No actor and no reason (an operator's
+ * identity and free text), and the unknown arm states the fact in fixed words
+ * rather than the read's own reason, which can quote coord's free text about a
+ * device (plan `2026-10-23-console-presentation-spaces` D3.3). Every arm still
+ * says what is true — a read that failed is UNKNOWN in words, never "in
+ * service".
+ */
+function presentedStateLine({ target, drain, clock }: StateLineInput) {
+  if (target.state === "no_device") {
+    return (
+      <DrainNotice tone="muted" headline="No drain state">
+        This machine is not linked to a coordination-service device, so it has
+        no drain state to show.
+      </DrainNotice>
+    );
+  }
+  if (drain.state === "unknown") {
+    return (
+      <DrainNotice tone="waiting" headline="Drain state unknown">
+        Its drain state has not been read, so this machine may or may not be
+        taking new work — this is a statement about the read, not about the
+        machine.
+      </DrainNotice>
+    );
+  }
+  if (drain.state === "drained") {
+    return (
+      <DrainedNotice headline="Out of service">
+        Drained until{" "}
+        <span className="font-medium text-foreground">
+          {absoluteTime(drain.entry.until)}
+        </span>{" "}
+        ({formatDrainRemaining(drain.entry.until, clock)}). No new work is sent
+        to it until then; anything already running on it keeps running.
+      </DrainedNotice>
+    );
+  }
+  if (drain.state === "expired") {
+    return (
+      <p className="text-[11px] leading-snug break-words text-muted-foreground">
+        Back in service — its last drain expired{" "}
+        {formatDrainRemaining(drain.entry.until, clock)} and it was released
+        automatically.
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px] leading-snug break-words text-muted-foreground">
+      In service — new work may be sent to it.
+    </p>
+  );
+}
+
+/** The drain state as the operator reads it: everything coord said. */
+function operatorStateLine({ target, drain, clock }: StateLineInput) {
+  if (target.state === "no_device") {
+    return (
+      <DrainNotice tone="muted" headline="No coord device to drain">
+        {target.reason}
+      </DrainNotice>
+    );
+  }
+  if (drain.state === "unknown") {
+    return (
+      <DrainNotice tone="waiting" headline="Drain state unknown">
+        {drain.reason} This machine may or may not be taking new work — this is
+        a statement about the read, not about the machine.
+      </DrainNotice>
+    );
+  }
+  if (drain.state === "drained") {
+    return (
+      <DrainedNotice headline="Drained">
+        Drained until{" "}
+        <span className="font-medium text-foreground">
+          {absoluteTime(drain.entry.until)}
+        </span>{" "}
+        ({formatDrainRemaining(drain.entry.until, clock)}) by{" "}
+        <span className="font-medium text-foreground">
+          {drain.entry.drainedBy ?? "an operator this read did not name"}
+        </span>
+        , reason{" "}
+        <span className="font-medium text-foreground">
+          {drain.entry.reason ?? "not recorded"}
+        </span>
+        .{" "}
+        {drain.entry.drainedAt
+          ? `Drained at ${absoluteTime(drain.entry.drainedAt)}. `
+          : ""}
+        Coord sends it no new work until then; anything already running on it
+        keeps running.
+      </DrainedNotice>
+    );
+  }
+  if (drain.state === "expired") {
+    return (
+      <p className="text-[11px] leading-snug break-words text-muted-foreground">
+        Not drained — the last drain expired{" "}
+        {formatDrainRemaining(drain.entry.until, clock)} (
+        {absoluteTime(drain.entry.until)}) and coord released the machine on its
+        own. Nobody undrained it.
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px] leading-snug break-words text-muted-foreground">
+      Not drained — coord may send this machine new work.
+    </p>
   );
 }
 
@@ -376,105 +445,32 @@ export function DeviceDrainControl({
   const stateKey = target.state === "no_device" ? "no_device" : drain.state;
   const actable = target.state === "identified" && drain.state !== "unknown";
 
-  // Presentation mode: the state, read-only — no lever, no dialog, no target
-  // line, no actor, no reason (the module doc's "Presentation mode").
-  if (presenting) {
-    return (
-      <PresentedDrainState
-        target={target}
-        drain={drain}
-        stateKey={stateKey}
-        clock={clock}
-      />
-    );
-  }
-
-  const stateLine = (() => {
-    if (target.state === "no_device") {
-      return (
-        <DrainNotice tone="muted" headline="No coord device to drain">
-          {target.reason}
-        </DrainNotice>
-      );
-    }
-    if (drain.state === "unknown") {
-      return (
-        <DrainNotice tone="waiting" headline="Drain state unknown">
-          {drain.reason} This machine may or may not be taking new work — this
-          is a statement about the read, not about the machine.
-        </DrainNotice>
-      );
-    }
-    if (drain.state === "drained") {
-      return (
-        <div
-          className="rounded-md border border-amber-500/50 bg-amber-500/5 px-2 py-1.5"
-          role="status"
-        >
-          <div className="flex items-center gap-1.5">
-            <PowerOff className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
-            <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
-              Drained
-            </span>
-          </div>
-          <p className="mt-1 text-[11px] leading-snug break-words text-muted-foreground">
-            Drained until{" "}
-            <span className="font-medium text-foreground">
-              {absoluteTime(drain.entry.until)}
-            </span>{" "}
-            ({formatDrainRemaining(drain.entry.until, clock)}) by{" "}
-            <span className="font-medium text-foreground">
-              {drain.entry.drainedBy ?? "an operator this read did not name"}
-            </span>
-            , reason{" "}
-            <span className="font-medium text-foreground">
-              {drain.entry.reason ?? "not recorded"}
-            </span>
-            .{" "}
-            {drain.entry.drainedAt
-              ? `Drained at ${absoluteTime(drain.entry.drainedAt)}. `
-              : ""}
-            Coord sends it no new work until then; anything already running on
-            it keeps running.
-          </p>
-        </div>
-      );
-    }
-    if (drain.state === "expired") {
-      return (
-        <p className="text-[11px] leading-snug break-words text-muted-foreground">
-          Not drained — the last drain expired{" "}
-          {formatDrainRemaining(drain.entry.until, clock)} (
-          {absoluteTime(drain.entry.until)}) and coord released the machine on
-          its own. Nobody undrained it.
-        </p>
-      );
-    }
-    return (
-      <p className="text-[11px] leading-snug break-words text-muted-foreground">
-        Not drained — coord may send this machine new work.
-      </p>
-    );
-  })();
-
+  // One shell in both modes. What changes while presenting (D3.2, D3.3): the
+  // block's testid, the state line's wording, the target line (it names
+  // coord's hostname and device id) — and the lever with its dialog, which
+  // `OperatorOnly` unmounts.
   return (
     <div
       className="space-y-1.5"
-      data-testid="device-drain"
+      data-testid={presenting ? "device-drain-status" : "device-drain"}
       data-device-drain={stateKey}
     >
       <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
         Drain
       </h4>
 
-      {target.state === "identified" && (
+      {!presenting && target.state === "identified" && (
         <DrainTargetLine
           deviceId={target.deviceId}
           coordHostname={target.coordHostname}
         />
       )}
 
-      <div data-testid="device-drain-state">{stateLine}</div>
+      <div data-testid="device-drain-state">
+        {presenting
+          ? presentedStateLine({ target, drain, clock })
+          : operatorStateLine({ target, drain, clock })}
+      </div>
 
       {/* The lever and its consent dialog are write controls: never mounted
           in presentation mode (D3.2). */}

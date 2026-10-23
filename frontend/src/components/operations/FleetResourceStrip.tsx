@@ -95,6 +95,7 @@ import {
 } from "@/components/presentation";
 import { deviceStateBadgeVariant } from "./FleetHealthSummary";
 import { PressureSparkline } from "./PressureSparkline";
+import { presentedFailureReason } from "./presentedFailure";
 import {
   buildMachineGroups,
   classifySaturation,
@@ -1358,8 +1359,9 @@ export function FleetResourceStrip({
             className="text-sm text-destructive"
             data-testid="fleet-resource-error"
           >
-            Resource samples unavailable: {error}. Rows below are last-known,
-            not current.
+            Resource samples unavailable:{" "}
+            {presentedFailureReason(error, presenting)}. Rows below are
+            last-known, not current.
           </p>
         )}
         {data?.schema_pending && (

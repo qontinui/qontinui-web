@@ -80,9 +80,13 @@ import {
   auditListValues,
   auditResourceKindWord,
   auditResourceMachine,
+  auditResourceRepo,
+  auditScope,
   indexDevices,
+  VERBATIM_BLAST_KEYS,
 } from "./auditPresentation";
 import { DEVOPS_SOURCES } from "./devOpsHeadline";
+import { FAILURE_REASON_WITHHELD } from "./presentedFailure";
 import type { FleetDeviceRef } from "./fleetResources";
 import {
   AUDIT_FILTERS,
@@ -256,10 +260,15 @@ function AuditRowView({
   );
 }
 
+/** What a withheld blast-radius value reads as. */
+const BLAST_VALUE_WITHHELD = "withheld in presentation mode";
+
 /**
  * One promoted blast-radius value as an outsider sees it: a count instead of
  * tenant ids, an alias instead of a device id, repositories only when
- * provably first-party, and an operator never.
+ * provably first-party, and an operator never. A value is shown as it is only
+ * when its key is one `VERBATIM_BLAST_KEYS` vouches for; anything else is
+ * redacted or withheld, never shown on trust.
  */
 function PresentedBlastValue({
   row,
@@ -306,12 +315,35 @@ function PresentedBlastValue({
         />
       );
     }
+    case "scope": {
+      // A merge-train scope is `tenant` or `repo:<owner>/<name>`: the
+      // repository is a name like any other, shown only when first-party.
+      const scope = auditScope(item.value);
+      if (scope.kind === "tenant") return <>tenant</>;
+      return (
+        <RedactedText
+          text={scope.kind === "repo" ? scope.repo : item.value}
+          repo={scope.kind === "repo" ? scope.repo : null}
+          descriptor={{
+            kind: scope.kind === "repo" ? "Repository" : "Scope",
+            status: "recorded",
+            at: row.occurred_at,
+          }}
+        />
+      );
+    }
     case "target_operator_id":
-      return <>an operator — withheld in presentation mode</>;
+      return <>an operator — {BLAST_VALUE_WITHHELD}</>;
     default:
-      // Drained / released, an expiry, a writer, a policy name, a level, a
-      // version, a commit prefix: fixed vocabulary, times and numbers.
-      return <>{item.value}</>;
+      // Drained / released, an expiry, a clearance writer, a policy name, a
+      // level, a version, a commit prefix: coord's fixed vocabulary, times
+      // and numbers. A key not vouched for could hold anything (D3.3: a
+      // blocklist fails open), so it is withheld.
+      return VERBATIM_BLAST_KEYS.has(item.key) ? (
+        <>{item.value}</>
+      ) : (
+        <span className="text-muted-foreground">{BLAST_VALUE_WITHHELD}</span>
+      );
   }
 }
 
@@ -350,7 +382,9 @@ function PresentedAuditRow({
         ) : row.resource_key ? (
           <RedactedText
             text={row.resource_key}
-            repo={row.resource_key}
+            // A merge-train key is `repo:<owner>/<name>`: redaction checks
+            // the repository it names, not the prefixed key.
+            repo={auditResourceRepo(row.resource_key)}
             descriptor={{
               kind: auditResourceKindWord(row.resource_kind),
               area: auditAreaWord(row.action),
@@ -719,11 +753,14 @@ export function OperatorAuditPanel({
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   The console could not read the audit feed &mdash;{" "}
-                  {read.reason} This says nothing about whether anyone changed
-                  anything; it is a statement about the request. Coord gates
-                  this route on the <code className="font-mono">admin</code>{" "}
-                  role, so a 403 here means the account lacks it, not that the
-                  feed is empty.
+                  {/* The request's own text can carry a resource key or
+                      coord's words about one; an outsider reads that it
+                      failed (D3.3). */}
+                  {presenting ? `${FAILURE_REASON_WITHHELD}.` : read.reason}{" "}
+                  This says nothing about whether anyone changed anything; it is
+                  a statement about the request. Coord gates this route on the{" "}
+                  <code className="font-mono">admin</code> role, so a 403 here
+                  means the account lacks it, not that the feed is empty.
                 </p>
               </div>
             </div>
