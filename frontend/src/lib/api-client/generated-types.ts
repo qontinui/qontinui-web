@@ -18646,6 +18646,24 @@ export interface paths {
         patch: operations["api_v1_plan_library_artifact_id_kind_patch"];
         trace?: never;
     };
+    "/api/v1/presentation/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the active project's presentation scope */
+        get: operations["api_v1_presentation_scope_get"];
+        /** Replace the active project's stored presentation scope */
+        put: operations["api_v1_presentation_scope_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -44644,6 +44662,105 @@ export interface components {
              * @enum {string}
              */
             written_scope: "all" | "code_only" | "none";
+        };
+        /**
+         * PresentationScopeConfigured
+         * @description What the project has stored — the form's editable half.
+         */
+        PresentationScopeConfigured: {
+            /** Confidential Terms */
+            confidential_terms: string[];
+            /**
+             * First Party Owners
+             * @description The stored owners, or null when none are configured.
+             */
+            first_party_owners: string[] | null;
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Updated By
+             * @description The email of whoever saved it last, when that is known.
+             */
+            updated_by: string | null;
+            /**
+             * Version
+             * @description 0 when the project has never saved a scope.
+             */
+            version: number;
+        };
+        /**
+         * PresentationScopeDefaults
+         * @description What applies when nothing is configured, read fresh for this viewer.
+         */
+        PresentationScopeDefaults: {
+            /**
+             * Registered Repo Owners
+             * @description The owners of this project's registered repositories, or null when they could not be read.
+             */
+            registered_repo_owners: string[] | null;
+            /** Registered Repo Owners Unknown Reason */
+            registered_repo_owners_unknown_reason: ("tenant_scope_mismatch" | "coord_unreachable" | "coord_refused" | "coord_unreadable") | null;
+            /**
+             * Viewer Other Tenant Names
+             * @description The names of the viewer's other projects. Always withheld for this viewer, whatever is configured.
+             */
+            viewer_other_tenant_names: string[];
+        };
+        /**
+         * PresentationScopeOut
+         * @description The scope a presentation-mode render applies, and how it was reached.
+         */
+        PresentationScopeOut: {
+            /**
+             * Can Edit
+             * @description Whether this caller may PUT the scope: an admin of this project, or qontinui staff — the same rule the PUT enforces.
+             */
+            can_edit: boolean;
+            /**
+             * Confidential Terms
+             * @description The configured terms plus the viewer's other projects' names.
+             */
+            confidential_terms: string[];
+            configured: components["schemas"]["PresentationScopeConfigured"];
+            defaults: components["schemas"]["PresentationScopeDefaults"];
+            /**
+             * First Party Owners
+             * @description The owners whose items may show their titles. Null means UNKNOWN (see first_party_owners_unknown_reason): withhold everything.
+             */
+            first_party_owners: string[] | null;
+            /**
+             * First Party Owners Source
+             * @enum {string}
+             */
+            first_party_owners_source: "configured" | "registered_repos";
+            /** First Party Owners Unknown Reason */
+            first_party_owners_unknown_reason: ("tenant_scope_mismatch" | "coord_unreachable" | "coord_refused" | "coord_unreadable") | null;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+        };
+        /**
+         * PresentationScopeWrite
+         * @description ``PUT /presentation/scope`` — replaces the tenant's stored scope.
+         */
+        PresentationScopeWrite: {
+            /**
+             * Confidential Terms
+             * @description Terms that withhold a title wherever they appear, matched ignoring case, accents, spacing and punctuation. Stored trimmed with whitespace collapsed; a term matching an earlier one is dropped. The viewer's other projects' names are always added on read and are never stored.
+             */
+            confidential_terms: string[];
+            /**
+             * Expected Version
+             * @description The `configured.version` this edit was made against (0 when the project has never saved a scope). A write against a version that moved answers 409 `presentation_scope_conflict`.
+             */
+            expected_version: number;
+            /**
+             * First Party Owners
+             * @description GitHub owners whose repositories are this project's own, or null to use the owners of the project's registered repositories. An empty list withholds every title in presentation mode. Stored trimmed, without a leading @, lower-cased and de-duplicated.
+             */
+            first_party_owners: string[] | null;
         };
         /**
          * PresignedUrlResponse
@@ -82373,6 +82490,73 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkArtifactSummary"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_presentation_scope_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresentationScopeOut"];
+                };
+            };
+        };
+    };
+    api_v1_presentation_scope_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresentationScopeWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresentationScopeOut"];
+                };
+            };
+            /** @description Not an admin of the active project. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The stored scope moved since expected_version. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -93,6 +93,7 @@ from app.api.v1.endpoints import (
     plan_library,
     plan_library_followups,
     plan_library_scan_roots,
+    presentation,
     project_files,
     project_images,
     project_screenshots,
@@ -514,6 +515,13 @@ api_router.include_router(
 # labelled by coord-tenant admins (plan
 # 2026-10-13-image-generation-and-visual-judgment, Phase 23).
 api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
+# The presentation scope — web.presentation_scopes: the first-party owners and
+# confidential terms the console's presentation lens redacts by, read by any
+# member of the active project and written by its admins (plan
+# 2026-10-23-console-presentation-spaces, Phase 1, D3.3).
+api_router.include_router(
+    presentation.router, prefix="/presentation", tags=["presentation"]
+)
 # Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries

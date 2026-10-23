@@ -40146,6 +40146,246 @@
         "title": "PostMergeFollowupScopeWriteResult",
         "type": "object"
       },
+      "PresentationScopeConfigured": {
+        "description": "What the project has stored \u2014 the form's editable half.",
+        "properties": {
+          "confidential_terms": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Terms",
+            "type": "array"
+          },
+          "first_party_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stored owners, or null when none are configured.",
+            "title": "First Party Owners"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The email of whoever saved it last, when that is known.",
+            "title": "Updated By"
+          },
+          "version": {
+            "description": "0 when the project has never saved a scope.",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "first_party_owners",
+          "confidential_terms",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "PresentationScopeConfigured",
+        "type": "object"
+      },
+      "PresentationScopeDefaults": {
+        "description": "What applies when nothing is configured, read fresh for this viewer.",
+        "properties": {
+          "registered_repo_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owners of this project's registered repositories, or null when they could not be read.",
+            "title": "Registered Repo Owners"
+          },
+          "registered_repo_owners_unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tenant_scope_mismatch",
+                  "coord_unreachable",
+                  "coord_refused",
+                  "coord_unreadable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registered Repo Owners Unknown Reason"
+          },
+          "viewer_other_tenant_names": {
+            "description": "The names of the viewer's other projects. Always withheld for this viewer, whatever is configured.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Viewer Other Tenant Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "registered_repo_owners",
+          "registered_repo_owners_unknown_reason",
+          "viewer_other_tenant_names"
+        ],
+        "title": "PresentationScopeDefaults",
+        "type": "object"
+      },
+      "PresentationScopeOut": {
+        "description": "The scope a presentation-mode render applies, and how it was reached.",
+        "properties": {
+          "can_edit": {
+            "description": "Whether this caller may PUT the scope: an admin of this project, or qontinui staff \u2014 the same rule the PUT enforces.",
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "confidential_terms": {
+            "description": "The configured terms plus the viewer's other projects' names.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Terms",
+            "type": "array"
+          },
+          "configured": {
+            "$ref": "#/components/schemas/PresentationScopeConfigured"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/PresentationScopeDefaults"
+          },
+          "first_party_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owners whose items may show their titles. Null means UNKNOWN (see first_party_owners_unknown_reason): withhold everything.",
+            "title": "First Party Owners"
+          },
+          "first_party_owners_source": {
+            "enum": [
+              "configured",
+              "registered_repos"
+            ],
+            "title": "First Party Owners Source",
+            "type": "string"
+          },
+          "first_party_owners_unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tenant_scope_mismatch",
+                  "coord_unreachable",
+                  "coord_refused",
+                  "coord_unreadable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Party Owners Unknown Reason"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "first_party_owners",
+          "first_party_owners_source",
+          "first_party_owners_unknown_reason",
+          "confidential_terms",
+          "configured",
+          "defaults",
+          "can_edit"
+        ],
+        "title": "PresentationScopeOut",
+        "type": "object"
+      },
+      "PresentationScopeWrite": {
+        "additionalProperties": false,
+        "description": "``PUT /presentation/scope`` \u2014 replaces the tenant's stored scope.",
+        "properties": {
+          "confidential_terms": {
+            "description": "Terms that withhold a title wherever they appear, matched ignoring case, accents, spacing and punctuation. Stored trimmed with whitespace collapsed; a term matching an earlier one is dropped. The viewer's other projects' names are always added on read and are never stored.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Terms",
+            "type": "array"
+          },
+          "expected_version": {
+            "description": "The `configured.version` this edit was made against (0 when the project has never saved a scope). A write against a version that moved answers 409 `presentation_scope_conflict`.",
+            "minimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "first_party_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GitHub owners whose repositories are this project's own, or null to use the owners of the project's registered repositories. An empty list withholds every title in presentation mode. Stored trimmed, without a leading @, lower-cased and de-duplicated.",
+            "title": "First Party Owners"
+          }
+        },
+        "required": [
+          "first_party_owners",
+          "confidential_terms",
+          "expected_version"
+        ],
+        "title": "PresentationScopeWrite",
+        "type": "object"
+      },
       "PresignedUrlResponse": {
         "description": "Response for presigned URL generation",
         "properties": {
@@ -113347,6 +113587,82 @@
         "summary": "Correct an artifact's kind and LOCK it against future re-scans",
         "tags": [
           "plan-library"
+        ]
+      }
+    },
+    "/api/v1/presentation/scope": {
+      "get": {
+        "operationId": "api_v1_presentation_scope_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresentationScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read the active project's presentation scope",
+        "tags": [
+          "presentation"
+        ]
+      },
+      "put": {
+        "operationId": "api_v1_presentation_scope_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresentationScopeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresentationScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not an admin of the active project."
+          },
+          "409": {
+            "description": "The stored scope moved since expected_version."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Replace the active project's stored presentation scope",
+        "tags": [
+          "presentation"
         ]
       }
     },
