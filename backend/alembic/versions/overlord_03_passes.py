@@ -237,7 +237,14 @@ tolerant of this revision not being applied yet.
 Indexes
 =======
 
-Every index is tenant-first, because every read is tenant-scoped.
+Every READ index is tenant-first, because every read is tenant-scoped. Two
+indexes are not read paths and say so below: the pruner's ``observed_at`` index
+and the composite-foreign-key target.
+
+* ``uq_overlord_passes_pass_tenant (pass_id, tenant_id)`` — exists only as the
+  unique target the rows table's ``(pass_id, tenant_id)`` foreign key needs; no
+  read uses it. It is a second unique index beside the ``pass_id`` primary key,
+  a small write cost that the tenant binding requires.
 
 * ``ix_overlord_passes_tenant_started (tenant_id, started_at DESC)`` — the pass
   list and the flow window, newest first.
