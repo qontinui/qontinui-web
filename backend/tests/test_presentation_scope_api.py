@@ -86,6 +86,10 @@ class FakeCoord:
     repos: dict[UUID, list[str]] = field(default_factory=dict)
     repo_error: BaseException | None = None
     repo_calls: list[UUID | None] = field(default_factory=list)
+    #: What the coord proxy would have sent with each repository read: the
+    #: caller's bearer and Project-selector value, as the request captured them
+    #: (``operations._tenant_headers`` reads exactly these two).
+    forwarded: list[tuple[str | None, str | None]] = field(default_factory=list)
 
     def identity(self, request: Request) -> CoordIdentity:
         """``/admin/coord/me`` as coord answers it: re-scoped to the selected
@@ -120,11 +124,17 @@ class FakeCoord:
     ) -> Any:
         assert path == rules.REGISTERED_REPOS_PATH
         self.repo_calls.append(tenant_id)
+        self.forwarded.append(
+            (operations._caller_bearer.get(), operations._caller_active_tenant.get())
+        )
         if self.repo_error is not None:
             raise self.repo_error
         assert tenant_id is not None
         return {
-            "repos": [{"repo": repo} for repo in self.repos.get(tenant_id, [])],
+            "repos": [
+                {"repo": repo, "role": "owner"}
+                for repo in self.repos.get(tenant_id, [])
+            ],
             "total": len(self.repos.get(tenant_id, [])),
         }
 
@@ -165,11 +175,18 @@ class Harness:
             transport=httpx.ASGITransport(app=self.app), base_url="http://test"
         )
 
-    def _headers(self, active: UUID | str | None) -> dict[str, str]:
-        return {} if active is None else {HEADER: str(active)}
+    def _headers(
+        self, active: UUID | str | None, bearer: str | None = None
+    ) -> dict[str, str]:
+        headers = {} if active is None else {HEADER: str(active)}
+        if bearer is not None:
+            headers["Authorization"] = f"Bearer {bearer}"
+        return headers
 
-    async def read(self, active: UUID | str | None = None) -> httpx.Response:
-        return await self.http.get(API, headers=self._headers(active))
+    async def read(
+        self, active: UUID | str | None = None, *, bearer: str | None = None
+    ) -> httpx.Response:
+        return await self.http.get(API, headers=self._headers(active, bearer))
 
     async def write(
         self,
@@ -178,6 +195,7 @@ class Harness:
         terms: list[str] | None = None,
         version: int = 0,
         active: UUID | str | None = None,
+        bearer: str | None = None,
         **extra: Any,
     ) -> httpx.Response:
         body = {
@@ -186,7 +204,9 @@ class Harness:
             "expected_version": version,
             **extra,
         }
-        return await self.http.put(API, json=body, headers=self._headers(active))
+        return await self.http.put(
+            API, json=body, headers=self._headers(active, bearer)
+        )
 
 
 async def _user(db: AsyncSession, name: str, *, superuser: bool = False) -> User:
@@ -299,6 +319,30 @@ async def test_with_nothing_stored_the_defaults_apply_presentation(
     assert body["can_edit"] is True
     # The registered repositories were read for OUR project.
     assert harness.coord.repo_calls == [projects.ours]
+
+
+@pytest.mark.asyncio
+async def test_the_read_forwards_the_callers_bearer_to_coord_presentation(
+    harness: Harness, projects: Projects
+) -> None:
+    """Coord scopes ``/pr-merge/repos`` to the operator's own bearer and
+    Project selection. Without the capture the read reaches coord with neither,
+    coord answers 401, and the registered-repository default never applies —
+    which a fake that ignores headers would never notice."""
+    resp = await harness.read(projects.ours, bearer="operator-bearer-1")
+    assert resp.status_code == 200, resp.text
+    assert harness.coord.forwarded == [("operator-bearer-1", str(projects.ours))]
+
+
+@pytest.mark.asyncio
+async def test_the_write_forwards_the_callers_bearer_to_coord_presentation(
+    harness: Harness, projects: Projects
+) -> None:
+    resp = await harness.write(
+        owners=None, active=projects.ours, bearer="operator-bearer-2"
+    )
+    assert resp.status_code == 200, resp.text
+    assert harness.coord.forwarded == [("operator-bearer-2", str(projects.ours))]
 
 
 @pytest.mark.asyncio
