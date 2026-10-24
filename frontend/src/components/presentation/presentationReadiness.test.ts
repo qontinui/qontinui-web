@@ -28,8 +28,10 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, inject, it } from "vitest";
+import { READINESS_PROVIDE_KEY } from "@/test/readinessEvidence";
 import { readyRouteProblems } from "@/test/readinessProof";
+import { readyRouteTargets } from "@/test/readinessReporter";
 import {
   LENS_TREES,
   PRESENTATION_READY_ROUTES,
@@ -193,6 +195,15 @@ describe("every presentation-ready route is proven", () => {
   it("registers each route once", () => {
     const routes = PRESENTATION_READY_ROUTES.map((e) => e.route);
     expect(new Set(routes).size).toBe(routes.length);
+  });
+
+  it("is armed in this run: the end-of-run step that requires every route's evidence provided the routes it will check", () => {
+    // Provided by the reporter `presentationReadiness()` adds in
+    // vitest.config.ts; absent when the plugin is not in the run's config.
+    expect(inject(READINESS_PROVIDE_KEY)).toEqual({
+      srcDir: SRC,
+      targets: readyRouteTargets(SRC),
+    });
   });
 
   it("finds the real page modules (the route map is not vacuous)", () => {
