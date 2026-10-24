@@ -13,7 +13,15 @@
  *   - a bind acknowledges itself and lands in a terminal state, with coord's
  *     error code on a refusal;
  *   - unbind requires a reason, sends DELETE with `{repo, reason}`, and
- *     reports its success after the row is re-read away.
+ *     reports its success after the row is re-read away;
+ *   - who sees the card: admin IN THE ACTIVE TENANT (the routes' own gate),
+ *     never the any-tenant union — anyone else gets the admin-only notice and
+ *     no list read is sent;
+ *   - any 2xx write is a success (an unparseable or partial body included);
+ *     a failed write re-reads the list and renders the web's write-timeout
+ *     refusal with its next action;
+ *   - unbind busy/error survive the row collapsing; only the latest list read
+ *     lands; every settled write calls `onChanged`.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,20 +38,33 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
-const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
+// The card gates on `isActiveTenantCoordAdmin`: the active tenant's own
+// `roles`, then the `coord_is_admin` union only when those are absent. So a
+// test flips `tenantState` (roles / active id) to change who is admin, and
+// `user.coord_is_admin` to model "admin of SOME tenant".
+const authState = vi.hoisted(() => ({
+  user: { is_superuser: false, coord_is_admin: true } as {
+    is_superuser: boolean;
+    coord_is_admin: boolean;
+  },
+}));
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+  useAuth: () => ({
+    user: authState.user,
+    isCoordAdmin: authState.user.coord_is_admin,
+  }),
 }));
 
 const tenantState = vi.hoisted(() => ({
   tenants: [] as { id: string; slug: string; name: string; roles?: string[] }[],
+  activeTenantId: null as string | null,
   loading: false,
   error: null as string | null,
 }));
 vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({
     tenants: tenantState.tenants,
-    activeTenantId: tenantState.tenants[0]?.id ?? null,
+    activeTenantId: tenantState.activeTenantId,
     isMultiTenant: tenantState.tenants.length > 1,
     loading: tenantState.loading,
     error: tenantState.error,
@@ -55,6 +76,7 @@ vi.mock("@/contexts/tenant-context", () => ({
 import {
   RepoTenantBindings,
   bindTargetOptions,
+  resultSummary,
   validateBindForm,
 } from "./RepoTenantBindings";
 
@@ -102,6 +124,35 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * The web backend's own 504 for a timed-out WRITE (`_coord_timeout(write=
+ * True)` composed by `http_exception_handler`): the legacy top level plus the
+ * refusal envelope whose next action names the re-read.
+ */
+function writeTimeout(): Response {
+  return json(
+    {
+      error: "GATEWAY_TIMEOUT",
+      message: "timeout waiting for coord",
+      timestamp: 0,
+      path: "/api/v1/operations/pr-merge/onboarding/repo-bindings",
+      refusal: {
+        code: "upstream_timeout",
+        discriminator: "coord_write_timeout",
+        next_action: {
+          kind: "retry_later",
+          target: "whether the change was applied",
+        },
+        glossary_terms: ["coord"],
+        detail: "timeout waiting for coord",
+        source: "web_backend",
+        observed_at: "2026-10-24T08:00:00Z",
+      },
+    },
+    504
+  );
+}
+
 type Call = [string, { method: string; body?: string; maxRetries?: number }];
 
 function callsOf(method: string): Call[] {
@@ -130,7 +181,8 @@ function routeFetch(
 
 beforeEach(() => {
   fetchMock.mockReset();
-  authState.isCoordAdmin = true;
+  authState.user = { is_superuser: false, coord_is_admin: true };
+  tenantState.activeTenantId = ORG_TENANT;
   tenantState.tenants = [
     { id: ORG_TENANT, slug: "meryts-2-0", name: "Meryts", roles: ["admin"] },
     {
@@ -352,11 +404,16 @@ describe("bind action", () => {
     render(<RepoTenantBindings />);
     await screen.findByTestId("repo-bindings-bound-here-empty");
     fillValidBind();
-    fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
+    const submit = screen.getByTestId("repo-binding-bind-submit");
+    fireEvent.click(submit);
 
-    const submit = await screen.findByTestId("repo-binding-bind-submit");
     await waitFor(() => expect(submit.textContent).toBe("Binding…"));
     expect((submit as HTMLButtonElement).disabled).toBe(true);
+    // A second click while the POST is pending sends nothing — nor does a
+    // submit that bypasses the disabled button (the ref guard).
+    fireEvent.click(submit);
+    fireEvent.submit(screen.getByTestId("repo-binding-bind-form"));
+    expect(callsOf("POST")).toHaveLength(1);
 
     release(json(MOVE_RESULT));
     const outcome = await screen.findByTestId("repo-binding-bind-outcome");
@@ -527,21 +584,377 @@ describe("unbind action", () => {
     expect(screen.queryByTestId("repo-binding-unbind-outcome")).toBeNull();
   });
 
-  it("hides bind and unbind controls from a non-admin", async () => {
-    authState.isCoordAdmin = false;
+});
+
+describe("who sees the card: admin IN THE ACTIVE TENANT", () => {
+  function expectAdminOnly() {
+    const card = screen.getByTestId("repo-tenant-bindings");
+    expect(card.dataset.readState).toBe("admin-only");
+    expect(
+      within(card).getByTestId("coord-admin-only-notice").textContent
+    ).toContain("Administrator only");
+    expect(screen.queryByTestId("repo-binding-bind-form")).toBeNull();
+    expect(screen.queryByTestId("repo-tenant-bindings-unknown")).toBeNull();
+    expect(screen.queryByTestId("repo-tenant-bindings-refresh")).toBeNull();
+    // The list read is gated on admin in the active tenant: it could only 403.
+    expect(fetchMock).not.toHaveBeenCalled();
+  }
+
+  it("a non-admin gets the admin-only notice and no GET is sent", async () => {
+    authState.user = { is_superuser: false, coord_is_admin: false };
+    tenantState.tenants = [
+      { id: ORG_TENANT, slug: "meryts-2-0", name: "Meryts", roles: ["developer"] },
+    ];
+    render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-tenant-bindings-admin-only");
+    expectAdminOnly();
+  });
+
+  it("an admin of ANOTHER tenant gets no forms and no GET either", async () => {
+    // Admin of BOUND_TENANT (so the union `coord_is_admin` is true), but the
+    // active tenant is one where they are a developer.
+    tenantState.activeTenantId = "dev-only";
+    render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-tenant-bindings-admin-only");
+    expectAdminOnly();
+  });
+
+  it("re-reads when the active tenant switches to one the viewer administers", async () => {
+    tenantState.activeTenantId = "dev-only";
     routeFetch([
       () =>
         json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
     ]);
-    render(<RepoTenantBindings />);
-    const row = await screen.findByTestId(
-      `repo-binding-row-${BOUND_HERE.repo}`
+    const { rerender } = render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-tenant-bindings-admin-only");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    tenantState.activeTenantId = BOUND_TENANT;
+    rerender(<RepoTenantBindings />);
+    await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
+    expect(callsOf("GET")).toHaveLength(1);
+    expect(screen.getByTestId("repo-binding-bind-form")).toBeTruthy();
+  });
+});
+
+describe("a 2xx write is a success, whatever its body", () => {
+  it("resultSummary reads a partial or null body defensively", () => {
+    expect(resultSummary("Bound", null, "o/r")).toBe(
+      "Bound o/r — coord confirmed the change but sent no readable details."
     );
+    const partial = { repo: "o/r" } as unknown as Parameters<
+      typeof resultSummary
+    >[1];
+    expect(resultSummary("Unbound", partial, "o/r")).toBe(
+      "Unbound o/r — moved tenant_repos ?, profile ?, canonical ?; audit rows not reported; notification not reported."
+    );
+    expect(
+      resultSummary(
+        "Bound",
+        MOVE_RESULT as Parameters<typeof resultSummary>[1],
+        "x/y"
+      )
+    ).toBe(
+      "Bound Meryts/bauhaus-b2b-shop — moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified."
+    );
+  });
+
+  it("an unparseable 2xx bind body lands in the success state and re-reads", async () => {
+    routeFetch(
+      [
+        () => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json({ bindings: [BOUND_AWAY], measured_at: "2026-10-24T08:01:00Z" }),
+      ],
+      () => new Response("ok", { status: 200 })
+    );
+    render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+    fireEvent.change(screen.getByTestId("repo-binding-bind-repo"), {
+      target: { value: "Meryts/bauhaus-b2b-shop" },
+    });
+    fireEvent.change(screen.getByTestId("repo-binding-bind-target"), {
+      target: { value: BOUND_TENANT },
+    });
+    fireEvent.change(screen.getByTestId("repo-binding-bind-reason"), {
+      target: { value: "r" },
+    });
+    fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
+
+    const outcome = await screen.findByTestId("repo-binding-bind-outcome");
+    expect(outcome.dataset.outcome).toBe("ok");
+    expect(outcome.textContent).toContain(
+      "Bound Meryts/bauhaus-b2b-shop — coord confirmed the change"
+    );
+    await screen.findByTestId(`repo-binding-row-${BOUND_AWAY.repo}`);
+  });
+
+  it("an unbind answered 2xx with a partial body is reported as done", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () => json({ bindings: [], measured_at: "2026-10-24T08:02:00Z" }),
+      ],
+      () => json({ repo: BOUND_HERE.repo, governed_by: "org" })
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
-    await screen.findByTestId(`repo-binding-detail-${BOUND_HERE.repo}`);
+    fireEvent.change(
+      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    const notice = await screen.findByTestId("repo-binding-unbind-outcome");
+    expect(notice.textContent).toContain(`Unbound ${BOUND_HERE.repo}`);
+    expect(notice.textContent).toContain("audit rows not reported");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("a failed write re-reads, and a timeout names its next action", () => {
+  it("a bind timeout renders the refusal envelope and re-reads before re-enabling", async () => {
+    let releaseReread: (r: Response) => void = () => undefined;
+    routeFetch(
+      [
+        () => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          new Promise<Response>((r) => {
+            releaseReread = r;
+          }) as unknown as Response,
+      ],
+      () => writeTimeout()
+    );
+    render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+    fireEvent.change(screen.getByTestId("repo-binding-bind-repo"), {
+      target: { value: "Meryts/bauhaus-b2b-shop" },
+    });
+    fireEvent.change(screen.getByTestId("repo-binding-bind-target"), {
+      target: { value: BOUND_TENANT },
+    });
+    fireEvent.change(screen.getByTestId("repo-binding-bind-reason"), {
+      target: { value: "r" },
+    });
+    const submit = screen.getByTestId(
+      "repo-binding-bind-submit"
+    ) as HTMLButtonElement;
+    fireEvent.click(submit);
+
+    const outcome = await screen.findByTestId("repo-binding-bind-outcome");
+    expect(outcome.dataset.outcome).toBe("error");
+    expect(outcome.textContent).toContain("504");
+    const structured = outcome.querySelector('[data-refusal="structured"]');
+    expect(structured).not.toBeNull();
+    expect(structured!.textContent).toContain("coord_write_timeout");
+    expect(structured!.textContent).toContain("whether the change was applied");
+    // The re-read was sent, and Bind stays disabled until it lands.
+    await waitFor(() => expect(callsOf("GET")).toHaveLength(2));
+    expect(submit.disabled).toBe(true);
+
+    releaseReread(
+      json({ bindings: [BOUND_AWAY], measured_at: "2026-10-24T08:01:00Z" })
+    );
+    // The timed-out bind had landed: the re-read shows it.
+    await screen.findByTestId(`repo-binding-row-${BOUND_AWAY.repo}`);
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    expect(callsOf("POST")).toHaveLength(1);
+  });
+
+  it("an unbind refusal re-reads the list too", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_AWAY], measured_at: "2026-10-24T08:00:00Z" }),
+      ],
+      () =>
+        json(
+          { error: "in_flight_merge_proposals", message: "in flight" },
+          409
+        )
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(`repo-binding-row-${BOUND_AWAY.repo}`);
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_AWAY.repo}`),
+      { target: { value: "reclaim" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_AWAY.repo}`)
+    );
+    await screen.findByTestId(`repo-binding-unbind-error-${BOUND_AWAY.repo}`);
+    await waitFor(() => expect(callsOf("GET")).toHaveLength(2));
+  });
+
+  it("an unbind that timed out but landed keeps its failure at card level", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () => json({ bindings: [], measured_at: "2026-10-24T08:02:00Z" }),
+      ],
+      () => writeTimeout()
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    // The re-read no longer lists the row, so the failure moves to the card.
+    const orphan = await screen.findByTestId(
+      `repo-binding-unbind-error-unlisted-${BOUND_HERE.repo}`
+    );
+    expect(orphan.textContent).toContain("may have been applied");
+    expect(
+      orphan.querySelector('[data-refusal="structured"]')?.textContent
+    ).toContain("coord_write_timeout");
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+  });
+});
+
+describe("unbind state lives at card level", () => {
+  it("survives the row collapsing: no second DELETE, and a later failure is shown", async () => {
+    let rejectDelete: (r: Response) => void = () => undefined;
+    routeFetch(
+      [
+        () =>
+          json({
+            bindings: [BOUND_HERE, { ...BOUND_HERE, repo: "meryts/other" }],
+            measured_at: "2026-10-24T08:00:00Z",
+          }),
+      ],
+      () =>
+        new Promise<Response>((r) => {
+          rejectDelete = r;
+        })
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+    await waitFor(() => expect(callsOf("DELETE")).toHaveLength(1));
+
+    // Open the OTHER row: one open at a time, so this form unmounts.
+    const other = screen.getByTestId("repo-binding-row-meryts/other");
+    fireEvent.click(within(other).getByRole("button", { expanded: false }));
+    await screen.findByTestId("repo-binding-unbind-form-meryts/other");
     expect(
       screen.queryByTestId(`repo-binding-unbind-form-${BOUND_HERE.repo}`)
     ).toBeNull();
-    expect(screen.queryByTestId("repo-binding-bind-form")).toBeNull();
+
+    // Back to the first row while its DELETE is still pending: still busy.
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    const button = (await screen.findByTestId(
+      `repo-binding-unbind-${BOUND_HERE.repo}`
+    )) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("Unbinding…");
+    fireEvent.change(
+      screen.getByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      { target: { value: "again" } }
+    );
+    fireEvent.submit(
+      screen.getByTestId(`repo-binding-unbind-form-${BOUND_HERE.repo}`)
+    );
+    expect(callsOf("DELETE")).toHaveLength(1);
+
+    // Collapse it again; the failure arrives while it is closed.
+    fireEvent.click(within(other).getByRole("button", { expanded: false }));
+    await screen.findByTestId("repo-binding-unbind-form-meryts/other");
+    rejectDelete(
+      json({ error: "binding_not_found", message: "no binding" }, 404)
+    );
+    await waitFor(() => expect(callsOf("GET")).toHaveLength(2));
+
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    const err = await screen.findByTestId(
+      `repo-binding-unbind-error-${BOUND_HERE.repo}`
+    );
+    expect(err.textContent).toContain("404 binding_not_found");
+    expect(
+      (
+        screen.getByTestId(
+          `repo-binding-unbind-${BOUND_HERE.repo}`
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(false);
+  });
+});
+
+describe("list reads and change notification", () => {
+  it("drops a list response older than the latest request", async () => {
+    let releaseFirst: (r: Response) => void = () => undefined;
+    routeFetch([
+      () =>
+        new Promise<Response>((r) => {
+          releaseFirst = r;
+        }) as unknown as Response,
+      () =>
+        json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:01:00Z" }),
+    ]);
+    render(<RepoTenantBindings />);
+    await waitFor(() => expect(callsOf("GET")).toHaveLength(1));
+
+    fireEvent.click(screen.getByTestId("repo-tenant-bindings-refresh"));
+    await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
+
+    // The first, slower read now answers with an EMPTY list — stale.
+    releaseFirst(json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(
+      screen.getByTestId(`repo-binding-row-${BOUND_HERE.repo}`)
+    ).toBeTruthy();
+    expect(screen.queryByTestId("repo-bindings-bound-here-empty")).toBeNull();
+  });
+
+  it("calls onChanged after a bind succeeds and after one fails", async () => {
+    const onChanged = vi.fn();
+    let status = 200;
+    routeFetch(
+      [() => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })],
+      () =>
+        status === 200
+          ? json(MOVE_RESULT)
+          : json({ error: "invalid_repo", message: "bad" }, 400)
+    );
+    render(<RepoTenantBindings onChanged={onChanged} />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+
+    const fill = () => {
+      fireEvent.change(screen.getByTestId("repo-binding-bind-repo"), {
+        target: { value: "Meryts/bauhaus-b2b-shop" },
+      });
+      fireEvent.change(screen.getByTestId("repo-binding-bind-target"), {
+        target: { value: BOUND_TENANT },
+      });
+      fireEvent.change(screen.getByTestId("repo-binding-bind-reason"), {
+        target: { value: "r" },
+      });
+    };
+    fill();
+    fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+
+    status = 400;
+    fill();
+    fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
   });
 });

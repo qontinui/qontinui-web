@@ -163,6 +163,7 @@ function BoundAwayRow({ entry }: { entry: BoundAwayRepo }) {
         className="text-[10px]"
         title={`Governed by tenant ${entry.bound_tenant_slug} through a per-repo binding. Unbind it on the Repository tenant bindings card to return it here.`}
         data-testid={`bound-away-tenant-${entry.repo}`}
+        data-ui-bridge-id="operations.connected-org-repo-bound-away-tenant"
       >
         bound to {entry.bound_tenant_slug}
       </Badge>
@@ -567,7 +568,41 @@ function AccountRow({
   );
 }
 
-export function ConnectedOrgs() {
+/**
+ * The repos no listed org owns, under their own heading. Rendered beside the
+ * account list AND beside the empty state: a bound-away repo whose org has no
+ * row here is still one nobody could otherwise see (D8).
+ */
+function UnmatchedBoundAway({ entries }: { entries: readonly BoundAwayRepo[] }) {
+  if (entries.length === 0) return null;
+  return (
+    <div
+      data-testid="connected-orgs-bound-away-unmatched"
+      data-ui-bridge-id="operations.connected-orgs-bound-away-unmatched"
+    >
+      <p className="text-xs text-muted-foreground">
+        Bound to another tenant (organization not listed above)
+      </p>
+      <ul className="mt-1 space-y-1 pl-6">
+        {entries.map((b) => (
+          <BoundAwayRow key={b.repo} entry={b} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export interface ConnectedOrgsProps {
+  /**
+   * Bumped by the page whenever a per-repo binding is written (the Repository
+   * tenant bindings card's bind / unbind). Each change re-reads the accounts
+   * IN PLACE — the card is never remounted for it, which would cancel an
+   * in-flight enroll poll — so the "bound to <slug>" rows follow the binding.
+   */
+  bindingsVersion?: number;
+}
+
+export function ConnectedOrgs({ bindingsVersion }: ConnectedOrgsProps = {}) {
   const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null);
   // `undefined` = coord did not send `bound_away` (an older coord): render
   // nothing new. `[]` = coord measured none.
@@ -608,6 +643,16 @@ export function ConnectedOrgs() {
     };
   }, [refetch]);
 
+  // A binding written elsewhere on the page: re-read silently (no skeleton),
+  // like the enroll poll does. The mount value is skipped — the effect above
+  // already reads once on mount.
+  const seenBindingsVersion = useRef(bindingsVersion);
+  useEffect(() => {
+    if (bindingsVersion === seenBindingsVersion.current) return;
+    seenBindingsVersion.current = bindingsVersion;
+    void refetch();
+  }, [bindingsVersion, refetch]);
+
   return (
     <Card data-testid="connected-orgs">
       <CardHeader>
@@ -643,21 +688,6 @@ export function ConnectedOrgs() {
                 refetch={refetch}
               />
             ))}
-            {grouped.unmatched.length > 0 && (
-              <li
-                data-testid="connected-orgs-bound-away-unmatched"
-                data-ui-bridge-id="operations.connected-orgs-bound-away-unmatched"
-              >
-                <p className="text-xs text-muted-foreground">
-                  Bound to another tenant (organization not listed above)
-                </p>
-                <ul className="mt-1 space-y-1 pl-6">
-                  {grouped.unmatched.map((b) => (
-                    <BoundAwayRow key={b.repo} entry={b} />
-                  ))}
-                </ul>
-              </li>
-            )}
           </ul>
         ) : (
           <div className="space-y-2" data-testid="connected-orgs-empty">
@@ -670,6 +700,9 @@ export function ConnectedOrgs() {
               </Link>
             </Button>
           </div>
+        )}
+        {!loading && !error && (
+          <UnmatchedBoundAway entries={grouped.unmatched} />
         )}
       </CardContent>
     </Card>

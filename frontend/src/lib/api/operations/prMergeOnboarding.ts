@@ -263,23 +263,14 @@ export interface BoundAwayRepo {
   bound_tenant_slug: string;
 }
 
-/** A repo bound TO the active tenant from an org another tenant owns. */
-export interface BoundHereRepo {
-  repo: string;
-  org_tenant_slug: string | null;
-  bound_by: string;
-  reason: string;
-  created_at: string;
-}
-
 /**
- * `get_pr_merge_onboarding_accounts`'s body. `bound_here` / `bound_away` are
- * ABSENT on a coord that predates the binding plan's Phase 5 — absent means
- * "not reported", never "none", so a reader renders nothing new for it.
+ * `get_pr_merge_onboarding_accounts`'s body. `bound_away` is ABSENT on a coord
+ * that predates the binding plan's Phase 5 — absent means "not reported",
+ * never "none", so a reader renders nothing new for it. (Repos bound TO the
+ * active tenant are read from the bindings list door, not from here.)
  */
 export interface AccountsResponse {
   accounts: ConnectedAccount[];
-  bound_here?: BoundHereRepo[];
   bound_away?: BoundAwayRepo[];
 }
 
@@ -428,11 +419,13 @@ export async function fetchRepoTenantBindings(
  * `POST /pr-merge/onboarding/repo-bindings` —
  * `post_pr_merge_onboarding_repo_binding`. Moves a repo's governance and
  * writes audit rows plus an operator notification, so it is never re-sent
- * (`idempotent: false`, `maxRetries: 0`).
+ * (`idempotent: false`, `maxRetries: 0`). The 2xx is the fact that matters —
+ * the change landed — so a 2xx whose body does not parse resolves `null`
+ * rather than rejecting (a rejection would render a landed bind as failed).
  */
 export async function bindRepoTenant(
   body: RepoBindRequest
-): Promise<RepoBindingResult> {
+): Promise<RepoBindingResult | null> {
   const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
   const res = await httpClient.fetch(url, {
     method: "POST",
@@ -440,17 +433,20 @@ export async function bindRepoTenant(
     idempotent: false,
     maxRetries: 0,
   });
-  return readJson<RepoBindingResult>(res, `POST ${url}`);
+  return readJson<RepoBindingResult>(res, `POST ${url}`, {
+    unparseable: "null",
+  });
 }
 
 /**
  * `DELETE /pr-merge/onboarding/repo-bindings` —
  * `delete_pr_merge_onboarding_repo_binding`. Returns the repo to its org's
- * tenant; never re-sent (`idempotent: false`, `maxRetries: 0`).
+ * tenant; never re-sent (`idempotent: false`, `maxRetries: 0`); resolves
+ * `null` for a 2xx whose body does not parse, as {@link bindRepoTenant}.
  */
 export async function unbindRepoTenant(
   body: RepoUnbindRequest
-): Promise<RepoBindingResult> {
+): Promise<RepoBindingResult | null> {
   const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
@@ -458,7 +454,9 @@ export async function unbindRepoTenant(
     idempotent: false,
     maxRetries: 0,
   });
-  return readJson<RepoBindingResult>(res, `DELETE ${url}`);
+  return readJson<RepoBindingResult>(res, `DELETE ${url}`, {
+    unparseable: "null",
+  });
 }
 
 // ----------------------------------------------------------------------------

@@ -560,6 +560,71 @@ describe("<ConnectedOrgs> repos bound to another tenant", () => {
     ).toBeTruthy();
   });
 
+  it("renders a bound-away repo no listed org owns, beside the account list", async () => {
+    const stray = {
+      repo: "elsewhere/repo",
+      bound_tenant_id: "t",
+      bound_tenant_slug: "other",
+    };
+    accountsMock.mockResolvedValue({
+      accounts: [MERYTS_ORG],
+      bound_away: [stray],
+    });
+    render(<ConnectedOrgs />);
+
+    const unmatched = await screen.findByTestId(
+      "connected-orgs-bound-away-unmatched"
+    );
+    expect(unmatched.textContent).toContain("elsewhere/repo");
+    expect(unmatched.textContent).toContain("bound to other");
+    expect(screen.getByTestId("connected-org-repo-Meryts/site")).toBeTruthy();
+  });
+
+  it("renders unmatched bound-away repos when no organization is connected", async () => {
+    accountsMock.mockResolvedValue({
+      accounts: [],
+      bound_away: [BOUND_AWAY[0]],
+    });
+    render(<ConnectedOrgs />);
+
+    // The empty state still renders — and the bound-away row beside it.
+    await screen.findByTestId("connected-orgs-empty");
+    const unmatched = screen.getByTestId("connected-orgs-bound-away-unmatched");
+    expect(
+      unmatched.querySelector(
+        '[data-testid="connected-org-repo-bound-away-meryts/bauhaus-b2b-dev-notes"]'
+      )
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId("bound-away-tenant-meryts/bauhaus-b2b-dev-notes")
+        .textContent
+    ).toBe("bound to bauhaus-b2b");
+  });
+
+  it("re-reads in place when bindingsVersion changes, without a remount", async () => {
+    accountsMock.mockResolvedValueOnce({ accounts: [MERYTS_ORG] });
+    const { rerender } = render(<ConnectedOrgs bindingsVersion={0} />);
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(accountsMock).toHaveBeenCalledTimes(1);
+    // A re-render with the SAME version reads nothing.
+    rerender(<ConnectedOrgs bindingsVersion={0} />);
+    expect(accountsMock).toHaveBeenCalledTimes(1);
+
+    const card = screen.getByTestId("connected-orgs");
+    accountsMock.mockResolvedValueOnce({
+      accounts: [MERYTS_ORG],
+      bound_away: [BOUND_AWAY[0]],
+    });
+    rerender(<ConnectedOrgs bindingsVersion={1} />);
+
+    await screen.findByTestId(
+      "connected-org-repo-bound-away-meryts/bauhaus-b2b-dev-notes"
+    );
+    expect(accountsMock).toHaveBeenCalledTimes(2);
+    // Same element: the card was re-read in place, not remounted.
+    expect(screen.getByTestId("connected-orgs")).toBe(card);
+  });
+
   it("groupBoundAway keeps a repo no listed org owns instead of dropping it", () => {
     const stray = {
       repo: "elsewhere/repo",

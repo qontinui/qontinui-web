@@ -464,6 +464,14 @@ export default function OnboardingStatusPage() {
     label: string;
   } | null>(null);
   const [deepLink, setDeepLink] = useState<string | null>(null);
+  // Bumped after every per-repo binding write, so ConnectedOrgs re-reads its
+  // "bound to <slug>" rows in place (a `key` remount would kill an in-flight
+  // enroll poll).
+  const [bindingsVersion, setBindingsVersion] = useState(0);
+  const onBindingsChanged = useCallback(
+    () => setBindingsVersion((v) => v + 1),
+    []
+  );
   // Fire the claim POST exactly once per mount (belt to the URL-strip braces).
   const firedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -694,14 +702,19 @@ export default function OnboardingStatusPage() {
           account-level "Connected organizations" summary. A connected org with
           zero enrolled repos reads as success here (closing the empty-org
           dead-end); each repo links to `?repo=` which loads the doctor below. */}
-      {phase === null && !repo && <ConnectedOrgs />}
+      {phase === null && !repo && (
+        <ConnectedOrgs bindingsVersion={bindingsVersion} />
+      )}
 
       {/* Repositories governed by a per-repo tenant binding (plan
           `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant` D8):
           a repo bound to this tenant is invisible under the connected orgs,
           which list only this tenant's own org logins, so it is listed here —
-          beside the orgs, with bind and unbind. */}
-      {phase === null && !repo && <RepoTenantBindings />}
+          beside the orgs, with bind and unbind. A write there re-reads the
+          orgs too (`bindingsVersion`). */}
+      {phase === null && !repo && (
+        <RepoTenantBindings onChanged={onBindingsChanged} />
+      )}
 
       {phase === "handoff" && (
         <ClaimBanner

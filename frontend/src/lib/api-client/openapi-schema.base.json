@@ -44492,11 +44492,12 @@
         "type": "object"
       },
       "RepoBindRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).\n\n``repo`` is ``owner/name``; coord normalizes it case-insensitively and\nanswers ``400 invalid_repo`` for anything else. ``target_tenant`` is the\ntenant uuid the repo is bound to; it is a plain string here so a malformed\nvalue reaches coord and comes back as coord's own refusal rather than a\nweb-side validation shape. ``reason`` is recorded in the audit rows coord\nwrites per affected tenant; ``decision_ref`` is optional free text.",
+        "description": "Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).\n\n``repo`` is ``owner/name``; coord normalizes it case-insensitively and\nanswers ``400 invalid_repo`` for anything else. ``target_tenant`` is the\ntenant uuid the repo is bound to; it is a plain string here so a malformed\nvalue reaches coord and comes back as coord's own refusal rather than a\nweb-side validation shape. ``reason`` is recorded in the audit rows coord\nwrites per affected tenant; ``decision_ref`` is optional free text. Each\nfield is length-capped (see ``REPO_BINDING_*_MAX``): an over-long value is a\nweb-side 422, never forwarded.",
         "properties": {
           "decision_ref": {
             "anyOf": [
               {
+                "maxLength": 1000,
                 "type": "string"
               },
               {
@@ -44506,14 +44507,17 @@
             "title": "Decision Ref"
           },
           "reason": {
+            "maxLength": 2000,
             "title": "Reason",
             "type": "string"
           },
           "repo": {
+            "maxLength": 140,
             "title": "Repo",
             "type": "string"
           },
           "target_tenant": {
+            "maxLength": 64,
             "title": "Target Tenant",
             "type": "string"
           }
@@ -44759,13 +44763,15 @@
         "type": "object"
       },
       "RepoUnbindRequest": {
-        "description": "Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).\n\nUnbinding returns governance to the org's tenant. ``reason`` is required\nand must be non-blank; coord enforces that and records it in the audit.",
+        "description": "Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).\n\nUnbinding returns governance to the org's tenant. ``reason`` is required\nand must be non-blank; coord enforces that and records it in the audit.\nBoth fields carry the bind body's length caps.",
         "properties": {
           "reason": {
+            "maxLength": 2000,
             "title": "Reason",
             "type": "string"
           },
           "repo": {
+            "maxLength": 140,
             "title": "Repo",
             "type": "string"
           }

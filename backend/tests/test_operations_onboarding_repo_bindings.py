@@ -14,7 +14,10 @@ re-checks admin in BOTH tenants for a bind), so what matters here is:
   (``decision_ref`` omitted when absent), and DELETE carries its body;
 * coord's status code AND typed error body pass through VERBATIM, extras
   (``remedy``, ``failed_tenant``, ``proposal_ids``) included;
-* a coord transport failure is the web's 502 / 504.
+* an over-long body field is a web-side 422 and never reaches coord;
+* a coord transport failure is the web's 502 / 504, and a timed-out WRITE's
+  504 carries the ``coord_write_timeout`` refusal envelope the page renders
+  (its next action names the re-read before any retry).
 
 No live coord: ``httpx.AsyncClient`` is patched, as in the restore test.
 """
@@ -87,7 +90,9 @@ async def _fake_admin_target(request: Request) -> UUID:
     return TEST_TENANT_ID
 
 
-def _build_test_app(*, deny_admin: bool = False) -> FastAPI:
+def _build_test_app(
+    *, deny_admin: bool = False, with_error_handler: bool = False
+) -> FastAPI:
     from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.operations import (
         require_coord_tenant_admin,
@@ -115,6 +120,17 @@ def _build_test_app(*, deny_admin: bool = False) -> FastAPI:
             _fake_admin_target
         )
     test_app.include_router(operations_router, prefix="/api/v1/operations")
+    if with_error_handler:
+        # The app's real handler: it composes a RefusalHTTPException into the
+        # wire body (top-level `error`/`message` + nested `refusal`).
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        from app.middleware.error_handler import http_exception_handler
+
+        test_app.add_exception_handler(
+            StarletteHTTPException,
+            http_exception_handler,  # type: ignore[arg-type]
+        )
     return test_app
 
 
@@ -168,9 +184,14 @@ def test_non_admin_gets_403_before_any_coord_call(
 
 
 def test_every_verb_depends_on_the_effective_tenant_admin_gate() -> None:
-    """The three routes resolve the tenant through the TARGET gate, not the
-    home-returning one — the bind body names a tenant, so the active-tenant
-    selection is the one the write is checked against."""
+    """Each of the three verbs declares ``require_coord_tenant_admin_target``
+    as a dependency — the gate that checks admin in the EFFECTIVE tenant (the
+    switcher's selection) — rather than the home-returning base gate alone.
+
+    This pins only WHICH gate guards the routes. It does not test, and the
+    web does not do, any comparison between a bind body's ``target_tenant``
+    and the active tenant: that body field is forwarded unexamined, and coord
+    re-checks admin in both tenants itself."""
     from fastapi.routing import APIRoute
 
     from app.api.v1.endpoints.operations import (
@@ -398,3 +419,95 @@ def test_coord_timeout_on_bind_is_504(auth_client: TestClient) -> None:
             json={"repo": REPO, "target_tenant": TARGET_TENANT, "reason": "r"},
         )
     assert res.status_code == 504
+
+
+@pytest.mark.parametrize(
+    ("method", "body", "discriminator"),
+    [
+        ("GET", None, "coord_timeout"),
+        (
+            "POST",
+            {"repo": REPO, "target_tenant": TARGET_TENANT, "reason": "r"},
+            "coord_write_timeout",
+        ),
+        ("DELETE", {"repo": REPO, "reason": "r"}, "coord_write_timeout"),
+    ],
+)
+def test_coord_timeout_carries_the_refusal_envelope(
+    method: str, body: dict[str, Any] | None, discriminator: str
+) -> None:
+    """The page renders a timed-out write through its refusal envelope: the
+    write's next action names the re-read that must precede a retry, which
+    the bare ``message`` does not."""
+    client = _patched_client(side_effect=httpx.ReadTimeout("slow"))
+    test_client = TestClient(_build_test_app(with_error_handler=True))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(test_client, method, json=body)
+    assert res.status_code == 504
+    payload = res.json()
+    assert payload["message"] == "timeout waiting for coord"
+    refusal = payload["refusal"]
+    assert refusal["code"] == "upstream_timeout"
+    assert refusal["discriminator"] == discriminator
+    assert refusal["next_action"]["kind"] == "retry_later"
+    if method == "GET":
+        assert refusal["next_action"].get("target") is None
+    else:
+        assert refusal["next_action"]["target"] == "whether the change was applied"
+
+
+# ---------------------------------------------------------------------------
+# Length caps — an over-long field is a 422 and never reaches coord
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method", "body"),
+    [
+        (
+            "POST",
+            {"repo": "o/" + "n" * 139, "target_tenant": TARGET_TENANT, "reason": "r"},
+        ),
+        (
+            "POST",
+            {"repo": REPO, "target_tenant": "t" * 65, "reason": "r"},
+        ),
+        (
+            "POST",
+            {"repo": REPO, "target_tenant": TARGET_TENANT, "reason": "r" * 2001},
+        ),
+        (
+            "POST",
+            {
+                "repo": REPO,
+                "target_tenant": TARGET_TENANT,
+                "reason": "r",
+                "decision_ref": "d" * 1001,
+            },
+        ),
+        ("DELETE", {"repo": "o/" + "n" * 139, "reason": "r"}),
+        ("DELETE", {"repo": REPO, "reason": "r" * 2001}),
+    ],
+)
+def test_over_long_fields_are_refused_before_coord(
+    auth_client: TestClient, method: str, body: dict[str, Any]
+) -> None:
+    client = _patched_client(_mock_response(200, BIND_BODY))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(auth_client, method, json=body)
+    assert res.status_code == 422
+    client.request.assert_not_called()
+
+
+def test_fields_at_their_caps_are_forwarded(auth_client: TestClient) -> None:
+    body = {
+        "repo": "o" * 39 + "/" + "n" * 100,
+        "target_tenant": TARGET_TENANT,
+        "reason": "r" * 2000,
+        "decision_ref": "d" * 1000,
+    }
+    client = _patched_client(_mock_response(200, BIND_BODY))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(auth_client, "POST", json=body)
+    assert res.status_code == 200
+    assert client.request.call_args.kwargs["json"] == body

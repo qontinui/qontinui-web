@@ -47091,7 +47091,9 @@ export interface components {
          *     tenant uuid the repo is bound to; it is a plain string here so a malformed
          *     value reaches coord and comes back as coord's own refusal rather than a
          *     web-side validation shape. ``reason`` is recorded in the audit rows coord
-         *     writes per affected tenant; ``decision_ref`` is optional free text.
+         *     writes per affected tenant; ``decision_ref`` is optional free text. Each
+         *     field is length-capped (see ``REPO_BINDING_*_MAX``): an over-long value is a
+         *     web-side 422, never forwarded.
          */
         RepoBindRequest: {
             /** Decision Ref */
@@ -47247,6 +47249,7 @@ export interface components {
          *
          *     Unbinding returns governance to the org's tenant. ``reason`` is required
          *     and must be non-blank; coord enforces that and records it in the audit.
+         *     Both fields carry the bind body's length caps.
          */
         RepoUnbindRequest: {
             /** Reason */

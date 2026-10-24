@@ -2880,6 +2880,19 @@ async def post_pr_merge_onboarding_restore_repo(
 COORD_REPO_BINDINGS_PATH = "/coord/onboarding/repo-bindings"
 
 
+#: Length caps on the binding bodies. Like :class:`OnboardingClaimRequest`'s,
+#: they only keep an unbounded blob out of a proxied request body — coord stays
+#: the authoritative check on every value, so nothing here is a pattern. A
+#: ``repo`` is GitHub's 39-char login + ``/`` + its 100-char repository name;
+#: a ``reason`` gets this module's usual 2000; a ``decision_ref`` is a decision
+#: record path or link. ``target_tenant`` is a uuid string, capped generously.
+#: The frontend form carries the same caps (``RepoTenantBindings.tsx``).
+REPO_BINDING_REPO_MAX = 140
+REPO_BINDING_REASON_MAX = 2000
+REPO_BINDING_DECISION_REF_MAX = 1000
+REPO_BINDING_TENANT_MAX = 64
+
+
 class RepoBindRequest(BaseModel):
     """Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
 
@@ -2888,13 +2901,17 @@ class RepoBindRequest(BaseModel):
     tenant uuid the repo is bound to; it is a plain string here so a malformed
     value reaches coord and comes back as coord's own refusal rather than a
     web-side validation shape. ``reason`` is recorded in the audit rows coord
-    writes per affected tenant; ``decision_ref`` is optional free text.
+    writes per affected tenant; ``decision_ref`` is optional free text. Each
+    field is length-capped (see ``REPO_BINDING_*_MAX``): an over-long value is a
+    web-side 422, never forwarded.
     """
 
-    repo: str
-    target_tenant: str
-    reason: str
-    decision_ref: str | None = None
+    repo: str = Field(max_length=REPO_BINDING_REPO_MAX)
+    target_tenant: str = Field(max_length=REPO_BINDING_TENANT_MAX)
+    reason: str = Field(max_length=REPO_BINDING_REASON_MAX)
+    decision_ref: str | None = Field(
+        default=None, max_length=REPO_BINDING_DECISION_REF_MAX
+    )
 
 
 class RepoUnbindRequest(BaseModel):
@@ -2902,10 +2919,11 @@ class RepoUnbindRequest(BaseModel):
 
     Unbinding returns governance to the org's tenant. ``reason`` is required
     and must be non-blank; coord enforces that and records it in the audit.
+    Both fields carry the bind body's length caps.
     """
 
-    repo: str
-    reason: str
+    repo: str = Field(max_length=REPO_BINDING_REPO_MAX)
+    reason: str = Field(max_length=REPO_BINDING_REASON_MAX)
 
 
 @router.get("/pr-merge/onboarding/repo-bindings")
