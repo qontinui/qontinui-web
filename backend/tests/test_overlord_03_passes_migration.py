@@ -73,7 +73,23 @@ _INDEXES = (
     "ix_overlord_interventions_tenant_ccsession",
 )
 
+# What each index must cover: name -> the column list ``pg_indexes.indexdef`` ends with.
+_INDEX_COLUMNS: dict[str, str] = {
+    "ix_overlord_passes_tenant_started": "(tenant_id, started_at DESC)",
+    "ix_overlord_passes_tenant_runner": (
+        "(tenant_id, device_id, runner_port, started_at DESC)"
+    ),
+    "ix_overlord_pass_rows_tenant_session": (
+        "(tenant_id, claude_session_id, observed_at)"
+    ),
+    "ix_overlord_pass_rows_observed": "(observed_at)",
+    "ix_overlord_interventions_tenant_ccsession": (
+        "(tenant_id, claude_code_session_id)"
+    ),
+}
+
 # The column contracts shared with coord's Rust code: name -> (data_type, nullable).
+# An array column's type is its element udt (``_text``), so ``INTEGER[]`` cannot pass.
 _EXPECTED_PASS_COLUMNS: dict[str, tuple[str, str]] = {
     "pass_id": ("uuid", "NO"),
     "tenant_id": ("uuid", "NO"),
@@ -83,7 +99,7 @@ _EXPECTED_PASS_COLUMNS: dict[str, tuple[str, str]] = {
     "scope": ("text", "NO"),
     "filter": ("jsonb", "NO"),
     "mode": ("text", "NO"),
-    "skipped_steps": ("ARRAY", "NO"),
+    "skipped_steps": ("_text", "NO"),
     "started_at": ("timestamp with time zone", "NO"),
     "ended_at": ("timestamp with time zone", "YES"),
     "recorded_at": ("timestamp with time zone", "NO"),
@@ -105,7 +121,7 @@ _EXPECTED_ROW_COLUMNS: dict[str, tuple[str, str]] = {
     "account": ("text", "YES"),
     "screen_verdict": ("text", "YES"),
     "verdict": ("text", "NO"),
-    "reason_codes": ("ARRAY", "NO"),
+    "reason_codes": ("_text", "NO"),
     "state_since_ms": ("bigint", "YES"),
     "progress_since_nudge": ("boolean", "YES"),
     "action": ("text", "NO"),
@@ -183,7 +199,10 @@ def _columns(engine: Engine, table: str) -> dict[str, tuple[str, str]]:
         rows = conn.execute(
             text(
                 """
-                SELECT column_name, data_type, is_nullable
+                SELECT column_name,
+                       CASE WHEN data_type = 'ARRAY' THEN udt_name
+                            ELSE data_type END,
+                       is_nullable
                   FROM information_schema.columns
                  WHERE table_schema = 'coord' AND table_name = :table
                 """
@@ -191,6 +210,22 @@ def _columns(engine: Engine, table: str) -> dict[str, tuple[str, str]]:
             {"table": table},
         ).all()
     return {name: (dtype, nullable) for name, dtype, nullable in rows}
+
+
+def _assert_index_columns(engine: Engine) -> None:
+    """Every index exists AND covers exactly the columns, order and direction."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT indexname, indexdef FROM pg_indexes "
+                "WHERE schemaname = 'coord' AND indexname = ANY(:names)"
+            ),
+            {"names": list(_INDEX_COLUMNS)},
+        ).all()
+    defs: dict[str, str] = {str(name): str(indexdef) for name, indexdef in rows}
+    for name, columns in _INDEX_COLUMNS.items():
+        assert name in defs, f"missing index {name}"
+        assert defs[name].endswith(columns), f"{name}: {defs[name]!r}"
 
 
 def _primary_key(engine: Engine, table: str) -> list[str]:
@@ -266,6 +301,8 @@ def test_overlord_03_creates_the_pass_ledger_and_enforces_its_contract() -> None
         assert _primary_key(engine, _ROWS) == ["pass_id", "terminal_id"]
         for name in _INDEXES:
             assert index_exists(engine, name), f"missing index {name}"
+        assert set(_INDEX_COLUMNS) == set(_INDEXES)
+        _assert_index_columns(engine)
 
         # 3. A valid pass with NULL identities is accepted; defaults are honest.
         base = _pass(did=None, ended=None, row_count=2)
@@ -341,6 +378,7 @@ def test_overlord_03_creates_the_pass_ledger_and_enforces_its_contract() -> None
             [""],
             ["a,b"],
             ["layout", ""],
+            [["layout"], ["name"]],
         ):
             _refused(engine, _INSERT_PASS, _pass(skipped=bad))
 
@@ -354,6 +392,7 @@ def test_overlord_03_creates_the_pass_ledger_and_enforces_its_contract() -> None
             [None],
             [""],
             ["stopped.a,stopped.b"],
+            [["held.no_progress"], ["stopped.ok"]],
         ):
             _refused(engine, _INSERT_ROW, _row(pid, reasons=bad_reasons))
 
@@ -374,6 +413,8 @@ def test_overlord_03_creates_the_pass_ledger_and_enforces_its_contract() -> None
         _insert(engine, _INSERT_ROW, _row(pid, terminal_id="dup-ok"))
         _refused(engine, _INSERT_ROW, _row(pid, terminal_id="dup-ok"))
         _refused(engine, _INSERT_ROW, _row(uuid.uuid4()))
+        # A row can only carry its own pass's tenant (composite foreign key).
+        _refused(engine, _INSERT_ROW, _row(pid, tid=uuid.uuid4()))
 
         # 10. Deleting a pass cascades to its rows.
         assert _rows_of(engine, pid) == 7
@@ -397,3 +438,4 @@ def test_overlord_03_creates_the_pass_ledger_and_enforces_its_contract() -> None
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert table_exists(engine, "coord", _PASSES)
         assert table_exists(engine, "coord", _ROWS)
+        _assert_index_columns(engine)
