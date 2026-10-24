@@ -62,7 +62,7 @@ _EXPECTED_COLUMNS: tuple[tuple[str, str, bool, str | None], ...] = (
     ("created_at", "timestamp with time zone", False, "now()"),
 )
 
-# The plan's D4 cap statement, in the shape coord issues it: check and insert
+# The plan's D4 cap statement, in the shape the plan specifies for coord: check and insert
 # are ONE statement, so zero rows inserted means ``mint_cap_reached``.
 _CAP_INSERT = text(
     f"""
@@ -150,6 +150,20 @@ def test_table_columns_and_indexes_land() -> None:
                 assert info[2] is not None and default in info[2], (name, info)
         for idx in _INDEXES:
             assert index_exists(engine, idx, schema=_SCHEMA), idx
+        # The mint cap counts per (dispatch_id, target_repo): the leading
+        # column matters, so pin the column order, not just the names.
+        defs = {
+            name: scalar(
+                engine,
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE schemaname = :s AND indexname = :i",
+                s=_SCHEMA,
+                i=name,
+            )
+            for name in _INDEXES
+        }
+        assert "(dispatch_id, target_repo)" in defs[_INDEXES[0]], defs
+        assert "(created_at)" in defs[_INDEXES[1]], defs
 
 
 @_needs_pg
@@ -196,5 +210,7 @@ def test_round_trip_down_and_up() -> None:
         assert isinstance(parent, str)
         run_alembic(backend_root(), url, "downgrade", parent)
         assert not table_exists(engine, _SCHEMA, _TABLE)
+        for idx in _INDEXES:
+            assert not index_exists(engine, idx, schema=_SCHEMA), idx
         run_alembic(backend_root(), url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)

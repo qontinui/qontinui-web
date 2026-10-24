@@ -18,7 +18,7 @@ one durable store, and it carries two properties at once:
   ``pending`` until decided, then ``minted`` or the typed refusal code coord
   answered); the installation the token was minted on; and the token's expiry.
   The token VALUE is never stored.
-* **The mint cap.** At most 4 mints per ``(dispatch_id, target_repo)``. Coord
+* **The mint cap.** At most 4 mints per ``(dispatch_id, target_repo)``. Coord (per plan D4)
   counts rows with ``outcome IN ('pending','minted')`` and inserts in ONE
   statement (``INSERT … SELECT … WHERE (SELECT count(*) …) < 4``) under a
   transaction advisory lock keyed on the pair, so a refused retry never
@@ -30,9 +30,10 @@ its primary key is the OIDC ``jti`` and ``oidc_expires_at`` is NOT NULL, and a
 dispatch request has neither. Synthetic values would hide two principals in one
 ledger (plan D7).
 
-Retention: coord's ``table_retention`` sweep deletes rows whose ``created_at``
-is more than 90 days old (the ``ci_read_token_01`` precedent) — hence
-``idx_ci_dispatch_read_tokens_created_at``.
+Retention (plan D7 intent, not yet coord behaviour): coord's ``table_retention``
+sweep is to delete rows whose ``created_at`` is more than 90 days old, entered
+by the coord PR that reads this table (``ci_read_token_01`` is pruned the same
+way, by its own expiry column) — hence ``idx_ci_dispatch_read_tokens_created_at``.
 
 ``outcome`` is TEXT without a CHECK on purpose: its vocabulary is coord's typed
 refusal set, which grows with the door, and a CHECK here would make every new
@@ -45,9 +46,9 @@ not take its audit rows with it.
 Hand-authored; ``alembic revision --autogenerate`` was not run and is never run
 against ``coord.*``. coord authors **zero** DDL
 (``[policy: alembic-sole-authorship]``), so this revision must merge **before**
-the coord PR that reads and writes the table. Until it has applied, coord's
-door answers ``503 schema_migration_pending`` and never mints: with no audit
-row, there is no mint.
+the coord PR that reads and writes the table. Plan D7 intent: until it has
+applied, coord's door answers ``503 schema_migration_pending`` and never mints
+(with no audit row, there is no mint); that behaviour lives in the coord PR.
 
 Idempotency: ``IF NOT EXISTS`` / ``IF EXISTS`` throughout, matching the
 ``coord.*`` migration house style. Creating a new table and its indexes takes
