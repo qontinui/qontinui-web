@@ -1,14 +1,15 @@
 # Console UI Style Guide
 
-**Version:** 0.2.4 (Phase 1 — §3 filled in from the shipped primitives; §3.3
+**Version:** 0.2.5 (Phase 1 — §3 filled in from the shipped primitives; §3.3
 records the patterns the first post-guide page had to add; §3.4 records the
 alerts page's retirement and the Dev Ops Conditions panel; §3.5 records the computers console; §3.6 the CI dashboard; §3.7 adds the
-share primitives)
-**Last Updated:** 2026-10-01
+share primitives; §6.5 adds the presentation lens)
+**Last Updated:** 2026-10-24
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
 `2026-08-20-fleet-served-agent-skills.md` Phase 3; §3.4 from
 `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8;
-§3.7 from `2026-08-27-operator-touch-read-and-surface` Phase C3
+§3.7 from `2026-08-27-operator-touch-read-and-surface` Phase C3; §6.5 from
+`2026-10-23-console-presentation-spaces` Phase 1
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -1292,8 +1293,8 @@ same table. Every module doc cites its rule number and links this file.
 
 | Component | Rule(s) | Props | Notes |
 |---|---|---|---|
-| `HealthStrip` | R1 | `{ level, headline, detail?, badges?, className?, "data-testid"? }` where `badges: { key, label, tone?, onClick?, title?, "data-testid"? }[]` and `tone: "default" \| "muted" \| "attention"` | Takes the **already-derived** verdict. It cannot fetch, so R1's "never a second fetch" is structural. A badge with an `onClick` becomes a real `<button>` wrapping the badge in `display:contents`. |
-| `StatCluster` | R1 | `{ stats, className?, "data-testid"? }` where `stats: { key, label, value, tone?, title?, onClick?, "data-testid"? }[]` and `tone: "default" \| "success" \| "warning" \| "attention" \| "muted"` | The count-cluster form of the same opening, for a table page with no single traffic-light verdict. `value: null` renders `–`, never `0`. First adopted by `/gates` (Wave 4, where `SummaryCards`' testids were ported); also the Dev Ops Conditions panel's two breakdown rows (§3.4). Count its consumers with a grep, not from this cell. |
+| `HealthStrip` | R1 | `{ level, headline, detail?, badges?, className?, "data-testid"? }` where `badges: { key, label, tone?, onClick?, navigationOnly?, title?, "data-testid"? }[]` and `tone: "default" \| "muted" \| "waiting" \| "attention"` | Takes the **already-derived** verdict. It cannot fetch, so R1's "never a second fetch" is structural. A badge with an `onClick` becomes a real `<button>` wrapping the badge in `display:contents`. `navigationOnly` is the caller's CLAIM that the press only filters, jumps or opens a view, and marks that button `NAVIGATION_ONLY_PROPS` (§6.5); leave it unset for anything that writes. |
+| `StatCluster` | R1 | `{ stats, className?, "data-testid"? }` where `stats: { key, label, value, tone?, title?, onClick?, navigationOnly?, "data-testid"? }[]` and `tone: "default" \| "success" \| "warning" \| "attention" \| "muted"` | The count-cluster form of the same opening, for a table page with no single traffic-light verdict. `value: null` renders `–`, never `0`. First adopted by `/gates` (Wave 4, where `SummaryCards`' testids were ported); also the Dev Ops Conditions panel's two breakdown rows (§3.4). Count its consumers with a grep, not from this cell. `navigationOnly` is the same claim as `HealthStrip`'s. |
 | `RecordRow` | R2, R4 | `{ identity, label, status?, reason?, time?, accent?, expanded, onToggle, children?, rowKey?, className?, "data-testid"?, reasonTestId? }` | Slot ORDER is fixed by the primitive, not the caller. `status` and `time` are `ReactNode` slots so each surface renders its own `<StatusBadge palette={…}>` without the row knowing a kind union. `accent` is the string from `rowAccentClass(status)`. The whole line is one `<button>` — R5 has to be keyboard-reachable. `children` render below the row, only while expanded. |
 | `RecordDetail` | R5 | `{ why?, problems?, actions?, history?, raw?, className?, "data-testid"? }` | Five slots in that order, each a bare fragment, so the panel's `space-y-3` spaces real content and an absent slot leaves no gap. Shares the row's border (`border-t-0 rounded-b-md`). Not a slide-over (D2). |
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
@@ -1302,6 +1303,7 @@ same table. Every module doc cites its rule number and links this file.
 | `RefreshButton` | §6.4 (no numbered rule) | `{ onRefresh, label, title, className?, "data-testid"? }` where `onRefresh: () => Promise<unknown> \| void` | The icon-only "re-read now" control. **`label` and `title` are required, not defaulted**: `label` is the accessible name (an icon has none), and `title` names what the press does AND its effect — "returns to the first page", "also refreshes itself every 10 s" — without repeating the label, since it is announced as the description right after the name. **Busy belongs to the press**: the button is busy for exactly as long as the promise ITS click returned is out, so a page's poll — which usually calls the same fetch function — has no path to the state and cannot make it pulse every interval. Busy is `aria-busy` + `aria-disabled` with presses ignored, never the real `disabled` attribute (same reasoning as `FilterChips`' `all` chip: it would blur the button out from under the keyboard user who just pressed it). A rejected read ends busy too — the failure is the page's to render (R6). Added by plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves` after 18 of 28 `/admin/coord/*` files rendering `RefreshCw` were found carrying no `aria-label`; adopted on `/plans` first, then `/spawn` (the sibling page sharing `derivePlansHealth` and the same fetch/poll-lock shape), 16 are still open. |
 | `GlossaryTerm` | supports R8 | `{ id, children?, className?, "data-testid"? }` where `id: GlossaryTerm` (the generated union from `@qontinui/shared-types/glossary`) | R8 keeps INTERNAL vocabulary off a primary surface; the product's OWN vocabulary (gate, work unit, claim, merge train…) stays, and this is how it explains itself. The tooltip is `GLOSSARY[id].short` **byte for byte**, from the table generated out of the schemas `glossary/terms.toml` by the same generator as the Rust table coord and the runner serve — **compiled in, never fetched**, so a term explains itself when coord is unreachable. `id` is the union, so a misspelt id is a compile error; `GlossaryTerm.test.tsx` also scans every literal `id` in `src/`. The trigger is focusable (the definition is not hover-only) and carries its own `TooltipProvider`. Pass `children` when the surface's wording differs from the display name ("gates", a column header). First adopted (plan `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists` C3) on the `/admin/coord/*` column headers and empty states that use a roster term — `/gates` (Gate, Continuation, both empty states), `/work-units`, `/findings`, `/gate-clearance`, `/git-ops`, `/policies` (Tenant), `/prompt-documents`; count its consumers with a grep. **Wrap a word only where the glossary definition is what the column means**: `/members`' "Grant tier" (a role grant) and the design-policies "Policy" column (UX policy rows) were deliberately NOT wrapped, because `tier` and `policy` define other things. |
 | `BackendErrorMessage` | supports R3, R8 | `{ error, className?, "data-testid"? }` where `error` is what the surface caught (a `BackendError` from `backendError(res)`, any `Error`) or the `BackendErrorReading` it kept in state | The one renderer for a backend refusal (plan `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists` D3). A body carrying the `Refusal` envelope (`body.refusal`) renders `Refusal::render()`'s sentence (mirrored in `lib/errors/refusal.ts`), a link for `open_page` (app paths and `https:` URLs only — never `http:` or a `javascript:` target) or a copyable command for `run_command`, its `detail` BESIDE the sentence, and each cited term through `GlossaryTerm`; it is stamped `data-refusal="structured"`. A cited term id this build's glossary does not define (a newer producer) is shown on the surface as the raw id, marked `data-glossary-unrecognised` and titled "Not in this version's glossary". Only an envelope at a STRUCTURAL position (`body.refusal`, `body.detail.refusal`, the body itself) gets the affordances: one relayed inside a string `detail` / `message` may echo caller input, so it renders its sentence only, with no link, copy button or terms, stamped `data-refusal="from-text"`. **Every other body renders exactly its pre-contract sentence**, stamped `data-refusal="unstructured"`, which is what lets a scenario count the refusals an operator still meets without a next action. Adopted on `/members`' five section-level read failures. |
+| `NAVIGATION_ONLY_PROPS` / `NAVIGATION_ONLY_ATTRIBUTE` | supports the presentation lens (§6.5) | spread `{...NAVIGATION_ONLY_PROPS}` onto a control | The marker of a control whose press changes only what is DISPLAYED, so it stays live in presentation mode. `FilterTabs`, `FilterChips` and `RefreshButton` carry it on every control by construction; `HealthStrip` and `StatCluster` only where the caller says `navigationOnly`. It is a claim the code makes about its own control, and §6.5 says which controls may make it. |
 | `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx` (D3). Phase 1's re-export shim at the old path is **deleted**: its seven callers were repointed at this barrel in Phase 1's post-merge follow-up. The re-export in `operations/index.ts` stays — that is the barrel, not the shim. |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
@@ -1863,6 +1865,102 @@ If a page genuinely needs something this guide does not cover, that is a real
 finding and the guide is wrong — extend it, add the primitive, and cite the rule
 number from the new component's module doc. What is not allowed is shipping the new
 shape silently and leaving the next author to guess which of the two is the pattern.
+
+### 6.5 Presentation density — the presentation lens, recorded under §6.4
+
+Plan `2026-10-23-console-presentation-spaces` lets the operator console double as
+a live showcase for an external evaluator (`audience_profile/external-evaluator`).
+It does so as a **lens**, never a fork: the same routes and the same data hooks,
+rendered with captions on, provenance on, density down, controls off and redaction
+on. The lens is an **authorized extension of this guide**: in presentation mode,
+and only there, a lens page may depart from R1, R9 and §5 in the ways this section
+lists. In operator mode every rule above holds unchanged. The pieces live in
+`frontend/src/components/presentation/` (one barrel), composing `components/console/`.
+
+**Entry, and where it applies.**
+
+- The mode is per browser, never per tenant: `?present=1|0` on the URL wins, then
+  the tab's last choice, then the viewer's remembered setting (localStorage, a
+  convenience — a tab that opens presenting on it keeps presenting), then off.
+  The header's `PresentationModeToggle` flips it; while presenting it is the
+  "Presentation mode" chip. A mode not yet resolved (a server or hydration render)
+  counts as presenting, so every guard fails closed.
+- It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
+  to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
+  while presenting, the sidebar names only the active project, aliases the runner,
+  hides the account menu, search and project creation, and offers only entries
+  inside a lens tree. Elsewhere there is no presentation mode at all.
+- **A lens page is withheld until it is proven safe.** `PresentationPage`, around
+  every lens layout's page body, renders the page in presentation mode only when
+  its route is in `PRESENTATION_READY_ROUTES`; every other lens page renders its
+  surface caption and "Shown in the operator view only" instead — over-withholding
+  costs a placeholder, a page shown before it is safe costs a write control in
+  front of a client. Register a page **in the same PR** as its page test (below);
+  the registry's own test fails an entry whose test is missing or never runs the
+  helper.
+
+**Captions before data** (the departure from R1 and R9). `Caption` renders a page's
+or a panel's `{ title, oneLiner, whyItMatters }` ahead of its data: in presentation
+mode the title at screen-share size (`text-2xl` / `text-xl` / `text-lg` for levels
+1–3), the one-liner at `text-base` and why it matters at `text-sm`, which is up to
+three lines of chrome above R1's health strip. That is the point of the lens — an
+evaluator does not share the vocabulary, and the caption is the translation — and
+it is why it is confined to presentation mode: in operator mode a caption renders
+nothing (or, `persistent`, the title and one-liner at the console's sizes, for a
+page whose own heading is its caption). Copy lives in ONE registry composed of one
+file per lens surface (`captions/`); product terms in it go through `GlossaryTerm`
+via `term(...)`, never as plain text (the registry's test fails a glossary term's
+name left plain); and every sentence is a claim about the product, so it is checked
+against the code like any other claim.
+
+**Provenance beside every figure.** `Provenance` is the chip `source: … · as of …`
+beside each number a lens page shows. An unknown source or time renders `UNKNOWN`
+on R3's ignorance-floor amber (`UNKNOWN_AMBER`), never a blank. The age advances on
+one shared 15-second tick; below a minute it says "under a minute ago" rather than a
+seconds count the tick would leave behind; and a render with no client clock (server,
+hydration) states the instant in UTC to the minute, so the HTML and the first client
+render agree.
+
+**Density down.** Presentation mode never adds a row to a page: what it changes is
+which of the page's own elements render, and how large a caption is. A page does not
+grow a second presentation layout.
+
+**Controls off.** Every control that writes renders inside `OperatorOnly` — not
+hidden, unmounted, so its UI Bridge registration goes with it; a `placeholder` that
+stands in must itself be navigation-only. What may stay live is a control marked
+`NAVIGATION_ONLY_PROPS`, and the mark is a **claim**: only a control whose press
+changes nothing but what this browser displays may make it — a filter, a refresh, a
+link-like jump, a tab or view switch, a disclosure of read-only detail. Never a
+control that writes, and never one that opens a menu or a dialog whose items can
+write; a `combobox` (the UI kit's `Select`) is a choice, so it needs the claim on its
+trigger and may make it only when every option is view-only. `FilterTabs`,
+`FilterChips`, `RefreshButton`, the presentation toggle and the sidebar's navigation
+entries carry the mark by construction; `HealthStrip` and `StatCluster` carry it only
+where the caller passes `navigationOnly`.
+
+**Redaction on.**
+
+- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title)
+  renders only when every repository it belongs to has a first-party owner and it
+  holds none of the confidential terms; otherwise the descriptor
+  `kind · area · status · age`, with `withheld` for a field that may name someone
+  the scope cannot clear. An unknown scope withholds everything. The two lists are
+  tenant data, edited in operator mode on `/admin/coord/tenant-policy`.
+- `MachineName` / `useMachineName` / `useMachineAliaser`: a machine renders as
+  `Machine A`, `B`… — one letter per computer for the session, on every panel,
+  however each panel identifies it (device id, hostname); two letters that turn out
+  to be one machine merge to the earlier.
+- `CostFigure` is the only component that renders a per-task cost, always beside
+  "list-price equivalent, not your bill", and in presentation mode never — a
+  descriptor instead. `costRenders.test.ts` scans every module a lens page and its
+  shell can reach and fails on a cost rendered any other way.
+
+**The test every presentation-ready page carries.** A presentation-mode render of the
+real page with `renderInPresentationMode` and `expectPresentationSafe(view, {
+captions, forbidden })` (`src/test/presentation.tsx`): no enabled control that is
+not navigation-only, no write or undeclared UI Bridge registration, no cost, every
+listed caption, no email address or UUID, and none of the `forbidden` strings — the
+real hostnames, device ids and other parties' names the fixture holds.
 
 ---
 

@@ -12,7 +12,11 @@
 
 import { readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isGlossaryTerm } from "@qontinui/shared-types/glossary";
+import {
+  GLOSSARY,
+  GLOSSARY_TERMS,
+  isGlossaryTerm,
+} from "@qontinui/shared-types/glossary";
 import {
   CAPTIONS,
   CAPTION_SURFACES,
@@ -125,6 +129,45 @@ describe("caption copy is written for an external evaluator", () => {
         }
       }
     }
+  });
+
+  it("writes every product term through the glossary, never as plain text", () => {
+    // A glossary term's own name, as a whole word in plain copy, renders with
+    // no definition to open (D5). A word used in ANOTHER sense is allowed only
+    // by name here, with why — never by default.
+    const ALLOWED_PLAIN: Readonly<Record<string, string>> = {};
+    const offenders: string[] = [];
+    for (const [key, entry] of entries) {
+      for (const [name, text] of fields(entry)) {
+        if (name === "title") continue; // a title is a name, not copy
+        for (const segment of captionSegments(text)) {
+          if (typeof segment !== "string") continue;
+          for (const id of GLOSSARY_TERMS) {
+            const word = GLOSSARY[id].term.toLowerCase();
+            const pattern = new RegExp(
+              `\\b${word.replace(/\s+/g, "\\s+")}\\b`,
+              "i"
+            );
+            if (!pattern.test(segment)) continue;
+            const at = `${key}.${name}:${id}`;
+            if (!(at in ALLOWED_PLAIN))
+              offenders.push(`${at} — "${segment.trim()}"`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the plain-term check fails on a term left as plain text", () => {
+    // Not vacuous: the fix this check guards — the tour's "operator", once
+    // plain — is caught when it regresses.
+    const plain = "Every stop is the operator's own working page.";
+    expect(
+      new RegExp(`\\b${GLOSSARY.operator.term.toLowerCase()}\\b`, "i").test(
+        plain
+      )
+    ).toBe(true);
   });
 
   it("names only terms the generated glossary defines", () => {
