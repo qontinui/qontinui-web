@@ -20,21 +20,29 @@
  *    sidebar renders beside every lens page — are scanned as modules (their
  *    directories are not: `(app)` holds every page of the app).
  * 3. Then, to a fixed point, every `app/` or `components/` MODULE a scanned
- *    module imports (static, re-export or dynamic `import()`, by `@/…` alias
- *    or a relative path) is scanned too — a component a lens page renders is
- *    part of the lens. Reachability is per module, not per directory: a lens
- *    page importing one constant from another route's `_lib/` brings that file
- *    in, not the route's money code beside it.
+ *    module imports (static, re-export, or a literal `import()` /
+ *    `require()`, by `@/…` alias or a relative path) is scanned too — a
+ *    component a lens page renders is part of the lens. Reachability is per
+ *    module, not per directory: a lens page importing one constant from
+ *    another route's `_lib/` brings that file in, not the route's money code
+ *    beside it.
  *
  * `lib/`, `services/`, `hooks/`, `data/` and the rest are data and logic
  * layers, not rendering, and are not scanned whole. What a lens page CAN
- * import from them and render is a formatter, so every exported function
- * anywhere under `src/` is classified by what its body does
- * (`currencyFormatters.ts`): one that formats a currency or glues a currency
- * symbol to a value — or reads one that does — is a currency formatter, and
- * importing it into a scanned module is a violation under any local name. A
- * figure computed there and rendered as an opaque string is left to the
- * rendered-page layer (`expectPresentationSafe`'s currency check in
+ * import from them and render is a formatter, so every module's exports
+ * anywhere under `src/` are classified by what their code does
+ * (`currencyFormatters.ts`): a function, class or value (a `NumberFormat`
+ * instance) that formats a currency or glues a currency symbol to a value —
+ * or reads one that does — is a currency formatter, under every name its
+ * module exports it by, a barrel's `export *` and `export { … } from`
+ * included, and a default export as `default`. In a scanned module, every way
+ * of reaching one is a violation under any local name: a named or default
+ * import, a member read through a namespace import (`ns.formatCurrency`, or
+ * the namespace handed on whole), a re-export (named, `export *` or
+ * `export * as`), and a literal `import()` / `require()` of a module that
+ * exports one. A figure that arrives already formatted — from the backend, a
+ * package, or the composed build's cloud overlay outside `src/` — is left to
+ * the rendered-page layer (`expectPresentationSafe`'s currency check in
  * `src/test/presentation.tsx`).
  *
  * ## What counts as rendering money (four rules, on the parsed TSX)
@@ -49,12 +57,15 @@
  *   `toLocaleString`.
  * - **glued-symbol** — a currency symbol or ISO code glued to a computed value,
  *   on either side: `` `$${x}` ``, `` `${x} USD` ``, `"$" + x`, `x + " USD"`,
- *   JSX text ending in `$` before `{x}` or an element, JSX text starting with
- *   `USD` after one, a lone `{"$"}` child, an element holding nothing but a
- *   currency symbol or code beside a value (`<span>$</span>{x}`,
- *   `{x}<small>USD</small>`), or a currency CODE value (`currency`,
- *   `currencyCode`) written into a template. A plain string child (`{"}"}`)
- *   is text, not a computed value.
+ *   JSX text — or a string child, `{"Total: $"}` — ending in `$` before `{x}`
+ *   or an element, or starting with `USD` after one, a lone `{"$"}` child, an
+ *   element holding nothing but a currency symbol or code beside a value
+ *   (`<span>$</span>{x}`, `{x}<small>USD</small>`), or a currency CODE value
+ *   (`currency`, `currencyCode`) written into a template or beside a JSX value
+ *   (`{x} {row.currency}`). What renders nothing between the two — whitespace,
+ *   the `{" "}` spacer Prettier writes when it wraps `{x} USD`, an empty
+ *   `{/* … *\/}` — does not unglue them. A plain string child (`{"}"}`) is
+ *   text, not a computed value.
  * - **literal-figure** — a currency figure written into text (`"$12"`,
  *   `"5 EUR"`), or the cost label itself (`"list-price equivalent"`), which
  *   belongs only beside a `CostFigure`'s figure.
@@ -69,12 +80,15 @@
  *   re-exported, under any name — and so is any import or re-export whose
  *   IMPORTED name is a money name (`formatUsd as fmt`), any default import
  *   from a money-named module (`import fmt from "@/lib/formatUsd"`), and any
- *   import of a currency formatter (above), except from the presentation
- *   package's own `CostFigure` module. Declarations (a variable, a parameter,
- *   the name a destructuring BINDS, an object key), types and type-only
- *   imports are not values and are not flagged; the READ that renders is —
- *   the key a destructuring reads (`{ cost_usd: c } = row`) included. A
- *   display-text value (`label: "Costs"`) names the concept, not a figure.
+ *   way of reaching a currency formatter (above). The one exception is the
+ *   presentation package's own `CostFigure` module, where money-named names
+ *   come from by design — but its raw formatter is a currency formatter there
+ *   too, so a wrapper of it anywhere under `src/` is one. Declarations (a
+ *   variable, a parameter, the name a destructuring BINDS, an object key),
+ *   types and type-only imports are not values and are not flagged; the READ
+ *   that renders is — the key a destructuring reads (`{ cost_usd: c } = row`)
+ *   included. A display-text value (`label: "Costs"`) names the concept, not
+ *   a figure.
  *
  * Known non-money compounds are listed in {@link NON_MONEY_COMPOUNDS}, each
  * with its reason. Add one only with a reason a reviewer can check.
@@ -84,7 +98,12 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import ts from "typescript";
 import {
+  DEFAULT_EXPORT,
   discoverCurrencyFormatters,
+  isRead,
+  loadedSpecifier,
+  moduleSpecifiers,
+  namespaceReadsAny,
   resolveSrcModule,
   type CurrencyFormatters,
 } from "./currencyFormatters";
@@ -193,6 +212,8 @@ export type CostRule =
 export interface CostRenderViolation {
   readonly file: string;
   readonly line: number;
+  /** The offending node's start offset in the scanned text. */
+  readonly start: number;
   readonly rule: CostRule;
   readonly detail: string;
 }
@@ -264,6 +285,61 @@ function tagName(node: ts.JsxOpeningElement | ts.JsxSelfClosingElement) {
 }
 
 /**
+ * The text a JSX child renders as text: JSX text, or a string child
+ * (`{"Total: $"}`, `` {`USD`} ``); `null` for anything else.
+ */
+function jsxChildText(child: ts.Node | undefined): string | null {
+  if (child === undefined) return null;
+  if (ts.isJsxText(child)) return child.text;
+  if (ts.isJsxExpression(child) && child.expression) {
+    const value = unwrapExpression(child.expression);
+    if (
+      ts.isStringLiteral(value) ||
+      ts.isNoSubstitutionTemplateLiteral(value)
+    ) {
+      return value.text;
+    }
+  }
+  return null;
+}
+
+/**
+ * A JSX child that renders nothing between its neighbours — whitespace, the
+ * `{" "}` spacer Prettier writes when it wraps `{x} USD`, an empty
+ * `{/* … *\/}` — and so cannot unglue a symbol from a value.
+ */
+function isTransparentChild(child: ts.Node): boolean {
+  if (ts.isJsxExpression(child) && !child.expression) return true;
+  const text = jsxChildText(child);
+  return text !== null && text.trim() === "";
+}
+
+/** The nearest child before (`step` -1) or after (+1) `children[at]` that renders something. */
+function jsxNeighbour(
+  children: readonly ts.Node[],
+  at: number,
+  step: 1 | -1
+): ts.Node | undefined {
+  for (let i = at + step; i >= 0 && i < children.length; i += step) {
+    const child = children[i];
+    if (child !== undefined && !isTransparentChild(child)) return child;
+  }
+  return undefined;
+}
+
+/** `{currency}`, `{row.currencyCode}` — a JSX child that holds a currency CODE value. */
+function currencyCodeChild(child: ts.Node): string | null {
+  if (!ts.isJsxExpression(child) || !child.expression) return null;
+  const value = unwrapExpression(child.expression);
+  const name = ts.isIdentifier(value)
+    ? value.text
+    : ts.isPropertyAccessExpression(value)
+      ? value.name.text
+      : null;
+  return name !== null && isCurrencyCodeName(name) ? name : null;
+}
+
+/**
  * A computed value among JSX children: an element, or an expression that is
  * not a plain string (`{"}"}` beside a regex's `$` anchor is text, not a
  * figure). An element holding nothing but a currency symbol is the symbol,
@@ -274,21 +350,21 @@ function isJsxValue(sibling: ts.Node | undefined): boolean {
   if (ts.isJsxElement(sibling)) return !isCurrencyOnlyElement(sibling);
   if (!ts.isJsxExpression(sibling)) return true;
   if (!sibling.expression) return false;
-  const value = unwrapExpression(sibling.expression);
-  return !(
-    ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)
-  );
+  return jsxChildText(sibling) === null;
 }
 
-/** `<span>$</span>`, `<small> USD </small>` — an element that is only a currency token. */
+/**
+ * `<span>$</span>`, `<small> USD </small>`, `<small>{currency}</small>` — an
+ * element that is only a currency token.
+ */
 function isCurrencyOnlyElement(node: ts.JsxElement): boolean {
-  const children = node.children.filter(
-    (child) => !(ts.isJsxText(child) && child.text.trim() === "")
-  );
+  const children = node.children.filter((child) => !isTransparentChild(child));
   const only = children.length === 1 ? children[0] : undefined;
-  return (
-    only !== undefined && ts.isJsxText(only) && CURRENCY_ONLY.test(only.text)
-  );
+  if (only === undefined) return false;
+  const text = jsxChildText(only);
+  return text !== null
+    ? CURRENCY_ONLY.test(text)
+    : currencyCodeChild(only) !== null;
 }
 
 /** `x`, `(x)`, `x as const`, `x satisfies T`, `x!` — down to `x`. */
@@ -435,30 +511,84 @@ function specifierName(specifier: string): string {
   return last.replace(/\.(tsx?|jsx?)$/, "");
 }
 
-/** Every violation in one module's source. */
-export function scanSource(
-  file: string,
-  text: string,
-  context: ScanContext = NO_CONTEXT
-): CostRenderViolation[] {
-  const source = ts.createSourceFile(
+const NO_FORMATTERS: ReadonlySet<string> = new Set();
+
+/** A module's text, parsed the way every scan reads it. */
+function parseModule(file: string, text: string): ts.SourceFile {
+  return ts.createSourceFile(
     file,
     text,
     ts.ScriptTarget.Latest,
     true,
     file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   );
+}
+
+/** Every violation in one module's source. */
+export function scanSource(
+  file: string,
+  text: string,
+  context: ScanContext = NO_CONTEXT
+): CostRenderViolation[] {
+  return scanParsed(file, parseModule(file, text), context);
+}
+
+/** {@link scanSource} over a module already parsed. */
+export function scanParsed(
+  file: string,
+  source: ts.SourceFile,
+  context: ScanContext = NO_CONTEXT
+): CostRenderViolation[] {
+  const text = source.text;
   const formatAliases = numberFormatAliases(source);
   const out: CostRenderViolation[] = [];
-  const flag = (node: ts.Node, rule: CostRule, detail: string) =>
+  const flag = (node: ts.Node, rule: CostRule, detail: string) => {
+    const start = node.getStart(source);
     out.push({
       file,
-      line:
-        source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+      line: source.getLineAndCharacterOfPosition(start).line + 1,
+      start,
       rule,
       detail,
     });
+  };
   const costFigures = sanctionedCostFigureNames(source);
+  const formattersOf = (module: string | null): ReadonlySet<string> =>
+    (module === null ? undefined : context.formatters.get(module)) ??
+    NO_FORMATTERS;
+  const listed = (names: Iterable<string>) =>
+    [...names].map((n) => `\`${n}\``).join(", ");
+
+  // A namespace import of a module that exports a currency formatter is
+  // checked where it is READ (`ns.formatCurrency`), so collect them first:
+  // an import may sit below the code that uses it.
+  const namespaceFormatters = new Map<
+    string,
+    { readonly module: string; readonly names: ReadonlySet<string> }
+  >();
+  for (const statement of source.statements) {
+    const bindings = ts.isImportDeclaration(statement)
+      ? statement.importClause?.namedBindings
+      : undefined;
+    if (
+      !ts.isImportDeclaration(statement) ||
+      statement.importClause?.isTypeOnly ||
+      !bindings ||
+      !ts.isNamespaceImport(bindings) ||
+      !ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      continue;
+    }
+    const origin = resolveSrcModule(
+      file,
+      statement.moduleSpecifier.text,
+      context.modules
+    );
+    const names = formattersOf(origin);
+    if (origin !== null && names.size > 0) {
+      namespaceFormatters.set(bindings.name.text, { module: origin, names });
+    }
+  }
 
   const checkModuleSpecifiers = (
     node: ts.ImportDeclaration | ts.ExportDeclaration
@@ -518,19 +648,45 @@ export function scanSource(
         );
       }
     }
-    // A default import is named by its module: `import fmt from "…/formatUsd"`.
+    // A default import is a currency formatter by what its module exports as
+    // `default`, or is named by its module: `import fmt from "…/formatUsd"`.
+    if (clause?.name && !typeOnly && specifier !== null) {
+      if (formattersOf(resolved).has(DEFAULT_EXPORT)) {
+        flag(
+          clause.name,
+          "money-value",
+          `the default export of ${resolved}, a currency formatter, under any name`
+        );
+      } else if (!sanctioned && isMoneyName(specifierName(specifier))) {
+        flag(
+          clause.name,
+          "money-value",
+          `the default export of a money-named module \`${specifier}\``
+        );
+      }
+    }
+    // `export * from` passes on every formatter but the default;
+    // `export * as ns from` passes on the module whole.
     if (
-      clause?.name &&
-      !typeOnly &&
+      ts.isExportDeclaration(node) &&
       specifier !== null &&
-      !sanctioned &&
-      isMoneyName(specifierName(specifier))
+      !typeOnly &&
+      (node.exportClause === undefined ||
+        ts.isNamespaceExport(node.exportClause))
     ) {
-      flag(
-        clause.name,
-        "money-value",
-        `the default export of a money-named module \`${specifier}\``
+      const exportClause = node.exportClause;
+      const names = [...formattersOf(resolved)].filter(
+        (name) => exportClause !== undefined || name !== DEFAULT_EXPORT
       );
+      if (names.length > 0) {
+        flag(
+          node,
+          "money-value",
+          exportClause === undefined
+            ? `re-exports every export of ${resolved}, among them the currency formatter(s) ${listed(names)}`
+            : `re-exports ${resolved} whole as \`${exportClause.name.text}\`, with its currency formatter(s) ${listed(names)}`
+        );
+      }
     }
   };
 
@@ -669,42 +825,49 @@ export function scanSource(
         );
       }
     }
-    if (ts.isJsxText(node)) {
-      const siblings = (node.parent as ts.JsxElement | ts.JsxFragment).children;
-      const at = siblings.indexOf(node);
-      const isValue = isJsxValue;
-      if (CURRENCY_AT_END.test(node.text) && isValue(siblings[at + 1])) {
-        flag(
-          node,
-          "glued-symbol",
-          "a currency symbol or code glued to a JSX value"
-        );
-      }
-      if (CURRENCY_AT_START.test(node.text) && isValue(siblings[at - 1])) {
-        flag(
-          node,
-          "glued-symbol",
-          "a currency symbol or code glued after a JSX value"
-        );
-      }
-    }
-    if (ts.isJsxElement(node) && isCurrencyOnlyElement(node)) {
-      // `<span>$</span>{x}` and `{x}<small>USD</small>`: the symbol in its own
-      // element is glued to the value beside it as surely as JSX text is.
-      const parent = node.parent;
-      if (ts.isJsxElement(parent) || ts.isJsxFragment(parent)) {
-        const siblings = parent.children.filter(
-          (child) => !(ts.isJsxText(child) && child.text.trim() === "")
-        );
-        const at = siblings.indexOf(node);
-        if (isJsxValue(siblings[at - 1]) || isJsxValue(siblings[at + 1])) {
+    if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
+      // What renders beside what: a symbol or code is glued to the nearest
+      // child on its side that renders anything, whatever whitespace or
+      // `{" "}` spacer lies between.
+      const children = node.children;
+      children.forEach((child, at) => {
+        const before = jsxNeighbour(children, at, -1);
+        const after = jsxNeighbour(children, at, 1);
+        const childText = jsxChildText(child);
+        if (childText !== null) {
+          if (CURRENCY_AT_END.test(childText) && isJsxValue(after)) {
+            flag(
+              child,
+              "glued-symbol",
+              "a currency symbol or code glued to a JSX value"
+            );
+          }
+          if (CURRENCY_AT_START.test(childText) && isJsxValue(before)) {
+            flag(
+              child,
+              "glued-symbol",
+              "a currency symbol or code glued after a JSX value"
+            );
+          }
+          return;
+        }
+        // `<span>$</span>{x}`, `{x}<small>USD</small>`: the symbol in its
+        // own element is glued to the value beside it as surely as JSX text
+        // is — and so is a currency CODE value, `{x} {row.currency}`.
+        const code = currencyCodeChild(child);
+        const token =
+          code !== null ||
+          (ts.isJsxElement(child) && isCurrencyOnlyElement(child));
+        if (token && (isJsxValue(before) || isJsxValue(after))) {
           flag(
-            node,
+            child,
             "glued-symbol",
-            "a currency symbol or code in its own element, beside a JSX value"
+            code !== null
+              ? `a currency code \`${code}\` beside a JSX value`
+              : "a currency symbol or code in its own element, beside a JSX value"
           );
         }
-      }
+      });
     }
     if (
       ts.isJsxExpression(node) &&
@@ -764,6 +927,37 @@ export function scanSource(
         flag(node, "money-value", `a money key ${JSON.stringify(value)}`);
       }
     }
+    const namespace = ts.isIdentifier(node)
+      ? namespaceFormatters.get(node.text)
+      : undefined;
+    if (namespace !== undefined && ts.isIdentifier(node) && isRead(node)) {
+      const read = namespaceReadsAny(node, namespace.names);
+      if (read?.kind === "formatter") {
+        flag(
+          node,
+          "money-value",
+          `the currency formatter \`${read.name}\` (${namespace.module}), read through the namespace \`${node.text}\``
+        );
+      } else if (read?.kind === "escape") {
+        flag(
+          node,
+          "money-value",
+          `the namespace \`${node.text}\` of ${namespace.module}, which exports the currency formatter(s) ${listed(namespace.names)}, ${read.how}`
+        );
+      }
+    }
+    const loaded = loadedSpecifier(node);
+    if (loaded !== undefined) {
+      const origin = resolveSrcModule(file, loaded, context.modules);
+      const names = formattersOf(origin);
+      if (names.size > 0) {
+        flag(
+          node,
+          "money-value",
+          `loads ${origin}, which exports the currency formatter(s) ${listed(names)}`
+        );
+      }
+    }
     if (
       ts.isIdentifier(node) &&
       isMoneyName(node.text) &&
@@ -800,12 +994,6 @@ function modulesUnder(dir: string, out: string[] = []): string[] {
   }
   return out;
 }
-
-/** Static imports and re-exports, then dynamic `import("…")` (`next/dynamic`). */
-const IMPORT_SPECIFIERS = [
-  /(?:^|\n)\s*(?:import|export)\s[^;]*?from\s+["']([^"']+)["']/g,
-  /\bimport\(\s*["']([^"']+)["']\s*\)/g,
-];
 
 /**
  * The `src/`-relative MODULE an import names, when it is an `app/` or
@@ -881,10 +1069,22 @@ function srcModules(): string[] {
 }
 
 /**
+ * Where a parsed module formats money itself: the start of each currency
+ * format or glued symbol this scan's own rules find in it — what
+ * `currencyFormatters.ts` classifies a binding by.
+ */
+export function moneyFormatsAt(file: string, source: ts.SourceFile): number[] {
+  return scanParsed(file, source)
+    .filter((v) => v.rule === "currency-format" || v.rule === "glued-symbol")
+    .map((v) => v.start);
+}
+
+/**
  * The scan's knowledge of the rest of `src/`: every module, and every
- * exported currency formatter among them (`currencyFormatters.ts`), judged by
+ * module's currency-formatter exports (`currencyFormatters.ts`), judged by
  * this scan's own currency-format and glued-symbol rules. `CostFigure.tsx` is
- * not classified: importing it is the sanctioned route.
+ * declared rather than read: importing `CostFigure` from it is the sanctioned
+ * route, and its one formatter export is the raw `formatCostAmount`.
  */
 export function discoverContext(
   modules: readonly string[] = srcModules()
@@ -892,11 +1092,8 @@ export function discoverContext(
   const formatters = discoverCurrencyFormatters({
     modules,
     read: sourceOf,
-    exclude: new Set([COST_HOME]),
-    formatsMoney: (snippet, file) =>
-      scanSource(file, snippet).some(
-        (v) => v.rule === "currency-format" || v.rule === "glued-symbol"
-      ),
+    declared: new Map([[COST_HOME, new Set([COST_FORMATTER])]]),
+    moneyFormatsAt,
   });
   return { formatters, modules: new Set(modules) };
 }
@@ -920,13 +1117,11 @@ export function discoverScope(): CostScanScope {
   const queue = [...scanned];
   while (queue.length > 0) {
     const file = queue.pop()!;
-    for (const pattern of IMPORT_SPECIFIERS) {
-      for (const match of sourceOf(file).matchAll(pattern)) {
-        const target = importedModule(file, match[1], known);
-        if (target && !scanned.has(target)) {
-          scanned.add(target);
-          queue.push(target);
-        }
+    for (const specifier of moduleSpecifiers(sourceOf(file))) {
+      const target = importedModule(file, specifier, known);
+      if (target && !scanned.has(target)) {
+        scanned.add(target);
+        queue.push(target);
       }
     }
   }

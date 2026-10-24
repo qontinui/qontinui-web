@@ -27,13 +27,19 @@ import {
   describeCostViolation,
   discoverScope,
   isMoneyName,
+  moneyFormatsAt,
   scanLensTrees,
   scanSource,
   sourceOf,
   type CostRule,
   type ScanContext,
 } from "@/test/costRenderScan";
-import { discoverCurrencyFormatters } from "@/test/currencyFormatters";
+import {
+  DEFAULT_EXPORT,
+  discoverCurrencyFormatters,
+  resolveSrcModule,
+  type CurrencyFormatters,
+} from "@/test/currencyFormatters";
 
 const scope = discoverScope();
 
@@ -146,9 +152,49 @@ describe("no lens surface renders money outside CostFigure", () => {
       "<span>{fmt(fleet.amount, currency)}</span>",
     ],
     [
+      "that formatter imported the way the repo imports it, through its barrel",
+      'import { formatCurrency } from "@/data/model-costs";\n',
+      "<span>{formatCurrency(fleet.amount, currency)}</span>",
+    ],
+    [
+      "that formatter through its barrel, under another name",
+      'import { formatCurrency as fmt } from "@/data/model-costs";\n',
+      "<span>{fmt(fleet.amount, currency)}</span>",
+    ],
+    [
+      "that formatter read through a namespace import of its module",
+      'import * as calc from "@/data/model-costs/calc";\n',
+      "<span>{calc.formatCurrency(fleet.amount, currency)}</span>",
+    ],
+    [
+      "that formatter read through a namespace import of its barrel",
+      'import * as costs from "@/data/model-costs";\n',
+      "<span>{costs.formatCurrency(fleet.amount, currency)}</span>",
+    ],
+    [
+      "its module loaded with import()",
+      'const costs = import("@/data/model-costs");\n',
+      "<span>{String(costs)}</span>",
+    ],
+    [
       "a symbol in an element of its own, beside the figure",
       "",
       '<span><span className="unit">$</span>{fleet.amount}</span>',
+    ],
+    [
+      'a code after the {" "} spacer Prettier writes',
+      "",
+      '<span>{fleet.amount}{" "}USD</span>',
+    ],
+    [
+      "a code after the spacer, in Prettier's wrapped form",
+      "",
+      '<span>\n  {fleet.amount}{" "}\n  USD\n</span>',
+    ],
+    [
+      "a currency code value beside the figure",
+      "",
+      "<span>{fleet.amount} {fleet.currency}</span>",
     ],
   ])("goes red on a real lens page with %s", (_name, imports, render) => {
     const page = "app/(app)/admin/coord/devops/page.tsx";
@@ -162,47 +208,107 @@ describe("no lens surface renders money outside CostFigure", () => {
   });
 });
 
+/** Classify a synthetic tree the way `discoverContext` classifies the real one. */
+function classify(
+  files: Record<string, string>,
+  declared?: CurrencyFormatters
+): { formatters: CurrencyFormatters; context: ScanContext } {
+  const formatters = discoverCurrencyFormatters({
+    modules: Object.keys(files),
+    read: (f) => files[f] ?? "",
+    moneyFormatsAt,
+    declared,
+  });
+  return {
+    formatters,
+    context: { formatters, modules: new Set(Object.keys(files)) },
+  };
+}
+
+function exportsOf(formatters: CurrencyFormatters, file: string): string[] {
+  return [...(formatters.get(file) ?? [])].sort();
+}
+
+/** A data module holding one currency formatter and one count formatter. */
+const MONEY_MODULE =
+  'export function formatCurrency(a: number, c: string) { return new Intl.NumberFormat("en", { style: "currency", currency: c }).format(a); }\n' +
+  "export function formatCount(n: number) { return String(n); }";
+/** A module that formats no money. */
+const PLAIN_MODULE = "export const label = (n: number) => `${n} runs`;";
+
+/** One module of every shape a formatter can be exported or reached by. */
+const SHAPES: Record<string, string> = {
+  "data/money/fmt.ts": MONEY_MODULE,
+  "lib/named.ts": 'export { formatCurrency } from "@/data/money/fmt";',
+  "lib/renamed.ts":
+    'export { formatCurrency as asText } from "@/data/money/fmt";',
+  "lib/star.ts": 'export * from "@/data/money/fmt";',
+  "lib/starNs.ts": 'export * as fmt from "@/data/money/fmt";',
+  "lib/passedOn.ts":
+    'import { formatCurrency } from "@/data/money/fmt";\nexport { formatCurrency };',
+  "lib/listed.ts":
+    "function glue(n: number) { return `$${n}`; }\nexport { glue as formatAmount };",
+  "lib/defaultFn.ts":
+    'export default function fmt(n: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n); }',
+  "lib/defaultName.ts":
+    "const glue = (n: number) => `${n} USD`;\nexport default glue;",
+  "lib/defaultAnon.ts": "export default (n: number) => `€${n}`;",
+  "lib/instance.ts":
+    'export const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });',
+  "lib/viaInstance.ts":
+    'const nf = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });\n' +
+    "export function formatUsd(n: number) { return nf.format(n); }",
+  "lib/viaNamespace.ts":
+    'import * as m from "@/data/money/fmt";\n' +
+    'export const wrap = (n: number) => m.formatCurrency(n, "USD");\n' +
+    "export const count = (n: number) => m.formatCount(n);",
+  "lib/viaDefault.ts":
+    'import fmt from "@/lib/defaultFn";\nexport const twice = (n: number) => fmt(n) + fmt(n);',
+  "lib/viaLoad.ts":
+    'export async function later(n: number) { const m = await import("@/data/money/fmt"); return m.formatCurrency(n, "USD"); }',
+  "lib/notMoney.ts":
+    'export { formatCount } from "@/data/money/fmt";\nexport * from "@/lib/plain";',
+  "lib/plain.ts": PLAIN_MODULE,
+};
+
 describe("currency formatters are found by what they do, anywhere under src/", () => {
-  it("finds the repo's own formatter outside the scanned folders", () => {
+  it("finds the repo's own formatter outside the scanned folders, and through its barrel", () => {
     expect(
       scope.context.formatters
         .get("data/model-costs/calc.ts")
         ?.has("formatCurrency")
     ).toBe(true);
+    // `data/model-costs/index.ts` is `export * from "./calc"` — the path the
+    // repo's own caller imports the formatter by.
+    expect(
+      scope.context.formatters
+        .get("data/model-costs/index.ts")
+        ?.has("formatCurrency")
+    ).toBe(true);
+  });
+
+  it("declares the cost home's raw formatter, and nothing else of it", () => {
+    expect(exportsOf(scope.context.formatters, COST_HOME)).toEqual([
+      "formatCostAmount",
+    ]);
   });
 
   it("classifies a function by its body, and a wrapper of one to a fixed point", () => {
-    const files: Record<string, string> = {
-      "data/money/fmt.ts":
-        'export function formatCurrency(a: number, c: string) { return new Intl.NumberFormat("en", { style: "currency", currency: c }).format(a); }\n' +
-        "export function formatCount(n: number) { return String(n); }",
+    const { formatters, context } = classify({
+      "data/money/fmt.ts": MONEY_MODULE,
       "lib/wrap.ts":
         'import { formatCurrency as base } from "@/data/money/fmt";\n' +
         'export const formatAmount = (n: number) => base(n, "USD");',
       "lib/glued.ts": "export const dollars = (n: number) => `$${n}`;",
-      "lib/plain.ts": "export const label = (n: number) => `${n} runs`;",
-    };
-    const formatters = discoverCurrencyFormatters({
-      modules: Object.keys(files),
-      read: (f) => files[f],
-      formatsMoney: (snippet, file) =>
-        scanSource(file, snippet).some(
-          (v) => v.rule === "currency-format" || v.rule === "glued-symbol"
-        ),
+      "lib/plain.ts": PLAIN_MODULE,
     });
-    expect([...(formatters.get("data/money/fmt.ts") ?? [])]).toEqual([
+    expect(exportsOf(formatters, "data/money/fmt.ts")).toEqual([
       "formatCurrency",
     ]);
-    expect([...(formatters.get("lib/wrap.ts") ?? [])]).toEqual([
-      "formatAmount",
-    ]);
-    expect([...(formatters.get("lib/glued.ts") ?? [])]).toEqual(["dollars"]);
+    expect(exportsOf(formatters, "lib/wrap.ts")).toEqual(["formatAmount"]);
+    expect(exportsOf(formatters, "lib/glued.ts")).toEqual(["dollars"]);
     expect(formatters.has("lib/plain.ts")).toBe(false);
 
-    const context: ScanContext = {
-      formatters,
-      modules: new Set(Object.keys(files)),
-    };
     for (const lens of [
       'import { formatAmount } from "@/lib/wrap";\n<b>{formatAmount(x)}</b>',
       'import { formatAmount as f } from "../../../lib/wrap";\n<b>{f(x)}</b>',
@@ -218,6 +324,134 @@ describe("currency formatters are found by what they do, anywhere under src/", (
         context
       )
     ).toEqual([]);
+  });
+
+  it("classifies every name a module exports one under", () => {
+    const { formatters } = classify(SHAPES);
+    const expected: Record<string, string[]> = {
+      "lib/named.ts": ["formatCurrency"],
+      "lib/renamed.ts": ["asText"],
+      "lib/star.ts": ["formatCurrency"],
+      "lib/starNs.ts": ["fmt"],
+      "lib/passedOn.ts": ["formatCurrency"],
+      "lib/listed.ts": ["formatAmount"],
+      "lib/defaultFn.ts": [DEFAULT_EXPORT],
+      "lib/defaultName.ts": [DEFAULT_EXPORT],
+      "lib/defaultAnon.ts": [DEFAULT_EXPORT],
+      "lib/instance.ts": ["usd"],
+      "lib/viaInstance.ts": ["formatUsd"],
+      "lib/viaNamespace.ts": ["wrap"],
+      "lib/viaDefault.ts": ["twice"],
+      "lib/viaLoad.ts": ["later"],
+    };
+    for (const [file, names] of Object.entries(expected)) {
+      expect(exportsOf(formatters, file), file).toEqual(names);
+    }
+    // A module passing on only what formats no money exports no formatter.
+    expect(formatters.has("lib/notMoney.ts")).toBe(false);
+    expect(formatters.has("lib/plain.ts")).toBe(false);
+  });
+
+  it("makes a wrapper of the cost home's raw formatter a formatter, but not CostFigure", () => {
+    const { formatters } = classify(
+      {
+        [COST_HOME]:
+          "export function formatCostAmount(n: number) { return n.toFixed(2); }\n" +
+          "export function CostFigure() { return null; }",
+        "lib/costText.ts":
+          'import { formatCostAmount } from "@/components/presentation/CostFigure";\n' +
+          "export const costText = (n: number) => formatCostAmount(n);",
+        "lib/figure.ts":
+          'import { CostFigure } from "@/components/presentation/CostFigure";\n' +
+          "export const Figure = CostFigure;",
+      },
+      new Map([[COST_HOME, new Set(["formatCostAmount"])]])
+    );
+    expect(exportsOf(formatters, "lib/costText.ts")).toEqual(["costText"]);
+    expect(formatters.has("lib/figure.ts")).toBe(false);
+  });
+});
+
+describe("module resolution, without touching the disk", () => {
+  it("resolves an alias, a relative path, an index, a trailing slash and the @cloud mirror", () => {
+    const known = new Set([
+      "lib/a.ts",
+      "lib/runner-client/index.ts",
+      "cloud-absent/nav-items.ts",
+    ]);
+    expect(resolveSrcModule("app/x/page.tsx", "@/lib/a", known)).toBe(
+      "lib/a.ts"
+    );
+    expect(resolveSrcModule("app/x/page.tsx", "../../lib/a", known)).toBe(
+      "lib/a.ts"
+    );
+    // `lib/runner-client.ts` re-exports `"./runner-client/"`; an alias with a
+    // trailing slash names the same index.
+    expect(
+      resolveSrcModule("lib/runner-client.ts", "./runner-client/", known)
+    ).toBe("lib/runner-client/index.ts");
+    expect(
+      resolveSrcModule("app/x/page.tsx", "@/lib/runner-client/", known)
+    ).toBe("lib/runner-client/index.ts");
+    // `@cloud/*` is the OSS mirror under src/ (the composed overlay is not).
+    expect(resolveSrcModule("app/x/page.tsx", "@cloud/nav-items", known)).toBe(
+      "cloud-absent/nav-items.ts"
+    );
+    expect(resolveSrcModule("app/x/page.tsx", "react", known)).toBeNull();
+    expect(resolveSrcModule("app/x/page.tsx", "@/lib/none", known)).toBeNull();
+  });
+});
+
+describe("a lens module reaching a currency formatter, every way it can", () => {
+  const { context } = classify(SHAPES);
+  const rulesOf = (source: string) =>
+    scanSource("app/(app)/x/page.tsx", source, context).map((v) => v.rule);
+  /** What the classifier's own rules found: nothing here is money-NAMED. */
+  const formatterFindings = (source: string) =>
+    scanSource("app/(app)/x/page.tsx", source, context).filter(
+      (v) => v.rule === "money-value" && v.detail.includes("currency formatter")
+    );
+
+  it.each<string>([
+    'import { formatCurrency } from "@/lib/named";\n<b>{formatCurrency(x, c)}</b>',
+    'import { asText as m } from "@/lib/renamed";\n<b>{m(x, c)}</b>',
+    'import { formatCurrency } from "@/lib/star";\n<b>{formatCurrency(x, c)}</b>',
+    'import { fmt } from "@/lib/starNs";\n<b>{fmt.formatCurrency(x, c)}</b>',
+    'import { formatCurrency } from "@/lib/passedOn";\n<b>{formatCurrency(x, c)}</b>',
+    'import { formatAmount } from "@/lib/listed";\n<b>{formatAmount(x)}</b>',
+    'import fmt from "@/lib/defaultFn";\n<b>{fmt(x)}</b>',
+    'import formatAmount from "@/lib/defaultFn";\n<b>{formatAmount(x)}</b>',
+    'import glue from "@/lib/defaultName";\n<b>{glue(x)}</b>',
+    'import anything from "@/lib/defaultAnon";\n<b>{anything(x)}</b>',
+    'import { usd } from "@/lib/instance";\n<b>{usd.format(x)}</b>',
+    'import { formatUsd } from "@/lib/viaInstance";\n<b>{formatUsd(x)}</b>',
+    'import * as m from "@/data/money/fmt";\n<b>{m.formatCurrency(x, c)}</b>',
+    'import * as m from "@/lib/star";\n<b>{m.formatCurrency(x, c)}</b>',
+    'import * as m from "@/data/money/fmt";\n<b>{m["formatCurrency"](x, c)}</b>',
+    'import * as m from "@/data/money/fmt";\nconst { formatCurrency: f } = m;\nconst el = <b>{f(x, c)}</b>;',
+    'import * as m from "@/data/money/fmt";\nconst { ...all } = m;',
+    'import * as m from "@/data/money/fmt";\n<b>{m[key](x, c)}</b>',
+    'import * as m from "@/data/money/fmt";\nrender(m);',
+    'export * from "@/lib/star";',
+    'export * as amounts from "@/data/money/fmt";',
+    'export { formatCurrency as f } from "@/lib/star";',
+    'const m = await import("@/lib/star");',
+    'const Lazy = dynamic(() => import("@/data/money/fmt"));',
+  ])("fails %s", (source) => {
+    expect(formatterFindings(source)).not.toEqual([]);
+  });
+
+  it.each<string>([
+    'import { formatCount } from "@/data/money/fmt";\n<b>{formatCount(x)}</b>',
+    'import * as m from "@/data/money/fmt";\n<b>{m.formatCount(x)}</b>',
+    'import * as m from "@/data/money/fmt";\nconst { formatCount } = m;',
+    'import * as plain from "@/lib/plain";\nrender(plain);',
+    'export * from "@/lib/plain";',
+    'export { formatCount } from "@/lib/star";',
+    'const m = await import("@/lib/plain");',
+    'import { count } from "@/lib/viaNamespace";\n<b>{count(x)}</b>',
+  ])("passes %s", (source) => {
+    expect(rulesOf(source)).toEqual([]);
   });
 });
 
@@ -433,6 +667,42 @@ describe("each rule catches the shape it names", () => {
       "glued-symbol",
     ],
     ["a cent sign after a value", "<span>{x}¢</span>", "glued-symbol"],
+    [
+      'a code after the {" "} spacer Prettier writes',
+      '<span>{x}{" "}USD</span>',
+      "glued-symbol",
+    ],
+    [
+      "a code after the spacer, in Prettier's wrapped form",
+      '<span>\n  {x}{" "}\n  USD\n</span>',
+      "glued-symbol",
+    ],
+    ["a symbol before a spacer", '<span>${" "}{x}</span>', "glued-symbol"],
+    [
+      "a code after an empty comment child",
+      "<span>{x}{/* per run */}USD</span>",
+      "glued-symbol",
+    ],
+    [
+      "a symbol in a string child",
+      '<span>{"Total: $"}{x}</span>',
+      "glued-symbol",
+    ],
+    [
+      "a currency code value after a value",
+      "<td>{row.total} {row.currency}</td>",
+      "glued-symbol",
+    ],
+    [
+      "a currency code value before a value",
+      "<td>{currencyCode} {amount}</td>",
+      "glued-symbol",
+    ],
+    [
+      "a currency code value in an element of its own",
+      "<td>{row.total}<small>{row.currency}</small></td>",
+      "glued-symbol",
+    ],
     ["a figure with no leading digit", 'const s = "$.50";', "literal-figure"],
     [
       "a figure with the symbol after it",
@@ -518,6 +788,8 @@ describe("and passes what is not a money render", () => {
     ["a regex back-reference", 'const s = name.replace(/(a)/, "$1");'],
     ["a template with no symbol", "const s = `${count} sessions`;"],
     ["percent", "<b>{percent}%</b>"],
+    ["a currency code shown on its own", "<p>Currency: {currency}</p>"],
+    ["a spacer between a count and its noun", '<p>{count}{" "}sessions</p>'],
   ])("%s", (_name, source) => {
     expect(rulesIn(source)).toEqual([]);
   });
