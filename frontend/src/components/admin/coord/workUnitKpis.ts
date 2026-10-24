@@ -83,7 +83,12 @@ export function reasonWords(reason: string | null | undefined): string {
   if (reason === null || reason === undefined || reason.trim() === "") {
     return "no reason given";
   }
-  return REASON_WORDS[reason] ?? reason;
+  // Own-key lookup: a bare index would return Object.prototype's function for a
+  // reason such as "constructor", which is not a string and crashes the render.
+  const words = Object.prototype.hasOwnProperty.call(REASON_WORDS, reason)
+    ? REASON_WORDS[reason]
+    : undefined;
+  return words ?? reason;
 }
 
 /** "2 of 3 observed" — how much of the population the figure saw. */

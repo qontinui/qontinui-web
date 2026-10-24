@@ -264,6 +264,18 @@ describe("formatters", () => {
     expect(reasonWords(null)).toBe("no reason given");
     expect(reasonWords("   ")).toBe("no reason given");
   });
+
+  it("keeps a reason that names an Object.prototype member as its raw code", () => {
+    for (const r of [
+      "constructor",
+      "toString",
+      "hasOwnProperty",
+      "__proto__",
+    ]) {
+      expect(reasonWords(r)).toBe(r);
+      expect(describeKpi(unknown(r), formatCount).text).toBe("unknown");
+    }
+  });
 });
 
 describe("not_requested (a single-unit read's aggregates)", () => {

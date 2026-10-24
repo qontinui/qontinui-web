@@ -206,16 +206,19 @@ describe("CoordPlanDetailPage — Delivery KPIs", () => {
 
   it("never renders a figure from aggregates, whatever they hold", async () => {
     const body = payload([unit(SLUG)]);
-    // Sentinels no unit figure produces.
-    body.aggregates.cost_per_shipped_task_microusd_median = kpi(777_000_000);
-    body.aggregates.lead_time_seconds_median = kpi(123_456_789);
-    body.aggregates.land_rate = kpi(0.4242);
+    // Sentinels no unit figure produces. Checked as digit runs, so a leak is
+    // caught however a future tile would format it ("$777.78", "777,777,777",
+    // "31.4%", "0.314", "987,654,321").
+    body.aggregates.cost_per_shipped_task_microusd_median = kpi(777_777_777);
+    body.aggregates.lead_time_seconds_median = kpi(987_654_321);
+    body.aggregates.land_rate = kpi(0.31415);
     route(body);
     render(<CoordPlanDetailPage />);
     await screen.findByTestId("coord-plan-kpis-block");
-    expect(document.body.textContent).not.toMatch(
-      /777\.00|\$777|123,456|3y|0\.4242|42%|1428d/
-    );
+    const digits = (document.body.textContent ?? "").replace(/[^0-9]/g, "");
+    for (const run of ["777", "987654", "31415", "3141", "314"]) {
+      expect(digits).not.toContain(run);
+    }
   });
 
   it("shows unestablished interventions as unknown with the basis in the row, and an all-null split as not reported", async () => {
