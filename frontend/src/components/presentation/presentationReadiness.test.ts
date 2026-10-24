@@ -9,14 +9,16 @@
  *   `PresentationLens`. A lens layout missing from it leaves the app shell
  *   around that tree in operator mode (`PresentationShell` keys on it); an
  *   entry with no lens layout puts the shell in a mode no page shares.
- * - every `PRESENTATION_READY_ROUTES` entry must name a page test that
- *   actually runs `expectPresentationSafe`. Phase 1 registers none; the check
- *   is proven able to fail on fixtures below, so it is not vacuous when a
- *   later phase adds the first.
+ * - every `PRESENTATION_READY_ROUTES` entry must name a page test that runs
+ *   the helper (`expectPresentationSafe`, or `findPresentationViolations`
+ *   under an assertion) AND imports that route's own page module — a test
+ *   that renders some other page, or one panel of it, proves nothing about
+ *   the page the entry un-withholds. Phase 1 registers only the console's
+ *   landing redirect; the check is proven able to fail on fixtures below.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, posix, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   LENS_TREES,
@@ -36,16 +38,20 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
 }
 
-function layoutsUnder(dir: string, out: string[] = []): string[] {
+function filesNamed(name: string, dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
-    if (statSync(path).isDirectory()) layoutsUnder(path, out);
-    else if (entry === "layout.tsx") out.push(path);
+    if (statSync(path).isDirectory()) filesNamed(name, path, out);
+    else if (entry === name) out.push(path);
   }
   return out;
 }
 
-/** A layout's route: its directory under `app/`, route groups dropped. */
+function layoutsUnder(dir: string): string[] {
+  return filesNamed("layout.tsx", dir);
+}
+
+/** A layout's or a page's route: its directory under `app/`, route groups dropped. */
 function routeOfLayout(layout: string): string {
   const segments = relative(APP, dirname(layout))
     .split(sep)
@@ -53,13 +59,49 @@ function routeOfLayout(layout: string): string {
   return `/${segments.join("/")}`;
 }
 
+/** Each app route's page module, `src/`-relative and without its extension. */
+const PAGE_MODULES: ReadonlyMap<string, string> = new Map(
+  filesNamed("page.tsx", APP).map((page) => [
+    routeOfLayout(page),
+    relative(SRC, page)
+      .split(sep)
+      .join("/")
+      .replace(/\.tsx$/, ""),
+  ])
+);
+
+/** The module specifiers `source` imports statically or dynamically. */
+function importedSpecifiers(source: string): string[] {
+  const code = withoutComments(source);
+  return [
+    ...code.matchAll(/\bimport\s+(?:[^"';]*?\sfrom\s+)?["']([^"']+)["']/g),
+    ...code.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g),
+  ].map((m) => m[1]);
+}
+
+/** `specifier`, imported from the `src/`-relative `from`, as a `src/`-relative module path. */
+function resolvedModule(specifier: string, from: string): string | null {
+  const bare = specifier.replace(/\.(tsx?|jsx?)$/, "");
+  if (bare.startsWith("@/")) return posix.normalize(bare.slice(2));
+  if (bare.startsWith("./") || bare.startsWith("../")) {
+    return posix.normalize(posix.join(posix.dirname(from), bare));
+  }
+  return null;
+}
+
+/** A call of the helper's: the assertion, or the finder under an assertion. */
+const HELPER_CALL = /\b(?:expectPresentationSafe|findPresentationViolations)\(/;
+
 /**
  * Why `entry` is not a proven ready route; empty when it is. `read` returns a
- * `src/`-relative file's text, or `null` when there is no such file.
+ * `src/`-relative file's text, or `null` when there is no such file; `pageOf`
+ * the route's `src/`-relative page module, or `null` when there is none.
  */
 function readyRouteProblems(
   entry: PresentationReadyRoute,
-  read: (srcRelative: string) => string | null
+  read: (srcRelative: string) => string | null,
+  pageOf: (route: string) => string | null = (route) =>
+    PAGE_MODULES.get(route) ?? null
 ): string[] {
   const problems: string[] = [];
   if (!isLensTreePath(entry.route)) {
@@ -72,12 +114,28 @@ function readyRouteProblems(
       `${entry.route}: provenBy ${entry.provenBy} is not a test file`
     );
   }
+  const page = pageOf(entry.route);
+  if (page === null) {
+    problems.push(`${entry.route}: no page module serves this route`);
+  }
   const source = read(entry.provenBy);
   if (source === null) {
     problems.push(`${entry.route}: provenBy ${entry.provenBy} does not exist`);
-  } else if (!/\bexpectPresentationSafe\(/.test(withoutComments(source))) {
+    return problems;
+  }
+  if (!HELPER_CALL.test(withoutComments(source))) {
     problems.push(
       `${entry.route}: ${entry.provenBy} never calls expectPresentationSafe`
+    );
+  }
+  if (
+    page !== null &&
+    !importedSpecifiers(source).some(
+      (specifier) => resolvedModule(specifier, entry.provenBy) === page
+    )
+  ) {
+    problems.push(
+      `${entry.route}: ${entry.provenBy} does not render the page — it never imports ${page}`
     );
   }
   return problems;
@@ -194,18 +252,45 @@ describe("every presentation-ready route is proven", () => {
   });
 
   describe("the proof check itself can fail", () => {
+    const DEVOPS_PAGE = "app/(app)/admin/coord/devops/page";
     const files: Record<string, string> = {
-      "app/ok/page.test.tsx": "expectPresentationSafe(view, {});",
-      "app/commented/page.test.tsx": "// expectPresentationSafe(view);",
-      "app/silent/page.test.tsx": "expect(view).toBeTruthy();",
+      "app/(app)/admin/coord/devops/page.test.tsx":
+        'import DevOpsPage from "./page";\nexpectPresentationSafe(view, {});',
+      "app/(app)/admin/coord/devops/aliased.test.tsx":
+        'import Page from "@/app/(app)/admin/coord/devops/page";\nexpect(findPresentationViolations(view)).toEqual([]);',
+      "app/(app)/admin/coord/devops/panel.test.tsx":
+        'import { HealthPanel } from "./_components/HealthPanel";\nexpectPresentationSafe(view, {});',
+      "app/(app)/admin/coord/devops/other.test.tsx":
+        'import Page from "../spawns/page";\nexpectPresentationSafe(view, {});',
+      "app/(app)/admin/coord/devops/mocked.test.tsx":
+        'vi.mock("./page");\nexpectPresentationSafe(view, {});',
+      "app/(app)/admin/coord/devops/commented.test.tsx":
+        'import DevOpsPage from "./page";\n// expectPresentationSafe(view);',
+      "app/(app)/admin/coord/devops/silent.test.tsx":
+        'import DevOpsPage from "./page";\nexpect(view).toBeTruthy();',
+      // The generic helper suite runs the helper, but over no page at all.
+      "test/presentation.test.tsx": "expectPresentationSafe(view, {});",
     };
     const read = (f: string) => files[f] ?? null;
+    const pageOf = (route: string) =>
+      route === "/admin/coord/devops" ? DEVOPS_PAGE : null;
+    const devops = (provenBy: string): PresentationReadyRoute => ({
+      route: "/admin/coord/devops",
+      provenBy,
+    });
 
-    it("passes a lens route whose test runs the helper", () => {
+    it.each<[string, string]>([
+      ["imports its page and runs the assertion", "page.test.tsx"],
+      [
+        "imports its page by alias and asserts the finder is empty",
+        "aliased.test.tsx",
+      ],
+    ])("passes a lens route whose test %s", (_name, file) => {
       expect(
         readyRouteProblems(
-          { route: "/admin/coord/devops", provenBy: "app/ok/page.test.tsx" },
-          read
+          devops(`app/(app)/admin/coord/devops/${file}`),
+          read,
+          pageOf
         )
       ).toEqual([]);
     });
@@ -213,34 +298,73 @@ describe("every presentation-ready route is proven", () => {
     it.each<[string, PresentationReadyRoute, string]>([
       [
         "a missing test",
-        { route: "/admin/coord/devops", provenBy: "app/none/page.test.tsx" },
+        devops("app/(app)/admin/coord/devops/none.test.tsx"),
         "does not exist",
       ],
       [
         "a test that never runs the helper",
-        { route: "/admin/coord/devops", provenBy: "app/silent/page.test.tsx" },
+        devops("app/(app)/admin/coord/devops/silent.test.tsx"),
         "never calls expectPresentationSafe",
       ],
       [
         "a helper call that is only a comment",
-        {
-          route: "/admin/coord/devops",
-          provenBy: "app/commented/page.test.tsx",
-        },
+        devops("app/(app)/admin/coord/devops/commented.test.tsx"),
         "never calls expectPresentationSafe",
       ],
       [
+        "a test that runs the helper over one panel of the page",
+        devops("app/(app)/admin/coord/devops/panel.test.tsx"),
+        "does not render the page",
+      ],
+      [
+        "a test that renders another route's page",
+        devops("app/(app)/admin/coord/devops/other.test.tsx"),
+        "does not render the page",
+      ],
+      [
+        "a test that only mocks the page",
+        devops("app/(app)/admin/coord/devops/mocked.test.tsx"),
+        "does not render the page",
+      ],
+      [
+        "the helper's own suite, which renders no page",
+        devops("test/presentation.test.tsx"),
+        "does not render the page",
+      ],
+      [
         "a route outside every lens tree",
-        { route: "/settings", provenBy: "app/ok/page.test.tsx" },
+        {
+          route: "/settings",
+          provenBy: "app/(app)/admin/coord/devops/page.test.tsx",
+        },
         "not under a lens tree",
       ],
       [
+        "a route no page serves",
+        {
+          route: "/admin/coord/nowhere",
+          provenBy: "app/(app)/admin/coord/devops/page.test.tsx",
+        },
+        "no page module serves this route",
+      ],
+      [
         "a proof that is not a test",
-        { route: "/admin/coord/devops", provenBy: "app/ok/page.tsx" },
+        devops("app/(app)/admin/coord/devops/page.tsx"),
         "is not a test file",
       ],
     ])("fails %s", (_name, entry, problem) => {
-      expect(readyRouteProblems(entry, read).join("\n")).toContain(problem);
+      expect(readyRouteProblems(entry, read, pageOf).join("\n")).toContain(
+        problem
+      );
+    });
+
+    it("finds the real page modules (the route map is not vacuous)", () => {
+      expect(PAGE_MODULES.get("/admin/coord")).toBe(
+        "app/(app)/admin/coord/page"
+      );
+      expect(PAGE_MODULES.get("/digital-twin")).toBe(
+        "app/(app)/digital-twin/page"
+      );
     });
   });
 });

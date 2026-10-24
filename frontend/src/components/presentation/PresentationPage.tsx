@@ -24,7 +24,6 @@ import { usePathname } from "next/navigation";
 import { Caption } from "./Caption";
 import { lensSurfaceForPath } from "./lensSurfaces";
 import { usePresentationMode } from "./PresentationModeProvider";
-import { PresentationModeToggle } from "./PresentationModeToggle";
 import { isPresentationReady } from "./presentationReadiness";
 
 /** The withheld placeholder's heading. */
@@ -36,18 +35,14 @@ export const WITHHELD_PAGE_TEXT =
 
 export interface PresentationPageProps {
   children: ReactNode;
-  /**
-   * Offer the mode toggle in the withheld placeholder. For a layout whose
-   * header does not carry one — the digital twin's toggle is in its page's
-   * own header, which the placeholder replaces. Default false.
-   */
-  withToggle?: boolean;
 }
 
-export function PresentationPage({
-  children,
-  withToggle = false,
-}: PresentationPageProps) {
+/**
+ * The gate. The layout's own toggle sits OUTSIDE it, never in the page body:
+ * a toggle inside the gate is unmounted by its own press (the body swaps for
+ * the placeholder), dropping keyboard focus and moving the control.
+ */
+export function PresentationPage({ children }: PresentationPageProps) {
   const { presenting } = usePresentationMode();
   const pathname = usePathname() ?? "";
   if (!presenting || isPresentationReady(pathname)) return <>{children}</>;
@@ -65,7 +60,6 @@ export function PresentationPage({
         </p>
         <p className="text-sm text-muted-foreground">{WITHHELD_PAGE_TEXT}</p>
       </div>
-      {withToggle && <PresentationModeToggle />}
     </div>
   );
 }

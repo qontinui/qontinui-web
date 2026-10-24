@@ -40,7 +40,7 @@ vi.mock("./_components/UiBridgePanel", () => ({ UiBridgePanel: () => null }));
 import DigitalTwinPage from "./page";
 
 describe("DigitalTwinPage title — the presentation lens (plan 2026-10-23-console-presentation-spaces)", () => {
-  it("adds why it matters, and the presentation chip, in presentation mode", () => {
+  it("adds why it matters in presentation mode, and leaves the toggle to the layout", () => {
     render(
       <FixedPresentationMode presenting>
         <DigitalTwinPage />
@@ -52,8 +52,9 @@ describe("DigitalTwinPage title — the presentation lens (plan 2026-10-23-conso
     expect(
       document.querySelector('[data-caption-part="why-it-matters"]')
     ).not.toBeNull();
-    expect(screen.getByTestId("presentation-mode-chip")).toHaveTextContent(
-      "Presentation mode"
-    );
+    // The toggle is the layout's, outside the gate this page sits behind: a
+    // toggle in here would be unmounted by its own press.
+    expect(screen.queryByTestId("presentation-mode-chip")).toBeNull();
+    expect(screen.queryByTestId("presentation-mode-toggle")).toBeNull();
   });
 });

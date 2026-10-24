@@ -55,10 +55,15 @@ export const LENS_TREES: readonly string[] = ["/admin/coord", "/digital-twin"];
 
 /**
  * The lens pages proven safe to render in presentation mode. Phase 1 builds
- * the lens and converts no page: every lens page is withheld until the phase
- * that adopts it (plan Phases 2 and 4–8) registers it here with its test.
+ * the lens and converts no surface: every lens surface is withheld until the
+ * phase that adopts it (plan Phases 2 and 4–8) registers it here with its
+ * test. The one page Phase 1 registers is the console's landing redirect,
+ * which shows one sentence: withheld, it would never mount and so never
+ * redirect, and every presenting tab sent to `/admin/coord` would stop there.
  */
-export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [];
+export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
+  { route: "/admin/coord", provenBy: "app/(app)/admin/coord/page.test.tsx" },
+];
 
 /** `pathname` without its query, hash and trailing slash. */
 export function normalizePath(pathname: string): string {

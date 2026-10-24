@@ -9,7 +9,10 @@
  * both the banner's alerts read and the lens's scope read go through) and the
  * router's search params. The file imports nothing the phase added, so
  * without the phase it fails on its assertions, not on an import — which is
- * what lets `arming-record.sh prove` observe it.
+ * what lets `arming-record.sh prove` observe it. (The REAL header row and the
+ * landing redirect, in presentation mode, are
+ * `layout.presentation-chrome.population.test.tsx`'s, which may import the
+ * phase's helpers.)
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
@@ -155,9 +158,13 @@ describe("CoordLayout — entered through a console URL", () => {
     // repository is named and the foreign one stays withheld. Asserted
     // before the chip, so a console without the redaction fails HERE.
     await waitFor(() =>
-      expect(container).toHaveTextContent(`${wire.FIRST_PARTY} main is RED`)
+      expect(container).toHaveTextContent(
+        `${wire.FIRST_PARTY}'s main branch is failing its checks`
+      )
     );
-    expect(container).toHaveTextContent("A repository main is RED");
+    expect(container).toHaveTextContent(
+      "A repository's main branch is failing its checks"
+    );
     expect(container.innerHTML).not.toContain("client-org");
     expect(container.innerHTML).not.toContain("deploy");
     expect(wire.urls.some((u) => u.includes("/presentation/scope"))).toBe(true);
@@ -167,7 +174,7 @@ describe("CoordLayout — entered through a console URL", () => {
     // The redacted row names none of its workflows, stale ones included.
     expect(container.innerHTML).not.toContain("lint-portal");
     expect(container).toHaveTextContent(
-      "stale push baseline on 1 workflow, contradicted by newer passing runs"
+      "1 failing check has since passed on a newer run."
     );
     // The claimant is a kind and a machine alias, never an id; coord's run
     // reference is not shown.
