@@ -29,6 +29,11 @@
  * reloads the page: every coord surface — fleet, gates, plans, members, merge
  * queue — must re-fetch in the new project's context, and a reload is the
  * simplest correct way to re-scope all of it at once.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3) it
+ * is the active project's name and nothing else: the switcher's list is the
+ * viewer's OTHER projects — the lens's default confidential terms (D3.3) —
+ * and "New project" creates a tenant, a write in front of an audience (D3.2).
  */
 
 import { useState } from "react";
@@ -48,6 +53,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useTenant } from "@/contexts/tenant-context";
 import { CoordProjectCreateDialog } from "@/components/admin/coord/CoordProjectCreateDialog";
+import { usePresentationMode } from "@/components/presentation";
 
 interface ProjectSelectorProps {
   isCollapsed: boolean;
@@ -55,6 +61,7 @@ interface ProjectSelectorProps {
 
 export function ProjectSelector({ isCollapsed }: ProjectSelectorProps) {
   const { tenants, activeTenantId, setActiveTenantId } = useTenant();
+  const { presenting } = usePresentationMode();
   const [createOpen, setCreateOpen] = useState(false);
 
   const onSwitch = (id: string) => {
@@ -85,6 +92,25 @@ export function ProjectSelector({ isCollapsed }: ProjectSelectorProps) {
         </TooltipTrigger>
         <TooltipContent side="right">Project: {activeName}</TooltipContent>
       </Tooltip>
+    );
+  }
+
+  if (presenting) {
+    return (
+      <div
+        className="flex h-8 min-w-0 items-center gap-1.5 px-2 text-xs text-text-primary"
+        data-ui-bridge-id="coord.tenant-switcher"
+        data-testid="coord-project-presented"
+      >
+        <FolderKanban
+          className="size-3.5 shrink-0 text-text-muted"
+          aria-hidden
+        />
+        <span className="min-w-0 truncate">
+          <span className="sr-only">Active project: </span>
+          {activeName}
+        </span>
+      </div>
     );
   }
 

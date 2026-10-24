@@ -6,6 +6,7 @@ import type {
   OrganizationSwitcherProps,
   SwitcherOrganization,
 } from "@/lib/cloud-component-slots";
+import { OperatorOnly } from "@/components/presentation";
 import { ProjectSelector } from "./ProjectSelector";
 
 type SwitcherOrg = SwitcherOrganization;
@@ -52,8 +53,9 @@ export function SidebarHeader({
   // every authenticated page, so an unguarded throw here reaches the root
   // boundary in `app/layout.tsx` and white-screens all of them, which is
   // the shape of the 2026-08-26 outage.
-  const OrganizationSwitcher =
-    useSlotComponent<OrganizationSwitcherProps>("organizationSwitcher");
+  const OrganizationSwitcher = useSlotComponent<OrganizationSwitcherProps>(
+    "organizationSwitcher"
+  );
 
   return (
     <>
@@ -112,23 +114,26 @@ export function SidebarHeader({
         // then leaves no empty bordered container, which is the same shape
         // the OSS-only build renders. The fallback must be a truthy node —
         // `ErrorBoundary` tests `if (this.props.fallback)`, so `null` falls
-        // through to its full-page error card.
-        <ErrorBoundary fallback={<></>}>
-          <div className="px-2 py-1.5 border-b border-border-subtle">
-            {mounted ? (
-              <OrganizationSwitcher
-                organizations={switcherOrganizations}
-                currentOrganization={switcherCurrentOrg}
-                onOrganizationChange={onOrganizationChange}
-                onCreateOrganization={onCreateOrganization}
-                loading={loading}
-                className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
-              />
-            ) : (
-              <div className="h-8 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
-            )}
-          </div>
-        </ErrorBoundary>
+        // through to its full-page error card. In presentation mode it is not
+        // rendered: it lists the viewer's organisations and creates one.
+        <OperatorOnly>
+          <ErrorBoundary fallback={<></>}>
+            <div className="px-2 py-1.5 border-b border-border-subtle">
+              {mounted ? (
+                <OrganizationSwitcher
+                  organizations={switcherOrganizations}
+                  currentOrganization={switcherCurrentOrg}
+                  onOrganizationChange={onOrganizationChange}
+                  onCreateOrganization={onCreateOrganization}
+                  loading={loading}
+                  className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
+                />
+              ) : (
+                <div className="h-8 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
+              )}
+            </div>
+          </ErrorBoundary>
+        </OperatorOnly>
       )}
     </>
   );
