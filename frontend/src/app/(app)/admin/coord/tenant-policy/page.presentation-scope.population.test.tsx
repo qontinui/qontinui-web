@@ -3,11 +3,12 @@
  * `2026-10-23-console-presentation-spaces` D3.3: both lists are tenant data,
  * "editable in operator mode only" — on this page).
  *
- * The REAL console layout and the REAL tenant-policy page, with every panel on
- * it; what is faked is only the network (`httpClient`, which the scope read,
- * the scope save, the red-main banner and the other panels' policy reads all
- * go through) and the router's search params and path. The other panels get a
- * 404 and render their own labelled failure, which is not under test here.
+ * The REAL tenant-policy page, with every panel on it, as an operator sees it
+ * (no presentation lens above it: in operator mode none is needed); what is
+ * faked is only the network (`httpClient`, which the scope read, the scope
+ * save and the other panels' policy reads all go through). The other panels
+ * get a 404 and render their own labelled failure, which is not under test
+ * here.
  * The file imports nothing the phase added, so without the phase it fails on
  * its assertions, not on an import.
  */
@@ -18,9 +19,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
   usePathname: () => window.location.pathname,
-}));
-vi.mock("@/components/admin/coord/CoordNav", () => ({
-  default: () => <nav data-testid="coord-nav" />,
 }));
 
 const wire = vi.hoisted(() => {
@@ -64,7 +62,6 @@ const wire = vi.hoisted(() => {
         }
         return json(record(3, ["Acme Corp"]));
       }
-      if (url.includes("/alerts")) return json([]);
       return new Response("null", { status: 404 });
     },
   };
@@ -77,7 +74,6 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-import CoordLayout from "../layout";
 import TenantPolicyPage from "./page";
 
 beforeEach(() => {
@@ -95,11 +91,7 @@ afterEach(() => {
 
 describe("/admin/coord/tenant-policy — the presentation scope", () => {
   it("lets an admin replace the project's stored presentation scope, seeded from what is stored", async () => {
-    render(
-      <CoordLayout>
-        <TenantPolicyPage />
-      </CoordLayout>
-    );
+    render(<TenantPolicyPage />);
 
     const terms = (await screen.findByTestId(
       "presentation-scope-terms-input"
