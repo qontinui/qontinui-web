@@ -1922,6 +1922,18 @@ trigger and may make it only when every option is view-only. `FilterTabs`,
 entries carry the mark by construction; `HealthStrip` and `StatCluster` carry it only
 where the caller passes `navigationOnly`.
 
+The one exception is **the presenter's own safety controls** — a CLOSED list,
+`PRESENTER_SAFETY_CONTROLS` in `components/console/presenterSafety.ts`, each control
+carrying `presenterSafetyProps(<name>)`: Stop on the "AI co-pilot is active" banner,
+Stop on the UI Bridge recording indicator, and the session-expiry dialog's two
+buttons (continue, sign out). Each acts on THIS screen or THIS presenter's session,
+and taking it away would leave the presenter unable to stop something happening in
+front of the audience, so presentation mode keeps it, and the toggle's title says
+so. Nothing else joins the list by a marker: `expectPresentationSafe` fails a marker
+naming anything the list does not hold. A control that only belongs to the account
+is not a safety control — the co-pilot banner's "Disable for this account" is inside
+`OperatorOnly`, and so are the shell's beta banner and offline sync queue.
+
 **Redaction on.**
 
 - `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title)

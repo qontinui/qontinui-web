@@ -25,6 +25,7 @@
  * | `MachineName`, `useMachineName`, `useMachineAliaser` | "Machine A, B…" — one alias per machine across every panel and page (D3.3) |
  * | `CostFigure` | the only component that may render a per-task cost; never in presentation mode (D3.1) |
  * | `NAVIGATION_ONLY_PROPS` | marks a control whose press only changes what is displayed (D3.2) |
+ * | `presenterSafetyProps`, `PRESENTER_SAFETY_CONTROLS` | marks one of the presenter's own safety controls — the closed list of controls besides navigation that presentation mode keeps live (D3.2) |
  *
  * The test helper that asserts a presentation-mode render is safe —
  * `renderInPresentationMode` / `expectPresentationSafe` — lives in
@@ -226,3 +227,11 @@ export {
   NAVIGATION_ONLY_ATTRIBUTE,
   NAVIGATION_ONLY_PROPS,
 } from "@/components/console/navigationOnly";
+
+export {
+  PRESENTER_SAFETY_ATTRIBUTE,
+  PRESENTER_SAFETY_CONTROLS,
+  isPresenterSafetyControl,
+  presenterSafetyProps,
+} from "@/components/console/presenterSafety";
+export type { PresenterSafetyControl } from "@/components/console/presenterSafety";

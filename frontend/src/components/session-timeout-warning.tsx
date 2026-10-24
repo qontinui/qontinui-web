@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { presenterSafetyProps } from "@/components/console/presenterSafety";
 import { Clock, LogOut } from "lucide-react";
 import { authService } from "@/services/service-factory";
 
@@ -110,8 +111,13 @@ export function SessionTimeoutWarning() {
 
   return (
     <Dialog open={showWarning} onOpenChange={setShowWarning} modal={true}>
+      {/* A decision, not a notice: no corner close button, as outside clicks
+          are already refused. Dismissing it without choosing let the session
+          run out unannounced, and in presentation mode the decision's two
+          buttons are the only controls it may show (`presenterSafety.ts`). */}
       <DialogContent
         className="sm:max-w-md"
+        showCloseButton={false}
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
@@ -132,15 +138,23 @@ export function SessionTimeoutWarning() {
               : `Your session will expire in ${formatTime(timeRemaining)}. Would you like to continue working?`}
           </DialogDescription>
         </DialogHeader>
+        {/* The presenter's own safety controls: presentation mode keeps them
+            live (`presenterSafety.ts`) — a session that expires mid-
+            presentation must still be extendable, or ended. */}
         <DialogFooter className="gap-2">
           {isLoggedOut ? (
-            <Button onClick={handleLogout} className="flex items-center gap-2">
+            <Button
+              {...presenterSafetyProps("session-sign-out")}
+              onClick={handleLogout}
+              className="flex items-center gap-2"
+            >
               <LogOut className="h-4 w-4" />
               Go to Login
             </Button>
           ) : (
             <>
               <Button
+                {...presenterSafetyProps("session-sign-out")}
                 variant="outline"
                 onClick={handleLogout}
                 disabled={isRefreshing}
@@ -150,6 +164,7 @@ export function SessionTimeoutWarning() {
                 Logout
               </Button>
               <Button
+                {...presenterSafetyProps("session-continue")}
                 onClick={handleExtendSession}
                 disabled={isRefreshing}
                 className="flex items-center gap-2"

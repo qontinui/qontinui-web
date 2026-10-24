@@ -28,6 +28,12 @@
  *   because what it opens can write; neither is a `combobox` (the UI kit's
  *   Select trigger), whose list is a choice that can write. Hidden content is
  *   scanned too: a control one click away is still in front of the audience.
+ *   The one other allowance is a presenter safety control
+ *   (`presenterSafetyProps`, `components/console/presenterSafety.ts`) naming
+ *   one of the CLOSED list `PRESENTER_SAFETY_CONTROLS` — stopping the AI
+ *   co-pilot or a recording, and the session-expiry prompt. A marker naming
+ *   anything else is itself a violation, so an exemption cannot be minted at
+ *   a call site.
  * - **(b) a write registration** — a mounted UI Bridge component action, or a
  *   connected element's custom action, whose declared `effect` is `write` or
  *   `destructive`, or that declares NO effect: unclassified is not safe (D3.2:
@@ -72,7 +78,9 @@ import {
   FixedPresentationMode,
   NAVIGATION_ONLY_ATTRIBUTE,
   PRESENTATION_SCOPE_UNKNOWN,
+  PRESENTER_SAFETY_ATTRIBUTE,
   PresentationScopeProvider,
+  isPresenterSafetyControl,
   type CaptionKey,
   type PresentationScopeState,
 } from "@/components/presentation";
@@ -314,6 +322,8 @@ const READ_ONLY_INPUT_TYPES = new Set([
 /** Why `el` may stay live in presentation mode, or `null` when it may not. */
 function controlAllowance(el: Element): string | null {
   if (el.hasAttribute(NAVIGATION_ONLY_ATTRIBUTE)) return "navigation-only";
+  const safety = el.getAttribute(PRESENTER_SAFETY_ATTRIBUTE);
+  if (isPresenterSafetyControl(safety)) return `presenter safety: ${safety}`;
   const tag = el.tagName.toLowerCase();
   if (tag === "input" && (el as HTMLInputElement).type === "hidden")
     return "hidden input";
@@ -363,12 +373,27 @@ function describeElement(el: Element): string {
 }
 
 function controlViolations(root: Element): PresentationViolation[] {
-  return [...root.querySelectorAll(CONTROL_SELECTOR)]
-    .filter((el) => controlAllowance(el) === null)
-    .map((el) => ({
-      kind: "enabled-control" as const,
-      detail: `${describeElement(el)} is an enabled control that is not navigation-only`,
-    }));
+  const out: PresentationViolation[] = [];
+  const marked = `[${PRESENTER_SAFETY_ATTRIBUTE}]`;
+  for (const el of root.querySelectorAll(`${CONTROL_SELECTOR},${marked}`)) {
+    // A safety marker naming a control the closed list does not hold claims
+    // an exemption nobody granted — on any element, control or not.
+    const safety = el.getAttribute(PRESENTER_SAFETY_ATTRIBUTE);
+    if (safety !== null && !isPresenterSafetyControl(safety)) {
+      out.push({
+        kind: "enabled-control",
+        detail: `${describeElement(el)} claims presenter-safety control "${safety}", which PRESENTER_SAFETY_CONTROLS does not list`,
+      });
+      continue;
+    }
+    if (el.matches(CONTROL_SELECTOR) && controlAllowance(el) === null) {
+      out.push({
+        kind: "enabled-control",
+        detail: `${describeElement(el)} is an enabled control that is not navigation-only`,
+      });
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
