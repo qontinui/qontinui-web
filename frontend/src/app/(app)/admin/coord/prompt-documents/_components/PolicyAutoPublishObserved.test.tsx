@@ -235,13 +235,14 @@ describe("the observed auto-publisher, per worker status", () => {
     );
   });
 
-  it("erroring: names the failure code and coord's reason, never UNKNOWN or a healthy last pass", async () => {
+  it("erroring on a failure code: names it as context beside coord's reason, never UNKNOWN or a healthy last pass", async () => {
+    const reason =
+      "`prompt_document_auto_publish.pass` is running but reported a failure (ran:publish_failed): its last pass could not decide or publish some documents; the coord log names them";
     statusGet.mockResolvedValue(
       status({
         pass: {
           status: "erroring",
-          unknown_reason:
-            "`prompt_document_auto_publish.pass` is running but reported a failure (ran:publish_failed)",
+          unknown_reason: reason,
           last_tick_at: minutesAgo(0),
           last_work_tick_at: minutesAgo(3),
           last_decision_code: "ran:publish_failed",
@@ -252,23 +253,27 @@ describe("the observed auto-publisher, per worker status", () => {
 
     const line = await observed();
     expect(line).toHaveTextContent(
-      "Observed: running but failing — ran:publish_failed"
+      "Observed: running but failing (last decision: ran:publish_failed)"
     );
-    expect(line).toHaveTextContent("is running but reported a failure");
+    expect(line).toHaveTextContent("the coord log names them");
     expect(line).not.toHaveTextContent(UNKNOWN);
-    expect(line).not.toHaveTextContent(/last pass/);
+    expect(line).not.toHaveTextContent(/last pass \d/);
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
-  it("erroring with no decision code (the body errors every tick): says so", async () => {
+  it("erroring on an error streak (the ledger's tick_error): says the body errors, with coord's reason", async () => {
+    // The shape coord serves for a body that errors on every tick: the lease
+    // holder's row carries the ledger's `tick_error` code.
+    const reason =
+      "`prompt_document_auto_publish.pass` is running but its body is failing on every tick (error_streak); coord_query_workers name=prompt_document_auto_publish.pass has the streak";
     statusGet.mockResolvedValue(
       status({
         pass: {
           status: "erroring",
-          unknown_reason: "error_streak",
+          unknown_reason: reason,
           last_tick_at: minutesAgo(0),
           last_work_tick_at: minutesAgo(0),
-          last_decision_code: null,
+          last_decision_code: "tick_error",
         },
       })
     );
@@ -276,8 +281,32 @@ describe("the observed auto-publisher, per worker status", () => {
 
     const line = await observed();
     expect(line).toHaveTextContent(
-      "Observed: running but failing — the body errors on every tick"
+      "Observed: running but failing — the pass body errors on every tick"
     );
+    expect(line).not.toHaveTextContent(/last decision/);
+    expect(line).toHaveTextContent("has the streak");
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("erroring with no lease-holder row (no code, no work tick): says failing and lets coord's reason name the code", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "erroring",
+          unknown_reason:
+            "`prompt_document_auto_publish.pass` is running but reported a failure (ran:decide_failed)",
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: null,
+          last_decision_code: null,
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent("Observed: running but failing");
+    expect(line).not.toHaveTextContent(/body errors|last decision/);
+    expect(line).toHaveTextContent("reported a failure (ran:decide_failed)");
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 

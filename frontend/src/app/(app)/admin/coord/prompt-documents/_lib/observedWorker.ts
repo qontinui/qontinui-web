@@ -26,11 +26,20 @@ export type ObservedTone = "nominal" | "attention" | "unknown";
 export interface ObservedReading {
   text: string;
   tone: ObservedTone;
-  /** Extra detail for a tooltip — the other rendering of the time, or why UNKNOWN. */
+  /**
+   * Extra detail for a tooltip — the other rendering of the time, or coord's
+   * sentence for why the status is UNKNOWN or erroring.
+   */
   title?: string;
   /** Coord's own `unknown_reason`, verbatim — shown muted beside the sentence. */
   reason?: string;
 }
+
+/**
+ * The decision code coord's worker ledger records for a tick whose body
+ * errored (`worker_ledger::TICK_ERROR_DECISION`).
+ */
+export const ERROR_TICK_CODE = "tick_error";
 
 export const OBSERVED_UNKNOWN_TEXT =
   "Observed: UNKNOWN — no auto-publisher pass recorded on the serving coord";
@@ -66,12 +75,23 @@ export function describeObservedPass(
       };
     }
     case "erroring": {
-      // The loop runs and is FAILING: its body errors on every tick, or its
-      // last pass returned a failure code (`ran:publish_failed`, …). Not
-      // UNKNOWN — coord observed it — and never a healthy "last pass".
-      const code = pass.last_decision_code ?? "the body errors on every tick";
+      // The loop runs and is FAILING: its body errors on every tick (the
+      // ledger records such a tick as `tick_error`), or its last pass
+      // returned a failure code (`ran:publish_failed`, …). Not UNKNOWN —
+      // coord observed it — and never a healthy "last pass". The code is
+      // CONTEXT, not the verdict: coord decides `erroring` across replicas,
+      // so the lease holder's latest code can briefly read healthy after a
+      // handover. Coord's own sentence, beside it, says where to look.
+      // No code at all means coord could not read the lease holder's row; its
+      // reason (beside) then names the failing code it found elsewhere.
+      const code = pass.last_decision_code;
       return {
-        text: `Observed: running but failing — ${code}`,
+        text:
+          code === ERROR_TICK_CODE
+            ? "Observed: running but failing — the pass body errors on every tick"
+            : code == null
+              ? "Observed: running but failing"
+              : `Observed: running but failing (last decision: ${code})`,
         tone: "attention",
         reason: pass.unknown_reason || undefined,
         title: pass.unknown_reason ? `Coord: ${pass.unknown_reason}` : undefined,
