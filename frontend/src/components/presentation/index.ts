@@ -211,12 +211,14 @@ export {
 } from "./MachineName";
 export type { MachineNameProps } from "./MachineName";
 
+// `formatCostAmount` is deliberately NOT exported here: it formats a figure
+// WITHOUT the label, so only `CostFigure` may call it (`costRenderScan.ts`
+// fails an import of it, under any name, anywhere else).
 export {
   COST_EQUIVALENT_LABEL,
   COST_WITHHELD_TEXT,
   CostFigure,
   coverageText,
-  formatCostAmount,
 } from "./CostFigure";
 export type { CostCoverage, CostFigureProps, CostSource } from "./CostFigure";
 

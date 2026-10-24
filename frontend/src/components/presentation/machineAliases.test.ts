@@ -5,7 +5,7 @@
  * identifier. Hostnames here are placeholders.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MACHINE_ALIAS_STORAGE_KEY,
   MachineAliasRegistry,
@@ -73,6 +73,75 @@ describe("MachineAliasRegistry", () => {
       "Machine A"
     );
     expect(r.aliasFor({ deviceId: DEVICE_1 })).toBe("Machine A");
+  });
+
+  it("merges two letters when an identity proves they are one machine (device first, then host)", () => {
+    const r = new MachineAliasRegistry();
+    // A spawn row knows only the device id; a UI Bridge panel only the host.
+    expect(r.aliasFor({ deviceId: DEVICE_1 })).toBe("Machine A");
+    expect(r.aliasFor({ hostname: "build-host-1" })).toBe("Machine B");
+    // The machine list knows both: one computer, so one letter — the earlier.
+    expect(r.aliasFor({ deviceId: DEVICE_1, hostname: "build-host-1" })).toBe(
+      "Machine A"
+    );
+    expect(r.aliasFor({ hostname: "build-host-1" })).toBe("Machine A");
+    expect(r.aliasFor({ deviceId: DEVICE_1 })).toBe("Machine A");
+    // The retired letter is never handed to another machine.
+    expect(r.aliasFor({ hostname: "laptop-7" })).toBe("Machine C");
+    expect(r.mergeCount()).toBe(1);
+  });
+
+  it("moves EVERY identifier of the retired letter, not only those of the identity that linked them", () => {
+    const r = new MachineAliasRegistry();
+    expect(r.aliasFor({ deviceId: DEVICE_1 })).toBe("Machine A");
+    // A second coord device on the build host, seen with its host.
+    expect(r.aliasFor({ deviceId: DEVICE_2, hostname: "build-host-1" })).toBe(
+      "Machine B"
+    );
+    // DEVICE_1 turns out to run on the build host too: one computer.
+    expect(r.aliasFor({ deviceId: DEVICE_1, hostname: "build-host-1" })).toBe(
+      "Machine A"
+    );
+    // DEVICE_2 was never named in that identity, and still follows the merge.
+    expect(r.aliasFor({ deviceId: DEVICE_2 })).toBe("Machine A");
+  });
+
+  it("keeps the earlier letter whichever side was seen first", () => {
+    const r = new MachineAliasRegistry();
+    expect(r.aliasFor({ hostname: "build-host-1" })).toBe("Machine A");
+    expect(r.aliasFor({ deviceId: DEVICE_1 })).toBe("Machine B");
+    expect(r.aliasFor({ deviceId: DEVICE_1, hostname: "build-host-1" })).toBe(
+      "Machine A"
+    );
+    expect(r.aliasFor({ deviceId: DEVICE_1 })).toBe("Machine A");
+  });
+
+  it("tells its subscribers about a merge, after the render that found it", async () => {
+    const r = new MachineAliasRegistry();
+    const listener = vi.fn();
+    r.subscribe(listener);
+    r.aliasFor({ deviceId: DEVICE_1 });
+    r.aliasFor({ hostname: "build-host-1" });
+    r.aliasFor({ deviceId: DEVICE_1, hostname: "build-host-1" });
+    // Deferred: a merge is found mid-render, and React must not be told then.
+    expect(listener).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+    // Naming known machines again is no merge, and notifies nobody.
+    r.aliasFor({ deviceId: DEVICE_1, hostname: "build-host-1" });
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a merge across a reload", () => {
+    const storage = memoryStorage();
+    const first = new MachineAliasRegistry({ storage: () => storage });
+    first.aliasFor({ deviceId: DEVICE_1 });
+    first.aliasFor({ hostname: "build-host-1" });
+    first.aliasFor({ deviceId: DEVICE_1, hostname: "build-host-1" });
+    const reloaded = new MachineAliasRegistry({ storage: () => storage });
+    expect(reloaded.aliasFor({ hostname: "build-host-1" })).toBe("Machine A");
+    expect(reloaded.aliasFor({ hostname: "laptop-7" })).toBe("Machine C");
   });
 
   it("gives two coord devices on one host that host's letter — a machine is a computer", () => {

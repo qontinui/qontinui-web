@@ -122,6 +122,37 @@ const NAV: NavItem[] = [
         icon: <span />,
         color: "",
       },
+      {
+        id: "fleet-sessions",
+        label: "Session repository",
+        route: "/sessions/repository",
+        icon: <span />,
+        color: "",
+      },
+    ],
+  },
+  // Outside every lens tree: a page with no presentation mode at all.
+  {
+    id: "overview-costs",
+    label: "Costs",
+    route: "/overview/financials",
+    icon: <span />,
+    color: "",
+  },
+  {
+    id: "outside",
+    label: "Outside",
+    route: "/settings",
+    icon: <span />,
+    color: "",
+    children: [
+      {
+        id: "outside-account",
+        label: "Account",
+        route: "/settings/account",
+        icon: <span />,
+        color: "",
+      },
     ],
   },
 ];
@@ -207,6 +238,18 @@ describe("UnifiedSidebar in presentation mode", () => {
     expect(runners).toBeEnabled();
     expect(runners).toHaveAttribute("data-presentation-nav");
   });
+
+  it("offers no way out of the lens: entries outside every lens tree are not shown", async () => {
+    renderInPresentationMode(<UnifiedSidebar />);
+    fireEvent.click(await screen.findByRole("button", { name: "Fleet" }));
+    await screen.findByRole("button", { name: "Runners" });
+    expect(screen.queryByRole("button", { name: "Costs" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Session repository" })
+    ).toBeNull();
+    // A section with no entry inside a lens tree goes altogether.
+    expect(screen.queryByRole("button", { name: "Outside" })).toBeNull();
+  });
 });
 
 describe("UnifiedSidebar in operator mode", () => {
@@ -220,5 +263,7 @@ describe("UnifiedSidebar in operator mode", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
     expect(container).toHaveTextContent(`Runner: ${fx.RUNNER_NAME}`);
     expect(container.innerHTML).toContain(fx.EMAIL);
+    expect(screen.getByRole("button", { name: "Costs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Outside" })).toBeInTheDocument();
   });
 });

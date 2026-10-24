@@ -28,7 +28,7 @@ export const SERVER_MACHINE_ALIAS = "Machine";
 /** Shown in operator mode when the identity carries no name at all. */
 export const UNKNOWN_MACHINE_NAME = "unknown machine";
 
-/** Assigned aliases never change, so there is nothing to subscribe to. */
+/** For `useOnTheClient`, which has nothing to wait for. */
 const subscribeNever = () => () => {};
 
 /** `false` on a server render and during hydration; `true` once on the client. */
@@ -65,8 +65,10 @@ export function useMachineName(
   label?: string | null
 ): string {
   const { presenting } = usePresentationMode();
+  // Subscribed: a merge of two letters (`machineAliases.ts`) re-renders a
+  // name that showed the retired one.
   const alias = useSyncExternalStore(
-    subscribeNever,
+    sessionMachineAliases.subscribe,
     () => sessionMachineAliases.aliasFor(identity),
     () => SERVER_MACHINE_ALIAS
   );
@@ -83,6 +85,13 @@ export function useMachineAliaser(): (
 ) => string {
   const { presenting } = usePresentationMode();
   const onTheClient = useOnTheClient();
+  // A merge of two letters re-renders the caller, so every name it built
+  // with this function is rebuilt with the kept letter.
+  const merges = useSyncExternalStore(
+    sessionMachineAliases.subscribe,
+    sessionMachineAliases.mergeCount,
+    () => 0
+  );
   return useCallback(
     (identity: MachineIdentity, label?: string | null) =>
       !presenting
@@ -90,7 +99,11 @@ export function useMachineAliaser(): (
         : onTheClient
           ? sessionMachineAliases.aliasFor(identity)
           : SERVER_MACHINE_ALIAS,
-    [presenting, onTheClient]
+    // `merges` is not read inside: it is in the deps so a merge hands the
+    // caller a NEW function, and a caller memoizing names by this function's
+    // identity recomputes them with the kept letter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+    [presenting, onTheClient, merges]
   );
 }
 
