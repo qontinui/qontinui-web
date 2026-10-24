@@ -1980,11 +1980,18 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
   and fails on the shapes it knows: a money-named value, key or import (a
   destructured key and an aliased import included), an `Intl` currency format
   however `NumberFormat` is reached, a currency symbol or code glued to a value
-  (in text, a template, a concatenation, or an element of its own), a literal
-  figure or the label, and an import of any function anywhere under `src/` whose
-  body formats a currency or glues a symbol, or wraps one that does. A figure that
-  arrives as an opaque string is past it: that is what the rendered-page check
-  below is for.
+  (in text, a string child, a template, a concatenation, or an element of its
+  own, across any whitespace or `{" "}` spacer), a currency code value beside one,
+  a literal figure or the label — and any way of reaching a CURRENCY FORMATTER
+  from anywhere under `src/`: an export (a function, a class or a value such as a
+  `NumberFormat` instance) whose code formats a currency or glues a symbol, or
+  reads one that does, under every name its module exports it by — through a
+  barrel's `export *` or `export { … } from`, an export list, or as the default.
+  Named, default and namespace imports of one (`ns.formatCurrency`, or the
+  namespace handed on whole), re-exports, and a literal `import()` of its module
+  all fail (`src/test/currencyFormatters.ts`). A figure that arrives already
+  formatted — from the backend, a package, or the composed build's cloud overlay
+  outside `src/` — is past it: that is what the rendered-page check below is for.
 
 **The test every presentation-ready page carries.** A presentation-mode render of the
 real page with `renderInPresentationMode` and `expectPresentationSafe(view, {
