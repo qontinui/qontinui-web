@@ -193,6 +193,49 @@ def test_coord_5xx_is_a_502() -> None:
     assert resp.status_code == 502
 
 
+@pytest.mark.parametrize("coord_status", [401, 403])
+def test_coord_refusing_web_credential_is_a_502_not_passed_through(
+    coord_status: int,
+) -> None:
+    # A coord 401/403 refuses web's service token, not the operator; passing it
+    # through would read in the browser as the operator's session failing.
+    resp, _ = _drive(
+        _OK_BODY,
+        gets=[_page((_IID, _ROOT))],
+        posts=[_resp(coord_status, {"error": "unauthorized"})],
+    )
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_upstream_error",
+        "coord_status": coord_status,
+        "coord_detail": {"error": "unauthorized"},
+    }
+
+
+@pytest.mark.parametrize("coord_status", [401, 403])
+def test_coord_refusing_web_credential_on_the_list_read_is_a_502(
+    coord_status: int,
+) -> None:
+    body = {"error": "token_carries_no_tenant"}
+    resp, inst = _drive(_OK_BODY, gets=[_resp(coord_status, body)])
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_upstream_error",
+        "coord_status": coord_status,
+        "coord_detail": body,
+    }
+    inst.post.assert_not_called()
+
+
+def test_other_coord_4xx_still_passes_through() -> None:
+    # Only 401/403 (web's own credential) are remapped; any other 4xx is the
+    # caller's and keeps its status and typed body.
+    body = {"error": "not_found"}
+    resp, _ = _drive(_OK_BODY, gets=[_page((_IID, _ROOT))], posts=[_resp(404, body)])
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == body
+
+
 def test_non_operator_is_refused_before_any_coord_call() -> None:
     resp, inst = _drive(_OK_BODY, gets=[], operator=False)
     assert resp.status_code == 403
