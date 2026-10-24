@@ -39759,7 +39759,7 @@
       },
       "PresentationScopeWrite": {
         "additionalProperties": false,
-        "description": "``PUT /presentation/scope`` \u2014 replaces the tenant's stored scope.",
+        "description": "``PUT /presentation/scope`` \u2014 replaces the tenant's stored scope.\n\nA refusal names a confidential term by its position, never by its text:\nthe terms are the names presentation mode exists to keep off screen.",
         "properties": {
           "confidential_terms": {
             "description": "Terms that withhold a title wherever they appear, matched ignoring case, accents, spacing and punctuation. Stored trimmed with whitespace collapsed; a term matching an earlier one is dropped. The viewer's other projects' names are always added on read and are never stored.",
@@ -39769,8 +39769,15 @@
             "title": "Confidential Terms",
             "type": "array"
           },
+          "expected_tenant_id": {
+            "description": "The `tenant_id` of the scope this edit was made against. It never chooses the row -- the write lands in the project this request resolves to -- it only refuses a write made for another project: when the two differ the answer is 409 `presentation_scope_tenant_mismatch` and nothing is written.",
+            "format": "uuid",
+            "title": "Expected Tenant Id",
+            "type": "string"
+          },
           "expected_version": {
             "description": "The `configured.version` this edit was made against (0 when the project has never saved a scope). A write against a version that moved answers 409 `presentation_scope_conflict`.",
+            "maximum": 2147483647.0,
             "minimum": 0.0,
             "title": "Expected Version",
             "type": "integer"
@@ -39794,7 +39801,8 @@
         "required": [
           "first_party_owners",
           "confidential_terms",
-          "expected_version"
+          "expected_version",
+          "expected_tenant_id"
         ],
         "title": "PresentationScopeWrite",
         "type": "object"
@@ -111353,7 +111361,7 @@
             "description": "Not an admin of the active project."
           },
           "409": {
-            "description": "The stored scope moved since expected_version."
+            "description": "The stored scope moved since expected_version, or the active project is not expected_tenant_id."
           },
           "422": {
             "content": {

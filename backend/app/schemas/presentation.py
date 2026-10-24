@@ -16,6 +16,7 @@ from app.models.presentation_scope import (
     MAX_CONFIDENTIAL_TERM_LENGTH,
     MAX_CONFIDENTIAL_TERMS,
     MAX_FIRST_PARTY_OWNERS,
+    MAX_SCOPE_VERSION,
 )
 from app.services.presentation_scope import (
     OwnersSource,
@@ -26,8 +27,26 @@ from app.services.presentation_scope import (
 )
 
 
+def _storable(text: str) -> bool:
+    """Whether Postgres ``text`` can hold ``text``: no NUL (which ``text``
+    refuses) and no unpaired surrogate (which has no UTF-8 encoding). Either
+    would pass validation and come back from the database as a 500 instead of
+    a 422 -- the same refusal ``schemas/overview.py`` ``_no_nul`` makes."""
+    if "\x00" in text:
+        return False
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 class PresentationScopeWrite(BaseModel):
-    """``PUT /presentation/scope`` — replaces the tenant's stored scope."""
+    """``PUT /presentation/scope`` — replaces the tenant's stored scope.
+
+    A refusal names a confidential term by its position, never by its text:
+    the terms are the names presentation mode exists to keep off screen.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -53,10 +72,21 @@ class PresentationScopeWrite(BaseModel):
     expected_version: int = Field(
         ...,
         ge=0,
+        le=MAX_SCOPE_VERSION,
         description=(
             "The `configured.version` this edit was made against (0 when the "
             "project has never saved a scope). A write against a version that "
             "moved answers 409 `presentation_scope_conflict`."
+        ),
+    )
+    expected_tenant_id: UUID = Field(
+        ...,
+        description=(
+            "The `tenant_id` of the scope this edit was made against. It never "
+            "chooses the row -- the write lands in the project this request "
+            "resolves to -- it only refuses a write made for another project: "
+            "when the two differ the answer is 409 "
+            "`presentation_scope_tenant_mismatch` and nothing is written."
         ),
     )
 
@@ -87,17 +117,23 @@ class PresentationScopeWrite(BaseModel):
             )
         terms: list[str] = []
         keys: set[str] = set()
-        for raw in value:
+        for position, raw in enumerate(value, start=1):
+            if not _storable(raw):
+                raise ValueError(
+                    f"confidential term {position} holds a character that cannot "
+                    "be stored (a NUL or an unpaired surrogate)"
+                )
             term = clean_term(raw)
             if len(term) > MAX_CONFIDENTIAL_TERM_LENGTH:
                 raise ValueError(
-                    f"a confidential term is at most {MAX_CONFIDENTIAL_TERM_LENGTH} "
-                    "characters"
+                    f"confidential term {position} is longer than "
+                    f"{MAX_CONFIDENTIAL_TERM_LENGTH} characters"
                 )
             key = match_key(term)
             if not key:
                 raise ValueError(
-                    f"{raw!r} has no letter or digit, so it would match nothing"
+                    f"confidential term {position} has no letter or digit, so it "
+                    "would match nothing"
                 )
             if key not in keys:
                 keys.add(key)

@@ -25,7 +25,10 @@ descriptor. This row stores the tenant-authored half of those two lists:
     Starts at 1 and moves by one on every write. A write names the version it
     read and is refused when the row moved, so two admins editing at once
     cannot silently drop each other's terms — a lost confidential term is a
-    client's name on screen.
+    client's name on screen. A write also names the TENANT whose scope it read
+    (``expected_tenant_id``) and is refused when the request resolves to
+    another, so an edit made for one project is never saved into another's
+    row: the compare-and-set binds (tenant, version).
 
 No row means the documented defaults, never "no scope": the read door answers
 with them. Scoping: ``tenant_id`` is the active coord tenant with no FK (coord's
@@ -55,6 +58,11 @@ MAX_CONFIDENTIAL_TERMS = 200
 
 #: The longest confidential term, in characters (the write schema's bound).
 MAX_CONFIDENTIAL_TERM_LENGTH = 120
+
+#: The largest ``version`` the column holds: it is ``INTEGER`` (int4). The
+#: write schema bounds ``expected_version`` by it, so an out-of-range value is
+#: a 422 rather than a driver error and a 500.
+MAX_SCOPE_VERSION = 2**31 - 1
 
 
 def _now() -> datetime:

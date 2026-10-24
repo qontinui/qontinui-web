@@ -35,6 +35,7 @@ from app.models.presentation_scope import (
     MAX_CONFIDENTIAL_TERM_LENGTH,
     MAX_CONFIDENTIAL_TERMS,
     MAX_FIRST_PARTY_OWNERS,
+    MAX_SCOPE_VERSION,
 )
 from app.schemas.presentation import PresentationScopeWrite
 from app.services import presentation_scope as rules
@@ -463,12 +464,16 @@ def test_the_terms_are_always_the_union_presentation() -> None:
 # ===========================================================================
 
 
+_WRITE_TENANT = "00000000-0000-0000-0000-00000000000a"
+
+
 def _write(**body: Any) -> PresentationScopeWrite:
     return PresentationScopeWrite.model_validate(
         {
             "first_party_owners": None,
             "confidential_terms": [],
             "expected_version": 0,
+            "expected_tenant_id": _WRITE_TENANT,
             **body,
         }
     )
@@ -521,13 +526,52 @@ def test_too_many_terms_are_refused_presentation() -> None:
 def test_the_write_names_every_field_and_no_other_presentation() -> None:
     with pytest.raises(ValidationError):
         PresentationScopeWrite.model_validate(
-            {"confidential_terms": [], "expected_version": 0}
+            {
+                "confidential_terms": [],
+                "expected_version": 0,
+                "expected_tenant_id": _WRITE_TENANT,
+            }
         )
     with pytest.raises(ValidationError):
         PresentationScopeWrite.model_validate(
-            {"first_party_owners": None, "confidential_terms": []}
+            {
+                "first_party_owners": None,
+                "confidential_terms": [],
+                "expected_tenant_id": _WRITE_TENANT,
+            }
         )
+    with pytest.raises(ValidationError, match="expected_tenant_id"):
+        PresentationScopeWrite.model_validate(
+            {
+                "first_party_owners": None,
+                "confidential_terms": [],
+                "expected_version": 0,
+            }
+        )
+    with pytest.raises(ValidationError):
+        _write(expected_tenant_id="not-a-tenant")
     with pytest.raises(ValidationError):
         _write(tenant_id=str(uuid4()))
     with pytest.raises(ValidationError):
         _write(expected_version=-1)
+
+
+def test_the_version_is_bounded_by_its_integer_column_presentation() -> None:
+    assert _write(expected_version=MAX_SCOPE_VERSION).expected_version == (
+        MAX_SCOPE_VERSION
+    )
+    with pytest.raises(ValidationError):
+        _write(expected_version=MAX_SCOPE_VERSION + 1)
+    # The bound is the column's: INTEGER is int4.
+    assert MAX_SCOPE_VERSION == 2**31 - 1
+
+
+@pytest.mark.parametrize("bad", ["Acme\x00Corp", "\x00", "Acme\ud800Corp"])
+def test_a_term_postgres_cannot_store_is_refused_presentation(bad: str) -> None:
+    with pytest.raises(ValidationError, match="cannot be stored") as refused:
+        _write(confidential_terms=["Globex", bad])
+    # The message -- what the 422 handler returns -- names the term by its
+    # position and never echoes it.
+    (message,) = [error["msg"] for error in refused.value.errors()]
+    assert "confidential term 2" in message
+    assert "Acme" not in message and "Globex" not in message

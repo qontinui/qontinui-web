@@ -44744,6 +44744,9 @@ export interface components {
         /**
          * PresentationScopeWrite
          * @description ``PUT /presentation/scope`` — replaces the tenant's stored scope.
+         *
+         *     A refusal names a confidential term by its position, never by its text:
+         *     the terms are the names presentation mode exists to keep off screen.
          */
         PresentationScopeWrite: {
             /**
@@ -44751,6 +44754,12 @@ export interface components {
              * @description Terms that withhold a title wherever they appear, matched ignoring case, accents, spacing and punctuation. Stored trimmed with whitespace collapsed; a term matching an earlier one is dropped. The viewer's other projects' names are always added on read and are never stored.
              */
             confidential_terms: string[];
+            /**
+             * Expected Tenant Id
+             * Format: uuid
+             * @description The `tenant_id` of the scope this edit was made against. It never chooses the row -- the write lands in the project this request resolves to -- it only refuses a write made for another project: when the two differ the answer is 409 `presentation_scope_tenant_mismatch` and nothing is written.
+             */
+            expected_tenant_id: string;
             /**
              * Expected Version
              * @description The `configured.version` this edit was made against (0 when the project has never saved a scope). A write against a version that moved answers 409 `presentation_scope_conflict`.
@@ -82551,7 +82560,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The stored scope moved since expected_version. */
+            /** @description The stored scope moved since expected_version, or the active project is not expected_tenant_id. */
             409: {
                 headers: {
                     [name: string]: unknown;
