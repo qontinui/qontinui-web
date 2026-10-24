@@ -21,6 +21,8 @@
  * point at a different pool without code changes.
  */
 
+import { sameOriginNext } from "@/lib/safe-next";
+
 // Public Cognito web app client (no secret → PKCE mandatory).
 export const COGNITO_CLIENT_ID =
   process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID || "q6ns1a8bokf2np1mj8v8arl31";
@@ -382,12 +384,8 @@ export function verifyStateAndExtractNext(
   if (dot === -1) return null;
   const encodedNext = stored.slice(dot + 1);
   try {
-    const decoded = base64UrlDecodeString(encodedNext);
-    // Only honour same-origin absolute paths — never an attacker-controlled
-    // absolute URL (open-redirect guard).
-    return decoded.startsWith("/") && !decoded.startsWith("//")
-      ? decoded
-      : null;
+    // Only a destination that stays on this origin (open-redirect guard).
+    return sameOriginNext(base64UrlDecodeString(encodedNext));
   } catch {
     return null;
   }

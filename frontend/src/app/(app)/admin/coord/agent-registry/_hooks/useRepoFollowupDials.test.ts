@@ -71,7 +71,14 @@ function scopeView(scope = "all", resolved = "default") {
 }
 
 function deliveryView(mode = "in_session_with_spawn_fallback") {
-  return { repo: REPO, mode, provenance_known: false, can_edit: true };
+  return {
+    repo: REPO,
+    mode,
+    resolved_scope: null,
+    stored_value: null,
+    provenance_known: false,
+    can_edit: true,
+  };
 }
 
 function routeGets(

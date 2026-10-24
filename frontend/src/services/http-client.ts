@@ -147,6 +147,11 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // `/api/v1/public/build-records/…`, which resolves no tenant. Plan
   // 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
   "/api/v1/build-records/",
+  // Overlord operator labels — `require_coord_tenant_admin` gates the write, so
+  // admin is checked in the SELECTED project, not the home one. Plan
+  // 2026-10-01-overlord-session-supervisor-classifies-stops-and-absorbs-
+  // avoidable-escalations, Phase 2b.
+  "/api/v1/admin/coord/overlord/",
 ];
 
 function readActiveTenantId(): string | null {

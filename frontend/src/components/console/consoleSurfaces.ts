@@ -217,6 +217,14 @@ import {
   SERVICE_AUTHOR_GLYPH_KINDS,
   SERVICE_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
+// The spawn ledger — plan
+// `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+// Phase 5. Its shared kinds take the gate-continuation table's own entries.
+import {
+  SPAWN_ATTENTION_BY_KIND,
+  SPAWN_AUTHOR_GLYPH_KINDS,
+  SPAWN_KIND_CLASS,
+} from "@/app/(app)/admin/coord/spawns/_lib/spawnStatus";
 // GitHub-hosted CI on the Dev Ops ▸ CI page — plan
 // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
 import {
@@ -268,6 +276,13 @@ import {
 } from "@/components/operations/domainCostStatus";
 // Operator action items — plan
 // `2026-10-12-operator-action-items-pushed-to-the-phone` Phase 3.
+// The PR hold control — plan `2026-10-04-coord-pr-hold-without-github-drafts`
+// Phase 4.
+import {
+  PR_HOLD_ATTENTION_BY_KIND,
+  PR_HOLD_AUTHOR_GLYPH_KINDS,
+  PR_HOLD_BADGE_CLASS,
+} from "@/components/operations/prHoldStatus";
 import {
   ACTION_ITEM_ATTENTION_BY_KIND,
   ACTION_ITEM_AUTHOR_GLYPH_KINDS,
@@ -294,6 +309,15 @@ export interface ConsoleSurface {
  * renders it. One row per surface.
  */
 export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
+  {
+    surface: "PR hold control (/admin/coord/prs, /admin/coord/pipeline)",
+    module: "components/operations/prHoldStatus.ts",
+    attentionByKind: PR_HOLD_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: PR_HOLD_BADGE_CLASS,
+      authorGlyphKinds: PR_HOLD_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   {
     surface: "findings (/admin/coord/findings)",
     module: "app/(app)/admin/coord/findings/_lib/findingStatus.ts",
@@ -668,6 +692,19 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: SERVICE_BADGE_CLASS,
       authorGlyphKinds: SERVICE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- the spawn ledger --------------------------------------------------
+  {
+    // The gates page's continuation vocabulary plus the two ledger-only
+    // states (`queued`, `superseded`), so both surfaces paint a shared word
+    // the same way.
+    surface: "spawn requests (/admin/coord/spawns)",
+    module: "app/(app)/admin/coord/spawns/_lib/spawnStatus.ts",
+    attentionByKind: SPAWN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SPAWN_KIND_CLASS,
+      authorGlyphKinds: SPAWN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- GitHub-hosted CI (Dev Ops) ----------------------------------------

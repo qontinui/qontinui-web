@@ -405,11 +405,22 @@ COORD_DELIVERY = {
 
 
 class TestContinuationDeliveryMode:
-    def test_get_reports_mode_with_unknown_provenance(self, client: TestClient):
+    @pytest.mark.parametrize(
+        ("coord_scope", "stored", "known"),
+        [
+            ("repo", None, True),
+            ("default", None, True),
+            ("unrecognized", "inject_always", False),
+        ],
+    )
+    def test_get_reports_provenance_coord_sent(
+        self, client: TestClient, coord_scope, stored, known
+    ):
+        payload = {**COORD_DELIVERY, "resolved_scope": coord_scope}
+        if stored is not None:
+            payload["stored_value"] = stored
         with (
-            _coord(
-                get=AsyncMock(return_value=_mock_response(200, COORD_DELIVERY))
-            ) as c,
+            _coord(get=AsyncMock(return_value=_mock_response(200, payload))) as c,
             _patch_identity(),
         ):
             resp = client.get(
@@ -419,12 +430,66 @@ class TestContinuationDeliveryMode:
         assert resp.json() == {
             "repo": REPO,
             "mode": "notify_only",
-            # Coord's read is fail-open and its resolved_scope a constant, so
-            # the proxy never claims the value is a stored setting.
-            "provenance_known": False,
+            "resolved_scope": coord_scope,
+            "stored_value": stored,
+            "provenance_known": known,
             "can_edit": True,
         }
         assert c.get.call_args.args[0].endswith("/coord/continuation-delivery-mode")
+
+    @pytest.mark.parametrize("missing", ["absent", "garbage"])
+    def test_get_without_a_recognisable_scope_is_unknown_not_guessed(
+        self, client: TestClient, missing
+    ):
+        payload = {k: v for k, v in COORD_DELIVERY.items() if k != "resolved_scope"}
+        if missing == "garbage":
+            payload["resolved_scope"] = "everywhere"
+        with (
+            _coord(get=AsyncMock(return_value=_mock_response(200, payload))),
+            _patch_identity(),
+        ):
+            resp = client.get(
+                f"{API_PREFIX}/continuation-delivery-mode", params={"repo": REPO}
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["resolved_scope"] is None
+        assert body["stored_value"] is None
+        assert body["provenance_known"] is False
+
+    @pytest.mark.parametrize("error", ["preference_unreadable", "column_not_present"])
+    def test_get_coord_503_passes_through_not_a_default(
+        self, client: TestClient, error
+    ):
+        with (
+            _coord(get=AsyncMock(return_value=_mock_response(503, {"error": error}))),
+            _patch_identity(),
+        ):
+            resp = client.get(
+                f"{API_PREFIX}/continuation-delivery-mode", params={"repo": REPO}
+            )
+        assert resp.status_code == 503
+        assert error in resp.text
+
+    @pytest.mark.parametrize(
+        ("coord_scope", "stored"),
+        [("repo", "inject_always"), ("unrecognized", None), ("unrecognized", 7)],
+    )
+    def test_stored_value_is_kept_only_as_an_unrecognized_string(
+        self, client: TestClient, coord_scope, stored
+    ):
+        payload = {**COORD_DELIVERY, "resolved_scope": coord_scope}
+        if stored is not None:
+            payload["stored_value"] = stored
+        with (
+            _coord(get=AsyncMock(return_value=_mock_response(200, payload))),
+            _patch_identity(),
+        ):
+            resp = client.get(
+                f"{API_PREFIX}/continuation-delivery-mode", params={"repo": REPO}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["stored_value"] is None
 
     def test_get_unrecognised_mode_is_502(self, client: TestClient):
         with (
@@ -461,6 +526,8 @@ class TestContinuationDeliveryMode:
         body = resp.json()
         assert body["written_mode"] == "spawn_always"
         assert body["effective"]["mode"] == "spawn_always"
+        assert body["effective"]["resolved_scope"] == "repo"
+        assert body["effective"]["provenance_known"] is True
         assert body["readback_error"] is None
 
     def test_put_unknown_mode_is_refused_locally(self, client: TestClient):

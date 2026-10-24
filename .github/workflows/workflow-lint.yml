@@ -18,23 +18,22 @@
 #   There is deliberately NO `push: main` trigger: coord reads a failing push
 #   run on main as main-red and holds the train.
 #
-# ADVISORY until >= 5 observed runs with zero unexplained reds (plan Phase
-# 1.5), then promote to a required check. Advisory is STEP-level
-# `continue-on-error: true`, never job-level: a job-level continue-on-error
-# lets the RUN conclude success but still publishes the job's CHECK RUN with
-# conclusion=failure, and coord's candidate classifier reads check runs, so it
-# would see red and hold the train. Evidence: qontinui-runner run 33284989396
-# concluded success while its continue-on-error job's check run 99186538561
-# reads conclusion=failure (`gh api repos/qontinui/qontinui-runner/check-runs/
-# 99186538561 --jq .conclusion`, verified 2026-10-04).
+# REQUIRED (promoted 2026-10-17, plan Phase 1.5): the tool steps below are
+# BLOCKING -- a zizmor or actionlint finding, a failed tool install and a
+# checkout or arch failure all red the check. Promotion evidence: the 12 most
+# recent completed runs of this workflow after qontinui-web#1897 (re-pin of
+# dtolnay/rust-toolchain + the DRIFT class) landed (2026-10-14T14:57Z) all
+# completed with zero failed steps and zero `##[error]` / "Process completed
+# with exit code" lines in their job logs.
 #
-# Every step is advisory that way, each with its own timeout-minutes. What
-# CANNOT be made advisory, and so can still red the check: the runner-side
-# "Set up job" phase, losing the runner mid-job, cancellation, and the
-# job-level timeout-minutes backstop -- which is set above the sum of the step
-# timeouts so it should never fire first.
+# Only the final always() summary step keeps STEP-level
+# `continue-on-error: true` (never job-level: a job-level one still publishes
+# the CHECK RUN as conclusion=failure, which coord's candidate classifier
+# reads -- qontinui-runner check run 99186538561, verified 2026-10-04). What
+# can red the check regardless: the runner-side "Set up job" phase, losing the
+# runner mid-job, cancellation, and the job-level timeout-minutes backstop.
 #
-# DRIFT (non-blocking even once promoted): zizmor's `ref-version-mismatch`
+# DRIFT (non-blocking): zizmor's `ref-version-mismatch`
 # audit judges a pinned `uses:` comment against where an UPSTREAM tag points
 # NOW, so it can go red on an unchanged workflow tree the moment an action's
 # maintainer moves a tag (observed 2026-10-09: dtolnay/rust-toolchain moved
@@ -50,14 +49,13 @@
 # is where upstream drift is acted on. Every other audit, including the online
 # known-vulnerable-actions and impostor-commit, counts as FINDINGS.
 #
-# VISIBILITY while the check stays green: each finding is a workflow-command
+# VISIBILITY: each finding is a workflow-command
 # annotation (::error for a finding, ::warning for DRIFT) on the run and the
-# PR diff, the failing step is marked failed in the job log, and the run's
+# PR diff, the failing step reds the check, and the run's
 # step summary gets exactly one line per tool:
 #   - zizmor: PASS | DRIFT(n) | FINDINGS(n) | ERROR (...)
 #   - actionlint: PASS | FINDINGS(n) | ERROR (...)
-# so Phase 1.5's ">= 5 observed runs, zero unexplained reds" is countable from
-# the run summaries. The final always() step is the SOLE writer of those
+# The final always() step is the SOLE writer of those
 # lines: every other step only sets step outputs (`verdict=` / `reason=`), so
 # a step killed at any point yields exactly one ERROR (...) line per tool, never
 # zero and never two.
@@ -122,14 +120,12 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         id: checkout
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 2
         with:
           persist-credentials: false
       - name: Check host architecture (release tarballs below are x86_64)
         id: arch
         if: steps.checkout.outcome == 'success'
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 1
         run: |
           arch="$(uname -m)"
@@ -142,7 +138,6 @@ jobs:
       - name: Install zizmor and actionlint (pinned, sha256-verified, host-cached)
         id: install
         if: steps.arch.outcome == 'success'
-        continue-on-error: true  # advisory; see header
         # Cold fetch worst case: per tarball 2 attempts x 240 s + 5 s delay,
         # 2 tarballs = 970 s, under this 18 min bound. A warm host-cache hit
         # is a local copy + sha256 check.
@@ -203,7 +198,6 @@ jobs:
       - name: zizmor
         id: zizmor
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 3
         env:
           # Online audits (impostor-commit, known-vulnerable-actions) read
@@ -331,7 +325,6 @@ jobs:
       - name: actionlint
         id: actionlint
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 2
         # `-shellcheck=` / `-pyflakes=` disable the external-linter integrations:
         # CI must not depend on whatever shellcheck/pyflakes each self-hosted
@@ -372,7 +365,7 @@ jobs:
       # using the failing step's own `reason=` when it managed to set one.
       - name: Record verdicts
         if: always()
-        continue-on-error: true  # advisory; see header
+        continue-on-error: true  # the summary line never decides the check
         timeout-minutes: 1
         env:
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}

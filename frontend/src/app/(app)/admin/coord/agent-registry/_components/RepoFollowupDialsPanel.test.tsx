@@ -73,8 +73,18 @@ function scopeView(
 }
 
 function deliveryView(repo: string, mode = "in_session_with_spawn_fallback") {
-  return { repo, mode, provenance_known: false, can_edit: true };
+  return {
+    repo,
+    mode,
+    resolved_scope: null,
+    stored_value: null,
+    provenance_known: false,
+    can_edit: true,
+  };
 }
+
+/** Fields coord's delivery GET sends beyond the default (UNKNOWN) provenance. */
+let deliveryOverride: Record<string, unknown> = {};
 
 function serve(scopes: Record<string, unknown | Error>) {
   httpGet.mockImplementation((url: string) => {
@@ -83,7 +93,7 @@ function serve(scopes: Record<string, unknown | Error>) {
       const v = scopes[repo];
       return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);
     }
-    return Promise.resolve(deliveryView(repo));
+    return Promise.resolve({ ...deliveryView(repo), ...deliveryOverride });
   });
 }
 
@@ -96,6 +106,7 @@ function rowFor(repo: string): HTMLElement {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  deliveryOverride = {};
   window.localStorage.clear();
   listRepos.mockResolvedValue([{ repo: WEB }, { repo: NOTES }]);
 });
@@ -233,7 +244,9 @@ describe("RepoFollowupDialsPanel", () => {
       within(rowFor(WEB)).getByRole("button", { expanded: false })
     );
     const detail = await screen.findByTestId("repo-followup-detail");
-    expect(detail.textContent).toContain("fail-open");
+    expect(detail.textContent).toContain(
+      "Coord did not say where this value came from"
+    );
 
     fireEvent.click(
       within(detail).getByTestId("repo-followup-delivery-notify_only")
@@ -247,7 +260,7 @@ describe("RepoFollowupDialsPanel", () => {
     await waitFor(() =>
       expect(
         within(detail).getByTestId("repo-followup-delivery-current").textContent
-      ).toBe("Notify only (resolved, not confirmed)")
+      ).toBe("Notify only (not confirmed)")
     );
   });
 
@@ -349,6 +362,54 @@ describe("RepoFollowupDialsPanel", () => {
     );
   });
 
+  it.each([
+    ["repo", "(set for this repo)", true],
+    ["default", "(default)", true],
+    ["unrecognized", "(stored value not understood)", false],
+  ])(
+    "a delivery mode coord reports as %s is labelled from that field",
+    async (resolved, suffix, confirmed) => {
+      deliveryOverride = {
+        resolved_scope: resolved,
+        stored_value: resolved === "unrecognized" ? "inject_always" : null,
+        provenance_known: resolved !== "unrecognized",
+      };
+      serve({
+        [NOTES]: scopeView(NOTES, "all"),
+        [WEB]: scopeView(WEB, "all"),
+      });
+      render(<RepoFollowupDialsPanel />);
+      await waitFor(() =>
+        expect(rowFor(WEB).textContent).toContain("Every merge")
+      );
+      fireEvent.click(
+        within(rowFor(WEB)).getByRole("button", { expanded: false })
+      );
+      const detail = await screen.findByTestId("repo-followup-detail");
+      const current = within(detail).getByTestId(
+        "repo-followup-delivery-current"
+      );
+      await waitFor(() => expect(current.textContent).toContain(suffix));
+      expect(current.getAttribute("data-provenance")).toBe(resolved);
+      expect(detail.textContent?.includes('stores "inject_always"')).toBe(
+        resolved === "unrecognized"
+      );
+      expect(
+        detail.textContent?.includes("An unreadable setting is an error")
+      ).toBe(confirmed);
+      expect(current.className.includes("bg-amber-500/10")).toBe(!confirmed);
+      // Only a mode a row already declares is a no-op write; the default is
+      // still writable explicitly for this repo.
+      expect(
+        (
+          within(detail).getByTestId(
+            "repo-followup-delivery-in_session_with_spawn_fallback"
+          ) as HTMLButtonElement
+        ).disabled
+      ).toBe(resolved === "repo");
+    }
+  );
+
   it("an unconfirmed delivery mode is qualified, amber, and can be re-written", async () => {
     serve({
       [NOTES]: scopeView(NOTES, "all"),
@@ -367,12 +428,12 @@ describe("RepoFollowupDialsPanel", () => {
     );
     await waitFor(() =>
       expect(current.textContent).toBe(
-        "In the author's session (resolved, not confirmed)"
+        "In the author's session (not confirmed)"
       )
     );
     expect(current.getAttribute("data-provenance")).toBe("unconfirmed");
     expect(current.className).toContain("bg-amber-500/10");
-    // The resolved value may be the fail-open default, so writing it
+    // Coord did not say where the value came from, so writing it
     // explicitly stays possible.
     expect(
       (

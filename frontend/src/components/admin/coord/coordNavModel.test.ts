@@ -81,6 +81,7 @@ describe("coordNavModel", () => {
       "Questions",
       "Findings",
       "Operator Touches",
+      "Verification",
       "Agents",
       "Unfinished Sessions",
       "Agent Commands",
@@ -117,8 +118,9 @@ describe("coordNavModel", () => {
       "Overview",
       "CI",
       "Computers",
+      "Spawns",
       "Trees",
-      "Spawn",
+      "Launch session",
       "Runner Drain",
       "Test Targets",
       "Migrations",
@@ -141,14 +143,31 @@ describe("coordNavModel", () => {
     // Plain member: exactly Overview and CI (resolved Q3, extended by the
     // CI dashboard plan's D1 — both are member reads).
     expect(visibleLabels("devops", MEMBER)).toEqual(["Overview", "CI"]);
-    // A coord admin who is NOT staff sees Computers and nothing operator-only.
+    // A coord admin who is NOT staff sees Computers and Spawns and nothing
+    // operator-only.
     expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
       "Overview",
       "CI",
       "Computers",
+      "Spawns",
     ]);
     // A superuser sees every Dev Ops member.
     expect(visibleLabels("devops", SUPERUSER)).toEqual(labels("devops"));
+  });
+
+  it("gates Spawns on coord tenant admin, and never lets two leaves share the word", () => {
+    const items = group("devops").items;
+    const spawns = items.find((i) => i.href === "/admin/coord/spawns");
+    expect(spawns?.label).toBe("Spawns");
+    expect(spawns?.coordAdminOnly).toBe(true);
+    expect(spawns?.operatorOnly).toBeUndefined();
+    // The launcher keeps its route and its frozen testId under a label that
+    // names what it does, so "Spawn" no longer names two pages.
+    const launcher = items.find((i) => i.href === "/admin/coord/spawn");
+    expect(launcher?.label).toBe("Launch session");
+    expect(launcher?.testId).toBe("coord-nav-spawn");
+    const spawnWords = items.filter((i) => /\bspawn/i.test(i.label));
+    expect(spawnWords.map((i) => i.label)).toEqual(["Spawns"]);
   });
 
   it("asks admin IN THE ACTIVE TENANT, as require_coord_tenant_admin does", () => {

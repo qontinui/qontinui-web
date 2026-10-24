@@ -71,6 +71,21 @@ describe("pageAccessLabel", () => {
     );
   });
 
+  it("lets coord's declaration outrank the manifest's query kind", () => {
+    // coord declares a row the manifest calls parameterized: live-probed.
+    expect(
+      pageAccessLabel({
+        query_kind: "parameterized",
+        ask_via: "ask-the-twin",
+        liveProbed: true,
+      })
+    ).toBe("Live-probed");
+    // A manifest snapshot row coord does not declare: drift, said as drift.
+    expect(pageAccessLabel({ query_kind: "snapshot", liveProbed: false })).toBe(
+      "Not served by coord"
+    );
+  });
+
   it("never shows the raw query kind, which contradicts coord's catalog for some tools", () => {
     // coord's catalog lists these tools as kind `snapshot`; on this page
     // `parameterized` only means "not probed here".
@@ -78,13 +93,30 @@ describe("pageAccessLabel", () => {
     expect(pageAccessLabel(byId.get("twin_fidelity")!)).toBe(
       "Ask the Twin (Completeness tab)"
     );
-    expect(pageAccessLabel(byId.get("workers")!)).toBe(
-      "Ask the Twin (Completeness tab)"
-    );
     expect(pageAccessLabel(byId.get("cost")!)).toBe("Not askable here");
     for (const s of manifest.subspaces) {
       expect(pageAccessLabel(s), s.id).not.toMatch(/snapshot|parameterized/i);
     }
+  });
+});
+
+describe("the per-cell statuses Phase 9 adds", () => {
+  it("words a refused cell as that sub-space being internal, not the whole twin", () => {
+    expect(STATUS_STYLES.restricted.meaning).toContain("Qontinui-internal");
+    expect(STATUS_STYLES.restricted.meaning).toContain(
+      "other sub-spaces are unaffected"
+    );
+  });
+
+  it("keeps a served report out of the healthy and the failed vocabulary", () => {
+    for (const status of ["implemented", "partial", "error"] as const) {
+      expect(STATUS_STYLES.served.dot).not.toBe(STATUS_STYLES[status].dot);
+    }
+    expect(STATUS_STYLES.served.meaning).toContain("not graded");
+  });
+
+  it("names manifest/coord drift as not served by coord", () => {
+    expect(STATUS_STYLES["not-served"].label).toBe("Not served by coord");
   });
 });
 
