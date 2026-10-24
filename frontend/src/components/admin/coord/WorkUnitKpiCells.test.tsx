@@ -169,6 +169,14 @@ describe("KPI chips on a PlanRow", () => {
     expect(chip).toHaveAttribute("data-kpi-state", "unknown");
   });
 
+  it("renders no chip for an 'unrecorded' cell (only the [slug] page produces one)", () => {
+    renderRow({ kind: "unrecorded", sentence: "No KPIs recorded: x." });
+    expect(screen.queryByTestId("coord-plan-kpis")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-plan-kpis-outside")
+    ).not.toBeInTheDocument();
+  });
+
   it("carries the whole block in the expanded detail", () => {
     renderRow(cellFor("2026-10-01-a-plan"), true);
     const detail = screen.getByTestId("coord-plan-kpis-detail");
@@ -270,6 +278,26 @@ describe("KpiBlock", () => {
     const row = screen.getByTestId("coord-plan-kpi-row-ci_attempts");
     expect(row).toHaveAttribute("data-kpi-partial", "true");
     expect(row).toHaveTextContent("CI attempts: 7 (1 of 2 observed)");
+  });
+
+  it("states 'No KPIs recorded' for a unit coord has no row for — in words, with no figure", () => {
+    render(
+      <KpiBlock
+        cell={kpiCell(
+          indexKpis(payload([]), READ, null, "2026-10-01-a-plan"),
+          "2026-10-01-a-plan"
+        )}
+      />
+    );
+    const note = screen.getByTestId("coord-plan-kpis-unrecorded");
+    expect(note).toHaveTextContent(
+      "No KPIs recorded: coord has no KPI row for this work unit."
+    );
+    expect(note).toHaveAttribute("data-kpi-state", "none");
+    expect(
+      screen.queryByTestId("coord-plan-kpis-block")
+    ).not.toBeInTheDocument();
+    expect(note.textContent).not.toMatch(/\d/);
   });
 
   it("states pending, unavailable and outside in words, with no figure", () => {

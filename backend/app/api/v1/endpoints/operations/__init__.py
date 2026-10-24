@@ -5197,6 +5197,8 @@ async def get_domain_cost(
 async def get_kpis(
     window: str | None = Query(default=None),
     repos: str | None = Query(default=None),
+    slug: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return coord's per-work-unit KPIs (schema ``kpis/v1``).
@@ -5216,19 +5218,29 @@ async def get_kpis(
     ``cost_microusd`` is a list-price EQUIVALENT whose ``basis`` says so. A
     database failure is coord's typed error, raised here, never zeros.
 
-    ``window`` (coord's ``28d`` grammar) and ``repos`` (comma-separated
-    ``owner/name``) are forwarded verbatim when set and ABSENT from the wire
-    when not — coord owns the defaults and the validation, and a value it
-    cannot parse comes back as its own 4xx rather than being re-validated
-    (and eventually mis-validated) here. The body is passed through
-    untouched — no ``response_model`` — so a field coord adds reaches the
-    console without a change in this module.
+    ``window`` (coord's ``28d`` grammar), ``repos`` (comma-separated
+    ``owner/name``), ``slug`` and ``limit`` are forwarded verbatim when set
+    and ABSENT from the wire when not — coord owns the defaults and the
+    validation, and a value it cannot accept (an unparseable ``window``, a
+    ``limit`` over its ceiling) comes back as its own 4xx rather than being
+    re-validated (and eventually mis-validated) here. ``limit`` is therefore
+    a string at this boundary: typing it ``int`` would make this module the
+    one that answers 422 for ``limit=abc``, a second grammar for coord's
+    own. With ``slug``, coord's ``units`` holds that one unit (any status)
+    while ``aggregates`` stay computed over the window's shipped units; an
+    empty ``units`` then means coord has no row for that slug. The body is
+    passed through untouched — no ``response_model`` — so a field coord adds
+    reaches the console without a change in this module.
     """
     params: dict[str, Any] = {}
     if window is not None:
         params["window"] = window
     if repos is not None:
         params["repos"] = repos
+    if slug is not None:
+        params["slug"] = slug
+    if limit is not None:
+        params["limit"] = limit
     # Default ``_COORD_TIMEOUT`` on purpose: the composer's latency has not been
     # measured (the coord route is not deployed when this proxy lands), and the
     # longer timeouts above are each chosen from a measurement, never a guess.

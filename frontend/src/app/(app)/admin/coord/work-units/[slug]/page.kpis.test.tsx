@@ -2,21 +2,23 @@
  * `/admin/coord/work-units/[slug]` — the Delivery KPIs panel.
  *
  * Plan `2026-10-09-kpi-telemetry-and-dashboards` Phase 4. Pinned:
- *   - the panel reads `GET /api/v1/operations/kpis` once and finds this unit by
- *     slug; every figure the plan lists is in the block;
+ *   - the panel asks coord for THIS unit — one `GET /api/v1/operations/kpis
+ *     ?slug=<slug>`, no window — and every figure the plan lists is in the
+ *     block;
  *   - UNKNOWN is `unknown — <reason> (n of m observed)`, never a zero; partial
  *     coverage is stated; cost is a list-price equivalent;
- *   - a unit coord returned no row for says so (none in window, or unknown when
- *     the answer was truncated) — not a block of zeros;
+ *   - an empty `units` for that slug request is coord having no row for the
+ *     unit: "No KPIs recorded", not a block of zeros, and not "outside a
+ *     window" or "unknown" (there is no window, and truncation does not apply);
+ *     an answer carrying a DIFFERENT unit is unavailable, not an absence;
  *   - a failed KPI read is "KPIs unavailable" with no figure, and the rest of
  *     the page — the unit's meta, the transition lever, the status history —
  *     is unaffected;
- *   - the window control re-asks with that window.
+ *   - there is no window control: a slug read does not depend on one.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, within } from "@testing-library/react";
 import { kpi, payload, unit, unknown } from "@/test/kpisFixtures";
 
 const httpGet = vi.fn();
@@ -70,12 +72,16 @@ beforeEach(() => {
 });
 
 describe("CoordPlanDetailPage — Delivery KPIs", () => {
-  it("reads once and renders every figure the plan lists for this unit", async () => {
-    route(payload([unit(SLUG), unit("someone-else")]));
+  it("asks coord for this unit by slug — one request, no window — and renders every figure the plan lists", async () => {
+    route(
+      payload([unit(SLUG)], {
+        population: { shipped_units: 250, units_returned: 1, truncated: false },
+      })
+    );
     render(<CoordPlanDetailPage />);
 
     const block = await screen.findByTestId("coord-plan-kpis-block");
-    expect(kpiReads()).toEqual([`${KPI_URL}?window=28d`]);
+    expect(kpiReads()).toEqual([`${KPI_URL}?slug=${SLUG}`]);
 
     for (const [id, text] of [
       ["lead_time", "Lead time: 1h 30m (1 of 1 observed)"],
@@ -102,11 +108,13 @@ describe("CoordPlanDetailPage — Delivery KPIs", () => {
         within(block).getByTestId(`coord-plan-kpi-row-${id}`)
       ).toHaveTextContent(text);
     }
-    expect(screen.getByTestId("coord-plan-kpis-status")).toHaveTextContent(
-      "last 28 days (2026-09-26 to 2026-10-24): 2 of 2 returned"
-    );
+    const status = screen.getByTestId("coord-plan-kpis-status");
+    expect(status).toHaveTextContent("KPIs for this work unit.");
+    expect(status).toHaveTextContent("list-price equivalent");
+    // The window sentence belongs to the list read; this is not that.
+    expect(status).not.toHaveTextContent(/last \d+ days|returned/);
     expect(screen.getByTestId("coord-plan-kpis-summary")).toHaveTextContent(
-      "28d window"
+      "recorded"
     );
   });
 
@@ -157,46 +165,60 @@ describe("CoordPlanDetailPage — Delivery KPIs", () => {
     ).toHaveAttribute("data-kpi-partial", "true");
   });
 
-  it("says this unit is not among the measured units — not zeros — when coord returned no row", async () => {
-    route(payload([unit("someone-else")]));
+  it("says 'No KPIs recorded' — not zeros — when coord has no row for the unit", async () => {
+    route(payload([]));
     render(<CoordPlanDetailPage />);
-    expect(
-      await screen.findByTestId("coord-plan-kpis-outside-detail")
-    ).toHaveTextContent(
-      "No KPIs in the last 28 days: this work unit is not among the 1 shipped work unit coord measured for that window."
+    const note = await screen.findByTestId("coord-plan-kpis-unrecorded");
+    expect(note).toHaveTextContent(
+      "No KPIs recorded: coord has no KPI row for this work unit."
     );
     expect(
       screen.queryByTestId("coord-plan-kpis-block")
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-plan-kpis-outside-detail")
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelector("[data-testid^='coord-plan-kpi-row-']")
+    ).toBeNull();
     expect(screen.getByTestId("coord-plan-kpis-summary")).toHaveTextContent(
-      "none in window"
+      "none recorded"
     );
+    expect(kpiReads()).toEqual([`${KPI_URL}?slug=${SLUG}`]);
   });
 
-  it("says it is unknown whether this unit has KPIs when the answer was truncated", async () => {
+  it("does not read a truncated flag into an absence: a slug read's empty units is still 'recorded none'", async () => {
     route(
-      payload([unit("someone-else")], {
-        population: {
-          shipped_units: 250,
-          units_returned: 100,
-          truncated: true,
-        },
+      payload([], {
+        population: { shipped_units: 250, units_returned: 0, truncated: true },
       })
     );
     render(<CoordPlanDetailPage />);
-    const note = await screen.findByTestId("coord-plan-kpis-outside-detail");
-    expect(note).toHaveTextContent("unknown —");
-    expect(note).toHaveTextContent("100 of 250");
-    expect(note).toHaveAttribute("data-kpi-state", "unknown");
-    expect(screen.getByTestId("coord-plan-kpis-summary")).toHaveTextContent(
-      "unknown"
+    expect(
+      await screen.findByTestId("coord-plan-kpis-unrecorded")
+    ).toHaveTextContent("No KPIs recorded");
+  });
+
+  it("is unavailable, not 'no KPIs recorded', when coord answers with a different unit", async () => {
+    route(payload([unit("someone-else")]));
+    render(<CoordPlanDetailPage />);
+    expect(
+      await screen.findByTestId("coord-plan-kpis-unavailable")
+    ).toHaveTextContent(
+      "KPIs unavailable — coord answered a request for one work unit with a different one"
     );
+    expect(
+      screen.queryByTestId("coord-plan-kpis-unrecorded")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-plan-kpis-block")
+    ).not.toBeInTheDocument();
   });
 
   it("says KPIs are unavailable, with no figure, when the coord route is not deployed — and the rest of the page works", async () => {
     route(
       new Error(
-        `GET ${KPI_URL}?window=28d failed: 404 - {"error":"no_such_route"}`
+        `GET ${KPI_URL}?slug=${SLUG} failed: 404 - {"error":"no_such_route"}`
       )
     );
     render(<CoordPlanDetailPage />);
@@ -222,34 +244,15 @@ describe("CoordPlanDetailPage — Delivery KPIs", () => {
     expect(screen.queryByText(/Failed to load/)).not.toBeInTheDocument();
   });
 
-  it("re-asks with the chosen window", async () => {
+  it("has no window control, because a slug read does not depend on one", async () => {
     route(payload([unit(SLUG)]));
     render(<CoordPlanDetailPage />);
     await screen.findByTestId("coord-plan-kpis-block");
-
-    route(
-      payload([unit(SLUG, { ci_attempts: kpi(11) })], {
-        window: {
-          days: 90,
-          from: "2026-07-26T12:00:00Z",
-          to: "2026-10-24T12:00:00Z",
-        },
-      })
-    );
-    const user = userEvent.setup();
-    await user.click(screen.getByTestId("coord-plan-kpi-window-select"));
-    await user.click(
-      await screen.findByRole("option", { name: "Last 90 days" })
-    );
-
-    await waitFor(() =>
-      expect(
-        screen.getByTestId("coord-plan-kpi-row-ci_attempts")
-      ).toHaveTextContent("CI attempts: 11")
-    );
-    expect(kpiReads()).toEqual([
-      `${KPI_URL}?window=28d`,
-      `${KPI_URL}?window=90d`,
-    ]);
+    expect(
+      screen.queryByTestId("coord-plan-kpi-window-select")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("KPI window")).not.toBeInTheDocument();
+    // And nothing re-asked on its own.
+    expect(kpiReads()).toHaveLength(1);
   });
 });

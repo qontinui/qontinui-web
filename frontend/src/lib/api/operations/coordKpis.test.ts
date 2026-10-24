@@ -53,9 +53,41 @@ describe("coordKpis", () => {
     expect(qs.getAll("repos")).toEqual(["qontinui/a,qontinui/b"]);
   });
 
+  it("forwards slug and limit, in a fixed order, alongside window and repos", async () => {
+    fetchMock.mockResolvedValueOnce(json({}));
+    await fetchKpis({
+      window: "28d",
+      repos: "qontinui/a",
+      slug: "2026-10-01-a-plan",
+      limit: "50",
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/operations/kpis?window=28d&repos=qontinui%2Fa&slug=2026-10-01-a-plan&limit=50"
+    );
+  });
+
+  it("sends a slug alone as `?slug=` with no window", async () => {
+    fetchMock.mockResolvedValueOnce(json({}));
+    await fetchKpis({ slug: "2026-10-01-a-plan" }, { maxRetries: 0 });
+    expect(fetchMock.mock.calls).toEqual([
+      [
+        "/api/v1/operations/kpis?slug=2026-10-01-a-plan",
+        { maxRetries: 0, method: "GET", idempotent: true },
+      ],
+    ]);
+  });
+
+  it("percent-encodes a slug", async () => {
+    fetchMock.mockResolvedValueOnce(json({}));
+    await fetchKpis({ slug: "a b&c=d" });
+    const url = new URL(fetchMock.mock.calls[0][0] as string, "http://x");
+    expect(url.searchParams.getAll("slug")).toEqual(["a b&c=d"]);
+    expect([...url.searchParams.keys()]).toEqual(["slug"]);
+  });
+
   it("omits an empty window or repos rather than sending `window=`", async () => {
     fetchMock.mockResolvedValueOnce(json({}));
-    await fetchKpis({ window: "", repos: "" });
+    await fetchKpis({ window: "", repos: "", slug: "", limit: "" });
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/operations/kpis");
   });
 

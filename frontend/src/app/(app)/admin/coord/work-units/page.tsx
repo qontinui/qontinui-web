@@ -418,7 +418,9 @@ export default function CoordWorkUnitsListPage() {
   // The KPI window is the QUESTION of the KPI read only: it re-asks coord's
   // `/kpis`, and changes nothing about which work units are listed.
   const [kpiWindow, setKpiWindow] = useState<string>(DEFAULT_KPI_WINDOW);
-  const { index: kpiIndex, refresh: refreshKpis } = useWorkUnitKpis(kpiWindow);
+  const { index: kpiIndex, refresh: refreshKpis } = useWorkUnitKpis({
+    window: kpiWindow,
+  });
   const [data, setData] = useState<PlansWindow | null>(null);
   // The server order is part of the QUESTION (it decides what is fetched);
   // the client sort within an order is not, so switching between two walked

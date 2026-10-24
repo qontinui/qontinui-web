@@ -343,6 +343,35 @@ describe("kpiCell and the page-level sentence", () => {
     expect(outsideChipText(cell)).toBe("KPIs unknown");
   });
 
+  it("says 'No KPIs recorded' for a slug read that came back without the unit — never zeros, no window to reason about", () => {
+    const idx = indexKpis(payload([]), read, null, "no-such-unit");
+    const cell = kpiCell(idx, "no-such-unit");
+    expect(cell).toEqual({
+      kind: "unrecorded",
+      sentence: "No KPIs recorded: coord has no KPI row for this work unit.",
+    });
+    // Not the window sentence, and not a truncation unknown: neither applies.
+    expect(JSON.stringify(cell)).not.toMatch(/last \d+ days|shipped work unit/);
+  });
+
+  it("still finds the unit on a slug read that returned it", () => {
+    const a = unit("a");
+    const idx = indexKpis(payload([a]), read, null, "a");
+    expect(kpiCell(idx, "a")).toEqual({ kind: "unit", unit: a });
+  });
+
+  it("does not let a truncated flag turn a slug read's absence into 'unknown'", () => {
+    const idx = indexKpis(
+      payload([], {
+        population: { shipped_units: 250, units_returned: 0, truncated: true },
+      }),
+      read,
+      null,
+      "a"
+    );
+    expect(kpiCell(idx, "a").kind).toBe("unrecorded");
+  });
+
   it("describes each read state; unavailable carries no figure", () => {
     expect(describeKpiIndex(KPI_PENDING)).toBe("Reading KPIs…");
     const unavailable = describeKpiIndex({
@@ -376,12 +405,29 @@ describe("kpiCell and the page-level sentence", () => {
     expect(text).toContain("The latest re-read failed (HTTP 502)");
   });
 
+  it("describes a slug read as this unit's KPIs, with no window sentence", () => {
+    const text = describeKpiIndex(
+      indexKpis(payload([unit("a")]), read, null, "a")
+    );
+    expect(text).toContain("KPIs for this work unit.");
+    expect(text).toContain(LIST_PRICE_LABEL);
+    expect(text).toContain("Read 2026-10-24 12:01Z; read once per page load.");
+    expect(text).not.toMatch(/last \d+ days|returned|window/);
+    expect(
+      describeKpiIndex(indexKpis(payload([unit("a")]), read, "HTTP 502", "a"))
+    ).toContain("The latest re-read failed (HTTP 502)");
+  });
+
   it("keeps the folded panel's header a word or a window, never a count", () => {
     const loaded = indexKpis(payload([unit("a")]), read);
     expect(kpiPanelSummary(loaded, kpiCell(loaded, "a"))).toBe("28d window");
     expect(kpiPanelSummary(loaded, kpiCell(loaded, "zzz"))).toBe(
       "none in window"
     );
+    const bySlug = indexKpis(payload([unit("a")]), read, null, "a");
+    expect(kpiPanelSummary(bySlug, kpiCell(bySlug, "a"))).toBe("recorded");
+    const none = indexKpis(payload([]), read, null, "a");
+    expect(kpiPanelSummary(none, kpiCell(none, "a"))).toBe("none recorded");
     expect(kpiPanelSummary(KPI_PENDING, { kind: "pending" })).toBe("reading");
     expect(
       kpiPanelSummary(

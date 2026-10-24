@@ -9,12 +9,13 @@ A verbatim pass-through. What is pinned is the part a proxy can get wrong
 silently:
 
 * the coord path, and the operator bearer forwarded to it,
-* ``window`` and ``repos`` forwarded VERBATIM when set (the comma list is not
-  split, re-joined or percent-mangled) and ABSENT from the wire when not —
-  coord owns the defaults, and an empty ``?window=`` from us would override
-  them,
-* nothing else is forwarded: the contract's HTTP door takes no ``slug`` or
-  ``limit``, so a client-supplied one must not be invented onto the wire,
+* ``window``, ``repos``, ``slug`` and ``limit`` forwarded VERBATIM when set
+  (the comma list is not split, re-joined or percent-mangled; ``limit`` is not
+  coerced or range-checked — coord owns its 200 ceiling) and ABSENT from the
+  wire when not — coord owns the defaults, and an empty ``?window=`` from us
+  would override them,
+* nothing else is forwarded: the contract defines exactly those four, so a
+  client-supplied extra must not be invented onto the wire,
 * the body surviving uncoerced — every figure is
   ``{value, coverage_n, population_n, basis, reason}``, and a ``null`` value
   carries the ``reason`` that makes it UNKNOWN rather than zero. A proxy that
@@ -306,12 +307,59 @@ def test_kpis_forwards_window_and_repos_together(auth_client: TestClient) -> Non
     }
 
 
+def test_kpis_forwards_slug_verbatim(auth_client: TestClient) -> None:
+    resp, get = _get(
+        auth_client,
+        f"{KPIS_ROUTE}?slug=2026-10-01-a-plan",
+        _mock_response(200, KPIS),
+    )
+    assert resp.status_code == 200
+    assert _assert_forwarded(get) == {"slug": "2026-10-01-a-plan"}
+
+
+def test_kpis_forwards_limit_verbatim_as_the_string_it_was_sent(
+    auth_client: TestClient,
+) -> None:
+    resp, get = _get(auth_client, f"{KPIS_ROUTE}?limit=200", _mock_response(200, KPIS))
+    assert resp.status_code == 200
+    # A string, not an int: this module does not own limit's grammar.
+    assert _assert_forwarded(get) == {"limit": "200"}
+
+
+def test_kpis_forwards_all_four_params_together(auth_client: TestClient) -> None:
+    resp, get = _get(
+        auth_client,
+        f"{KPIS_ROUTE}?window=90d&repos=qontinui/qontinui-web"
+        "&slug=2026-10-01-a-plan&limit=50",
+        _mock_response(200, KPIS),
+    )
+    assert resp.status_code == 200
+    assert _assert_forwarded(get) == {
+        "window": "90d",
+        "repos": "qontinui/qontinui-web",
+        "slug": "2026-10-01-a-plan",
+        "limit": "50",
+    }
+
+
+def test_kpis_does_not_validate_limit_itself(auth_client: TestClient) -> None:
+    # Over coord's ceiling and not a number at all: both reach coord unchanged.
+    # If this module typed `limit` as an int, the second would be a 422 raised
+    # here, a grammar of this module's own.
+    for sent in ("201", "abc", "-1"):
+        resp, get = _get(
+            auth_client, f"{KPIS_ROUTE}?limit={sent}", _mock_response(200, KPIS)
+        )
+        assert resp.status_code == 200, sent
+        assert _assert_forwarded(get) == {"limit": sent}
+
+
 def test_kpis_does_not_invent_params_the_contract_does_not_define(
     auth_client: TestClient,
 ) -> None:
     resp, get = _get(
         auth_client,
-        f"{KPIS_ROUTE}?window=7d&slug=2026-10-01-a-plan&limit=5",
+        f"{KPIS_ROUTE}?window=7d&offset=5&extra=1",
         _mock_response(200, KPIS),
     )
     assert resp.status_code == 200
@@ -348,6 +396,35 @@ def test_kpis_unknown_field_from_a_newer_coord_is_not_stripped(
     newer = {**KPIS, "added_by_a_later_coord": {"x": 1}}
     resp, _ = _get(auth_client, KPIS_ROUTE, _mock_response(200, newer))
     assert resp.json()["added_by_a_later_coord"] == {"x": 1}
+
+
+def test_kpis_slug_response_with_no_row_stays_an_empty_units_list(
+    auth_client: TestClient,
+) -> None:
+    # With `slug`, coord's `units` holds that one unit — and is EMPTY when coord
+    # has no row for it. Aggregates are still over the window's shipped units.
+    # The proxy must pass the empty list through as [], not drop or fill it.
+    body = {**KPIS, "units": []}
+    resp, _ = _get(
+        auth_client, f"{KPIS_ROUTE}?slug=no-such-unit", _mock_response(200, body)
+    )
+    assert resp.status_code == 200
+    out = resp.json()
+    assert out["units"] == []
+    assert out["aggregates"] == KPIS["aggregates"]
+
+
+def test_kpis_coord_rejection_of_limit_over_its_ceiling_passes_through(
+    auth_client: TestClient,
+) -> None:
+    resp, get = _get(
+        auth_client,
+        f"{KPIS_ROUTE}?limit=201",
+        _mock_response(400, None, text='{"error":"limit must be <= 200"}'),
+    )
+    assert resp.status_code == 400
+    assert "limit must be <= 200" in resp.text
+    assert _assert_forwarded(get) == {"limit": "201"}
 
 
 def test_kpis_coord_rejection_of_window_passes_through(

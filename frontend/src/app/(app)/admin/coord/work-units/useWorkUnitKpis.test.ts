@@ -10,7 +10,10 @@
  *     reason, and NO index of units;
  *   - a failed RE-read over a good one keeps the good one and says it is stale;
  *   - a window change is a different question: pending until it answers, and a
- *     superseded answer never lands under the new window.
+ *     superseded answer never lands under the new window;
+ *   - a SLUG read (the `[slug]` page) asks coord for that one unit —
+ *     `?slug=<slug>`, no window — and an empty `units` is coord having no row
+ *     for it, while another unit's row in the answer is a malformed reply.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +30,7 @@ vi.mock("@/services/service-factory", () => ({
 
 import {
   KPIS_ROUTE_UNAVAILABLE_TEXT,
+  KPIS_SLUG_MISMATCH_REASON,
   useWorkUnitKpis,
 } from "./useWorkUnitKpis";
 import { KPIS_SCHEMA_MISMATCH_REASON } from "@/components/admin/coord/workUnitKpis";
@@ -52,7 +56,7 @@ describe("useWorkUnitKpis", () => {
     fetchMock.mockResolvedValue(
       json(payload([unit("a"), unit("b"), unit("c")]))
     );
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     expect(result.current.index.state).toBe("pending");
     await waitFor(() => expect(result.current.index.state).toBe("loaded"));
 
@@ -73,7 +77,7 @@ describe("useWorkUnitKpis", () => {
     vi.useFakeTimers();
     try {
       fetchMock.mockResolvedValue(json(payload([unit("a")])));
-      renderHook(() => useWorkUnitKpis("28d"));
+      renderHook(() => useWorkUnitKpis({ window: "28d" }));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
@@ -91,7 +95,7 @@ describe("useWorkUnitKpis", () => {
     fetchMock.mockResolvedValue(
       new Response('{"error":"no_such_route"}', { status: 404 })
     );
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     await waitFor(() => expect(result.current.index.state).toBe("unavailable"));
     expect(result.current.index).toEqual({
       state: "unavailable",
@@ -101,7 +105,7 @@ describe("useWorkUnitKpis", () => {
 
   it("lands a transport failure as unavailable with the message", async () => {
     fetchMock.mockRejectedValue(new Error("Failed to fetch"));
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     await waitFor(() => expect(result.current.index.state).toBe("unavailable"));
     expect(result.current.index).toEqual({
       state: "unavailable",
@@ -113,7 +117,7 @@ describe("useWorkUnitKpis", () => {
     fetchMock.mockResolvedValue(
       new Response("coord is not reachable", { status: 502 })
     );
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     await waitFor(() => expect(result.current.index.state).toBe("unavailable"));
     const index = result.current.index;
     if (index.state !== "unavailable") throw new Error("not unavailable");
@@ -122,7 +126,7 @@ describe("useWorkUnitKpis", () => {
 
   it("lands a 200 that is not kpis/v1 as unavailable — an empty list is not an answer", async () => {
     fetchMock.mockResolvedValue(json({ work_units: [] }));
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     await waitFor(() => expect(result.current.index.state).toBe("unavailable"));
     expect(result.current.index).toEqual({
       state: "unavailable",
@@ -134,7 +138,7 @@ describe("useWorkUnitKpis", () => {
     const partial = unit("b");
     delete (partial as unknown as Record<string, unknown>).cost_microusd;
     fetchMock.mockResolvedValue(json(payload([unit("a"), partial])));
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     await waitFor(() => expect(result.current.index.state).toBe("unavailable"));
   });
 
@@ -142,7 +146,7 @@ describe("useWorkUnitKpis", () => {
     fetchMock
       .mockResolvedValueOnce(json(payload([unit("a")])))
       .mockRejectedValueOnce(new Error("HTTP 502"));
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     await waitFor(() => expect(result.current.index.state).toBe("loaded"));
 
     await act(async () => {
@@ -160,7 +164,7 @@ describe("useWorkUnitKpis", () => {
       .mockResolvedValueOnce(json(payload([unit("a")])))
       .mockRejectedValueOnce(new Error("HTTP 502"))
       .mockResolvedValueOnce(json(payload([unit("a"), unit("b")])));
-    const { result } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
     await waitFor(() => expect(result.current.index.state).toBe("loaded"));
     await act(async () => {
       await result.current.refresh();
@@ -182,7 +186,7 @@ describe("useWorkUnitKpis", () => {
       )
       .mockReturnValueOnce(second.promise);
     const { result, rerender } = renderHook(
-      ({ w }: { w: string }) => useWorkUnitKpis(w),
+      ({ w }: { w: string }) => useWorkUnitKpis({ window: w }),
       { initialProps: { w: "28d" } }
     );
     await waitFor(() => expect(result.current.index.state).toBe("loaded"));
@@ -216,7 +220,7 @@ describe("useWorkUnitKpis", () => {
         )
       );
     const { result, rerender } = renderHook(
-      ({ w }: { w: string }) => useWorkUnitKpis(w),
+      ({ w }: { w: string }) => useWorkUnitKpis({ window: w }),
       { initialProps: { w: "28d" } }
     );
     rerender({ w: "7d" });
@@ -235,12 +239,121 @@ describe("useWorkUnitKpis", () => {
   it("lands nothing after unmount", async () => {
     const slow = deferred();
     fetchMock.mockReturnValueOnce(slow.promise);
-    const { result, unmount } = renderHook(() => useWorkUnitKpis("28d"));
+    const { result, unmount } = renderHook(() =>
+      useWorkUnitKpis({ window: "28d" })
+    );
     unmount();
     await act(async () => {
       slow.resolve(json(payload([unit("a")])));
       await Promise.resolve();
     });
     expect(result.current.index.state).toBe("pending");
+  });
+});
+
+describe("useWorkUnitKpis — a slug read", () => {
+  it("asks coord for that one unit: ?slug=<slug>, no window, one request", async () => {
+    fetchMock.mockResolvedValue(
+      json(
+        payload([unit("2026-10-01-a-plan")], {
+          population: {
+            shipped_units: 250,
+            units_returned: 1,
+            truncated: false,
+          },
+        })
+      )
+    );
+    const { result } = renderHook(() =>
+      useWorkUnitKpis({ slug: "2026-10-01-a-plan" })
+    );
+    await waitFor(() => expect(result.current.index.state).toBe("loaded"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/kpis?slug=2026-10-01-a-plan",
+      { maxRetries: 0, method: "GET", idempotent: true },
+    ]);
+    const index = result.current.index;
+    if (index.state !== "loaded") throw new Error("not loaded");
+    expect(index.requestedSlug).toBe("2026-10-01-a-plan");
+    expect([...index.bySlug.keys()]).toEqual(["2026-10-01-a-plan"]);
+  });
+
+  it("percent-encodes a slug rather than splicing it into the URL", async () => {
+    fetchMock.mockResolvedValue(json(payload([])));
+    renderHook(() => useWorkUnitKpis({ slug: "a b&window=7d" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const url = new URL(fetchMock.mock.calls[0][0] as string, "http://x");
+    expect(url.searchParams.getAll("slug")).toEqual(["a b&window=7d"]);
+    expect(url.searchParams.has("window")).toBe(false);
+  });
+
+  it("takes an empty units list as coord having no row — loaded, and the slug is recorded", async () => {
+    fetchMock.mockResolvedValue(json(payload([])));
+    const { result } = renderHook(() =>
+      useWorkUnitKpis({ slug: "no-such-unit" })
+    );
+    await waitFor(() => expect(result.current.index.state).toBe("loaded"));
+    const index = result.current.index;
+    if (index.state !== "loaded") throw new Error("not loaded");
+    expect(index.bySlug.size).toBe(0);
+    expect(index.requestedSlug).toBe("no-such-unit");
+  });
+
+  it("refuses a slug answer that carries a DIFFERENT unit — a malformed reply is not an absence", async () => {
+    fetchMock.mockResolvedValue(json(payload([unit("someone-else")])));
+    const { result } = renderHook(() =>
+      useWorkUnitKpis({ slug: "2026-10-01-a-plan" })
+    );
+    await waitFor(() => expect(result.current.index.state).toBe("unavailable"));
+    expect(result.current.index).toEqual({
+      state: "unavailable",
+      reason: KPIS_SLUG_MISMATCH_REASON,
+    });
+  });
+
+  it("does not apply that check to a window read, which legitimately returns many units", async () => {
+    fetchMock.mockResolvedValue(json(payload([unit("a"), unit("b")])));
+    const { result } = renderHook(() => useWorkUnitKpis({ window: "28d" }));
+    await waitFor(() => expect(result.current.index.state).toBe("loaded"));
+    const index = result.current.index;
+    if (index.state !== "loaded") throw new Error("not loaded");
+    expect(index.requestedSlug).toBeNull();
+  });
+
+  it("treats a changed slug as a new question: pending, then the new unit", async () => {
+    const second = deferred();
+    fetchMock
+      .mockResolvedValueOnce(json(payload([unit("first")])))
+      .mockReturnValueOnce(second.promise);
+    const { result, rerender } = renderHook(
+      ({ s }: { s: string }) => useWorkUnitKpis({ slug: s }),
+      { initialProps: { s: "first" } }
+    );
+    await waitFor(() => expect(result.current.index.state).toBe("loaded"));
+
+    rerender({ s: "second" });
+    // The first unit's figures must not be shown under the second's heading.
+    expect(result.current.index.state).toBe("pending");
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "/api/v1/operations/kpis?slug=second"
+    );
+    await act(async () => {
+      second.resolve(json(payload([unit("second")])));
+    });
+    await waitFor(() => expect(result.current.index.state).toBe("loaded"));
+  });
+
+  it("lands a 404 for a slug read as unavailable, not as 'no row'", async () => {
+    fetchMock.mockResolvedValue(
+      new Response('{"error":"no_such_route"}', { status: 404 })
+    );
+    const { result } = renderHook(() => useWorkUnitKpis({ slug: "a" }));
+    await waitFor(() => expect(result.current.index.state).toBe("unavailable"));
+    expect(result.current.index).toEqual({
+      state: "unavailable",
+      reason: KPIS_ROUTE_UNAVAILABLE_TEXT,
+    });
   });
 });

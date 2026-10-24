@@ -17,7 +17,8 @@
  * Plan `2026-10-09-kpi-telemetry-and-dashboards` Phase 4. The wire types are
  * `components/admin/coord/kpisV1.ts`; the handler is `get_kpis` in
  * `backend/app/api/v1/endpoints/operations/__init__.py`, which forwards
- * `window` and `repos` to coord's `GET /coord/kpis` and nothing else.
+ * `window`, `repos`, `slug` and `limit` to coord's `GET /coord/kpis` and
+ * nothing else.
  */
 
 import type { HttpOptions } from "@/services/http-client";
@@ -30,9 +31,17 @@ export interface KpisQuery {
   window?: string;
   /** Comma-separated `owner/name`. Unset = every repo of the tenant. */
   repos?: string;
+  /**
+   * One work unit's slug. Coord then returns that unit (any status) in
+   * `units` — empty when it has no row for it — while `aggregates` stay over
+   * the window's shipped units.
+   */
+  slug?: string;
+  /** Caps `units`; coord defaults it to 100 and refuses more than 200 with a 400. */
+  limit?: string;
 }
 
-/** `GET /kpis?<window>&<repos>` (`get_kpis`). */
+/** `GET /kpis?<window>&<repos>&<slug>&<limit>` (`get_kpis`). */
 export async function fetchKpis(
   query: KpisQuery = {},
   options: HttpOptions = {}
@@ -40,6 +49,8 @@ export async function fetchKpis(
   const qs = new URLSearchParams();
   if (query.window) qs.set("window", query.window);
   if (query.repos) qs.set("repos", query.repos);
+  if (query.slug) qs.set("slug", query.slug);
+  if (query.limit) qs.set("limit", query.limit);
   const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
   const url = `${OPERATIONS_BASE}/kpis${suffix}`;
   const res = await httpClient.fetch(url, {

@@ -101165,7 +101165,7 @@
     },
     "/api/v1/operations/kpis": {
       "get": {
-        "description": "Return coord's per-work-unit KPIs (schema ``kpis/v1``).\n\nProxies coord ``GET /coord/kpis`` (plan\n``2026-10-09-kpi-telemetry-and-dashboards`` Phase 4), the one read behind\nthe KPI cells on ``/admin/coord/work-units`` and the KPI block on\n``/admin/coord/work-units/[slug]``. Per shipped work unit in the window\ncoord reports lead time (and its two segments), sessions, tokens, cost,\nCI attempts, red-to-green iterations, interventions and rework; beside\nthem sit ``aggregates`` over the same shipped population.\n\nUnknown is first-class on this wire and the proxy preserves it: every\nfigure is ``{value, coverage_n, population_n, basis, reason}``, a figure\ncoord cannot compute arrives as ``value: null`` with a ``reason`` from its\nclosed vocabulary (``not_yet_measured``, ``no_usage_rows`` \u2026), and\n``cost_microusd`` is a list-price EQUIVALENT whose ``basis`` says so. A\ndatabase failure is coord's typed error, raised here, never zeros.\n\n``window`` (coord's ``28d`` grammar) and ``repos`` (comma-separated\n``owner/name``) are forwarded verbatim when set and ABSENT from the wire\nwhen not \u2014 coord owns the defaults and the validation, and a value it\ncannot parse comes back as its own 4xx rather than being re-validated\n(and eventually mis-validated) here. The body is passed through\nuntouched \u2014 no ``response_model`` \u2014 so a field coord adds reaches the\nconsole without a change in this module.",
+        "description": "Return coord's per-work-unit KPIs (schema ``kpis/v1``).\n\nProxies coord ``GET /coord/kpis`` (plan\n``2026-10-09-kpi-telemetry-and-dashboards`` Phase 4), the one read behind\nthe KPI cells on ``/admin/coord/work-units`` and the KPI block on\n``/admin/coord/work-units/[slug]``. Per shipped work unit in the window\ncoord reports lead time (and its two segments), sessions, tokens, cost,\nCI attempts, red-to-green iterations, interventions and rework; beside\nthem sit ``aggregates`` over the same shipped population.\n\nUnknown is first-class on this wire and the proxy preserves it: every\nfigure is ``{value, coverage_n, population_n, basis, reason}``, a figure\ncoord cannot compute arrives as ``value: null`` with a ``reason`` from its\nclosed vocabulary (``not_yet_measured``, ``no_usage_rows`` \u2026), and\n``cost_microusd`` is a list-price EQUIVALENT whose ``basis`` says so. A\ndatabase failure is coord's typed error, raised here, never zeros.\n\n``window`` (coord's ``28d`` grammar), ``repos`` (comma-separated\n``owner/name``), ``slug`` and ``limit`` are forwarded verbatim when set\nand ABSENT from the wire when not \u2014 coord owns the defaults and the\nvalidation, and a value it cannot accept (an unparseable ``window``, a\n``limit`` over its ceiling) comes back as its own 4xx rather than being\nre-validated (and eventually mis-validated) here. ``limit`` is therefore\na string at this boundary: typing it ``int`` would make this module the\none that answers 422 for ``limit=abc``, a second grammar for coord's\nown. With ``slug``, coord's ``units`` holds that one unit (any status)\nwhile ``aggregates`` stay computed over the window's shipped units; an\nempty ``units`` then means coord has no row for that slug. The body is\npassed through untouched \u2014 no ``response_model`` \u2014 so a field coord adds\nreaches the console without a change in this module.",
         "operationId": "api_v1_operations_kpis_get",
         "parameters": [
           {
@@ -101198,6 +101198,38 @@
                 }
               ],
               "title": "Repos"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Slug"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
             }
           }
         ],

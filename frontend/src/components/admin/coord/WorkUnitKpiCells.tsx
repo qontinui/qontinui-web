@@ -78,7 +78,13 @@ function tone(view: Pick<KpiView, "kind">): string {
  * row for.
  */
 export function KpiRowChips({ cell }: { cell: KpiCell }) {
-  if (cell.kind === "pending" || cell.kind === "unavailable") return null;
+  if (
+    cell.kind === "pending" ||
+    cell.kind === "unavailable" ||
+    cell.kind === "unrecorded"
+  ) {
+    return null;
+  }
   if (cell.kind === "outside") {
     return (
       <span
@@ -146,6 +152,17 @@ export function KpiBlock({ cell }: { cell: KpiCell }) {
       >
         KPIs unavailable — {cell.reason}. No figures are shown for this work
         unit.
+      </p>
+    );
+  }
+  if (cell.kind === "unrecorded") {
+    return (
+      <p
+        className="text-xs text-muted-foreground italic"
+        data-testid="coord-plan-kpis-unrecorded"
+        data-kpi-state="none"
+      >
+        {cell.sentence}
       </p>
     );
   }

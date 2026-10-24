@@ -418,7 +418,10 @@ export function unitBlockRows(unit: KpiUnit): KpiBlockRow[] {
  * - `unavailable`: the read FAILED or came back in a shape this build cannot
  *   read. No figure is shown, anywhere, and no figure is made up.
  * - `loaded`: coord answered. `staleReason` is set when a LATER re-read failed
- *   and these figures are the last good ones.
+ *   and these figures are the last good ones. `requestedSlug` is non-null when
+ *   the read asked coord for ONE unit (`slug=`), in which case `units` holds
+ *   that unit or is empty — and empty means coord has no row for it, which is
+ *   a different fact from "not among the window's returned units".
  */
 export type KpiIndex =
   | { state: "pending" }
@@ -431,6 +434,7 @@ export type KpiIndex =
       generatedAt: string;
       readAt: string;
       staleReason: string | null;
+      requestedSlug: string | null;
     };
 
 export const KPI_PENDING: KpiIndex = { state: "pending" };
@@ -438,7 +442,8 @@ export const KPI_PENDING: KpiIndex = { state: "pending" };
 export function indexKpis(
   payload: KpisPayload,
   readAt: string,
-  staleReason: string | null = null
+  staleReason: string | null = null,
+  requestedSlug: string | null = null
 ): KpiIndex {
   return {
     state: "loaded",
@@ -448,6 +453,7 @@ export function indexKpis(
     generatedAt: payload.generated_at,
     readAt,
     staleReason,
+    requestedSlug,
   };
 }
 
@@ -457,6 +463,8 @@ export type KpiCell =
   | { kind: "unavailable"; reason: string }
   /** Coord answered, and this unit is not among the units it returned. */
   | { kind: "outside"; sentence: string; coverageUnknown: boolean }
+  /** Coord was asked for this unit by slug and has no row for it. */
+  | { kind: "unrecorded"; sentence: string }
   | { kind: "unit"; unit: KpiUnit };
 
 /**
@@ -465,7 +473,11 @@ export type KpiCell =
  * - the answer was complete → this unit is not one of the shipped units in the
  *   window (a draft, a unit shipped earlier, or a repo outside the selection),
  *   so it has no KPI row, and the sentence says that;
- * - the answer was TRUNCATED → whether this unit has a row is unknown.
+ * - the answer was TRUNCATED → whether this unit has a row is unknown;
+ * - the read asked for THIS unit by slug and `units` came back without it →
+ *   coord has no KPI row for it, which is "no KPIs recorded" — a complete
+ *   answer to the question asked, so there is no window and no truncation to
+ *   reason about.
  */
 export function kpiCell(index: KpiIndex, slug: string): KpiCell {
   if (index.state === "pending") return { kind: "pending" };
@@ -474,6 +486,12 @@ export function kpiCell(index: KpiIndex, slug: string): KpiCell {
   }
   const unit = index.bySlug.get(slug);
   if (unit) return { kind: "unit", unit };
+  if (index.requestedSlug !== null) {
+    return {
+      kind: "unrecorded",
+      sentence: "No KPIs recorded: coord has no KPI row for this work unit.",
+    };
+  }
   const { days } = index.window;
   const { units_returned: returned, shipped_units: shipped } = index.population;
   if (index.population.truncated) {
@@ -517,6 +535,12 @@ export function describeKpiIndex(index: KpiIndex): string {
     case "unavailable":
       return `KPIs unavailable — ${index.reason}. No KPI figures are shown; nothing else on this page depends on them.`;
     case "loaded": {
+      if (index.requestedSlug !== null) {
+        const single = `KPIs for this work unit. Cost is a ${LIST_PRICE_LABEL}, not billed spend. A figure that saw only part of its inputs says how many; unknown is never zero. Read ${stamp(index.readAt)}; read once per page load.`;
+        return index.staleReason
+          ? `${single} The latest re-read failed (${index.staleReason}); these are the last good figures.`
+          : single;
+      }
       const { population } = index;
       const { days, from, to } = index.window;
       const base = `KPIs for work units shipped in the last ${days} days (${day(from)} to ${day(to)}): ${population.units_returned} of ${population.shipped_units} returned${population.truncated ? ", TRUNCATED — the rest are not shown" : ""}. Cost is a ${LIST_PRICE_LABEL}, not billed spend. A figure that saw only part of its inputs says how many; unknown is never zero. Read ${stamp(index.readAt)}; re-read only on Refresh or a window change.`;
@@ -539,8 +563,13 @@ export function kpiPanelSummary(index: KpiIndex, cell: KpiCell): string {
       return "unavailable";
     case "outside":
       return cell.coverageUnknown ? "unknown" : "none in window";
+    case "unrecorded":
+      return "none recorded";
     case "unit":
-      return index.state === "loaded" ? `${index.window.days}d window` : "";
+      if (index.state !== "loaded") return "";
+      return index.requestedSlug !== null
+        ? "recorded"
+        : `${index.window.days}d window`;
   }
 }
 

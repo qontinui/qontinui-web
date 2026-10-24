@@ -63,12 +63,14 @@
  * A "Delivery KPIs" panel carries every figure coord measures for this unit —
  * lead time and its two segments, sessions, the four token classes, a
  * list-price-equivalent cost, CI attempts, red→green iterations, interventions
- * (with their split) and rework — from the SAME one read the list page makes
- * (`useWorkUnitKpis`, `GET /api/v1/operations/kpis`), found here by slug. It is
- * a read of its own: a failure shows "KPIs unavailable" with no figure and
- * touches nothing else on this page, and a unit coord returned no row for says
- * so rather than showing zeros. The panel is R7's: the window and the state
- * stay in the header when it is folded.
+ * (with their split) and rework — from a read of its OWN
+ * (`useWorkUnitKpis({ slug })`, `GET /api/v1/operations/kpis?slug=<slug>`):
+ * coord is asked for this unit, and returns it whatever its status and wherever
+ * it sits relative to any window. So an empty answer means coord has no KPI row
+ * for it ("No KPIs recorded"), never zeros, and there is no window control — a
+ * slug read does not depend on one. A failure shows "KPIs unavailable" with no
+ * figure and touches nothing else on this page. The panel is R7's: its state
+ * stays in the header when it is folded.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -124,12 +126,8 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { KpiBlock } from "@/components/admin/coord/WorkUnitKpiCells";
 import {
-  KpiBlock,
-  KpiWindowSelect,
-} from "@/components/admin/coord/WorkUnitKpiCells";
-import {
-  DEFAULT_KPI_WINDOW,
   describeKpiIndex,
   kpiCell,
   kpiPanelSummary,
@@ -195,9 +193,8 @@ export default function CoordPlanDetailPage() {
    */
   const [historyLoaded, setHistoryLoaded] = useState(false);
 
-  // The KPI read is its own: one request for the window, never one per field.
-  const [kpiWindow, setKpiWindow] = useState<string>(DEFAULT_KPI_WINDOW);
-  const { index: kpiIndex } = useWorkUnitKpis(kpiWindow);
+  // The KPI read is its own: one request, for THIS unit, never one per field.
+  const { index: kpiIndex } = useWorkUnitKpis({ slug });
   const kpi = kpiCell(kpiIndex, slug);
 
   const [newStatus, setNewStatus] = useState("in_progress");
@@ -470,10 +467,10 @@ export default function CoordPlanDetailPage() {
           </section>
           </CoordAdminOnly>
 
-          {/* R7 — the KPIs are supporting material, so they fold; the window
-              and the state stay in the header while folded, and the state is
-              a WORD ("unavailable", "none in window"), never a number that
-              could be read as zero. */}
+          {/* R7 — the KPIs are supporting material, so they fold; the state
+              stays in the header while folded, and it is a WORD
+              ("unavailable", "none recorded"), never a number that could be
+              read as zero. */}
           <CollapsiblePanel
             titleAs="h2"
             className="p-3"
@@ -490,13 +487,6 @@ export default function CoordPlanDetailPage() {
               >
                 {kpiPanelSummary(kpiIndex, kpi)}
               </Badge>
-            }
-            headerActions={
-              <KpiWindowSelect
-                value={kpiWindow}
-                onChange={setKpiWindow}
-                data-testid="coord-plan-kpi-window-select"
-              />
             }
             contentClassName="space-y-2"
             data-testid="coord-plan-kpis"
