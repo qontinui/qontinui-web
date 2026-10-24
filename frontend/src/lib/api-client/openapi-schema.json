@@ -103327,6 +103327,72 @@
         ]
       }
     },
+    "/api/v1/operations/kpis": {
+      "get": {
+        "description": "Return coord's per-work-unit KPIs (schema ``kpis/v1``).\n\nProxies coord ``GET /coord/kpis`` (plan\n``2026-10-09-kpi-telemetry-and-dashboards`` Phase 4), the one read behind\nthe KPI cells on ``/admin/coord/work-units`` and the KPI block on\n``/admin/coord/work-units/[slug]``. Per shipped work unit in the window\ncoord reports lead time (and its two segments), sessions, tokens, cost,\nCI attempts, red-to-green iterations, interventions and rework; beside\nthem sit ``aggregates`` over the same shipped population.\n\nUnknown is first-class on this wire and the proxy preserves it: every\nfigure is ``{value, coverage_n, population_n, basis, reason}``, a figure\ncoord cannot compute arrives as ``value: null`` with a ``reason`` from its\nclosed vocabulary (``not_yet_measured``, ``no_usage_rows`` \u2026), and\n``cost_microusd`` is a list-price EQUIVALENT whose ``basis`` says so. A\ndatabase failure is coord's typed error, raised here, never zeros.\n\n``window`` (coord's ``28d`` grammar) and ``repos`` (comma-separated\n``owner/name``) are forwarded verbatim when set and ABSENT from the wire\nwhen not \u2014 coord owns the defaults and the validation, and a value it\ncannot parse comes back as its own 4xx rather than being re-validated\n(and eventually mis-validated) here. The body is passed through\nuntouched \u2014 no ``response_model`` \u2014 so a field coord adds reaches the\nconsole without a change in this module.",
+        "operationId": "api_v1_operations_kpis_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repos",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repos"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Kpis Api V1 Operations Kpis Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Kpis",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/lands": {
       "get": {
         "description": "List recent declared lands + their verifications from coord.\n\nForwards the optional ``repo`` filter and ``limit`` cap to coord.",

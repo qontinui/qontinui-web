@@ -13945,6 +13945,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Kpis
+         * @description Return coord's per-work-unit KPIs (schema ``kpis/v1``).
+         *
+         *     Proxies coord ``GET /coord/kpis`` (plan
+         *     ``2026-10-09-kpi-telemetry-and-dashboards`` Phase 4), the one read behind
+         *     the KPI cells on ``/admin/coord/work-units`` and the KPI block on
+         *     ``/admin/coord/work-units/[slug]``. Per shipped work unit in the window
+         *     coord reports lead time (and its two segments), sessions, tokens, cost,
+         *     CI attempts, red-to-green iterations, interventions and rework; beside
+         *     them sit ``aggregates`` over the same shipped population.
+         *
+         *     Unknown is first-class on this wire and the proxy preserves it: every
+         *     figure is ``{value, coverage_n, population_n, basis, reason}``, a figure
+         *     coord cannot compute arrives as ``value: null`` with a ``reason`` from its
+         *     closed vocabulary (``not_yet_measured``, ``no_usage_rows`` …), and
+         *     ``cost_microusd`` is a list-price EQUIVALENT whose ``basis`` says so. A
+         *     database failure is coord's typed error, raised here, never zeros.
+         *
+         *     ``window`` (coord's ``28d`` grammar) and ``repos`` (comma-separated
+         *     ``owner/name``) are forwarded verbatim when set and ABSENT from the wire
+         *     when not — coord owns the defaults and the validation, and a value it
+         *     cannot parse comes back as its own 4xx rather than being re-validated
+         *     (and eventually mis-validated) here. The body is passed through
+         *     untouched — no ``response_model`` — so a field coord adds reaches the
+         *     console without a change in this module.
+         */
+        get: operations["api_v1_operations_kpis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/lands": {
         parameters: {
             query?: never;
@@ -76672,6 +76715,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegisteredRunner"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_kpis_get: {
+        parameters: {
+            query?: {
+                window?: string | null;
+                repos?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
