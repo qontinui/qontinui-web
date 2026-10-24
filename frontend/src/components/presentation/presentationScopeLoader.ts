@@ -31,8 +31,10 @@
  *   made. Both withhold every title. A failed read is retried after
  *   {@link PRESENTATION_SCOPE_RETRY_MS}.
  *
- * The tenant-policy page's form reads the same store (`record`) and hands it
- * the saved answer (`accept`), so a save is in force in this tab immediately.
+ * The tenant-policy page's form (`PresentationScopePanel`, operator mode only)
+ * reads the same store (`record`) — asking for the read itself, since nothing
+ * there is presenting — and hands it the saved answer (`accept`), so a save is
+ * in force in this tab immediately.
  *
  * This is the presentation folder's only network module, and
  * `noNetwork.test.tsx` names it as such.
