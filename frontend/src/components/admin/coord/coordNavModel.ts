@@ -63,6 +63,7 @@ import {
   Cpu,
   FileText,
   Files,
+  FolderOpen,
   Gauge,
   Gavel,
   GitBranch,
@@ -320,6 +321,17 @@ export const GROUPS: NavGroup[] = [
         label: "Findings",
         icon: Lightbulb,
         testId: "coord-nav-findings",
+      },
+      {
+        // Beside Findings, because every dossier IS a finding: the durable
+        // head of a recurring defect. This page lists them all — filtered by
+        // readiness and by the LIVE state of their remediation plan, sorted by
+        // recurrences — which the findings feed's newest-first window cannot.
+        // Plan `2026-10-03-dossier-query-door-filters-sort-cursor`, Phase 5.
+        href: "/admin/coord/dossiers",
+        label: "Dossiers",
+        icon: FolderOpen,
+        testId: "coord-nav-dossiers",
       },
       {
         // Sits after Questions and Findings deliberately: Questions is where a
