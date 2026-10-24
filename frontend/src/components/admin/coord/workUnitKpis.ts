@@ -6,7 +6,9 @@
  * in `kpisV1.ts`. Rendering follows the Overview's domain-cost convention
  * (`app/(app)/overview/_lib/domainCost.ts`): a figure is
  * `{value, coverage_n, population_n, basis, reason}`, coverage is written as
- * "N of M observed", and **`null` renders "unknown — <reason>", never `0`, never
+ * "N of M observed" (the one exception is the sessions count, which is exact
+ * and says "3 sessions, 2 with usage data" — see {@link ExactCount}), and
+ * **`null` renders "unknown — <reason>", never `0`, never
  * a dash, never blank** (served policy `verification-and-evidence`
  * `unknown-must-not-render-as-a-default`). `unknownText` is that module's own
  * export, reused rather than re-spelled so the two surfaces cannot drift.
@@ -120,13 +122,19 @@ export function formatCompactCount(n: number): string {
   }).format(n);
 }
 
+/** What a negative cost prints: an anomaly to be seen, not `-$0.0000`. */
+export const NEGATIVE_COST_TEXT = "negative (cost out of range)";
+
 /**
  * Micro-USD as dollars: `$2.50`, four places below a cent so it is not
  * `$0.00`, and `<$0.0001` for a positive amount that would still round to
  * zero at four places (1..49 micro-USD) — a cost that was incurred never
- * prints as `$0.0000`.
+ * prints as `$0.0000`. A NEGATIVE cost is not a cost at all, and a tiny one
+ * would print as `-$0.0000`, a zero-looking number; any negative prints as
+ * {@link NEGATIVE_COST_TEXT}, the way a negative duration does.
  */
 export function formatMicroUsd(micro: number): string {
+  if (micro < 0) return NEGATIVE_COST_TEXT;
   const sub = micro !== 0 && Math.abs(micro) < 10_000;
   const text = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -215,22 +223,30 @@ export function describeKpi(
       basis: "",
     };
   }
-  const coverage = options.exact
-    ? options.exact.coverage(kpi.coverage_n, kpi.population_n)
-    : coverageText(kpi.coverage_n, kpi.population_n);
   const basis = kpi.basis ?? "";
   const hasReason = kpi.reason !== null && kpi.reason !== undefined;
   if (kpi.value === null || kpi.value === undefined || hasReason) {
+    // An EXACT count that is unknown says only `unknown` and why. Its coverage
+    // is about the items of a count that was not established, so "(0 with usage
+    // data)" beside it would be a zero-reading fact next to an unknown number.
+    const coverage = options.exact
+      ? "coverage not stated"
+      : coverageText(kpi.coverage_n, kpi.population_n);
     return {
       kind: "unknown",
       text: "unknown",
-      detail: `${unknownText(reasonWords(kpi.reason))} (${coverage})`,
+      detail: options.exact
+        ? unknownText(reasonWords(kpi.reason))
+        : `${unknownText(reasonWords(kpi.reason))} (${coverage})`,
       coverage,
       partial: false,
       reason: kpi.reason ?? null,
       basis,
     };
   }
+  const coverage = options.exact
+    ? options.exact.coverage(kpi.coverage_n, kpi.population_n)
+    : coverageText(kpi.coverage_n, kpi.population_n);
   const value = format(kpi.value);
   const withSuffix = options.suffix ? `${value} ${options.suffix}` : value;
   if (options.exact) {

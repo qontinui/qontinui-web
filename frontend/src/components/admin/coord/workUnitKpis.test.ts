@@ -35,6 +35,7 @@ import {
   unitBlockRows,
   unitColumnViews,
   KPI_PENDING,
+  NEGATIVE_COST_TEXT,
   NEGATIVE_DURATION_TEXT,
   formatSessions,
 } from "./workUnitKpis";
@@ -206,6 +207,27 @@ describe("formatters", () => {
     expect(formatMicroUsd(0)).toBe("$0.00");
   });
 
+  it("prints any negative cost as an anomaly — never a zero-looking -$0.0000", () => {
+    for (const micro of [-0.4, -1, -49, -50, -10_000, -2_500_000]) {
+      expect(formatMicroUsd(micro)).toBe(NEGATIVE_COST_TEXT);
+    }
+    expect(NEGATIVE_COST_TEXT).toBe("negative (cost out of range)");
+    // Through the cell as well, labelled and with its coverage.
+    const v = describeKpi(kpi(-49), formatMicroUsd, {
+      suffix: LIST_PRICE_LABEL,
+    });
+    expect(v.kind).toBe("known");
+    expect(v.text).toBe("negative (cost out of range)");
+    expect(v.detail).toBe(
+      "negative (cost out of range) list-price equivalent (1 of 1 observed)"
+    );
+    expect(v.text).not.toMatch(/\$/);
+    // The positive and zero forms are unchanged.
+    expect(formatMicroUsd(49)).toBe("<$0.0001");
+    expect(formatMicroUsd(50)).toBe("$0.0001");
+    expect(formatMicroUsd(0)).toBe("$0.00");
+  });
+
   it("formats token counts compactly", () => {
     expect(formatCompactCount(950)).toBe("950");
     expect(formatCompactCount(12_345)).toBe("12.3K");
@@ -273,9 +295,34 @@ describe("sessions", () => {
       unit("a", { sessions: unknown("not_established", { population_n: 0 }) })
     ).find((r) => r.id === "sessions")!;
     expect(row.view.kind).toBe("unknown");
-    expect(row.view.detail).toBe(
-      "unknown — not established (0 with usage data)"
-    );
+    // Only `unknown` and why: no "(0 with usage data)" beside an unknown count.
+    expect(row.view.detail).toBe("unknown — not established");
+    expect(row.view.detail).not.toMatch(/usage data|\d/);
+    expect(row.view.coverage).not.toMatch(/\d/);
+  });
+
+  it("does the same for a sessions count that arrives with both a value and a reason", () => {
+    const row = unitBlockRows(
+      unit("a", {
+        sessions: {
+          value: 3,
+          coverage_n: 0,
+          population_n: 3,
+          basis: "sessions of the unit",
+          reason: "no_usage_rows",
+        },
+      })
+    ).find((r) => r.id === "sessions")!;
+    expect(row.view.kind).toBe("unknown");
+    expect(row.view.detail).toBe("unknown — no usage rows recorded");
+    expect(row.view.text).toBe("unknown");
+  });
+
+  it("keeps the 'N of M observed' coverage on an unknown figure that is not an exact count", () => {
+    const row = unitBlockRows(
+      unit("a", { ci_attempts: unknown("no_cited_prs") })
+    ).find((r) => r.id === "ci_attempts")!;
+    expect(row.view.detail).toBe("unknown — no cited PRs (0 of 3 observed)");
   });
 
   it("does not change how every other count is worded", () => {
@@ -345,6 +392,49 @@ describe("columns", () => {
     expect(half.kind).toBe("known");
     expect(half.text).toBe("in 12.3K · out unknown");
     expect(half.detail).toContain("output — unknown — no usage rows recorded");
+  });
+
+  it("renders a token figure that carries both a value and a reason as UNKNOWN, with no number", () => {
+    const contradictory = (value: number) => ({
+      value,
+      coverage_n: 0,
+      population_n: 3,
+      basis: "sessions with a usage row",
+      reason: "no_usage_rows",
+    });
+    // Both classes contradictory: the cell collapses to one unknown.
+    const both = unitColumnViews(
+      unit("a", {
+        tokens: {
+          input: contradictory(12_345),
+          output: contradictory(4_100),
+          cache_creation_input: kpi(1),
+          cache_read_input: kpi(1),
+        },
+      })
+    ).tokens;
+    expect(both.kind).toBe("unknown");
+    expect(both.text).toBe("unknown");
+    expect(both.reason).toBe("no_usage_rows");
+    expect(both.text).not.toMatch(/\d|12|4\.1/);
+    expect(both.detail).not.toMatch(/12K|12\.3K|4\.1K|12,345/);
+
+    // One contradictory, one known: the contradictory side is unknown, the
+    // known side still prints, and the hidden number appears nowhere.
+    const half = unitColumnViews(
+      unit("a", {
+        tokens: {
+          input: contradictory(12_345),
+          output: kpi(4_100),
+          cache_creation_input: kpi(1),
+          cache_read_input: kpi(1),
+        },
+      })
+    ).tokens;
+    expect(half.kind).toBe("known");
+    expect(half.text).toBe("in unknown · out 4.1K");
+    expect(half.detail).toContain("input — unknown — no usage rows recorded");
+    expect(half.text + half.detail).not.toMatch(/12\.3K|12,345/);
   });
 
   it("flags a partially covered token pair as partial", () => {
