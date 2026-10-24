@@ -1,7 +1,7 @@
 """worktree_headroom_mode control + cpu_busy_permille sample column
 
 Revision ID: wthr_01
-Revises: cihost_01_ci_host_agent_fleet
+Revises: citecand_01
 Create Date: 2026-10-05
 
 Phase 1 of plan
@@ -43,7 +43,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "wthr_01"
-down_revision: str | Sequence[str] | None = "cihost_01_ci_host_agent_fleet"
+down_revision: str | Sequence[str] | None = "citecand_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

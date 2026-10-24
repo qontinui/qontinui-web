@@ -26,7 +26,7 @@ from tests._alembic_harness import (
 
 _REVISION_ID = "wthr_01"
 # MUST equal the revision's own down_revision (first test enforces it).
-_PARENT_REVISION_ID = "cihost_01_ci_host_agent_fleet"
+_PARENT_REVISION_ID = "citecand_01"
 _REVISION_FILENAME = "wthr_01_worktree_headroom_mode_cpu_busy_permille.py"
 
 # (schema.table, column, information_schema.data_type)
