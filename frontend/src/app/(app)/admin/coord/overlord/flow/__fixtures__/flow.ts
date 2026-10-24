@@ -6,6 +6,33 @@
 
 export const SESSION_ID = "6f1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a5b";
 
+export const DEVICE_ID = "0d1e2f3a-4b5c-4d6e-8f70-819203a4b5c6";
+export const DEVICE_ID_2 = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+
+/** Two runners with 2 full passes each: a tenant total of 4, and still none covered. */
+export const RUNNERS_TWO_SHORT = [
+  {
+    device_id: DEVICE_ID,
+    runner_port: 9876,
+    passes: 3,
+    full_passes: 2,
+    latest_full_pass_at: "2026-10-23T20:00:00Z",
+  },
+  {
+    device_id: DEVICE_ID_2,
+    runner_port: 9876,
+    passes: 2,
+    full_passes: 2,
+    latest_full_pass_at: "2026-10-23T19:00:00Z",
+  },
+];
+
+/** Every runner ran at least 3 full passes. */
+export const RUNNERS_ALL_COVERED = [
+  { ...RUNNERS_TWO_SHORT[0], passes: 4, full_passes: 3 },
+  { ...RUNNERS_TWO_SHORT[1], passes: 5, full_passes: 4 },
+];
+
 export const FULL_FLOW = {
   ok: true,
   window: { since: "2026-10-17T00:00:00Z", until: "2026-10-24T00:00:00Z" },
@@ -98,6 +125,8 @@ export const FULL_FLOW = {
       histogram: { FINISHED: 1 },
     },
   ],
+  full_passes_by_runner: [RUNNERS_TWO_SHORT[0]],
+  params: { unchanged_min_passes: 3, nudge_window_passes: 3 },
 };
 
 /** A window coord answered with nothing measurable: nulls, never zeros. */
@@ -141,4 +170,6 @@ export const NULL_FLOW = {
       histogram: {},
     },
   ],
+  full_passes_by_runner: [RUNNERS_TWO_SHORT[0]],
+  params: { unchanged_min_passes: 3, nudge_window_passes: 3 },
 };

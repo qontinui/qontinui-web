@@ -62,28 +62,69 @@ export function flowQuery(id: FlowWindowId): string {
   return qs.toString();
 }
 
-/**
- * Could an unchanged session have been SEEN in this window? Unchanged is
- * defined over consecutive FULL passes only (filtered passes never count), so
- * with fewer than {@link UNCHANGED_MIN_PASSES} of them — or an unknown number
- * — an empty unchanged list is not evidence that nothing is stuck. The strip
- * and the list's empty slot both read this one predicate.
- */
-export function unchangedIsObservable(view: FlowView): boolean {
-  return (
-    view.fullPassesConsidered !== undefined &&
-    view.fullPassesConsidered >= UNCHANGED_MIN_PASSES
-  );
+/** Whether an EMPTY unchanged list can be read as "nothing is stuck". */
+export interface UnchangedCoverage {
+  /** True only when EVERY runner in the window ran enough full passes. */
+  everyRunnerCovered: boolean;
+  /** Why, in words — one clause, no trailing punctuation (strip and list). */
+  sentence: string;
 }
 
-/** Why an empty unchanged list says nothing, in words (the strip and the list). */
-export function unchangedUnobservableSentence(
+/**
+ * Could an unchanged session have been SEEN on every runner?
+ *
+ * Unchanged is decided per `(device_id, runner_port)` over consecutive FULL
+ * passes (filtered passes never count), so the question is per runner: a
+ * runner that ran fewer than the applied threshold cannot have produced an
+ * unchanged row, however many full passes the tenant ran in total — two
+ * runners with 2 full passes each total 4 and still could not see one. So
+ * the answer is confirmed ONLY from coord's served `full_passes_by_runner`,
+ * non-empty, with every entry at or above `params.unchanged_min_passes` (the
+ * {@link UNCHANGED_MIN_PASSES} this page sends when `params` is absent).
+ * Absent, unreadable or empty per-runner counts are never confirmation, and
+ * the tenant-wide `full_passes_considered` is never consulted for it.
+ *
+ * The health strip's green and the list's empty sentence both read this one
+ * verdict, so they cannot disagree.
+ */
+export function unchangedCoverage(
   view: FlowView,
   windowWords: string
-): string {
-  return view.fullPassesConsidered === undefined
-    ? "coord did not say how many full passes ran, so unchanged sessions cannot be judged"
-    : `fewer than ${UNCHANGED_MIN_PASSES} full passes in ${windowWords} (${view.fullPassesConsidered}) — unchanged sessions cannot be seen`;
+): UnchangedCoverage {
+  const runners = view.runnerPasses;
+  const n = view.unchangedMinPasses;
+  if (runners === undefined) {
+    return {
+      everyRunnerCovered: false,
+      sentence:
+        "per-runner full-pass counts not served — unchanged cannot be confirmed",
+    };
+  }
+  if (runners === null) {
+    return {
+      everyRunnerCovered: false,
+      sentence:
+        "per-runner full-pass counts could not be read — unchanged cannot be confirmed",
+    };
+  }
+  if (runners.length === 0) {
+    return {
+      everyRunnerCovered: false,
+      sentence: `no runner reported a pass in ${windowWords} — unchanged cannot be confirmed`,
+    };
+  }
+  const short = runners.filter((r) => r.fullPasses < n).length;
+  if (short > 0) {
+    const of = `${short} of ${runners.length} ${runners.length === 1 ? "runner" : "runners"}`;
+    return {
+      everyRunnerCovered: false,
+      sentence: `${of} ran fewer than ${n} full passes — their sessions cannot be judged unchanged`,
+    };
+  }
+  return {
+    everyRunnerCovered: true,
+    sentence: `every runner ran at least ${n} full passes`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +179,15 @@ export interface VerdictPass {
   histogram: Record<string, number>;
 }
 
+/** One runner's full-pass count, narrowed. */
+export interface RunnerPasses {
+  deviceId: string | null;
+  runnerPort: number;
+  passes: number;
+  fullPasses: number;
+  latestFullPassAt: string | null;
+}
+
 export interface FlowView {
   since: string | null;
   until: string | null;
@@ -145,6 +195,14 @@ export interface FlowView {
   truncated: boolean | undefined;
   passesConsidered: number | undefined;
   fullPassesConsidered: number | undefined;
+  /**
+   * coord's `full_passes_by_runner`. `undefined` = not served (an older
+   * coord); `null` = served but unreadable (not a list, or any entry
+   * malformed — a partial list could hide the short runner).
+   */
+  runnerPasses: RunnerPasses[] | null | undefined;
+  /** The threshold coord applied (`params`), else the one this page sent. */
+  unchangedMinPasses: number;
   timeToClose: {
     count: number | undefined;
     medianSecs: Metric;
@@ -290,6 +348,37 @@ function latestUnknownOf(raw: unknown): LatestUnknownShare | null | undefined {
   return latest;
 }
 
+function runnerPassesOf(raw: unknown): RunnerPasses[] | null | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return null;
+  const runners: RunnerPasses[] = [];
+  for (const r of raw) {
+    if (!isObj(r)) return null;
+    const port = count(r.runner_port);
+    const passes = count(r.passes);
+    const full = count(r.full_passes);
+    if (port === undefined || passes === undefined || full === undefined) {
+      return null;
+    }
+    runners.push({
+      deviceId: str(r.device_id),
+      runnerPort: port,
+      passes,
+      fullPasses: full,
+      latestFullPassAt: str(r.latest_full_pass_at),
+    });
+  }
+  return runners;
+}
+
+/** `params.unchanged_min_passes` when coord served a usable one. */
+function appliedMinPasses(raw: unknown): number {
+  const n = isObj(raw) ? count(raw.unchanged_min_passes) : undefined;
+  return n !== undefined && Number.isInteger(n) && n >= 1
+    ? n
+    : UNCHANGED_MIN_PASSES;
+}
+
 /**
  * Narrow coord's answer. `null` when the body is not a flow answer at all —
  * the page treats that as a failed read (UNKNOWN), never as an empty window.
@@ -306,6 +395,8 @@ export function readFlowBody(body: unknown): FlowView | null {
     truncated: typeof body.truncated === "boolean" ? body.truncated : undefined,
     passesConsidered: count(body.passes_considered),
     fullPassesConsidered: count(body.full_passes_considered),
+    runnerPasses: runnerPassesOf(body.full_passes_by_runner),
+    unchangedMinPasses: appliedMinPasses(body.params),
     timeToClose: {
       count: ttcCount,
       medianSecs: metric(ttc.median_secs),
@@ -575,13 +666,14 @@ export function deriveFlowHealth(input: {
       badges: flowBadges(view),
     };
   }
-  if (!unchangedIsObservable(view)) {
-    // An empty list over too few FULL passes (only filtered ones, or one) is
-    // not an all-clear: nothing could have been seen staying put.
+  const coverage = unchangedCoverage(view, words);
+  if (!coverage.everyRunnerCovered) {
+    // An empty list is an all-clear only when every runner ran enough full
+    // passes to have produced an unchanged row — never on a tenant total.
     return {
       level: "amber",
-      headline: "Unchanged sessions cannot be seen yet",
-      detail: unchangedUnobservableSentence(view, words),
+      headline: "Unchanged sessions cannot be confirmed",
+      detail: coverage.sentence,
       badges: flowBadges(view),
     };
   }
@@ -679,6 +771,27 @@ export function scopeCounts(points: HistogramPoint[]): {
 /** A pass's scope or mode in words; one this build does not know is "unknown". */
 export function passWord(value: PassScope | PassMode): string {
   return value ?? "unknown";
+}
+
+/** The transparent gap between stacked segments, in px. */
+export const SEGMENT_GAP_PX = 2;
+
+/**
+ * Where to draw one stacked segment. A segment below the bar's top gives up
+ * up to {@link SEGMENT_GAP_PX} of its own top edge as a transparent gap, but
+ * never shrinks below 1px — a thin segment (one terminal on a tall scale)
+ * stays visible rather than vanishing into the gap. A segment already under
+ * 1px is drawn as it is, never inflated. The top segment is never inset, so
+ * the bar's total height stays true.
+ */
+export function insetSegment(
+  y: number,
+  height: number,
+  isTop: boolean
+): { y: number; height: number } {
+  if (isTop || !(height > 1)) return { y, height: Math.max(0, height) };
+  const drawn = Math.max(1, height - SEGMENT_GAP_PX);
+  return { y: y + (height - drawn), height: drawn };
 }
 
 /** Where the per-session console view is, when a Claude session id was proven. */
