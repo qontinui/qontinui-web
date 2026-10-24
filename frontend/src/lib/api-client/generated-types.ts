@@ -10888,6 +10888,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/overlord/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Flow
+         * @description Proxy coord's ``GET /coord/overlord/flow`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched —
+         *     ``window``, ``truncated``, ``passes_considered``,
+         *     ``full_passes_considered``, ``time_to_close`` (``median_secs`` /
+         *     ``p90_secs`` are ``null`` when ``count == 0``), ``nudge`` (rates ``null``
+         *     when ``nudged == 0``), ``unchanged``, ``unknown_share`` (``share`` ``null``
+         *     over an empty pass), ``verdict_series`` and, with
+         *     ``group_by=overlord_version``, ``groups``. A ``null`` is coord saying
+         *     "not measurable", and must reach the page as ``null`` — never a ``0``.
+         *
+         *     Every parameter is a STRING forwarded unchanged; coord's typed 422/503
+         *     bodies pass through verbatim — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_flow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Overlord Passes
+         * @description Proxy coord's ``GET /coord/overlord/passes`` (tenant-scoped list).
+         *
+         *     Answers ``{ok, passes, total_matching, truncated, limit, offset}``, newest
+         *     ``started_at`` first, each pass WITHOUT its rows. Filters are strings
+         *     forwarded unchanged (``scope`` ``full|filtered``, ``mode``
+         *     ``report|act``, ``since`` RFC 3339, ``limit`` ≤ 200 — coord validates);
+         *     error bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes/{pass_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Pass
+         * @description Proxy coord's ``GET /coord/overlord/passes/{pass_id}`` (tenant-scoped).
+         *
+         *     Answers ``{ok, pass: {<pass fields>, rows: [...]}}``; a pass absent in the
+         *     caller's tenant is coord's ``404 {"error": "pass_not_found"}``, passed
+         *     through verbatim. ``pass_id`` is typed ``UUID`` because it is spliced into
+         *     the coord URL path — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_pass_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/policies": {
         parameters: {
             query?: never;
@@ -73420,6 +73503,110 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_flow_get: {
+        parameters: {
+            query?: {
+                window_hours?: string | null;
+                device_id?: string | null;
+                runner_port?: string | null;
+                unchanged_min_passes?: string | null;
+                nudge_window_passes?: string | null;
+                group_by?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_get: {
+        parameters: {
+            query?: {
+                device_id?: string | null;
+                runner_port?: string | null;
+                scope?: string | null;
+                mode?: string | null;
+                since?: string | null;
+                limit?: string | null;
+                offset?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_pass_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pass_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

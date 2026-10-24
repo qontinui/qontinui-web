@@ -1559,6 +1559,21 @@ things rather than shipping them silently:
 | **A count chart on a console page, built like `ThroughputPanel`, that says what it does not cover** | `spawns/_components/SpawnRateChart.tsx` | Two series inside a `CollapsiblePanel`, colours from `@/config/theme`, mirrored in an `sr-only` table, bucketed and labelled by UTC hour. Drawn from the window's request list, so it counts requests MADE in its span and when those started — a request made earlier that started inside the span is not on it, and the caption says so rather than calling the line a start rate. It starts at the first FULL hour the read covers — after the window's start, or after the oldest row loaded when the list was truncated — because the hour either falls in was only partly read; earlier hours are not drawn, never drawn as zeros. | `plans/ThroughputPanel.tsx` is the first chart on a console page and is not recorded here; this records the shape both now follow, so a third chart has something written to compose against. |
 | **A fact the wire does not serve yet, stated once for the list** | `spawns/page.tsx` (`coord-spawns-reserve-note`) | Each device's dispatch role IS served (`/fleet/dispatch-roles`) and rides on its line's label. Its current reserve and ceilings are not served until the plan's Phase 6: the `ShareList` says so ONCE above its lines, and each line's `title` repeats it for a reader hovering one device. | Repeating "not served yet" on every line is chrome that cannot vary (served policy `ux-priorities` `repeated-chrome-must-earn-its-space-by-varying`), and rendering the slot as `0` would be R6's dash rule broken. |
 
+### 3.9 The session-flow console — recorded under §6.4
+
+`/admin/coord/overlord/flow` (plan
+`2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`
+Phase 4) composes `HealthStrip`, `StatCluster`, `RecordList`/`RecordRow`/
+`RecordDetail`, `RowTime`, `CollapsiblePanel` and `RefreshButton`. It declares
+no attention table (its rows are not classified, so `RecordRow`'s `attention`
+is ABSENT, not `"none"`), and records two things rather than shipping them
+silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Metric tiles are headed `StatCluster`s, not a tile component** | `overlord/flow/page.tsx` (`MetricTile`) | Each metric (time-to-close, nudge → progress, nudge → finished, latest UNKNOWN share) is an `h2` + one `<StatCluster>` + a one-line explanation, two per row from `sm` up. Every value is one of THREE things (`overlordFlowStatus.ts`): a measured number; coord's explicit `null`, rendered as the words `no data` with a `title` saying why nothing was measurable; or unknown (field absent, read failed), rendered as `–`. | R6 says an unfetched count is `–`. This page also receives a value coord ANSWERED as not measurable (a median over no closed session, a rate over no nudge), and rendering that as `–` would call an answer unknown, while `0` would claim a measurement. A bordered tile per metric would be a new card shape (§6.4); the cluster already is the console's count vocabulary. |
+| **A categorical series palette, validated, in `config/theme.ts`** | `chartCategorical` (`config/theme.ts`), used by `overlord/flow/_components/VerdictHistogramChart.tsx` | The console's first multi-series stacked chart: one bar per triage pass, three verdicts on fixed categorical slots (a slot follows the verdict, never its rank), every other verdict folded into a neutral "other", UNKNOWN in muted grey, and the full per-pass breakdown in the tooltip and an `sr-only` table. Built like §3.8's count chart otherwise. | `colors.brand.*` fails as a categorical set on the console's dark surfaces (slate blue vs muted violet: ΔE 11.9 normal, 5.9 deutan), so a chart that needs more than one identity hue needs slots that pass. The slots are identity, never severity — they are not R3 families and must not be read as such. |
+
 ---
 
 ## 4. The attention palette
