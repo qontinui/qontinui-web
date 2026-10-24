@@ -31,7 +31,9 @@ import {
   scanSource,
   sourceOf,
   type CostRule,
+  type ScanContext,
 } from "@/test/costRenderScan";
+import { discoverCurrencyFormatters } from "@/test/currencyFormatters";
 
 const scope = discoverScope();
 
@@ -116,7 +118,7 @@ describe("no lens surface renders money outside CostFigure", () => {
     const page = "app/(app)/admin/coord/devops/page.tsx";
     expect(scope.files).toContain(page);
     const real = sourceOf(page);
-    expect(scanSource(page, real)).toEqual([]);
+    expect(scanSource(page, real, scope.context)).toEqual([]);
     const withCost = real.replace(
       /<Caption id="dev-ops\.page" \/>/,
       '<Caption id="dev-ops.page" /><span>{fleet.cost_usd}</span>'
@@ -126,14 +128,109 @@ describe("no lens surface renders money outside CostFigure", () => {
       "money-value"
     );
   });
+
+  it.each<[string, string, string]>([
+    [
+      "a cost read through a renamed destructuring",
+      "",
+      "{(() => { const { cost_usd: c } = fleet; return <span>{c}</span>; })()}",
+    ],
+    [
+      "the repo's own currency formatter, from outside app/ and components/",
+      'import { formatCurrency } from "@/data/model-costs/calc";\n',
+      "<span>{formatCurrency(fleet.amount, currency)}</span>",
+    ],
+    [
+      "that formatter imported under another name",
+      'import { formatCurrency as fmt } from "@/data/model-costs/calc";\n',
+      "<span>{fmt(fleet.amount, currency)}</span>",
+    ],
+    [
+      "a symbol in an element of its own, beside the figure",
+      "",
+      '<span><span className="unit">$</span>{fleet.amount}</span>',
+    ],
+  ])("goes red on a real lens page with %s", (_name, imports, render) => {
+    const page = "app/(app)/admin/coord/devops/page.tsx";
+    const real = sourceOf(page);
+    const withCost = `${imports}${real.replace(
+      /<Caption id="dev-ops\.page" \/>/,
+      `<Caption id="dev-ops.page" />${render}`
+    )}`;
+    expect(withCost).not.toBe(real);
+    expect(scanSource(page, withCost, scope.context)).not.toEqual([]);
+  });
+});
+
+describe("currency formatters are found by what they do, anywhere under src/", () => {
+  it("finds the repo's own formatter outside the scanned folders", () => {
+    expect(
+      scope.context.formatters
+        .get("data/model-costs/calc.ts")
+        ?.has("formatCurrency")
+    ).toBe(true);
+  });
+
+  it("classifies a function by its body, and a wrapper of one to a fixed point", () => {
+    const files: Record<string, string> = {
+      "data/money/fmt.ts":
+        'export function formatCurrency(a: number, c: string) { return new Intl.NumberFormat("en", { style: "currency", currency: c }).format(a); }\n' +
+        "export function formatCount(n: number) { return String(n); }",
+      "lib/wrap.ts":
+        'import { formatCurrency as base } from "@/data/money/fmt";\n' +
+        'export const formatAmount = (n: number) => base(n, "USD");',
+      "lib/glued.ts": "export const dollars = (n: number) => `$${n}`;",
+      "lib/plain.ts": "export const label = (n: number) => `${n} runs`;",
+    };
+    const formatters = discoverCurrencyFormatters({
+      modules: Object.keys(files),
+      read: (f) => files[f],
+      formatsMoney: (snippet, file) =>
+        scanSource(file, snippet).some(
+          (v) => v.rule === "currency-format" || v.rule === "glued-symbol"
+        ),
+    });
+    expect([...(formatters.get("data/money/fmt.ts") ?? [])]).toEqual([
+      "formatCurrency",
+    ]);
+    expect([...(formatters.get("lib/wrap.ts") ?? [])]).toEqual([
+      "formatAmount",
+    ]);
+    expect([...(formatters.get("lib/glued.ts") ?? [])]).toEqual(["dollars"]);
+    expect(formatters.has("lib/plain.ts")).toBe(false);
+
+    const context: ScanContext = {
+      formatters,
+      modules: new Set(Object.keys(files)),
+    };
+    for (const lens of [
+      'import { formatAmount } from "@/lib/wrap";\n<b>{formatAmount(x)}</b>',
+      'import { formatAmount as f } from "../../../lib/wrap";\n<b>{f(x)}</b>',
+    ]) {
+      expect(
+        scanSource("app/(app)/x/page.tsx", lens, context).map((v) => v.rule)
+      ).toContain("money-value");
+    }
+    expect(
+      scanSource(
+        "app/(app)/x/page.tsx",
+        'import { formatCount } from "@/data/money/fmt";\n<b>{formatCount(x)}</b>',
+        context
+      )
+    ).toEqual([]);
+  });
 });
 
 /** What a fixture needs for its `<CostFigure>` to be the sanctioned one. */
 const IMPORT_COST_FIGURE =
   'import { CostFigure } from "@/components/presentation";\n';
 
-function rulesIn(source: string, file = "fixture.tsx"): CostRule[] {
-  return scanSource(file, source).map((v) => v.rule);
+function rulesIn(
+  source: string,
+  file = "fixture.tsx",
+  context?: ScanContext
+): CostRule[] {
+  return scanSource(file, source, context).map((v) => v.rule);
 }
 
 describe("each rule catches the shape it names", () => {
@@ -275,8 +372,89 @@ describe("each rule catches the shape it names", () => {
       "<CostFigure amount={run.cost_usd} source={null} />",
       "money-value",
     ],
+    [
+      "a cost read through a renamed destructuring",
+      "const { cost_usd: c } = fleet; const el = <b>{c}</b>;",
+      "money-value",
+    ],
+    [
+      "a cost read through a nested renamed destructuring",
+      "const { usage: { cost_usd: c } } = fleet; const el = <b>{c}</b>;",
+      "money-value",
+    ],
+    [
+      "a cost read through a renamed parameter",
+      "const Cell = ({ cost_usd: amount }) => <td>{amount}</td>;",
+      "money-value",
+    ],
+    [
+      "a cost prop read under another name",
+      "function Cell({ totalCost: v }) { return <td>{v}</td>; }",
+      "money-value",
+    ],
+    [
+      "a money formatter imported under another name",
+      'import { formatUsd as fmt } from "@/lib/format";',
+      "money-value",
+    ],
+    [
+      "a money-named binding re-exported under another name",
+      'export { formatUsd as fmt } from "@/lib/format";',
+      "money-value",
+    ],
+    [
+      "the default export of a money-named module",
+      'import fmt from "@/lib/formatUsd";',
+      "money-value",
+    ],
+    [
+      "a currency format reached through window.Intl",
+      "new window.Intl.NumberFormat(l, opts);",
+      "currency-format",
+    ],
+    [
+      "a currency format through a destructured NumberFormat",
+      "const { NumberFormat: NF } = Intl; new NF(l, opts);",
+      "currency-format",
+    ],
+    [
+      "a currency format through an aliased NumberFormat",
+      "const NF = globalThis.Intl.NumberFormat; NF(l, { style: kind });",
+      "currency-format",
+    ],
+    [
+      "a symbol in an element of its own, before a value",
+      '<td><span className="unit">$</span>{row.total}</td>',
+      "glued-symbol",
+    ],
+    [
+      "a code in an element of its own, after a value",
+      "<td>{row.total}<small>USD</small></td>",
+      "glued-symbol",
+    ],
+    ["a cent sign after a value", "<span>{x}¢</span>", "glued-symbol"],
+    ["a figure with no leading digit", 'const s = "$.50";', "literal-figure"],
+    [
+      "a figure with the symbol after it",
+      'const s = "12,00 €";',
+      "literal-figure",
+    ],
   ])("%s", (_name, source, rule) => {
     expect(rulesIn(source)).toContain(rule);
+  });
+
+  it("flags a currency formatter's import by what the formatter does, whatever it is called", () => {
+    const context: ScanContext = {
+      formatters: new Map([["data/fmt.ts", new Set(["formatCurrency"])]]),
+      modules: new Set(["data/fmt.ts"]),
+    };
+    expect(
+      rulesIn(
+        'import { formatCurrency as f } from "@/data/fmt";\n<td>{f(fleet.amount, currency)}</td>',
+        "fixture.tsx",
+        context
+      )
+    ).toContain("money-value");
   });
 });
 
@@ -304,7 +482,14 @@ describe("and passes what is not a money render", () => {
       "an import list",
       'import { CostFigure, coverageText } from "@/components/presentation";',
     ],
-    ["a re-export", 'export { CostFigure } from "./CostFigure";'],
+    [
+      "type-only imports of money-named types",
+      'import type { CostRow } from "@/lib/api/costs";\nimport { type PriceTier } from "@/lib/pricing";',
+    ],
+    [
+      "a renamed destructuring of a key that is not money",
+      "const { label: text } = item; const el = <b>{text}</b>;",
+    ],
     ["a regex anchor beside a literal brace", '<p>^[a-z]{"{"}0,63{"}"}$</p>'],
     [
       "a navigation label naming the costs page",
@@ -335,6 +520,34 @@ describe("and passes what is not a money render", () => {
     ["percent", "<b>{percent}%</b>"],
   ])("%s", (_name, source) => {
     expect(rulesIn(source)).toEqual([]);
+  });
+});
+
+describe("the presentation package re-exports its own CostFigure", () => {
+  it("passes the barrel's re-export of CostFigure and its label, and nothing else of the kind", () => {
+    const context: ScanContext = {
+      formatters: new Map(),
+      modules: new Set([COST_HOME, "components/presentation/index.ts"]),
+    };
+    expect(
+      rulesIn(
+        'export { CostFigure, COST_EQUIVALENT_LABEL } from "./CostFigure";',
+        "components/presentation/index.ts",
+        context
+      )
+    ).toEqual([]);
+    // Its raw formatter stays flagged even from there.
+    expect(
+      rulesIn(
+        'export { formatCostAmount } from "./CostFigure";',
+        "components/presentation/index.ts",
+        context
+      )
+    ).toContain("money-value");
+    // The same names from anywhere else are flagged.
+    expect(
+      rulesIn('export { CostFigure } from "./CostFigure";', "fixture.tsx")
+    ).toContain("money-value");
   });
 });
 

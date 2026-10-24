@@ -90,6 +90,14 @@ describe("PresentationPage", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "Dev Ops"
     );
+    // What the page is, never why its content matters: the next line says
+    // that content is off screen.
+    expect(
+      container.querySelector('[data-caption-part="one-liner"]')
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-caption-part="why-it-matters"]')
+    ).toBeNull();
   });
 
   it("withholds a page below a surface under that surface's caption", () => {

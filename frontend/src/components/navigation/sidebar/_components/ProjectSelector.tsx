@@ -106,7 +106,8 @@ export function ProjectSelector({ isCollapsed }: ProjectSelectorProps) {
           className="size-3.5 shrink-0 text-text-muted"
           aria-hidden
         />
-        <span className="min-w-0 truncate">
+        {/* Truncated to the rail's width; the whole name is the tooltip. */}
+        <span className="min-w-0 truncate" title={activeName}>
           <span className="sr-only">Active project: </span>
           {activeName}
         </span>

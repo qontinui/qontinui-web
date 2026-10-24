@@ -46,6 +46,13 @@ export interface CaptionProps {
    * page whose own heading is this caption. Default false.
    */
   persistent?: boolean;
+  /**
+   * The title and one-liner only, in presentation mode too — for a caption
+   * standing in for content the audience is NOT shown (the withheld-page
+   * placeholder), where a why-it-matters line would describe what the next
+   * line says is off screen. Default false.
+   */
+  brief?: boolean;
   className?: string;
   "data-testid"?: string;
 }
@@ -90,6 +97,7 @@ export function Caption({
   id,
   level = 2,
   persistent = false,
+  brief = false,
   className,
   "data-testid": testId,
 }: CaptionProps) {
@@ -118,7 +126,7 @@ export function Caption({
       >
         <CaptionCopy text={entry.oneLiner} />
       </p>
-      {presenting && (
+      {presenting && !brief && (
         <p
           className="text-sm text-muted-foreground"
           data-caption-part="why-it-matters"
