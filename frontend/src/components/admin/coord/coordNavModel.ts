@@ -104,6 +104,7 @@ import {
   Stethoscope,
   Timer,
   UserCog,
+  Waves,
   Workflow,
 } from "lucide-react";
 
@@ -392,6 +393,19 @@ export const GROUPS: NavGroup[] = [
         label: "Unfinished Sessions",
         icon: RotateCcw,
         testId: "coord-nav-unfinished",
+      },
+      {
+        // Beside Unfinished Sessions deliberately: both are about whether
+        // sessions reach the end of their work. This one is the overlord's
+        // own scorecard — time from a stop to its close, what a nudge led to,
+        // which sessions sat unchanged pass after pass — read from coord's
+        // per-pass triage ledger. Plan
+        // `2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`,
+        // Phase 4.
+        href: "/admin/coord/overlord/flow",
+        label: "Session Flow",
+        icon: Waves,
+        testId: "coord-nav-overlord-flow",
       },
       {
         // Sits beside Agents deliberately: Agents is the per-agent registry,
