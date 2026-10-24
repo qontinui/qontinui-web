@@ -3,18 +3,20 @@
  * D3; served policy `testing` `a-test-must-be-able-to-fail`).
  *
  * Each row is a run, as `readinessReporter.ts` hands it to `readinessVerdict`:
- * the readiness test's module and a ready route's proof module, every test
- * with its final state and the records its page checks left. A route is
- * proven only by a test that FINISHED passed, not concurrent, holding a
- * record of the check over the route's page under a presenting lens, with no
- * violation, through the real UI Bridge provider (`readinessEvidence.ts`).
- * Each refusal names the reason it must give, so a requirement that stops
- * holding turns its own row red; each proof keeps one from over-reaching.
+ * the arming test's module and a ready route's proof module, every test with
+ * its final state and the records its page checks left. For each render of
+ * the page in each test, the verdict reads the LAST check over it that read
+ * the page presented. A route is refused when any such last check found a
+ * violation, however its test ended; otherwise it is proven only by a test
+ * that FINISHED passed, not concurrent, in which such a last check found
+ * nothing and read the checked render's own UI Bridge registry
+ * (`readinessEvidence.ts`). Each refusal names the reason it must give, so a
+ * requirement that stops holding turns its own row red; each proof keeps one
+ * from over-reaching.
  */
 
 import { describe, expect, it } from "vitest";
 import {
-  READINESS_TEST_MODULE,
   provesRoute,
   readinessVerdict,
   type PresentationCheckRecord,
@@ -32,14 +34,17 @@ const TARGET: ReadinessTarget = {
   pageFile: "/repo/src/app/(app)/admin/coord/devops/page.tsx",
 };
 
-/** A check over the presented page that found nothing, through the real provider. */
+/** A check over render 1 of the presented page that found nothing, through the real provider. */
 const SAFE: PresentationCheckRecord = {
+  render: 1,
   presented: [ROUTE],
   operator: [],
   unread: [],
   violations: 0,
   registry: "provider",
 };
+/** The same render's check finding a violation. */
+const DIRTY: PresentationCheckRecord = { ...SAFE, violations: 1 };
 const check = (
   overrides: Partial<PresentationCheckRecord>
 ): PresentationCheckRecord => ({ ...SAFE, ...overrides });
@@ -47,21 +52,22 @@ const test = (overrides: Partial<RunTest> = {}): RunTest => ({
   name: "dev ops > is safe to show",
   state: "passed",
   concurrent: false,
+  armed: false,
   checks: [SAFE],
   ...overrides,
 });
 const proof = (...tests: RunTest[]): RunModule => ({ file: PROOF, tests });
-/** The readiness test, having run. */
+/** The arming test, having run and passed, in the readiness test's module. */
+const ARMING: RunTest = {
+  name: "arms the end-of-run requirement in this run",
+  state: "passed",
+  concurrent: false,
+  armed: true,
+  checks: [],
+};
 const READINESS_RAN: RunModule = {
-  file: READINESS_TEST_MODULE,
-  tests: [
-    {
-      name: "every presentation-ready route is proven",
-      state: "passed",
-      concurrent: false,
-      checks: [],
-    },
-  ],
+  file: "components/presentation/presentationReadiness.test.ts",
+  tests: [ARMING],
 };
 const run = (...modules: RunModule[]) => [READINESS_RAN, ...modules];
 
@@ -86,12 +92,29 @@ const PROVEN: ReadonlyArray<readonly [string, readonly RunModule[]]> = [
     run(proof(test({ checks: [check({ presented: [] }), SAFE] }))),
   ],
   [
-    "a check that found violations while the page settled, then none",
-    run(proof(test({ checks: [check({ violations: 2 }), SAFE] }))),
+    "a check that found violations while the page settled, then none, over the same render (waitFor)",
+    run(proof(test({ checks: [check({ violations: 2 }), DIRTY, SAFE] }))),
   ],
   [
     "a check over a view holding this page and another ready page",
     run(proof(test({ checks: [check({ presented: [OTHER_ROUTE, ROUTE] })] }))),
+  ],
+  [
+    "two renders of the page, each settling clean",
+    run(proof(test({ checks: [SAFE, DIRTY, check({ render: 2 }), SAFE] }))),
+  ],
+  [
+    "a clean last presenting check over the page, then a check of the render in the operator view",
+    run(
+      proof(
+        test({
+          checks: [
+            SAFE,
+            check({ presented: [], operator: [ROUTE], violations: 3 }),
+          ],
+        })
+      )
+    ),
   ],
 ];
 
@@ -126,12 +149,84 @@ const REFUSED: ReadonlyArray<readonly [string, readonly RunModule[], string]> =
     [
       "a check over the page that found violations",
       run(proof(test({ checks: [check({ violations: 3 })] }))),
-      'the page check found 3 violations over the page in "dev ops > is safe to show"',
+      'the page check found 3 violations over the page in "dev ops > is safe to show", the last check over that render of it',
     ],
     [
       "a check over the page that found one violation",
-      run(proof(test({ checks: [check({ violations: 1 })] }))),
+      run(proof(test({ checks: [DIRTY] }))),
       "found 1 violation over the page",
+    ],
+    [
+      "a clean check, then a dirty one over the same render, in one passing test — the loaded page shows what the empty one hid",
+      run(proof(test({ checks: [SAFE, DIRTY] }))),
+      'the page check found 1 violation over the page in "dev ops > is safe to show", the last check over that render of it (the test finished passed) — the run\'s own evidence that the page shows what presentation mode must not, which a clean check elsewhere does not outweigh',
+    ],
+    [
+      "a clean passing test beside a passing test whose check over the page found a violation",
+      run(
+        proof(
+          test({ name: "a > is clean", checks: [SAFE] }),
+          test({ name: "b > loads the data", checks: [check({ render: 2 })] }),
+          test({
+            name: "c > the loaded page",
+            checks: [check({ render: 3, violations: 2 })],
+          })
+        )
+      ),
+      'the page check found 2 violations over the page in "c > the loaded page", the last check over that render of it',
+    ],
+    [
+      "a render that ended dirty, then a clean render, in one passing test — each render counts by its own last check",
+      run(proof(test({ checks: [check({ render: 2, violations: 1 }), SAFE] }))),
+      "found 1 violation over the page",
+    ],
+    [
+      "a clean passing test beside a test that ended dirty and then skipped",
+      run(
+        proof(
+          test({ name: "a > is clean" }),
+          test({
+            name: "b > skips once loaded",
+            state: "skipped",
+            checks: [check({ render: 2, violations: 4 })],
+          })
+        )
+      ),
+      'the page check found 4 violations over the page in "b > skips once loaded", the last check over that render of it (the test finished skipped)',
+    ],
+    [
+      "a clean check, then the render's last check not reading all of the page and finding a violation",
+      run(
+        proof(
+          test({
+            checks: [
+              SAFE,
+              check({ presented: [], unread: [ROUTE], violations: 2 }),
+            ],
+          })
+        )
+      ),
+      'the page check found 2 violations over a render of the page whose output it did not read in full in "dev ops > is safe to show", the last check over that render of it',
+    ],
+    [
+      "a clean check, then the render's last check not reading all of the page",
+      run(
+        proof(
+          test({ checks: [SAFE, check({ presented: [], unread: [ROUTE] })] })
+        )
+      ),
+      'the page\'s own component was mounted in "dev ops > is safe to show", but the check did not read what it rendered',
+    ],
+    [
+      "two renders that ended dirty",
+      run(
+        proof(
+          test({
+            checks: [DIRTY, check({ render: 2, violations: 1 })],
+          })
+        )
+      ),
+      "; 1 more render of the page ended so too",
     ],
     [
       "a check that saw the UI Bridge through a registry view the test supplied",
@@ -157,6 +252,11 @@ const REFUSED: ReadonlyArray<readonly [string, readonly RunModule[], string]> =
       "a check whose registry could not be tied to the checked render",
       run(proof(test({ checks: [check({ registry: "unbound" })] }))),
       "seeing the UI Bridge through a registry the check could not tie to the checked render",
+    ],
+    [
+      "a clean check through the real provider, then the render's last check through a registry the test supplied",
+      run(proof(test({ checks: [SAFE, check({ registry: "caller" })] }))),
+      "seeing the UI Bridge through a registry view the test supplied",
     ],
     [
       "a check over the page mounted, but its output not read — portaled out of what the check read, or nothing",
@@ -261,8 +361,8 @@ describe("readinessVerdict — what a run must show", () => {
   });
 
   it("is not vacuous: every refusal gives a reason, and the tables hold rows", () => {
-    expect(PROVEN.length).toBeGreaterThanOrEqual(5);
-    expect(REFUSED.length).toBeGreaterThanOrEqual(15);
+    expect(PROVEN.length).toBeGreaterThanOrEqual(7);
+    expect(REFUSED.length).toBeGreaterThanOrEqual(25);
     for (const [, , reason] of REFUSED) expect(reason).not.toBe("");
   });
 });
@@ -270,7 +370,7 @@ describe("readinessVerdict — what a run must show", () => {
 describe("readinessVerdict — when a run must prove the routes", () => {
   const broken = proof(test({ state: "skipped" }));
 
-  it("claims nothing in a run that does not execute the readiness test", () => {
+  it("claims nothing in a run where no test armed the requirement", () => {
     expect(readinessVerdict([TARGET], [broken])).toEqual({
       enforced: false,
       proven: [],
@@ -278,18 +378,36 @@ describe("readinessVerdict — when a run must prove the routes", () => {
     });
   });
 
-  it("claims nothing when the readiness test's module ran with every test filtered out", () => {
-    const filtered: RunModule = {
-      file: READINESS_TEST_MODULE,
-      tests: [{ ...READINESS_RAN.tests[0]!, state: "skipped" }],
+  it("is not armed by the readiness test's module running, nor by its file name, without the arming record", () => {
+    const unarmed: RunModule = {
+      file: READINESS_RAN.file,
+      tests: [{ ...ARMING, armed: false }],
     };
-    expect(readinessVerdict([TARGET], [filtered, broken]).enforced).toBe(false);
+    expect(readinessVerdict([TARGET], [unarmed, broken]).enforced).toBe(false);
   });
 
-  it("requires every route once the readiness test ran, failed or passed", () => {
+  it("is armed by the record wherever the arming test lives, whatever its file is named", () => {
+    const moved: RunModule = {
+      file: "components/presentation/presentationReadiness.test.tsx",
+      tests: [ARMING],
+    };
+    const verdict = readinessVerdict([TARGET], [moved, broken]);
+    expect(verdict.enforced).toBe(true);
+    expect(verdict.problems).toHaveLength(1);
+  });
+
+  it("claims nothing when the arming test finished skipped", () => {
+    const skipped: RunModule = {
+      file: READINESS_RAN.file,
+      tests: [{ ...ARMING, state: "skipped" }],
+    };
+    expect(readinessVerdict([TARGET], [skipped, broken]).enforced).toBe(false);
+  });
+
+  it("requires every route once the arming test ran, failed or passed", () => {
     const failed: RunModule = {
-      file: READINESS_TEST_MODULE,
-      tests: [{ ...READINESS_RAN.tests[0]!, state: "failed" }],
+      file: READINESS_RAN.file,
+      tests: [{ ...ARMING, state: "failed" }],
     };
     const verdict = readinessVerdict([TARGET], [failed, broken]);
     expect(verdict.enforced).toBe(true);

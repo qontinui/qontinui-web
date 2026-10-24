@@ -25,7 +25,9 @@
  * - **how check (b) saw the UI Bridge** — `provider` only when the registry it
  *   read is the one `renderInPresentationMode` read back from THIS render's
  *   real `UIBridgeProvider`, and no other UI Bridge provider in the render's
- *   tree holds a registry of its own (`uiBridgeBinding.ts`).
+ *   tree holds a registry of its own (`uiBridgeBinding.ts`);
+ * - **which render it read** — one number per render's container, so the
+ *   verdict can take each render's last check as what that render settled in.
  */
 
 import { TestRunner } from "vitest";
@@ -51,6 +53,41 @@ import { registryBinding, type BindableView } from "./uiBridgeBinding";
 
 /** What the recorder reads of a view: its render's container, and how (b) observed. */
 export type RecordedView = BindableView;
+
+const RENDERS_KEY = Symbol.for("qontinui.presentationReadiness.renders");
+
+interface RenderNumbers {
+  readonly byContainer: WeakMap<Element, number>;
+  next: number;
+}
+
+/**
+ * The render numbers, by container. On `globalThis`, so two copies of this
+ * module (after a `vi.resetModules()`) never give two renders one number.
+ */
+function renderNumbers(): RenderNumbers {
+  const holder = globalThis as unknown as Record<
+    symbol,
+    RenderNumbers | undefined
+  >;
+  const existing = holder[RENDERS_KEY];
+  if (existing !== undefined) return existing;
+  const created: RenderNumbers = { byContainer: new WeakMap(), next: 1 };
+  holder[RENDERS_KEY] = created;
+  return created;
+}
+
+/** The number of the render whose container is `container`: the same for every check over it. */
+function renderOf(container: Element | undefined): number | null {
+  if (container === undefined) return null;
+  const numbers = renderNumbers();
+  const known = numbers.byContainer.get(container);
+  if (known !== undefined) return known;
+  const assigned = numbers.next;
+  numbers.next += 1;
+  numbers.byContainer.set(container, assigned);
+  return assigned;
+}
 
 function presentsAt(fiber: Fiber, modeContext: unknown): boolean {
   const { found, value } = contextValueAbove(fiber, modeContext);
@@ -116,6 +153,7 @@ export function presentationCheckRecord(
     }
   }
   return {
+    render: renderOf(view.container),
     presented,
     operator,
     unread,
@@ -129,6 +167,7 @@ function sameRecord(
   b: PresentationCheckRecord
 ): boolean {
   return (
+    a.render === b.render &&
     a.violations === b.violations &&
     a.registry === b.registry &&
     a.presented.join("\n") === b.presented.join("\n") &&
@@ -138,10 +177,24 @@ function sameRecord(
 }
 
 /**
+ * `checks` with `record` after them. A check that polls (`waitFor`) repeats
+ * itself, so a record equal to the one before it — the same render, seen the
+ * same way — is not added again; one of another render always is.
+ */
+export function appendCheck(
+  checks: readonly PresentationCheckRecord[],
+  record: PresentationCheckRecord
+): PresentationCheckRecord[] {
+  const last = checks.at(-1);
+  return last !== undefined && sameRecord(last, record)
+    ? [...checks]
+    : [...checks, record];
+}
+
+/**
  * Record one check over `view`, which read the element `read` and found
  * `violations`, on the running test — when that test's file proves a ready
- * route. A check that polls (`waitFor`) repeats itself; a record equal to the
- * one before it is not added again.
+ * route.
  */
 export function recordPresentationCheck(
   view: RecordedView,
@@ -153,8 +206,8 @@ export function recordPresentationCheck(
   const targets = readinessTargetsOf(test.file.filepath);
   if (targets.length === 0) return;
   const record = presentationCheckRecord(view, violations, targets, read);
-  const checks = test.meta[CHECKS_META_KEY] ?? [];
-  const last = checks.at(-1);
-  if (last === undefined || !sameRecord(last, record)) checks.push(record);
-  test.meta[CHECKS_META_KEY] = checks;
+  test.meta[CHECKS_META_KEY] = appendCheck(
+    test.meta[CHECKS_META_KEY] ?? [],
+    record
+  );
 }

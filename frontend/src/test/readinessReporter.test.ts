@@ -13,9 +13,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { TestModule, Vitest, VitestPluginContext } from "vitest/node";
 import { PRESENTATION_READY_ROUTES } from "@/components/presentation/presentationReadiness";
 import {
+  ARMED_META_KEY,
   CHECKS_META_KEY,
   READINESS_PROVIDE_KEY,
-  READINESS_TEST_MODULE,
   type PresentationCheckRecord,
   type RunTestState,
 } from "./readinessEvidence";
@@ -35,6 +35,7 @@ interface FakeTest {
   readonly name: string;
   readonly state: RunTestState;
   readonly concurrent?: boolean;
+  readonly armed?: boolean;
   readonly checks?: PresentationCheckRecord[];
 }
 
@@ -49,8 +50,12 @@ function fakeModule(file: string, tests: readonly FakeTest[]): TestModule {
             fullName: t.name,
             result: () => ({ state: t.state }),
             options: { concurrent: t.concurrent },
-            meta: () =>
-              t.checks === undefined ? {} : { [CHECKS_META_KEY]: t.checks },
+            meta: () => ({
+              ...(t.armed === undefined ? {} : { [ARMED_META_KEY]: t.armed }),
+              ...(t.checks === undefined
+                ? {}
+                : { [CHECKS_META_KEY]: t.checks }),
+            }),
           };
         }
       },
@@ -71,14 +76,17 @@ const LANDING = PRESENTATION_READY_ROUTES.find(
   (e) => e.route === "/admin/coord"
 );
 const SAFE: PresentationCheckRecord = {
+  render: 1,
   presented: ["/admin/coord"],
   operator: [],
   unread: [],
   violations: 0,
   registry: "provider",
 };
-const READINESS = fakeModule(READINESS_TEST_MODULE, [
-  { name: "readiness", state: "passed" },
+const READINESS_FILE = "components/presentation/presentationReadiness.test.ts";
+/** The readiness test's module, its arming test having run. */
+const READINESS = fakeModule(READINESS_FILE, [
+  { name: "readiness > arms", state: "passed", armed: true },
 ]);
 
 describe("readyRouteTargets", () => {
@@ -107,11 +115,12 @@ describe("readyRouteTargets", () => {
 });
 
 describe("runModulesOf", () => {
-  it("reads each module src-relative, and each test's name, state, concurrency and records", () => {
+  it("reads each module src-relative, and each test's name, state, concurrency, arming and records", () => {
     const modules = runModulesOf(SRC, [
       fakeModule("app/(app)/admin/coord/page.test.tsx", [
         { name: "a > is safe", state: "passed", checks: [SAFE] },
         { name: "a > runs beside", state: "skipped", concurrent: true },
+        { name: "a > arms", state: "passed", armed: true },
       ]),
     ]);
     expect(modules).toEqual([
@@ -122,12 +131,21 @@ describe("runModulesOf", () => {
             name: "a > is safe",
             state: "passed",
             concurrent: false,
+            armed: false,
             checks: [SAFE],
           },
           {
             name: "a > runs beside",
             state: "skipped",
             concurrent: true,
+            armed: false,
+            checks: [],
+          },
+          {
+            name: "a > arms",
+            state: "passed",
+            concurrent: false,
+            armed: true,
             checks: [],
           },
         ],
@@ -226,6 +244,48 @@ describe("PresentationReadinessReporter", () => {
     const printed = String(vitest.logger.error.mock.calls[0]?.[0]);
     expect(printed).toContain("/admin/coord");
     expect(printed).toContain("but that test finished skipped");
+  });
+
+  it("fails a run armed from a readiness test moved or renamed, by its arming record", () => {
+    const { vitest, asVitest } = fakeVitest();
+    const fail = vi.fn();
+    const reporter = new PresentationReadinessReporter(fail);
+    reporter.onInit(asVitest);
+    reporter.onTestRunEnd(
+      [
+        fakeModule("components/presentation/presentationReadiness.test.tsx", [
+          { name: "readiness > arms", state: "passed", armed: true },
+        ]),
+        fakeModule(LANDING?.provenBy ?? "", [
+          { name: "is safe", state: "skipped", checks: [SAFE] },
+        ]),
+      ],
+      [],
+      "passed"
+    );
+    expect(fail).toHaveBeenCalledTimes(1);
+    expect(String(vitest.logger.error.mock.calls[0]?.[0])).toContain(
+      "presentation readiness: FAILED"
+    );
+  });
+
+  it("checks nothing in a run whose readiness test ran without arming it", () => {
+    const { vitest, asVitest } = fakeVitest();
+    const fail = vi.fn();
+    const reporter = new PresentationReadinessReporter(fail);
+    reporter.onInit(asVitest);
+    reporter.onTestRunEnd(
+      [
+        fakeModule(READINESS_FILE, [{ name: "readiness", state: "passed" }]),
+        fakeModule(LANDING?.provenBy ?? "", [
+          { name: "is safe", state: "skipped", checks: [SAFE] },
+        ]),
+      ],
+      [],
+      "passed"
+    );
+    expect(fail).not.toHaveBeenCalled();
+    expect(vitest.logger.error).not.toHaveBeenCalled();
   });
 
   it("checks nothing in a run that does not execute the readiness test", () => {

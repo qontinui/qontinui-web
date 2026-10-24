@@ -22,7 +22,7 @@ import {
   type PresentationView,
 } from "./presentation";
 import { provesRoute } from "./readinessEvidence";
-import { presentationCheckRecord } from "./readinessRecorder";
+import { appendCheck, presentationCheckRecord } from "./readinessRecorder";
 
 const ROUTE = "/admin/coord/devops";
 
@@ -50,6 +50,7 @@ function Providers({ children }: { children: ReactNode }) {
 describe("presentationCheckRecord — which pages the checked view holds", () => {
   it("names the page mounted under the presenting lens", () => {
     expect(recordOf(renderInPresentationMode(<DevOpsPage />))).toEqual({
+      render: expect.any(Number),
       presented: [ROUTE],
       operator: [],
       unread: [],
@@ -410,6 +411,52 @@ describe("presentationCheckRecord — how check (b) saw the UI Bridge", () => {
     expect(
       presentationCheckRecord(view, 4, TARGETS, document.body).violations
     ).toBe(4);
+  });
+});
+
+describe("presentationCheckRecord — which render it read", () => {
+  it("numbers one render alike in every check over it, however it is re-rendered or copied", () => {
+    const view = renderInPresentationMode(<DevOpsPage />);
+    const first = recordOf(view).render;
+    expect(first).toEqual(expect.any(Number));
+    view.rerender(<HealthPanel />);
+    expect(recordOf(view).render).toBe(first);
+    expect(recordOf({ ...view, baseElement: view.container }).render).toBe(
+      first
+    );
+  });
+
+  it("numbers another render otherwise, and a view without a container not at all", () => {
+    const one = renderInPresentationMode(<DevOpsPage />);
+    const two = renderInPresentationMode(<DevOpsPage />);
+    expect(recordOf(two).render).not.toBe(recordOf(one).render);
+    expect(recordOf({ uiBridge: one.uiBridge }).render).toBe(null);
+  });
+});
+
+describe("appendCheck — the records a test keeps", () => {
+  const record = (render: number, violations = 0) => ({
+    render,
+    presented: [ROUTE],
+    operator: [],
+    unread: [],
+    violations,
+    registry: "provider" as const,
+  });
+
+  it("keeps a polled check once: an equal record after its twin is not added", () => {
+    expect(appendCheck([record(1)], record(1))).toEqual([record(1)]);
+  });
+
+  it("keeps a record of another render, or another reading, even when the rest is equal", () => {
+    expect(appendCheck([record(1, 1)], record(2, 1))).toEqual([
+      record(1, 1),
+      record(2, 1),
+    ]);
+    expect(appendCheck([record(1)], record(1, 1))).toEqual([
+      record(1),
+      record(1, 1),
+    ]);
   });
 });
 

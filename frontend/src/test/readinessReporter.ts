@@ -9,7 +9,8 @@
  * flag — which replaces the configured list — cannot drop it. At init the
  * reporter provides every ready route, with its proof and its page module, to
  * the test workers, where `readinessTargets.ts` loads the pages. When the run
- * ends it reads every test's state and records, prints the routes the run
+ * ends it reads every test's state, arming flag and records; in a run a test
+ * armed (the readiness test, wherever it lives) it prints the routes the run
  * proved, and fails the run (exit code 1) on any it did not, naming why.
  *
  * The vitest config bundles this module, so it imports only Node, types and
@@ -31,6 +32,7 @@ import {
 } from "../components/presentation/presentationReadiness";
 import { appPageModules } from "./appRoutes";
 import {
+  ARMED_META_KEY,
   CHECKS_META_KEY,
   READINESS_PROVIDE_KEY,
   readinessVerdict,
@@ -55,7 +57,10 @@ export function readyRouteTargets(
   });
 }
 
-/** The run's test modules as the verdict reads them: `src/`-relative, each test's state and records. */
+/**
+ * The run's test modules as the verdict reads them: `src/`-relative, each
+ * test's state, whether it armed the requirement, and its records.
+ */
 export function runModulesOf(
   srcDir: string,
   modules: ReadonlyArray<TestModule>
@@ -66,6 +71,7 @@ export function runModulesOf(
       name: test.fullName,
       state: test.result().state,
       concurrent: test.options.concurrent === true,
+      armed: test.meta()[ARMED_META_KEY] === true,
       checks: test.meta()[CHECKS_META_KEY] ?? [],
     })),
   }));
