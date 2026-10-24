@@ -43,7 +43,7 @@ from tests._alembic_harness import (
 
 _REVISION = "overview_04c_phase_progress_backfill"
 _CHECKS_REVISION = "overview_04b_phase_progress_checks"
-_PARENT = "overview_04_timeline"
+_PARENT = "citecand_01"
 _CHECKS = (
     "ck_overview_phases_actual_end_has_start",
     "ck_overview_phases_gate_decision_dated",
