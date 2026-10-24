@@ -41,6 +41,10 @@ import {
   renderInPresentationMode,
   type PresentationViolationKind,
 } from "./presentation";
+import {
+  CURRENCY_CODES,
+  CURRENCY_FIGURE as SHARED_CURRENCY_FIGURE,
+} from "./currencyTokens";
 
 function kinds(view: ReturnType<typeof renderInPresentationMode>) {
   return findPresentationViolations(view).map((v) => v.kind);
@@ -493,6 +497,22 @@ describe("(c) no cost", () => {
       expect(CURRENCY_FIGURE.test(figure)).toBe(true);
       expectOnly(
         renderInPresentationMode(<p>It came to {figure} today</p>),
+        "currency-figure"
+      );
+    }
+  );
+
+  it("reads the one currency vocabulary the source scan reads", () => {
+    // Not a copy: a second list is how the classifier came to know four codes
+    // of nine (review round 4).
+    expect(CURRENCY_FIGURE).toBe(SHARED_CURRENCY_FIGURE);
+  });
+
+  it.each([...CURRENCY_CODES])(
+    "reads a figure in %s as a currency figure on the page",
+    (code) => {
+      expectOnly(
+        renderInPresentationMode(<p>It came to 12 {code} today</p>),
         "currency-figure"
       );
     }
