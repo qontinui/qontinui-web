@@ -8,9 +8,10 @@
  * and renders a descriptor in presentation mode. This scanner is the guard that
  * makes "only" true — in the style of `components/console/consoleSurfaces.test.ts`:
  * the defect is an ABSENCE (a figure nobody routed through `CostFigure`), so it
- * is found by reading the source tree, not by walking the module graph.
+ * is found by reading the source of every module a lens page can load, not by
+ * waiting for a render that happens to hold a cost.
  *
- * ## Scope — by directory, so later pages are covered automatically
+ * ## Scope — every module a lens page can load, so later pages are covered automatically
  *
  * 1. Every `app/**\/layout.tsx` that renders `<PresentationLens>` roots a lens
  *    tree, and EVERY module under its directory is scanned (today the console
@@ -19,31 +20,43 @@
  * 2. The layouts ABOVE each lens root — the authenticated app shell, whose
  *    sidebar renders beside every lens page — are scanned as modules (their
  *    directories are not: `(app)` holds every page of the app).
- * 3. Then, to a fixed point, every `app/` or `components/` MODULE a scanned
- *    module imports (static, re-export, or a literal `import()` /
- *    `require()`, by `@/…` alias or a relative path) is scanned too — a
- *    component a lens page renders is part of the lens. Reachability is per
- *    module, not per directory: a lens page importing one constant from
- *    another route's `_lib/` brings that file in, not the route's money code
- *    beside it.
+ * 3. Then, to a fixed point, EVERY module under `src/` a scanned module loads
+ *    is scanned too, whatever its folder or extension: `components/`,
+ *    `design-system/` and `contexts/` components, and the `lib/`, `hooks/`,
+ *    `services/`, `stores/` and `data/` modules beside them. A helper that
+ *    formats a cost, or hands one to a page under a name that does not say
+ *    money (`sessionSummary(r)`, `{ spentText }`, `amount(r)`), reads the
+ *    money-named value itself, so it is flagged where it does — the finding
+ *    names the chain of loads from the lens page. "Loads" is read from each
+ *    module's syntax tree (`runtimeSpecifiers`, `currencyFormatters.ts`): an
+ *    import or re-export by `@/…`, `@cloud/…` or a relative path, a side-effect
+ *    import, or a literal `import()` / `require()`. A type-only import loads no
+ *    code and is not followed. Reachability is per module, not per directory:
+ *    a lens page importing one constant from another route's `_lib/` brings
+ *    that file in, not the route's money code beside it.
  *
- * `lib/`, `services/`, `hooks/`, `data/` and the rest are data and logic
- * layers, not rendering, and are not scanned whole. What a lens page CAN
- * import from them and render is a formatter, so every module's exports
- * anywhere under `src/` are classified by what their code does
- * (`currencyFormatters.ts`): a function, class or value (a `NumberFormat`
- * instance) that formats a currency or glues a currency symbol to a value —
- * or reads one that does — is a currency formatter, under every name its
- * module exports it by, a barrel's `export *` and `export { … } from`
- * included, and a default export as `default`. In a scanned module, every way
- * of reaching one is a violation under any local name: a named or default
- * import, a member read through a namespace import (`ns.formatCurrency`, or
- * the namespace handed on whole), a re-export (named, `export *` or
- * `export * as`), and a literal `import()` / `require()` of a module that
- * exports one. A figure that arrives already formatted — from the backend, a
- * package, or the composed build's cloud overlay outside `src/` — is left to
- * the rendered-page layer (`expectPresentationSafe`'s currency check in
- * `src/test/presentation.tsx`).
+ * On top of that, every module's exports anywhere under `src/` are classified
+ * by what their code does (`currencyFormatters.ts`): a function, class or
+ * value (a `NumberFormat` instance) that formats a currency or glues a
+ * currency symbol to a value — or reads one that does — is a currency
+ * formatter, under every name its module exports it by, a barrel's
+ * `export *` and `export { … } from` included, and a default export as
+ * `default`. In a scanned module, every way of reaching one is a violation
+ * under any local name: a named or default import, a member read through a
+ * namespace import (`ns.formatCurrency`, or the namespace handed on whole), a
+ * re-export (named, `export *` or `export * as`), and a literal `import()` /
+ * `require()` of a module that exports one — so the lens module that pulls a
+ * formatter in is named, not only the formatter's own module.
+ *
+ * What is past this layer is what is not in `src/`: a figure, or a bare
+ * number, that arrives from the backend, a package, or the composed build's
+ * cloud overlay (the scan reads its OSS mirror, `cloud-absent/`), under a name
+ * that does not say money. A figure with a symbol or a code is the
+ * rendered-page layer's to catch (`expectPresentationSafe`'s currency check in
+ * `src/test/presentation.tsx`); a bare number such as `0.42` under a neutral
+ * name is caught by neither, and the guard against it is the field's name: a
+ * cost the backend sends is named as one (`cost_usd`), and reading that name
+ * on a lens page outside `CostFigure` is flagged.
  *
  * ## What counts as rendering money (four rules, on the parsed TSX)
  *
@@ -109,9 +122,9 @@ import {
   discoverCurrencyFormatters,
   isRead,
   loadedSpecifier,
-  moduleSpecifiers,
   namespaceReadsAny,
   resolveSrcModule,
+  runtimeSpecifiers,
   type CurrencyFormatters,
 } from "./currencyFormatters";
 import { CURRENCY_FIGURE, CURRENCY_TOKEN_PATTERN } from "./currencyTokens";
@@ -278,6 +291,11 @@ export interface CostRenderViolation {
   readonly start: number;
   readonly rule: CostRule;
   readonly detail: string;
+  /**
+   * When an import brought the module into scope: the chain of loads from a
+   * lens-tree module or a shell layout, this module last.
+   */
+  readonly via?: readonly string[];
 }
 
 /** `cost_usd` → [cost, usd]; `totalCostUSD` → [total, cost, usd]. */
@@ -1160,34 +1178,30 @@ function modulesUnder(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/**
- * The `src/`-relative MODULE an import names, when it is an `app/` or
- * `components/` module; `null` for anything else (packages, `lib/`, …).
- * `known` is every module there is, so resolution never touches the disk.
- */
-function importedModule(
-  fromFile: string,
-  specifier: string,
-  known: ReadonlySet<string>
-): string | null {
-  const target = resolveSrcModule(fromFile, specifier, known);
-  return target !== null && /^(app|components)\//.test(target) ? target : null;
-}
-
 export interface CostScanScope {
   /** Lens-tree roots: the directories of layouts rendering `<PresentationLens>`. */
   readonly lensRoots: readonly string[];
   /**
    * The layouts ABOVE the lens roots — the app shell that renders around every
    * lens page (its sidebar is on screen beside the page). Each is scanned as a
-   * module, and what it imports is followed, but its directory is not: the
+   * module, and what it loads is followed, but its directory is not: the
    * `(app)` directory holds every page of the app.
    */
   readonly shellLayouts: readonly string[];
-  /** Every module scanned: the lens trees' own, then what they import. Sorted. */
+  /**
+   * Every module scanned: the lens trees' own, the shell layouts, then every
+   * module under `src/` they load, to a fixed point. Sorted.
+   */
   readonly files: readonly string[];
+  /**
+   * For each module an import brought in, the scanned module that first
+   * loaded it — the way back to a lens tree, which a finding's message names.
+   */
+  readonly importedBy: ReadonlyMap<string, string>;
   /** What each scan knows of the rest of `src/`: its modules and formatters. */
   readonly context: ScanContext;
+  /** A scanned module, parsed once per scope. */
+  readonly parsed: (file: string) => ts.SourceFile;
 }
 
 function within(file: string, dirs: Iterable<string>): boolean {
@@ -1252,40 +1266,67 @@ export function moneyFormatsAt(file: string, source: ts.SourceFile): number[] {
  * route, and its one formatter export is the raw `formatCostAmount`.
  */
 export function discoverContext(
-  modules: readonly string[] = srcModules()
+  modules: readonly string[] = srcModules(),
+  read: (file: string) => string = sourceOf
 ): ScanContext {
   const formatters = discoverCurrencyFormatters({
     modules,
-    read: sourceOf,
+    read,
     declared: new Map([[COST_HOME, new Set([COST_FORMATTER])]]),
     moneyFormatsAt,
   });
   return { formatters, modules: new Set(modules) };
 }
 
-/** Discover the scope from the tree as it stands (see the module doc). */
-export function discoverScope(): CostScanScope {
-  const all = [...modulesUnder("app"), ...modulesUnder("components")];
-  const lensRoots = all
+/** A tree to discover the scope in: the real one ({@link discoverScope}), or a test's. */
+export interface ScopeSources {
+  /** Every non-test module, `src/`-relative. */
+  readonly modules: readonly string[];
+  /** A module's text. */
+  readonly read: (file: string) => string;
+  /** The classification to scan with; discovered from `modules` when absent. */
+  readonly context?: ScanContext;
+}
+
+/** Discover the scope in a tree (see the module doc). */
+export function discoverScopeIn({
+  modules,
+  read,
+  context,
+}: ScopeSources): CostScanScope {
+  const known = new Set(modules);
+  const parsedModules = new Map<string, ts.SourceFile>();
+  const parsed = (file: string): ts.SourceFile => {
+    let source = parsedModules.get(file);
+    if (source === undefined) {
+      source = parseModule(file, read(file));
+      parsedModules.set(file, source);
+    }
+    return source;
+  };
+  const lensRoots = modules
     .filter((f) => /^app\/(.*\/)?layout\.tsx$/.test(f))
-    .filter((f) => /<PresentationLens\b/.test(sourceOf(f)))
+    .filter((f) => /<PresentationLens\b/.test(read(f)))
     .map((f) => toPosix(dirname(f)))
     .sort();
-  const known = new Set(all);
   const shellLayouts = [
     ...new Set(lensRoots.flatMap((root) => layoutsAbove(root, known))),
   ].sort();
   const scanned = new Set([
-    ...all.filter((f) => within(f, lensRoots)),
+    ...modules.filter((f) => within(f, lensRoots)),
     ...shellLayouts,
   ]);
-  const queue = [...scanned];
-  while (queue.length > 0) {
-    const file = queue.pop()!;
-    for (const specifier of moduleSpecifiers(sourceOf(file))) {
-      const target = importedModule(file, specifier, known);
-      if (target && !scanned.has(target)) {
+  const importedBy = new Map<string, string>();
+  // Breadth first, so each module's recorded importer is on a shortest way
+  // back to a lens tree.
+  const queue = [...scanned].sort();
+  for (let at = 0; at < queue.length; at++) {
+    const file = queue[at]!;
+    for (const specifier of runtimeSpecifiers(parsed(file))) {
+      const target = resolveSrcModule(file, specifier, known);
+      if (target !== null && !scanned.has(target)) {
         scanned.add(target);
+        importedBy.set(target, file);
         queue.push(target);
       }
     }
@@ -1294,8 +1335,31 @@ export function discoverScope(): CostScanScope {
     lensRoots,
     shellLayouts,
     files: [...scanned].sort(),
-    context: discoverContext(),
+    importedBy,
+    context: context ?? discoverContext(modules, read),
+    parsed,
   };
+}
+
+/** Discover the scope from the tree as it stands (see the module doc). */
+export function discoverScope(): CostScanScope {
+  return discoverScopeIn({ modules: srcModules(), read: sourceOf });
+}
+
+/**
+ * How the scope reaches `file`: the chain of loads from a lens-tree module or
+ * a shell layout, `file` last — just `[file]` for a module in a lens tree.
+ */
+export function reachOf(scope: CostScanScope, file: string): string[] {
+  const chain = [file];
+  for (
+    let importer = scope.importedBy.get(file);
+    importer !== undefined;
+    importer = scope.importedBy.get(importer)
+  ) {
+    chain.unshift(importer);
+  }
+  return chain;
 }
 
 /** Every violation in scope, outside {@link COST_HOME}. */
@@ -1304,10 +1368,19 @@ export function scanLensTrees(
 ): CostRenderViolation[] {
   return scope.files
     .filter((file) => file !== COST_HOME)
-    .flatMap((file) => scanSource(file, sourceOf(file), scope.context));
+    .flatMap((file) => {
+      const via = reachOf(scope, file);
+      return scanParsed(file, scope.parsed(file), scope.context).map((v) =>
+        via.length > 1 ? { ...v, via } : v
+      );
+    });
 }
 
 /** One line per violation, for an assertion message a reader can act on. */
 export function describeCostViolation(v: CostRenderViolation): string {
-  return `${v.file}:${v.line} [${v.rule}] ${v.detail} — render it through <CostFigure>`;
+  const reached =
+    v.via === undefined
+      ? ""
+      : ` (reached from a lens page: ${v.via.join(" → ")})`;
+  return `${v.file}:${v.line} [${v.rule}] ${v.detail} — render it through <CostFigure>${reached}`;
 }

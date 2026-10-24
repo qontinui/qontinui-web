@@ -20,14 +20,17 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
   COST_HOME,
   NON_MONEY_COMPOUNDS,
   describeCostViolation,
   discoverScope,
+  discoverScopeIn,
   isMoneyName,
   moneyFormatsAt,
+  reachOf,
   scanLensTrees,
   scanSource,
   sourceOf,
@@ -38,6 +41,7 @@ import {
   DEFAULT_EXPORT,
   discoverCurrencyFormatters,
   resolveSrcModule,
+  runtimeSpecifiers,
   type CurrencyFormatters,
 } from "@/test/currencyFormatters";
 import {
@@ -93,6 +97,31 @@ describe("the scope is discovered, not listed", () => {
     expect(scope.files).toContain("app/(app)/overview/_lib/intent.ts");
     expect(scope.files).not.toContain("app/(app)/overview/_lib/domainCost.ts");
     expect(scope.files).not.toContain("components/overview/money.ts");
+  });
+
+  it("follows a lens page into every module it loads under src/, whatever its folder", () => {
+    for (const folder of [
+      "contexts/",
+      "lib/",
+      "hooks/",
+      "services/",
+      "stores/",
+    ]) {
+      expect(
+        scope.files.some((f) => f.startsWith(folder)),
+        folder
+      ).toBe(true);
+    }
+    // A module an import brought in says how: a chain of loads from a module
+    // of a lens tree, or a layout above one, to it.
+    const chain = reachOf(scope, "contexts/auth-context.tsx");
+    expect(chain.length).toBeGreaterThan(1);
+    expect(chain.at(-1)).toBe("contexts/auth-context.tsx");
+    const [first] = chain;
+    expect(
+      scope.lensRoots.some((root) => first?.startsWith(`${root}/`)) ||
+        scope.shellLayouts.includes(first ?? "")
+    ).toBe(true);
   });
 
   it("scans real files, CostFigure among them (the scan is not vacuous)", () => {
@@ -313,6 +342,199 @@ describe("no lens surface renders money outside CostFigure", () => {
       ).not.toEqual([]);
     }
   );
+});
+
+describe("a lens page reaching money through a module anywhere under src/", () => {
+  // The real tree, with the real Dev Ops page loading helpers that live
+  // outside app/ and components/ — the shapes review round 4 found passing:
+  // a component that renders a cost, a helper that formats one into text, a
+  // hook that hands one on under a neutral name, an accessor that returns one
+  // bare, and a helper reached through another module.
+  const page = "app/(app)/admin/coord/devops/page.tsx";
+  const HELPERS: Record<string, string> = {
+    "design-system/components/layout/RunRowFixture.tsx":
+      "export function RunRow({ run }: { run: { cost_usd: number } }) { return <td>{run.cost_usd.toFixed(2)}</td>; }",
+    "lib/sessionSummaryFixture.ts":
+      "export function sessionSummary(r: { turns: number; cost_usd: number }) { return `${r.turns} turns, ${r.cost_usd.toFixed(2)}`; }",
+    "hooks/useRunStatsFixture.ts":
+      "export function useRunStats(run: { total_cost: number }) { return { spentText: run.total_cost.toFixed(4) }; }",
+    "lib/amountFixture.ts":
+      "export const amount = (r: { cost_usd: number }) => r.cost_usd;",
+    "hooks/useDigestFixture.ts":
+      'import { digestLine } from "@/lib/digestLineFixture";\nexport const useDigest = (r: { id: string }) => digestLine(r);',
+    "lib/digestLineFixture.ts":
+      "export const digestLine = (r: { id: string; price: number }) => `${r.id}: ${r.price}`;",
+    // Reached only by type: loads no code, so it is not in the lens.
+    "lib/costRowsFixture.ts":
+      "export interface CostRow { cost_usd: number }\nexport const totalCost = (rows: CostRow[]) => rows.reduce((s, r) => s + r.cost_usd, 0);",
+    "lib/costRowsAgainFixture.ts":
+      "export interface PriceRow { price: number }\nexport const priceOf = (r: PriceRow) => r.price;",
+  };
+  const IMPORTS = [
+    'import { RunRow } from "@/design-system/components/layout/RunRowFixture";',
+    'import { sessionSummary } from "@/lib/sessionSummaryFixture";',
+    'import { useRunStats } from "@/hooks/useRunStatsFixture";',
+    'import { amount } from "@/lib/amountFixture";',
+    'import { useDigest } from "@/hooks/useDigestFixture";',
+    'import type { CostRow } from "@/lib/costRowsFixture";',
+    'import { type PriceRow } from "@/lib/costRowsAgainFixture";',
+  ].join("\n");
+  const RENDER =
+    "<RunRow run={fleet} /><span>{sessionSummary(fleet)}</span>" +
+    "<span>{useRunStats(fleet).spentText}</span><span>{amount(fleet)}</span>" +
+    "<span>{useDigest(fleet)}</span>";
+  const real = sourceOf(page);
+  const withHelpers = `${IMPORTS}\n${real.replace(
+    /<Caption id="dev-ops\.page" \/>/,
+    (caption) => `${caption}${RENDER}`
+  )}`;
+  const extended = discoverScopeIn({
+    modules: [...scope.context.modules, ...Object.keys(HELPERS)],
+    read: (file) =>
+      HELPERS[file] ?? (file === page ? withHelpers : sourceOf(file)),
+    context: scope.context,
+  });
+  const found = scanLensTrees(extended);
+  const inFile = (file: string) => found.filter((v) => v.file === file);
+
+  it("puts the page's helpers in scope, and nothing it imports only by type", () => {
+    expect(withHelpers).toContain(RENDER);
+    for (const file of [
+      "design-system/components/layout/RunRowFixture.tsx",
+      "lib/sessionSummaryFixture.ts",
+      "hooks/useRunStatsFixture.ts",
+      "lib/amountFixture.ts",
+      "hooks/useDigestFixture.ts",
+      "lib/digestLineFixture.ts",
+    ]) {
+      expect(extended.files, file).toContain(file);
+    }
+    expect(extended.files).not.toContain("lib/costRowsFixture.ts");
+    expect(extended.files).not.toContain("lib/costRowsAgainFixture.ts");
+    expect(inFile("lib/costRowsFixture.ts")).toEqual([]);
+  });
+
+  it.each<[string, string, string]>([
+    [
+      "a component that renders a cost",
+      "design-system/components/layout/RunRowFixture.tsx",
+      "a money value `cost_usd`",
+    ],
+    [
+      "a helper that formats a cost into text",
+      "lib/sessionSummaryFixture.ts",
+      "a money value `cost_usd`",
+    ],
+    [
+      "a hook that hands a cost on under a neutral name",
+      "hooks/useRunStatsFixture.ts",
+      "a money value `total_cost`",
+    ],
+    [
+      "an accessor that returns a cost bare",
+      "lib/amountFixture.ts",
+      "a money value `cost_usd`",
+    ],
+    [
+      "a helper reached through another module",
+      "lib/digestLineFixture.ts",
+      "a money value `price`",
+    ],
+  ])("fails %s, where it touches the money", (_name, file, detail) => {
+    const findings = inFile(file);
+    expect(
+      findings.filter(
+        (v) => v.rule === "money-value" && v.detail.includes(detail)
+      ),
+      found.map(describeCostViolation).join("\n")
+    ).not.toEqual([]);
+    // The finding says how the lens page reaches it.
+    for (const v of findings) {
+      expect(v.via?.[0]).toBe(page);
+      expect(v.via?.at(-1)).toBe(file);
+      expect(describeCostViolation(v)).toContain(
+        `reached from a lens page: ${page}`
+      );
+    }
+  });
+
+  it("names the whole chain for a helper reached through another module", () => {
+    const [first] = inFile("lib/digestLineFixture.ts");
+    expect(first?.via).toEqual([
+      page,
+      "hooks/useDigestFixture.ts",
+      "lib/digestLineFixture.ts",
+    ]);
+  });
+
+  it("finds nothing else: the real tree is clean", () => {
+    expect(
+      found
+        .filter((v) => !Object.keys(HELPERS).includes(v.file))
+        .map(describeCostViolation)
+    ).toEqual([]);
+  });
+});
+
+describe("what a module loads, read from its syntax tree", () => {
+  const loads = (text: string) =>
+    runtimeSpecifiers(
+      ts.createSourceFile(
+        "m.tsx",
+        text,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX
+      )
+    );
+
+  it("follows imports, re-exports, side effects and literal loads", () => {
+    expect(
+      loads(
+        [
+          'import a from "./a";',
+          'import { b } from "./b";',
+          'import * as c from "./c";',
+          'import "./d";',
+          'import {} from "./e";',
+          'import { type T, f } from "./f";',
+          'export * from "./g";',
+          'export * as h from "./h";',
+          'export { i } from "./i";',
+          'import j = require("./j");',
+          'const k = () => import("./k");',
+          'const l = require("./l");',
+        ].join("\n")
+      )
+    ).toEqual([
+      "./a",
+      "./b",
+      "./c",
+      "./d",
+      "./e",
+      "./f",
+      "./g",
+      "./h",
+      "./i",
+      "./j",
+      "./k",
+      "./l",
+    ]);
+  });
+
+  it("does not follow what loads no code: type-only imports and re-exports", () => {
+    expect(
+      loads(
+        [
+          'import type { A } from "./a";',
+          'import { type B, type C } from "./b";',
+          'export type { D } from "./d";',
+          'export { type E } from "./e";',
+          'import type F = require("./f");',
+        ].join("\n")
+      )
+    ).toEqual([]);
+  });
 });
 
 /** Classify a synthetic tree the way `discoverContext` classifies the real one. */
