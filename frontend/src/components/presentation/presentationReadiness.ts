@@ -30,21 +30,34 @@
  * that proves it**: a presentation-mode render of the page that passes
  * `expectPresentationSafe` (`src/test/presentation.tsx`). `provenBy` names
  * that test file. What makes it a proof is read from the RUN, not from the
- * test's source (`src/test/readinessEvidence.ts`): a run that executes
- * `presentationReadiness.test.ts` — `npm run test`, so CI — fails unless that
- * same run also ran the proof and, in it, a test that FINISHED passed (so not
- * skipped at run time, from wherever, nor failed, nor concurrent) ran the
- * page check over a view in which this route's page module's own default
- * export was mounted, under a presenting lens, the check finding nothing and
- * seeing the real UI Bridge provider's registry. So a route cannot be declared
- * ready on a promise, on a proof that did not run, or on one that ran over
- * something other than the page. A run that filters the readiness test out
- * claims nothing either way. Out of reach: a proof that writes that evidence
- * itself, or mocks or edits the checker's own modules, the reporter, the
- * setup file or the vitest config; and the state the proof checks the page
- * in, which is the proof's choice. Over-withholding costs a placeholder
- * instead of a page, which D3 accepts; a page shown before it is safe costs a
- * write control, a hostname or a client's name in front of an evaluator.
+ * test's source (`src/test/readinessEvidence.ts`). A run armed by the
+ * readiness test — `presentationReadiness.test.ts` records the arming on
+ * itself, so `npm run test`, and so CI, is armed wherever that file lives —
+ * fails unless that same run also ran the proof, and in it:
+ *
+ * - a test that FINISHED passed (so not skipped at run time, from wherever,
+ *   nor failed, nor concurrent) ran the page check over a render in which
+ *   this route's page module's own default export was mounted under a
+ *   presenting lens, rendered something and all of it inside the element the
+ *   check read, with check (b) reading that render's own UI Bridge registry,
+ *   and the last such check over that render found nothing;
+ * - and no render of the page, in any test of the proof however it ended,
+ *   settled with its last such check finding a violation.
+ *
+ * So a route cannot be declared ready on a promise, on a proof that did not
+ * run, on one whose check did not read the page — another component, a page
+ * unmounted or portaled out of what the check read, a view assembled from two
+ * renders, a registry the page does not register with — or on a clean check
+ * the run's own record of a violation contradicts. A run no test armed (one
+ * that filters the readiness test out) claims nothing either way. Out of
+ * reach: a proof that writes that evidence itself, or mocks or edits the
+ * checker's own modules, the reporter, the readiness test, the setup file or
+ * the vitest config; a proof that mocks a module the page renders (a child
+ * component, a lens primitive), so the render is not production's — mock
+ * data sources only; and the state the proof checks the page in, which is
+ * the proof's choice. Over-withholding costs a placeholder instead of a page,
+ * which D3 accepts; a page shown before it is safe costs a write control, a
+ * hostname or a client's name in front of an evaluator.
  */
 
 /** A lens page that renders in presentation mode, and the test proving it may. */
