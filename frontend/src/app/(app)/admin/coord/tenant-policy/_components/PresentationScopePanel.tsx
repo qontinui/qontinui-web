@@ -18,15 +18,27 @@
  *   names, which are always withheld and never stored.
  * - **The form** — seeded from what the project has STORED, never from the
  *   effective lists (those carry the viewer's own memberships, which would
- *   then be written into a row every member reads). It saves as a
- *   compare-and-set on the stored version; when someone saved first the
- *   panel re-reads and keeps the edit for the operator to save again.
+ *   then be written into a row every member reads). An edit is bound to the
+ *   scope it was made against — the project and the stored version at its
+ *   first keystroke (`ScopeEdit`) — and the panel's own re-reads never move
+ *   that: a save is a compare-and-set on what the operator actually edited.
+ *   When the stored version moved underneath, the save answers 409 and the
+ *   panel re-reads, keeping the edit for the operator to check and save
+ *   again. When the active project changed underneath (another tab switched
+ *   it), the edit is SET ASIDE — never shown under, nor saved into, the
+ *   other project's scope — and the backend refuses it too
+ *   (`expected_tenant_id`).
+ * - **The outcome** — what the save observed: saved, refused (a 4xx, nothing
+ *   written), or UNKNOWN (a timeout, a lost connection or a 5xx: the backend
+ *   may have committed before the answer was lost), in which case the panel
+ *   re-reads and says so rather than claiming either.
  *
  * It reads and writes through the lens's own scope store
  * (`defaultPresentationScopeStore`), so a save is in force in this tab at
- * once. The backend decides who may write (`require_coord_tenant_admin_target`
- * on `PUT /api/v1/presentation/scope`); `can_edit` is its answer, computed by
- * the same rule, and the form is not offered without it.
+ * once — when the project has not changed since the save was sent. The backend decides who may write
+ * (`require_coord_tenant_admin_target` on `PUT /api/v1/presentation/scope`);
+ * `can_edit` is its answer, computed by the same rule, and the form is not
+ * offered without it.
  *
  * The whole panel sits inside `OperatorOnly`: it lists the confidential terms
  * — the names presentation mode exists to keep off screen — so it is never
@@ -52,15 +64,18 @@ import {
   savePresentationScope,
   type PresentationScopeRecord,
 } from "@/lib/api/presentationScope";
-import { BackendError } from "@/lib/errors/backend-error-message";
 import { cn } from "@/lib/utils";
 import {
+  baseOf,
   draftChangesStored,
   draftFromConfigured,
+  editIsFor,
+  saveFailureOf,
   unknownOwnersReason,
-  writeFromDraft,
+  writeFromEdit,
   type OwnersMode,
   type ScopeDraft,
+  type ScopeEdit,
 } from "../_lib/presentationScopeDraft";
 
 export interface PresentationScopePanelProps {
@@ -69,9 +84,16 @@ export interface PresentationScopePanelProps {
 }
 
 type SaveOutcome =
-  | { readonly kind: "saved"; readonly version: number }
+  | {
+      readonly kind: "saved";
+      readonly version: number;
+      /** Whether the answer is in force in this tab: false when the active
+       *  project changed while the save was in flight. */
+      readonly held: boolean;
+    }
   | { readonly kind: "conflict" }
-  | { readonly kind: "refused"; readonly message: string };
+  | { readonly kind: "refused"; readonly message: string }
+  | { readonly kind: "unknown"; readonly message: string };
 
 export function PresentationScopePanel(props: PresentationScopePanelProps) {
   return (
@@ -85,8 +107,9 @@ function ScopePanel({
   store = defaultPresentationScopeStore,
 }: PresentationScopePanelProps) {
   const snapshot = usePresentationScopeSnapshot(store);
-  /** The operator's edit; `null` while they follow what is stored. */
-  const [draft, setDraft] = useState<ScopeDraft | null>(null);
+  /** The operator's edit, bound to the scope it was made against; `null`
+   *  while they follow what is stored. */
+  const [edit, setEdit] = useState<ScopeEdit | null>(null);
   const [saving, setSaving] = useState(false);
   const [outcome, setOutcome] = useState<SaveOutcome | null>(null);
 
@@ -105,46 +128,79 @@ function ScopePanel({
     snapshot.selection === store.currentSelection() ? snapshot.record : null;
   const canEdit = record?.can_edit === true;
   const stored = record?.configured ?? null;
-  const form = draft ?? (stored ? draftFromConfigured(stored) : null);
+  // An edit made for another project (the selection changed underneath) is
+  // set aside: never shown under this project's scope, never saved into it.
+  const ownEdit = edit !== null && record !== null && editIsFor(edit, record);
+  const setAside = edit !== null && record !== null && !ownEdit;
+  const form =
+    ownEdit && edit ? edit.draft : stored ? draftFromConfigured(stored) : null;
   const dirty =
-    draft !== null && stored !== null && draftChangesStored(draft, stored);
+    ownEdit && edit !== null && stored !== null
+      ? draftChangesStored(edit.draft, stored)
+      : false;
+  // The version this edit was made against, when the stored one has moved
+  // since (a re-read brought someone's save in): the save will say so.
+  const editedFrom =
+    ownEdit && edit !== null && stored !== null
+      ? edit.base.version !== stored.version
+        ? edit.base.version
+        : null
+      : null;
 
-  const edit = (change: Partial<ScopeDraft>) => {
-    if (!form) return;
-    setDraft({ ...form, ...change });
+  const change = (patch: Partial<ScopeDraft>) => {
+    if (!form || !record) return;
+    setEdit({
+      draft: { ...form, ...patch },
+      // Bound at the first keystroke; later keystrokes keep the binding.
+      base: ownEdit && edit ? edit.base : baseOf(record),
+    });
     setOutcome(null);
   };
 
   const save = async () => {
-    if (!record || !form) return;
+    if (!record || !ownEdit || edit === null) return;
+    const sent = edit;
     setSaving(true);
     setOutcome(null);
+    // The selection this save is sent under: its answer is held only if the
+    // project is still that one when it lands.
+    const sentUnder = store.currentSelection();
     try {
-      const saved = await savePresentationScope(
-        writeFromDraft(form, record.configured.version)
-      );
-      store.accept(saved);
-      setDraft(null);
-      setOutcome({ kind: "saved", version: saved.configured.version });
+      const saved = await savePresentationScope(writeFromEdit(sent));
+      const held =
+        saved.tenant_id === sent.base.tenantId &&
+        store.accept(saved, sentUnder);
+      // Saved either way; when the project changed meanwhile, read the one
+      // selected now rather than hold another project's answer as its scope.
+      if (!held) void store.reload();
+      setEdit(null);
+      setOutcome({ kind: "saved", version: saved.configured.version, held });
     } catch (err) {
-      if (err instanceof BackendError && err.status === 409) {
-        // Someone saved first: show what is stored now, keep the edit.
+      const failure = saveFailureOf(err);
+      if (failure.kind === "conflict") {
+        // The stored scope moved since the edit began. Show what is stored
+        // now and keep the edit, re-bound to what was re-read: the notice
+        // asks the operator to check it, and their next save is against it.
         setOutcome({ kind: "conflict" });
         await store.reload();
-      } else if (err instanceof BackendError && err.status === 403) {
-        setOutcome({
-          kind: "refused",
-          message:
-            "The save was refused: only an admin of this project may change its presentation scope.",
-        });
+        const reread = store.getSnapshot();
+        const current =
+          reread.selection === store.currentSelection() ? reread.record : null;
+        if (current !== null && editIsFor(sent, current)) {
+          setEdit({ draft: sent.draft, base: baseOf(current) });
+        }
+      } else if (failure.kind === "tenant-moved") {
+        // The active project is not the one this edit was made for: nothing
+        // was written. Read the project selected now; the edit stays bound to
+        // its own project, so it is set aside rather than shown here.
+        await store.reload();
+      } else if (failure.kind === "unknown") {
+        // The save may have been committed before its answer was lost: say
+        // so, and re-read what is stored instead of claiming either.
+        setOutcome(failure);
+        await store.reload();
       } else {
-        setOutcome({
-          kind: "refused",
-          message:
-            err instanceof Error && err.message
-              ? `The save was refused: ${err.message}`
-              : "The save did not complete, so nothing was changed.",
-        });
+        setOutcome(failure);
       }
     } finally {
       setSaving(false);
@@ -198,6 +254,23 @@ function ScopePanel({
         <div className="mt-4 space-y-4">
           <InForce record={record} />
           <Defaults record={record} />
+          {setAside && (
+            <Notice testId="presentation-scope-set-aside">
+              An unsaved edit made for another project is set aside: the active
+              project changed before it was saved. It is not shown here and is
+              never saved into this project — switch back to that project to
+              finish it, or discard it. Editing this project&apos;s scope
+              discards it.{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                onClick={() => setEdit(null)}
+                data-testid="presentation-scope-discard-set-aside"
+              >
+                Discard it
+              </button>
+            </Notice>
+          )}
           {canEdit && form ? (
             <ScopeForm
               form={form}
@@ -205,10 +278,11 @@ function ScopePanel({
               saving={saving}
               outcome={outcome}
               version={record.configured.version}
-              onEdit={edit}
+              editedFrom={editedFrom}
+              onEdit={change}
               onSave={save}
               onRevert={() => {
-                setDraft(null);
+                setEdit(null);
                 setOutcome(null);
               }}
             />
@@ -324,6 +398,8 @@ interface ScopeFormProps {
   saving: boolean;
   outcome: SaveOutcome | null;
   version: number;
+  /** The stored version the edit was made against, when it is not `version`. */
+  editedFrom: number | null;
   onEdit: (change: Partial<ScopeDraft>) => void;
   onSave: () => void;
   onRevert: () => void;
@@ -336,6 +412,7 @@ function ScopeForm({
   saving,
   outcome,
   version,
+  editedFrom,
   onEdit,
   onSave,
   onRevert,
@@ -355,8 +432,24 @@ function ScopeForm({
           (version {version})
         </span>
       </h3>
+      {editedFrom !== null && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="presentation-scope-edited-from"
+        >
+          Your edit began from version {editedFrom}; the scope has been saved
+          since, so saving will ask you to check your edit against what is
+          stored now.
+        </p>
+      )}
 
-      <fieldset className="space-y-1.5">
+      {/* Read-only while a save is in flight, so the edit that answer
+          settles is the edit that was sent. */}
+      <fieldset
+        className="space-y-1.5"
+        disabled={saving}
+        data-testid="presentation-scope-owners-fieldset"
+      >
         <legend className="text-xs text-muted-foreground">
           First-party owners
         </legend>
@@ -405,7 +498,7 @@ function ScopeForm({
         )}
       </fieldset>
 
-      <div className="space-y-1.5">
+      <fieldset className="space-y-1.5" disabled={saving}>
         <Label
           htmlFor="presentation-scope-terms-input"
           className="text-xs font-normal text-muted-foreground"
@@ -423,7 +516,7 @@ function ScopeForm({
           className="text-xs"
           data-testid="presentation-scope-terms-input"
         />
-      </div>
+      </fieldset>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -450,20 +543,30 @@ function ScopeForm({
             className="text-xs text-muted-foreground"
             data-testid="presentation-scope-saved"
           >
-            Saved (version {outcome.version}); in force in this tab now.
+            {outcome.held
+              ? `Saved (version ${outcome.version}); in force in this tab now.`
+              : `Saved (version ${outcome.version}). The active project changed while it was saving, so this page shows the project selected now and has re-read its scope.`}
           </span>
         )}
       </div>
 
       {outcome?.kind === "conflict" && (
         <Notice testId="presentation-scope-conflict">
-          Someone saved the scope after you opened it. The lists above are what
-          is stored now; your edit is kept below — check it against them and
-          save again.
+          The stored scope changed after this edit began — another admin saved,
+          or an earlier attempt of this save landed. The lists above are what is
+          stored now; your edit is kept below — check it against them and save
+          again.
         </Notice>
       )}
       {outcome?.kind === "refused" && (
         <Notice testId="presentation-scope-refused">{outcome.message}</Notice>
+      )}
+      {outcome?.kind === "unknown" && (
+        <Notice testId="presentation-scope-outcome-unknown">
+          {outcome.message} It may or may not have been stored: the lists above
+          have been re-read, so check them before saving again. Your edit is
+          kept below.
+        </Notice>
       )}
     </form>
   );

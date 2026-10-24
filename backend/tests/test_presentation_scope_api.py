@@ -30,6 +30,7 @@ so the REAL tenant resolution and the REAL admin gate
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -91,16 +92,21 @@ class FakeCoord:
     #: (``operations._tenant_headers`` reads exactly these two).
     forwarded: list[tuple[str | None, str | None]] = field(default_factory=list)
 
+    def effective(self, selection: UUID | str | None) -> UUID | None:
+        """The project a request carrying ``selection`` resolves to: the
+        selected one when the operator belongs to it, home otherwise."""
+        chosen = "" if selection is None else str(selection).strip()
+        for m in self.memberships:
+            if str(m.tenant_id) == chosen or m.slug == chosen:
+                return m.tenant_id
+        return self.home
+
     def identity(self, request: Request) -> CoordIdentity:
         """``/admin/coord/me`` as coord answers it: re-scoped to the selected
         project when the operator belongs to it, home otherwise."""
         if not self.linked:
             raise HTTPException(status_code=403, detail="tenant_not_resolved")
-        selection = (request.headers.get(HEADER) or "").strip()
-        effective = self.home
-        for m in self.memberships:
-            if str(m.tenant_id) == selection or m.slug == selection:
-                effective = m.tenant_id
+        effective = self.effective(request.headers.get(HEADER))
         return CoordIdentity(
             operator_id=None,
             home_tenant_id=effective,
@@ -195,13 +201,19 @@ class Harness:
         terms: list[str] | None = None,
         version: int = 0,
         active: UUID | str | None = None,
+        tenant: UUID | str | None = None,
         bearer: str | None = None,
         **extra: Any,
     ) -> httpx.Response:
+        """PUT a scope. ``tenant`` is the body's ``expected_tenant_id`` -- by
+        default the project the request resolves to, as a client that read
+        the scope under the same selection sends."""
+        expected = tenant if tenant is not None else self.coord.effective(active)
         body = {
             "first_party_owners": owners,
             "confidential_terms": terms or [],
             "expected_version": version,
+            "expected_tenant_id": None if expected is None else str(expected),
             **extra,
         }
         return await self.http.put(
@@ -390,6 +402,21 @@ async def test_an_operator_coord_does_not_know_is_refused_presentation(
     assert resp.json()["message"] == "tenant_not_resolved"
 
 
+@pytest.mark.asyncio
+async def test_an_identity_naming_no_project_is_refused_presentation(
+    harness: Harness,
+) -> None:
+    """Coord answers, but the operator has no home project and the selection
+    names none they belong to: the read is refused before any tenant-keyed
+    read, rather than reading the scope of no tenant."""
+    harness.coord.home = None
+    harness.coord.memberships = []
+    resp = await harness.read(uuid4())
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["message"] == "tenant_not_resolved"
+    assert harness.coord.repo_calls == []
+
+
 # ===========================================================================
 # Layer 2 — the write
 # ===========================================================================
@@ -509,12 +536,55 @@ async def test_an_invalid_write_is_refused_presentation(
         await harness.write(terms=["--"], version=0),
         await harness.write(terms=["Initech"], version=0, tenant_id=str(projects.acme)),
         await harness.http.put(
-            API, json={"confidential_terms": [], "expected_version": 0}
+            API,
+            json={
+                "confidential_terms": [],
+                "expected_version": 0,
+                "expected_tenant_id": str(projects.ours),
+            },
         ),
+        # A write that names no project it was made for.
+        await harness.http.put(
+            API,
+            json={
+                "first_party_owners": None,
+                "confidential_terms": [],
+                "expected_version": 0,
+            },
+        ),
+        # Past what the INTEGER column holds: a 422, not a driver error.
+        await harness.write(terms=["Initech"], version=2**31),
     ):
         assert resp.status_code == 422, resp.text
     assert await _row(harness.db, projects.ours) is None
     assert await _row(harness.db, projects.acme) is None
+
+
+@pytest.mark.asyncio
+async def test_a_term_postgres_cannot_store_is_refused_unechoed_presentation(
+    harness: Harness, projects: Projects
+) -> None:
+    """A NUL, or an unpaired surrogate (which has no UTF-8 form), passes the
+    letter-or-digit check -- the match key drops both -- and would reach the
+    database, which refuses it with a 500 whose error text carries every
+    submitted term. The schema refuses it first, and names the term by its
+    position: the terms are the names presentation mode keeps off screen."""
+    for term in ("Acme\x00Corp", "Acme\ud800Corp"):
+        body = json.dumps(
+            {
+                "first_party_owners": None,
+                "confidential_terms": ["Globex Holdings", term],
+                "expected_version": 0,
+                "expected_tenant_id": str(projects.ours),
+            }
+        )
+        resp = await harness.http.put(
+            API, content=body, headers={"Content-Type": "application/json"}
+        )
+        assert resp.status_code == 422, resp.text
+        assert "confidential term 2" in resp.text
+        assert "Acme" not in resp.text and "Globex" not in resp.text
+    assert await _row(harness.db, projects.ours) is None
 
 
 # ===========================================================================
@@ -561,6 +631,15 @@ async def test_another_project_can_neither_read_nor_write_ours_presentation(
     assert again.json()["tenant_id"] == str(projects.globex)
     ours = await _row(harness.db, projects.ours)
     assert ours is not None and ours.confidential_terms == ["Initech"]
+    # Nor by naming our project as the one the edit was made for.
+    named = await harness.write(
+        terms=["Hooli"], version=1, active=projects.ours, tenant=projects.ours
+    )
+    assert named.status_code == 409, named.text
+    assert named.json()["error"] == "presentation_scope_tenant_mismatch"
+    ours = await _row(harness.db, projects.ours)
+    assert ours is not None and ours.confidential_terms == ["Initech"]
+    assert ours.version == 1
 
 
 @pytest.mark.asyncio
@@ -583,6 +662,45 @@ async def test_the_project_selector_picks_the_row_presentation(
     by_slug = (await harness.read("acme-corp")).json()
     assert by_slug["tenant_id"] == str(projects.acme)
     assert by_slug["configured"]["version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_an_edit_made_for_another_project_is_never_saved_here_presentation(
+    harness: Harness, projects: Projects
+) -> None:
+    """An admin of BOTH projects with a form open on ours while another tab
+    switched the selection to Acme's: the save now resolves to Acme, and the
+    body says the edit was made for ours. Refused, nothing written anywhere --
+    even though both rows sit at version 0, where a version check alone would
+    let our confidential terms land in Acme's row, which every Acme member
+    reads."""
+    harness.coord.memberships[1] = _member(
+        projects.acme, "acme-corp", "Acme Corp", "admin"
+    )
+    resp = await harness.write(
+        owners=["qontinui"],
+        terms=["Initech"],
+        version=0,
+        active=projects.acme,
+        tenant=projects.ours,
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"] == "presentation_scope_tenant_mismatch"
+    assert "Initech" not in resp.text
+    assert await _row(harness.db, projects.acme) is None
+    assert await _row(harness.db, projects.ours) is None
+
+    # A non-member selection degrades to home; an edit made for Acme is then
+    # refused in ours too.
+    assert (await harness.write(terms=["Initech"], version=0)).status_code == 200
+    resp = await harness.write(
+        terms=["Hooli"], version=1, active=uuid4(), tenant=projects.acme
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["error"] == "presentation_scope_tenant_mismatch"
+    ours = await _row(harness.db, projects.ours)
+    assert ours is not None and ours.confidential_terms == ["Initech"]
+    assert ours.version == 1
 
 
 @pytest.mark.asyncio

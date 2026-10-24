@@ -109,6 +109,9 @@ describe("/admin/coord/tenant-policy — the presentation scope", () => {
         first_party_owners: ["qontinui"],
         confidential_terms: ["Acme Corp", "Globex"],
         expected_version: 3,
+        // The project the stored scope was read for: the write is refused if
+        // the request resolves to another.
+        expected_tenant_id: "00000000-0000-0000-0000-00000000000a",
       },
     ]);
   });

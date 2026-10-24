@@ -160,11 +160,14 @@ async def _write_target(world: World, selection: UUID) -> UUID:
     )
 
 
-def _body(**fields: Any) -> dict[str, Any]:
+def _body(tenant: UUID, **fields: Any) -> dict[str, Any]:
+    """A write made against ``tenant``'s scope, as the console's form sends it
+    after reading that scope."""
     return {
         "first_party_owners": None,
         "confidential_terms": [],
         "expected_version": 0,
+        "expected_tenant_id": str(tenant),
         **fields,
     }
 
@@ -185,7 +188,11 @@ async def test_an_admin_writes_the_selected_scope_a_member_reads_it(world) -> No
     written = await world.client.put(
         SCOPE,
         headers=_headers(world.ours),
-        json=_body(first_party_owners=["qontinui"], confidential_terms=["Acme Corp"]),
+        json=_body(
+            world.ours,
+            first_party_owners=["qontinui"],
+            confidential_terms=["Acme Corp"],
+        ),
     )
     assert written.status_code == 200, written.text
     assert written.json()["tenant_id"] == str(world.ours)
@@ -213,7 +220,7 @@ async def test_a_non_admin_of_the_selected_project_cannot_write_it(world) -> Non
     resp = await world.client.put(
         SCOPE,
         headers=_headers(world.theirs),
-        json=_body(confidential_terms=["Initech"]),
+        json=_body(world.theirs, confidential_terms=["Initech"]),
     )
     assert resp.status_code == 403, resp.text
     served = await world.client.get(SCOPE, headers=_headers(world.theirs))

@@ -1,7 +1,7 @@
 """web.presentation_scopes — the presentation lens's redaction scope
 
 Revision ID: presentation_scope_01
-Revises: coord_policy_clauses_02
+Revises: citecand_01
 Create Date: 2026-10-23
 
 Phase 1 of plan ``2026-10-23-console-presentation-spaces``
@@ -72,7 +72,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "presentation_scope_01"
-down_revision: str = "coord_policy_clauses_02"
+down_revision: str = "citecand_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
