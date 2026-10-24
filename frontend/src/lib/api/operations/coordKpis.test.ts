@@ -85,6 +85,32 @@ describe("coordKpis", () => {
     expect([...url.searchParams.keys()]).toEqual(["slug"]);
   });
 
+  it("does not depend on URLSearchParams.size, which not every engine has", async () => {
+    // `qs.size > 0` is false when `size` is undefined, which silently dropped
+    // the whole query. Every sibling client builds the suffix from toString().
+    const original = Object.getOwnPropertyDescriptor(
+      URLSearchParams.prototype,
+      "size"
+    );
+    Object.defineProperty(URLSearchParams.prototype, "size", {
+      configurable: true,
+      get: () => undefined,
+    });
+    try {
+      fetchMock.mockResolvedValueOnce(json({}));
+      await fetchKpis({ window: "28d", slug: "2026-10-01-a-plan" });
+    } finally {
+      if (original) {
+        Object.defineProperty(URLSearchParams.prototype, "size", original);
+      } else {
+        delete (URLSearchParams.prototype as { size?: number }).size;
+      }
+    }
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/operations/kpis?window=28d&slug=2026-10-01-a-plan"
+    );
+  });
+
   it("omits an empty window or repos rather than sending `window=`", async () => {
     fetchMock.mockResolvedValueOnce(json({}));
     await fetchKpis({ window: "", repos: "", slug: "", limit: "" });

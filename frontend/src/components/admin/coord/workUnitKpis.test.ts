@@ -35,7 +35,10 @@ import {
   unitBlockRows,
   unitColumnViews,
   KPI_PENDING,
+  NEGATIVE_DURATION_TEXT,
+  formatSessions,
 } from "./workUnitKpis";
+import { formatDurationSecs } from "@/components/operations/fleetReadout";
 
 describe("describeKpi", () => {
   it("renders a null value as unknown with its reason and coverage — never 0", () => {
@@ -63,6 +66,36 @@ describe("describeKpi", () => {
     const v = describeKpi(broken, String);
     expect(v.kind).toBe("unknown");
     expect(v.detail).toContain("unknown — no reason given");
+  });
+
+  it("treats a non-null reason as UNKNOWN even when a value rides along — the number is not shown", () => {
+    // The contract: reason is non-null IFF value is null. A figure carrying
+    // both is coord contradicting itself; it must not print as `$0.00`.
+    const contradictory = {
+      value: 0,
+      coverage_n: 0,
+      population_n: 3,
+      basis: "list-price equivalent",
+      reason: "no_usage_rows",
+    };
+    const v = describeKpi(contradictory, formatMicroUsd, {
+      suffix: LIST_PRICE_LABEL,
+    });
+    expect(v.kind).toBe("unknown");
+    expect(v.text).toBe("unknown");
+    expect(v.detail).toBe("unknown — no usage rows recorded (0 of 3 observed)");
+    expect(v.reason).toBe("no_usage_rows");
+    expect(v.partial).toBe(false);
+    for (const s of [v.text, v.detail]) expect(s).not.toMatch(/\$/);
+    // A non-zero value with a reason is hidden the same way.
+    expect(describeKpi({ ...contradictory, value: 7 }, String).text).toBe(
+      "unknown"
+    );
+  });
+
+  it("keeps an absent reason on a known value known", () => {
+    const { reason: _reason, ...noReason } = kpi(5);
+    expect(describeKpi(noReason as never, String).kind).toBe("known");
   });
 
   it("treats a figure missing from the answer as unknown, not as zero", () => {
@@ -117,12 +150,60 @@ describe("describeKpi", () => {
   });
 });
 
+describe("negative durations", () => {
+  it("prints a negative duration as a visible anomaly, never 0s", () => {
+    expect(formatSeconds(-120)).toBe(NEGATIVE_DURATION_TEXT);
+    expect(NEGATIVE_DURATION_TEXT).toBe("negative (timestamps out of order)");
+    const v = describeKpi(kpi(-120), formatSeconds);
+    expect(v.kind).toBe("known");
+    expect(v.text).toBe("negative (timestamps out of order)");
+    expect(v.text).not.toContain("0s");
+  });
+
+  it("reaches the segment rows of a unit whose PR was opened before it went in_progress", () => {
+    const rows = unitBlockRows(
+      unit("a", {
+        lead_time_segments: {
+          in_progress_to_first_pr_opened_seconds: kpi(-300),
+          first_pr_opened_to_last_landed_seconds: kpi(3600),
+        },
+      })
+    );
+    const seg = rows.find((r) => r.id === "lead_time_to_first_pr")!;
+    expect(seg.view.text).toBe("negative (timestamps out of order)");
+    expect(seg.view.detail).toBe(
+      "negative (timestamps out of order) (1 of 1 observed)"
+    );
+    expect(seg.view.detail).not.toContain("0s");
+  });
+
+  it("leaves zero and positive durations as they were", () => {
+    expect(formatSeconds(0)).toBe("0s");
+    expect(formatSeconds(5400)).toBe("1h 30m");
+  });
+
+  it("does not change the shared helper's clamp for its other callers", () => {
+    expect(formatDurationSecs(-5)).toBe("0s");
+  });
+});
+
 describe("formatters", () => {
   it("formats micro-USD as dollars, with four places below a cent", () => {
     expect(formatMicroUsd(2_500_000)).toBe("$2.50");
     expect(formatMicroUsd(0)).toBe("$0.00");
     expect(formatMicroUsd(1_234)).toBe("$0.0012");
     expect(formatMicroUsd(1_000_000_000)).toBe("$1,000.00");
+  });
+
+  it("prints <$0.0001 for a positive cost that would round to zero — never $0.0000", () => {
+    for (const micro of [1, 2, 25, 49]) {
+      expect(formatMicroUsd(micro)).toBe("<$0.0001");
+    }
+    // The boundary: 50 micro-USD is $0.00005, which rounds up to $0.0001.
+    expect(formatMicroUsd(50)).toBe("$0.0001");
+    expect(formatMicroUsd(99)).toBe("$0.0001");
+    // A known zero is still a zero.
+    expect(formatMicroUsd(0)).toBe("$0.00");
   });
 
   it("formats token counts compactly", () => {
@@ -152,6 +233,57 @@ describe("formatters", () => {
     }
     expect(reasonWords(null)).toBe("no reason given");
     expect(reasonWords("   ")).toBe("no reason given");
+  });
+});
+
+describe("sessions", () => {
+  const sessions = (v: number, coverage: number, population: number) =>
+    unitBlockRows(
+      unit("a", {
+        sessions: kpi(v, {
+          coverage_n: coverage,
+          population_n: population,
+          basis: "sessions of the unit",
+        }),
+      })
+    ).find((r) => r.id === "sessions")!;
+
+  it("words an exact count with 'with usage data', not as a part-seen number", () => {
+    const row = sessions(3, 2, 3);
+    expect(row.view.kind).toBe("known");
+    expect(row.view.text).toBe("3 sessions");
+    expect(row.view.detail).toBe("3 sessions, 2 with usage data");
+    // The count is exact: it is not partial and carries no (n/m).
+    expect(row.view.partial).toBe(false);
+    expect(row.view.detail).not.toMatch(/observed|\(2\/3\)|\(2 of 3/);
+  });
+
+  it("uses the singular for one session", () => {
+    expect(sessions(1, 1, 1).view.detail).toBe("1 session, 1 with usage data");
+    expect(formatSessions(1)).toBe("1 session");
+  });
+
+  it("keeps a unit with sessions but no usage rows a KNOWN count, with the gap said", () => {
+    expect(sessions(3, 0, 3).view.detail).toBe("3 sessions, 0 with usage data");
+    expect(sessions(3, 0, 3).view.kind).toBe("known");
+  });
+
+  it("still renders an unknown session count as unknown", () => {
+    const row = unitBlockRows(
+      unit("a", { sessions: unknown("not_established", { population_n: 0 }) })
+    ).find((r) => r.id === "sessions")!;
+    expect(row.view.kind).toBe("unknown");
+    expect(row.view.detail).toBe(
+      "unknown — not established (0 with usage data)"
+    );
+  });
+
+  it("does not change how every other count is worded", () => {
+    const ci = unitBlockRows(
+      unit("a", { ci_attempts: kpi(7, { coverage_n: 1, population_n: 2 }) })
+    ).find((r) => r.id === "ci_attempts")!;
+    expect(ci.view.detail).toBe("7 (1 of 2 observed)");
+    expect(ci.view.partial).toBe(true);
   });
 });
 

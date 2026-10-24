@@ -51,7 +51,8 @@ export async function fetchKpis(
   if (query.repos) qs.set("repos", query.repos);
   if (query.slug) qs.set("slug", query.slug);
   if (query.limit) qs.set("limit", query.limit);
-  const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
+  const q = qs.toString();
+  const suffix = q ? `?${q}` : "";
   const url = `${OPERATIONS_BASE}/kpis${suffix}`;
   const res = await httpClient.fetch(url, {
     ...options,

@@ -23,6 +23,14 @@ describe("isKpi", () => {
     expect(isKpi(rest)).toBe(true);
   });
 
+  it("accepts a figure that carries both a value and a reason — describeKpi, not the guard, treats it as unknown", () => {
+    expect(isKpi({ ...kpi(0), reason: "no_usage_rows" })).toBe(true);
+    const body = payload([
+      unit("a", { cost_microusd: { ...kpi(0), reason: "no_usage_rows" } }),
+    ]);
+    expect(isKpisPayload(body)).toBe(true);
+  });
+
   it("refuses a value that is neither a finite number nor null", () => {
     expect(isKpi({ ...kpi(5), value: "5" })).toBe(false);
     expect(isKpi({ ...kpi(5), value: Number.NaN })).toBe(false);

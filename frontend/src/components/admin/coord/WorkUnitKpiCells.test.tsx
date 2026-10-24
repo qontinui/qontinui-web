@@ -121,6 +121,28 @@ describe("KPI chips on a PlanRow", () => {
     expect(rework.getAttribute("title")).toContain("revert probe has not run");
   });
 
+  it("does not print a value that arrives with a reason: the chip is unknown and shows why", () => {
+    renderRow(
+      cellFor("2026-10-01-a-plan", [
+        unit("2026-10-01-a-plan", {
+          cost_microusd: {
+            value: 0,
+            coverage_n: 0,
+            population_n: 3,
+            basis: "list-price equivalent",
+            reason: "no_usage_rows",
+          },
+        }),
+      ])
+    );
+    const cost = screen.getByTestId("coord-plan-kpi-cost");
+    expect(cost).toHaveTextContent("list-price equiv.unknown");
+    expect(cost).toHaveAttribute("data-kpi-state", "unknown");
+    expect(cost).toHaveAttribute("data-kpi-reason", "no_usage_rows");
+    expect(cost.textContent).not.toMatch(/\$/);
+    expect(cost.getAttribute("title")).toContain("no usage rows recorded");
+  });
+
   it("prints partial coverage as (n/m) beside the number", () => {
     renderRow(
       cellFor("2026-10-01-a-plan", [
@@ -263,6 +285,77 @@ describe("KpiBlock", () => {
       "Input tokens: unknown — no usage rows recorded (0 of 3 observed)"
     );
     expect(row.textContent).not.toMatch(/: 0\b/);
+  });
+
+  it("shows a value-with-a-reason row as unknown with the reason, not as a number", () => {
+    render(
+      <KpiBlock
+        cell={cellFor("a", [
+          unit("a", {
+            cost_microusd: {
+              value: 0,
+              coverage_n: 0,
+              population_n: 3,
+              basis: "list-price equivalent",
+              reason: "no_usage_rows",
+            },
+          }),
+        ])}
+      />
+    );
+    const row = screen.getByTestId("coord-plan-kpi-row-cost");
+    expect(row).toHaveAttribute("data-kpi-state", "unknown");
+    expect(row).toHaveAttribute("data-kpi-reason", "no_usage_rows");
+    expect(row).toHaveTextContent(
+      "unknown — no usage rows recorded (0 of 3 observed)"
+    );
+    expect(row.textContent).not.toMatch(/\$/);
+  });
+
+  it("shows a negative segment as an anomaly and a sub-0.0001 cost as <$0.0001", () => {
+    render(
+      <KpiBlock
+        cell={cellFor("a", [
+          unit("a", {
+            lead_time_segments: {
+              in_progress_to_first_pr_opened_seconds: kpi(-300),
+              first_pr_opened_to_last_landed_seconds: kpi(3600),
+            },
+            cost_microusd: kpi(7, { basis: "list-price equivalent" }),
+          }),
+        ])}
+      />
+    );
+    const seg = screen.getByTestId("coord-plan-kpi-row-lead_time_to_first_pr");
+    expect(seg).toHaveTextContent(
+      "In progress → first PR opened: negative (timestamps out of order)"
+    );
+    expect(seg.textContent).not.toContain("0s");
+    expect(screen.getByTestId("coord-plan-kpi-row-cost")).toHaveTextContent(
+      "<$0.0001 list-price equivalent"
+    );
+  });
+
+  it("words sessions as an exact count with its usage coverage", () => {
+    render(
+      <KpiBlock
+        cell={cellFor("a", [
+          unit("a", {
+            sessions: kpi(3, {
+              coverage_n: 2,
+              population_n: 3,
+              basis: "sessions of the unit",
+            }),
+          }),
+        ])}
+      />
+    );
+    const row = screen.getByTestId("coord-plan-kpi-row-sessions");
+    expect(row).toHaveTextContent(
+      "Agent sessions: 3 sessions, 2 with usage data"
+    );
+    expect(row).not.toHaveAttribute("data-kpi-partial");
+    expect(row.textContent).not.toMatch(/observed/);
   });
 
   it("marks a partially covered row, in the sentence and as an attribute", () => {

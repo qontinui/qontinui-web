@@ -135,6 +135,12 @@ function isCount(v: unknown): v is number {
  * A `Kpi`: a finite number or `null` as value, both counts, a string basis and
  * a string-or-null reason. `reason` MAY be absent on a known value — only a
  * present non-string is malformed.
+ *
+ * The contract's rule that `reason` is non-null IFF `value` is null is NOT
+ * enforced here, deliberately: a figure that breaks it (a number AND a reason)
+ * must not fail the whole read and blank every other figure. `describeKpi`
+ * (`workUnitKpis.ts`) enforces it at render time instead — a non-null `reason`
+ * means UNKNOWN, and the number is not shown.
  */
 export function isKpi(v: unknown): v is Kpi<number> {
   if (!isObject(v)) return false;

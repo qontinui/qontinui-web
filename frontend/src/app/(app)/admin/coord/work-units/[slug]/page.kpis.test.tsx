@@ -87,7 +87,7 @@ describe("CoordPlanDetailPage — Delivery KPIs", () => {
       ["lead_time", "Lead time: 1h 30m (1 of 1 observed)"],
       ["lead_time_to_first_pr", "In progress → first PR opened: 30m"],
       ["lead_time_first_pr_to_landed", "First PR opened → last PR landed: 1h"],
-      ["sessions", "Agent sessions: 3 (3 of 3 observed)"],
+      ["sessions", "Agent sessions: 3 sessions, 3 with usage data"],
       ["tokens_input", "Input tokens: 12,345"],
       ["tokens_output", "Output tokens: 4,100"],
       ["tokens_cache_creation_input", "Cache-creation input tokens: 900"],

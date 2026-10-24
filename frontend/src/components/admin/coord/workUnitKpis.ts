@@ -92,8 +92,20 @@ export function coverageText(coverageN: number, populationN: number): string {
 // Formatters (a `Kpi`'s value, once it is known)
 // ============================================================================
 
-/** `1h 30m`, `45s`. */
-export const formatSeconds = formatDurationSecs;
+/** What a negative duration prints: an anomaly to be seen, not a `0s`. */
+export const NEGATIVE_DURATION_TEXT = "negative (timestamps out of order)";
+
+/**
+ * `1h 30m`, `45s` — and a NEGATIVE duration (a PR opened before the unit went
+ * `in_progress`) as {@link NEGATIVE_DURATION_TEXT}. The shared
+ * `formatDurationSecs` clamps at zero for its other callers, which would print
+ * `0s` here: a known value that reads as "instant" when it is really a
+ * timestamp-ordering fault. Handled here, before the shared helper, so its
+ * behaviour for the fleet readouts is untouched.
+ */
+export function formatSeconds(secs: number): string {
+  return secs < 0 ? NEGATIVE_DURATION_TEXT : formatDurationSecs(secs);
+}
 
 /** `12,345`. */
 export function formatCount(n: number): string {
@@ -108,15 +120,21 @@ export function formatCompactCount(n: number): string {
   }).format(n);
 }
 
-/** Micro-USD as dollars: `$2.50`, and four places below a cent so it is not `$0.00`. */
+/**
+ * Micro-USD as dollars: `$2.50`, four places below a cent so it is not
+ * `$0.00`, and `<$0.0001` for a positive amount that would still round to
+ * zero at four places (1..49 micro-USD) — a cost that was incurred never
+ * prints as `$0.0000`.
+ */
 export function formatMicroUsd(micro: number): string {
   const sub = micro !== 0 && Math.abs(micro) < 10_000;
-  return new Intl.NumberFormat("en-US", {
+  const text = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: sub ? 4 : 2,
     maximumFractionDigits: sub ? 4 : 2,
   }).format(micro / 1_000_000);
+  return micro > 0 && /^\$0\.0+$/.test(text) ? "<$0.0001" : text;
 }
 
 // ============================================================================
@@ -147,20 +165,44 @@ export interface KpiView {
   basis: string;
 }
 
+/** How {@link describeKpi} words an EXACT count whose coverage is about something else. */
+export interface ExactCount {
+  /** The coverage clause, from `coverage_n` / `population_n`. */
+  coverage: (coverageN: number, populationN: number) => string;
+}
+
+export interface DescribeKpiOptions {
+  /** Goes on the DETAIL sentence only (`list-price equivalent`). */
+  suffix?: string;
+  /**
+   * The value is an EXACT count and `coverage_n` says something else about its
+   * items — for sessions, how many have a usage row. Coverage is then a
+   * clause of its own ("3 sessions, 2 with usage data"), never `(n/m)` on the
+   * number and never `partial`: the count is not part-seen.
+   */
+  exact?: ExactCount;
+}
+
 /**
  * The only function that turns a `Kpi`'s `value` into text.
  *
  * - `value === null` (or a figure that is missing from the answer) →
  *   `unknown`, with the reason in words and the coverage. Never `0`.
+ * - a NON-NULL `reason` also means `unknown`, whatever `value` holds. The
+ *   contract says `reason` is non-null iff `value` is null, so a figure that
+ *   carries both is coord contradicting itself, and the number is not shown:
+ *   `{value: 0, reason: "no_usage_rows"}` is "no usage rows recorded", not
+ *   `$0.00`. The read is not rejected for it (see `isKpi`).
  * - a known value with `coverage_n < population_n` → `partial`, and the cell
  *   text carries `(n/m)` so a number that saw 2 of 3 inputs never reads as one
  *   that saw all three.
- * - `suffix` goes on the DETAIL sentence only (`list-price equivalent`).
+ * - `options.exact` words a count whose coverage is not about how much of it
+ *   was seen (sessions).
  */
 export function describeKpi(
   kpi: Kpi<number> | null | undefined,
   format: (value: number) => string,
-  options: { suffix?: string } = {}
+  options: DescribeKpiOptions = {}
 ): KpiView {
   if (!kpi) {
     return {
@@ -173,9 +215,12 @@ export function describeKpi(
       basis: "",
     };
   }
-  const coverage = coverageText(kpi.coverage_n, kpi.population_n);
+  const coverage = options.exact
+    ? options.exact.coverage(kpi.coverage_n, kpi.population_n)
+    : coverageText(kpi.coverage_n, kpi.population_n);
   const basis = kpi.basis ?? "";
-  if (kpi.value === null || kpi.value === undefined) {
+  const hasReason = kpi.reason !== null && kpi.reason !== undefined;
+  if (kpi.value === null || kpi.value === undefined || hasReason) {
     return {
       kind: "unknown",
       text: "unknown",
@@ -187,8 +232,19 @@ export function describeKpi(
     };
   }
   const value = format(kpi.value);
-  const partial = kpi.coverage_n < kpi.population_n;
   const withSuffix = options.suffix ? `${value} ${options.suffix}` : value;
+  if (options.exact) {
+    return {
+      kind: "known",
+      text: value,
+      detail: `${withSuffix}, ${coverage}`,
+      coverage,
+      partial: false,
+      reason: null,
+      basis,
+    };
+  }
+  const partial = kpi.coverage_n < kpi.population_n;
   return {
     kind: "known",
     text: partial ? `${value} (${kpi.coverage_n}/${kpi.population_n})` : value,
@@ -297,6 +353,21 @@ export interface KpiBlockRow {
   nested?: boolean;
 }
 
+/** `3 sessions`, `1 session`. */
+export function formatSessions(n: number): string {
+  return `${formatCount(n)} session${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The sessions figure is an EXACT count — `value` is the distinct sessions of
+ * the unit — and `coverage_n` is how many of them have a usage row. So
+ * "3 (2 of 3 observed)" would read as a count that saw only two thirds of the
+ * sessions; it is "3 sessions, 2 with usage data".
+ */
+const SESSIONS_EXACT: ExactCount = {
+  coverage: (withUsage) => `${formatCount(withUsage)} with usage data`,
+};
+
 /** A plain integer that is not a `Kpi` (the PR counts): known, or "not reported". */
 function plainCount(n: unknown): string {
   return typeof n === "number" && Number.isFinite(n)
@@ -342,7 +413,7 @@ export function unitBlockRows(unit: KpiUnit): KpiBlockRow[] {
     kpi: Kpi<number>,
     format: (v: number) => string,
     nested = false,
-    options: { suffix?: string } = {}
+    options: DescribeKpiOptions = {}
   ): KpiBlockRow => ({
     id,
     label,
@@ -365,7 +436,9 @@ export function unitBlockRows(unit: KpiUnit): KpiBlockRow[] {
       formatSeconds,
       true
     ),
-    row("sessions", "Agent sessions", unit.sessions, formatCount),
+    row("sessions", "Agent sessions", unit.sessions, formatSessions, false, {
+      exact: SESSIONS_EXACT,
+    }),
     row("tokens_input", "Input tokens", unit.tokens.input, formatCount),
     row("tokens_output", "Output tokens", unit.tokens.output, formatCount),
     row(
