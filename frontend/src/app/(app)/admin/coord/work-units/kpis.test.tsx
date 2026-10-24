@@ -83,11 +83,11 @@ function route(kpis: unknown) {
 }
 
 function rowFor(slug: string): HTMLElement {
-  const row = screen
+  const card = screen
     .getAllByTestId("coord-plan-card")
     .find((el) => el.getAttribute("data-row-key") === slug);
-  if (!row) throw new Error(`no row for ${slug}`);
-  return row;
+  if (!card) throw new Error(`no card for ${slug}`);
+  return card;
 }
 
 async function renderLoaded() {
