@@ -43,9 +43,12 @@
  * its raw formatter `formatCostAmount` is one, and declaring it so makes a
  * wrapper of it anywhere under `src/` a formatter too.
  *
- * Only modules whose text could matter are parsed: those that mention
- * `currency` or a currency symbol, and — each time a module turns out to
- * export a formatter — the modules that import from it.
+ * Every module is parsed and asked for its money positions — this module
+ * keeps no currency text of its own, so nothing here can know fewer codes,
+ * symbols or shapes than the scan's rules do. (It once had a text prefilter
+ * that knew four codes of the nine: a module whose only money text was `CHF`
+ * was never classified.) Each time a module turns out to export a formatter,
+ * the modules that import from it are classified again.
  *
  * What it cannot see: a figure formatted somewhere it is not handed code for —
  * the composed build's cloud overlay (outside `src/`; its OSS mirror,
@@ -446,9 +449,6 @@ function readsFormatter(node: ts.Node, context: ReadContext): boolean {
   return found;
 }
 
-/** Text that could hold a currency format or a glued symbol. */
-const MAY_FORMAT_MONEY = /currency|[$€£¥₹¢]|\b(?:USD|EUR|GBP|JPY)\b/;
-
 export interface CurrencyFormatterOptions {
   /** Every non-test module, `src/`-relative. */
   readonly modules: readonly string[];
@@ -532,9 +532,11 @@ export function discoverCurrencyFormatters({
     queued.add(file);
     queue.push(file);
   };
-  for (const file of modules) {
-    if (MAY_FORMAT_MONEY.test(read(file))) enqueue(file);
-  }
+  // Every module, whatever its text: which code formats money is the scan's
+  // rules' answer (`moneyFormatsAt`), and a text prefilter would have to know
+  // every shape they react to — a currency code, a character reference, an
+  // escape, options it cannot read.
+  for (const file of modules) enqueue(file);
   for (const file of declared.keys()) {
     for (const importer of importersOf(file)) enqueue(importer);
   }
@@ -549,13 +551,11 @@ export function discoverCurrencyFormatters({
       // Seeded once: the bindings whose own code formats money.
       locals = new Set();
       localFormatters.set(file, locals);
-      if (MAY_FORMAT_MONEY.test(model.source.text)) {
-        const positions = moneyFormatsAt(file, model.source);
-        for (const [name, node] of model.locals) {
-          const start = node.getStart(model.source);
-          const end = node.getEnd();
-          if (positions.some((p) => p >= start && p < end)) locals.add(name);
-        }
+      const positions = moneyFormatsAt(file, model.source);
+      for (const [name, node] of model.locals) {
+        const start = node.getStart(model.source);
+        const end = node.getEnd();
+        if (positions.some((p) => p >= start && p < end)) locals.add(name);
       }
     }
     // Then the bindings that read one, to a fixed point within the module.
