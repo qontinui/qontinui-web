@@ -22,7 +22,10 @@
  *   "unreadable", so a server render and the hydration render resolve to
  *   `unresolved` — presenting, fail closed — and never mismatch the HTML;
  * - a `?present=` the tab arrives with is recorded as the tab's choice, so
- *   following a link that carries none keeps the presentation on.
+ *   following a link that carries none keeps the presentation on;
+ * - so is a presentation the tab OPENED on the viewer's remembered setting:
+ *   the setting applies when a tab opens, never live, so another tab pressing
+ *   the toggle off cannot drop the lens in front of this tab's audience.
  *
  * Where NO provider is mounted the mode is `source: "absent"`, `presenting:
  * false`: there is no lens on that page, so its controls are the operator's.
@@ -149,6 +152,17 @@ export function PresentationModeProvider({
   useEffect(() => {
     if (urlChoice !== null) store.recordChoice(urlChoice, { remember: false });
   }, [urlChoice, store]);
+
+  // A tab presenting on the viewer's remembered setting makes it the tab's own
+  // choice. Left unlatched, the setting would be live authority across tabs in
+  // the fail-OPEN direction: the operator pressing the toggle off in another
+  // tab rewrites it, and this tab would reveal every control and name to the
+  // audience with nobody touching it. Only `true` is latched — a remembered
+  // setting turning ON reaches a tab that made no choice, which fails closed.
+  const latchRemembered = resolved.source === "storage" && resolved.presenting;
+  useEffect(() => {
+    if (latchRemembered) store.recordChoice(true, { remember: false });
+  }, [latchRemembered, store]);
 
   const setPresenting = useCallback(
     (next: boolean) => {

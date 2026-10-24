@@ -19,11 +19,17 @@ vi.mock("@/services/service-factory", () => ({
 import {
   FixedPresentationMode,
   PresentationScopeProvider,
+  sessionMachineAliases,
+  type PresentationScopeState,
 } from "@/components/presentation";
 import {
   WITHHELD_REPOSITORY,
   RedMainBanner,
+  claimChip,
   compactPrincipal,
+  presentableClaimant,
+  redMainRowView,
+  remediationText,
   parseAlertClaim,
   parseBaselineFreshness,
   parseFixSession,
@@ -116,7 +122,10 @@ describe("parseRedMainAlerts", () => {
     // A malformed detail payload must never hide a live episode.
     const got = parseRedMainAlerts([
       { alert_key: "red_main:owner/repo", detail: undefined },
-      { alert_key: "red_main:owner/other", detail: { workflows: "not-a-list" } },
+      {
+        alert_key: "red_main:owner/other",
+        detail: { workflows: "not-a-list" },
+      },
     ]);
     expect(got.map((a) => a.repo)).toEqual(["owner/other", "owner/repo"]);
     for (const a of got) {
@@ -230,9 +239,10 @@ describe("parseAlertClaim", () => {
   });
 
   it("is UNKNOWN for every row when the body says claims_scrape_up: false", () => {
-    expect(
-      parseAlertClaim({ claimed: false, claim: null }, false)
-    ).toEqual({ kind: "unknown", cause: "unreadable" });
+    expect(parseAlertClaim({ claimed: false, claim: null }, false)).toEqual({
+      kind: "unknown",
+      cause: "unreadable",
+    });
     expect(parseAlertClaim({ claimed: true }, false).kind).toBe("unknown");
   });
 
@@ -257,7 +267,10 @@ describe("parseAlertClaim", () => {
   it("never infers a verdict from a lease object alone", () => {
     expect(
       parseAlertClaim({
-        claim: { claimed_by: "session:abc", claim_expires_at: "2099-01-01T00:00:00Z" },
+        claim: {
+          claimed_by: "session:abc",
+          claim_expires_at: "2099-01-01T00:00:00Z",
+        },
       }).kind
     ).toBe("unknown");
   });
@@ -265,9 +278,9 @@ describe("parseAlertClaim", () => {
 
 describe("compactPrincipal", () => {
   it("keeps the principal kind and shortens only the id", () => {
-    expect(
-      compactPrincipal("agent:11111111-2222-3333-4444-555555555555")
-    ).toBe("agent:11111111…");
+    expect(compactPrincipal("agent:11111111-2222-3333-4444-555555555555")).toBe(
+      "agent:11111111…"
+    );
     expect(compactPrincipal("device:c79a07d5")).toBe("device:c79a07d5");
     expect(compactPrincipal("no-prefix-but-quite-long")).toBe("no-prefi…");
   });
@@ -974,5 +987,401 @@ describe("<RedMainBanner> in presentation mode (plan 2026-10-23-console-presenta
     const banner = await screen.findByTestId("red-main-banner-row");
     expect(banner).toHaveTextContent(`${FOREIGN} main is RED`);
     expect(banner).not.toHaveAttribute("data-redacted");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The presentation row is rebuilt field by field — review round 1 found the
+// blanked-fields version printing a withheld row's stale workflow names, the
+// claimant's device id and coord's run reference.
+// ---------------------------------------------------------------------------
+
+describe("<RedMainBanner> in presentation mode — nothing leaks past the allowlist", () => {
+  const READY: PresentationScopeState = {
+    status: "ready",
+    scope: { firstPartyOwners: ["qontinui"], confidentialTerms: ["acme"] },
+  };
+  const DEVICE = "0b9d6a54-0000-4000-8000-0000000000aa";
+  const SESSION = "5f3c2e1d-1111-4222-8333-444455556666";
+  const AGENT = "11111111-2222-3333-4444-555555555555";
+  const RUN = "987654321";
+
+  /** A partial red: `stale` contradicted, the rest of `freshnessRows` corroborated. */
+  function partialRow(
+    repo: string,
+    workflows: string[],
+    freshnessRows: string[],
+    stale: string[],
+    extra: Record<string, unknown> = {},
+    detail: Record<string, unknown> = {}
+  ) {
+    return {
+      id: 7,
+      alert_key: `red_main:${repo}`,
+      severity: "critical",
+      kind: "red_main",
+      first_seen_at: "2026-07-06T01:00:00Z",
+      detail: {
+        repo,
+        workflows,
+        blocked_pr_count: 2,
+        fix_session: "none",
+        baseline_freshness: {
+          read: "ok",
+          all_contradicted: false,
+          workflows: freshnessRows.map((workflow) => ({
+            workflow,
+            verdict: stale.includes(workflow) ? "contradicted" : "corroborated",
+          })),
+        },
+        ...detail,
+      },
+      ...extra,
+    };
+  }
+
+  function renderPresenting(scope?: PresentationScopeState) {
+    return render(
+      <FixedPresentationMode presenting>
+        {scope ? (
+          <PresentationScopeProvider state={scope}>
+            <RedMainBanner />
+          </PresentationScopeProvider>
+        ) : (
+          <RedMainBanner />
+        )}
+      </FixedPresentationMode>
+    );
+  }
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+    sessionMachineAliases.reset();
+  });
+
+  it("counts a withheld row's stale baselines instead of naming them while the scope is unknown", async () => {
+    getMock.mockResolvedValue([
+      partialRow(
+        "client-org/portal",
+        ["deploy-portal-prod", "lint-portal"],
+        ["deploy-portal-prod", "lint-portal"],
+        ["deploy-portal-prod"]
+      ),
+    ]);
+    const { container } = renderPresenting();
+
+    const banner = await screen.findByTestId("red-main-banner-row");
+    expect(banner).toHaveAttribute("data-redacted", "true");
+    expect(banner).toHaveAttribute("data-baseline-freshness", "partial");
+    expect(banner).toHaveTextContent("A repository main is RED since");
+    expect(banner).toHaveTextContent(
+      "(stale push baseline on 1 workflow, contradicted by newer passing runs)"
+    );
+    expect(container.innerHTML).not.toContain("deploy-portal-prod");
+    expect(container.innerHTML).not.toContain("lint-portal");
+    expect(container.innerHTML).not.toContain("client-org");
+  });
+
+  it("withholds a first-party row whose STALE workflow names a confidential term", async () => {
+    // `deploy-acme` is in the freshness evidence but not in `workflows`: the
+    // verdict must read the stale names too, not lean on coord sending them
+    // as a subset.
+    getMock.mockResolvedValue([
+      partialRow(
+        "qontinui/qontinui-web",
+        ["CI"],
+        ["deploy-acme", "CI"],
+        ["deploy-acme"]
+      ),
+    ]);
+    const { container } = renderPresenting(READY);
+
+    const banner = await screen.findByTestId("red-main-banner-row");
+    expect(banner).toHaveAttribute("data-redacted", "true");
+    expect(container.innerHTML.toLowerCase()).not.toContain("acme");
+    expect(container.innerHTML).not.toContain("qontinui-web");
+  });
+
+  it("names a cleared row's stale workflows", async () => {
+    getMock.mockResolvedValue([
+      partialRow(
+        "qontinui/qontinui-web",
+        ["CI", "release"],
+        ["CI", "release"],
+        ["CI"]
+      ),
+    ]);
+    renderPresenting(READY);
+
+    const banner = await screen.findByTestId("red-main-banner-row");
+    expect(banner).toHaveAttribute("data-redacted", "false");
+    expect(banner).toHaveTextContent(
+      "(stale push baseline, contradicted by newer passing runs: CI)"
+    );
+    expect(screen.getByTestId("red-main-workflows")).toHaveTextContent(
+      "failing: CI, release"
+    );
+  });
+
+  it("names a device claimant by its machine alias, with no id in the text or the tooltip", async () => {
+    getMock.mockResolvedValue([
+      partialRow("qontinui/qontinui-web", ["CI"], ["CI"], [], {
+        claimed: true,
+        claim: {
+          claimed_by: `device:${DEVICE}:session:${SESSION}`,
+          claimed_at: "2026-07-06T01:05:00Z",
+          claim_expires_at: "2026-07-06T02:05:00Z",
+        },
+      }),
+    ]);
+    const { container } = renderPresenting(READY);
+
+    const chip = await screen.findByTestId("red-main-claim");
+    expect(chip).toHaveAttribute("data-claim-state", "claimed");
+    expect(chip.textContent).toBe("claimed by an agent on Machine A");
+    expect(chip.getAttribute("title")).toContain(
+      "Claimed by an agent on Machine A"
+    );
+    expect(container.innerHTML).not.toContain(DEVICE.slice(0, 8));
+    expect(container.innerHTML).not.toContain(SESSION.slice(0, 8));
+    expect(container.innerHTML).not.toContain("device:");
+  });
+
+  it("names an agent claimant by kind, even on a row the scope clears", async () => {
+    getMock.mockResolvedValue([
+      partialRow("qontinui/qontinui-web", ["CI"], ["CI"], [], {
+        claimed: true,
+        claim: { claimed_by: `agent:${AGENT}` },
+      }),
+    ]);
+    const { container } = renderPresenting(READY);
+
+    const chip = await screen.findByTestId("red-main-claim");
+    expect(chip.textContent).toBe("claimed by an agent");
+    expect(container.innerHTML).not.toContain(AGENT.slice(0, 8));
+  });
+
+  it("drops coord's run reference and the fix session's agent id from the remediation note", async () => {
+    getMock.mockResolvedValue([
+      partialRow(
+        "qontinui/qontinui-web",
+        ["CI"],
+        ["CI"],
+        [],
+        {},
+        { fix_session: `auto-rerun-failed-jobs:${RUN}` }
+      ),
+      partialRow(
+        "qontinui/qontinui-runner",
+        ["CI"],
+        ["CI"],
+        [],
+        {},
+        { fix_session: { state: "running", agent_id: AGENT } }
+      ),
+    ]);
+    const { container } = renderPresenting(READY);
+
+    const notes = await screen.findAllByTestId("red-main-remediation");
+    expect(notes.map((n) => n.textContent)).toEqual([
+      "fix session running",
+      "auto-rerun in flight",
+    ]);
+    for (const note of notes) expect(note).not.toHaveAttribute("title");
+    expect(container.innerHTML).not.toContain(RUN);
+    expect(container.innerHTML).not.toContain(AGENT.slice(0, 8));
+  });
+
+  it("still shows the operator every name, id and reference", async () => {
+    getMock.mockResolvedValue([
+      partialRow(
+        "client-org/portal",
+        ["deploy-portal-prod"],
+        ["deploy-portal-prod", "lint-portal"],
+        ["deploy-portal-prod"],
+        {
+          claimed: true,
+          claim: { claimed_by: `device:${DEVICE}` },
+        },
+        { fix_session: `auto-rerun-failed-jobs:${RUN}` }
+      ),
+    ]);
+    render(
+      <FixedPresentationMode presenting={false}>
+        <RedMainBanner />
+      </FixedPresentationMode>
+    );
+
+    const banner = await screen.findByTestId("red-main-banner-row");
+    expect(banner).toHaveTextContent("client-org/portal main is RED");
+    expect(banner).toHaveTextContent(
+      "contradicted by newer passing runs: deploy-portal-prod"
+    );
+    expect(
+      screen.getByTestId("red-main-claim").getAttribute("title")
+    ).toContain(`device:${DEVICE}`);
+    expect(screen.getByTestId("red-main-remediation")).toHaveAttribute(
+      "title",
+      `auto-rerun-failed-jobs:${RUN}`
+    );
+  });
+});
+
+describe("presentableClaimant", () => {
+  const alias = (id: string) => `Machine<${id.length}>`;
+
+  it.each<[string, string | null]>([
+    ["device:abc", "Machine<3>"],
+    ["device:abc:session:def", "an agent on Machine<3>"],
+    ["DEVICE:abc:SESSION:def", "an agent on Machine<3>"],
+    ["device:", "a machine"],
+    ["agent:11111111-2222", "an agent"],
+    ["session:sess-1", "an agent session"],
+    ["operator:op-1", "the operator"],
+    ["robot:r-1", null],
+    ["someone", null],
+    ["", null],
+  ])("%s → %s", (label, phrase) => {
+    expect(presentableClaimant(label, alias)).toBe(phrase);
+  });
+});
+
+describe("claimChip", () => {
+  const aliasDevice = () => "Machine C";
+  const claimed: AlertClaimState = {
+    kind: "claimed",
+    claimedBy: "device:dev-1",
+    claimedAt: "2026-07-06T01:05:00Z",
+  };
+
+  it("names the claimant in full for the operator", () => {
+    expect(claimChip(claimed, null)).toEqual({
+      state: "claimed",
+      text: "claimed by device:dev-1",
+      title: "Claimed by device:dev-1, since 2026-07-06T01:05:00Z",
+    });
+  });
+
+  it("names it by alias in presentation mode", () => {
+    expect(claimChip(claimed, { aliasDevice })).toEqual({
+      state: "claimed",
+      text: "claimed by Machine C",
+      title: "Claimed by Machine C, since 2026-07-06T01:05:00Z",
+    });
+  });
+
+  it("withholds a claimant of a kind it does not know, rather than guessing", () => {
+    const chip = claimChip(
+      { kind: "claimed", claimedBy: "robot:r-1" },
+      { aliasDevice }
+    );
+    expect(chip.text).toBe("claimed (claimant withheld)");
+    expect(chip.title).not.toContain("robot");
+  });
+
+  it("says when coord named nobody, in either mode", () => {
+    expect(claimChip({ kind: "claimed" }, { aliasDevice }).text).toBe(
+      "claimed (claimant not named)"
+    );
+    expect(claimChip({ kind: "claimed" }, null).text).toBe(
+      "claimed (claimant not named)"
+    );
+  });
+
+  it("renders unclaimed and unknown the same in both modes", () => {
+    for (const claim of [
+      { kind: "unclaimed" },
+      { kind: "unknown", cause: "unreadable" },
+      { kind: "unknown", cause: "not-reported" },
+    ] as AlertClaimState[]) {
+      expect(claimChip(claim, { aliasDevice })).toEqual(claimChip(claim, null));
+    }
+  });
+});
+
+describe("remediationText", () => {
+  it.each<[FixSessionState, boolean, ReturnType<typeof remediationText>]>([
+    [{ kind: "none" }, false, null],
+    [{ kind: "none" }, true, null],
+    [
+      { kind: "self_heal", raw: "auto-rerun-failed-jobs:42" },
+      false,
+      { text: "auto-rerun in flight", title: "auto-rerun-failed-jobs:42" },
+    ],
+    [
+      { kind: "self_heal", raw: "auto-rerun-failed-jobs:42" },
+      true,
+      { text: "auto-rerun in flight" },
+    ],
+    [
+      { kind: "running", agentId: "abcdefgh-1234-5678" },
+      false,
+      { text: "fix session running · abcdefgh…" },
+    ],
+    [
+      { kind: "running", agentId: "abcdefgh-1234-5678" },
+      true,
+      { text: "fix session running" },
+    ],
+    [
+      { kind: "failed", agentId: "abc" },
+      false,
+      { text: "fix session failed · abc" },
+    ],
+    [
+      { kind: "stalled", agentId: "abc" },
+      true,
+      { text: "fix session stalled" },
+    ],
+  ])("%j (presenting: %s)", (fixSession, presenting, expected) => {
+    expect(remediationText(fixSession, presenting)).toEqual(expected);
+  });
+});
+
+describe("redMainRowView", () => {
+  const now = Date.parse("2026-07-06T12:00:00Z");
+  const partial: RedMainAlert = {
+    alertKey: "red_main:client-org/portal",
+    repo: "client-org/portal",
+    workflows: ["deploy", "lint"],
+    blockedPrCount: 1,
+    queuedProposalCount: null,
+    since: "2026-07-06T11:00:00Z",
+    fixSession: { kind: "none" },
+    claim: { kind: "unclaimed" },
+    baselineFreshness: "partial",
+    staleWorkflows: ["deploy", "lint-extra"],
+  };
+  const lens = (scope: PresentationScopeState) =>
+    ({ presenting: true, scope, aliasDevice: () => "Machine A" }) as const;
+
+  it("is the parsed row verbatim for the operator", () => {
+    const view = redMainRowView(partial, now, { presenting: false });
+    expect(view.withheld).toBeNull();
+    expect(view.headline).toBe(redMainHeadline(partial, now));
+    expect(view.workflows).toBe("failing: deploy, lint");
+  });
+
+  it("counts two stale baselines in the plural on a withheld row", () => {
+    const view = redMainRowView(partial, now, lens({ status: "unknown" }));
+    expect(view.withheld).toBe(true);
+    expect(view.workflows).toBeNull();
+    expect(view.headline).toBe(
+      "🔴 A repository main is RED since 1h 0m ago — 1 PR read main-red, " +
+        "merge-queue depth unknown; a candidate lands only if its own rebased " +
+        "CI is green (stale push baseline on 2 workflows, contradicted by newer " +
+        "passing runs)"
+    );
+  });
+
+  it("withholds on every scope state that is not ready", () => {
+    for (const scope of [
+      { status: "unknown" },
+      { status: "loading" },
+      { status: "error", reason: "boom" },
+    ] as PresentationScopeState[]) {
+      expect(redMainRowView(partial, now, lens(scope)).withheld).toBe(true);
+    }
   });
 });
