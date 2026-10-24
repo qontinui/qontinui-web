@@ -8,7 +8,11 @@
 import type { ReactNode, Ref } from "react";
 import { cleanup } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { useUIComponent, useUIElement } from "@qontinui/ui-bridge/react";
+import {
+  UIBridgeProvider,
+  useUIComponent,
+  useUIElement,
+} from "@qontinui/ui-bridge/react";
 import {
   FilterChips,
   FilterTabs,
@@ -440,6 +444,45 @@ describe("(b) no visible write registration", () => {
         </>
       )
     );
+  });
+
+  it("fails a view assembled from two renders — (b) would read the other render's registry", () => {
+    const page = renderInPresentationMode(<WriteAction effect="write" />);
+    const other = renderInPresentationMode(<p>another render</p>);
+    const view = { ...page, uiBridge: other.uiBridge };
+    expectOnly(view, "unread-registry");
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "registry of another render"
+    );
+  });
+
+  it("fails a render whose wrapper mounts a UIBridgeProvider of its own — the page registers there", () => {
+    const view = renderInPresentationMode(<WriteAction effect="write" />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <UIBridgeProvider>{children}</UIBridgeProvider>
+      ),
+    });
+    expectOnly(view, "unread-registry");
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "mounts a UIBridgeProvider of its own"
+    );
+  });
+
+  it("fails a page that mounts a UIBridgeProvider of its own", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <UIBridgeProvider>
+          <WriteAction effect="read" />
+        </UIBridgeProvider>
+      ),
+      "unread-registry"
+    );
+  });
+
+  it("reads a copy of the view, or one narrowed to its own container, as the same render", () => {
+    const view = renderInPresentationMode(<WriteAction effect="write" />);
+    expectOnly({ ...view }, "write-registration");
+    expectOnly({ ...view, baseElement: view.container }, "write-registration");
   });
 });
 

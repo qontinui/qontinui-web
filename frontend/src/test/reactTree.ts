@@ -1,17 +1,20 @@
 /**
  * reactTree — what a render's React root holds when the page check runs, read
  * from React DOM's own bookkeeping (plan `2026-10-23-console-presentation-spaces`
- * D3; used by `presentation.tsx` and `readinessRecorder.ts`).
+ * D3; used by `presentation.tsx`, `uiBridgeBinding.ts` and
+ * `readinessRecorder.ts`).
  *
  * React DOM marks every container it renders into with a
  * `__reactContainer$<random>` property pointing at the root's first fiber, and
  * sets it to `null` when the root is unmounted. Each fiber names what it
  * renders (`type`, `elementType`), links to its first child, next sibling and
- * parent, and keeps the props it last rendered with (`memoizedProps`). These
+ * parent, keeps the props it last rendered with (`memoizedProps`), and, for a
+ * DOM element or a text node it rendered, holds that node (`stateNode`). These
  * are React internals — unchanged since React 17, and how React DevTools reads
  * a tree — so every reader here fails CLOSED: a container it cannot read has no
  * React root as far as it can tell, and the page check then reports the view
- * as not mounted instead of passing it.
+ * as not mounted instead of passing it; a provider it cannot find binds
+ * nothing; a page whose output it cannot find counts as rendering nothing.
  */
 
 /** The part of a React fiber this module reads. */
@@ -22,6 +25,8 @@ export interface Fiber {
   readonly sibling: Fiber | null;
   readonly return: Fiber | null;
   readonly memoizedProps: unknown;
+  /** The DOM node a host fiber rendered; something else (or nothing) for any other fiber. */
+  readonly stateNode: unknown;
 }
 
 /**
@@ -68,7 +73,7 @@ export function reactRootOf(container: Element): ReactRootState {
     : { state: "none" };
 }
 
-/** Every fiber below `root`, depth first. */
+/** Every fiber below `root`, depth first — portals' children included. */
 export function fibersUnder(root: Fiber): Fiber[] {
   const out: Fiber[] = [];
   const stack: Fiber[] = root.child ? [root.child] : [];
@@ -103,6 +108,52 @@ export function isContext(type: unknown): boolean {
 }
 
 /**
+ * Whether `fiber` is a provider of `context`. React 19 renders
+ * `<Context.Provider>` (and `<Context>`) as the context itself; React 18 as a
+ * provider object pointing back at it.
+ */
+export function providesContext(fiber: Fiber, context: unknown): boolean {
+  return (
+    fiber.type === context ||
+    (typeof fiber.type === "object" &&
+      fiber.type !== null &&
+      Reflect.get(fiber.type, "_context") === context)
+  );
+}
+
+/** The value a provider fiber passes down: its `value` prop. */
+export function providedValue(fiber: Fiber): unknown {
+  const props = fiber.memoizedProps;
+  return typeof props === "object" && props !== null
+    ? Reflect.get(props, "value")
+    : undefined;
+}
+
+/**
+ * The context a component provides to its children, read from the first fiber
+ * in `fibers` that renders one of `components` and renders a context provider
+ * first — as the presentation lens's components and the UI Bridge's
+ * `UIBridgeProvider` do. `null` when no such fiber is found.
+ */
+export function contextProvidedBy(
+  fibers: readonly Fiber[],
+  components: readonly unknown[]
+): unknown {
+  for (const fiber of fibers) {
+    if (!components.some((component) => renders(fiber, component))) continue;
+    const provider = fiber.child?.type;
+    if (isContext(provider)) return provider;
+    // React 18: the provider object points back at its context.
+    const context: unknown =
+      typeof provider === "object" && provider !== null
+        ? Reflect.get(provider, "_context")
+        : undefined;
+    if (isContext(context)) return context;
+  }
+  return null;
+}
+
+/**
  * The value the nearest provider of `context` above `fiber` passes down — what
  * `useContext(context)` returns inside `fiber` — or `found: false` when no
  * provider is above it.
@@ -112,23 +163,24 @@ export function contextValueAbove(
   context: unknown
 ): { readonly found: boolean; readonly value: unknown } {
   for (let at = fiber.return; at !== null; at = at.return) {
-    // React 19 renders `<Context.Provider>` as the context itself; React 18
-    // as a provider object pointing back at it.
-    const provides =
-      at.type === context ||
-      (typeof at.type === "object" &&
-        at.type !== null &&
-        Reflect.get(at.type, "_context") === context);
-    if (provides) {
-      const props = at.memoizedProps;
-      return {
-        found: true,
-        value:
-          typeof props === "object" && props !== null
-            ? Reflect.get(props, "value")
-            : undefined,
-      };
+    if (providesContext(at, context)) {
+      return { found: true, value: providedValue(at) };
     }
   }
   return { found: false, value: undefined };
+}
+
+function isDomNode(value: unknown): value is Node {
+  return typeof Node !== "undefined" && value instanceof Node;
+}
+
+/**
+ * Every DOM node `fiber`'s subtree rendered — its elements and its text,
+ * wherever they went: a portal's nodes are below the portal's fiber, so they
+ * are here too, inside whatever container the portal rendered into.
+ */
+export function hostNodesUnder(fiber: Fiber): Node[] {
+  return fibersUnder(fiber)
+    .map((f) => f.stateNode)
+    .filter(isDomNode);
 }

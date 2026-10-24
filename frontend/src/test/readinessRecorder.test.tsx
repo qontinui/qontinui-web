@@ -3,20 +3,25 @@
  * `2026-10-23-console-presentation-spaces` D3; `readinessRecorder.ts`).
  *
  * A ready route counts only when the checked view's React root holds the
- * route's page module's own component under a presenting lens. Each row below
- * is a render the review rounds showed a source reader accepting while the
- * page was not on the screen when the check ran — and the record must not name
- * the page for any of them.
+ * route's page module's own component under a presenting lens, the check read
+ * everything that component rendered, and check (b) read the registry that
+ * render registers with. Each row below is a render the review rounds showed
+ * passing the check while the page was not what the check read — and the
+ * record must not name the page as presented, or must not claim the real
+ * provider's registry, for any of them.
  */
 
 import { memo, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { describe, expect, it, TestRunner } from "vitest";
+import { UIBridgeProvider, useUIComponent } from "@qontinui/ui-bridge/react";
 import { FixedPresentationMode, OperatorOnly } from "@/components/presentation";
 import {
   findPresentationViolations,
   renderInPresentationMode,
   type PresentationView,
 } from "./presentation";
+import { provesRoute } from "./readinessEvidence";
 import { presentationCheckRecord } from "./readinessRecorder";
 
 const ROUTE = "/admin/coord/devops";
@@ -34,8 +39,9 @@ function HealthPanel() {
 }
 
 const TARGETS = [{ route: ROUTE, page: DevOpsPage }];
-const recordOf = (view: PresentationView) =>
-  presentationCheckRecord(view, 0, TARGETS);
+/** The record of a check reading `read` (default: what the check reads by default). */
+const recordOf = (view: PresentationView, read: Element = document.body) =>
+  presentationCheckRecord(view, 0, TARGETS, read);
 
 function Providers({ children }: { children: ReactNode }) {
   return <div data-testid="providers">{children}</div>;
@@ -46,6 +52,7 @@ describe("presentationCheckRecord — which pages the checked view holds", () =>
     expect(recordOf(renderInPresentationMode(<DevOpsPage />))).toEqual({
       presented: [ROUTE],
       operator: [],
+      unread: [],
       violations: 0,
       registry: "provider",
     });
@@ -65,8 +72,12 @@ describe("presentationCheckRecord — which pages the checked view holds", () =>
     const MemoPage = memo(DevOpsPage);
     const view = renderInPresentationMode(<MemoPage />);
     expect(
-      presentationCheckRecord(view, 0, [{ route: ROUTE, page: MemoPage }])
-        .presented
+      presentationCheckRecord(
+        view,
+        0,
+        [{ route: ROUTE, page: MemoPage }],
+        document.body
+      ).presented
     ).toEqual([ROUTE]);
   });
 
@@ -89,10 +100,42 @@ describe("presentationCheckRecord — which pages the checked view holds", () =>
     );
     expect(recordOf(view).presented).toEqual([ROUTE]);
   });
+
+  it("names the page presented only when every mount of it is presenting", () => {
+    const view = renderInPresentationMode(
+      <>
+        <DevOpsPage />
+        <FixedPresentationMode presenting={false}>
+          <DevOpsPage />
+        </FixedPresentationMode>
+      </>
+    );
+    expect(recordOf(view)).toMatchObject({ presented: [], operator: [ROUTE] });
+  });
+
+  it("names a page that portals into the document the check reads", () => {
+    function DialogPage() {
+      return createPortal(<p role="dialog">Fleet health</p>, document.body);
+    }
+    const view = renderInPresentationMode(
+      <>
+        Loading
+        <DialogPage />
+      </>
+    );
+    expect(
+      presentationCheckRecord(
+        view,
+        0,
+        [{ route: ROUTE, page: DialogPage }],
+        document.body
+      )
+    ).toMatchObject({ presented: [ROUTE], unread: [] });
+  });
 });
 
 describe("presentationCheckRecord — a view without the page names none", () => {
-  const none = { presented: [], operator: [] };
+  const none = { presented: [], operator: [], unread: [] };
 
   it("is a view unmounted before the check", () => {
     const view = renderInPresentationMode(<DevOpsPage />);
@@ -146,11 +189,204 @@ describe("presentationCheckRecord — a view without the page names none", () =>
   });
 });
 
+describe("presentationCheckRecord — a page whose output the check did not read is unread, not presented", () => {
+  /** The page's own markup, an enabled control (check (a) fails it), rendered where it is put. */
+  function ControlPage() {
+    return (
+      <main>
+        <button type="button">Drain this machine</button>
+      </main>
+    );
+  }
+  const CONTROL_TARGETS = [{ route: ROUTE, page: ControlPage }];
+  const unread = { presented: [], operator: [], unread: [ROUTE] };
+
+  it("fails the check when rendered where the check reads (the control is seen)", () => {
+    expect(
+      findPresentationViolations(renderInPresentationMode(<ControlPage />)).map(
+        (v) => v.kind
+      )
+    ).toContain("enabled-control");
+  });
+
+  it("is a page portaled into a detached element, while the view's own container shows something else", () => {
+    const detached = document.createElement("div");
+    const view = renderInPresentationMode(
+      <>Loading{createPortal(<ControlPage />, detached)}</>
+    );
+    // The check reads the document: the control is in no part of it.
+    const violations = findPresentationViolations(view);
+    expect(violations).toEqual([]);
+    const record = presentationCheckRecord(
+      view,
+      violations.length,
+      CONTROL_TARGETS,
+      document.body
+    );
+    expect(record).toMatchObject(unread);
+    expect(provesRoute(record, ROUTE)).toBe(false);
+  });
+
+  it("is a page that portals outside a narrowed element the check reads", () => {
+    function DialogPage() {
+      return (
+        <>
+          <p>Fleet health</p>
+          {createPortal(
+            <button type="button">Drain this machine</button>,
+            document.body
+          )}
+        </>
+      );
+    }
+    const view = renderInPresentationMode(<DialogPage />);
+    const narrowed = { ...view, baseElement: view.container };
+    const violations = findPresentationViolations(narrowed);
+    expect(violations).toEqual([]);
+    const record = presentationCheckRecord(
+      narrowed,
+      violations.length,
+      [{ route: ROUTE, page: DialogPage }],
+      view.container
+    );
+    expect(record).toMatchObject(unread);
+    expect(provesRoute(record, ROUTE)).toBe(false);
+  });
+
+  it("is a page that rendered nothing inside a caller's frame", () => {
+    function NothingPage() {
+      return null;
+    }
+    const view = renderInPresentationMode(<NothingPage />, {
+      wrapper: Providers,
+    });
+    expect(
+      presentationCheckRecord(
+        view,
+        0,
+        [{ route: ROUTE, page: NothingPage }],
+        document.body
+      )
+    ).toMatchObject(unread);
+  });
+
+  it("is a page that rendered only blank text", () => {
+    function BlankPage() {
+      return <>{"   "}</>;
+    }
+    const view = renderInPresentationMode(<BlankPage />, {
+      wrapper: Providers,
+    });
+    expect(
+      presentationCheckRecord(
+        view,
+        0,
+        [{ route: ROUTE, page: BlankPage }],
+        document.body
+      )
+    ).toMatchObject(unread);
+  });
+});
+
 describe("presentationCheckRecord — how check (b) saw the UI Bridge", () => {
+  /** A page whose only unsafe surface is a write UI Bridge action. */
+  function WritePage() {
+    useUIComponent({
+      id: "fleet-drain",
+      name: "Fleet drain",
+      actions: [
+        {
+          id: "drain",
+          label: "Drain",
+          effect: "write",
+          handler: async () => true,
+        },
+      ],
+    });
+    return <main>Fleet health</main>;
+  }
+  const WRITE_TARGETS = [{ route: ROUTE, page: WritePage }];
+  const checked = (view: PresentationView) => {
+    const violations = findPresentationViolations(view);
+    return {
+      kinds: violations.map((v) => v.kind),
+      record: presentationCheckRecord(
+        view,
+        violations.length,
+        WRITE_TARGETS,
+        document.body
+      ),
+    };
+  };
+
   it("is the provider only for the registry the helper read back from the real UIBridgeProvider", () => {
     expect(recordOf(renderInPresentationMode(<DevOpsPage />)).registry).toBe(
       "provider"
     );
+  });
+
+  it("is the provider for a copy of the page's own view, and (b) sees the page's write action", () => {
+    const view = renderInPresentationMode(<WritePage />);
+    const { kinds, record } = checked({ ...view });
+    expect(kinds).toEqual(["write-registration"]);
+    expect(record.registry).toBe("provider");
+  });
+
+  it("is another render's for a view assembled from two renders: (b) fails it, and the record proves nothing", () => {
+    const page = renderInPresentationMode(<WritePage />);
+    const other = renderInPresentationMode(<HealthPanel />);
+    const { kinds, record } = checked({ ...page, uiBridge: other.uiBridge });
+    expect(kinds).toEqual(["unread-registry"]);
+    expect(record).toMatchObject({
+      presented: [ROUTE],
+      registry: "another-render",
+    });
+    expect(provesRoute(record, ROUTE)).toBe(false);
+  });
+
+  it("is another provider's for a caller's wrapper that mounts its own UIBridgeProvider: (b) fails it, and the record proves nothing", () => {
+    const view = renderInPresentationMode(<WritePage />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <UIBridgeProvider>{children}</UIBridgeProvider>
+      ),
+    });
+    const { kinds, record } = checked(view);
+    // The write action registered with the wrapper's provider, which (b)
+    // does not read — so (b) fails the read itself.
+    expect(kinds).toEqual(["unread-registry"]);
+    expect(record).toMatchObject({
+      presented: [ROUTE],
+      registry: "another-provider",
+    });
+    expect(provesRoute(record, ROUTE)).toBe(false);
+  });
+
+  it("is another provider's for a page that mounts a UIBridgeProvider of its own", () => {
+    function OwnBridgePage() {
+      return (
+        <UIBridgeProvider>
+          <WritePage />
+        </UIBridgeProvider>
+      );
+    }
+    const view = renderInPresentationMode(<OwnBridgePage />);
+    const violations = findPresentationViolations(view);
+    expect(violations.map((v) => v.kind)).toEqual(["unread-registry"]);
+    expect(
+      presentationCheckRecord(
+        view,
+        violations.length,
+        [{ route: ROUTE, page: OwnBridgePage }],
+        document.body
+      ).registry
+    ).toBe("another-provider");
+  });
+
+  it("is unbound for a view without a container, or one unmounted", () => {
+    const view = renderInPresentationMode(<DevOpsPage />);
+    expect(recordOf({ uiBridge: view.uiBridge }).registry).toBe("unbound");
+    view.unmount();
+    expect(recordOf(view).registry).toBe("unbound");
   });
 
   it("is the caller's for a registry view a test supplied, even one shaped like the provider's", () => {
@@ -171,7 +407,9 @@ describe("presentationCheckRecord — how check (b) saw the UI Bridge", () => {
 
   it("carries the violation count it is given", () => {
     const view = renderInPresentationMode(<DevOpsPage />);
-    expect(presentationCheckRecord(view, 4, TARGETS).violations).toBe(4);
+    expect(
+      presentationCheckRecord(view, 4, TARGETS, document.body).violations
+    ).toBe(4);
   });
 });
 
