@@ -11,6 +11,17 @@
  * `next/dynamic` is `React.lazy`, so the sidebar loads as it does in the
  * browser, behind its Suspense boundary.
  *
+ * The shell's own controls are rendered, not mocked away, so the whole shell
+ * can be checked in presentation mode (review round 2 found write controls
+ * there the mocks hid): the composed build's beta banner (its real slot
+ * wrapper, filled with a stand-in offering the banner's two buttons), the
+ * offline sync queue (a stand-in with its "Sync now"), and the REAL co-pilot
+ * banner in its active state — the hooks behind it faked to "a relayed
+ * command just landed". The session-expiry dialog and the recording indicator
+ * are checked whole in their own tests (`session-timeout-warning.test.tsx`,
+ * `RecordingIndicator.test.tsx`), since each needs a world of its own to
+ * show at all.
+ *
  * The file imports nothing the phase added, so without the phase it fails on
  * its assertions (the shell shows the presenter's email and "New project"),
  * not on an import.
@@ -19,6 +30,8 @@
 import { lazy, type ComponentType } from "react";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PRESENTER_SAFETY_ATTRIBUTE } from "@/components/console/presenterSafety";
+import { findPresentationViolations } from "@/test/presentation";
 
 const fx = vi.hoisted(() => {
   const DEVICE = "0b9d6a54-0000-4000-8000-0000000000aa";
@@ -119,14 +132,16 @@ vi.mock("@/contexts/tab-state-context", () => ({
 vi.mock("@/components/offline/AppInitializer", () => ({
   AppInitializer: fx.passThrough,
 }));
-vi.mock("@/components/cloud-slots/BetaBannerSlot", () => ({
-  BetaBannerSlot: () => null,
-}));
 vi.mock("@/components/helper-portal/HelperRedirectGate", () => ({
   HelperRedirectGate: () => null,
 }));
+// The queue's own controls, as it renders them with uploads queued.
 vi.mock("@/components/offline/SyncQueueViewer", () => ({
-  SyncQueueViewer: () => null,
+  SyncQueueViewer: () => (
+    <button type="button" data-testid="sync-queue-sync-now">
+      Sync now
+    </button>
+  ),
 }));
 vi.mock("@/components/session-timeout-warning", () => ({
   SessionTimeoutWarning: () => null,
@@ -134,11 +149,34 @@ vi.mock("@/components/session-timeout-warning", () => ({
 vi.mock("@/components/ui-bridge/RecordingIndicator", () => ({
   RecordingIndicator: () => null,
 }));
-vi.mock("@/components/co-pilot/CoPilotActiveBanner", () => ({
-  CoPilotActiveBanner: () => null,
+// The co-pilot banner is REAL; what it reads is "the relay issued a command
+// in the last 30 s" for a signed-in account that opted in.
+vi.mock("@/hooks/useCoPilotPreference", () => ({
+  useCoPilotPreference: () => ({ enabled: true, mutate: vi.fn() }),
 }));
+vi.mock("@/hooks/useCoPilotSessionConsent", () => ({
+  useCoPilotSessionConsent: () => ({ state: "granted", revoke: vi.fn() }),
+}));
+vi.mock("@/hooks/useCoPilotActivity", () => ({
+  useCoPilotActivity: () => ({ isActive: true, lastActionAt: Date.now() }),
+}));
+vi.mock("@/lib/ui-bridge/co-pilot-gates", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ui-bridge/co-pilot-gates")>()),
+  // Not loopback dev, so the account-wide opt-out is offered at all.
+  useIsLoopbackDev: () => false,
+}));
+// The composed build fills the beta-banner slot; its stand-in offers the
+// cloud banner's two buttons ("Give Feedback" opens a form that POSTs).
 vi.mock("@/lib/extension-slots", () => ({
-  useSlotComponent: () => undefined,
+  useSlotComponent: (name: string) =>
+    name === "betaBanner"
+      ? () => (
+          <div data-testid="beta-banner">
+            <button type="button">Give Feedback</button>
+            <button type="button">Dismiss</button>
+          </div>
+        )
+      : undefined,
 }));
 vi.mock("@/components/admin/coord/CoordProjectCreateDialog", () => ({
   CoordProjectCreateDialog: () => null,
@@ -235,6 +273,51 @@ describe("the app shell beside a lens page", () => {
     expect(screen.queryByRole("button", { name: "Costs" })).toBeNull();
   });
 
+  it("shows no write control anywhere in the shell while presenting — only the presenter's own safety controls", async () => {
+    visit("/admin/coord/devops", "present=1");
+    render(
+      <AppLayout>
+        <p>Console page</p>
+      </AppLayout>
+    );
+    await screen.findByText("Runner: Machine A", {}, { timeout: LAZY_MS });
+    expect(
+      await screen.findByTestId(
+        "co-pilot-active-banner",
+        {},
+        { timeout: LAZY_MS }
+      )
+    ).toBeTruthy();
+
+    // The co-pilot banner stays, and so does Stop — a listed safety control —
+    // but not the account-wide opt-out, a durable preference write.
+    expect(
+      screen
+        .getByTestId("co-pilot-active-banner-stop")
+        .getAttribute(PRESENTER_SAFETY_ATTRIBUTE)
+    ).toBe("co-pilot-stop");
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-disable-account")
+    ).toBeNull();
+    // Neither the beta banner's buttons nor the sync queue's.
+    expect(screen.queryByTestId("beta-banner")).toBeNull();
+    expect(screen.queryByTestId("sync-queue-sync-now")).toBeNull();
+
+    // The whole shell, every control on the page, checked as a lens page is.
+    expect(
+      findPresentationViolations(
+        {
+          baseElement: document.body,
+          uiBridge: {
+            unobservable:
+              "the shell test fakes no UI Bridge provider; the shell's own controls are checked as DOM",
+          },
+        },
+        { forbidden: [fx.EMAIL, fx.OTHER_PROJECT, fx.RUNNER_NAME] }
+      )
+    ).toEqual([]);
+  });
+
   it("is the operator's shell on a route outside every lens, whatever the URL asks", async () => {
     visit("/settings", "present=1");
     const { container } = render(
@@ -252,5 +335,17 @@ describe("the app shell beside a lens page", () => {
     expect(container.innerHTML).toContain(fx.EMAIL);
     expect(screen.getByTitle("New project")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Costs" })).toBeTruthy();
+    // The operator's controls are all there.
+    expect(screen.getByTestId("beta-banner")).toBeTruthy();
+    expect(
+      await screen.findByTestId("sync-queue-sync-now", {}, { timeout: LAZY_MS })
+    ).toBeTruthy();
+    expect(
+      await screen.findByTestId(
+        "co-pilot-active-banner-disable-account",
+        {},
+        { timeout: LAZY_MS }
+      )
+    ).toBeTruthy();
   });
 });

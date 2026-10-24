@@ -32,6 +32,7 @@
  * | `BackendErrorMessage` | supports R3/R8 — a backend refusal with its typed next action, or `unstructured` |
  * | `ShareBar` / `ShareList` / `share` | §6.4 (§3.7) — a part of a whole, and a ranked distribution of parts |
  * | `NAVIGATION_ONLY_PROPS` | supports the presentation lens — a control whose press changes only what is displayed |
+ * | `presenterSafetyProps` | supports the presentation lens — one of the presenter's own safety controls, the closed list presentation mode keeps live |
  *
  * These are **presentation only**. Nothing here fetches, polls, or knows a
  * route, and **no module under `console/` that is REACHABLE FROM A ROUTE has
@@ -99,6 +100,14 @@ export {
   NAVIGATION_ONLY_PROPS,
 } from "./navigationOnly";
 
+export {
+  PRESENTER_SAFETY_ATTRIBUTE,
+  PRESENTER_SAFETY_CONTROLS,
+  isPresenterSafetyControl,
+  presenterSafetyProps,
+} from "./presenterSafety";
+export type { PresenterSafetyControl } from "./presenterSafety";
+
 export { ShareBar, ShareList, rankShares, shareFraction } from "./ShareBar";
 export type { ShareBarProps, ShareListItem, ShareListProps } from "./ShareBar";
 
@@ -127,11 +136,7 @@ export {
   rowAccentClass,
   rowAccentProps,
 } from "./statusRow";
-export type {
-  RowStatus,
-  RowTimeProps,
-  StatusPalette,
-} from "./statusRow";
+export type { RowStatus, RowTimeProps, StatusPalette } from "./statusRow";
 
 export { absoluteTime, relativeTime } from "./time";
 export type { RelativeTimeOptions } from "./time";
@@ -165,8 +170,4 @@ export {
   escalateAttention,
   paletteDisagreements,
 } from "./attention";
-export type {
-  Attention,
-  AttentionMap,
-  AuditablePalette,
-} from "./attention";
+export type { Attention, AttentionMap, AuditablePalette } from "./attention";

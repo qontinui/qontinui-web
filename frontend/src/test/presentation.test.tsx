@@ -14,6 +14,7 @@ import {
   NAVIGATION_ONLY_PROPS,
   RecordRow,
   RefreshButton,
+  presenterSafetyProps,
 } from "@/components/console";
 import {
   Select,
@@ -312,6 +313,33 @@ describe("(a) no enabled control except navigation-only ones", () => {
       </div>
     );
     expect(findPresentationViolations(view)).toEqual([]);
+  });
+
+  it("keeps a listed presenter safety control, and only a listed one", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <button type="button" {...presenterSafetyProps("co-pilot-stop")}>
+          Stop
+        </button>
+      )
+    );
+    // The closed list is the exemption: a marker naming anything else is
+    // itself a violation, on a control or not.
+    const forged = renderInPresentationMode(
+      <div>
+        <button type="button" data-presentation-safety="drain-machine">
+          Drain
+        </button>
+        <span data-presentation-safety="">nothing</span>
+      </div>
+    );
+    const found = findPresentationViolations(forged);
+    expect(found.map((v) => v.kind)).toEqual([
+      "enabled-control",
+      "enabled-control",
+    ]);
+    expect(found[0].detail).toContain('"drain-machine"');
+    expect(found[0].detail).toContain("does not list");
   });
 
   it("scans portals too, not only the container", () => {
