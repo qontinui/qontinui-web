@@ -41,6 +41,12 @@ export interface ObservedReading {
  */
 export const ERROR_TICK_CODE = "tick_error";
 
+/**
+ * Coord's `reason` for a live loop whose lease holder it could not read
+ * (`observe_worker`): never nominal, and no pass is attributable.
+ */
+export const LEASE_HOLDER_UNKNOWN = "lease_holder_unknown";
+
 export const OBSERVED_UNKNOWN_TEXT =
   "Observed: UNKNOWN — no auto-publisher pass recorded on the serving coord";
 
@@ -50,6 +56,16 @@ export function describeObservedPass(
 ): ObservedReading {
   switch (pass?.status) {
     case "alive": {
+      // Coord could not read the lease, so no replica's pass can be called
+      // THE last pass: the pass fields are null, and "no pass body recorded
+      // yet" would claim passes never ran when only the holder is unknown.
+      if (pass.reason === LEASE_HOLDER_UNKNOWN) {
+        return {
+          text: "Observed: loop alive, but coord cannot tell which replica runs the pass",
+          tone: "attention",
+          title: "Coord could not read the auto-publisher's lease holder",
+        };
+      }
       // A leader that has never run a body is not nominal: the loop ticks,
       // but nothing it was built to do has happened yet.
       if (!pass.last_work_tick_at) {
@@ -83,7 +99,7 @@ export function describeObservedPass(
       // so the lease holder's latest code can briefly read healthy after a
       // handover. Coord's own sentence, beside it, says where to look.
       // No code at all means coord could not read the lease holder's row; its
-      // reason (beside) then names the failing code it found elsewhere.
+      // reason, beside the line, then says what is failing.
       const code = pass.last_decision_code;
       return {
         text:

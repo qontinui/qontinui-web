@@ -178,6 +178,30 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(await observed()).toHaveAttribute("data-observed-tone", "attention");
   });
 
+  it("alive with an unreadable lease: never claims no pass ran, and is not nominal", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          nominal: false,
+          reason: "lease_holder_unknown",
+          unknown_reason: null,
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: null,
+          last_decision_code: null,
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: loop alive, but coord cannot tell which replica runs the pass"
+    );
+    expect(line).not.toHaveTextContent(/no pass body recorded/);
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
   it("stale: says stale since the last tick", async () => {
     const at = minutesAgo(45);
     statusGet.mockResolvedValue(
@@ -294,7 +318,7 @@ describe("the observed auto-publisher, per worker status", () => {
         pass: {
           status: "erroring",
           unknown_reason:
-            "`prompt_document_auto_publish.pass` is running but reported a failure (ran:decide_failed)",
+            "`prompt_document_auto_publish.pass` is running but reported a failure (ran:decide_failed): its last pass could not decide or publish some documents; the coord log names them",
           last_tick_at: minutesAgo(1),
           last_work_tick_at: null,
           last_decision_code: null,

@@ -1812,6 +1812,16 @@ export interface AutoPublishWorkerObservation {
   last_work_tick_at?: string | null;
   /** Coord's decision code for that tick (`ran:published`, `skip:switch_off`, …), verbatim. */
   last_decision_code?: string | null;
+  /**
+   * Coord's own verdict on whether the loop is healthy. `false` whenever
+   * anything is wrong, an `alive` loop included (absent from an older coord).
+   */
+  nominal?: boolean;
+  /**
+   * Why `nominal` is false — the ledger rollup's reason (`stale`,
+   * `error_streak`, …), `last_pass_failed`, or `lease_holder_unknown`.
+   */
+  reason?: string | null;
 }
 
 // ------------------- the kill switch (`policy_auto_publish`) -------------------
