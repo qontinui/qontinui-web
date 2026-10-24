@@ -45,6 +45,7 @@ import {
   CHARTED_VERDICTS,
   OTHER_SERIES,
   UNKNOWN_SERIES,
+  insetSegment,
   passWord,
   scopeCounts,
   verdictWords,
@@ -65,9 +66,6 @@ const SERIES: ReadonlyArray<{ key: string; name: string; color: string }> = [
   },
   { key: UNKNOWN_SERIES, name: "unknown", color: colors.text.muted },
 ];
-
-/** The transparent gap between stacked segments, in px. */
-const SEGMENT_GAP_PX = 2;
 
 /** `MM-DD HH:MM UTC` — the pass's start, in UTC so a bar is not misplaced. */
 function passLabel(iso: string): string {
@@ -199,7 +197,8 @@ export function VerdictHistogramChart({
                     // Stacked fills are separated by a 2px gap and never
                     // touch (dataviz mark spec). The gap is TRANSPARENT, not a
                     // painted stroke: every segment below the bar's top gives
-                    // up its own top 2px, so whatever the panel behind the
+                    // up up to 2px of its own top edge, never shrinking below
+                    // 1px (`insetSegment`), so whatever the panel behind the
                     // chart is (a translucent card over the canvas) shows
                     // through, and no stroke colour can mismatch it. The
                     // topmost NON-ZERO segment keeps its full height, so the
@@ -209,13 +208,13 @@ export function VerdictHistogramChart({
                       const top =
                         (props.payload as HistogramPoint | undefined)
                           ?.topSeries === s.key;
-                      const gap = top ? 0 : SEGMENT_GAP_PX;
+                      const rect = insetSegment(props.y, props.height, top);
                       return (
                         <Rectangle
                           x={props.x}
-                          y={props.y + gap}
+                          y={rect.y}
                           width={props.width}
-                          height={Math.max(0, props.height - gap)}
+                          height={rect.height}
                           fill={s.color}
                           radius={top ? [2, 2, 0, 0] : 0}
                         />

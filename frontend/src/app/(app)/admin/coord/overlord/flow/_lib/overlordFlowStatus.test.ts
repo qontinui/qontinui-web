@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FULL_FLOW, NULL_FLOW } from "../__fixtures__/flow";
+import {
+  FULL_FLOW,
+  NULL_FLOW,
+  RUNNERS_ALL_COVERED,
+  RUNNERS_TWO_SHORT,
+} from "../__fixtures__/flow";
 import {
   NO_DATA,
   deriveFlowHealth,
@@ -15,8 +20,10 @@ import {
   readFlowBody,
   scopeCounts,
   sessionHref,
+  SEGMENT_GAP_PX,
   UNCHANGED_MIN_PASSES,
-  unchangedIsObservable,
+  insetSegment,
+  unchangedCoverage,
 } from "./overlordFlowStatus";
 
 describe("flowQuery", () => {
@@ -288,36 +295,79 @@ describe("deriveFlowHealth", () => {
     }
   });
 
-  it("never goes green while too few FULL passes ran to see an unchanged session", () => {
-    for (const full of [0, 1, 2, undefined]) {
-      const h = deriveFlowHealth({
-        view: { ...view, fullPassesConsidered: full, unchanged: [] },
-        loaded: true,
-        failed: false,
-        failure: null,
-        windowId: "7d",
+  /** The strip for an empty unchanged list over a given flow body. */
+  const stripOver = (body: Record<string, unknown>) =>
+    deriveFlowHealth({
+      view: readFlowBody({ ...FULL_FLOW, unchanged: [], ...body })!,
+      loaded: true,
+      failed: false,
+      failure: null,
+      windowId: "7d",
+    });
+
+  it("is not green for two runners with 2 full passes each (a tenant total of 4)", () => {
+    const h = stripOver({
+      full_passes_considered: 4,
+      full_passes_by_runner: RUNNERS_TWO_SHORT,
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("Unchanged sessions cannot be confirmed");
+    expect(h.detail).toBe(
+      "2 of 2 runners ran fewer than 3 full passes — their sessions cannot be judged unchanged"
+    );
+  });
+
+  it("is green only when every runner ran the applied number of full passes", () => {
+    const h = stripOver({ full_passes_by_runner: RUNNERS_ALL_COVERED });
+    expect(h.level).toBe("green");
+    expect(h.headline).toBe("No session is stuck unchanged");
+  });
+
+  it("is never green on a total when per-runner counts are absent", () => {
+    for (const total of [0, 3, 100]) {
+      const h = stripOver({
+        full_passes_considered: total,
+        full_passes_by_runner: undefined,
       });
-      expect(h.level, String(full)).toBe("amber");
-      expect(h.headline).toBe("Unchanged sessions cannot be seen yet");
-      expect(h.detail).toMatch(
-        full === undefined
-          ? /did not say how many full passes ran/
-          : /^fewer than 3 full passes in the last 7 days/
+      expect(h.level, String(total)).toBe("amber");
+      expect(h.detail).toBe(
+        "per-runner full-pass counts not served — unchanged cannot be confirmed"
       );
     }
   });
 
-  it("gates on the full-pass count it asked coord to apply", () => {
-    expect(UNCHANGED_MIN_PASSES).toBe(3);
-    expect(unchangedIsObservable({ ...view, fullPassesConsidered: 3 })).toBe(
-      true
+  it("is not green on an empty or unreadable per-runner list", () => {
+    expect(stripOver({ full_passes_by_runner: [] }).detail).toBe(
+      "no runner reported a pass in the last 7 days — unchanged cannot be confirmed"
     );
-    expect(unchangedIsObservable({ ...view, fullPassesConsidered: 2 })).toBe(
-      false
-    );
-    expect(
-      unchangedIsObservable({ ...view, fullPassesConsidered: undefined })
-    ).toBe(false);
+    for (const bad of [
+      "x",
+      [RUNNERS_ALL_COVERED[0], { runner_port: 9877 }],
+      [RUNNERS_ALL_COVERED[0], null],
+    ]) {
+      const h = stripOver({ full_passes_by_runner: bad });
+      expect(h.level).toBe("amber");
+      expect(h.detail).toMatch(/could not be read/);
+    }
+  });
+
+  it("uses the threshold coord applied, else the one the page sent", () => {
+    const strict = readFlowBody({
+      ...FULL_FLOW,
+      full_passes_by_runner: RUNNERS_ALL_COVERED,
+      params: { unchanged_min_passes: 4, nudge_window_passes: 3 },
+    })!;
+    expect(strict.unchangedMinPasses).toBe(4);
+    expect(unchangedCoverage(strict, "the last 7 days")).toEqual({
+      everyRunnerCovered: false,
+      sentence:
+        "1 of 2 runners ran fewer than 4 full passes — their sessions cannot be judged unchanged",
+    });
+    for (const params of [undefined, {}, { unchanged_min_passes: 0 }, "x"]) {
+      expect(readFlowBody({ ...FULL_FLOW, params })!.unchangedMinPasses).toBe(
+        UNCHANGED_MIN_PASSES
+      );
+    }
   });
 
   it("is amber with unchanged sessions and green with none", () => {
@@ -332,7 +382,13 @@ describe("deriveFlowHealth", () => {
     ).toBe("amber");
     expect(
       deriveFlowHealth({
-        view: { ...view, fullPassesConsidered: 3, unchanged: [] },
+        view: {
+          ...readFlowBody({
+            ...FULL_FLOW,
+            full_passes_by_runner: RUNNERS_ALL_COVERED,
+          })!,
+          unchanged: [],
+        },
         loaded: true,
         failed: false,
         failure: null,
@@ -379,6 +435,26 @@ describe("topSeries", () => {
       },
     ]);
     expect(p!.topSeries).toBe("STOPPED");
+  });
+});
+
+describe("insetSegment", () => {
+  it("never insets the top segment, so the bar's total stays true", () => {
+    expect(insetSegment(10, 20, true)).toEqual({ y: 10, height: 20 });
+  });
+
+  it("gives a lower segment's top edge to the gap", () => {
+    expect(insetSegment(10, 20, false)).toEqual({
+      y: 10 + SEGMENT_GAP_PX,
+      height: 20 - SEGMENT_GAP_PX,
+    });
+  });
+
+  it("keeps a thin lower segment at least 1px tall, never inflating one", () => {
+    expect(insetSegment(10, 2, false)).toEqual({ y: 11, height: 1 });
+    expect(insetSegment(10, 1.5, false)).toEqual({ y: 10.5, height: 1 });
+    expect(insetSegment(10, 0.6, false)).toEqual({ y: 10, height: 0.6 });
+    expect(insetSegment(10, 0, false)).toEqual({ y: 10, height: 0 });
   });
 });
 

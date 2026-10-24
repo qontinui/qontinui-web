@@ -57,8 +57,7 @@ import {
   parseFlowReadFailure,
   percentWords,
   readFlowBody,
-  unchangedIsObservable,
-  unchangedUnobservableSentence,
+  unchangedCoverage,
   type FlowReadFailure,
   type FlowView,
   type FlowWindowId,
@@ -289,6 +288,8 @@ export default function CoordOverlordFlowPage() {
     () => (shown?.series ? histogramPoints(shown.series) : null),
     [shown]
   );
+  /** The strip reads the same verdict through `deriveFlowHealth`. */
+  const coverage = shown ? unchangedCoverage(shown, win.words) : null;
 
   return (
     <div
@@ -414,14 +415,12 @@ export default function CoordOverlordFlowPage() {
                 No triage pass recorded in {win.words} — no session could be
                 seen staying unchanged, so this is not an all-clear.
               </p>
-            ) : shown && !unchangedIsObservable(shown) ? (
+            ) : coverage && !coverage.everyRunnerCovered ? (
               <p
                 className="text-sm text-muted-foreground italic m-0"
-                data-testid="overlord-flow-unchanged-too-few-full"
+                data-testid="overlord-flow-unchanged-not-confirmed"
               >
-                None listed, but{" "}
-                {unchangedUnobservableSentence(shown, win.words)}, so this is
-                not an all-clear.
+                None listed, but {coverage.sentence}. This is not an all-clear.
               </p>
             ) : (
               <p

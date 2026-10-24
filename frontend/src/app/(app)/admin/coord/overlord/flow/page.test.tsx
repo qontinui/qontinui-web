@@ -10,7 +10,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { FULL_FLOW, NULL_FLOW, SESSION_ID } from "./__fixtures__/flow";
+import {
+  FULL_FLOW,
+  NULL_FLOW,
+  RUNNERS_ALL_COVERED,
+  RUNNERS_TWO_SHORT,
+  SESSION_ID,
+} from "./__fixtures__/flow";
 
 // The page reads through the typed client; its request shape is pinned in
 // `lib/api/operations/overlordFlow.test.ts`. The mock receives the query so
@@ -226,7 +232,7 @@ describe("/admin/coord/overlord/flow", () => {
   it("says an empty unchanged list is a measured empty, in words", async () => {
     fetchFlow.mockResolvedValue({
       ...FULL_FLOW,
-      full_passes_considered: 3,
+      full_passes_by_runner: RUNNERS_ALL_COVERED,
       unchanged: [],
     });
     render(<CoordOverlordFlowPage />);
@@ -253,34 +259,32 @@ describe("/admin/coord/overlord/flow", () => {
 
   it.each([
     [
-      "only filtered passes",
-      0,
-      "fewer than 3 full passes in the last 7 days (0)",
+      "two runners with 2 full passes each (total 4)",
+      { full_passes_considered: 4, full_passes_by_runner: RUNNERS_TWO_SHORT },
+      "2 of 2 runners ran fewer than 3 full passes — their sessions cannot be judged unchanged",
     ],
-    ["two full passes", 2, "fewer than 3 full passes in the last 7 days (2)"],
     [
-      "an unknown full-pass count",
-      undefined,
-      "did not say how many full passes ran",
+      "absent per-runner counts",
+      { full_passes_considered: 9, full_passes_by_runner: undefined },
+      "per-runner full-pass counts not served — unchanged cannot be confirmed",
     ],
   ])(
     "does not read an empty unchanged list over %s as an all-clear",
-    async (_label, full, words) => {
-      fetchFlow.mockResolvedValue({
-        ...FULL_FLOW,
-        full_passes_considered: full,
-        unchanged: [],
-      });
+    async (_label, body, sentence) => {
+      fetchFlow.mockResolvedValue({ ...FULL_FLOW, ...body, unchanged: [] });
       render(<CoordOverlordFlowPage />);
-      const tooFew = await screen.findByTestId(
-        "overlord-flow-unchanged-too-few-full"
+      const slot = await screen.findByTestId(
+        "overlord-flow-unchanged-not-confirmed"
       );
-      expect(tooFew).toHaveTextContent(words);
-      expect(tooFew).toHaveTextContent("not an all-clear");
+      // One sentence, no doubled "so".
+      expect(slot.textContent).toBe(
+        `None listed, but ${sentence}. This is not an all-clear.`
+      );
       expect(screen.queryByTestId("overlord-flow-unchanged-empty")).toBeNull();
       const s = await strip();
       expect(s).toHaveAttribute("data-health-level", "amber");
-      expect(s).toHaveTextContent("Unchanged sessions cannot be seen yet");
+      expect(s).toHaveTextContent("Unchanged sessions cannot be confirmed");
+      expect(s).toHaveTextContent(sentence);
       expect(s).not.toHaveTextContent("No session is stuck unchanged");
     }
   );
@@ -369,14 +373,16 @@ describe("/admin/coord/overlord/flow", () => {
       )
     );
     expect(screen.queryByTestId("overlord-flow-unknown")).toBeNull();
-    // NULL_FLOW has 2 full passes: too few to see an unchanged session.
+    // NULL_FLOW's one runner ran 2 full passes: too few to see one.
     expect(
-      screen.getByTestId("overlord-flow-unchanged-too-few-full")
-    ).toHaveTextContent("fewer than 3 full passes in the last 30 days (2)");
+      screen.getByTestId("overlord-flow-unchanged-not-confirmed")
+    ).toHaveTextContent("1 of 1 runner ran fewer than 3 full passes");
     expect(screen.getByTestId("overlord-flow-histogram")).toHaveTextContent(
       "1 pass in the last 30 days"
     );
-    expect(await strip()).toHaveTextContent("in the last 30 days");
+    expect(await strip()).toHaveTextContent(
+      "Unchanged sessions cannot be confirmed"
+    );
   });
 
   it("keeps the last good numbers on a failed refresh, and says they are stale", async () => {
