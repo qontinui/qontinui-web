@@ -21,10 +21,23 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review / Taste Inbox
- *   Dev Ops ▸ Overview / CI / Trees° / Spawn° / Runner Drain° / Test Targets° /
- *             Migrations° / Deploys° / Releases° / Git Ops° / Federation° /
- *             Memory° / Onboarding° / Onboarding Status°
- *   Access ▸  Members / Agent Registry                  (° = operator-only)
+ *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Trees° / Launch session° /
+ *             Runner Drain° / Test Targets° / Migrations° / Deploys° /
+ *             Releases° / Git Ops° / Federation° / Memory° / Onboarding° /
+ *             Onboarding Status°
+ *   Access ▸  Members / Agent Registry
+ *
+ *   (° = operator-only; † = coord tenant admin of the active tenant, the same
+ *   gate as the page's proxies)
+ *
+ * `Spawns` (every spawn coord was asked to place, where it went and how it
+ * ended) and `Launch session` (the launcher at `/admin/coord/spawn`) are two
+ * leaves that must never share the word "Spawn": the launcher was labelled
+ * "Spawn" until the ledger page arrived (plan
+ * `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+ * Phase 5), and one label naming two pages is the defect served policy
+ * `ux-priorities` `a-label-names-one-referent-and-a-quantity-names-its-unit`
+ * forbids.
  *
  * There is no Alerts tab. The raw `coord.alerts` list is agents' work (plan
  * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
@@ -83,6 +96,7 @@ import {
   SlidersHorizontal,
   SquareTerminal,
   Stethoscope,
+  Timer,
   UserCog,
   Workflow,
 } from "lucide-react";
@@ -571,6 +585,21 @@ export const GROUPS: NavGroup[] = [
         coordAdminOnly: true,
       },
       {
+        // Plan `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-
+        // arbitration` Phase 5: every spawn coord was asked to place — where
+        // it went, how long it waited, how it ended — and the per-device
+        // breakdown. Beside Computers because it reports spawns PER device,
+        // and `coordAdminOnly` for the same reason as Computers: its three
+        // proxies (`/operations/spawns…`) are `require_coord_tenant_admin`
+        // (the rows name each spawn's devices, account and session), and the
+        // menu uses that same gate.
+        href: "/admin/coord/spawns",
+        label: "Spawns",
+        icon: Timer,
+        testId: "coord-nav-spawns",
+        coordAdminOnly: true,
+      },
+      {
         href: "/admin/coord/trees",
         label: "Trees",
         icon: Boxes,
@@ -578,8 +607,13 @@ export const GROUPS: NavGroup[] = [
         operatorOnly: true,
       },
       {
+        // The launcher: start a session on a plan or a free prompt. Labelled
+        // "Launch session", not "Spawn", so it never shares a word with the
+        // `Spawns` ledger leaf above (see the module doc). The route and the
+        // testId keep their names — the testId is frozen (Playwright's
+        // `admin-coord-spawn.spec.ts` asserts `coord-nav-spawn-active`).
         href: "/admin/coord/spawn",
-        label: "Spawn",
+        label: "Launch session",
         icon: Rocket,
         testId: "coord-nav-spawn",
         operatorOnly: true,
@@ -590,8 +624,8 @@ export const GROUPS: NavGroup[] = [
         // runner, watch its restart readiness, and wind down the sessions in
         // the way. Dev Ops rather than a sixth session console — it links to
         // `/sessions?device=` for history instead of reimplementing it. Beside
-        // Spawn because the two are the operator's two levers on a runner:
-        // put work on it, and get it quiet enough to rebuild.
+        // Launch session because the two are the operator's two levers on a
+        // runner: put work on it, and get it quiet enough to rebuild.
         href: "/admin/coord/runners",
         // Not "Runners": the app sidebar's top-level Runners entry is
         // `/runners` (online devices, history, tokens). This page is the
@@ -706,6 +740,12 @@ export const GROUPS: NavGroup[] = [
         // the `command_safety_rewrite` fleet-policy dial runners read at
         // spawn (plan
         // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`),
+        // the `permission_prompt_capture` dial deciding whether those sessions
+        // record their permission prompts as coord findings (plan
+        // `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`),
+        // the `permission_auto_accept` dial deciding whether runners accept
+        // the tool permission prompts those sessions raise (plan
+        // `2026-10-23-runner-sessions-stop-at-permission-dialogs-so-accept-them-by-default-with-a-tenant-switch`),
         // the `account_selection_mode` dial runners force-apply unless the
         // machine is pinned (plan
         // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),

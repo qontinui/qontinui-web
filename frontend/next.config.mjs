@@ -359,6 +359,20 @@ const nextConfig = {
         ],
       },
       {
+        // Image-slot files (plan 2026-10-13-image-generation-and-visual-
+        // judgment, Phase 14): the pages load them through <picture>/<img>,
+        // where a document CSP does not apply, so this changes nothing there.
+        // It matters when a published SVG is opened DIRECTLY as a same-origin
+        // document: no script runs, and the document is sandboxed. The SVGs
+        // are also checked against the SVG allowlist in CI
+        // (src/lib/image-slots/inventory.ci.test.tsx).
+        source: '/image-slots/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: "script-src 'none'; sandbox" },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
+      {
         // Service worker must never be cached by the browser or any
         // intermediate proxy — otherwise users get stuck on an old SW for
         // up to 24h after a deploy. The SW itself controls cache lifetime

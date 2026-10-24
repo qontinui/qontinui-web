@@ -21,7 +21,7 @@ import {
   DELIVERY_HELP,
   DELIVERY_LABEL,
   DELIVERY_MODES,
-  DELIVERY_PROVENANCE_NOTE,
+  deliveryProvenanceNote,
   deliveryCurrentLabel,
   EMPTY_READING,
   FOLLOWUP_SCOPES,
@@ -478,10 +478,10 @@ function DeliveryEditor({
 }) {
   /** The mode whose write is in flight, so only its button spins. */
   const [pending, setPending] = useState<DeliveryMode | null>(null);
-  // Coord's read is fail-open, so a value it resolves is not proof that it
-  // was set: `provenance_known: false` renders it qualified, never as a
-  // confirmed setting.
-  const confirmed = reading.delivery?.provenance_known === true;
+  // Coord says where the mode came from; a missing or `unrecognized` scope is
+  // never rendered as a confirmed setting.
+  const resolvedScope = reading.delivery?.resolved_scope ?? null;
+  const confirmed = resolvedScope === "repo" || resolvedScope === "default";
   const current: DeliveryMode | null =
     reading.deliveryReadbackError === null
       ? (reading.delivery?.mode ?? null)
@@ -501,10 +501,12 @@ function DeliveryEditor({
             key={m}
             size="sm"
             variant={current === m ? "default" : "outline"}
-            // While coord cannot confirm the value was SET (fail-open read),
-            // the shown mode may be the default — so it can still be written
-            // explicitly.
-            disabled={!canEdit || busy || (current === m && confirmed)}
+            // Only a mode a row already declares (`repo`) is a no-op write.
+            // A default, an unrecognized stored value or an UNKNOWN scope can
+            // still be written explicitly for this repo.
+            disabled={
+              !canEdit || busy || (current === m && resolvedScope === "repo")
+            }
             onClick={() => {
               setPending(m);
               onChoose(m);
@@ -523,9 +525,9 @@ function DeliveryEditor({
           variant="outline"
           className={`text-[11px] ${current === null || !confirmed ? UNKNOWN_AMBER : ""}`}
           data-testid="repo-followup-delivery-current"
-          data-provenance={confirmed ? "confirmed" : "unconfirmed"}
+          data-provenance={resolvedScope ?? "unconfirmed"}
         >
-          {deliveryCurrentLabel(current, confirmed)}
+          {deliveryCurrentLabel(current, resolvedScope)}
         </Badge>
       </div>
       {current !== null && (
@@ -540,7 +542,10 @@ function DeliveryEditor({
         </AmberNote>
       )}
       <p className="text-[11px] text-muted-foreground">
-        {DELIVERY_PROVENANCE_NOTE}
+        {deliveryProvenanceNote(
+          resolvedScope,
+          reading.delivery?.stored_value ?? null
+        )}
       </p>
     </div>
   );

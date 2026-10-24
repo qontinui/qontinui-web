@@ -16,6 +16,18 @@ import {
   MAX_CAUSE_LENGTH,
   plainSentence,
 } from "@/lib/errors/backend-error-message";
+import { tokenManager } from "@/services/service-factory";
+
+/**
+ * The operator bearer for the two `/api/vga/*` routes that hop to the runner
+ * (`monitors`, `capture`). Those routes admit only an authenticated
+ * same-origin page (`app/api/_runner-hop/bridge-session.ts`); a cookie is not
+ * accepted there.
+ */
+function runnerHopHeaders(): Record<string, string> {
+  const token = tokenManager.getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 /**
  * Throw a readable error for a non-ok response. The /api/vga/* routes answer
@@ -125,7 +137,10 @@ export async function importStateMachine(
 export async function listMonitors(): Promise<
   Array<{ id: number; name?: string; width: number; height: number }>
 > {
-  const resp = await fetch("/api/vga/monitors", { cache: "no-store" });
+  const resp = await fetch("/api/vga/monitors", {
+    cache: "no-store",
+    headers: runnerHopHeaders(),
+  });
   // Runner shape: { monitors: [...] } — tolerate either shape.
   const body = (await handleJson<unknown>(resp)) as
     | {
@@ -144,6 +159,7 @@ export async function listMonitors(): Promise<
 export async function captureScreenshot(monitor: number): Promise<Blob> {
   const resp = await fetch(`/api/vga/capture?monitor=${monitor}`, {
     cache: "no-store",
+    headers: runnerHopHeaders(),
   });
   await throwIfNotOk(resp, "Capture failed");
   return resp.blob();
