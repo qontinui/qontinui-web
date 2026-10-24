@@ -9,16 +9,21 @@
  *   `PresentationLens`. A lens layout missing from it leaves the app shell
  *   around that tree in operator mode (`PresentationShell` keys on it); an
  *   entry with no lens layout puts the shell in a mode no page shares.
- * - every `PRESENTATION_READY_ROUTES` entry must name a page test that runs
- *   the helper (`expectPresentationSafe`, or `findPresentationViolations`
- *   under an assertion) AND imports that route's own page module — a test
- *   that renders some other page, or one panel of it, proves nothing about
- *   the page the entry un-withholds. Phase 1 registers only the console's
- *   landing redirect; the check is proven able to fail on fixtures below.
+ * - every `PRESENTATION_READY_ROUTES` entry must name a page test that
+ *   ASSERTS the helper — `expectPresentationSafe(…)`, or
+ *   `expect(findPresentationViolations(…)).toEqual([])`; a finder whose
+ *   answer is discarded asserts nothing — AND imports that route's own page
+ *   module without mocking it. A test that renders some other page, one panel
+ *   of it, or a stand-in `vi.mock` put in the page's place proves nothing
+ *   about the page the entry un-withholds. The file is read as TypeScript, so
+ *   a call in a comment or a string is no call. Phase 1 registers only the
+ *   console's landing redirect; the check is proven able to fail on fixtures
+ *   below.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, posix, relative, sep } from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
   LENS_TREES,
@@ -70,13 +75,149 @@ const PAGE_MODULES: ReadonlyMap<string, string> = new Map(
   ])
 );
 
-/** The module specifiers `source` imports statically or dynamically. */
-function importedSpecifiers(source: string): string[] {
-  const code = withoutComments(source);
-  return [
-    ...code.matchAll(/\bimport\s+(?:[^"';]*?\sfrom\s+)?["']([^"']+)["']/g),
-    ...code.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g),
-  ].map((m) => m[1]);
+/** What a proof file does, read from its syntax tree (comments and strings are not code). */
+interface ProofFacts {
+  /** The modules it imports for their values — statically or by `import()`. */
+  readonly imports: readonly string[];
+  /** The modules it puts a stand-in in place of (`vi.mock`, `vi.doMock`). */
+  readonly mocked: readonly string[];
+  /** Whether it ASSERTS the helper (see {@link isHelperAssertion}). */
+  readonly assertsHelper: boolean;
+}
+
+/** `"./page"` or `import("./page")` — the module a `vi.mock` names. */
+function mockedSpecifier(arg: ts.Expression | undefined): string | null {
+  if (arg === undefined) return null;
+  if (ts.isStringLiteralLike(arg)) return arg.text;
+  if (
+    ts.isCallExpression(arg) &&
+    arg.expression.kind === ts.SyntaxKind.ImportKeyword &&
+    arg.arguments[0] !== undefined &&
+    ts.isStringLiteralLike(arg.arguments[0])
+  ) {
+    return arg.arguments[0].text;
+  }
+  return null;
+}
+
+function calls(node: ts.CallExpression, name: string): boolean {
+  return ts.isIdentifier(node.expression) && node.expression.text === name;
+}
+
+/** `x` without the parentheses around it, upward: the node its parent sees. */
+function outermost(node: ts.Node): ts.Node {
+  let current = node;
+  while (ts.isParenthesizedExpression(current.parent)) current = current.parent;
+  return current;
+}
+
+/**
+ * Whether `call` runs the helper AS AN ASSERTION: `expectPresentationSafe(…)`,
+ * or `findPresentationViolations(…)` — optionally `.map(describeViolation)`
+ * — as the value of `expect(…)` asserted empty with `.toEqual([])`,
+ * `.toStrictEqual([])` or `.toHaveLength(0)`. A finder whose answer is
+ * discarded, kept in a variable, or asserted anything else asserts nothing.
+ */
+function isHelperAssertion(call: ts.CallExpression): boolean {
+  if (calls(call, "expectPresentationSafe")) return true;
+  if (!calls(call, "findPresentationViolations")) return false;
+  let value: ts.Node = outermost(call);
+  const mapped = value.parent;
+  const mapper =
+    ts.isPropertyAccessExpression(mapped) &&
+    mapped.expression === value &&
+    mapped.name.text === "map" &&
+    ts.isCallExpression(mapped.parent) &&
+    mapped.parent.expression === mapped &&
+    mapped.parent.arguments.length === 1
+      ? mapped.parent.arguments[0]
+      : undefined;
+  if (
+    mapper !== undefined &&
+    ts.isIdentifier(mapper) &&
+    mapper.text === "describeViolation"
+  ) {
+    value = outermost(mapped.parent);
+  }
+  const expectCall = value.parent;
+  if (
+    !ts.isCallExpression(expectCall) ||
+    !calls(expectCall, "expect") ||
+    expectCall.arguments[0] !== value
+  ) {
+    return false;
+  }
+  const matcher = expectCall.parent;
+  if (
+    !ts.isPropertyAccessExpression(matcher) ||
+    matcher.expression !== expectCall ||
+    !ts.isCallExpression(matcher.parent) ||
+    matcher.parent.expression !== matcher
+  ) {
+    return false;
+  }
+  const args = matcher.parent.arguments;
+  const only = args.length === 1 ? args[0] : undefined;
+  switch (matcher.name.text) {
+    case "toEqual":
+    case "toStrictEqual":
+      return (
+        only !== undefined &&
+        ts.isArrayLiteralExpression(only) &&
+        only.elements.length === 0
+      );
+    case "toHaveLength":
+      return (
+        only !== undefined && ts.isNumericLiteral(only) && only.text === "0"
+      );
+    default:
+      return false;
+  }
+}
+
+function proofFacts(file: string, text: string): ProofFacts {
+  const source = ts.createSourceFile(
+    file,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const imports: string[] = [];
+  const mocked: string[] = [];
+  let assertsHelper = false;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      !node.importClause?.isTypeOnly
+    ) {
+      imports.push(node.moduleSpecifier.text);
+    }
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (
+        callee.kind === ts.SyntaxKind.ImportKeyword &&
+        node.arguments[0] !== undefined &&
+        ts.isStringLiteralLike(node.arguments[0])
+      ) {
+        imports.push(node.arguments[0].text);
+      }
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        ts.isIdentifier(callee.expression) &&
+        callee.expression.text === "vi" &&
+        (callee.name.text === "mock" || callee.name.text === "doMock")
+      ) {
+        const target = mockedSpecifier(node.arguments[0]);
+        if (target !== null) mocked.push(target);
+      }
+      if (isHelperAssertion(node)) assertsHelper = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return { imports, mocked, assertsHelper };
 }
 
 /** `specifier`, imported from the `src/`-relative `from`, as a `src/`-relative module path. */
@@ -88,9 +229,6 @@ function resolvedModule(specifier: string, from: string): string | null {
   }
   return null;
 }
-
-/** A call of the helper's: the assertion, or the finder under an assertion. */
-const HELPER_CALL = /\b(?:expectPresentationSafe|findPresentationViolations)\(/;
 
 /**
  * Why `entry` is not a proven ready route; empty when it is. `read` returns a
@@ -123,19 +261,21 @@ function readyRouteProblems(
     problems.push(`${entry.route}: provenBy ${entry.provenBy} does not exist`);
     return problems;
   }
-  if (!HELPER_CALL.test(withoutComments(source))) {
+  const facts = proofFacts(entry.provenBy, source);
+  if (!facts.assertsHelper) {
     problems.push(
-      `${entry.route}: ${entry.provenBy} never calls expectPresentationSafe`
+      `${entry.route}: ${entry.provenBy} never calls expectPresentationSafe, nor asserts findPresentationViolations empty`
     );
   }
-  if (
-    page !== null &&
-    !importedSpecifiers(source).some(
-      (specifier) => resolvedModule(specifier, entry.provenBy) === page
-    )
-  ) {
+  const isPage = (specifier: string) =>
+    resolvedModule(specifier, entry.provenBy) === page;
+  if (page !== null && !facts.imports.some(isPage)) {
     problems.push(
       `${entry.route}: ${entry.provenBy} does not render the page — it never imports ${page}`
+    );
+  } else if (page !== null && facts.mocked.some(isPage)) {
+    problems.push(
+      `${entry.route}: ${entry.provenBy} does not render the page — it mocks ${page}, so what renders is a stand-in`
     );
   }
   return problems;
@@ -264,6 +404,24 @@ describe("every presentation-ready route is proven", () => {
         'import Page from "../spawns/page";\nexpectPresentationSafe(view, {});',
       "app/(app)/admin/coord/devops/mocked.test.tsx":
         'vi.mock("./page");\nexpectPresentationSafe(view, {});',
+      "app/(app)/admin/coord/devops/stand-in.test.tsx":
+        'vi.mock("./page", () => ({ default: () => null }));\nimport Page from "./page";\nexpectPresentationSafe(view, {});',
+      "app/(app)/admin/coord/devops/stand-in-by-import.test.tsx":
+        'import Page from "@/app/(app)/admin/coord/devops/page";\nvi.mock(import("./page"), () => ({ default: () => null }));\nexpectPresentationSafe(view, {});',
+      "app/(app)/admin/coord/devops/discarded.test.tsx":
+        'import DevOpsPage from "./page";\nfindPresentationViolations(view);',
+      "app/(app)/admin/coord/devops/kept.test.tsx":
+        'import DevOpsPage from "./page";\nconst found = findPresentationViolations(view);\nexpect(found).toBeDefined();',
+      "app/(app)/admin/coord/devops/not-empty.test.tsx":
+        'import DevOpsPage from "./page";\nexpect(findPresentationViolations(view)).not.toEqual([]);',
+      "app/(app)/admin/coord/devops/equal-to-a-list.test.tsx":
+        'import DevOpsPage from "./page";\nexpect(findPresentationViolations(view)).toEqual(expected);',
+      "app/(app)/admin/coord/devops/in-a-string.test.tsx":
+        'import DevOpsPage from "./page";\nconst s = "expectPresentationSafe(view)";',
+      "app/(app)/admin/coord/devops/mapped.test.tsx":
+        'import DevOpsPage from "./page";\nexpect(\n  findPresentationViolations(view, { forbidden }).map(describeViolation)\n).toEqual([]);',
+      "app/(app)/admin/coord/devops/mocks-another.test.tsx":
+        'vi.mock("@/services/service-factory", () => ({}));\nimport DevOpsPage from "./page";\nexpect(findPresentationViolations(view)).toHaveLength(0);',
       "app/(app)/admin/coord/devops/commented.test.tsx":
         'import DevOpsPage from "./page";\n// expectPresentationSafe(view);',
       "app/(app)/admin/coord/devops/silent.test.tsx":
@@ -284,6 +442,14 @@ describe("every presentation-ready route is proven", () => {
       [
         "imports its page by alias and asserts the finder is empty",
         "aliased.test.tsx",
+      ],
+      [
+        "asserts the finder's described violations are empty",
+        "mapped.test.tsx",
+      ],
+      [
+        "mocks a service, not the page, and asserts the finder has none",
+        "mocks-another.test.tsx",
       ],
     ])("passes a lens route whose test %s", (_name, file) => {
       expect(
@@ -325,6 +491,41 @@ describe("every presentation-ready route is proven", () => {
         "a test that only mocks the page",
         devops("app/(app)/admin/coord/devops/mocked.test.tsx"),
         "does not render the page",
+      ],
+      [
+        "a test that imports the page and mocks it with a stand-in",
+        devops("app/(app)/admin/coord/devops/stand-in.test.tsx"),
+        "it mocks app/(app)/admin/coord/devops/page",
+      ],
+      [
+        "a test that mocks the page by import() under another spelling",
+        devops("app/(app)/admin/coord/devops/stand-in-by-import.test.tsx"),
+        "it mocks app/(app)/admin/coord/devops/page",
+      ],
+      [
+        "a finder whose answer is discarded",
+        devops("app/(app)/admin/coord/devops/discarded.test.tsx"),
+        "never calls expectPresentationSafe",
+      ],
+      [
+        "a finder whose answer is kept but never asserted empty",
+        devops("app/(app)/admin/coord/devops/kept.test.tsx"),
+        "never calls expectPresentationSafe",
+      ],
+      [
+        "a finder asserted NOT empty",
+        devops("app/(app)/admin/coord/devops/not-empty.test.tsx"),
+        "never calls expectPresentationSafe",
+      ],
+      [
+        "a finder asserted equal to a list that may not be empty",
+        devops("app/(app)/admin/coord/devops/equal-to-a-list.test.tsx"),
+        "never calls expectPresentationSafe",
+      ],
+      [
+        "a helper call that is only a string",
+        devops("app/(app)/admin/coord/devops/in-a-string.test.tsx"),
+        "never calls expectPresentationSafe",
       ],
       [
         "the helper's own suite, which renders no page",
