@@ -69,6 +69,7 @@ _INDEXES = (
     "ix_overlord_passes_tenant_started",
     "ix_overlord_passes_tenant_runner",
     "ix_overlord_pass_rows_tenant_session",
+    "ix_overlord_pass_rows_observed",
     "ix_overlord_interventions_tenant_ccsession",
 )
 

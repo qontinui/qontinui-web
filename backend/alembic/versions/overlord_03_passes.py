@@ -243,6 +243,10 @@ Every index is tenant-first, because every read is tenant-scoped.
   metric is computed in.
 * ``ix_overlord_pass_rows_tenant_session (tenant_id, claude_session_id,
   observed_at)`` — one session's rows across passes.
+* ``ix_overlord_pass_rows_observed (observed_at)`` — the one index that is NOT
+  tenant-first, deliberately: coord's retention pruner deletes rows older than
+  180 days across every tenant in bounded batches, and without it each batch
+  would scan the whole table.
 * No separate ``(pass_id)`` index on the rows: the primary key
   ``(pass_id, terminal_id)`` leads with ``pass_id``, so it already serves "every
   row of one pass" and the ``ON DELETE CASCADE`` lookup. A second index would
@@ -382,6 +386,14 @@ def upgrade() -> None:
         """
     )
 
+    # The retention pruner's cross-tenant age scan (see the docstring).
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_overlord_pass_rows_observed
+            ON coord.overlord_pass_rows (observed_at)
+        """
+    )
+
     # The flow route's join from a pass row's Claude session to the
     # interventions that session received.
     op.execute(
@@ -395,6 +407,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop both ledger tables and the join index. Any recorded rows go with them."""
     op.execute("DROP INDEX IF EXISTS coord.ix_overlord_interventions_tenant_ccsession")
+    op.execute("DROP INDEX IF EXISTS coord.ix_overlord_pass_rows_observed")
     op.execute("DROP INDEX IF EXISTS coord.ix_overlord_pass_rows_tenant_session")
     # DROP TABLE takes the primary key, the FK and every CHECK with it. The rows
     # table goes first: it references the passes table.
