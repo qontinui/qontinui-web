@@ -1348,10 +1348,12 @@ def _bash() -> str:
 def _run_step(
     body: str, env: dict[str, str], cwd: Path
 ) -> subprocess.CompletedProcess[str]:
-    """Run a `run:` body the way GitHub does: `bash --noprofile --norc -eo
-    pipefail`."""
+    """Run a `run:` body the way GitHub does for a step with no `shell:`
+    (this workflow sets none): `bash -e`, WITHOUT pipefail -- so a body is
+    tested no stricter than it runs. `--noprofile --norc` keep the run
+    hermetic."""
     return subprocess.run(
-        [_bash(), "--noprofile", "--norc", "-eo", "pipefail", "-s"],
+        [_bash(), "--noprofile", "--norc", "-e", "-s"],
         input=body,
         env=env,
         cwd=cwd,
@@ -1403,9 +1405,10 @@ def _publish_tip(repo: Repo, sha: str, ref: str = "main") -> None:
 
 
 def _step_env_for(step_env: dict[str, str], base: str, head: str) -> dict[str, str]:
-    """The qualifying step's `env:`. BASE_SHA is the event's
-    `pull_request.base.sha`; the step must not read it, so it is set here to
-    a value the step would visibly misuse."""
+    """The qualifying step's `env:`, plus BASE_SHA standing in for the
+    event's `pull_request.base.sha`. The step must not read it; only the
+    stale-base callers pass a value that differs from the tip, and they are
+    the ones that tell the two apart."""
     return {**step_env, "BASE_SHA": base, "BASE_REF": "main", "HEAD_SHA": head}
 
 
@@ -1505,6 +1508,30 @@ def test_qualifying_step_switches_to_the_base_tip_not_the_stale_event_base(
     assert f"Tree is base tip {tip} plus {NEW_MIGRATION}" in proc.stdout
     assert (repo.root / PARENT_MIGRATION).is_file()
     assert (repo.root / NEW_MIGRATION).read_bytes() == _b(REVISION)
+
+
+def test_qualifying_step_refuses_an_added_path_that_main_has_since_added(
+    repo: Repo, step_env: dict[str, str]
+) -> None:
+    """Condition (b) at the tip: a stale PR whose "added" migration path has
+    meanwhile landed on main would REPLACE main's copy if overlaid. Against
+    the stale merge base this could not fire; against the tip it must."""
+    stale = _base_and_branch(repo, {REV_PATH: DOC_EDIT.base})
+    repo.write(NEW_MIGRATION, _b(REVISION))
+    head = repo.commit("a new migration")
+    repo.git("checkout", "--quiet", "main")
+    repo.write(NEW_MIGRATION, _b("# main's own file at the same path\n"))
+    tip = repo.commit("main lands a file at the same path")
+    repo.git("checkout", "--quiet", head)
+    _install_script(repo)
+    _publish_tip(repo, tip)
+    proc = _run_step(
+        _step(QUALIFY_STEP)["run"], _step_env_for(step_env, stale, head), repo.root
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert ERROR_B in proc.stdout
+    assert f"already exists at the base tip {tip}" in proc.stdout
+    assert repo.git("rev-parse", "HEAD") == head  # never detached onto the tip
 
 
 def test_qualifying_step_refuses_an_unresolvable_base_tip(

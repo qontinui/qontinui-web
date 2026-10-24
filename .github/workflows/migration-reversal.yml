@@ -909,7 +909,10 @@ jobs:
   # write the expected `alembic_version` row itself, or tamper with the
   # runner. Unsetting GITHUB_ENV / GITHUB_OUTPUT / GITHUB_PATH /
   # GITHUB_STEP_SUMMARY / BASH_ENV for those commands narrows the obvious
-  # channels into later steps; it is not a sandbox. So coord MUST NOT treat
+  # channels into later steps; it is not a sandbox. (`MRT_BASE_TIP`, like
+  # `MRT_HEAD` / `MRT_DOWN`, reaches the reversibility step through
+  # $GITHUB_ENV after untrusted code has run, so it is in the same class.)
+  # So coord MUST NOT treat
   # this check's `success` as adversarial proof of reversibility -- it is
   # evidence about a migration written in good faith, nothing stronger
   # (plan 2026-10-05-coord-clears-a-migration-on-a-reversal-gate-it-cannot-
@@ -1428,7 +1431,7 @@ jobs:
           # sha is UNKNOWN, never "compare against nothing".
           BASE_TIP="${MRT_BASE_TIP:-}"
           if ! [[ "$BASE_TIP" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error title=Migration Reversal Tested - condition (e) failed::MRT_BASE_TIP ('${BASE_TIP}') is not a commit sha, so the base tree this step reads is UNKNOWN -- not passed."
+            echo "::error title=Migration Reversal Tested - condition (e) failed::MRT_BASE_TIP ('${BASE_TIP}') is not a commit sha, so the base this step records in MRT_TESTED is UNKNOWN -- not passed."
             exit 1
           fi
           # MRT_HEAD / MRT_DOWN were parsed from the identity verdict by the
