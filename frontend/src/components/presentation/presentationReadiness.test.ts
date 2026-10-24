@@ -9,28 +9,27 @@
  *   `PresentationLens`. A lens layout missing from it leaves the app shell
  *   around that tree in operator mode (`PresentationShell` keys on it); an
  *   entry with no lens layout puts the shell in a mode no page shares.
- * - every `PRESENTATION_READY_ROUTES` entry must name a page test that
- *   PROVES it (`src/test/readinessProof.ts` says how it is read): it asserts
- *   the helper — `expectPresentationSafe(…)`, or
- *   `expect(findPresentationViolations(…)).toEqual([])`; a finder whose
- *   answer is discarded asserts nothing — where a failure fails a test that
- *   RUNS, every time it runs (on the test body's unconditional path: no
- *   condition, early `return`, swallowing `catch` or deferring callback
- *   between them, in a test no modifier, option, context `skip` or
- *   registration condition can stop), over a render that always evaluates the
- *   route's own page module, imported and not mocked. A test that renders
- *   some other page, one panel of it while merely importing the page, or a
- *   stand-in `vi.mock` put in the page's place, proves nothing about the page
- *   the entry un-withholds; nor does one that never runs, or runs only in some
- *   builds. Phase 1 registers only the console's landing redirect; the check
- *   is proven able to fail on the fixtures in `src/test/readinessProof.test.ts`.
+ * - every `PRESENTATION_READY_ROUTES` entry must be a route inside a lens
+ *   tree that a page module serves, proven by a test file that exists.
+ *
+ * Whether that test PROVES the route is not read here, and not from its
+ * source: it is the run's to show (`src/test/readinessEvidence.ts`). Running
+ * this file arms that requirement — the run must also run every entry's
+ * proof, and in it a test that FINISHED passed must have run the page check
+ * over the route's own page under a presenting lens, finding nothing — and
+ * the end-of-run step fails the run otherwise. The last test below fails when
+ * that step is not armed in this run.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, inject, it } from "vitest";
+import {
+  appFilesNamed,
+  appPageModules,
+  routeOfAppFile,
+} from "@/test/appRoutes";
 import { READINESS_PROVIDE_KEY } from "@/test/readinessEvidence";
-import { readyRouteProblems } from "@/test/readinessProof";
 import { readyRouteTargets } from "@/test/readinessReporter";
 import {
   LENS_TREES,
@@ -50,47 +49,44 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
 }
 
-function filesNamed(name: string, dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) filesNamed(name, path, out);
-    else if (entry === name) out.push(path);
-  }
-  return out;
-}
-
 function layoutsUnder(dir: string): string[] {
-  return filesNamed("layout.tsx", dir);
-}
-
-/** A layout's or a page's route: its directory under `app/`, route groups dropped. */
-function routeOfLayout(layout: string): string {
-  const segments = relative(APP, dirname(layout))
-    .split(sep)
-    .filter((s) => s && !/^\(.*\)$/.test(s));
-  return `/${segments.join("/")}`;
+  return appFilesNamed("layout.tsx", dir);
 }
 
 /** Each app route's page module, `src/`-relative and without its extension. */
-const PAGE_MODULES: ReadonlyMap<string, string> = new Map(
-  filesNamed("page.tsx", APP).map((page) => [
-    routeOfLayout(page),
-    relative(SRC, page)
-      .split(sep)
-      .join("/")
-      .replace(/\.tsx$/, ""),
-  ])
-);
+const PAGE_MODULES = appPageModules(SRC);
 
-/** The route's page module, from the real tree. */
-function realPageOf(route: string): string | null {
-  return PAGE_MODULES.get(route) ?? null;
+/**
+ * Why `entry` is not a well-formed ready route; empty when it is. `exists`
+ * says whether a `src/`-relative file exists; `pageOf` names the route's page
+ * module, or `null` when no page serves it.
+ */
+function entryProblems(
+  entry: PresentationReadyRoute,
+  exists: (srcRelative: string) => boolean,
+  pageOf: (route: string) => string | null
+): string[] {
+  const problems: string[] = [];
+  if (!isLensTreePath(entry.route)) {
+    problems.push(
+      `${entry.route}: not under a lens tree (${LENS_TREES.join(", ")})`
+    );
+  }
+  if (pageOf(entry.route) === null) {
+    problems.push(`${entry.route}: no page module serves this route`);
+  }
+  if (!/\.test\.tsx?$/.test(entry.provenBy)) {
+    problems.push(
+      `${entry.route}: provenBy ${entry.provenBy} is not a test file`
+    );
+  } else if (!exists(entry.provenBy)) {
+    problems.push(`${entry.route}: provenBy ${entry.provenBy} does not exist`);
+  }
+  return problems;
 }
 
-function readSrc(srcRelative: string): string | null {
-  const path = join(SRC, srcRelative);
-  return existsSync(path) ? readFileSync(path, "utf8") : null;
-}
+const existsInSrc = (srcRelative: string) => existsSync(join(SRC, srcRelative));
+const realPageOf = (route: string) => PAGE_MODULES.get(route) ?? null;
 
 describe("normalizePath / routeMatches", () => {
   it("drops the query, the hash and a trailing slash", () => {
@@ -162,7 +158,7 @@ describe("LENS_TREES are exactly the layouts that mount the lens", () => {
     );
     // Not vacuous: the console and the twin both mount it today.
     expect(lensLayouts.length).toBeGreaterThanOrEqual(2);
-    expect(lensLayouts.map(routeOfLayout).sort()).toEqual(
+    expect(lensLayouts.map((l) => routeOfAppFile(APP, l)).sort()).toEqual(
       [...LENS_TREES].sort()
     );
   });
@@ -184,17 +180,57 @@ describe("LENS_TREES are exactly the layouts that mount the lens", () => {
 });
 
 describe("every presentation-ready route is proven", () => {
-  it("names a page test that runs expectPresentationSafe, for a route inside a lens tree", () => {
+  it("names, for a route inside a lens tree that a page serves, a test file that exists", () => {
     expect(
       PRESENTATION_READY_ROUTES.flatMap((entry) =>
-        readyRouteProblems(entry, readSrc, realPageOf)
+        entryProblems(entry, existsInSrc, realPageOf)
       )
     ).toEqual([]);
+  });
+
+  it.each<[string, PresentationReadyRoute, string]>([
+    [
+      "a route outside every lens tree",
+      { route: "/settings", provenBy: "app/(app)/settings/page.test.tsx" },
+      "/settings: not under a lens tree",
+    ],
+    [
+      "a route no page serves",
+      {
+        route: "/admin/coord/nowhere",
+        provenBy: "app/(app)/admin/coord/page.test.tsx",
+      },
+      "/admin/coord/nowhere: no page module serves this route",
+    ],
+    [
+      "a proof that is not a test file",
+      { route: "/admin/coord", provenBy: "app/(app)/admin/coord/page.tsx" },
+      "provenBy app/(app)/admin/coord/page.tsx is not a test file",
+    ],
+    [
+      "a proof that does not exist",
+      {
+        route: "/admin/coord",
+        provenBy: "app/(app)/admin/coord/missing.test.tsx",
+      },
+      "provenBy app/(app)/admin/coord/missing.test.tsx does not exist",
+    ],
+  ])("refuses %s", (_what, entry, problem) => {
+    expect(entryProblems(entry, existsInSrc, realPageOf).join("\n")).toContain(
+      problem
+    );
   });
 
   it("registers each route once", () => {
     const routes = PRESENTATION_READY_ROUTES.map((e) => e.route);
     expect(new Set(routes).size).toBe(routes.length);
+  });
+
+  it("finds the real page modules (the route map is not vacuous)", () => {
+    expect(PAGE_MODULES.get("/admin/coord")).toBe("app/(app)/admin/coord/page");
+    expect(PAGE_MODULES.get("/digital-twin")).toBe(
+      "app/(app)/digital-twin/page"
+    );
   });
 
   it("is armed in this run: the end-of-run step that requires every route's evidence provided the routes it will check", () => {
@@ -204,12 +240,5 @@ describe("every presentation-ready route is proven", () => {
       srcDir: SRC,
       targets: readyRouteTargets(SRC),
     });
-  });
-
-  it("finds the real page modules (the route map is not vacuous)", () => {
-    expect(PAGE_MODULES.get("/admin/coord")).toBe("app/(app)/admin/coord/page");
-    expect(PAGE_MODULES.get("/digital-twin")).toBe(
-      "app/(app)/digital-twin/page"
-    );
   });
 });
