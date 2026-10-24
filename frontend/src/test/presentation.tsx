@@ -33,7 +33,11 @@
  *   one of the CLOSED list `PRESENTER_SAFETY_CONTROLS` — stopping the AI
  *   co-pilot or a recording, and the session-expiry prompt. A marker naming
  *   anything else is itself a violation, so an exemption cannot be minted at
- *   a call site.
+ *   a call site. And a link is navigation only while it keeps the
+ *   presentation: an `a[href]` to a lens page (this origin, `LENS_TREES`)
+ *   whose URL does not carry `?present=1` is a `presentation-dropping-link` —
+ *   opened in a new tab it would show the operator view. Build its href with
+ *   `usePresentationHref`.
  * - **(b) a write registration** — a mounted UI Bridge component action, or a
  *   connected element's custom action, whose declared `effect` is `write` or
  *   `destructive`, or that declares NO effect: unclassified is not safe (D3.2:
@@ -84,7 +88,9 @@ import {
   NAVIGATION_ONLY_ATTRIBUTE,
   PRESENTATION_SCOPE_UNKNOWN,
   PRESENTER_SAFETY_ATTRIBUTE,
+  PRESENT_PARAM,
   PresentationScopeProvider,
+  isLensTreePath,
   isPresenterSafetyControl,
   type CaptionKey,
   type PresentationScopeState,
@@ -144,6 +150,7 @@ export interface PresentationView {
 
 export type PresentationViolationKind =
   | "enabled-control"
+  | "presentation-dropping-link"
   | "write-registration"
   | "undeclared-registration"
   | "cost-figure"
@@ -440,8 +447,37 @@ function describeElement(el: Element): string {
     .join(" ");
 }
 
+/**
+ * The lens page `link` opens WITHOUT the presentation — this origin, a lens
+ * tree, and a URL not carrying `?present=1` — or `null` when it keeps it (or
+ * leaves the lens, where there is no presentation to keep).
+ */
+function presentationDroppedBy(link: Element): string | null {
+  const href = link.getAttribute("href");
+  if (href === null) return null;
+  const base = link.ownerDocument.baseURI;
+  let url: URL;
+  try {
+    url = new URL(href, base);
+  } catch {
+    return null;
+  }
+  if (url.origin !== new URL(base).origin) return null;
+  if (!isLensTreePath(url.pathname)) return null;
+  return url.searchParams.get(PRESENT_PARAM) === "1" ? null : url.pathname;
+}
+
 function controlViolations(root: Element): PresentationViolation[] {
   const out: PresentationViolation[] = [];
+  for (const link of root.querySelectorAll("a[href]")) {
+    const dropped = presentationDroppedBy(link);
+    if (dropped !== null) {
+      out.push({
+        kind: "presentation-dropping-link",
+        detail: `${describeElement(link)} links to the lens page ${dropped} without ?${PRESENT_PARAM}=1, so opened in a new tab it shows the operator view — build its href with usePresentationHref`,
+      });
+    }
+  }
   const marked = `[${PRESENTER_SAFETY_ATTRIBUTE}]`;
   for (const el of root.querySelectorAll(`${CONTROL_SELECTOR},${marked}`)) {
     // A safety marker naming a control the closed list does not hold claims
