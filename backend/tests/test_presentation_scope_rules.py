@@ -28,6 +28,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from structlog.testing import capture_logs
 
 from app.api.v1.endpoints import operations
 from app.models.presentation_scope import (
@@ -89,15 +90,48 @@ def test_owner_of_repo_presentation(repo: object, owner: str | None) -> None:
 def test_registered_repo_owners_are_distinct_and_sorted_presentation() -> None:
     payload = {
         "repos": [
-            {"repo": "qontinui/qontinui-web", "role": "app"},
-            {"repo": "Qontinui/qontinui-coord"},
-            {"repo": "acme-corp/site"},
-            {"repo": "no-owner"},
-            {"role": "missing repo"},
+            {"repo": "qontinui/qontinui-web", "role": "owner"},
+            {"repo": "Qontinui/qontinui-coord", "role": "owner"},
+            {"repo": "acme-corp/site", "role": "owner"},
+            {"repo": "no-owner", "role": "owner"},
+            {"role": "owner"},
         ],
         "total": 5,
     }
     assert rules.registered_repo_owners(payload) == ["acme-corp", "qontinui"]
+
+
+def test_an_observed_repository_is_not_first_party_presentation() -> None:
+    """``observer`` is one tenant auditing ANOTHER's repository read-only
+    (qontinui-coord ``pr_merge/dep_graph.rs``); its owner is that other party,
+    so it never becomes first-party by default."""
+    payload = {
+        "repos": [
+            {"repo": "qontinui/qontinui-web", "role": "owner"},
+            {"repo": "partner-a/portal", "role": "observer"},
+        ],
+        "total": 2,
+    }
+    assert rules.registered_repo_owners(payload) == ["qontinui"]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"repo": "partner-a/portal"},
+        {"repo": "partner-a/portal", "role": None},
+        {"repo": "partner-a/portal", "role": "Owner"},
+        {"repo": "partner-a/portal", "role": "admin"},
+        {"repo": "partner-a/portal", "role": ["owner"]},
+    ],
+)
+def test_a_role_that_does_not_prove_ownership_fails_closed_presentation(
+    row: dict[str, Any],
+) -> None:
+    """A missing or unknown role cannot prove the repository is the tenant's:
+    the row is skipped, so its owner is not made first-party."""
+    payload = {"repos": [{"repo": "qontinui/web", "role": "owner"}, row], "total": 2}
+    assert rules.registered_repo_owners(payload) == ["qontinui"]
 
 
 @pytest.mark.parametrize(
@@ -216,7 +250,10 @@ def coord_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, UUID | None]
 
     async def default(path: str, *, tenant_id: UUID | None = None, **_: Any) -> Any:
         calls.append((path, tenant_id))
-        return {"repos": [{"repo": "qontinui/qontinui-web"}], "total": 1}
+        return {
+            "repos": [{"repo": "qontinui/qontinui-web", "role": "owner"}],
+            "total": 1,
+        }
 
     monkeypatch.setattr(rules, "_proxy_coord_get", default)
     return calls
@@ -277,11 +314,72 @@ async def test_every_failed_read_is_a_typed_unknown_presentation(
     monkeypatch: pytest.MonkeyPatch, exc: BaseException, reason: str
 ) -> None:
     monkeypatch.setattr(rules, "_proxy_coord_get", _raiser(exc))
-    read = await rules.read_registered_repo_owners(
-        _identity((ACTIVE, "a", None)), ACTIVE
-    )
+    with capture_logs() as logs:
+        read = await rules.read_registered_repo_owners(
+            _identity((ACTIVE, "a", None)), ACTIVE
+        )
     assert read.owners is None
     assert read.unknown_reason == reason
+    # Logged, so the operator can read why a presentation withheld its titles.
+    [line] = [e for e in logs if e["log_level"] == "warning"]
+    assert line["event"] == "presentation_scope.registered_repo_owners_unknown"
+    assert line["reason"] == reason
+    assert line["tenant_id"] == str(ACTIVE)
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_logs_coords_status_and_detail_presentation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 401, a 403 ``tenant_not_resolved`` and a 500 are one reason word to
+    the client; the log keeps which it was."""
+    monkeypatch.setattr(
+        rules,
+        "_proxy_coord_get",
+        _raiser(HTTPException(status_code=403, detail="tenant_not_resolved")),
+    )
+    with capture_logs() as logs:
+        await rules.read_registered_repo_owners(_identity((ACTIVE, "a", None)), ACTIVE)
+    [line] = [e for e in logs if e["log_level"] == "warning"]
+    assert line["status_code"] == 403
+    assert line["detail"] == "tenant_not_resolved"
+
+
+@pytest.mark.asyncio
+async def test_a_long_refusal_detail_is_truncated_in_the_log_presentation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rules,
+        "_proxy_coord_get",
+        _raiser(HTTPException(status_code=500, detail="x" * 5000)),
+    )
+    with capture_logs() as logs:
+        await rules.read_registered_repo_owners(_identity((ACTIVE, "a", None)), ACTIVE)
+    [line] = [e for e in logs if e["log_level"] == "warning"]
+    assert line["detail"] == "x" * 200
+
+
+@pytest.mark.asyncio
+async def test_a_tenant_mismatch_logs_both_tenants_presentation(
+    coord_calls: list[tuple[str, UUID | None]],
+) -> None:
+    identity = _identity((ACTIVE, "a", None), (OTHER, "b", None), home=OTHER)
+    with capture_logs() as logs:
+        await rules.read_registered_repo_owners(identity, ACTIVE)
+    [line] = [e for e in logs if e["log_level"] == "warning"]
+    assert line["reason"] == "tenant_scope_mismatch"
+    assert line["tenant_id"] == str(ACTIVE)
+    assert line["coord_tenant_id"] == str(OTHER)
+
+
+@pytest.mark.asyncio
+async def test_a_successful_read_logs_nothing_presentation(
+    coord_calls: list[tuple[str, UUID | None]],
+) -> None:
+    with capture_logs() as logs:
+        await rules.read_registered_repo_owners(_identity((ACTIVE, "a", None)), ACTIVE)
+    assert [e for e in logs if e["log_level"] == "warning"] == []
 
 
 @pytest.mark.asyncio
@@ -292,10 +390,13 @@ async def test_a_list_coord_sent_malformed_is_unknown_presentation(
         return {"repos": "not a list"}
 
     monkeypatch.setattr(rules, "_proxy_coord_get", malformed)
-    read = await rules.read_registered_repo_owners(
-        _identity((ACTIVE, "a", None)), ACTIVE
-    )
+    with capture_logs() as logs:
+        read = await rules.read_registered_repo_owners(
+            _identity((ACTIVE, "a", None)), ACTIVE
+        )
     assert read == rules.OwnersRead(owners=None, unknown_reason="coord_unreadable")
+    [line] = [e for e in logs if e["log_level"] == "warning"]
+    assert line["error"] == "not a repository list"
 
 
 # ===========================================================================
