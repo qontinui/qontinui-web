@@ -13,12 +13,16 @@
  *   tree that a page module serves, proven by a test file that exists.
  *
  * Whether that test PROVES the route is not read here, and not from its
- * source: it is the run's to show (`src/test/readinessEvidence.ts`). Running
- * this file arms that requirement — the run must also run every entry's
- * proof, and in it a test that FINISHED passed must have run the page check
- * over the route's own page under a presenting lens, finding nothing — and
- * the end-of-run step fails the run otherwise. The last test below fails when
- * that step is not armed in this run.
+ * source: it is the run's to show (`src/test/readinessEvidence.ts`). The
+ * arming test below turns that requirement on for the run it runs in, by
+ * recording `ARMED_META_KEY` on itself — so it holds wherever this file lives
+ * and whatever it is named. In an armed run, every entry's proof must run too,
+ * and in it a test that FINISHED passed must have run the page check over the
+ * route's own page under a presenting lens, the last check over that render
+ * finding nothing (and no render's last check finding anything); the
+ * end-of-run step fails the run otherwise. The arming test fails when that
+ * step's reporter is not in the run, and the test after it fails when the
+ * arming record is missing.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -29,7 +33,10 @@ import {
   appPageModules,
   routeOfAppFile,
 } from "@/test/appRoutes";
-import { READINESS_PROVIDE_KEY } from "@/test/readinessEvidence";
+import {
+  ARMED_META_KEY,
+  READINESS_PROVIDE_KEY,
+} from "@/test/readinessEvidence";
 import { readyRouteTargets } from "@/test/readinessReporter";
 import {
   LENS_TREES,
@@ -86,6 +93,10 @@ function entryProblems(
 }
 
 const existsInSrc = (srcRelative: string) => existsSync(join(SRC, srcRelative));
+
+/** The test that arms the end-of-run requirement for the run it runs in. */
+const ARMING_TEST =
+  "arms the end-of-run requirement in this run, and the reporter that enforces it provided the routes it will check";
 const realPageOf = (route: string) => PAGE_MODULES.get(route) ?? null;
 
 describe("normalizePath / routeMatches", () => {
@@ -233,12 +244,23 @@ describe("every presentation-ready route is proven", () => {
     );
   });
 
-  it("is armed in this run: the end-of-run step that requires every route's evidence provided the routes it will check", () => {
+  it(ARMING_TEST, ({ task }) => {
+    // This record, on this test, is what makes the end-of-run step require
+    // every ready route's evidence in this run (readinessEvidence.ts). It is
+    // read from the run, so it moves with this file wherever the file goes.
+    task.meta[ARMED_META_KEY] = true;
     // Provided by the reporter `presentationReadiness()` adds in
     // vitest.config.ts; absent when the plugin is not in the run's config.
     expect(inject(READINESS_PROVIDE_KEY)).toEqual({
       srcDir: SRC,
       targets: readyRouteTargets(SRC),
     });
+  });
+
+  it("is armed: the run reports the arming test above with its arming record", ({
+    task,
+  }) => {
+    const arming = task.suite?.tasks.find((t) => t.name === ARMING_TEST);
+    expect(arming?.meta[ARMED_META_KEY]).toBe(true);
   });
 });

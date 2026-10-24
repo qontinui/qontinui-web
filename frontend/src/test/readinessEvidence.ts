@@ -24,40 +24,57 @@
  *    page's place is not the page (`readinessRecorder.ts`). A page portaled
  *    out of what the check read is `unread`, not presented; a view assembled
  *    from two renders, or a render that mounts a `UIBridgeProvider` of its
- *    own, is a check (b) failure (`uiBridgeBinding.ts`).
+ *    own, is a check (b) failure (`uiBridgeBinding.ts`). Each record names
+ *    the render it read (one number per render's container), so the checks
+ *    over one render can be told from another's.
  * 2. **The run decides.** When the run ends, `readinessReporter.ts` hands
- *    every test's records and final state to {@link readinessVerdict}. A route
- *    is proven only by a test that FINISHED `passed` — so not skipped at run
- *    time from wherever the skip came, not failed, and not concurrent (vitest
- *    cannot say which of the tests running at once made a check) — holding a
- *    record of the check over that route's page, presenting, with no
- *    violation, through the real UI Bridge provider's registry. Any ready
- *    route without one fails the run, with the reason.
+ *    every test's records and final state to {@link readinessVerdict}, which
+ *    reads, for each render of a route's page in each test, the LAST check
+ *    over it that saw the page presenting (read in full, or `unread`) — the
+ *    state the render settled in, so a check polled while the page loads
+ *    (`waitFor`) counts by its last attempt. A route is refused when any such
+ *    last check, in any test of the proof and however that test ended, found
+ *    a violation: that is the run's own evidence that the page shows what
+ *    presentation mode must not, and a clean check elsewhere does not
+ *    outweigh it. A render whose last such check is `unread` proves nothing
+ *    either way. Otherwise it is proven
+ *    only by a test that FINISHED `passed` — so not skipped at run time from
+ *    wherever the skip came, not failed, and not concurrent (vitest cannot
+ *    say which of the tests running at once made a check) — in which such a
+ *    last check found no violation and read the registry of the checked
+ *    render's own UI Bridge provider. Any ready route without that fails the
+ *    run, with the reason.
  *
- * **When it applies.** Whenever a run executes the readiness test
- * ({@link READINESS_TEST_MODULE}) — `npm run test`, in CI or anywhere — every
- * ready route's proof file must run in that same run and carry the evidence;
- * a proof filtered out of it is UNKNOWN, and UNKNOWN fails the run rather
- * than counting as proven. A run that does not execute the readiness test (a
- * filtered run, `-t` excluding it) claims nothing about readiness and checks
- * nothing. `presentationReadiness.test.ts` fails when the reporter is not
- * armed in its run.
+ * **When it applies.** Whenever a test of the run carrying
+ * {@link ARMED_META_KEY} — the readiness test records it on itself
+ * (`presentationReadiness.test.ts`, wherever that file lives or whatever it
+ * is named) — finishes passed or failed: then every ready route's proof file
+ * must run in that same run and carry the evidence. `npm run test`, in CI or
+ * anywhere, runs it. A proof filtered out of the run is UNKNOWN, and UNKNOWN
+ * fails the run rather than counting as proven. A run in which no test armed
+ * the requirement (a filtered run, `-t` excluding the arming test) claims
+ * nothing about readiness and checks nothing. The arming test fails when the
+ * reporter is not in its run.
  *
  * **What stays out of reach.** A proof — or a module it loads — that writes
- * the records itself, mocks the checker's own modules (this one,
- * `readinessTargets.ts`, `readinessRecorder.ts`, `reactTree.ts`,
- * `presentation.tsx`), or edits them, the reporter, `setup.ts` or the vitest
- * config: the evidence is only as honest as the code that writes it. And the
- * state the page was checked in is the proof's choice: a fixture that never
- * loads data proves the empty page, not the loaded one.
+ * the records or the arming flag itself, mocks the checker's own modules (this
+ * one, `readinessTargets.ts`, `readinessRecorder.ts`, `uiBridgeBinding.ts`,
+ * `reactTree.ts`, `presentation.tsx`), or edits them, the reporter, the
+ * readiness test, `setup.ts` or the vitest config: the evidence is only as
+ * honest as the code that writes it. And the state the page was checked in is
+ * the proof's choice: a fixture that never loads data proves the empty page,
+ * not the loaded one.
  *
  * This module is pure and imports nothing, so the vitest config can bundle it
  * for the reporter.
  */
 
-/** The `src/`-relative test module whose run turns the requirement on. */
-export const READINESS_TEST_MODULE =
-  "components/presentation/presentationReadiness.test.ts";
+/**
+ * The test-meta key that arms the requirement: written by the readiness test
+ * on itself, and only by it. A run in which a test carrying it finished
+ * passed or failed must prove every ready route.
+ */
+export const ARMED_META_KEY = "presentationReadinessArmed";
 
 /** The key the reporter provides {@link ProvidedReadiness} to every test worker under. */
 export const READINESS_PROVIDE_KEY = "presentationReadiness";
@@ -105,6 +122,11 @@ export type RegistryObservation =
 /** One run of the page check, as the check itself records it on the running test. */
 export interface PresentationCheckRecord {
   /**
+   * Which render the check read: one number per render's container, the same
+   * for every check over it; `null` for a view without a container.
+   */
+  readonly render: number | null;
+  /**
    * The ready routes whose page module's own default export was mounted in
    * the checked view's React root, rendered something, and rendered all of it
    * inside the element the check read — with a presenting lens above it.
@@ -127,6 +149,8 @@ declare module "vitest" {
   interface TaskMeta {
     /** {@link CHECKS_META_KEY}. */
     presentationChecks?: PresentationCheckRecord[];
+    /** {@link ARMED_META_KEY}. */
+    presentationReadinessArmed?: boolean;
   }
   interface ProvidedContext {
     /** {@link READINESS_PROVIDE_KEY}. */
@@ -143,6 +167,8 @@ export interface RunTest {
   readonly name: string;
   readonly state: RunTestState;
   readonly concurrent: boolean;
+  /** Whether it carries {@link ARMED_META_KEY}. */
+  readonly armed: boolean;
   readonly checks: readonly PresentationCheckRecord[];
 }
 
@@ -160,7 +186,11 @@ export interface ProvenRoute {
 }
 
 export interface ReadinessVerdict {
-  /** Whether the run executed the readiness test, and so must prove every ready route. */
+  /**
+   * Whether a test of the run armed the requirement — carries
+   * {@link ARMED_META_KEY} and finished passed or failed — so the run must
+   * prove every ready route.
+   */
   readonly enforced: boolean;
   readonly proven: readonly ProvenRoute[];
   /** One line per ready route this run does not prove, with the reason. */
@@ -209,42 +239,75 @@ function withChecks(
   return tests.find((t) => t.checks.some(matches));
 }
 
+/**
+ * The last check over one render of a route's page that saw the page in
+ * presentation mode — presented, or mounted with its output not read in full
+ * (`unread`) — and its test.
+ */
+interface FinalCheck {
+  readonly test: RunTest;
+  readonly check: PresentationCheckRecord;
+}
+
+/**
+ * For each test of `proof` and each render of `route`'s page in it, the last
+ * check over that render that saw the page presenting — read in full
+ * (`presented`) or not (`unread`): the state the render settled in. A check
+ * of the page in the operator view is not one.
+ */
+function finalChecks(proof: RunModule, route: string): FinalCheck[] {
+  const out: FinalCheck[] = [];
+  for (const test of proof.tests) {
+    const last = new Map<number | null, PresentationCheckRecord>();
+    for (const check of test.checks) {
+      if (check.presented.includes(route) || check.unread.includes(route)) {
+        last.set(check.render, check);
+      }
+    }
+    for (const check of last.values()) out.push({ test, check });
+  }
+  return out;
+}
+
+/** Why `dirty` — renders whose last check found a violation — refuse `route`. */
+function dirtyReason(dirty: readonly FinalCheck[], route: string): string {
+  const [first] = dirty;
+  if (first === undefined) return "";
+  const more = dirty.length - 1;
+  const over = first.check.presented.includes(route)
+    ? "over the page"
+    : "over a render of the page whose output it did not read in full";
+  return `the page check found ${plural(first.check.violations, "violation")} ${over} in "${first.test.name}", the last check over that render of it (the test finished ${first.test.state}) — the run's own evidence that the page shows what presentation mode must not, which a clean check elsewhere does not outweigh${
+    more > 0 ? `; ${plural(more, "more render")} of the page ended so too` : ""
+  }`;
+}
+
 /** Why no test of `proof` proves `route` — the evidence closest to a proof first. */
-function whyNotProven(proof: RunModule, route: string): string {
+function whyNotProven(
+  proof: RunModule,
+  route: string,
+  finals: readonly FinalCheck[]
+): string {
   const tests = proof.tests;
-  const proving = withChecks(tests, (c) => provesRoute(c, route));
-  if (proving !== undefined && proving.state !== "passed") {
-    return `the page check passed over the page in "${proving.name}", but that test finished ${proving.state}${
-      proving.state === "skipped"
+  const proving = finals.filter((f) => provesRoute(f.check, route));
+  const unfinished = proving.find((f) => f.test.state !== "passed");
+  if (unfinished !== undefined) {
+    return `the page check passed over the page in "${unfinished.test.name}", but that test finished ${unfinished.test.state}${
+      unfinished.test.state === "skipped"
         ? " — a skip at run time, from the test, a hook or the runner, leaves nothing proven"
         : ""
     }`;
   }
-  if (proving !== undefined) {
-    return `the page check passed over the page in "${proving.name}", a concurrent test: which of the tests running beside it made the check cannot be told, so none counts`;
+  const [concurrent] = proving;
+  if (concurrent !== undefined) {
+    return `the page check passed over the page in "${concurrent.test.name}", a concurrent test: which of the tests running beside it made the check cannot be told, so none counts`;
   }
-  const failing = withChecks(
-    tests,
-    (c) => c.presented.includes(route) && c.violations > 0
-  );
-  if (failing !== undefined) {
-    const most = Math.max(
-      ...failing.checks
-        .filter((c) => c.presented.includes(route))
-        .map((c) => c.violations)
-    );
-    return `the page check found ${plural(most, "violation")} over the page in "${failing.name}"`;
-  }
-  const unobserved = withChecks(
-    tests,
-    (c) => c.presented.includes(route) && c.registry !== "provider"
+  const unobserved = finals.find(
+    (f) => f.check.presented.includes(route) && f.check.registry !== "provider"
   );
   if (unobserved !== undefined) {
-    const how = unobserved.checks.find(
-      (c) => c.presented.includes(route) && c.registry !== "provider"
-    );
-    return `the page check ran over the page in "${unobserved.name}" seeing the UI Bridge through ${
-      REGISTRY_SEEN[how?.registry ?? "unobservable"]
+    return `the page check ran over the page in "${unobserved.test.name}" seeing the UI Bridge through ${
+      REGISTRY_SEEN[unobserved.check.registry]
     }, so check (b) never read the registry the page registers with`;
   }
   const unread = withChecks(tests, (c) => c.unread.includes(route));
@@ -262,6 +325,25 @@ function whyNotProven(proof: RunModule, route: string): string {
   return `no test in it ran the page check (${stateSummary(tests)})`;
 }
 
+/** The test of `proof` that proves `route`, or why none does (see the module doc). */
+function routeVerdict(
+  proof: RunModule,
+  route: string
+): { readonly by: string } | { readonly problem: string } {
+  const finals = finalChecks(proof, route);
+  const dirty = finals.filter((f) => f.check.violations > 0);
+  if (dirty.length > 0) return { problem: dirtyReason(dirty, route) };
+  const by = finals.find(
+    (f) =>
+      f.test.state === "passed" &&
+      !f.test.concurrent &&
+      provesRoute(f.check, route)
+  );
+  return by !== undefined
+    ? { by: by.test.name }
+    : { problem: whyNotProven(proof, route, finals) };
+}
+
 /**
  * Which ready routes the run proves, and why each other one is not proven
  * (see the module doc). `modules` are the run's test modules.
@@ -270,10 +352,11 @@ export function readinessVerdict(
   targets: readonly ReadinessTarget[],
   modules: readonly RunModule[]
 ): ReadinessVerdict {
-  const readiness = modules.find((m) => m.file === READINESS_TEST_MODULE);
-  const enforced =
-    readiness !== undefined &&
-    readiness.tests.some((t) => t.state === "passed" || t.state === "failed");
+  const enforced = modules.some((m) =>
+    m.tests.some(
+      (t) => t.armed && (t.state === "passed" || t.state === "failed")
+    )
+  );
   if (!enforced) return { enforced: false, proven: [], problems: [] };
   const proven: ProvenRoute[] = [];
   const problems: string[] = [];
@@ -292,14 +375,9 @@ export function readinessVerdict(
       );
       continue;
     }
-    const by = proof.tests.find(
-      (t) =>
-        t.state === "passed" &&
-        !t.concurrent &&
-        t.checks.some((c) => provesRoute(c, target.route))
-    );
-    if (by !== undefined) proven.push({ route: target.route, test: by.name });
-    else problems.push(`${label}: ${whyNotProven(proof, target.route)}`);
+    const verdict = routeVerdict(proof, target.route);
+    if ("by" in verdict) proven.push({ route: target.route, test: verdict.by });
+    else problems.push(`${label}: ${verdict.problem}`);
   }
   return { enforced: true, proven, problems };
 }
