@@ -136,10 +136,59 @@ describe("PresentationModeProvider — D2's order", () => {
     expect(probe()).toMatchObject({ presenting: "false", source: "url" });
   });
 
-  it("falls back to the viewer's remembered setting", () => {
+  it("opens on the viewer's remembered presentation, and makes it the tab's own choice", () => {
     viewer.setItem(PRESENTATION_MODE_STORAGE_KEY, "1");
     render(<Lens />);
-    expect(probe()).toMatchObject({ presenting: "true", source: "storage" });
+    // Resolved from the remembered setting, then latched into the tab.
+    expect(probe()).toMatchObject({ presenting: "true", source: "session" });
+    expect(session.getItem(PRESENTATION_MODE_STORAGE_KEY)).toBe("1");
+    expect(viewer.getItem(PRESENTATION_MODE_STORAGE_KEY)).toBe("1");
+  });
+
+  it("falls back to a remembered operator view without latching it", () => {
+    viewer.setItem(PRESENTATION_MODE_STORAGE_KEY, "0");
+    render(<Lens />);
+    expect(probe()).toMatchObject({ presenting: "false", source: "storage" });
+    expect(session.getItem(PRESENTATION_MODE_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe("PresentationModeProvider — another tab changing the remembered setting", () => {
+  function anotherTabWrites(value: "0" | "1") {
+    viewer.setItem(PRESENTATION_MODE_STORAGE_KEY, value);
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: PRESENTATION_MODE_STORAGE_KEY })
+      );
+    });
+  }
+
+  it("never turns a presenting tab off: the operator pressing OFF elsewhere does not reveal this one", () => {
+    viewer.setItem(PRESENTATION_MODE_STORAGE_KEY, "1");
+    render(<Lens />);
+    expect(probe()).toMatchObject({ presenting: "true" });
+
+    anotherTabWrites("0");
+    expect(probe()).toMatchObject({ presenting: "true", source: "session" });
+  });
+
+  it("does follow another tab turning presentation ON, the direction that fails closed", () => {
+    viewer.setItem(PRESENTATION_MODE_STORAGE_KEY, "0");
+    render(<Lens />);
+    expect(probe()).toMatchObject({ presenting: "false", source: "storage" });
+
+    anotherTabWrites("1");
+    expect(probe()).toMatchObject({ presenting: "true" });
+    // …and once presenting, it is this tab's own choice too.
+    anotherTabWrites("0");
+    expect(probe()).toMatchObject({ presenting: "true", source: "session" });
+  });
+
+  it("is turned off in this tab by this tab's own toggle", () => {
+    viewer.setItem(PRESENTATION_MODE_STORAGE_KEY, "1");
+    render(<Lens withToggle />);
+    fireEvent.click(screen.getByRole("button", { name: "Presentation mode" }));
+    expect(probe()).toMatchObject({ presenting: "false", source: "session" });
   });
 });
 
