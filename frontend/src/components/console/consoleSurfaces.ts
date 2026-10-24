@@ -105,6 +105,13 @@ import {
   FINDING_AUTHOR_GLYPH_RETENTIONS,
   FINDING_RETENTION_CLASS,
 } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
+// The dossier list — plan `2026-10-03-dossier-query-door-filters-sort-cursor`
+// Phase 5. Same shape as findings: a `*Status.ts` in a `_lib/` beside its route.
+import {
+  DOSSIER_ATTENTION_BY_REMEDIATION,
+  DOSSIER_AUTHOR_GLYPH_REMEDIATIONS,
+  DOSSIER_REMEDIATION_CLASS,
+} from "@/app/(app)/admin/coord/dossiers/_lib/dossierStatus";
 // The operator-touch aggregate — plan
 // `2026-08-27-operator-touch-read-and-surface` Phase C3. Same shape as
 // findings: a `*Status.ts` in a `_lib/` beside its own route.
@@ -325,6 +332,16 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: FINDING_RETENTION_CLASS,
       authorGlyphKinds: FINDING_AUTHOR_GLYPH_RETENTIONS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "dossiers (/admin/coord/dossiers)",
+    module: "app/(app)/admin/coord/dossiers/_lib/dossierStatus.ts",
+    attentionByKind: DOSSIER_ATTENTION_BY_REMEDIATION,
+    palette: {
+      badgeClass: DOSSIER_REMEDIATION_CLASS,
+      authorGlyphKinds:
+        DOSSIER_AUTHOR_GLYPH_REMEDIATIONS as ReadonlySet<string>,
     },
   },
   {
