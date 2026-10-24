@@ -157,6 +157,30 @@ const ITERATIONS: ReadonlySet<string> = new Set([
   "from",
 ]);
 
+/**
+ * The test-context fields that cannot reach `skip`. An allow-list: `task`, for
+ * one, reaches it again (`ctx.task.context.skip()`), and so may a field this
+ * check has not met.
+ */
+const SAFE_CONTEXT_FIELDS: ReadonlySet<string> = new Set([
+  "expect",
+  "onTestFinished",
+  "onTestFailed",
+  "annotate",
+  "signal",
+]);
+
+/**
+ * `null` for a context field that cannot reach `skip`; `""` for `skip` itself;
+ * else the clause saying why it may.
+ */
+function contextFieldProblem(field: string): string | null {
+  if (SAFE_CONTEXT_FIELDS.has(field)) return null;
+  return field === "skip"
+    ? ""
+    : ", which this check does not know cannot reach `skip`";
+}
+
 /** How a failure leaves a function: a throw, or the rejection of what it returns. */
 type Carrier = "throw" | "rejection";
 
@@ -611,12 +635,13 @@ export class RunReader {
         }
         const ref = outermost(id);
         const use = ref.parent;
-        const reads =
-          ts.isPropertyAccessExpression(use) && use.expression === ref;
-        if (reads && use.name.text !== "skip") continue;
-        return reads
-          ? `it reads \`${name.text}.skip\` ${at(use)}`
-          : `its context \`${name.text}\` is handed on or aliased ${at(use)}, which this check cannot follow to \`skip\``;
+        if (!(ts.isPropertyAccessExpression(use) && use.expression === ref)) {
+          return `its context \`${name.text}\` is handed on or aliased ${at(use)}, which this check cannot follow to \`skip\``;
+        }
+        const field = contextFieldProblem(use.name.text);
+        if (field !== null) {
+          return `it reads \`${name.text}.${use.name.text}\` ${at(use)}${field}`;
+        }
       }
       return null;
     }
@@ -629,8 +654,9 @@ export class RunReader {
         if (!(ts.isIdentifier(key) || ts.isStringLiteral(key))) {
           return `it reads a computed field of its context ${at(element)}`;
         }
-        if (key.text === "skip") {
-          return `it takes \`skip\` from its context ${at(element)}`;
+        const field = contextFieldProblem(key.text);
+        if (field !== null) {
+          return `it takes \`${key.text}\` from its context ${at(element)}${field}`;
         }
       }
       return null;

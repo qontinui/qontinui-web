@@ -150,6 +150,18 @@ const PROOFS: ReadonlyArray<readonly [string, string]> = [
       ),
   ],
   [
+    "asserts after a local function whose own return does not end the test",
+    PAGE +
+      inTest(
+        `const first = (rows: string[]) => {\n  return rows[0];\n};\n${RENDER}\nexpect(first(["a"])).toBe("a");\nexpectPresentationSafe(view);`
+      ),
+  ],
+  [
+    "asserts in an it.each whose handler takes its row, not a context",
+    PAGE +
+      `it.each(["a"])("is safe with %s", (row) => {\n  expect(row).toBe("a");\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+  ],
+  [
     "asserts through a function called on the spot",
     PAGE +
       inTest(`(() => {\n  ${RENDER}\n  expectPresentationSafe(view);\n})();`),
@@ -166,7 +178,7 @@ const PROOFS: ReadonlyArray<readonly [string, string]> = [
   [
     "asserts with its context's own expect",
     PAGE +
-      `it("is safe", ({ expect, task }) => {\n  ${RENDER}\n  expect(findPresentationViolations(view)).toEqual([]);\n});`,
+      `it("is safe", ({ expect, onTestFinished }) => {\n  ${RENDER}\n  expect(findPresentationViolations(view)).toEqual([]);\n});`,
   ],
   [
     "asserts in a test whose context it reads only for other fields",
@@ -572,6 +584,14 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
     "is handed to `waitFor` (line 5), which this file may have replaced: it mocks Testing Library",
   ],
   [
+    "its only assertion handed to waitFor as its second argument",
+    PAGE +
+      inAsyncTest(
+        `${RENDER}\nawait waitFor(noop, () => expectPresentationSafe(view));`
+      ),
+    "is handed to `waitFor` (line 4), which this check does not read as running it",
+  ],
+  [
     "its only assertion in an act nobody awaits",
     PAGE + inTest(`${RENDER}\nact(() => expectPresentationSafe(view));`),
     "the `act` running it (line 4) is neither awaited nor returned",
@@ -792,6 +812,18 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
     "can skip itself at run time: it takes `skip` from its context",
   ],
   [
+    "its only assertion in a test that reads its context's task",
+    PAGE +
+      `it("is safe", (ctx) => {\n  ctx.task.context.skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+    "it reads `ctx.task` (line 3), which this check does not know cannot reach `skip`",
+  ],
+  [
+    "its only assertion in a test that takes task from its context",
+    PAGE +
+      `it("is safe", ({ task }) => {\n  task.context.skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+    "it takes `task` from its context (line 2), which this check does not know cannot reach `skip`",
+  ],
+  [
     "its only assertion in a test that hands its context on",
     PAGE +
       `it("is safe", (ctx) => {\n  skipUnlessComposed(ctx);\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
@@ -800,13 +832,13 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
   [
     "its only assertion in a test that gathers its context in a rest parameter",
     PAGE +
-      `it("is safe", (...args) => {\n  args[0].skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      `it("is safe", (...args) => {\n  args.at(0).skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
     "its context is gathered by a rest parameter",
   ],
   [
     "its only assertion in a test that gathers its context's remaining fields",
     PAGE +
-      `it("is safe", ({ task, ...rest }) => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      `it("is safe", ({ expect, ...rest }) => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
     "it gathers its context's remaining fields",
   ],
   [
