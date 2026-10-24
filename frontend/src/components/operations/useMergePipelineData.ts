@@ -46,8 +46,9 @@
 //      stretches the poll gap rather than piling on.
 //   3. Hidden tabs don't poll — a backgrounded dashboard left open for
 //      hours is pure load with nobody reading it.
-//   4. No client retries — every read in the hot batch passes
-//      `COORD_DASHBOARD_POLL_OPTIONS` (plan
+//   4. No client retries — every read in the hot batch is a
+//      `lib/api/operations/prMerge` client function sending `maxRetries: 0`,
+//      the `COORD_DASHBOARD_POLL_OPTIONS` policy (plan
 //      `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5),
 //      so a 504 costs one request and the next batch is the retry. Rule 1 is
 //      this hook's own single-flight, which predates `useSingleFlight`.
@@ -61,25 +62,31 @@
 //   - `onSuggestionAction`'s `fetchSuggestions` re-read runs once per
 //     operator click, right after that click's POST, so the acted-on row
 //     leaves the list at once. It is operator-triggered and bounded by the
-//     clicks (the action button is busy while it runs), and it passes
-//     `COORD_DASHBOARD_POLL_OPTIONS` like the batch read of the same route.
+//     clicks (the action button is busy while it runs), and it sends
+//     `maxRetries: 0` like the batch read of the same route (it IS that read).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { coordEventsWsUrl } from "@/lib/api/operations/coordEvents";
+import {
+  actOnMergeSuggestion,
+  fetchBlastRadiusBlocks,
+  fetchMergeEconomics,
+  fetchMergeQueue,
+  fetchMergeSuggestions,
+  fetchOpenPrsWithMergedCount,
+  fetchPrsIncludingMerged,
+} from "@/lib/api/operations/prMerge";
 import { isMergedPr } from "./prPipeline";
 import { normalizeMergeEconomics } from "./mergeEconomics";
 import type {
   BlastRadiusBlock,
-  BlastRadiusBlocksResponse,
   MergeEconomics,
-  PrListResponse,
   PrRow,
   ProposalDetail,
-  QueueResponse,
-  SuggestionListResponse,
   SuggestionRow,
 } from "./mergeTypes";
 
@@ -247,8 +254,8 @@ export interface MergePipelineData {
     body?: Record<string, unknown>
   ) => void;
   /**
-   * Debounced manual refresh. Per-row operator actions (e.g. the draft-state
-   * toggle) call it after a successful mutation to pull the pipeline forward,
+   * Debounced manual refresh. Per-row operator actions (e.g. the hold
+   * control) call it after a successful mutation to pull the pipeline forward,
    * so the row follows the twin once the reconciling webhook lands. Stable
    * identity — safe to pass through the row tree without re-binding children.
    */
@@ -310,12 +317,7 @@ export function useMergePipelineData(
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/merge/queue`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as QueueResponse | ProposalDetail[];
+      const body = await fetchMergeQueue();
       const list = Array.isArray(body) ? body : (body.proposals ?? []);
       if (!cleanedUpRef.current) {
         setProposals(list);
@@ -323,7 +325,7 @@ export function useMergePipelineData(
       }
     } catch (err) {
       if (!cleanedUpRef.current) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(statusOnlyErrorText(err, String(err)));
       }
     }
   }, []);
@@ -344,22 +346,7 @@ export function useMergePipelineData(
   // the read that took the API down on 2026-07-21.
   const fetchPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) {
-            setPrs([]);
-            setPrsError(null);
-            setPrsLoaded(true);
-          }
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as PrListResponse | PrRow[];
+      const body = await fetchOpenPrsWithMergedCount(MERGED_LOOKBACK_HOURS);
       const list = Array.isArray(body) ? body : (body.prs ?? []);
       // Absent means UNKNOWN — a coord too old to answer, or one whose count
       // failed and was omitted rather than failing the listing. That resets to
@@ -376,6 +363,14 @@ export function useMergePipelineData(
         setPrsLoaded(true);
       }
     } catch (err) {
+      if (httpStatusOf(err) === 404) {
+        if (!cleanedUpRef.current) {
+          setPrs([]);
+          setPrsError(null);
+          setPrsLoaded(true);
+        }
+        return;
+      }
       // Keep the last known-good list. This endpoint is slow enough on a
       // loaded fleet to intermittently 500/504 at the gateway (~30s); wiping
       // to [] on each miss made the whole pipeline blink empty mid-triage,
@@ -387,7 +382,7 @@ export function useMergePipelineData(
       // current, genuinely short pipeline.
       if (!cleanedUpRef.current) {
         setPrs((prev) => prev ?? []);
-        setPrsError(err instanceof Error ? err.message : String(err));
+        setPrsError(statusOnlyErrorText(err, String(err)));
       }
     }
   }, []);
@@ -398,26 +393,13 @@ export function useMergePipelineData(
   // for why this must never ride the hot poll.
   const fetchMergedPrs = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`,
-        // No client retry. The client retries every 5xx up to 3 times, and each
-        // attempt is a full coord query (14-21s for a 48h window): a coord that
-        // is already struggling would be asked the same expensive question four
-        // times per poll. The next poll IS the retry, on the cold cadence this
-        // read is meant to have.
-        { maxRetries: 0 }
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) {
-            setMergedPrs([]);
-            setMergedError(null);
-          }
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as PrListResponse | PrRow[];
+      // No client retry (`maxRetries: 0`, inside the client function). The
+      // client retries every 5xx up to 3 times, and each attempt is a full
+      // coord query (14-21s for a 48h window): a coord that is already
+      // struggling would be asked the same expensive question four times per
+      // poll. The next poll IS the retry, on the cold cadence this read is
+      // meant to have.
+      const body = await fetchPrsIncludingMerged(MERGED_LOOKBACK_HOURS);
       const list = Array.isArray(body) ? body : (body.prs ?? []);
       // Every row this endpoint adds beyond the open list has LANDED —
       // coord's merged query requires `merge_commit_sha IS NOT NULL`, and the
@@ -440,6 +422,13 @@ export function useMergePipelineData(
         setMergedError(null);
       }
     } catch (err) {
+      if (httpStatusOf(err) === 404) {
+        if (!cleanedUpRef.current) {
+          setMergedPrs([]);
+          setMergedError(null);
+        }
+        return;
+      }
       // Keep whatever is held, INCLUDING null. Coercing null to [] here made a
       // failed first read look like "nothing landed": the Merged label fell
       // from coord's cheap count to 0. Null keeps that label honest, and it
@@ -448,7 +437,7 @@ export function useMergePipelineData(
       // Kept rows are STALE and a never-loaded set is INCOMPLETE; either way
       // the consumer needs to be told, not left to infer it from an absence.
       if (!cleanedUpRef.current) {
-        setMergedError(err instanceof Error ? err.message : String(err));
+        setMergedError(statusOnlyErrorText(err, String(err)));
       }
     }
   }, []);
@@ -462,23 +451,16 @@ export function useMergePipelineData(
   // `{ repos: {...} }` wrapper, or an array of `{ repo, ...economics }`.
   const fetchEconomics = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/merge-economics`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setEconomicsByRepo({});
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
       // One shared normalizer (`mergeEconomics.ts`): coord's no-repo answer
       // is `{as_of, repos: [ {repo, ...} ]}`, which the inline version here
       // used to key by array INDEX.
-      const map = normalizeMergeEconomics(await res.json()).byRepo;
+      const map = normalizeMergeEconomics(await fetchMergeEconomics()).byRepo;
       if (!cleanedUpRef.current) setEconomicsByRepo(map);
     } catch (err) {
+      if (httpStatusOf(err) === 404) {
+        if (!cleanedUpRef.current) setEconomicsByRepo({});
+        return;
+      }
       log.warn("fetchEconomics failed", err);
       if (!cleanedUpRef.current) setEconomicsByRepo({});
     }
@@ -486,23 +468,14 @@ export function useMergePipelineData(
 
   const fetchSuggestions = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/suggestions`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setSuggestions([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as
-        | SuggestionListResponse
-        | SuggestionRow[];
+      const body = await fetchMergeSuggestions();
       const list = Array.isArray(body) ? body : (body.suggestions ?? []);
       if (!cleanedUpRef.current) setSuggestions(list);
     } catch (err) {
+      if (httpStatusOf(err) === 404) {
+        if (!cleanedUpRef.current) setSuggestions([]);
+        return;
+      }
       log.warn("fetchSuggestions failed", err);
       if (!cleanedUpRef.current) setSuggestions([]);
     }
@@ -510,24 +483,7 @@ export function useMergePipelineData(
 
   const fetchGateBlocks = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) {
-            setGateBlocks([]);
-            setGateTotalBlocks(0);
-            setGateTotalEvals(null);
-          }
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as
-        | BlastRadiusBlocksResponse
-        | BlastRadiusBlock[];
+      const body = await fetchBlastRadiusBlocks();
       const list = Array.isArray(body) ? body : (body.blocks ?? []);
       const total = Array.isArray(body)
         ? body.length
@@ -545,6 +501,14 @@ export function useMergePipelineData(
         setGateTotalEvals(evals);
       }
     } catch (err) {
+      if (httpStatusOf(err) === 404) {
+        if (!cleanedUpRef.current) {
+          setGateBlocks([]);
+          setGateTotalBlocks(0);
+          setGateTotalEvals(null);
+        }
+        return;
+      }
       log.warn("fetchGateBlocks failed", err);
       if (!cleanedUpRef.current) {
         setGateBlocks([]);
@@ -562,18 +526,16 @@ export function useMergePipelineData(
     ) => {
       setSuggestionBusy(alertId);
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/suggestions/${alertId}/${action}`,
-          {
-            method: "POST",
-            body: JSON.stringify(body ?? {}),
-          }
-        );
-        if (!res.ok) {
-          const text = await res.text();
-          log.warn(`suggestion ${action} failed`, res.status, text);
+        try {
+          await actOnMergeSuggestion(alertId, action, body ?? {});
+        } catch (err) {
+          // A status rejection is the server's answer; anything else (a
+          // network failure) falls through to the `threw` arm below.
+          const status = httpStatusOf(err);
+          if (status === null) throw err;
+          log.warn(`suggestion ${action} failed`, status, httpBodyOf(err));
           if (!cleanedUpRef.current)
-            setError(`Suggestion ${action} failed: HTTP ${res.status}`);
+            setError(`Suggestion ${action} failed: HTTP ${status}`);
           return;
         }
         await fetchSuggestions();
@@ -951,7 +913,7 @@ export function useMergePipelineData(
     suggestionBusy,
     onSuggestionAction,
     // Debounced manual refresh — used by per-row operator actions (e.g. the
-    // draft-state toggle) to pull the pipeline forward after a mutation. Stable
+    // hold control) to pull the pipeline forward after a mutation. Stable
     // identity (reads only refs), so passing it down never re-binds children.
     refetch: scheduleRefetch,
   };

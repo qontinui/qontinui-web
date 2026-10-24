@@ -9,9 +9,14 @@ fails for reasons that have nothing to do with the page under test: run
 exercised. It is a plain file scan — stdlib only, no git — which is why the
 runner lane can carry it unchanged.
 
-Three lanes invoke it, and the gate's own docstring names all three:
+Four lanes invoke it, and the gate's own docstring names all four:
 
 * ``.github/workflows/forbid-fixed-sleeps-in-e2e.yml`` — the PR gate.
+* ``.github/workflows/web-guards.yml``, step "forbid-fixed-sleeps-in-e2e: Count fixed sleeps in frontend/tests/e2e against the allowlist" — the
+  consolidated one-job guard lane (plan
+  ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``),
+  running the same command beside the per-guard workflow until a later
+  phase of that plan deletes the per-guard file.
 * ``.qontinui/ci.toml``, step ``forbid-fixed-sleeps-in-e2e`` — the
   runner-as-CI-node lane. It invokes this same script rather than mirroring a
   command string, which is the whole point of the extraction: the two lanes
@@ -19,7 +24,7 @@ Three lanes invoke it, and the gate's own docstring names all three:
 * ``.pre-commit-config.yaml`` — the shift-left lane, so the ratchet catches an
   added sleep before the push rather than after it.
 
-This module asserts that roster is EXACTLY those three, in both directions. The
+This module asserts that roster is EXACTLY those four, in both directions. The
 missing-lane arm is the quieter of the two: a gate that stops being invoked
 looks exactly like a gate that passes.
 
@@ -65,6 +70,7 @@ _SCRIPT_REF = "scripts/ci/check_fixed_sleeps_in_e2e.py"
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/forbid-fixed-sleeps-in-e2e.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }
@@ -90,7 +96,7 @@ def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
 def test_the_scripts_docstring_names_every_lane() -> None:
     """The roster in prose must be the roster in the tree.
 
-    The gate opens by naming its three lanes. That list is what a reader trusts
+    The gate opens by naming its four lanes. That list is what a reader trusts
     instead of grepping, so a lane added without touching it leaves the script
     confidently describing a shape the repo no longer has.
     """

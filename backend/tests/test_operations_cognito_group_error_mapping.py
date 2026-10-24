@@ -43,6 +43,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.services import cognito_admin
+from tests._ops_patch import patch_ops
 
 API_PREFIX = "/api/v1/operations"
 _GROUPS_URL = f"{API_PREFIX}/coord/cognito/groups"
@@ -120,8 +121,8 @@ def _no_coord_mappings():
     touch AWS. Every test here is about what happens AT AWS, so that read is
     stubbed with the all-zero verdict — the guards themselves are pinned in
     ``test_operations_cognito_group_delete_guards.py``."""
-    with patch(
-        "app.api.v1.endpoints.operations._coord_group_blast_radius",
+    with patch_ops(
+        "_coord_group_blast_radius",
         AsyncMock(return_value=_radius()),
     ):
         yield
@@ -225,8 +226,8 @@ class TestMalformedPathGroupNameIs400:
         """A name Cognito could never hold is not worth a coord round-trip,
         and a 502 ``mapping_check_unavailable`` would be a confusing answer
         to a typo."""
-        with patch(
-            "app.api.v1.endpoints.operations._coord_group_blast_radius",
+        with patch_ops(
+            "_coord_group_blast_radius",
             AsyncMock(side_effect=AssertionError("coord must not be read")),
         ):
             resp = client.delete(f"{_GROUPS_URL}/{_BAD_NAME}", headers=_AUTH)

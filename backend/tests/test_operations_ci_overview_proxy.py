@@ -28,6 +28,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 API_PREFIX = "/api/v1/operations"
 OVERVIEW_PATH = f"{API_PREFIX}/ci/overview"
 STATUS_PATH = f"{API_PREFIX}/ci-status"
@@ -176,8 +178,8 @@ class TestCiOverviewProxy:
         """A resolved tenant triggers bearer-forwarding — coord's route is
         ``TenantId``-authed, so an anonymous forward would 401."""
         sentinel = {"Authorization": "Bearer operator-token"}
-        with patch(
-            "app.api.v1.endpoints.operations._tenant_headers",
+        with patch_ops(
+            "_tenant_headers",
             return_value=sentinel,
         ) as tenant_headers:
             _, instance = _get(

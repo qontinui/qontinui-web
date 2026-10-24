@@ -31,6 +31,12 @@ on:
       # PR that drops a prefix must run the guard that catches it. The module
       # asserts this entry appears in BOTH filters.
       - 'frontend/src/services/http-client.ts'
+      # The image-slot specs tests/test_image_slot_specs.py validates (plan
+      # 2026-10-13-image-generation-and-visual-judgment, Phase 14): the
+      # frontend's TypeScript binding is declarations only, so this module is
+      # the ONE gate that refuses a malformed spec, and a spec-only PR must run
+      # it. The module asserts this entry appears in BOTH filters.
+      - 'frontend/image-slots/**'
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
@@ -42,6 +48,15 @@ on:
       # the frontend entries above and the nightly note below describe; the
       # repo already applies this fix in web-boundary-lint.yml.
       - 'scripts/ci/**'
+      # The consolidated guard job (plan
+      # 2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work).
+      # The gate_lane_roster tests (tests/test_*_gate.py,
+      # tests/test_coord_column_drop_guard.py) and
+      # tests/test_ruff_version_parity_gate.py read its `run:` steps as a lane
+      # of every scripts/ci/ gate it invokes. Without this entry a PR that
+      # edits ONLY web-guards.yml -- e.g. drops a gate step -- would not run
+      # the roster tests that exist to catch exactly that.
+      - '.github/workflows/web-guards.yml'
       # The OTHER workflows `backend/tests/test_ci_timeout_marker.py` reads.
       # That module asserts, against the workflow FILES, that every marker
       # carries a job budget matching its job and an EXTERNAL_CANCEL_NOTE
@@ -89,7 +104,10 @@ on:
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'frontend/src/services/http-client.ts'
+      - 'frontend/image-slots/**'
       - 'scripts/ci/**'
+      # See the pull_request filter above (gate lane rosters).
+      - '.github/workflows/web-guards.yml'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
       # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,
@@ -148,8 +166,8 @@ env:
 #
 # `cancel-in-progress` is an EXPRESSION, not `true`: only a `pull_request` run
 # is ever superseded. A run on a `push` or `schedule` lane is never cancelled
-# by this block, though note that a still-PENDING run in a group IS reaped when
-# a newer run enters it -- GitHub keeps at most one pending run per group.
+# by this block, and since 2026-10-05 it is not reaped while PENDING either:
+# the per-run suffix below makes it the only member of its group.
 #
 # NOTE this workflow has no `push` lane on the DEFAULT branch, and that is what
 # makes a group safe here. A top-level group on a workflow that runs on
@@ -157,9 +175,21 @@ env:
 # blocking set from soft (relaxable by the optimism gate) to a hard block --
 # see `merge_safety_from_observation`, whose soft-blocking arm requires those
 # runs to share NO concurrency group.
+#
+# PR-SCOPED SUPERSESSION, re-run- and push-safe (shared hosted-job cap relief,
+# 2026-10-05; pattern: qontinui-claude-config#1475). Only a FIRST-attempt
+# `pull_request` run uses the bare per-PR group below and cancels within it.
+# Every other run -- push (incl. merge-candidate*/**, coord's candidate CI),
+# schedule, workflow_dispatch, and EVERY re-run (run_attempt > 1) -- appends
+# `-run-<id>-<attempt>`, so it is the sole member of its group: never
+# cancelled, never reaped while pending, and a re-run of an older head can no
+# longer cancel the current head's run. The existing literal prefix is kept
+# because coord models a template by interpolating only `github.event_name` /
+# `github.ref` and collapsing every other expression (the suffix included) to
+# "" -- so coord's modelled group is byte-identical to before the suffix.
 concurrency:
-  group: backend-ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: backend-ci-${{ github.event_name }}-${{ github.ref }}${{ !(github.event_name == 'pull_request' && github.run_attempt == 1) && format('-run-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
 # repo; `actions: read` is for the job-timeout explainer's
@@ -175,7 +205,11 @@ jobs:
     # p50 1.35 / p90 1.47 / max 1.52 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
     name: Lint & Format Check
-    # ubuntu-latest, NOT [self-hosted, qontinui].
+    # ubuntu-latest, NOT [self-hosted, public-pool]. (The `qontinui` label is
+    # not an option at all: this repo is PUBLIC, and qontinui-claude-config's
+    # scripts/lint-public-repo-runner-exposure.py refuses `qontinui` on a
+    # public repo -- a public job's only self-hosted target is `public-pool`,
+    # run as a separate unix user from private-repo jobs.)
     #
     # This job was pinned to the self-hosted pool because those runners had
     # Python 3.12 pre-installed plus a persistent pip cache, which avoided the
@@ -198,9 +232,10 @@ jobs:
     # and was green on the run where this job broke. So this restores a
     # configuration already proven in this file rather than inventing one.
     #
-    # Re-pinning to [self-hosted, qontinui] is fine once the pool image ships a
-    # 3.12 that setup-python can resolve (or once the runner tool cache is
-    # seeded with one). Re-verify against a real run before doing so; the
+    # Re-pinning to [self-hosted, public-pool] (never `qontinui`, which the
+    # public-repo runner-exposure lint refuses here) is fine once the pool
+    # image ships a 3.12 that setup-python can resolve (or once the runner
+    # tool cache is seeded with one). Re-verify against a real run before doing so; the
     # comment that used to live here asserted "pre-installed" as a standing
     # fact, and that assertion is exactly what went stale.
     runs-on: ubuntu-latest
@@ -223,7 +258,9 @@ jobs:
       # workspace is fresh per run and the clones cannot be stale. It is kept
       # deliberately: it costs nothing on a clean runner and is what makes the
       # step correct again the moment this job is re-pinned to the self-hosted
-      # pool, which DOES reuse $GITHUB_WORKSPACE/.. between runs.
+      # pool ([self-hosted, public-pool] -- `qontinui` is refused on this public
+      # repo by the public-repo runner-exposure lint), which DOES reuse
+      # $GITHUB_WORKSPACE/.. between runs.
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
@@ -604,7 +641,6 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
-            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
@@ -855,6 +891,18 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
+        # `continue-on-error`, not only `fail_ci_if_error: false` below: that
+        # input covers an UPLOAD the uploader reports as failed, but NOT the
+        # action crashing before it uploads. Measured on the 2026-10-05 nightly
+        # (run 37280089560): Codecov's endpoint refused the TLS handshake
+        # (`write EPROTO ... SSL alert number 40`), the action threw, and all
+        # six shards concluded `failure` with every test passing -- which reds
+        # the `Run Tests` aggregate and turns the `shard-headroom` alarm to
+        # `unknown` (a failed shard is not a measurement). This upload is
+        # coverage telemetry, never a verdict on the suite, so it must not be
+        # able to fail the job. Pinned by
+        # backend/tests/test_codecov_upload_cannot_red_a_shard.py.
+        continue-on-error: true
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: ./backend/coverage.xml
@@ -862,8 +910,8 @@ jobs:
           # the flag stays `backend` and the union is the suite's coverage. The
           # NAME is shard-scoped so the six uploads are distinguishable in
           # Codecov's own UI rather than six rows called the same thing.
-          # `fail_ci_if_error: false` (below, unchanged) is why a merge surprise
-          # here cannot red the lane -- confirm the delta on the first run.
+          # `fail_ci_if_error: false` (below), together with `continue-on-error`
+          # above, is why a merge surprise here cannot red the lane.
           flags: backend
           name: backend-coverage-shard-${{ matrix.shard }}
           fail_ci_if_error: false
@@ -949,7 +997,7 @@ jobs:
           # declared at this job's `timeout-minutes` -- now the PER-SHARD budget.
           JOB_TIMEOUT_MINUTES: '45'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow's `concurrency:` block sets `cancel-in-progress` from the expression `github.event_name == 'pull_request'`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here - on a pull_request run a newer push to the same ref supersedes it; on any other lane a RUNNING job is never auto-superseded, though a run still PENDING in the group is reaped when a newer one enters it, and a manual cancel or coord's merge train reaping a merge-candidate/* ref are the remaining external causes
+            this workflow's `concurrency:` block sets `cancel-in-progress` from the expression `github.event_name == 'pull_request' && github.run_attempt == 1`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here - on a first-attempt pull_request run a newer push to the same PR supersedes it (and a reopen supersedes the same-head run it re-does); every other run (push, schedule, dispatch, any re-run) is alone in a per-run group and is never auto-superseded or reaped while pending, so a manual cancel or coord's merge train reaping a merge-candidate/* ref are the remaining external causes
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,

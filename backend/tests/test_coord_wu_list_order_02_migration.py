@@ -100,7 +100,6 @@ What this file requires, and what it does when a requirement is missing
 from __future__ import annotations
 
 import contextlib
-import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -114,6 +113,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     run_alembic,
 )
@@ -255,14 +255,9 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
     source = (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
         encoding="utf-8"
     )
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
-        source,
-        re.MULTILINE,
-    )
-    assert match is not None, f"no down_revision found in {_REVISION_FILENAME}"
-    assert match.group("parent") == _PARENT_REVISION_ID, (
-        f"{_REVISION_FILENAME} declares down_revision={match.group('parent')!r} "
+    declared = declared_parent_revision_id(source, _REVISION_FILENAME)
+    assert declared == _PARENT_REVISION_ID, (
+        f"{_REVISION_FILENAME} declares down_revision={declared!r} "
         f"but this test pins _PARENT_REVISION_ID={_PARENT_REVISION_ID!r}. "
         "Re-point both together."
     )

@@ -164,7 +164,11 @@ const FWD_QUERY = "?Q";
 /**
  * For each exported `GET`/`POST`/… of a route module: every PATH the verb can
  * forward to — one per alternative — for each `fetch(url, …)` in the verb or
- * a same-file function it calls. A URL is normalised as:
+ * a same-file function it calls, and for each
+ * `proxyToBackend(request, backendPath, …)` (`@/lib/server/proxyToBackend`,
+ * which fetches `${backendBaseOrResponse()}${backendPath}` plus, per its
+ * `query` option, the request's own query string), whose `backendPath` is
+ * read as a URL with no base. A URL is normalised as:
  *   - a leading `${base}` is dropped ONLY when it is the backend origin: a
  *     `process.env.*` read (optionally `||`/`??` fallbacks), directly or
  *     through the never-reassigned const holding it (`BACKEND_URL`,
@@ -391,6 +395,13 @@ function forwardedPaths(sf: ts.SourceFile): Map<string, string[]> {
           n.arguments[0]
         )
           out.push(...paths(n.arguments[0], scope, true));
+        if (
+          ts.isCallExpression(n) &&
+          ts.isIdentifier(n.expression) &&
+          n.expression.text === "proxyToBackend" &&
+          n.arguments[1]
+        )
+          out.push(...paths(n.arguments[1], scope, false));
         ts.forEachChild(n, fetches);
       };
       fetches(scope);
@@ -408,40 +419,6 @@ function ownPathPattern(template: string): RegExp {
     .join(FWD_PARAM.replace(/[{}]/g, "\\$&"));
   return new RegExp(`^${body}(${FWD_QUERY.replace("?", "\\?")})?$`);
 }
-
-/**
- * Proxy verbs that can forward to a path other than their own, why that
- * branch never fires for the URL the handler serves, and EXACTLY the paths
- * each may forward to — a new branch must be justified here, not absorbed.
- */
-const BRANCHING_FORWARDERS: ReadonlyMap<
-  string,
-  { reason: string; paths: readonly string[] }
-> = new Map([
-  [
-    "app/api/v1/execution/runs/[runId]/route.ts PUT",
-    {
-      reason:
-        "appends `/complete` only when the request pathname ends in `/complete`; this route's pathname is `/runs/{runId}`",
-      paths: [
-        `/api/v1/execution/runs/${FWD_PARAM}`,
-        `/api/v1/execution/runs/${FWD_PARAM}/complete`,
-      ],
-    },
-  ],
-  [
-    "app/api/v1/users/me/automation-streaming/route.ts POST",
-    {
-      reason:
-        "appends `/toggle` / `/reset-limit` only when request.url contains them; those URLs are their own route files",
-      paths: [
-        "/api/v1/users/me/automation-streaming",
-        "/api/v1/users/me/automation-streaming/toggle",
-        "/api/v1/users/me/automation-streaming/reset-limit",
-      ],
-    },
-  ],
-]);
 
 describe("route walker: the real tree against the OpenAPI snapshot", () => {
   const { sites } = tree;
@@ -516,14 +493,10 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
     // Parsed, per verb: every path its `fetch(...)` calls can forward to
     // (`forwardedPaths`) must END at the handler's own path, a query-string
     // suffix aside. Comments are not expressions, so a doc comment cannot
-    // satisfy it; `${ownUrl}/other` forwards to `/other`.
-    //
-    // Two verbs branch, and are classified by what they forward for the URL
-    // they SERVE — see `BRANCHING_FORWARDERS`: there the own path must be
-    // one of the alternatives, and the entry must really be needed.
+    // satisfy it; `${ownUrl}/other` forwards to `/other`. No verb may branch
+    // to a second path: a sub-path is served by its own route file.
     const proxies = tree.nextRoutes.filter((r) => r.backendProxy);
     expect(proxies.length).toBeGreaterThan(0);
-    const branching = new Set<string>();
     for (const r of proxies) {
       const own = ownPathPattern(r.template);
       const source = readFileSync(path.join(SRC_ROOT, r.file), "utf8");
@@ -533,28 +506,16 @@ describe("route walker: the real tree against the OpenAPI snapshot", () => {
       for (const verb of r.methods) {
         const alts = byVerb.get(verb) ?? [];
         const label = `${r.file} ${verb}`;
-        const others = alts.filter((a) => !own.test(a));
         expect(
           alts.some((a) => own.test(a)),
           `${label}: ${alts.join(" | ")}`
         ).toBe(true);
-        const pinned = BRANCHING_FORWARDERS.get(label);
-        if (pinned) {
-          branching.add(label);
-          expect([...alts].sort(), `${label} forwards to`).toEqual(
-            [...pinned.paths].sort()
-          );
-          expect(others.length, `${label} no longer branches`).toBeGreaterThan(
-            0
-          );
-        } else {
-          expect(others, `${label} forwards elsewhere`).toEqual([]);
-        }
+        expect(
+          alts.filter((a) => !own.test(a)),
+          `${label} forwards elsewhere`
+        ).toEqual([]);
       }
     }
-    expect([...branching].sort()).toEqual(
-      [...BRANCHING_FORWARDERS.keys()].sort()
-    );
     for (const file of NEXT_API_V1_SERVERS)
       expect(tree.nextRoutes.map((r) => r.file)).toContain(file);
   });
@@ -594,8 +555,13 @@ function scanBackendPathParams(): {
   for (const rel of readdirSync(apiRoot, { recursive: true }) as string[]) {
     if (!rel.endsWith(".py")) continue;
     const src = readFileSync(path.join(apiRoot, rel), "utf8");
-    const mod = path.basename(rel, ".py");
-    const flat = path.dirname(rel) === path.join("v1", "endpoints");
+    // A package's routes live in its `__init__.py`, and `api.py` mounts them
+    // under the PACKAGE name (`operations.router`), so name the module by its
+    // directory and test that directory, not the file's own, for flatness.
+    const pkg = path.basename(rel) === "__init__.py";
+    const modDir = pkg ? path.dirname(rel) : rel;
+    const mod = pkg ? path.basename(modDir) : path.basename(rel, ".py");
+    const flat = path.dirname(modDir) === path.join("v1", "endpoints");
     // Sub-routers mounted on a module router: `router.include_router(sub)`.
     const local = new Map<string, string[]>();
     const prefixesOf = (router: string): string[] | undefined => {
@@ -1618,6 +1584,19 @@ describe("S2: the pass-through check itself", () => {
         return fetch(backendUrl, {});
       }`)
     ).toBe(true);
+  });
+
+  it("a `proxyToBackend` backendPath is the forwarded path", () => {
+    expect(
+      verbPaths(`export async function GET(r: Request, id: string) {
+        return proxyToBackend(r, \`/api/v1/own/\${id}\`, OPTIONS);
+      }`)
+    ).toEqual([`/api/v1/own/${"{p}"}`]);
+    expect(
+      onlyOwn(`export async function GET(r: Request, id: string) {
+        return proxyToBackend(r, \`/api/v1/other/\${id}\`, OPTIONS);
+      }`)
+    ).toBe(false);
   });
 });
 

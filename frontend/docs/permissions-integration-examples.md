@@ -7,7 +7,6 @@
 ```tsx
 import React from "react";
 import { useProjectPermissions } from "@/hooks/useProjectPermissions";
-import { PermissionGate } from "@/components/collaboration/PermissionGate";
 import type { Project } from "@/lib/schemas";
 
 interface ProjectEditorProps {
@@ -42,9 +41,7 @@ export function ProjectEditor({ project }: ProjectEditorProps) {
         <WorkflowEditor project={project} />
 
         {/* Comments panel - visible if can comment */}
-        <PermissionGate project={project} requiredPermission="comment">
-          <CommentPanel projectId={project.id} />
-        </PermissionGate>
+        {canComment && <CommentPanel projectId={project.id} />}
       </main>
 
       <aside>
@@ -58,13 +55,13 @@ export function ProjectEditor({ project }: ProjectEditorProps) {
         )}
 
         {/* Admin tools - visible if can admin */}
-        <PermissionGate project={project} requiredPermission="admin">
+        {canAdmin && (
           <section>
             <h2>Admin Tools</h2>
             <ShareProjectButton />
             <ManageCollaborators />
           </section>
-        </PermissionGate>
+        )}
 
         {/* Owner tools - visible if owner */}
         {isOwner && (
@@ -84,45 +81,55 @@ export function ProjectEditor({ project }: ProjectEditorProps) {
 
 ```tsx
 import React from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { useProjects } from "@/hooks/use-projects";
-import { getPermissionLabel } from "@/lib/permissions";
-import { PermissionGate } from "@/components/collaboration/PermissionGate";
+import type { User } from "@/lib/schemas";
+import {
+  getPermissionLabel,
+  getPermissionLevel,
+  hasPermission,
+} from "@/lib/permissions";
 
 export function ProjectList() {
+  const { user: currentUser } = useAuth();
   const { data: projects, isLoading } = useProjects();
 
   if (isLoading) return <LoadingSpinner />;
 
+  // getPermissionLevel takes the schema User from @/lib/schemas; useAuth
+  // returns the @/types/auth-types User, so narrow it the way
+  // useProjectPermissions does.
+  const user = currentUser as User | null;
+
   return (
     <div className="project-list">
-      {projects?.map((project) => (
-        <div key={project.id} className="project-card">
-          <h3>{project.name}</h3>
-          <p>{project.description}</p>
+      {projects?.map((project) => {
+        // "owner" when project.owner_id matches the user, otherwise the
+        // project's permission_level, otherwise "none" (also "none" signed out)
+        const level = getPermissionLevel(project, user);
+        return (
+          <div key={project.id} className="project-card">
+            <h3>{project.name}</h3>
+            <p>{project.description}</p>
 
-          {/* Show permission level */}
-          <span className="permission-badge">
-            {getPermissionLabel(project.permission_level || "view")}
-          </span>
+            {/* Show permission level */}
+            <span className="permission-badge">
+              {getPermissionLabel(level)}
+            </span>
 
-          {/* Show actions based on permission */}
-          <div className="actions">
-            <button>View</button>
+            {/* Show actions based on permission */}
+            <div className="actions">
+              {hasPermission("view", level) && <button>View</button>}
 
-            <PermissionGate project={project} requiredPermission="edit">
-              <button>Edit</button>
-            </PermissionGate>
+              {hasPermission("edit", level) && <button>Edit</button>}
 
-            <PermissionGate project={project} requiredPermission="admin">
-              <button>Share</button>
-            </PermissionGate>
+              {hasPermission("admin", level) && <button>Share</button>}
 
-            <PermissionGate project={project} requiredPermission="owner">
-              <button>Delete</button>
-            </PermissionGate>
+              {hasPermission("owner", level) && <button>Delete</button>}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -133,9 +140,8 @@ export function ProjectList() {
 ```tsx
 import React from "react";
 import { useCollaboration } from "@/contexts/collaboration-context";
-import { PermissionGate } from "@/components/collaboration/PermissionGate";
 
-export function CollaborationSidebar({ project }) {
+export function CollaborationSidebar() {
   const { activeUsers, comments, canComment, canAdmin, addComment } =
     useCollaboration();
 
@@ -157,12 +163,12 @@ export function CollaborationSidebar({ project }) {
       )}
 
       {/* Collaboration settings - visible if can admin */}
-      <PermissionGate project={project} requiredPermission="admin">
+      {canAdmin && (
         <section>
           <h2>Collaboration Settings</h2>
           <CollaborationSettings />
         </section>
-      </PermissionGate>
+      )}
     </aside>
   );
 }
@@ -301,7 +307,6 @@ export function PermissionManagement({ project, collaborators }) {
 ```tsx
 import React from "react";
 import { useProjectPermissions } from "@/hooks/useProjectPermissions";
-import { PermissionGate } from "@/components/collaboration/PermissionGate";
 
 export function WorkflowBuilder({ project, workflow }) {
   const { canEdit, canComment, isLoading } = useProjectPermissions(project);
@@ -316,13 +321,7 @@ export function WorkflowBuilder({ project, workflow }) {
       <WorkflowCanvas workflow={workflow} readOnly={!canEdit} />
 
       {/* Editing toolbar - only if can edit */}
-      <PermissionGate
-        project={project}
-        requiredPermission="edit"
-        fallback={<ReadOnlyToolbar />}
-      >
-        <EditingToolbar />
-      </PermissionGate>
+      {canEdit ? <EditingToolbar /> : <ReadOnlyToolbar />}
 
       {/* Properties panel */}
       <PropertiesPanel workflow={workflow} readOnly={!canEdit} />

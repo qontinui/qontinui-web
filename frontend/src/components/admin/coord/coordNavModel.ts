@@ -10,19 +10,34 @@
  * The groups are persona-shaped (developer / merge maintainer / fleet
  * operator), carried over unchanged from the console's own dropdown nav:
  *
- *   Pipeline · Pull Requests · Gates · Notifications   ← direct
+ *   Pipeline · Pull Requests · Gates · Notifications · Action items   ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
+ *             Operator Touches /
+ *             Verification /
  *             Agents / Agent Commands / Agent Skills / Prompt Log /
  *             History / Lands
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
- *             Policy Edit Review
- *   Dev Ops ▸ Overview / CI / Trees° / Spawn° / Runner Drain° / Test Targets° /
- *             Migrations° / Deploys° / Releases° / Git Ops° / Federation° /
- *             Memory° / Onboarding° / Onboarding Status°
- *   Access ▸  Members / Agent Registry                  (° = operator-only)
+ *             Policy Edit Review / Taste Inbox
+ *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Trees° / Launch session° /
+ *             Runner Drain° / Test Targets° / Migrations° / Deploys° /
+ *             Releases° / Git Ops° / Federation° / Memory° / Onboarding° /
+ *             Onboarding Status°
+ *   Access ▸  Members / Agent Registry
+ *
+ *   (° = operator-only; † = coord tenant admin of the active tenant, the same
+ *   gate as the page's proxies)
+ *
+ * `Spawns` (every spawn coord was asked to place, where it went and how it
+ * ended) and `Launch session` (the launcher at `/admin/coord/spawn`) are two
+ * leaves that must never share the word "Spawn": the launcher was labelled
+ * "Spawn" until the ledger page arrived (plan
+ * `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+ * Phase 5), and one label naming two pages is the defect served policy
+ * `ux-priorities` `a-label-names-one-referent-and-a-quantity-names-its-unit`
+ * forbids.
  *
  * There is no Alerts tab. The raw `coord.alerts` list is agents' work (plan
  * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
@@ -39,6 +54,7 @@ import {
   Anchor,
   BadgeCheck,
   Bell,
+  BellRing,
   BookOpen,
   Bot,
   Boxes,
@@ -46,6 +62,7 @@ import {
   CornerDownRight,
   Cpu,
   FileText,
+  Files,
   Gauge,
   Gavel,
   GitBranch,
@@ -53,8 +70,10 @@ import {
   GitMerge,
   GitPullRequest,
   Hammer,
+  Hand,
   HardDrive,
   History as HistoryIcon,
+  Images,
   Inbox,
   KeyRound,
   Layers,
@@ -67,14 +86,17 @@ import {
   Package,
   Plug,
   Puzzle,
+  RotateCcw,
   Rocket,
   Scale,
   ScrollText,
+  SearchCheck,
   Server,
   ShieldCheck,
   SlidersHorizontal,
   SquareTerminal,
   Stethoscope,
+  Timer,
   UserCog,
   Workflow,
 } from "lucide-react";
@@ -183,6 +205,17 @@ export const DIRECT_TABS: NavLeaf[] = [
     icon: Bell,
     testId: "coord-nav-notifications",
   },
+  {
+    // Fifth direct tab, beside Notifications and for the opposite reason:
+    // notifications are what agents DID, action items are what the operator
+    // OWES (plan `2026-10-12-operator-action-items-pushed-to-the-phone`). An
+    // owed to-do buried two clicks deep is the failure the feature exists to
+    // prevent, and the page is the fallback when a push did not land.
+    href: "/admin/coord/action-items",
+    label: "Action items",
+    icon: BellRing,
+    testId: "coord-nav-action-items",
+  },
 ];
 
 export const GROUPS: NavGroup[] = [
@@ -218,14 +251,27 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-work-units",
       },
       {
-        // Sits beside Plans deliberately: Plans is coord's work units, this is
-        // the prompt/plan CORPUS those units are authored from. Distinct path
-        // (not /plans/library) so the Plans item's startsWith active-match
-        // doesn't double-highlight — same reasoning as the Onboarding pair.
-        href: "/admin/coord/plan-library",
-        label: "Plan Library",
+        // The plan library's two policy dials (`plan_capture`,
+        // `citation_scope_backfill_write`). Its browsing page folded into
+        // Plans (plan `2026-09-19-plan-library-cannot-answer-what-to-work-on-next`
+        // Phase 1) and `/admin/coord/plan-library` now redirects there, so the
+        // leaf names the one page the old route still owns. Distinct path (not
+        // /plans/settings) so the Plans item's startsWith active-match doesn't
+        // double-highlight — same reasoning as the Onboarding pair.
+        href: "/admin/coord/plan-library/settings",
+        label: "Plan Library Settings",
         icon: Library,
         testId: "coord-nav-plan-library",
+      },
+      {
+        // Every captured artifact KIND — prompts, findings reports, handoffs
+        // and the rest. Plans reads `kind = 'plan'` only, so without this leaf
+        // the other kinds would have no browsable surface at all. Sibling
+        // path of the settings page; neither prefixes the other.
+        href: "/admin/coord/plan-library/artifacts",
+        label: "Artifact Library",
+        icon: Files,
+        testId: "coord-nav-plan-library-artifacts",
       },
       // Phase 4 of `2026-09-20-the-operator-plans-page-reads-the-wrong-store`.
       // Three purpose-built plan-library joins had shipped with tests, an
@@ -276,10 +322,44 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-findings",
       },
       {
+        // Sits after Questions and Findings deliberately: Questions is where a
+        // single interruption is ANSWERED; this is the aggregate over every
+        // one of them — which classes of interruption reach the operator, and
+        // whether the operator is the constraint. Strategic and read-only, so
+        // it is not a second question queue (plan
+        // `2026-08-27-operator-touch-read-and-surface` Phase C3).
+        href: "/admin/coord/operator-touches",
+        label: "Operator Touches",
+        icon: Hand,
+        testId: "coord-nav-operator-touches",
+      },
+      {
+        // Beside Findings, because a refutation IS a finding: this page is the
+        // drill-down behind the overview's "Can I trust 'done'?" tile — trust
+        // calibration and independent-verification coverage over one shipped
+        // population, with their unknowns, the checker lane and a 12-week
+        // series. Plan
+        // `2026-09-20-trust-calibration-and-independent-verification-coverage-are-measured-continuously`,
+        // Phase 5.
+        href: "/admin/coord/verification",
+        label: "Verification",
+        icon: SearchCheck,
+        testId: "coord-nav-verification",
+      },
+      {
         href: "/admin/coord/agents",
         label: "Agents",
         icon: ScrollText,
         testId: "coord-nav-agents",
+      },
+      {
+        // Closed sessions whose work was never declared finished, fleet-wide,
+        // with Resume / Dismiss and the tenant's automatic-resume switch. Plan
+        // `2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed`.
+        href: "/admin/coord/unfinished",
+        label: "Unfinished Sessions",
+        icon: RotateCcw,
+        testId: "coord-nav-unfinished",
       },
       {
         // Sits beside Agents deliberately: Agents is the per-agent registry,
@@ -443,6 +523,19 @@ export const GROUPS: NavGroup[] = [
         icon: Gavel,
         testId: "coord-nav-prompt-document-proposals",
       },
+      {
+        // The taste inbox (plan `2026-10-13-image-generation-and-visual-judgment`
+        // Phase 23): the operator's pairwise image labels, from which the
+        // taste twin learns what "better" means for this tenant's imagery.
+        // Intent rather than Work: it declares the tenant's taste — what the
+        // factory should build toward — the way the prompt documents above
+        // declare its direction in prose. Member-visible; label writes gate
+        // on coord-tenant admin in the backend and on `can_label` in the page.
+        href: "/admin/coord/taste",
+        label: "Taste Inbox",
+        icon: Images,
+        testId: "coord-nav-taste",
+      },
     ],
   },
   {
@@ -492,6 +585,21 @@ export const GROUPS: NavGroup[] = [
         coordAdminOnly: true,
       },
       {
+        // Plan `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-
+        // arbitration` Phase 5: every spawn coord was asked to place — where
+        // it went, how long it waited, how it ended — and the per-device
+        // breakdown. Beside Computers because it reports spawns PER device,
+        // and `coordAdminOnly` for the same reason as Computers: its three
+        // proxies (`/operations/spawns…`) are `require_coord_tenant_admin`
+        // (the rows name each spawn's devices, account and session), and the
+        // menu uses that same gate.
+        href: "/admin/coord/spawns",
+        label: "Spawns",
+        icon: Timer,
+        testId: "coord-nav-spawns",
+        coordAdminOnly: true,
+      },
+      {
         href: "/admin/coord/trees",
         label: "Trees",
         icon: Boxes,
@@ -499,8 +607,13 @@ export const GROUPS: NavGroup[] = [
         operatorOnly: true,
       },
       {
+        // The launcher: start a session on a plan or a free prompt. Labelled
+        // "Launch session", not "Spawn", so it never shares a word with the
+        // `Spawns` ledger leaf above (see the module doc). The route and the
+        // testId keep their names — the testId is frozen (Playwright's
+        // `admin-coord-spawn.spec.ts` asserts `coord-nav-spawn-active`).
         href: "/admin/coord/spawn",
-        label: "Spawn",
+        label: "Launch session",
         icon: Rocket,
         testId: "coord-nav-spawn",
         operatorOnly: true,
@@ -511,8 +624,8 @@ export const GROUPS: NavGroup[] = [
         // runner, watch its restart readiness, and wind down the sessions in
         // the way. Dev Ops rather than a sixth session console — it links to
         // `/sessions?device=` for history instead of reimplementing it. Beside
-        // Spawn because the two are the operator's two levers on a runner:
-        // put work on it, and get it quiet enough to rebuild.
+        // Launch session because the two are the operator's two levers on a
+        // runner: put work on it, and get it quiet enough to rebuild.
         href: "/admin/coord/runners",
         // Not "Runners": the app sidebar's top-level Runners entry is
         // `/runners` (online devices, history, tokens). This page is the
@@ -624,9 +737,21 @@ export const GROUPS: NavGroup[] = [
         // Per-tenant switches: transcript sync (the session-output ingest
         // consent gate coord enforces; plan
         // `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls`)
-        // and the `command_safety_rewrite` fleet-policy dial runners read at
+        // the `command_safety_rewrite` fleet-policy dial runners read at
         // spawn (plan
-        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`).
+        // `2026-10-03-runner-sessions-stop-on-builtin-command-safety-prompts`),
+        // the `permission_prompt_capture` dial deciding whether those sessions
+        // record their permission prompts as coord findings (plan
+        // `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`),
+        // the `permission_auto_accept` dial deciding whether runners accept
+        // the tool permission prompts those sessions raise (plan
+        // `2026-10-23-runner-sessions-stop-at-permission-dialogs-so-accept-them-by-default-with-a-tenant-switch`),
+        // the `account_selection_mode` dial runners force-apply unless the
+        // machine is pinned (plan
+        // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),
+        // and the `image_generation` dial Studio is to read before each image
+        // request (recorded, not yet enforced), with per-repo overrides (plan
+        // `2026-10-13-image-generation-and-visual-judgment`).
         href: "/admin/coord/tenant-policy",
         label: "Tenant Policy",
         icon: ShieldCheck,

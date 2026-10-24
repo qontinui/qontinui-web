@@ -5,24 +5,14 @@
  * would go install an App that is already installed.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { absoluteTime } from "@/components/console/time";
-
-const fetchMock = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: {
-    fetch: (...args: unknown[]) => fetchMock(...args),
-    get: vi.fn(),
-  },
-}));
-
+import type { PendingInstallationResponse } from "@/lib/api/operations/prMergeOnboarding";
 import {
   classifyPendingInstallation,
   describePendingInstallation,
   describePendingInstallationFailure,
-  fetchPendingInstallation,
   formatRepoCount,
-  type PendingInstallationResponse,
 } from "./onboarding-pending";
 
 const RECEIVED = "2026-09-05T10:11:12Z";
@@ -133,36 +123,16 @@ describe("describePendingInstallationFailure", () => {
   });
 });
 
-describe("fetchPendingInstallation", () => {
-  function jsonResponse(body: unknown, status = 200): Response {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  it("sends exactly one key under coord's own query-param name", async () => {
-    fetchMock.mockReset();
-    // A fresh Response per call — a body can only be read once.
-    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(PENDING)));
-
-    await fetchPendingInstallation({ account_login: "portofino-pizzeria" });
-    let url = new URL(String(fetchMock.mock.calls[0][0]), "https://x.test");
-    expect(url.pathname).toMatch(/\/pr-merge\/onboarding\/pending-installation$/);
-    expect(url.searchParams.get("account_login")).toBe("portofino-pizzeria");
-    expect(url.searchParams.has("installation_id")).toBe(false);
-
-    await fetchPendingInstallation({ installation_id: 143833618 });
-    url = new URL(String(fetchMock.mock.calls[1][0]), "https://x.test");
-    expect(url.searchParams.get("installation_id")).toBe("143833618");
-    expect(url.searchParams.has("account_login")).toBe(false);
-  });
-
-  it("throws on a non-2xx, naming the status, so callers fold it into UNKNOWN", async () => {
-    fetchMock.mockReset();
-    fetchMock.mockResolvedValue(jsonResponse({ detail: "coord is not reachable" }, 502));
-    await expect(
-      fetchPendingInstallation({ account_login: "acme" })
-    ).rejects.toThrow(/HTTP 502/);
+describe("describePendingInstallationFailure (client rejections)", () => {
+  it("words a client status rejection by its status alone, as the check always has", () => {
+    const v = describePendingInstallationFailure(
+      new Error(
+        'GET /api/v1/operations/pr-merge/onboarding/pending-installation?account_login=acme failed: 502 - {"detail":"coord is not reachable"}'
+      )
+    );
+    expect(v.kind).toBe("unknown");
+    expect(v.message).toBe(
+      "couldn't check with coord (pending-installation check failed: HTTP 502)"
+    );
   });
 });

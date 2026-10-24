@@ -1,0 +1,318 @@
+{
+  "computed_at": "2026-09-30T10:00:00Z",
+  "as_of": null,
+  "roster_source": {
+    "repo": "qontinui/qontinui-dev-notes",
+    "path": "steering/autonomy-domains.toml",
+    "sha": "0123456789abcdef0123456789abcdef01234567",
+    "read_at": "2026-09-30T10:00:00Z"
+  },
+  "population": {
+    "units_n": 120,
+    "excluded_shepherd_n": 4,
+    "restamp_burst_minutes_n": 0
+  },
+  "unattributed_units_n": 12,
+  "as_of_scope": {
+    "historical": [],
+    "as_of_now": []
+  },
+  "roster": {
+    "domains": [
+      {
+        "name": "ux",
+        "areas": [
+          "ui-bridge"
+        ],
+        "spec": "domain_spec/ui-bridge"
+      },
+      {
+        "name": "operations",
+        "areas": [
+          "fleet-health"
+        ],
+        "spec": "domain_spec/fleet-health"
+      }
+    ],
+    "shared_areas": [
+      "coord-mcp"
+    ],
+    "compare": {
+      "numerator": "operations",
+      "denominator": "ux",
+      "source": "file_order"
+    }
+  },
+  "roster_error": null,
+  "roster_error_detail": null,
+  "shared": {
+    "areas": [
+      "coord-mcp"
+    ],
+    "cost": {
+      "work_units": {
+        "value": 6,
+        "coverage_n": 108,
+        "population_n": 120,
+        "basis": "units charged to this bucket by metadata.area",
+        "by_status_class": {
+          "shipped": 6,
+          "in_flight": 0,
+          "not_started": 0
+        }
+      },
+      "wall_clock_secs": {
+        "value": 36000,
+        "coverage_n": 6,
+        "population_n": 6,
+        "basis": "sum of (first_shipped_at - first_in_progress_at)",
+        "excluded_restamp_n": 0
+      },
+      "prs": {
+        "value": 6,
+        "coverage_n": 6,
+        "population_n": 6,
+        "basis": "distinct landed (repo, pr_number) citations"
+      },
+      "sessions": {
+        "value": 5,
+        "coverage_n": 6,
+        "population_n": 6,
+        "basis": "distinct agent_id in coord.agent_worktrees by work_unit_id"
+      },
+      "sessions_trailer": {
+        "value": null,
+        "coverage_n": 0,
+        "population_n": 6,
+        "basis": "Session-Id commit trailers: no producer",
+        "reason": "no_producer"
+      },
+      "operator_touches": {
+        "value": 1,
+        "coverage_n": 30,
+        "population_n": 40,
+        "basis": "coord.operator_touches rows by work_unit_id"
+      },
+      "tokens": {
+        "value": null,
+        "coverage_n": 0,
+        "population_n": 6,
+        "basis": "per-unit token spend: no producer",
+        "reason": "no_producer"
+      }
+    },
+    "shared_unassigned_n": 6,
+    "units": [
+      {
+        "slug": "2026-09-01-shared-twin",
+        "area": "coord-mcp",
+        "first_consumer": null,
+        "reason": "no_consumer_record"
+      }
+    ]
+  },
+  "unmapped_areas": [
+    {
+      "area": "plan-library-ui",
+      "count": 3
+    }
+  ],
+  "comparison_reason": null,
+  "domains": [
+    {
+      "name": "ux",
+      "areas": [
+        "ui-bridge"
+      ],
+      "spec": "domain_spec/ui-bridge",
+      "stage_reached": null,
+      "stage_reason": "no_attainment_claims",
+      "cost": {
+        "work_units": {
+          "value": 9,
+          "coverage_n": 40,
+          "population_n": 120,
+          "basis": "units charged to this bucket by metadata.area",
+          "by_status_class": {
+            "shipped": 9,
+            "in_flight": 0,
+            "not_started": 0
+          }
+        },
+        "wall_clock_secs": {
+          "value": 30000,
+          "coverage_n": 9,
+          "population_n": 9,
+          "basis": "sum of (first_shipped_at - first_in_progress_at)",
+          "excluded_restamp_n": 0
+        },
+        "prs": {
+          "value": 10,
+          "coverage_n": 9,
+          "population_n": 9,
+          "basis": "distinct landed (repo, pr_number) citations"
+        },
+        "sessions": {
+          "value": 7,
+          "coverage_n": 9,
+          "population_n": 9,
+          "basis": "distinct agent_id in coord.agent_worktrees by work_unit_id"
+        },
+        "sessions_trailer": {
+          "value": null,
+          "coverage_n": 0,
+          "population_n": 9,
+          "basis": "Session-Id commit trailers: no producer",
+          "reason": "no_producer"
+        },
+        "operator_touches": {
+          "value": null,
+          "coverage_n": 0,
+          "population_n": 0,
+          "basis": "coord.operator_touches rows by work_unit_id",
+          "reason": "store_empty"
+        },
+        "tokens": {
+          "value": null,
+          "coverage_n": 0,
+          "population_n": 9,
+          "basis": "per-unit token spend: no producer",
+          "reason": "no_producer"
+        }
+      }
+    },
+    {
+      "name": "operations",
+      "areas": [
+        "fleet-health"
+      ],
+      "spec": "domain_spec/fleet-health",
+      "stage_reached": null,
+      "stage_reason": "no_attainment_claims",
+      "cost": {
+        "work_units": {
+          "value": 5,
+          "coverage_n": 40,
+          "population_n": 120,
+          "basis": "units charged to this bucket by metadata.area",
+          "by_status_class": {
+            "shipped": 5,
+            "in_flight": 0,
+            "not_started": 0
+          }
+        },
+        "wall_clock_secs": {
+          "value": 18000,
+          "coverage_n": 5,
+          "population_n": 5,
+          "basis": "sum of (first_shipped_at - first_in_progress_at)",
+          "excluded_restamp_n": 0
+        },
+        "prs": {
+          "value": 6,
+          "coverage_n": 5,
+          "population_n": 5,
+          "basis": "distinct landed (repo, pr_number) citations"
+        },
+        "sessions": {
+          "value": 4,
+          "coverage_n": 5,
+          "population_n": 5,
+          "basis": "distinct agent_id in coord.agent_worktrees by work_unit_id"
+        },
+        "sessions_trailer": {
+          "value": null,
+          "coverage_n": 0,
+          "population_n": 5,
+          "basis": "Session-Id commit trailers: no producer",
+          "reason": "no_producer"
+        },
+        "operator_touches": {
+          "value": null,
+          "coverage_n": 0,
+          "population_n": 0,
+          "basis": "coord.operator_touches rows by work_unit_id",
+          "reason": "store_empty"
+        },
+        "tokens": {
+          "value": null,
+          "coverage_n": 0,
+          "population_n": 5,
+          "basis": "per-unit token spend: no producer",
+          "reason": "no_producer"
+        }
+      }
+    }
+  ],
+  "comparison": {
+    "numerator": "operations",
+    "denominator": "ux",
+    "source": "file_order",
+    "marginal_basis": "marginal = domain-specific cost: shared units are charged to no domain until a per-unit first-consumer record exists (shared.shared_unassigned_n)",
+    "coverage_floor": 0.6,
+    "compared_stage": null,
+    "ratios_informational": true,
+    "dimensions": {
+      "work_units": {
+        "R": null,
+        "reason": "coverage",
+        "numerator_value": 5,
+        "denominator_value": 9,
+        "numerator_coverage": 0.333333,
+        "denominator_coverage": 0.333333
+      },
+      "wall_clock_secs": {
+        "R": null,
+        "reason": "coverage",
+        "numerator_value": 18000,
+        "denominator_value": 30000,
+        "numerator_coverage": 1.0,
+        "denominator_coverage": 1.0
+      },
+      "prs": {
+        "R": 0.6,
+        "reason": null,
+        "numerator_value": 6,
+        "denominator_value": 10,
+        "numerator_coverage": 1.0,
+        "denominator_coverage": 1.0
+      },
+      "sessions": {
+        "R": 0.571429,
+        "reason": null,
+        "numerator_value": 4,
+        "denominator_value": 7,
+        "numerator_coverage": 1.0,
+        "denominator_coverage": 1.0
+      },
+      "sessions_trailer": {
+        "R": null,
+        "reason": "value_unknown",
+        "numerator_value": null,
+        "denominator_value": null,
+        "numerator_coverage": 0.0,
+        "denominator_coverage": 0.0
+      },
+      "operator_touches": {
+        "R": null,
+        "reason": "value_unknown",
+        "numerator_value": null,
+        "denominator_value": null,
+        "numerator_coverage": null,
+        "denominator_coverage": null
+      },
+      "tokens": {
+        "R": null,
+        "reason": "value_unknown",
+        "numerator_value": null,
+        "denominator_value": null,
+        "numerator_coverage": 0.0,
+        "denominator_coverage": 0.0
+      }
+    },
+    "agreement": null,
+    "agreement_reason": "no_attribution_agreement_record",
+    "verdict": "UNFALSIFIABLE_AS_MEASURED",
+    "verdict_reason": "no_common_attained_stage"
+  }
+}

@@ -10,13 +10,18 @@ fresh checkout can lose a lockfile the build reads. ``ec9fae1a`` un-ignored
 from ruff for long enough that ``e59a14ec`` had to pay off the lint debt; the
 hand-written negation list that fixed it was already missing an entry in the
 block it was copied from. This gate is what makes the invariant hold without
-anyone remembering it. Three lanes invoke it:
+anyone remembering it. Four lanes invoke it:
 
 * ``.github/workflows/gitignore-tracked-files.yml``, step "Scan for
   tracked-but-ignored files" — the PR gate. It carries no ``paths:`` filter on
   purpose: the pair (rules, index) also breaks when a file is ADDED under an
   existing rule, and that commit touches neither ``.gitignore`` nor the
   workflow, so a path-scoped gate would sit out the very change that breaks it.
+* ``.github/workflows/web-guards.yml``, step "gitignore-tracked-files: Scan for tracked-but-ignored files" — the
+  consolidated one-job guard lane (plan
+  ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``),
+  running the same command beside the per-guard workflow until a later
+  phase of that plan deletes the per-guard file.
 * ``.qontinui/ci.toml``, step ``gitignore-tracked-files`` — the
   runner-as-CI-node lane, invoking the same script rather than mirroring a
   command string, so the two cannot drift.
@@ -25,7 +30,7 @@ anyone remembering it. Three lanes invoke it:
   afterwards. ``always_run`` with ``pass_filenames: false``, for the same
   reason the workflow has no ``paths:`` filter.
 
-This module asserts that roster is EXACTLY those three, in both directions. The
+This module asserts that roster is EXACTLY those four, in both directions. The
 missing-lane arm matters as much as the extra-lane one: this gate is cheap
 (two ``git ls-files`` calls) and quiet, so a lane that silently stopped running
 would look exactly like a lane that keeps passing.
@@ -66,6 +71,7 @@ _SCRIPT_REF = "scripts/ci/check_tracked_ignored.py"
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/gitignore-tracked-files.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }
@@ -92,7 +98,7 @@ def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
 def test_the_scripts_docstring_names_every_lane() -> None:
     """The roster in prose must be the roster in the tree.
 
-    The gate opens by naming its three lanes, and the workflow header repeats
+    The gate opens by naming its four lanes, and the workflow header repeats
     them. That prose is what a reader trusts instead of grepping, so a lane
     added without touching it leaves the script describing a shape the repo no
     longer has.

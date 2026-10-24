@@ -2,7 +2,7 @@
 
 import { useCallback, RefObject } from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
-import { WorkflowDocumentationService } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentationService } from "@/services/workflow-documentation";
 
 export function useEditorActions(
   content: string,
@@ -95,7 +95,7 @@ export function useEditorActions(
     },
     complexityMetrics: () => {
       const docService = WorkflowDocumentationService.getInstance();
-      const metrics = docService.generateDependenciesList(workflow);
+      const metrics = docService.generateComplexityMetrics(workflow);
       insertAtCursor(`\n${metrics}\n`);
     },
     dependencies: () => {

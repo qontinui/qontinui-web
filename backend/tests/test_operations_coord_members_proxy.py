@@ -28,6 +28,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.middleware.error_handler import http_exception_handler
 from app.middleware.rate_limit import rate_limit_exceeded_handler, user_limiter
+from tests._ops_patch import patch_ops
 
 
 def _build_test_app(
@@ -132,9 +133,7 @@ def member_notice():
     composer = MagicMock()
     composer.send = send
     factory = MagicMock(return_value=composer)
-    with patch(
-        "app.api.v1.endpoints.operations._member_added_notice_composer", factory
-    ):
+    with patch_ops("_member_added_notice_composer", factory):
         yield SimpleNamespace(send=send, factory=factory)
 
 
@@ -156,7 +155,7 @@ def member_prior_access():
     check.
     """
     probe = AsyncMock(return_value=False)
-    with patch("app.api.v1.endpoints.operations._member_had_prior_access", probe):
+    with patch_ops("_member_had_prior_access", probe):
         yield probe
 
 
@@ -1049,7 +1048,7 @@ class TestMemberAddedNotice:
         WHOSE — otherwise the record cannot be acted on."""
         member_notice.send.return_value = False
 
-        with patch("app.api.v1.endpoints.operations.logger") as log:
+        with patch_ops("logger") as log:
             self._add_confirmed()
 
         errors = [c for c in log.error.call_args_list if c.args]
@@ -1174,7 +1173,7 @@ class TestMemberAddedNotice:
 
         member_notice.send.side_effect = _slow_send
 
-        with patch("app.api.v1.endpoints.operations.logger") as log:
+        with patch_ops("logger") as log:
 
             def _info(event, *_a, **_k):
                 seen.append("log:" + event)
@@ -1485,7 +1484,6 @@ class TestTenantMemberAddIsRateLimited:
 
     TENANT = uuid4()
     AUTH = {"Authorization": "Bearer operator-one"}
-    ROUTE_KEY = "app.api.v1.endpoints.operations.post_coord_tenant_member"
 
     def _client(self) -> TestClient:
         return TestClient(_build_test_app(server_tenant=self.TENANT))
@@ -1552,7 +1550,11 @@ class TestTenantMemberAddIsRateLimited:
         with two different limits to reason about."""
         from app.api.v1.endpoints import operations
 
-        limits = user_limiter._route_limits[self.ROUTE_KEY]
+        # slowapi keys a route's limits on ``<module>.<name>`` of the decorated
+        # function; derived from the function so the key follows it if the
+        # operations module is split into a package.
+        route = operations.post_coord_tenant_member
+        limits = user_limiter._route_limits[f"{route.__module__}.{route.__name__}"]
 
         assert [limit.scope for limit in limits] == ["coord-tenant-member-add"]
         assert operations._TENANT_MEMBER_ADD_RATE_LIMIT == "30 per minute"
@@ -1627,8 +1629,8 @@ def _identity_request(active_tenant: str | None) -> MagicMock:
 
 
 def _patch_identity():
-    return patch(
-        "app.api.v1.endpoints.operations.get_coord_identity",
+    return patch_ops(
+        "get_coord_identity",
         AsyncMock(return_value=_coord_identity()),
     )
 

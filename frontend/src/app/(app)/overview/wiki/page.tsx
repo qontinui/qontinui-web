@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { LoadFailure } from "@/components/overview/LoadFailure";
 import { useResourceList } from "@/components/overview/editing/useResource";
 import { useCanEdit } from "@/components/overview/editing/permissions";
+import { MirrorsRepoChip } from "../_components/DocumentProvenance";
 import { alphabeticalIndex, pageHref, type PageRecord } from "../_lib/pages";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
 import { NewPageForm } from "../_components/NewPageForm";
@@ -123,7 +124,11 @@ export default function WikiPage() {
                     data-ui-bridge-id={`overview.wiki.result-${page.slug}`}
                   >
                     {page.title}
-                  </Link>
+                  </Link>{" "}
+                  <MirrorsRepoChip
+                    page={page}
+                    uiBridgeId={`overview.wiki.result-${page.slug}.mirrors`}
+                  />
                   {page.excerpt && (
                     <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
                       {page.excerpt}
@@ -188,7 +193,11 @@ export default function WikiPage() {
                             data-ui-bridge-id={`overview.wiki.page-${page.slug}`}
                           >
                             {page.title}
-                          </Link>
+                          </Link>{" "}
+                          <MirrorsRepoChip
+                            page={page}
+                            uiBridgeId={`overview.wiki.page-${page.slug}.mirrors`}
+                          />
                           {page.excerpt && (
                             <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">
                               {page.excerpt}

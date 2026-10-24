@@ -9,6 +9,11 @@
 
 import type { Runner } from "@qontinui/shared-types";
 import type { DeviceCredentialDark } from "./coordCredentialStatus";
+import type {
+  RunnerCapabilityRecord,
+  RunnerReportsMeta,
+  RunnerWedgeIncident,
+} from "@/lib/api/operations/coordFleet";
 
 export interface ClaudeSessionInfo {
   pid: number;
@@ -770,6 +775,24 @@ export type CoordHealthJoin =
        * decision is made.
        */
       credential_dark?: DeviceCredentialDark | null;
+      /**
+       * What only the RUNNER can see — its wedge incidents, its capability
+       * verdicts, and their provenance — carried through verbatim from
+       * coord's fleet-health row (plan
+       * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+       * Phase 5). `null`/absent is UNKNOWN, never "none"; `MachineCard`
+       * renders all three through `resolveRunnerReports`, which is the only
+       * place that decision is made.
+       */
+      wedge_incidents?: RunnerWedgeIncident[] | null;
+      capability?: RunnerCapabilityRecord[] | null;
+      runner_reports?: RunnerReportsMeta | null;
+      /**
+       * The fleet-health BODY's `runner_reports_scrape_up`, copied onto each
+       * row so a row whose reports are `null` can say whether that is coord's
+       * read failing (`false`) rather than the runner's silence.
+       */
+      runner_reports_scrape_up?: boolean;
     }
   | { matched: false };
 

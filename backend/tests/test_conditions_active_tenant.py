@@ -25,6 +25,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
 _HOME = UUID("11111111-1111-1111-1111-111111111111")
 _SELECTED = UUID("22222222-2222-2222-2222-222222222222")
@@ -54,7 +56,6 @@ def client() -> TestClient:
 
 def _get_groups(client: TestClient, headers: dict[str, str]) -> AsyncMock:
     """Call ``GET /api/v1/conditions/groups`` and return the mocked httpx client."""
-    from app.api.v1.endpoints import operations
 
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 200
@@ -67,9 +68,7 @@ def _get_groups(client: TestClient, headers: dict[str, str]) -> AsyncMock:
     instance.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch.object(
-            operations, "get_coord_identity", new=AsyncMock(return_value=_identity())
-        ),
+        patch_ops("get_coord_identity", new=AsyncMock(return_value=_identity())),
         patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as mock_client,
     ):
         mock_client.return_value = instance

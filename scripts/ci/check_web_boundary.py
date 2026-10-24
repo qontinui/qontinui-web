@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """web/backend <-> qontinui boundary lint.
 
-THE single home of this gate's logic. Three lanes invoke this one script:
+THE single home of this gate's logic. Four lanes invoke this one script:
 
   * ``.github/workflows/web-boundary-lint.yml``, step
     "Scan backend/app for qontinui.* boundary violations"
+  * ``.github/workflows/web-guards.yml``, step
+    "web-boundary-lint: Scan backend/app for qontinui.* boundary violations"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``web-boundary-lint``
   * ``.pre-commit-config.yaml``, hook ``web-boundary-lint`` (``--files`` mode)
 

@@ -1,0 +1,454 @@
+{
+  "version": "1.0",
+  "id": "overview-domain-cost-did-not-compound",
+  "name": "OverviewDomainCostDidNotCompound",
+  "description": "Project Overview (/overview), the 'What each domain has cost' section — plan 2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first Phase 8. metadata.routeStubs fulfills GET /api/v1/operations/domain-cost with the fixture at frontend/test-fixtures/domain-cost/did-not-compound.json (DomainCostSection.test.tsx pins the stub body to that file), so the verdict line, the readout table's 'what the fleet does' sentence and the per-domain cards render deterministically. The ledger is its own read, rendered outside the intent documents' states, so the hermetic lane's 502 on the intent read does not hide it. Authored from the component source and its vitest render, NOT from a live UI Bridge snapshot (no dev stack on the authoring box): run it through Spec CI before counting it green. Each text assertion carries its expected text twice: as `expected` for a containsText-aware spec-check, and as `target.criteria.textContains`, because Spec CI's harness matches `target.criteria` alone and would otherwise check only that the element exists.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": [
+      "overview",
+      "domain-cost",
+      "second-ratchet",
+      "route-stub"
+    ],
+    "extraSettleMs": 2500,
+    "settleUntilPresent": [
+      {
+        "id": "overview.summary.domain-cost.verdict-sentence"
+      }
+    ],
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/operations/domain-cost**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "computed_at": "2026-09-30T10:00:00Z",
+          "as_of": null,
+          "roster_source": {
+            "repo": "qontinui/qontinui-dev-notes",
+            "path": "steering/autonomy-domains.toml",
+            "sha": "0123456789abcdef0123456789abcdef01234567",
+            "read_at": "2026-09-30T10:00:00Z"
+          },
+          "population": {
+            "units_n": 120,
+            "excluded_shepherd_n": 4,
+            "restamp_burst_minutes_n": 0
+          },
+          "unattributed_units_n": 12,
+          "as_of_scope": {
+            "historical": [],
+            "as_of_now": []
+          },
+          "roster": {
+            "domains": [
+              {
+                "name": "ux",
+                "areas": [
+                  "ui-bridge"
+                ],
+                "spec": "domain_spec/ui-bridge"
+              },
+              {
+                "name": "operations",
+                "areas": [
+                  "fleet-health"
+                ],
+                "spec": "domain_spec/fleet-health"
+              }
+            ],
+            "shared_areas": [
+              "coord-mcp"
+            ],
+            "compare": {
+              "numerator": "operations",
+              "denominator": "ux",
+              "source": "file_order"
+            }
+          },
+          "roster_error": null,
+          "roster_error_detail": null,
+          "shared": {
+            "areas": [
+              "coord-mcp"
+            ],
+            "cost": {
+              "work_units": {
+                "value": 6,
+                "coverage_n": 108,
+                "population_n": 120,
+                "basis": "units charged to this bucket by metadata.area",
+                "by_status_class": {
+                  "shipped": 6,
+                  "in_flight": 0,
+                  "not_started": 0
+                }
+              },
+              "wall_clock_secs": {
+                "value": 36000,
+                "coverage_n": 6,
+                "population_n": 6,
+                "basis": "sum of (first_shipped_at - first_in_progress_at)",
+                "excluded_restamp_n": 0
+              },
+              "prs": {
+                "value": 6,
+                "coverage_n": 6,
+                "population_n": 6,
+                "basis": "distinct landed (repo, pr_number) citations"
+              },
+              "sessions": {
+                "value": 5,
+                "coverage_n": 6,
+                "population_n": 6,
+                "basis": "distinct agent_id in coord.agent_worktrees by work_unit_id"
+              },
+              "sessions_trailer": {
+                "value": null,
+                "coverage_n": 0,
+                "population_n": 6,
+                "basis": "Session-Id commit trailers: no producer",
+                "reason": "no_producer"
+              },
+              "operator_touches": {
+                "value": 1,
+                "coverage_n": 30,
+                "population_n": 40,
+                "basis": "coord.operator_touches rows by work_unit_id"
+              },
+              "tokens": {
+                "value": null,
+                "coverage_n": 0,
+                "population_n": 6,
+                "basis": "per-unit token spend: no producer",
+                "reason": "no_producer"
+              }
+            },
+            "shared_unassigned_n": 6,
+            "units": [
+              {
+                "slug": "2026-09-01-shared-twin",
+                "area": "coord-mcp",
+                "first_consumer": null,
+                "reason": "no_consumer_record"
+              }
+            ]
+          },
+          "unmapped_areas": [
+            {
+              "area": "plan-library-ui",
+              "count": 3
+            }
+          ],
+          "comparison_reason": null,
+          "domains": [
+            {
+              "name": "ux",
+              "areas": [
+                "ui-bridge"
+              ],
+              "spec": "domain_spec/ui-bridge",
+              "stage_reached": "perceive",
+              "stage_reason": null,
+              "cost": {
+                "work_units": {
+                  "value": 40,
+                  "coverage_n": 108,
+                  "population_n": 120,
+                  "basis": "units charged to this bucket by metadata.area",
+                  "by_status_class": {
+                    "shipped": 40,
+                    "in_flight": 0,
+                    "not_started": 0
+                  }
+                },
+                "wall_clock_secs": {
+                  "value": 144000,
+                  "coverage_n": 40,
+                  "population_n": 40,
+                  "basis": "sum of (first_shipped_at - first_in_progress_at)",
+                  "excluded_restamp_n": 0
+                },
+                "prs": {
+                  "value": 44,
+                  "coverage_n": 40,
+                  "population_n": 40,
+                  "basis": "distinct landed (repo, pr_number) citations"
+                },
+                "sessions": {
+                  "value": 30,
+                  "coverage_n": 40,
+                  "population_n": 40,
+                  "basis": "distinct agent_id in coord.agent_worktrees by work_unit_id"
+                },
+                "sessions_trailer": {
+                  "value": null,
+                  "coverage_n": 0,
+                  "population_n": 40,
+                  "basis": "Session-Id commit trailers: no producer",
+                  "reason": "no_producer"
+                },
+                "operator_touches": {
+                  "value": null,
+                  "coverage_n": 0,
+                  "population_n": 0,
+                  "basis": "coord.operator_touches rows by work_unit_id",
+                  "reason": "store_empty"
+                },
+                "tokens": {
+                  "value": null,
+                  "coverage_n": 0,
+                  "population_n": 40,
+                  "basis": "per-unit token spend: no producer",
+                  "reason": "no_producer"
+                }
+              }
+            },
+            {
+              "name": "operations",
+              "areas": [
+                "fleet-health"
+              ],
+              "spec": "domain_spec/fleet-health",
+              "stage_reached": "perceive",
+              "stage_reason": null,
+              "cost": {
+                "work_units": {
+                  "value": 38,
+                  "coverage_n": 108,
+                  "population_n": 120,
+                  "basis": "units charged to this bucket by metadata.area",
+                  "by_status_class": {
+                    "shipped": 38,
+                    "in_flight": 0,
+                    "not_started": 0
+                  }
+                },
+                "wall_clock_secs": {
+                  "value": 136800,
+                  "coverage_n": 38,
+                  "population_n": 38,
+                  "basis": "sum of (first_shipped_at - first_in_progress_at)",
+                  "excluded_restamp_n": 0
+                },
+                "prs": {
+                  "value": 41,
+                  "coverage_n": 38,
+                  "population_n": 38,
+                  "basis": "distinct landed (repo, pr_number) citations"
+                },
+                "sessions": {
+                  "value": 29,
+                  "coverage_n": 38,
+                  "population_n": 38,
+                  "basis": "distinct agent_id in coord.agent_worktrees by work_unit_id"
+                },
+                "sessions_trailer": {
+                  "value": null,
+                  "coverage_n": 0,
+                  "population_n": 38,
+                  "basis": "Session-Id commit trailers: no producer",
+                  "reason": "no_producer"
+                },
+                "operator_touches": {
+                  "value": null,
+                  "coverage_n": 0,
+                  "population_n": 0,
+                  "basis": "coord.operator_touches rows by work_unit_id",
+                  "reason": "store_empty"
+                },
+                "tokens": {
+                  "value": null,
+                  "coverage_n": 0,
+                  "population_n": 38,
+                  "basis": "per-unit token spend: no producer",
+                  "reason": "no_producer"
+                }
+              }
+            }
+          ],
+          "comparison": {
+            "numerator": "operations",
+            "denominator": "ux",
+            "source": "file_order",
+            "marginal_basis": "marginal = domain-specific cost: shared units are charged to no domain until a per-unit first-consumer record exists (shared.shared_unassigned_n)",
+            "coverage_floor": 0.6,
+            "compared_stage": "perceive",
+            "ratios_informational": false,
+            "dimensions": {
+              "work_units": {
+                "R": 0.95,
+                "reason": null,
+                "numerator_value": 38,
+                "denominator_value": 40,
+                "numerator_coverage": 0.9,
+                "denominator_coverage": 0.9
+              },
+              "wall_clock_secs": {
+                "R": 0.95,
+                "reason": null,
+                "numerator_value": 136800,
+                "denominator_value": 144000,
+                "numerator_coverage": 1.0,
+                "denominator_coverage": 1.0
+              },
+              "prs": {
+                "R": 0.931818,
+                "reason": null,
+                "numerator_value": 41,
+                "denominator_value": 44,
+                "numerator_coverage": 1.0,
+                "denominator_coverage": 1.0
+              },
+              "sessions": {
+                "R": 0.966667,
+                "reason": null,
+                "numerator_value": 29,
+                "denominator_value": 30,
+                "numerator_coverage": 1.0,
+                "denominator_coverage": 1.0
+              },
+              "sessions_trailer": {
+                "R": null,
+                "reason": "value_unknown",
+                "numerator_value": null,
+                "denominator_value": null,
+                "numerator_coverage": 0.0,
+                "denominator_coverage": 0.0
+              },
+              "operator_touches": {
+                "R": null,
+                "reason": "value_unknown",
+                "numerator_value": null,
+                "denominator_value": null,
+                "numerator_coverage": null,
+                "denominator_coverage": null
+              },
+              "tokens": {
+                "R": null,
+                "reason": "value_unknown",
+                "numerator_value": null,
+                "denominator_value": null,
+                "numerator_coverage": 0.0,
+                "denominator_coverage": 0.0
+              }
+            },
+            "agreement": 0.9,
+            "agreement_reason": null,
+            "verdict": "DID_NOT_COMPOUND",
+            "verdict_reason": "work-unit R 0.950 >= 0.8, wall-clock R 0.950 agrees, attribution agreement 0.90"
+          }
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "overview-domain-cost-did-not-compound-card",
+      "name": "Domain cost readout — did-not-compound",
+      "description": "The ledger rendered from the did-not-compound fixture: verdict, action sentence, and per-domain cost with coverage.",
+      "assertions": [
+        {
+          "id": "overview-domain-cost-did-not-compound-card-elem-0",
+          "description": "The domain cost section mounts",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "overview.summary.domain-cost"
+            },
+            "label": "Domain cost section"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "overview-domain-cost-did-not-compound-card-elem-1",
+          "description": "the readout table's DID NOT COMPOUND action sentence",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "overview.summary.domain-cost.verdict-sentence",
+              "textContains": "Stop opening new domains, and run the twin audit before any domain-3 work is ranked."
+            },
+            "label": "the readout table's DID NOT COMPOUND action sentence"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "Stop opening new domains, and run the twin audit before any domain-3 work is ranked."
+        },
+        {
+          "id": "overview-domain-cost-did-not-compound-card-elem-2",
+          "description": "the DID_NOT_COMPOUND verdict badge",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "overview.summary.domain-cost.verdict",
+              "textContains": "Did not compound"
+            },
+            "label": "the DID_NOT_COMPOUND verdict badge"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "Did not compound"
+        },
+        {
+          "id": "overview-domain-cost-did-not-compound-card-elem-3",
+          "description": "the attribution agreement the verdict required",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "overview.summary.domain-cost.agreement",
+              "textContains": "Attribution agreement: 0.90"
+            },
+            "label": "the attribution agreement the verdict required"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "Attribution agreement: 0.90"
+        },
+        {
+          "id": "overview-domain-cost-did-not-compound-card-elem-4",
+          "description": "the work-unit cost ratio",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "overview.summary.domain-cost.ratio-work_units",
+              "textContains": "0.95"
+            },
+            "label": "the work-unit cost ratio"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "0.95"
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    }
+  ]
+}

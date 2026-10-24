@@ -7,7 +7,7 @@ module. The replacement is :mod:`app.crud.device_crud` (operating on
 ``coord.devices``). This shim adapts the legacy call shape — i.e.
 ``runner_id=``, ``runner_token_id=`` — to the new ``device_id=`` /
 no-token signature so the broader fleet of WS-bridge HTTP handlers
-(``runner_chat.py``, ``runner_command_ws.py``, ``ui_bridge_states.py``,
+(``runner_chat.py``, ``runner_command_ws.py``,
 ``websockets/testing/handler.py``, etc.) continues to compile while the
 rename is propagated through the codebase.
 

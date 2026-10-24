@@ -77,8 +77,10 @@ GAP_COUNT_PIN = 7
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;
 #: the testing reports' ``transitions[].status``, ``transitions[].error_type``,
 #: ``deficiencies[].severity``, ``deficiencies[].deficiency_type``, the
-#: completion ``status`` and the screenshot ``screenshot_type``.
-UNSERVED_CLOSED_FIELD_PIN = 7
+#: completion ``status`` and the screenshot ``screenshot_type``. Then +1:
+#: ``POST /plan-library`` ``status``, closed per spec kind only
+#: (``2026-10-09-spec-front-end-of-the-software-factory``).
+UNSERVED_CLOSED_FIELD_PIN = 8
 
 #: A plan stem as the corpus spells one: ``YYYY-MM-DD-kebab-case``.
 _PLAN_STEM = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -305,13 +307,20 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.api.deps._resolve_actor_principal": (
         "a plain coroutine the dual-auth dependencies call by hand; never a Depends()"
     ),
+    "app.api.v1.endpoints.devices._verify_poll_token": (
+        "a plain coroutine the GET-only pending-redeem handler calls by hand"
+    ),
+    "app.api.v1.endpoints.devices.pending_redeem": (
+        "a GET route (the runner's pending-redeem poll) — no write METHOD, so "
+        "never in the population"
+    ),
     "app.api.v1.endpoints.devices_ws.websocket_device_unified_endpoint": (
         "a WebSocket endpoint — no write METHOD, so never in the population"
     ),
     "app.api.v1.endpoints.devices_ws._route_device_message": (
         "dispatches frames inside the device WebSocket session, not an HTTP route"
     ),
-    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._verify_grant": (
+    "app.services.runner.remote_relay.grants.GrantAuthorizer._verify_grant": (
         "verifies a relay capability grant inside a WebSocket session, not an HTTP route"
     ),
     "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_attach": (
@@ -320,10 +329,10 @@ _NOT_A_ROUTE_DEPENDENCY: dict[str, str] = {
     "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_create": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
-    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._handle_end": (
+    "app.services.runner.remote_relay.end.EndCoordinator._handle_end": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
-    "app.services.runner.remote_terminal_relay.RemoteTerminalRelay._end_with_fresh_grant": (
+    "app.services.runner.remote_relay.end.EndCoordinator._end_with_fresh_grant": (
         "relay frame handler reached from the device WebSocket, not an HTTP route"
     ),
     "app.services.runner.remote_terminal_relay.handle_source_frame": (

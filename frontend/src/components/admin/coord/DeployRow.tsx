@@ -37,7 +37,7 @@ import {
   RowTime,
   StatusBadge,
 } from "@/components/console";
-import { httpClient } from "@/services/service-factory";
+import { fetchDeployRollbackProposal } from "@/lib/api/operations/coordDelivery";
 import {
   outcomeGlyph,
   VerdictChips,
@@ -60,8 +60,6 @@ import {
 import type { DimensionVerdict } from "@/components/admin/coord/landTypes";
 
 export type { DeployRowData };
-
-const API = "/api/v1/operations";
 
 /**
  * A managed predicted-head-fork keeps its own glyph: coord auto-resolves it,
@@ -108,9 +106,7 @@ export function DeployRow({
     setProposalLoading(true);
     setProposalMsg(null);
     try {
-      const body = await httpClient.get<RollbackProposal>(
-        `${API}/deploys/${sig.id}/rollback-proposal`
-      );
+      const body = await fetchDeployRollbackProposal(sig.id);
       setProposal(body);
     } catch (e) {
       setProposal(null);

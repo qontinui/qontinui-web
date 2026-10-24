@@ -38,6 +38,8 @@ from fastapi.testclient import TestClient
 from websockets.datastructures import Headers
 from websockets.http11 import Response as WsHttpResponse
 
+from tests._ops_patch import patch_ops
+
 _FIXTURE_TENANT_ID = UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
 API_PREFIX = "/api/v1/operations"
@@ -278,20 +280,20 @@ class TestCoordEventsWsBridge:
             return "fake.jwt.token"
 
         return (
-            patch(
-                "app.api.v1.endpoints.operations.get_current_user_from_ws",
+            patch_ops(
+                "get_current_user_from_ws",
                 auth or fake_get_user_from_ws,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_coord_identity_for_token",
+            patch_ops(
+                "get_coord_identity_for_token",
                 identity or fake_get_identity,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.mint_device_status_token",
+            patch_ops(
+                "mint_device_status_token",
                 mint or fake_mint,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.websockets_connect",
+            patch_ops(
+                "websockets_connect",
                 connect,
             ),
         )
@@ -558,7 +560,7 @@ class TestCoordEventsWsBridge:
             p3,
             p4,
             patch("app.services.coord_device_status.settings") as mock_settings,
-            patch("app.api.v1.endpoints.operations.logger") as mock_logger,
+            patch_ops("logger") as mock_logger,
         ):
             mock_settings.COORD_URL = "http://localhost:9870"
             with ws_client.websocket_connect(
@@ -659,7 +661,7 @@ class TestCoordEventsWsBridge:
             p3,
             p4,
             patch("app.services.coord_device_status.settings") as mock_settings,
-            patch("app.api.v1.endpoints.operations.logger") as mock_logger,
+            patch_ops("logger") as mock_logger,
         ):
             mock_settings.COORD_URL = "http://localhost:9870"
             with ws_client.websocket_connect(
@@ -696,8 +698,8 @@ class TestCoordEventsWsBridge:
             p3,
             p4,
             patch("app.services.coord_device_status.settings") as mock_settings,
-            patch(
-                "app.api.v1.endpoints.operations.COORD_EVENTS_KEEPALIVE_INTERVAL_S",
+            patch_ops(
+                "COORD_EVENTS_KEEPALIVE_INTERVAL_S",
                 0.01,
             ),
         ):
@@ -738,8 +740,8 @@ class TestCoordEventsWsBridge:
             p3,
             p4,
             patch("app.services.coord_device_status.settings") as mock_settings,
-            patch(
-                "app.api.v1.endpoints.operations.COORD_EVENTS_KEEPALIVE_INTERVAL_S",
+            patch_ops(
+                "COORD_EVENTS_KEEPALIVE_INTERVAL_S",
                 0.01,
             ),
         ):

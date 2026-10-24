@@ -4,6 +4,7 @@
  * via the dedicated `tests/e2e/**\/*.test.ts` include in vitest.config.ts.
  */
 
+import { createHash } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import {
   parseCssColor,
@@ -14,27 +15,53 @@ import {
   enrichElement,
   enrichElements,
   normalizeBboxes,
+  projectMedia,
+  srcDigest,
 } from "./normalize";
+// A REAL SDK capture, byte-identical to ui-bridge
+// `packages/ui-bridge-python/tests/fixtures/sdk_find_media_response.json` at
+// 7db24a78 (blob 4fe5d15244bfd5cb422724924202b74042a14a71): a `find` over an
+// enveloped media row, with six unmeasured dimensions in its provenance.
+import capturedFind from "./fixtures/sdk-find-media-response.json";
 
 describe("parseCssColor", () => {
   it("parses rgb()", () => {
     expect(parseCssColor("rgb(255, 128, 0)")).toEqual({ r: 255, g: 128, b: 0 });
   });
 
-  it("parses rgba() and drops alpha", () => {
-    expect(parseCssColor("rgba(16, 32, 48, 0.5)")).toEqual({
+  it("parses a fully opaque rgba() (alpha 1 IS opaque)", () => {
+    expect(parseCssColor("rgba(16, 32, 48, 1)")).toEqual({
       r: 16,
       g: 32,
       b: 48,
     });
   });
 
-  it("parses space-separated CSS Color 4 syntax", () => {
-    expect(parseCssColor("rgb(10 20 30 / 0.8)")).toEqual({
+  it("parses space-separated CSS Color 4 syntax when opaque", () => {
+    expect(parseCssColor("rgb(10 20 30)")).toEqual({ r: 10, g: 20, b: 30 });
+    expect(parseCssColor("rgb(10 20 30 / 100%)")).toEqual({
       r: 10,
       g: 20,
       b: 30,
     });
+  });
+
+  // Partial alpha is OMITTED, never flattened: half-transparent black over a
+  // white page is mid-grey, but flattened it reads as BLACK — and a contrast
+  // check over the fabricated black can pass illegible light text. Both cases
+  // below asserted the flattening until 2026-10-13.
+  it("omits a partial alpha in rgba() instead of flattening it", () => {
+    expect(parseCssColor("rgba(16, 32, 48, 0.5)")).toBeNull();
+    expect(parseCssColor("rgba(0, 0, 0, 0.999)")).toBeNull();
+  });
+
+  it("omits a partial alpha in CSS Color 4 syntax instead of flattening it", () => {
+    expect(parseCssColor("rgb(10 20 30 / 0.8)")).toBeNull();
+    expect(parseCssColor("rgb(10 20 30 / 80%)")).toBeNull();
+  });
+
+  it("reads an unparseable alpha as unknown, not opaque", () => {
+    expect(parseCssColor("rgba(0, 0, 0, 1.2.3)")).toBeNull();
   });
 
   it("returns null for fully transparent (alpha 0)", () => {
@@ -56,9 +83,27 @@ describe("parseCssColor", () => {
     expect(parseCssColor("#f80")).toEqual({ r: 255, g: 136, b: 0 });
   });
 
-  it("parses #rrggbbaa hex and drops alpha; null on alpha 0", () => {
-    expect(parseCssColor("#10203040")).toEqual({ r: 16, g: 32, b: 48 });
-    expect(parseCssColor("#10203000")).toBeNull();
+  it("parses opaque #rrggbbaa / #rgba hex; null on any other alpha", () => {
+    expect(parseCssColor("#102030ff")).toEqual({ r: 16, g: 32, b: 48 });
+    expect(parseCssColor("#f80f")).toEqual({ r: 255, g: 136, b: 0 });
+    expect(parseCssColor("#10203040")).toBeNull(); // 25% — translucent
+    expect(parseCssColor("#f80a")).toBeNull(); // ~67% — translucent
+    expect(parseCssColor("#10203000")).toBeNull(); // fully transparent
+  });
+
+  it("never lets a translucent background reach bg_color", () => {
+    const el: Record<string, unknown> = {
+      id: "scrim-label",
+      state: {
+        computedStyles: {
+          color: "rgb(250, 250, 250)",
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+        },
+      },
+    };
+    enrichElement(el);
+    expect(el.bg_color).toBeUndefined();
+    expect(el.fg_color).toEqual({ r: 250, g: 250, b: 250 });
   });
 
   it("returns null for unparseable", () => {
@@ -531,29 +576,21 @@ describe("enrichElement — stacking, visibility and text overflow", () => {
   // analyzer can see two boxes intersect but not which one the reader sees,
   // and text_fits_container compares only heights.
 
-  it("carries a numeric z-index through as z_index", () => {
-    const el: Record<string, unknown> = {
-      id: "overlay",
-      tagName: "div",
-      state: { computedStyles: { zIndex: "30" } },
-    };
-    enrichElement(el);
-    expect(el.z_index).toBe(30);
-  });
-
-  it("leaves z_index UNSET for `auto` rather than defaulting it to 0", () => {
-    // `auto` means "establishes no stacking context", which is a different
-    // claim from "sits at layer 0". Writing 0 would invent an ordering the
-    // browser never asserted, and the analyzer would then report a
-    // confidently wrong occlusion direction. Unset makes it report
-    // `occlusion_unknown` instead, which is the honest answer.
-    const el: Record<string, unknown> = {
-      id: "plain",
-      tagName: "div",
-      state: { computedStyles: { zIndex: "auto" } },
-    };
-    enrichElement(el);
-    expect(el.z_index).toBeUndefined();
+  it("never projects a CSS z-index into z_index", () => {
+    // vision-core's `z_index` is a GLOBAL paint rank. A CSS z-index is
+    // resolved inside its own stacking context: a `z-50` dropdown nested in a
+    // `z-10` title bar paints BELOW a `z-20` sibling panel, so projecting the
+    // CSS value inverts the occlusion verdict (coord finding 83b1e0d6). No
+    // spelling of it — numeric, negative, zero, `auto` — may reach the field.
+    for (const zIndex of ["30", "-1", "0", "auto", 5]) {
+      const el: Record<string, unknown> = {
+        id: "overlay",
+        tagName: "div",
+        state: { computedStyles: { zIndex } },
+      };
+      enrichElement(el);
+      expect(el.z_index).toBeUndefined();
+    }
   });
 
   it("carries the hit-test verdict and the occluder's identity", () => {
@@ -604,5 +641,662 @@ describe("enrichElement — stacking, visibility and text overflow", () => {
     enrichElement(el);
     expect(el.z_index).toBe(99);
     expect(el.visible).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Visibility detail — `visibility_reason` / `occluded_pct` (plan
+// 2026-10-13-image-generation-and-visual-judgment, Phase 15)
+// ---------------------------------------------------------------------------
+
+// (name, SDK `state` fields, expected {visibility_reason, occluded_pct} with
+// absent keys meaning OMITTED). The SAME table is in the Python projector's
+// suite (`qontinui-claude-config/scripts/test-uibridge-to-elementsnapshot.py`,
+// VISIBILITY_DETAIL_CASES); a row changed here belongs there too. Without
+// these fields the image analyzer cannot tell an image that paints nothing
+// (`hidden`, `no-layout`) from one that is painted but covered or scrolled
+// away, and reads every `visible: false` image as unreadable.
+const VISIBILITY_DETAIL_CASES: Array<
+  [string, Record<string, unknown>, Record<string, unknown>]
+> = [
+  [
+    "fully occluded",
+    { visible: false, visibilityReason: "occluded", occludedPct: 100 },
+    { visibility_reason: "occluded", occluded_pct: 100 },
+  ],
+  ["hidden", { visible: false, visibilityReason: "hidden" }, { visibility_reason: "hidden" }],
+  [
+    "no-layout",
+    { visible: false, visibilityReason: "no-layout" },
+    { visibility_reason: "no-layout" },
+  ],
+  [
+    "off-screen",
+    { visible: false, visibilityReason: "off-screen" },
+    { visibility_reason: "off-screen" },
+  ],
+  [
+    "an unknown reason is kept verbatim",
+    { visible: false, visibilityReason: "clipped" },
+    { visibility_reason: "clipped" },
+  ],
+  [
+    "partial occlusion: still visible, pct carried, no reason",
+    { visible: true, occludedBy: "div#toast", occludedPct: 37 },
+    { occluded_pct: 37 },
+  ],
+  ["a measured zero is kept, not dropped", { visible: true, occludedPct: 0 }, { occluded_pct: 0 }],
+  ["a fractional pct passes through unrounded", { occludedPct: 12.5 }, { occluded_pct: 12.5 }],
+  ["absent stays absent", { visible: true }, {}],
+  ["an empty reason is omitted", { visibilityReason: "" }, {}],
+  ["a non-string reason is omitted", { visibilityReason: 42 }, {}],
+  ["a null reason is omitted", { visibilityReason: null }, {}],
+  ["a boolean pct is omitted, never read as 1", { occludedPct: true }, {}],
+  ["a string pct is omitted", { occludedPct: "50" }, {}],
+  ["a negative pct is omitted, never clamped", { occludedPct: -1 }, {}],
+  ["a pct over 100 is omitted, never clamped", { occludedPct: 101 }, {}],
+  ["a NaN pct is omitted", { occludedPct: NaN }, {}],
+  ["an infinite pct is omitted", { occludedPct: Infinity }, {}],
+  ["a null pct is omitted", { occludedPct: null }, {}],
+];
+
+describe("enrichElement — visibility detail", () => {
+  it.each(VISIBILITY_DETAIL_CASES)("%s", (_name, state, want) => {
+    const el: Record<string, unknown> = { id: "img", tagName: "div", state };
+    enrichElement(el);
+    const got: Record<string, unknown> = {};
+    for (const k of ["visibility_reason", "occluded_pct"]) {
+      if (k in el) got[k] = el[k];
+    }
+    expect(got).toEqual(want);
+    // The serialized snapshot is what vision-core reads: same values, and no
+    // key that JSON would turn into `null`.
+    const wire = JSON.parse(JSON.stringify(el)) as Record<string, unknown>;
+    for (const k of ["visibility_reason", "occluded_pct"]) {
+      if (k in want) expect(wire[k]).toEqual(want[k]);
+      else expect(k in wire).toBe(false);
+    }
+  });
+
+  it("explains visible / occluded_by without replacing them", () => {
+    const el: Record<string, unknown> = {
+      id: "x",
+      state: { visible: true, occludedBy: "div#toast", occludedPct: 37 },
+    };
+    enrichElement(el);
+    expect(el.visible).toBe(true);
+    expect(el.occluded_by).toBe("div#toast");
+    expect(el.occluded_pct).toBe(37);
+  });
+
+  it("does not clobber values a snapshot source already set", () => {
+    const el: Record<string, unknown> = {
+      id: "pre",
+      visibility_reason: "hidden",
+      occluded_pct: 5,
+      state: { visibilityReason: "occluded", occludedPct: 90 },
+    };
+    enrichElement(el);
+    expect(el.visibility_reason).toBe("hidden");
+    expect(el.occluded_pct).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Media — the vision-core `Element.media` record (plan
+// 2026-10-13-image-generation-and-visual-judgment, Phase 7)
+// ---------------------------------------------------------------------------
+
+// THE shared `src_digest` vector: the same URL and digest are pinned in
+// vision-core (`rust-vision-core/src/element_media.rs`), in the Python
+// projector's suite (`scripts/test-uibridge-to-elementsnapshot.py`) and in
+// ui-bridge-native's `vision-fields.test.ts`. The query is part of the input
+// on purpose — stripped, every next/image is one image.
+const SHARED_SRC =
+  "http://localhost:3001/_next/image?url=%2Fimages%2Fhero.png&w=1920&q=75";
+const SHARED_DIGEST =
+  "a846bcf412cf708ec0a4ac6a972307cbcb250b75509765fd44c49caecbd01f94";
+
+/**
+ * An SDK Observation envelope around one media fact record. The provenance is
+ * the real capture's (fixtures/sdk-find-media-response.json).
+ */
+function measured(
+  value: Record<string, unknown>,
+  unmeasured: string[] = []
+): Record<string, unknown> {
+  return {
+    status: "measured",
+    value,
+    provenance: {
+      producer: { id: "sdk/media-discovery", version: "0.30.0" },
+      observedAt: "2026-10-13T08:12:27.592Z",
+      evaluatedAt: "2026-10-13T08:12:27.592Z",
+      coverage: {
+        considered: 1,
+        measured: unmeasured.length ? 0 : 1,
+        unmeasured: unmeasured.map((dimension) => ({
+          dimension,
+          count: 1,
+          code: "input_missing",
+        })),
+      },
+      confidence: null,
+      cache: null,
+      source: null,
+    },
+  };
+}
+
+/** A snapshot row the way the SDK serializes one. */
+function mediaRow(
+  mediaMetadata: unknown,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const { state: stateOverride, ...rest } = overrides;
+  return {
+    id: "img",
+    tagName: "img",
+    category: "media",
+    accessibleName: "Alt text that is NOT painted",
+    ...(mediaMetadata === undefined ? {} : { mediaMetadata }),
+    state: {
+      inViewport: true,
+      textContent: "",
+      ...((stateOverride as Record<string, unknown> | undefined) ?? {}),
+    },
+    ...rest,
+  };
+}
+
+const IMAGE_FACTS: Record<string, unknown> = {
+  mediaType: "image",
+  isDecorative: false,
+  renderedWidth: 100,
+  renderedHeight: 50,
+  src: SHARED_SRC,
+  altText: "Hero",
+  naturalWidth: 400,
+  naturalHeight: 200,
+  effectiveResolution: 2,
+  objectFit: "cover",
+  objectPosition: "50% 50%",
+  dimsReserved: true,
+  loading: "eager",
+  decoding: "async",
+  fetchPriority: "high",
+  loadingState: "loaded",
+  format: "webp",
+  encodedBodySize: 48213,
+  isLcpCandidate: true,
+  clsSources: [
+    {
+      value: 0.25,
+      startTime: 10,
+      hadRecentInput: false,
+      previousRect: { x: 0, y: 0, width: 1, height: 1 },
+      currentRect: { x: 0, y: 9, width: 1, height: 1 },
+    },
+    {
+      value: 0.5,
+      startTime: 20,
+      hadRecentInput: true,
+      previousRect: { x: 0, y: 0, width: 1, height: 1 },
+      currentRect: { x: 0, y: 9, width: 1, height: 1 },
+    },
+  ],
+  slotId: "hero",
+};
+
+const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
+
+/** `projectMedia`'s result, asserted non-null. */
+function mediaOf(row: Record<string, unknown>) {
+  const media = projectMedia(row);
+  if (!media) throw new Error(`expected a media record for ${String(row.id)}`);
+  return media;
+}
+
+describe("srcDigest — the shared vector", () => {
+  it("matches the digest vision-core and the other converters pin", () => {
+    expect(srcDigest(SHARED_SRC)).toBe(SHARED_DIGEST);
+  });
+
+  it("keeps the query: a stripped next/image URL digests differently", () => {
+    expect(srcDigest(SHARED_SRC.slice(0, SHARED_SRC.indexOf("?")))).not.toBe(
+      SHARED_DIGEST
+    );
+    expect(srcDigest(SHARED_SRC.replace("hero.png", "logo.png"))).not.toBe(
+      SHARED_DIGEST
+    );
+  });
+});
+
+describe("projectMedia — enveloped SDK observations", () => {
+  it("projects the REAL captured find row, omitting its unmeasured dimensions", () => {
+    const rows = (capturedFind as { elements: Array<Record<string, unknown>> })
+      .elements;
+    const row = structuredClone(rows[0]);
+    if (!row) throw new Error("the captured find response carries no row");
+    enrichElement(row);
+    expect(row.media).toEqual({
+      kind: "img",
+      in_viewport: true,
+      natural_px: { w: 400, h: 400 },
+      rendered_px: { w: 100, h: 100 },
+      src_digest: sha256("http://localhost:3000/img/hero.png"),
+      effective_resolution: 2,
+      loading: "lazy",
+      decoding: "auto",
+      fetch_priority: "auto",
+      load_state: "loaded",
+      dims_reserved: true,
+      format: "png",
+      alt: { decorative: false, text: "Hero" },
+      slot_id: "hero",
+      placeholder: false,
+    });
+    // Its accessibleName is the alt: never the element's text.
+    expect(row.text).toBeUndefined();
+  });
+
+  it("projects every field of a full record, CLS excluding shifts after input", () => {
+    const media = mediaOf(mediaRow(measured(IMAGE_FACTS)));
+    expect(media.object_fit).toBe("cover");
+    expect(media.object_position).toBe("50% 50%");
+    expect(media.transfer_bytes).toBe(48213); // encodedBodySize, not transferSize
+    expect(media.is_lcp_candidate).toBe(true);
+    expect(media.cls_contribution).toBe(0.25);
+    expect(media.src_digest).toBe(SHARED_DIGEST);
+  });
+
+  it("omits an unmeasured dimension even when a value rode along", () => {
+    const media = mediaOf(
+      mediaRow(measured(IMAGE_FACTS, ["objectFit", "encodedBodySize", "clsSources"]))
+    );
+    expect(media.object_fit).toBeUndefined();
+    expect(media.transfer_bytes).toBeUndefined();
+    expect(media.cls_contribution).toBeUndefined();
+  });
+
+  it("records a MISSING alt as measured, and an unread one as absent", () => {
+    const noAlt = { ...IMAGE_FACTS };
+    delete noAlt.altText;
+    expect(mediaOf(mediaRow(measured(noAlt))).alt).toEqual({ decorative: false });
+    expect(mediaOf(mediaRow(measured(IMAGE_FACTS, ["altText"]))).alt).toBeUndefined();
+  });
+
+  it("reads [] clsSources as a measured zero and a placeholder marker as true", () => {
+    expect(
+      mediaOf(mediaRow(measured({ ...IMAGE_FACTS, clsSources: [] }))).cls_contribution
+    ).toBe(0);
+    expect(
+      mediaOf(mediaRow(measured({ ...IMAGE_FACTS, placeholder: true }))).placeholder
+    ).toBe(true);
+  });
+
+  it("never digests a redacted src, and never takes the sentinel as alt or slot", () => {
+    const media = mediaOf(
+      mediaRow(
+        measured({
+          ...IMAGE_FACTS,
+          src: "[REDACTED]",
+          altText: "[REDACTED]",
+          slotId: "[REDACTED]",
+        }),
+        { state: { redaction: { content: true } } }
+      )
+    );
+    expect(media.src_digest).toBeUndefined();
+    expect(media.alt).toBeUndefined();
+    expect(media.slot_id).toBeUndefined();
+    expect(media.natural_px).toEqual({ w: 400, h: 200 }); // structure survives
+  });
+
+  it("keeps an image whose capture failed as an image with no facts", () => {
+    const unknown = {
+      status: "unknown",
+      unknown: { code: "producer_failed", detail: "media capture threw TypeError" },
+      provenance: measured({}).provenance,
+    };
+    expect(projectMedia(mediaRow(unknown))).toEqual({
+      kind: "img",
+      in_viewport: true,
+    });
+    // An untyped div cannot be named: no media rather than a guessed kind.
+    expect(projectMedia(mediaRow(unknown, { tagName: "div" }))).toBeNull();
+  });
+
+  it("emits nothing envelope-shaped on a scalar field", () => {
+    // An object on a scalar `ElementMedia` field rejects the WHOLE snapshot.
+    const media = mediaOf(mediaRow(measured(IMAGE_FACTS)));
+    const nested = new Set(["natural_px", "rendered_px", "alt"]);
+    const stray = Object.entries(media)
+      .filter(([k, v]) => typeof v === "object" && v !== null && !nested.has(k))
+      .map(([k]) => k);
+    expect(stray).toEqual([]);
+  });
+
+  it("projects nothing for a non-media row", () => {
+    expect(projectMedia({ id: "btn", tagName: "button", state: {} })).toBeNull();
+  });
+});
+
+describe("projectMedia — the legacy (pre-envelope) shape", () => {
+  const legacy: Record<string, unknown> = {
+    mediaType: "image",
+    src: "/img/a.png",
+    isDecorative: false,
+    altText: "A",
+    naturalWidth: 800,
+    naturalHeight: 600,
+    renderedWidth: 200,
+    renderedHeight: 150,
+    oversizeRatio: 4,
+    loadingState: "loaded",
+    lazyLoading: true,
+    format: "png",
+    transferSize: 0,
+  };
+
+  it("projects the fields that mean the same thing, and only those", () => {
+    // oversizeRatio is DPR-blind and transferSize reads 0 on every cache hit:
+    // neither is effective_resolution or transfer_bytes.
+    expect(projectMedia(mediaRow(legacy))).toEqual({
+      kind: "img",
+      in_viewport: true,
+      natural_px: { w: 800, h: 600 },
+      rendered_px: { w: 200, h: 150 },
+      src_digest: sha256("/img/a.png"),
+      loading: "lazy",
+      load_state: "loaded",
+      format: "png",
+      alt: { decorative: false, text: "A" },
+    });
+  });
+
+  it("does not trust a legacy isDecorative on an alt-less image", () => {
+    // Legacy `isDecorative` is `img.alt === ''`: a MISSING alt reads decorative.
+    const noAlt: Record<string, unknown> = { ...legacy, isDecorative: true };
+    delete noAlt.altText;
+    expect(mediaOf(mediaRow(noAlt)).alt).toBeUndefined();
+  });
+
+  it("does not trust a legacy background's hardcoded load state", () => {
+    const bg = {
+      mediaType: "background-image",
+      src: "/bg.png",
+      isDecorative: true,
+      renderedWidth: 10,
+      renderedHeight: 10,
+      loadingState: "loaded",
+      lazyLoading: false,
+    };
+    const media = mediaOf(mediaRow(bg, { tagName: "section" }));
+    expect(media.kind).toBe("css_background");
+    expect(media.load_state).toBeUndefined();
+  });
+
+  it("does not trust a format inferred from a transcoder URL", () => {
+    expect(
+      mediaOf(mediaRow({ ...legacy, src: "/_next/image?w=64&url=/a.png", format: "png" }))
+        .format
+    ).toBeUndefined();
+  });
+
+  it("reads state.mediaMetadata when no top-level copy exists", () => {
+    const row = mediaRow(undefined, { state: { mediaMetadata: legacy } });
+    expect(mediaOf(row).kind).toBe("img");
+  });
+});
+
+describe("enrichElement — media kinds and the painted-text rule", () => {
+  const cases: Array<[string, string, string]> = [
+    ["picture", "picture", "picture"],
+    ["img", "picture", "picture"],
+    ["svg", "svg", "svg"],
+    ["video", "video", "video"],
+    ["canvas", "canvas", "canvas"],
+    ["div", "image", "role_img"],
+    ["section", "background-image", "css_background"],
+  ];
+  for (const [tagName, mediaType, kind] of cases) {
+    it(`a ${tagName}/${mediaType} row is ${kind}, with painted text only`, () => {
+      const el = mediaRow(
+        measured({ mediaType, isDecorative: false, renderedWidth: 1, renderedHeight: 1 }),
+        { tagName, state: { textContent: "painted or not" } }
+      );
+      enrichElement(el);
+      expect((el.media as Record<string, unknown>).kind).toBe(kind);
+      const painted = kind === "role_img" || kind === "css_background";
+      expect(el.text).toBe(painted ? "painted or not" : undefined);
+    });
+  }
+
+  it("removes text a source put on an unpainted media row", () => {
+    // Whatever sits there is fallback content or an SVG <title> — an alt.
+    const el = mediaRow(measured(IMAGE_FACTS), { text: "Hero" });
+    enrichElement(el);
+    expect(el.text).toBeUndefined();
+    expect((el.media as Record<string, unknown>).alt).toEqual({
+      decorative: false,
+      text: "Hero",
+    });
+  });
+
+  it("does not clobber a media record a snapshot source already set", () => {
+    const el = mediaRow(measured(IMAGE_FACTS), { media: { kind: "video" } });
+    enrichElement(el);
+    expect(el.media).toEqual({ kind: "video" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The review round's contract rules (M1, m3, m4, m5, m7)
+// ---------------------------------------------------------------------------
+
+// The second shared vector: a lone surrogate digests as U+FFFD, which is what
+// Node's UTF-8 encoding does. Pinned in all four suites.
+const SHARED_SURROGATE_SRC = "http://localhost:3001/img/\ud800.png";
+const SHARED_SURROGATE_DIGEST =
+  "6f45e1fb51856d9f4f25eea51558783cc2c060af2ba43ea46c8bdab5dbdf23a6";
+
+/** A LEGACY (pre-envelope) image fact record, before the Phase 5 change. */
+function legacyImage(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    mediaType: "image",
+    src: "/img/hero.jpg",
+    isDecorative: false,
+    altText: "Hero",
+    naturalWidth: 640,
+    naturalHeight: 360,
+    renderedWidth: 320,
+    renderedHeight: 180,
+    loadingState: "loaded",
+    lazyLoading: false,
+    ...extra,
+  };
+}
+
+describe("M1: natural_px is source pixels, never a density-corrected reading", () => {
+  // A legacy SDK reads `naturalWidth`, which the browser density-corrects for
+  // a srcset candidate: a 1280w source at DPR 2 reads 640, a `2x` candidate
+  // reads half its size. Such a row carries no source-pixel size.
+  it("omits it for a legacy w-descriptor srcset row", () => {
+    const media = mediaOf(
+      mediaRow(legacyImage({ srcset: "/img/hero-640.jpg 640w, /img/hero-1280.jpg 1280w", sizes: "100vw" }))
+    );
+    expect(media.natural_px).toBeUndefined();
+    expect(media.rendered_px).toEqual({ w: 320, h: 180 });
+  });
+
+  it("omits it for a legacy x-descriptor srcset row", () => {
+    const media = mediaOf(mediaRow(legacyImage({ srcset: "/img/hero.jpg 1x, /img/hero@2x.jpg 2x" })));
+    expect(media.natural_px).toBeUndefined();
+  });
+
+  it("omits it for a legacy <picture> with sources", () => {
+    const media = mediaOf(
+      mediaRow(
+        legacyImage({ mediaType: "picture", sources: [{ srcset: "/img/hero.avif", type: "image/avif" }] }),
+        { tagName: "picture" }
+      )
+    );
+    expect(media.natural_px).toBeUndefined();
+  });
+
+  it("keeps it for a legacy plain src row", () => {
+    expect(mediaOf(mediaRow(legacyImage())).natural_px).toEqual({ w: 640, h: 360 });
+  });
+
+  it("passes an enveloped row through: its producer de-corrects or omits", () => {
+    const media = mediaOf(
+      mediaRow(
+        measured({
+          ...IMAGE_FACTS,
+          srcset: "/a-640.jpg 640w, /a-1280.jpg 1280w",
+          naturalWidth: 1280,
+          naturalHeight: 720,
+        })
+      )
+    );
+    expect(media.natural_px).toEqual({ w: 1280, h: 720 });
+  });
+
+  // When no srcset candidate resolves, the producer lists the natural size
+  // unmeasured. It stays absent here, and `effective_resolution` (computed
+  // from it) goes with it even if a value rode along — absent is absent.
+  it.each([[["naturalWidth", "naturalHeight"]], [["naturalWidth"]], [["naturalHeight"]]])(
+    "omits natural_px and effective_resolution when %j is unmeasured",
+    (dims) => {
+      const media = mediaOf(
+        mediaRow(measured({ ...IMAGE_FACTS, srcset: "/a-640.jpg 640w, /a-1280.jpg 1280w" }, dims))
+      );
+      expect(media.natural_px).toBeUndefined();
+      expect(media.effective_resolution).toBeUndefined();
+      expect(media.rendered_px).toEqual({ w: 100, h: 50 });
+    }
+  );
+
+  it("omits effective_resolution when the natural size is absent", () => {
+    const { naturalWidth: _w, naturalHeight: _h, ...rest } = IMAGE_FACTS;
+    expect(mediaOf(mediaRow(measured(rest))).effective_resolution).toBeUndefined();
+    expect(mediaOf(mediaRow(measured(IMAGE_FACTS))).effective_resolution).toBe(2);
+  });
+});
+
+describe("m3: enriched rows carry no raw media URLs", () => {
+  it("drops the raw observation, both copies, after projecting it", () => {
+    const urls = [
+      "https://cdn.example.com/signed/hero.jpg?token=SECRET",
+      "https://cdn.example.com/hero-1280.jpg",
+      "https://cdn.example.com/hero.avif",
+      "https://cdn.example.com/poster.jpg",
+    ];
+    const facts = {
+      ...IMAGE_FACTS,
+      src: urls[0],
+      srcset: `${urls[1]} 1280w`,
+      sources: [{ srcset: urls[2], type: "image/avif" }],
+      videoState: { poster: urls[3], currentTime: 0, duration: 1, paused: true, muted: true },
+    };
+    const el = mediaRow(measured(facts), { state: { mediaMetadata: measured(facts) } });
+    enrichElement(el);
+    const written = JSON.stringify(el);
+    for (const url of urls) expect(written).not.toContain(url);
+    expect("mediaMetadata" in el).toBe(false);
+    expect("mediaMetadata" in (el.state as Record<string, unknown>)).toBe(false);
+    // ...while the projection it was dropped for is intact.
+    expect((el.media as Record<string, unknown>).src_digest).toBe(sha256(urls[0]!));
+  });
+
+  it("leaves the real captured row with no URL anywhere", () => {
+    const rows = (capturedFind as { elements: Array<Record<string, unknown>> }).elements;
+    const row = structuredClone(rows[0]);
+    if (!row) throw new Error("the captured find response carries no row");
+    enrichElement(row);
+    expect(JSON.stringify(row)).not.toContain("http://localhost:3000/img/hero.png");
+  });
+});
+
+describe("m4: a present non-boolean placeholder is omitted, never coerced", () => {
+  it("reads absent-and-unlisted as a measured false, and keeps a real false", () => {
+    expect(mediaOf(mediaRow(measured(IMAGE_FACTS))).placeholder).toBe(false);
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, placeholder: false }))).placeholder).toBe(false);
+  });
+
+  it("omits a present non-boolean", () => {
+    for (const junk of ["true", 1, null, { x: 1 }]) {
+      const media = mediaOf(mediaRow(measured({ ...IMAGE_FACTS, placeholder: junk })));
+      expect("placeholder" in media).toBe(false);
+    }
+  });
+});
+
+describe("m5: the shared lone-surrogate digest vector", () => {
+  it("digests a lone surrogate as U+FFFD, directly and through a row", () => {
+    expect(srcDigest(SHARED_SURROGATE_SRC)).toBe(SHARED_SURROGATE_DIGEST);
+    const media = mediaOf(mediaRow(measured({ ...IMAGE_FACTS, src: SHARED_SURROGATE_SRC })));
+    expect(media.src_digest).toBe(SHARED_SURROGATE_DIGEST);
+  });
+});
+
+describe("m7: alt text loses ASCII whitespace; an alt that strips to nothing is decorative", () => {
+  it("strips HTML's ASCII whitespace but not NBSP", () => {
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, altText: " \tHero\n" }))).alt).toEqual({
+      decorative: false,
+      text: "Hero",
+    });
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, altText: "\u00a0Hero" }))).alt).toEqual({
+      decorative: false,
+      text: "\u00a0Hero",
+    });
+  });
+
+  it("reads a whitespace-only alt as decorative, enveloped and legacy", () => {
+    expect(mediaOf(mediaRow(measured({ ...IMAGE_FACTS, altText: " \t\n\f\r " }))).alt).toEqual({
+      decorative: true,
+    });
+    expect(mediaOf(mediaRow(legacyImage({ altText: "   " }))).alt).toEqual({ decorative: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Second review round: kind lookups never answer for inherited prototype keys
+// ---------------------------------------------------------------------------
+
+describe("r2: media kinds come from own table entries only", () => {
+  const unknownEnvelope = {
+    status: "unknown",
+    unknown: { code: "producer_failed", detail: "media capture threw TypeError" },
+    provenance: measured({}).provenance,
+  };
+  const protoKeys = ["constructor", "toString", "__proto__", "hasOwnProperty"];
+
+  it.each(protoKeys)("a <%s> tag with an unknown envelope names no kind", (tagName) => {
+    const row = mediaRow(unknownEnvelope, { tagName, role: "img" });
+    expect(projectMedia(row)).toBeNull();
+    enrichElement(row);
+    expect(row.media).toBeUndefined();
+  });
+
+  it.each(protoKeys)("a mediaType of %j names no kind", (mediaType) => {
+    const row = mediaRow(
+      measured({ mediaType, isDecorative: false, renderedWidth: 1, renderedHeight: 1 }),
+      { tagName: "div", state: { textContent: "painted" } }
+    );
+    expect(projectMedia(row)).toBeNull();
+    enrichElement(row);
+    expect(row.media).toBeUndefined();
+    expect(row.text).toBe("painted"); // a non-media kind keeps its painted text
+  });
+
+  it("a prototype-key tag never yields a non-string kind through JSON", () => {
+    for (const tagName of protoKeys) {
+      const row = mediaRow(measured(IMAGE_FACTS), { tagName });
+      enrichElement(row);
+      const kind = (JSON.parse(JSON.stringify(row)).media as Record<string, unknown>).kind;
+      expect(kind).toBe("role_img"); // an `image` on a non-img tag
+    }
   });
 });

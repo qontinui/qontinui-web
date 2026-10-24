@@ -43,6 +43,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     run_alembic,
 )
@@ -84,13 +85,8 @@ def _revision_source() -> str:
 
 
 def test_down_revision_pins_the_current_head() -> None:
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
-        _revision_source(),
-        re.MULTILINE,
-    )
-    assert match is not None
-    assert match.group("parent") == _PARENT_REVISION_ID
+    declared = declared_parent_revision_id(_revision_source(), _REVISION_FILENAME)
+    assert declared == _PARENT_REVISION_ID
 
 
 def test_the_revision_id_is_unique_in_the_chain() -> None:

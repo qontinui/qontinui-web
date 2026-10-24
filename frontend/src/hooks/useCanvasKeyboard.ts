@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useCallback, useRef } from "react";
-import { useCanvasStore } from "../stores/canvas-store";
+import { useCanvasStore } from "../stores/canvas";
 
 // ============================================================================
 // Types

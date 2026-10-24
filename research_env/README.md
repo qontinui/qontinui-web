@@ -304,7 +304,7 @@ Typical performance on a modern CPU:
 
 ## License
 
-MIT License - Use freely for research and production
+AGPL-3.0-or-later, as part of qontinui-web — see the repository [LICENSE](../LICENSE).
 
 ## Contributing
 

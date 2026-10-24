@@ -305,3 +305,96 @@ class DeviceMachineCredentialExchangeResponse(BaseModel):
     """
 
     token: str = Field(..., description="Coord-issued device-token JWT.")
+
+
+# ---------------------------------------------------------------------------
+# Operator credential controls — plan
+# ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-from-qontinui-web``
+# ---------------------------------------------------------------------------
+
+
+class DeviceMachineKeyPosture(BaseModel):
+    """web's own ``device_machine_credentials`` row for a device, reduced to
+    what an operator needs: whether a key exists, when it lapses, and whether
+    it was revoked. Never any key material."""
+
+    present: bool = Field(
+        ..., description="True when the device has a machine-key row at all."
+    )
+    expires_at: IsoDatetime | None = Field(
+        default=None, description="When the key lapses (UTC), or null."
+    )
+    revoked_at: IsoDatetime | None = Field(
+        default=None, description="When the key was revoked (UTC), or null."
+    )
+
+
+class PendingRedeemPosture(BaseModel):
+    """An operator authorization the runner has not redeemed yet."""
+
+    expires_at: IsoDatetime = Field(
+        ..., description="When the bound pair code lapses (UTC)."
+    )
+    delivered_at: IsoDatetime | None = Field(
+        default=None,
+        description=(
+            "When a device collected the code via /pending-redeem (UTC), or "
+            "null while uncollected. Collected-but-unredeemed for long means "
+            "the collector never finished pairing — after a theft-driven "
+            "revoke, re-pair interactively instead."
+        ),
+    )
+
+
+class DeviceCredentialOverviewRow(BaseModel):
+    """One device in ``GET /api/v1/devices/credential-overview``.
+
+    Credential POSTURE (live/expiring/expired/…) is deliberately NOT here — it
+    is coord's ``GET /coord/status`` report, joined on ``device_id`` by the
+    frontend, so a missing report renders UNKNOWN rather than a web default.
+    """
+
+    device_id: UUID
+    hostname: str | None = None
+    machine_key: DeviceMachineKeyPosture
+    credential_revoked_at: IsoDatetime | None = Field(
+        default=None,
+        description="Device-scoped credential deny (UTC), or null when not revoked.",
+    )
+    pending_redeem: PendingRedeemPosture | None = Field(
+        default=None,
+        description="The operator authorization awaiting the runner, or null.",
+    )
+
+
+class DeviceCredentialOverviewResponse(BaseModel):
+    """Response body for ``GET /api/v1/devices/credential-overview``."""
+
+    devices: list[DeviceCredentialOverviewRow]
+
+
+class AuthorizeRedeemResponse(BaseModel):
+    """Response body (202) for ``POST /api/v1/devices/{id}/authorize-redeem``.
+
+    Carries NO code: the code is delivered only to the device itself, through
+    ``/pending-redeem``.
+    """
+
+    device_id: UUID
+    expires_at: IsoDatetime = Field(
+        ..., description="When the authorization lapses unredeemed (UTC)."
+    )
+
+
+class PendingRedeemResponse(BaseModel):
+    """Response body (200) for ``GET /api/v1/devices/{id}/pending-redeem``."""
+
+    code: str = Field(..., min_length=6, max_length=6)
+    expires_at: IsoDatetime
+
+
+class DeviceCredentialRevokeResponse(BaseModel):
+    """Response body for ``POST /api/v1/devices/{id}/machine-credential/revoke``."""
+
+    device_id: UUID
+    revoked_at: IsoDatetime

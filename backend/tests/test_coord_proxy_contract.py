@@ -34,6 +34,7 @@ names the module that owns the helper only for readability.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 from collections.abc import Awaitable, Callable, Iterator
@@ -54,7 +55,9 @@ from app.api.v1.endpoints import (
     prompt_injections,
 )
 from app.core.config import settings
+from app.core.refusal import RefusalHTTPException
 from app.services import coord_proxy as services_coord_proxy
+from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
 TENANT = UUID("00000000-0000-4000-8000-000000000001")
 PATH = "/coord/contract-probe"
@@ -69,6 +72,10 @@ FULL_HEADERS = {
 
 NOT_REACHABLE = "coord is not reachable"
 TIMED_OUT = "timeout waiting for coord"
+#: What operations' own proxy helpers raise for a transport failure: a typed
+#: refusal (plan 2026-09-20-..., Phase D2), still an ``HTTPException`` with
+#: the same status and detail. The private copies elsewhere stay plain.
+OPS_TRANSPORT = RefusalHTTPException
 
 _REQ = httpx.Request("GET", "http://coord.test/coord/contract-probe")
 
@@ -200,13 +207,15 @@ def _get_family(cls: type[HTTPException]) -> dict[str, Cell]:
 
 
 _WRITE_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     # The one reader that maps a non-Connect transport error.
     "read_error": Cell(
         Raises(
             504,
             "coord's answer was lost in transit (ReadError); "
-            "the change may have been applied",
+            "the change may have been applied, so re-read the current "
+            "state before retrying",
+            OPS_TRANSPORT,
         )
     ),
     "coord_404_empty": Cell(Raises(404, "")),
@@ -219,14 +228,16 @@ _WRITE_FAMILY: dict[str, Cell] = {
         Raises(
             504,
             "coord answered 200 with a body that is not JSON; "
-            "the change may have been applied",
+            "the change may have been applied, so re-read the current "
+            "state before retrying",
+            OPS_TRANSPORT,
         )
     ),
 }
 
 # ``_proxy_coord_verbatim`` and the open-coded clone-credential route.
 _VERBATIM_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     "read_error": _READ_ERROR_ESCAPES,
     "coord_404_empty": Cell(Responds(404, {"detail": ""})),
     "coord_422_json": Cell(Responds(422, _JSON_ERROR_DICT)),
@@ -241,13 +252,13 @@ _VERBATIM_FAMILY: dict[str, Cell] = {
 }
 
 _DELETE_FAMILY: dict[str, Cell] = {
-    **_get_family(HTTPException),
+    **_get_family(OPS_TRANSPORT),
     "ok_200_empty": Cell(Returns({"status": "ok"})),
     "no_content_204": Cell(Returns({"status": "ok"})),
 }
 
 _PASSTHROUGH_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     "read_error": _READ_ERROR_ESCAPES,
     # Empty error body → the synthesized message, not an empty string.
     "coord_404_empty": Cell(Responds(404, {"error": "coord returned HTTP 404"})),
@@ -283,9 +294,15 @@ _POST_TO_COORD_503 = Cell(
 
 EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_get": _get_family(operations.CoordTransportUnavailable),
-    "ops_post": _get_family(HTTPException),
+    # Transport arms stay CoordTransportUnavailable; only a JSON OBJECT error
+    # body becomes a dict detail — empty/HTML fall back to ``resp.text``.
+    "ops_get_structured_errors": {
+        **_get_family(operations.CoordTransportUnavailable),
+        "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
+    },
+    "ops_post": _get_family(OPS_TRANSPORT),
     "ops_post_structured_errors": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         # Only a JSON OBJECT becomes a dict detail; empty/HTML stay text.
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
     },
@@ -293,12 +310,12 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # coord's own status passed through (the 202 row); ≥400 and non-JSON 2xx
     # behave exactly as plain ops_post.
     "ops_post_return_status": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "ok_200_json": Cell(Returns((_OK_DICT, 200))),
         OK_202_JSON: Cell(Returns((_OK_DICT, 202))),
     },
     "ops_post_non_json_success_as_empty": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "ok_200_empty": Cell(Returns({})),
         "no_content_204": Cell(Returns({})),
         "ok_200_text": Cell(Returns({})),
@@ -309,7 +326,7 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # re-raised exception is its own ``__cause__``. Class, status and detail
     # are unchanged, which is all these cells assert.
     "ops_post_readable": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "coord_422_json": Cell(
             Raises(
                 422,
@@ -419,6 +436,16 @@ DELETE_BODY = {"role": "admin"}
 HELPERS: dict[str, Helper] = {
     "ops_get": Helper(
         _OPS_TARGET, "get", _fwd(operations._proxy_coord_get, PATH, tenant_id=TENANT)
+    ),
+    "ops_get_structured_errors": Helper(
+        _OPS_TARGET,
+        "get",
+        _fwd(
+            operations._proxy_coord_get,
+            PATH,
+            tenant_id=TENANT,
+            structured_errors=True,
+        ),
     ),
     "ops_post": Helper(
         _OPS_TARGET,
@@ -578,12 +605,10 @@ def _stub_coord(
 
     For a retrying helper (``helper.sleeps``) ``asyncio.sleep`` is replaced by
     ``sleep`` (a fresh ``AsyncMock`` when not given) so the backoff costs no
-    wall time and can be read back from its ``await_args_list``. NOTE: the
-    target ``app.services.coord_proxy.asyncio.sleep`` is the ``sleep``
-    attribute of the ONE ``asyncio`` module object, so while the block is
-    active the patch is PROCESS-WIDE — every ``asyncio.sleep`` anywhere
-    (the event loop's own helpers included) returns immediately. Keep the
-    block around the helper call only."""
+    wall time and can be read back from its ``await_args_list``. The
+    replacement is scoped to coord_proxy alone (see
+    :mod:`tests._coord_proxy_sleep` for why patching ``asyncio.sleep`` by its
+    dotted path is process-wide and made the backoff assert flaky)."""
     instance = AsyncMock()
 
     async def _answer(*_args: Any, **_kwargs: Any) -> Any:
@@ -600,12 +625,7 @@ def _stub_coord(
             patch(helper.patch_target, return_value=instance)
         )
         if helper.sleeps:
-            stack.enter_context(
-                patch(
-                    "app.services.coord_proxy.asyncio.sleep",
-                    new=sleep if sleep is not None else AsyncMock(),
-                )
-            )
+            stack.enter_context(patch_coord_proxy_sleep(sleep))
         yield client_cls
 
 
@@ -973,8 +993,17 @@ _WIRE_ROWS: list[
         {"params": PARAMS, "json": BODY},
         ("params", "json"),
     ),
-    # The GET arm sends neither params nor json.
-    ("passthrough-get", "ops_passthrough", {}, (_url(),), {}, ()),
+    # The GET arm sends no json, and ``params`` verbatim: ``None`` when the
+    # caller passed no query (httpx puts nothing on the wire for it).
+    ("passthrough-get", "ops_passthrough", {}, (_url(),), {"params": None}, ()),
+    (
+        "passthrough-get_params",
+        "ops_passthrough",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
     (
         "passthrough_post-body",
         "ops_passthrough_post",
@@ -1123,6 +1152,27 @@ async def test_post_to_coord_backoff_sequence(
     assert all(c.kwargs == {} for c in sleep.await_args_list)
 
 
+@pytest.mark.asyncio
+async def test_backoff_sleep_mock_sees_only_coord_proxy_sleeps() -> None:
+    """A sleep awaited OUTSIDE coord_proxy while the stub is active must reach
+    the real ``asyncio.sleep``, not the backoff mock. Patched on the
+    process-wide module, ANY such sleep (here a task's; in the 2026-10-06
+    flake, a leftover background poll) was recorded by the mock and broke the
+    exact backoff assert above."""
+    helper = HELPERS["post_to_coord"]
+    queue = [SCENARIOS["connect_error"]] * 3
+
+    def _next() -> Any:
+        return queue.pop(0)()
+
+    sleep = AsyncMock()
+    with _captured(helper.vars_module), _stub_coord(helper, _next, sleep=sleep):
+        await asyncio.create_task(asyncio.sleep(0.01))
+        with pytest.raises(HTTPException):
+            await helper.invoke()
+    assert [c.args for c in sleep.await_args_list] == [(0.5,), (1.5,)]
+
+
 # ---------------------------------------------------------------------------
 # invoke must forward kwargs, never swallow them.
 # ---------------------------------------------------------------------------
@@ -1217,8 +1267,9 @@ async def test_client_timeout(
 
 def test_timeout_rows_cover_every_helper() -> None:
     covered = {row[1] for row in _TIMEOUT_ROWS}
-    # The three flag variants of post share ops_post's constructor call.
+    # The flag variants share their base helper's constructor call.
     assert covered | {
+        "ops_get_structured_errors",
         "ops_post_structured_errors",
         "ops_post_return_status",
         "ops_post_non_json_success_as_empty",

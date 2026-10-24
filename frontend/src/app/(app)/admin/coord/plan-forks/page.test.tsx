@@ -259,4 +259,115 @@ describe("/admin/coord/plan-forks consumes /plan-library/divergent", () => {
       /scanner can heal/i
     );
   });
+  describe("the orphan marker (Phase 8)", () => {
+    const ORPHAN_PAIR: DivergentResponse = {
+      groups: [
+        {
+          kind: "plan",
+          slug: "2026-09-19-plan-library",
+          variant_count: 2,
+          variants: [
+            {
+              id: "55555555-5555-5555-5555-555555555555",
+              kind: "plan",
+              kind_locked: false,
+              content_sha256: "111111111111222222222222",
+              source_repo: "qontinui-dev-notes/plans",
+              source_path: "2026-09-19-plan-library.md",
+              title: "Plan library",
+              status: "in_progress",
+              current_version: 3,
+              updated_at: "2026-10-01T00:00:00Z",
+              captured_by: "runner_scan",
+            },
+            {
+              id: "66666666-6666-6666-6666-666666666666",
+              kind: "plan",
+              kind_locked: true,
+              content_sha256: "333333333333444444444444",
+              source_repo: null,
+              source_path: null,
+              title: "Plan library",
+              status: "draft",
+              current_version: 1,
+              updated_at: "2026-09-25T00:00:00Z",
+              captured_by: "agent",
+            },
+          ],
+        },
+      ],
+      total: 1,
+      kind_forks: [],
+      kind_fork_total: 0,
+    };
+
+    async function openVariants() {
+      const user = userEvent.setup();
+      render(<CoordPlanForksPage />);
+      const row = await screen.findByTestId("coord-fork-content-row");
+      await user.click(within(row).getByRole("button"));
+      return screen.findAllByTestId("coord-fork-variant");
+    }
+
+    it("marks the null-source row beside a runner_scan row, and only that row", async () => {
+      get.mockResolvedValue(ORPHAN_PAIR);
+      const variants = await openVariants();
+
+      const scanned = variants.find(
+        (v) => v.getAttribute("data-captured-by") === "runner_scan"
+      )!;
+      const orphan = variants.find(
+        (v) => v.getAttribute("data-captured-by") === "agent"
+      )!;
+      expect(orphan).toHaveAttribute("data-kind-locked", "true");
+      expect(
+        within(orphan).getByTestId("coord-fork-variant-orphan")
+      ).toHaveTextContent(
+        "orphan — no scan source; the scanner will never update this copy"
+      );
+      expect(
+        within(scanned).queryByTestId("coord-fork-variant-orphan")
+      ).toBeNull();
+      expect(screen.getAllByTestId("coord-fork-variant-orphan")).toHaveLength(
+        1
+      );
+    });
+
+    it("renders no winner and no control beside the marker", async () => {
+      get.mockResolvedValue(ORPHAN_PAIR);
+      await openVariants();
+
+      const page = screen.getByTestId("coord-plan-forks-page");
+      expect(page).not.toHaveTextContent(/keep this/i);
+      expect(page).not.toHaveTextContent(/authoritative/i);
+      expect(page).not.toHaveTextContent(/winner/i);
+      const detail = screen.getByTestId("coord-fork-content-detail");
+      // Only the row's own expand toggle exists; nothing acts on a copy.
+      expect(within(detail).queryAllByRole("button")).toHaveLength(0);
+      // The fork itself is still the operator's to settle.
+      expect(detail).toHaveTextContent("content judgement");
+    });
+
+    it("marks nothing when the capture source is not served — UNKNOWN, not inferred", async () => {
+      const unserved: DivergentResponse = {
+        ...ORPHAN_PAIR,
+        groups: [
+          {
+            ...ORPHAN_PAIR.groups![0],
+            variants: ORPHAN_PAIR.groups![0].variants.map(
+              ({ captured_by: _drop, ...rest }) => rest
+            ),
+          },
+        ],
+      };
+      get.mockResolvedValue(unserved);
+      const variants = await openVariants();
+
+      expect(variants).toHaveLength(2);
+      expect(screen.queryByTestId("coord-fork-variant-orphan")).toBeNull();
+      for (const v of variants) {
+        expect(v).toHaveAttribute("data-captured-by", "unknown");
+      }
+    });
+  });
 });

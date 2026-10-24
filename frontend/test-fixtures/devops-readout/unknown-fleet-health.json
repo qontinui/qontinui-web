@@ -1,0 +1,44 @@
+{
+  "devices": [
+    {
+      "device_id": "c1c1c1c1-0000-4000-8000-00000000f2v1",
+      "hostname": "spec-ci-readout-box",
+      "state": "healthy",
+      "heartbeat_state": "healthy",
+      "credential_dark": {
+        "dark": false
+      },
+      "ci_runner_status": null,
+      "within_dispatch_window": true,
+      "wedge_incidents": null,
+      "capability": null,
+      "runner_reports": {
+        "wedge_incidents": {
+          "absent_reason": "build_nameable_key_absent",
+          "received_at": null,
+          "stale": null,
+          "dropped_entries": 0,
+          "omitted_by_runner": 0,
+          "error": null
+        },
+        "capability": {
+          "absent_reason": "no_publisher",
+          "received_at": null,
+          "stale": null,
+          "dropped_entries": 0,
+          "omitted_by_runner": 0,
+          "error": null
+        },
+        "stale_after_secs": 900
+      }
+    }
+  ],
+  "credential_dark_scrape_up": true,
+  "runner_reports_scrape_up": true,
+  "build_resolvability": {
+    "value": null,
+    "coverage_n": 0,
+    "population_n": 0,
+    "basis": "roster devices with a non-empty coord.devices.served_git_sha (fleet heartbeat git_sha)"
+  }
+}

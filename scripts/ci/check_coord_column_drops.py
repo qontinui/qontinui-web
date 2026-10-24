@@ -2,7 +2,7 @@
 """coord column-drop guard: a ``coord.*`` DROP/RENAME must not land while a
 coord build that is serving — or about to — still reads the surface.
 
-THE single home of this gate's logic. Three lanes invoke this one script:
+THE single home of this gate's logic. Four lanes invoke this one script:
 
   * ``.github/workflows/coord-column-drop-guard.yml``, job
     ``coord-column-drop-guard`` — the PR gate (``--base-ref origin/<base>``)
@@ -10,6 +10,12 @@ THE single home of this gate's logic. Three lanes invoke this one script:
     event's ``before`` sha, so every commit the push carried is scanned), which
     exists so the required-check context has posted on ``main`` before the
     ruleset requires it.
+  * ``.github/workflows/web-guards.yml``, step
+    "coord-column-drop-guard: Check coord.* drops against coord's read contract"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``coord-column-drop-guard`` — same, locally.
   * ``.pre-commit-config.yaml``, hook ``coord-column-drop-guard`` — the
     shift-left lane, handed the changed revision files as ``--files``.

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,8 +35,35 @@ import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { formatRelativeTime } from "@/utils/formatDuration";
 import { RunnerStatusBadge } from "@/components/server-runners/RunnerStatusBadge";
 import { describeTenantBindings } from "./tenantBindings";
+import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
+import {
+  getDeviceCredentialOverview,
+  type DeviceCredentialOverview,
+} from "@/lib/api/device_credentials";
+import {
+  DeviceCredentialPanel,
+  type OverviewState,
+} from "./DeviceCredentialPanel";
+import {
+  indexCredentialOverview,
+  normalizeDeviceId,
+  resolveDevicePosture,
+} from "./deviceCredentialPosture";
 
 const REGISTERED_REFETCH_MS = 30000;
+
+/** Query key for `GET /devices/credential-overview`. */
+export const CREDENTIAL_OVERVIEW_KEY = [
+  ...runnerKeys.all,
+  "credential-overview",
+];
+
+/**
+ * The clock the posture resolver is judged against. A runner that stops
+ * reporting sends no frame to re-render anything, so without this tick its
+ * last `live` would never go stale on screen (same 15 s tick as devops).
+ */
+const POSTURE_CLOCK_MS = 15_000;
 
 const MUTED_CHIP_CLASS = "border-text-muted/50 text-text-muted";
 
@@ -109,11 +136,43 @@ export function RegisteredDevicesList({
   } = useQuery<RegisteredDevice[], Error>({
     queryKey: [...runnerKeys.all, "registered"],
     queryFn: () => runnerService.getRunners(),
-    refetchInterval: (query) => (query.state.error ? false : REGISTERED_REFETCH_MS),
+    refetchInterval: (query) =>
+      query.state.error ? false : REGISTERED_REFETCH_MS,
     refetchIntervalInBackground: false,
     retry: 1,
     retryDelay: 1000,
   });
+
+  // Credential posture: coord's `GET /coord/status` stream, read exactly as
+  // `/admin/coord/devops` reads it. Subscribed ONCE here and shared by rows.
+  const deviceStatus = useDeviceStatusStream();
+  const overviewQuery = useQuery<DeviceCredentialOverview, Error>({
+    queryKey: CREDENTIAL_OVERVIEW_KEY,
+    queryFn: getDeviceCredentialOverview,
+    refetchInterval: (query) =>
+      query.state.error ? false : REGISTERED_REFETCH_MS,
+    refetchIntervalInBackground: false,
+    retry: 1,
+    retryDelay: 1000,
+  });
+  const overviewById = useMemo(
+    () => indexCredentialOverview(overviewQuery.data?.devices ?? []),
+    [overviewQuery.data]
+  );
+  const overviewState: OverviewState = overviewQuery.isLoading
+    ? "loading"
+    : overviewQuery.error
+      ? "error"
+      : "ok";
+  const queryClient = useQueryClient();
+  const refreshOverview = () => {
+    void queryClient.invalidateQueries({ queryKey: CREDENTIAL_OVERVIEW_KEY });
+  };
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), POSTURE_CLOCK_MS);
+    return () => clearInterval(t);
+  }, []);
 
   const { runners: onlineRunners } = useRealtimeConnections();
   const onlineIds = new Set(onlineRunners.map((r) => r.id));
@@ -187,8 +246,8 @@ export function RegisteredDevicesList({
           </h3>
           <p className="text-text-muted">
             You have {allDevices.length} registered{" "}
-            {allDevices.length === 1 ? "device" : "devices"} but none are
-            online right now. Turn off <span className="text-white">Online only</span>{" "}
+            {allDevices.length === 1 ? "device" : "devices"} but none are online
+            right now. Turn off <span className="text-white">Online only</span>{" "}
             to see them all.
           </p>
         </div>
@@ -262,6 +321,13 @@ export function RegisteredDevicesList({
       <div className="grid gap-4">
         {visibleDevices.map((device) => {
           const isOnline = onlineIds.has(device.id) || device.wsConnected;
+          const overview = overviewById.get(normalizeDeviceId(device.id));
+          const posture = resolveDevicePosture(
+            deviceStatus.byHostname,
+            device.id,
+            overview?.hostname ?? device.hostname,
+            nowMs
+          );
           return (
             <Card
               key={device.id}
@@ -332,6 +398,15 @@ export function RegisteredDevicesList({
 
                   <TenantBindingChips bindings={device.tenant_bindings} />
 
+                  <DeviceCredentialPanel
+                    deviceId={device.id}
+                    posture={posture}
+                    overview={overview}
+                    overviewState={overviewState}
+                    now={nowMs}
+                    onChanged={refreshOverview}
+                  />
+
                   <div className="mt-4 text-xs text-text-muted">
                     Last seen:{" "}
                     {device.lastHeartbeat
@@ -339,7 +414,9 @@ export function RegisteredDevicesList({
                       : "never"}
                     {" · "}
                     Device ID:{" "}
-                    <span className="font-mono">{device.id.slice(0, 8)}</span>
+                    <span className="font-mono" data-testid="device-id">
+                      {device.id}
+                    </span>
                   </div>
                 </div>
 

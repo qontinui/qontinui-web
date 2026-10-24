@@ -1,0 +1,438 @@
+{
+  "_answer_end_and_release": [
+    [
+      "await _send_to_source",
+      "await _release_end_only"
+    ]
+  ],
+  "_attach_target": [
+    [
+      "await _refuse",
+      "await _refuse"
+    ]
+  ],
+  "_attachment_by_remote_mark": [
+    [
+      "await _bound_attachment"
+    ]
+  ],
+  "_authorize": [
+    [
+      "await _refuse",
+      "await _refuse",
+      "await _send_to_source",
+      "await _detach_target",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse"
+    ]
+  ],
+  "_bind_terminal": [
+    [
+      "await _get_redis",
+      "await _eval",
+      "await _hset"
+    ]
+  ],
+  "_bound_attachment": [
+    [
+      "await _drop_attachment"
+    ]
+  ],
+  "_claim_grant": [
+    [
+      "await _get_redis",
+      "await _maybe_await"
+    ]
+  ],
+  "_close_pubsub": [
+    [
+      "await shield",
+      "call shield",
+      "await shield",
+      "call shield"
+    ]
+  ],
+  "_detach_target": [
+    [
+      "await send_terminal"
+    ]
+  ],
+  "_dispatch_target_frame": [
+    [
+      "await _reap_expired",
+      "await handler"
+    ]
+  ],
+  "_drop_attachment": [
+    [
+      "await shield",
+      "call shield",
+      "await _maybe_stop_listener"
+    ]
+  ],
+  "_end_attached": [
+    [
+      "await _refuse",
+      "await _authorize",
+      "await _forward_end"
+    ]
+  ],
+  "_end_with_fresh_grant": [
+    [
+      "await _verify_grant",
+      "await _refuse",
+      "await _end_attached",
+      "await _attach_target",
+      "await _claim_grant",
+      "await _write_grant_record",
+      "await _ensure_listener",
+      "call _ensure_listener",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _refuse",
+      "await _forward_end",
+      "await _drop_attachment"
+    ]
+  ],
+  "_ensure_listener": [
+    [
+      "await _get_redis",
+      "await subscribe",
+      "await _close_pubsub",
+      "call create_task",
+      "await send_command_to_runner",
+      "await _unsubscribe_runner"
+    ],
+    [
+      "call _ensure_listener"
+    ]
+  ],
+  "_eval": [
+    [
+      "await _maybe_await"
+    ]
+  ],
+  "_evict": [
+    [
+      "await _send_to_source",
+      "await _detach_target",
+      "await _drop_attachment"
+    ]
+  ],
+  "_expire_pending_end": [
+    [
+      "await sleep",
+      "call sleep",
+      "await _answer_end_and_release"
+    ]
+  ],
+  "_finish_listener": [
+    [
+      "await gather",
+      "call gather",
+      "await _close_pubsub",
+      "await _unsubscribe_runner"
+    ]
+  ],
+  "_forward": [
+    [
+      "await send_terminal",
+      "await _refuse"
+    ]
+  ],
+  "_forward_end": [
+    [
+      "await _refuse",
+      "await send_terminal",
+      "await _refuse",
+      "call spawn_background"
+    ]
+  ],
+  "_get_redis": [
+    [
+      "await get_redis"
+    ]
+  ],
+  "_handle_attach": [
+    [
+      "await _verify_grant",
+      "await _attach_target",
+      "await _refuse",
+      "await _claim_grant",
+      "await _write_grant_record",
+      "await _ensure_listener",
+      "call _ensure_listener",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _refuse",
+      "await send_terminal",
+      "await _drop_attachment",
+      "await _refuse"
+    ]
+  ],
+  "_handle_create": [
+    [
+      "await _verify_grant",
+      "await _refuse",
+      "await _refuse",
+      "await _claim_grant",
+      "await _write_grant_record",
+      "await _ensure_listener",
+      "call _ensure_listener",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _refuse",
+      "await send_terminal",
+      "await _drop_attachment",
+      "await _refuse"
+    ]
+  ],
+  "_handle_end": [
+    [
+      "await _end_with_fresh_grant",
+      "await _end_attached"
+    ]
+  ],
+  "_hset": [
+    [
+      "await _maybe_await"
+    ]
+  ],
+  "_listener_lost": [
+    [
+      "await _settle_pending_ends_on_target",
+      "await _evict",
+      "await _close_pubsub",
+      "await _unsubscribe_runner"
+    ]
+  ],
+  "_maybe_await": [
+    [
+      "await result"
+    ]
+  ],
+  "_maybe_stop_listener": [
+    [
+      "await _stop_listener"
+    ]
+  ],
+  "_reap_expired": [
+    [
+      "await _evict"
+    ]
+  ],
+  "_refuse": [
+    [
+      "await _send_to_source"
+    ]
+  ],
+  "_release_end_only": [
+    [
+      "await _drop_attachment",
+      "await _maybe_stop_listener"
+    ]
+  ],
+  "_release_registry": [
+    [
+      "await _get_redis",
+      "await delete",
+      "await delete",
+      "await _eval"
+    ]
+  ],
+  "_represent_attach": [
+    [
+      "await sleep",
+      "call sleep",
+      "await _evict",
+      "await send_terminal",
+      "await _evict"
+    ]
+  ],
+  "_route_attached": [
+    [
+      "await _send_to_source",
+      "await _bind_terminal",
+      "await _detach_target",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _detach_target",
+      "await _drop_attachment",
+      "await _refuse",
+      "await _send_to_source"
+    ]
+  ],
+  "_route_buffer_response": [
+    [
+      "await _attachment_by_remote_mark",
+      "await _send_to_source"
+    ]
+  ],
+  "_route_created": [
+    [
+      "await _send_to_source",
+      "await _drop_attachment"
+    ]
+  ],
+  "_route_end_error": [
+    [
+      "await _answer_end_and_release"
+    ]
+  ],
+  "_route_end_reply": [
+    [
+      "await _answer_end_and_release"
+    ]
+  ],
+  "_route_exit": [
+    [
+      "await _bound_attachment",
+      "await _send_to_source",
+      "await _drop_attachment"
+    ]
+  ],
+  "_route_input_ack": [
+    [
+      "await _attachment_by_remote_mark",
+      "await _send_to_source"
+    ]
+  ],
+  "_route_output": [
+    [
+      "await _bound_attachment",
+      "await _send_to_source"
+    ]
+  ],
+  "_route_runner_disconnected": [
+    [
+      "await _settle_pending_ends_on_target",
+      "await _evict"
+    ]
+  ],
+  "_route_target_error": [
+    [
+      "await _route_end_error",
+      "await _attachment_by_remote_mark",
+      "await _route_end_error",
+      "await _send_to_source",
+      "await _drop_attachment"
+    ]
+  ],
+  "_run_listener": [
+    [
+      "async for listen",
+      "await route_target_frame",
+      "call route_target_frame",
+      "await _listener_lost"
+    ]
+  ],
+  "_schedule_attach_represent": [
+    [
+      "call spawn_background"
+    ]
+  ],
+  "_send_to_source": [
+    [
+      "async with send_lock",
+      "await send_json"
+    ]
+  ],
+  "_settle_pending_ends_on_target": [
+    [
+      "await _answer_end_and_release"
+    ]
+  ],
+  "_stop_listener": [
+    [
+      "call spawn_background",
+      "await _finish_listener"
+    ]
+  ],
+  "_unsubscribe_runner": [
+    [
+      "await send_command_to_runner"
+    ]
+  ],
+  "_verify_grant": [
+    [
+      "await _refuse",
+      "await verify_token",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse",
+      "await _refuse"
+    ]
+  ],
+  "_write_grant_record": [
+    [
+      "await _get_redis",
+      "await _hset",
+      "await expireat"
+    ]
+  ],
+  "handle_source_frame": [
+    [
+      "await _reap_expired",
+      "await _handle_attach",
+      "await _handle_create",
+      "await _handle_end",
+      "await _authorize",
+      "await _forward",
+      "await _authorize",
+      "await _forward",
+      "await _authorize",
+      "await _refuse",
+      "await _forward",
+      "await _authorize",
+      "await _forward",
+      "await _authorize",
+      "await _detach_target",
+      "await _drop_attachment"
+    ],
+    [
+      "await handle_source_frame"
+    ]
+  ],
+  "publish_target_frame": [
+    [
+      "await _get_redis",
+      "await publish"
+    ],
+    [
+      "await publish_target_frame",
+      "call publish_target_frame"
+    ],
+    [
+      "call publish_target_frame"
+    ]
+  ],
+  "release_source": [
+    [
+      "await _detach_target",
+      "await _drop_attachment",
+      "await _stop_listener"
+    ],
+    [
+      "await release_source"
+    ]
+  ],
+  "route_target_frame": [
+    [
+      "await _dispatch_target_frame"
+    ],
+    [
+      "call route_target_frame"
+    ]
+  ],
+  "spawn_background": [
+    [
+      "call create_task"
+    ]
+  ]
+}

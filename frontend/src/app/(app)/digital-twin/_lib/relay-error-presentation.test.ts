@@ -193,6 +193,104 @@ describe("explainRelayFailure — the other arms", () => {
   });
 });
 
+describe("explainRelayFailure — the runner's own refusal", () => {
+  /** A failure where the RUNNER answered (the relay worked). */
+  const refused = (
+    status: number,
+    runner: NonNullable<ConstructorParameters<typeof RunnerRelayError>[4]>,
+    requestId?: string
+  ) => new RunnerRelayError("boom", status, { requestId }, undefined, runner);
+
+  it("names an unregistered app id instead of a bare HTTP 404", () => {
+    const out = explainRelayFailure(
+      refused(
+        404,
+        { reason: "app-not-found", detail: { appId: "qontinui-web" } },
+        "req-7"
+      ),
+      "spec pages for qontinui-web",
+      NOW
+    );
+
+    // The pointer is advice, not a claim that THIS runner registered the id:
+    // older runners do not self-register.
+    expect(out.cause).toBe(
+      'The runner has no app registered as "qontinui-web" (app-not-found).' +
+        ' Recent runners register their own UI as "qontinui-runner" — try that id.'
+    );
+    expect(out.cause).not.toContain("The relay answered");
+    expect(out.requestId).toBe("req-7");
+  });
+
+  it("does not point at qontinui-runner when that is the id that failed", () => {
+    const out = explainRelayFailure(
+      refused(404, {
+        reason: "app-not-found",
+        detail: { appId: "qontinui-runner" },
+      }),
+      "spec pages",
+      NOW
+    );
+
+    expect(out.cause).toBe(
+      'The runner has no app registered as "qontinui-runner" (app-not-found).'
+    );
+  });
+
+  it("still says app-not-found when the runner echoed no app id", () => {
+    const out = explainRelayFailure(
+      refused(404, { reason: "app-not-found" }),
+      "spec pages",
+      NOW
+    );
+
+    expect(out.cause).toContain("no app registered as that id");
+  });
+
+  it("reports any other refusal in the runner's own words", () => {
+    const out = explainRelayFailure(
+      refused(500, { message: "UI Bridge request timed out after 10000ms" }),
+      "a live snapshot",
+      NOW
+    );
+
+    expect(out.cause).toBe(
+      "The runner answered HTTP 500: UI Bridge request timed out after 10000ms."
+    );
+  });
+
+  it("joins a reason and a message", () => {
+    const out = explainRelayFailure(
+      refused(400, { reason: "invalid-app-id", message: "bad id" }),
+      "spec pages",
+      NOW
+    );
+
+    expect(out.cause).toBe(
+      "The runner answered HTTP 400: invalid-app-id — bad id."
+    );
+  });
+
+  it("says the runner named no cause rather than inventing one", () => {
+    const out = explainRelayFailure(refused(200, {}), "a live snapshot", NOW);
+
+    expect(out.cause).toBe(
+      "The runner answered HTTP 200 with a failure and named no cause."
+    );
+  });
+
+  it("groups the list and graph failing on the same unregistered app", () => {
+    const runner = { reason: "app-not-found", detail: { appId: "x" } };
+    expect(
+      sharesRelayCause(
+        refused(404, runner, "req-list"),
+        refused(404, runner, "req-graph"),
+        NOW
+      )
+    ).toBe(true);
+  });
+});
+
 describe("sharesRelayCause", () => {
   it("groups two queries that failed the same way", () => {
     // The dominant case: one runner, several queries, one outage. Each is its

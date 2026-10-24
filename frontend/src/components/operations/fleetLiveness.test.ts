@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import { summarizeFleetLiveness } from "./fleetLiveness";
-import type { FleetHealthDevice } from "./useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 const device = (id: string, state?: string): FleetHealthDevice => ({
   device_id: id,
@@ -17,12 +17,13 @@ const device = (id: string, state?: string): FleetHealthDevice => ({
 
 const summarize = (
   devices: FleetHealthDevice[],
-  over: { loading?: boolean; error?: string | null } = {}
+  over: { loading?: boolean; error?: string | null; answered?: boolean } = {}
 ) =>
   summarizeFleetLiveness({
     devices,
     loading: over.loading ?? false,
     error: over.error ?? null,
+    answered: over.answered ?? true,
   });
 
 describe("summarizeFleetLiveness", () => {
@@ -97,6 +98,23 @@ describe("summarizeFleetLiveness", () => {
     expect(s.headline).toBe("No devices reporting health");
   });
 
+  it("reports total as null, not 0, while the first read is in flight", () => {
+    const s = summarize([], { loading: true, answered: false });
+    expect(s.total).toBeNull();
+    expect(s.headline).toBe("Reading fleet health");
+  });
+
+  it("reports total as null, not 0, when the read failed before any answer", () => {
+    expect(
+      summarize([], { error: "coord unreachable", answered: false }).total
+    ).toBeNull();
+    // A failure after an answer keeps the last-read count, empty included.
+    expect(
+      summarize([device("a", "healthy")], { error: "coord unreachable" }).total
+    ).toBe(1);
+    expect(summarize([], { error: "coord unreachable" }).total).toBe(0);
+  });
+
   it("renders a failed read as amber and says it is about the read", () => {
     // A transport failure is evidence about the network, not about the
     // machines: red would invent an incident, green would hide one.
@@ -108,7 +126,7 @@ describe("summarizeFleetLiveness", () => {
   });
 
   it("distinguishes 'not read yet' from 'nothing to report'", () => {
-    const loading = summarize([], { loading: true });
+    const loading = summarize([], { loading: true, answered: false });
     expect(loading.headline).toBe("Reading fleet health");
     expect(loading.headline).not.toBe(summarize([]).headline);
   });

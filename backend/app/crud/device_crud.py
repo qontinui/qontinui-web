@@ -32,6 +32,10 @@ __all__ = [
     "take_ws_session",
     "pointer_names",
     "clear_ws_session_if_current",
+    "get_credential_revoked_at",
+    "set_credential_revoked_at",
+    "credential_revoked_at_for_devices",
+    "lock_device_row",
 ]
 
 
@@ -500,3 +504,73 @@ async def delete_device(
 
     await db.delete(record)
     await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Device-scoped credential deny (``coord.devices.credential_revoked_at``)
+#
+# Plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-from-
+# qontinui-web`` Phase 4. web AUTHORS this column (alembic ``devcred_01``)
+# and is its only writer; the operator revoke / authorize-redeem routes set
+# and clear it, and every web door that issues the device a credential reads
+# it. Kept on the ``Device`` ORM model with the rest of web's sanctioned
+# ``coord.devices`` write path.
+# ---------------------------------------------------------------------------
+
+
+async def get_credential_revoked_at(
+    db: AsyncSession, device_id: UUID
+) -> datetime | None:
+    """When ``device_id``'s credentials were revoked, or ``None`` if they are
+    not (including a device with no row — nothing to deny).
+
+    A failed read RAISES; callers treat that as a refusal, never as "not
+    revoked".
+    """
+    stmt = select(Device.credential_revoked_at).where(Device.device_id == device_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def set_credential_revoked_at(
+    db: AsyncSession, device_id: UUID, revoked_at: datetime | None
+) -> bool:
+    """Set (a timestamp) or clear (``None``) the device's credential deny.
+
+    Returns whether a ``coord.devices`` row was updated. Caller commits.
+    """
+    stmt = (
+        update(Device)
+        .where(Device.device_id == device_id)
+        .values(credential_revoked_at=revoked_at)
+    )
+    result = await db.execute(stmt)
+    return int(getattr(result, "rowcount", 0) or 0) > 0
+
+
+async def credential_revoked_at_for_devices(
+    db: AsyncSession, device_ids: list[UUID]
+) -> dict[UUID, datetime | None]:
+    """The deny for each listed device that has a ``coord.devices`` row.
+
+    A device absent from the result has no row here — callers must not read
+    that absence as "not revoked" without saying so.
+    """
+    if not device_ids:
+        return {}
+    stmt = select(Device.device_id, Device.credential_revoked_at).where(
+        Device.device_id.in_(device_ids)
+    )
+    return {row[0]: row[1] for row in (await db.execute(stmt)).all()}
+
+
+async def lock_device_row(db: AsyncSession, device_id: UUID) -> bool:
+    """``SELECT ... FOR UPDATE`` the device's row; whether one exists.
+
+    Serialises the operator credential controls (authorize-redeem, revoke)
+    for one device, so two concurrent authorizations cannot each miss the
+    other's uncommitted code and both survive the supersede sweep.
+    """
+    stmt = (
+        select(Device.device_id).where(Device.device_id == device_id).with_for_update()
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None

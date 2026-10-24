@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { fetchRecentDevActions } from "@/lib/api/operations/devActions";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import {
-  DEV_ACTIONS_API,
-  DEV_ACTIONS_LIMIT,
-  DEV_ACTIONS_POLL_MS,
-} from "./utils";
-import type { DevAction, DevActionsResponse } from "./types";
+import { DEV_ACTIONS_LIMIT, DEV_ACTIONS_POLL_MS } from "./utils";
+import type { DevAction } from "./types";
 
 const log = createLogger("DevActionsStream");
 
@@ -56,21 +52,14 @@ export function useDevActionsStream(): UseDevActionsStreamResult {
 
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(
-        `${DEV_ACTIONS_API}?limit=${DEV_ACTIONS_LIMIT}`,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as DevActionsResponse;
+      const data = await fetchRecentDevActions(DEV_ACTIONS_LIMIT);
       if (cleanedUpRef.current) return;
       setActions(data.actions ?? []);
       setError(null);
       setSeeded(true);
     } catch (err) {
       if (cleanedUpRef.current) return;
-      const msg = err instanceof Error ? err.message : "fetch failed";
+      const msg = statusOnlyErrorText(err, "fetch failed");
       log.warn("GET /dev-actions/recent failed:", msg);
       setError(msg);
       // An error is still an answer — the tile shows its error state, not

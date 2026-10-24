@@ -5,7 +5,7 @@ import {
   ActionType,
   Connections,
 } from "@/lib/action-schema/action-types";
-import { WorkflowDocumentation } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentation } from "@/services/workflow-documentation";
 import {
   BookOpen,
   FileCode,

@@ -60,7 +60,8 @@ REV_RE = re.compile(
     re.M,
 )
 DOWN_RE = re.compile(
-    r"^down_revision\s*(?::[^=\n]*)?\s*=\s*(\([^)]*\)|[^\n]+)",
+    r"^down_revision\s*(?::[^=\n]*)?\s*=\s*"
+    r"""(\((?:"[^"\n]*"|'[^'\n]*'|#[^\n]*(?![^\n])|[^)"'#])*\)|[^\n]+)""",
     re.M,
 )
 # The PARSE alphabet: what may be read as a REFERENCE to a revision. It is
@@ -78,7 +79,10 @@ DOWN_RE = re.compile(
 # `down_revision` right-hand side: a quoted literal, or a `#` comment running to
 # end of line. Scanning left to right, a `#` INSIDE a
 # quoted id is consumed by the literal alternative first, so only a comment is
-# skipped. `DOWN_RE`'s single-line fallback captures a trailing comment, and a
+# skipped. `DOWN_RE`'s paren alternative walks this same stream to find the
+# closing `)`, so a `)` inside a literal or a comment does not end the capture
+# early.
+# `DOWN_RE`'s single-line fallback captures a trailing comment, and a
 # comment is where a stray id-shaped string lives (`# was "rev.0"`); counting
 # it as a parent is wrong in BOTH directions a caller cares about — it turns a
 # scalar into a phantom merge revision for `_walk_to_fork_root`/`old_parent_of`,
@@ -121,6 +125,24 @@ def split_comment(down_rhs: str) -> tuple[str, str, str]:
     return down_rhs, "", ""
 
 
+_ROOT_NONE_RE = re.compile(r"\bNone\b")
+
+
+def root_none(down_rhs: str) -> re.Match[str] | None:
+    """The ``None`` token of a chain root's right-hand side, else ``None``.
+
+    Read on the ``_RHS_TOKEN_RE`` stream: literals and comments are blanked
+    first (offsets preserved, so the match indexes ``down_rhs``), and what is
+    left must be ``None`` alone, optionally wrapped in parentheses. So
+    ``None  # root`` and a formatter-wrapped ``(  # note\\n    None\\n)`` are
+    roots, while ``PARENT  # was None`` is not.
+    """
+    blanked = _RHS_TOKEN_RE.sub(lambda m: " " * len(m.group(0)), down_rhs)
+    if blanked.strip(" \t\r\n()") != "None":
+        return None
+    return _ROOT_NONE_RE.search(blanked)
+
+
 #: Revision ids are interpolated into PR comments, so anything outside this
 #: set is stripped before rendering. ``REV_RE`` captures ``(.+?)`` between
 #: quotes, which would otherwise let a revision id in someone's own PR close
@@ -151,11 +173,20 @@ SAFE_ID_RE = re.compile(r"[^0-9A-Za-z._-]")
 # revision has a parent is a cycle, which the callers already classify
 # separately.
 #
-# Still line-oriented on purpose: ``[^)]*`` inside the paren alternative
-# crosses newlines (a negated class always does), which covers the wrapped
-# scalar and the wrapped merge tuple, while the fallback ``[^\n]+`` keeps the
-# single-line forms parsing exactly as before. A right-hand side that nests
-# parentheses is still out of reach, and no alembic revision writes one.
+# The paren alternative reads the SAME tokens ``_RHS_TOKEN_RE`` does — a quoted
+# literal, a ``#`` comment to end of line, or any other character but ``)`` —
+# so a ``)`` inside a literal (``"a)"``, legal in the parse alphabet) or a
+# comment (``# see (x)``) no longer ends the tuple. Its first cut was
+# ``[^)]*``, which stopped at the FIRST ``)`` and silently dropped every
+# parent after one (plan
+# ``2026-09-30-a-paren-inside-a-comment-truncates-a-wrapped-alembic-down-revision``).
+# The ``(?![^\n])`` pins a comment to end of line: without it the generic class
+# could also eat a comment's tail, and an unterminated ``(`` backtracked
+# exponentially in the number of comments. With it every character has one
+# reading, so a miss is linear. The fallback ``[^\n]+`` keeps the single-line
+# forms parsing exactly as before. A right-hand side that nests parentheses
+# OUTSIDE a literal or comment is still out of reach, and no alembic revision
+# writes one.
 #
 # THE SECOND CHANGE HERE IS NOT MONOTONE, and saying so is the point: the
 # annotation segment narrowed from ``[^=]*`` to ``[^=\n]*``. ``[^=]*`` crossed
@@ -979,8 +1010,11 @@ def repoint_sites(
     # `old_parent is None` has two causes that must not share wording: a true
     # chain root (the right-hand side IS `None`) and a right-hand side holding
     # no string literal at all (`down_revision = PARENT`).
-    declared_rhs = split_comment(scan.revisions.get(revision, "None"))[0].strip()
-    parent_unparsed = old_parent is None and declared_rhs != "None"
+    # A wrapped root (`= (  # note\n    None\n)`) is a root too, so the test
+    # reads the token stream rather than comparing the comment-split text.
+    parent_unparsed = (
+        old_parent is None and root_none(scan.revisions.get(revision, "None")) is None
+    )
     down_before: str | None = None
     down_after = f'down_revision: str | Sequence[str] | None = "{new_parent}"'
     revises: tuple[str | None, str] | None = (None, f"Revises: {new_parent}")
@@ -993,25 +1027,40 @@ def repoint_sites(
             # advice never tells an author to delete what they wrote.
             lhs = down_before[: down_match.start(1) - down_match.start(0)]
             rhs = down_before[len(lhs) :]
-            value, hash_sign, comment = split_comment(rhs)
-            literal = (
-                re.search(r"([\"'])" + re.escape(old_parent) + r"\1", value)
-                if old_parent is not None
-                else None
+            # The old parent's literal is located on the SAME token stream
+            # `parent_refs` reads, so a comment is skipped wherever it sits —
+            # including on an earlier line of a wrapped right-hand side, where a
+            # `partition("#")` would swallow every line after it as "comment"
+            # and the advice would no longer parse as Python.
+            literal = next(
+                (
+                    m
+                    for m in _RHS_TOKEN_RE.finditer(rhs)
+                    if old_parent is not None and m.group(1) == old_parent
+                ),
+                None,
             )
-            if literal:
-                quote = literal.group(1)
-                new_value = (
-                    value[: literal.start()]
+            if literal is not None:
+                quote = rhs[literal.start()]
+                down_after = (
+                    lhs
+                    + rhs[: literal.start()]
                     + f"{quote}{new_parent}{quote}"
-                    + value[literal.end() :]
+                    + rhs[literal.end() :]
+                )
+            elif (root := root_none(rhs)) is not None:
+                # A chain root: replace the `None` token itself, found on the
+                # same token stream, so a wrapped `= (  # note\n    None\n)`
+                # keeps its parens and comment and the advice still parses.
+                down_after = (
+                    lhs + rhs[: root.start()] + f'"{new_parent}"' + rhs[root.end() :]
                 )
             else:
-                # `None` (a chain root) or no readable literal: write the
-                # target, keeping whatever spacing preceded a comment.
+                # No readable literal and no `None`: write the target, keeping
+                # whatever spacing preceded a comment.
+                value, hash_sign, comment = split_comment(rhs)
                 trailing = value[len(value.rstrip()) :]
-                new_value = f'"{new_parent}"' + trailing
-            down_after = lhs + new_value + hash_sign + comment
+                down_after = lhs + f'"{new_parent}"' + trailing + hash_sign + comment
         revises_match = REVISES_RE.search(revision_source)
         revises = (
             (

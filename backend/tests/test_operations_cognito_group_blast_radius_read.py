@@ -37,6 +37,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
 from tests.test_operations_cognito_group_delete_guards import (
     _BLAST_RADIUS_PATH,
     _CALLER_TOKEN,
@@ -160,8 +161,8 @@ class TestThePreviewAsksCoordThePoolWideQuestion:
             strands_own_tenant=(),
             strands_other_tenant_count=0,
         )
-        with patch(
-            "app.api.v1.endpoints.operations._coord_group_blast_radius",
+        with patch_ops(
+            "_coord_group_blast_radius",
             new=AsyncMock(return_value=radius),
         ) as reader:
             out = admin_client.get(

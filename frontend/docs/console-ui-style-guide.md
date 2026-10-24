@@ -1,12 +1,14 @@
 # Console UI Style Guide
 
-**Version:** 0.2.3 (Phase 1 — §3 filled in from the shipped primitives; §3.3
+**Version:** 0.2.4 (Phase 1 — §3 filled in from the shipped primitives; §3.3
 records the patterns the first post-guide page had to add; §3.4 records the
-alerts page's retirement and the Dev Ops Conditions panel)
-**Last Updated:** 2026-09-18
+alerts page's retirement and the Dev Ops Conditions panel; §3.5 records the computers console; §3.6 the CI dashboard; §3.7 adds the
+share primitives)
+**Last Updated:** 2026-10-01
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
 `2026-08-20-fleet-served-agent-skills.md` Phase 3; §3.4 from
-`2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8
+`2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8;
+§3.7 from `2026-08-27-operator-touch-read-and-surface` Phase C3
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -1298,10 +1300,13 @@ same table. Every module doc cites its rule number and links this file.
 | `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
 | `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **inert while it is** (`aria-disabled` with no handler, never the real `disabled` attribute, which would drop it out of the tab order on the one interaction it exists for and dim the page's default state) — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
 | `RefreshButton` | §6.4 (no numbered rule) | `{ onRefresh, label, title, className?, "data-testid"? }` where `onRefresh: () => Promise<unknown> \| void` | The icon-only "re-read now" control. **`label` and `title` are required, not defaulted**: `label` is the accessible name (an icon has none), and `title` names what the press does AND its effect — "returns to the first page", "also refreshes itself every 10 s" — without repeating the label, since it is announced as the description right after the name. **Busy belongs to the press**: the button is busy for exactly as long as the promise ITS click returned is out, so a page's poll — which usually calls the same fetch function — has no path to the state and cannot make it pulse every interval. Busy is `aria-busy` + `aria-disabled` with presses ignored, never the real `disabled` attribute (same reasoning as `FilterChips`' `all` chip: it would blur the button out from under the keyboard user who just pressed it). A rejected read ends busy too — the failure is the page's to render (R6). Added by plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves` after 18 of 28 `/admin/coord/*` files rendering `RefreshCw` were found carrying no `aria-label`; adopted on `/plans` first, then `/spawn` (the sibling page sharing `derivePlansHealth` and the same fetch/poll-lock shape), 16 are still open. |
+| `GlossaryTerm` | supports R8 | `{ id, children?, className?, "data-testid"? }` where `id: GlossaryTerm` (the generated union from `@qontinui/shared-types/glossary`) | R8 keeps INTERNAL vocabulary off a primary surface; the product's OWN vocabulary (gate, work unit, claim, merge train…) stays, and this is how it explains itself. The tooltip is `GLOSSARY[id].short` **byte for byte**, from the table generated out of the schemas `glossary/terms.toml` by the same generator as the Rust table coord and the runner serve — **compiled in, never fetched**, so a term explains itself when coord is unreachable. `id` is the union, so a misspelt id is a compile error; `GlossaryTerm.test.tsx` also scans every literal `id` in `src/`. The trigger is focusable (the definition is not hover-only) and carries its own `TooltipProvider`. Pass `children` when the surface's wording differs from the display name ("gates", a column header). First adopted (plan `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists` C3) on the `/admin/coord/*` column headers and empty states that use a roster term — `/gates` (Gate, Continuation, both empty states), `/work-units`, `/findings`, `/gate-clearance`, `/git-ops`, `/policies` (Tenant), `/prompt-documents`; count its consumers with a grep. **Wrap a word only where the glossary definition is what the column means**: `/members`' "Grant tier" (a role grant) and the design-policies "Policy" column (UX policy rows) were deliberately NOT wrapped, because `tier` and `policy` define other things. |
+| `BackendErrorMessage` | supports R3, R8 | `{ error, className?, "data-testid"? }` where `error` is what the surface caught (a `BackendError` from `backendError(res)`, any `Error`) or the `BackendErrorReading` it kept in state | The one renderer for a backend refusal (plan `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists` D3). A body carrying the `Refusal` envelope (`body.refusal`) renders `Refusal::render()`'s sentence (mirrored in `lib/errors/refusal.ts`), a link for `open_page` (app paths and `https:` URLs only — never `http:` or a `javascript:` target) or a copyable command for `run_command`, its `detail` BESIDE the sentence, and each cited term through `GlossaryTerm`; it is stamped `data-refusal="structured"`. A cited term id this build's glossary does not define (a newer producer) is shown on the surface as the raw id, marked `data-glossary-unrecognised` and titled "Not in this version's glossary". Only an envelope at a STRUCTURAL position (`body.refusal`, `body.detail.refusal`, the body itself) gets the affordances: one relayed inside a string `detail` / `message` may echo caller input, so it renders its sentence only, with no link, copy button or terms, stamped `data-refusal="from-text"`. **Every other body renders exactly its pre-contract sentence**, stamped `data-refusal="unstructured"`, which is what lets a scenario count the refusals an operator still meets without a next action. Adopted on `/members`' five section-level read failures. |
 | `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx` (D3). Phase 1's re-export shim at the old path is **deleted**: its seven callers were repointed at this barrel in Phase 1's post-merge follow-up. The re-export in `operations/index.ts` stays — that is the barrel, not the shim. |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
 | `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
+| `ShareBar` / `ShareList` / `share.ts` | §6.4 (see [§3.7](#37-the-share-primitives--recorded-under-64)) | `ShareBar { numerator, denominator, title?, className?, "data-testid"? }`; `ShareList { items, total, empty?, unit?, className?, "data-testid"? }` where `items: { key, label, count, title?, detail?, detailTitle?, "data-testid"? }[]` and `count: number \| null`; `share(n, d)`, `shareOfFraction(f)`, `SHARE_UNKNOWN` | A part of a whole, as a glyph, and a ranked distribution of parts. `share()` is the console's ONE part-of-a-whole formatter — exact `100%`/`0%` only at the exact ends, `>`/`<` hedges between, and `–` for a share over nothing. |
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
 and `alertStatus.test.ts`'s three (deleted with the alerts page, §3.4) each
@@ -1499,6 +1504,60 @@ returns `unknown` beside red/amber/green, and the page paints it amber
 (`stripLevel`) while exposing the verdict as `data-ci-health` — so "we do not
 know" and "waiting" look alike to the eye (R3's ignorance floor) and stay
 distinct to a UI Bridge reader.
+
+### 3.7 The share primitives — recorded under §6.4
+
+Plan `2026-08-27-operator-touch-read-and-surface` Phase C3 built
+`/admin/coord/operator-touches`, whose operator half answers a STRATEGIC
+question — *"these four classes are 60% of my interruptions; which do I make
+policy about?"* — and the console had nothing to draw that with. No primitive
+in `components/console/` rendered a share, a percentage or a ranked
+distribution; `RecordRow`'s slots are identity, label, status, reason and time;
+and the only two percentage formatters on operator surfaces were a scalar
+(`MergeOrchestrationSettings`' `fmtRate`) and a private helper
+(`PlanCoveragePanel`'s `share()`). §6.4 allows compose or extend; this is the
+extension, in the same PR as the page that needed it.
+
+| Export | What it is |
+|---|---|
+| `share(n, d)` / `shareOfFraction(f)` (`console/share.ts`) | The ONE part-of-a-whole formatter. **Promoted, not rewritten**: it is `PlanCoveragePanel`'s `share()`, which now imports it. `100%` and `0%` only at the exact ends; `>99.9%` / `<0.1%` rather than a rounding that asserts full or no coverage; and `SHARE_UNKNOWN` (`–`) for a share over nothing — a zero/negative/unknown whole, or a part outside it. `0 of 0` used to compute to `100%`. |
+| `ShareBar` | The glyph: a fixed-width track, a fill, and the `share()` text in mono. A known zero is an empty SOLID track; an unknown share is an empty DASHED track and `–` — the two must never look alike (R6's dash rule, applied to a bar). |
+| `ShareList` | A ranked distribution: one line per class — label (truncating, `title` for the full text), optional `detail` from `sm` up, the count, the `ShareBar`. **It ranks itself** (count descending, stable on ties, an unknown count last), so ranking is a property of the primitive rather than a hope about its input. `unit` names the count (`30 placed`) where the heading does not; a `null` count reads `unknown` over the dashed track — never `0`. The detail truncates at 28ch, so it carries a hover of its own: `detailTitle`, defaulting to the detail's own text when that is a string — never the line's `title`, which may be a wire token naming the LABEL (R8; the operator-touch page's `title` is a `reason_code`). All three added by the spawns console (§3.8). |
+
+Three rules, each held by the primitive rather than left to a caller:
+
+- **The bar is neutral — never an attention hue.** A share is a measurement of
+  the whole surface, the same kind of thing as a `HealthStrip` count badge, and
+  says nothing about whose move a line is (R3). Painting the largest class red
+  would spend the loudest signal in the console on "big". `share.test.tsx`
+  asserts no red or amber class is emitted.
+- **A `ShareList` line is not a button.** It is an aggregate, read and not acted
+  on; a per-line action is what `RecordRow` + R5 are for. A surface that wants
+  both — an aggregate and its records — renders a `ShareList` for the first and
+  a `RecordList` for the second, and says which question each answers.
+- **Labels are human words (R8).** The wire token belongs in the line's `title`
+  or in a record's expanded detail, never as the label.
+
+Density: a `ShareList` line is `px-3 py-1.5` + `text-sm` — inside §5's 40px
+row budget with room to spare, because a ranked aggregate is read as one block.
+
+### 3.8 The spawns console — recorded under §6.4
+
+`/admin/coord/spawns` (plan
+`2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+Phase 5) composes `HealthStrip`, `ShareList`, `FilterTabs`,
+`RecordList`/`RecordRow`/`RecordDetail`, `StatusBadge`, `RowTime`,
+`CollapsiblePanel` and `RefreshButton`, and registers one palette (a spawn
+request's status) in `CONSOLE_PALETTES`. It extends one primitive — `ShareList`
+gained `unit`, a `null` count and `detailTitle` (§3.7) — and records four
+things rather than shipping them silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **A second surface's outcome vocabulary, reused by reference** | `spawns/_lib/spawnStatus.ts` (`SPAWN_ATTENTION_BY_KIND`, `SPAWN_KIND_CLASS`) | A spawn request ends the way a gate continuation does, so every shared kind's attention and class IS `gates/continuationStatus.ts`'s entry (`spawned` is not success, `work_completed` is the only success, an unreported outcome is the ignorance floor). The ledger-only words get their own rows: `queued`, `waiting_late`, `waiting_stuck` and `superseded`. | §4.2 audits each table on its own; nothing said two surfaces describing the same lifecycle must agree. `spawnStatus.test.ts` asserts the shared entries are identical, so the two pages cannot drift into painting one word two ways. |
+| **A threshold is not portable when its counter's cadence differs** | `spawns/_lib/spawnStatus.ts` (`SPAWN_TARGET_MS`, `SPAWN_STUCK_MS`) | The gates page's `deferral_stuck` (24 deferrals) is a day of the runner's HOURLY stamps; the ledger's `deferrals` counts events that can arrive every 5 minutes, so the same 24 would be two hours. A waiting request is therefore judged by its AGE since the first attempt: calm under the plan's 10-minute target, amber past it, red past a day. The strip reads the same rows, so it is never calmer than a row beneath it: any red row turns it red, and the headline names what is red in the rows' own words ("1 spawn stuck for 3 d", "1 dispatch stalled"), taking coord's full-window figure wherever coord counts one, so a truncated list never makes the headline disagree with a badge. | R3 says what each hue promises, not how to borrow a threshold. Reusing the vocabulary (row above) does not license reusing a number whose unit is another producer's cadence. |
+| **A count chart on a console page, built like `ThroughputPanel`, that says what it does not cover** | `spawns/_components/SpawnRateChart.tsx` | Two series inside a `CollapsiblePanel`, colours from `@/config/theme`, mirrored in an `sr-only` table, bucketed and labelled by UTC hour. Drawn from the window's request list, so it counts requests MADE in its span and when those started — a request made earlier that started inside the span is not on it, and the caption says so rather than calling the line a start rate. It starts at the first FULL hour the read covers — after the window's start, or after the oldest row loaded when the list was truncated — because the hour either falls in was only partly read; earlier hours are not drawn, never drawn as zeros. | `plans/ThroughputPanel.tsx` is the first chart on a console page and is not recorded here; this records the shape both now follow, so a third chart has something written to compose against. |
+| **A fact the wire does not serve yet, stated once for the list** | `spawns/page.tsx` (`coord-spawns-reserve-note`) | Each device's dispatch role IS served (`/fleet/dispatch-roles`) and rides on its line's label. Its current reserve and ceilings are not served until the plan's Phase 6: the `ShareList` says so ONCE above its lines, and each line's `title` repeats it for a reader hovering one device. | Repeating "not served yet" on every line is chrome that cannot vary (served policy `ux-priorities` `repeated-chrome-must-earn-its-space-by-varying`), and rendering the slot as `0` would be R6's dash rule broken. |
 
 ---
 

@@ -33,10 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.redis_config import get_redis
 from app.services.object_storage import object_storage
 from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
-    pick_active_runner_for_user,
-    runner_bridge_503_no_runner,
+    dispatch_or_http_error,
+    resolve_runner_for_request,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
@@ -45,7 +43,7 @@ logger = structlog.get_logger(__name__)
 # Storage path for diff images
 DIFF_STORAGE_PREFIX = "visual-diffs"
 
-# Endpoint identifier surfaced inside ``runner_bridge_503_no_runner`` when
+# Endpoint identifier surfaced inside ``device_bridge_503_no_device`` when
 # the compare path falls back to the no-runner envelope. The actual HTTP
 # route varies (screenshots/{id}/compare, runs/{id}/visual-compare, ...);
 # this identifier is the SERVICE-LEVEL key so frontends know which
@@ -94,7 +92,7 @@ class ComparisonEngine:
         """Dispatch the ``vision.compare_screenshots`` command + return parsed result.
 
         Picks the user's most-recently-heartbeat-active connected runner
-        (via :func:`pick_active_runner_for_user`), pipes the image bytes
+        (via :func:`resolve_runner_for_request`), pipes the image bytes
         + ignore regions + algorithm + threshold over Redis pub/sub, and
         synchronously awaits the response with a 30s timeout.
 
@@ -128,9 +126,9 @@ class ComparisonEngine:
         redis = await get_redis()
         manager = await get_runner_websocket_manager(redis)
 
-        runner = await pick_active_runner_for_user(user_id, db, manager.registry)
-        if runner is None:
-            raise runner_bridge_503_no_runner(_COMPARE_ENDPOINT)
+        runner = await resolve_runner_for_request(
+            None, user_id, db, manager, _COMPARE_ENDPOINT
+        )
 
         request_id = uuid4()
         baseline_b64 = base64.b64encode(baseline_bytes).decode("ascii")
@@ -160,34 +158,16 @@ class ComparisonEngine:
             current_size_bytes=len(current_bytes),
         )
 
-        try:
-            raw_response = await manager.relay.dispatch_and_wait(
-                str(runner.id),
-                cmd,
-                request_id=str(request_id),
-                timeout_s=_COMPARE_TIMEOUT_S,
-            )
-        except RunnerNotConnectedError:
-            logger.warning(
-                "compare_screenshots_runner_disconnected_mid_dispatch",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise runner_bridge_503_no_runner(_COMPARE_ENDPOINT)
-        except RunnerCommandTimeoutError:
-            logger.error(
-                "compare_screenshots_timeout",
-                runner_id=str(runner.id),
-                request_id=str(request_id),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail={
-                    "error": "runner_timeout",
-                    "endpoint": _COMPARE_ENDPOINT,
-                    "request_id": str(request_id),
-                },
-            )
+        raw_response = await dispatch_or_http_error(
+            manager,
+            runner,
+            cmd,
+            request_id,
+            _COMPARE_ENDPOINT,
+            _COMPARE_TIMEOUT_S,
+            "compare_screenshots",
+            log=logger,
+        )
 
         runner_error = raw_response.get("error")
         if runner_error:

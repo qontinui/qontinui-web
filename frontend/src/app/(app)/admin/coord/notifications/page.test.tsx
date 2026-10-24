@@ -24,8 +24,27 @@ const httpGet = vi.fn();
 const httpPost = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => httpGet(...args),
-    post: (...args: unknown[]) => httpPost(...args),
+    // The page reads and marks through `lib/api/operations/notifications.ts`,
+    // which calls `httpClient.fetch`; route it to the `httpGet` / `httpPost`
+    // stubs by method — the POST with its parsed body — passing the remaining
+    // options through, so the `(url, body, options)` assertions hold. A
+    // rejection passes through as before.
+    fetch: async (
+      url: string,
+      init: {
+        method?: string;
+        body?: string;
+        idempotent?: boolean;
+        [key: string]: unknown;
+      } = {}
+    ) => {
+      const { method, body, idempotent: _idempotent, ...options } = init;
+      const answer =
+        method === "POST"
+          ? await httpPost(url, JSON.parse(body ?? "null"), options)
+          : await httpGet(url, options);
+      return new Response(JSON.stringify(answer ?? null));
+    },
   },
 }));
 

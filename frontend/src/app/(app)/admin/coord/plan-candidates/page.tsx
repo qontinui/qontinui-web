@@ -15,7 +15,7 @@
  * The route is explicit (design decision D6) that there is no criticality
  * score, because *"a hardcoded score would be a guess frozen into SQL"*. This
  * page is the same shape: the only ordering is the route's declared
- * `oldest_vetted_first`, there is no sort control that would imply a ranking,
+ * `oldest_captured_first`, there is no sort control that would imply a ranking,
  * and the readiness badge is a statement about dependencies rather than a
  * priority.
  *
@@ -78,6 +78,7 @@ import {
   useGuardedPoll,
   type ReadGuard,
 } from "@/components/admin/coord/useGuardedPoll";
+import { useCursorPager } from "@/components/admin/coord/cursorPager";
 import { httpClient } from "@/services/service-factory";
 import { StatusCurrencyBadge } from "../plan-library/_components/StatusCurrencyBadge";
 import {
@@ -338,7 +339,8 @@ function CandidateRow({
 }
 
 export default function CoordPlanCandidatesPage() {
-  const [offset, setOffset] = useState(0);
+  const pager = useCursorPager();
+  const { cursor, start, reset: resetPager } = pager;
   const [limit, setLimit] = useState<number>(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<PlanCandidateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -355,7 +357,9 @@ export default function CoordPlanCandidatesPage() {
     async (guard: ReadGuard) => {
       try {
         const qs = new URLSearchParams();
-        qs.set("offset", String(offset));
+        // Keyset paging: the previous page's `next_cursor`, verbatim (the
+        // route has no `offset`).
+        if (cursor !== null) qs.set("cursor", cursor);
         qs.set("limit", String(limit));
         const body = await httpClient.get<PlanCandidateResponse>(
           `${ENDPOINT}?${qs.toString()}`
@@ -368,7 +372,7 @@ export default function CoordPlanCandidatesPage() {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [offset, limit]
+    [cursor, limit]
   );
 
   // The window is the question: changing it makes the rows already held
@@ -388,16 +392,16 @@ export default function CoordPlanCandidatesPage() {
   const readFailed = error !== null;
   const rows = useMemo(() => data?.items ?? [], [data]);
   const window = useMemo(
-    () => (data ? describeCandidateWindow(data) : null),
-    [data]
+    () => (data ? describeCandidateWindow(data, start) : null),
+    [data, start]
   );
   const disclosure = useMemo(
     () => (data ? deriveCandidateDisclosure(data) : null),
     [data]
   );
   const health = useMemo(
-    () => deriveCandidateHealth(data, loaded, readFailed),
-    [data, loaded, readFailed]
+    () => deriveCandidateHealth(data, loaded, readFailed, start),
+    [data, loaded, readFailed, start]
   );
   const capture = data?.corpus_health?.capture ?? null;
   const census = useMemo(
@@ -432,7 +436,7 @@ export default function CoordPlanCandidatesPage() {
         <Select
           value={String(limit)}
           onValueChange={(v) => {
-            setOffset(0);
+            resetPager();
             setLimit(Number(v));
           }}
         >
@@ -452,7 +456,7 @@ export default function CoordPlanCandidatesPage() {
           </SelectContent>
         </Select>
         <RefreshButton
-          key={`${offset}:${limit}`}
+          key={`${cursor ?? ""}:${limit}`}
           onRefresh={refresh}
           label="Refresh candidates"
           title={`Re-reads the candidates now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
@@ -471,12 +475,18 @@ export default function CoordPlanCandidatesPage() {
           ) : (
             <span data-testid="coord-candidates-total-unknown">
               {window.total === null
-                ? "an unknown total — the route served no count"
+                ? "an unknown total — the route stated no exact count"
                 : `a total (${window.total}) that counts the document layer alone on this read`}
             </span>
           )}{" "}
-          unshipped plans, offset {window.offset}, page size{" "}
-          {window.limit ?? "unstated"}, ordered{" "}
+          unshipped plans
+          {window.shown > 0 && (
+            <>
+              {" "}
+              (rows {window.start + 1}–{window.start + window.shown})
+            </>
+          )}
+          , page size {window.limit ?? "unstated"}, ordered{" "}
           <span
             className="font-mono"
             data-testid="coord-candidates-ordering"
@@ -568,8 +578,8 @@ export default function CoordPlanCandidatesPage() {
         <Button
           variant="outline"
           size="sm"
-          disabled={offset === 0}
-          onClick={() => setOffset((o) => Math.max(0, o - limit))}
+          disabled={!pager.canPrev}
+          onClick={pager.prev}
           data-testid="coord-candidates-page-prev"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -579,7 +589,9 @@ export default function CoordPlanCandidatesPage() {
           variant="outline"
           size="sm"
           disabled={!(window?.hasMore ?? false)}
-          onClick={() => setOffset((o) => o + limit)}
+          onClick={() => {
+            if (window?.nextCursor) pager.next(window.nextCursor, window.shown);
+          }}
           data-testid="coord-candidates-page-next"
         >
           Next

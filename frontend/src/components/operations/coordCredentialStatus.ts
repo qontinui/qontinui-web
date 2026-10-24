@@ -104,6 +104,26 @@ import { relativeTime } from "@/components/console/time";
 export const COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS = 900;
 
 /**
+ * The ceiling on a bag's self-declared `stale_after_secs`. MIRROR of coord
+ * `runner_reports::CREDENTIAL_STALE_AFTER_MAX_SECS` (3600 s): the bag's
+ * declaration wins below this, but a bag declaring a huge bound must not keep
+ * a verdict alive for hours — an hour is already twelve missed refresher
+ * passes. Mirrored so the console and coord's own credential alert age one
+ * report identically.
+ */
+export const COORD_CREDENTIAL_STALE_AFTER_MAX_SECS = 3600;
+
+/**
+ * The coord-owned reserved key of `device_status.details` carrying a per-key
+ * RECEIPT stamp: `{<key>: <rfc3339>}`, the instant coord last received each
+ * top-level key (coord `runner_reports::RECEIVED_AT_KEY`, plan
+ * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+ * Phase 5). See {@link reportedCoordCredential} for why the credential's age
+ * is read from here and not from the row's `updated_at`.
+ */
+export const COORD_RECEIVED_AT_KEY = "_coord_received_at";
+
+/**
  * Coord's per-device credential join, verbatim from `DeviceCredentialDark`
  * (`crates/coord/src/fleet_health.rs`).
  *
@@ -307,13 +327,11 @@ export interface CoordCredentialInput {
    */
   reported?: unknown;
   /**
-   * The device-status row's `updated_at` (ISO-8601) — the age of
-   * {@link reported}. Coord's status upsert replaces `details` wholesale and
-   * stamps `updated_at = now()` in the same write, so a row that still carries
-   * a `coord_credential` bag was last written by the report that wrote it.
+   * When coord last RECEIVED {@link reported} (ISO-8601) — resolved by
+   * {@link reportedCoordCredential}, which says where it comes from.
    *
-   * **Absent or unparseable ⇒ the bag is treated as stale.** Every real row
-   * carries one; a bag whose age cannot be established is not evidence.
+   * **Absent or unparseable ⇒ the bag is treated as stale.** A bag whose age
+   * cannot be established is not evidence.
    */
   reportedAt?: string;
   /** The clock, in epoch milliseconds. Defaults to `Date.now()`; injectable so
@@ -329,7 +347,7 @@ export interface CoordCredentialInput {
 export interface ReportedCoordCredential {
   /** The verbatim `details.coord_credential` bag, or `undefined`. */
   reported: unknown;
-  /** The row's `updated_at`, or `undefined` when there is no row. */
+  /** When coord received the bag (see {@link reportedCoordCredential}), or `undefined`. */
   reportedAt: string | undefined;
 }
 
@@ -468,7 +486,7 @@ export function coordCredentialStaleAfterSecs(
   return typeof declared === "number" &&
     Number.isFinite(declared) &&
     declared > 0
-    ? declared
+    ? Math.min(declared, COORD_CREDENTIAL_STALE_AFTER_MAX_SECS)
     : COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS;
 }
 
@@ -562,7 +580,7 @@ export function coordDeviceHostKey(device: {
 
 /**
  * The runner's own `details.coord_credential` bag off one device-status row,
- * verbatim, together with that row's `updated_at` — the
+ * verbatim, together with WHEN COORD RECEIVED IT — the
  * {@link CoordCredentialInput.reported} and
  * {@link CoordCredentialInput.reportedAt} inputs, returned as one value so no
  * caller can pass the bag without its age. `reported` is `undefined` when
@@ -570,13 +588,48 @@ export function coordDeviceHostKey(device: {
  * published no such key. Shared by `MachineCard` and
  * {@link summarizeCoordCredentials}, for the same reason as
  * {@link coordDeviceHostKey}.
+ *
+ * ## Where the age comes from — and why not `updated_at`
+ *
+ * Coord's `POST /coord/status` now MERGES `details` per top-level key (plan
+ * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+ * Phase 5, vet V5): a writer owns only the keys it sends. That fixed a real
+ * flicker — a skill posting `details: {}` used to erase the runner's bag — and
+ * it broke the old reading here: the row's `updated_at` is bumped by EVERY
+ * writer, so a dead runner's last `ok: true` would read fresh for as long as
+ * anything else kept posting status for the device. The machine this module
+ * exists to surface would have worn a calm `live` forever.
+ *
+ * So coord stamps a per-key receipt time into {@link COORD_RECEIVED_AT_KEY}
+ * on every write, and the age read is `_coord_received_at.coord_credential`:
+ *
+ * * **The stamp map is present** (a coord running the per-key merge wrote
+ *   this row): the credential's own stamp is the age. No stamp for the key ⇒
+ *   `reportedAt` is `undefined` ⇒ the bag is treated as stale — coord's own
+ *   rule ("a key with no stamp has an unknown age, and an unknown age yields
+ *   no verdict").
+ * * **The stamp map is absent entirely**: this row was last written by a coord
+ *   predating the merge, whose writes REPLACED `details` wholesale and stamped
+ *   `updated_at` in the same statement — so `updated_at` IS the bag's age on
+ *   exactly those rows. A merging coord always writes the map (it merges the
+ *   write's stamps into `coalesce(…, '{}')`), so the fallback cannot reach a
+ *   row the merge has touched.
  */
 export function reportedCoordCredential(
   row: { details?: unknown; updated_at: string } | undefined
 ): ReportedCoordCredential {
+  const details = asRecord(row?.details);
+  const stamps = details?.[COORD_RECEIVED_AT_KEY];
+  let reportedAt: string | undefined;
+  if (stamps === undefined) {
+    reportedAt = row?.updated_at;
+  } else {
+    const stamp = asRecord(stamps)?.coord_credential;
+    reportedAt = typeof stamp === "string" ? stamp : undefined;
+  }
   return {
-    reported: asRecord(row?.details)?.coord_credential,
-    reportedAt: row?.updated_at,
+    reported: details?.coord_credential,
+    reportedAt,
   };
 }
 

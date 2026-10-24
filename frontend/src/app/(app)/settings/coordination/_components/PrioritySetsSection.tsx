@@ -35,7 +35,7 @@ import {
   orderingNames,
   slugifySetName,
 } from "../_hooks/priority-set-delivery";
-import type { UpdatePrioritySetInput } from "../_hooks/usePrioritySets";
+import type { UpdatePrioritySetInput } from "@/lib/api/operations/coordSettings";
 
 // ---- a minimal add/remove/reorder list editor for bare strings -------------
 

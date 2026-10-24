@@ -6,7 +6,8 @@
  * "is this route reachable without authentication". Keep this module
  * framework-agnostic (no `next/server` imports) so both runtimes can import it.
  *
- * A public route is marketing, auth flow, API, or static. The middleware
+ * A public route is marketing, auth flow, API, or static (including the
+ * extensionless social-card image routes, below). The middleware
  * allow-lists these (everything else is bounced to `/login`); the
  * session-expired handler uses the same predicate to decide whether an expiry
  * should hard-redirect to `/login` (protected routes) or simply drop local
@@ -24,6 +25,7 @@ export const PUBLIC_PATHS = [
   "/terms",
   "/acceptable-use",
   "/responsible-use",
+  "/how-it-works",
   // Cognito hosted-UI OAuth landing. It arrives unauthenticated (no token/
   // marker cookie yet) carrying `?code=&state=`; it MUST run the PKCE token
   // exchange in-page rather than being bounced to `/login?next=…`. Exempting
@@ -38,10 +40,36 @@ export const PUBLIC_PREFIXES = [
   "/api",
   "/coord-api",
   "/__ui-bridge__",
+  // Image-slot files (`public/image-slots/`, plan 2026-10-13-image-
+  // generation-and-visual-judgment, Phase 14): the art on public pages, and
+  // what studio's D7 preview fetches, logged out. Gated, a <picture> whose
+  // first <source> is redirected to /login shows NOTHING: the browser does
+  // not fall back to the next source on an error.
+  "/image-slots",
 ];
+
+// The social cards Next serves for the public trees
+// (`@/lib/server/social-card`): `app/{opengraph,twitter}-image.tsx` at
+// `/opengraph-image` and `/twitter-image`, and the `(marketing)` group's
+// copies at the same names plus Next's 6-char hash of the group path. These
+// paths have no file extension, so the middleware's static-asset matcher does
+// not skip them. Link-preview crawlers send no auth cookie, so an unlisted
+// card is redirected to /login and the preview shows no image.
+//
+// Exact paths, never a pattern: a pattern also admits the card a gated tree
+// such as `(app)` would get. `public-routes.test.ts` derives the served URLs
+// from the files on disk and fails until this list is exactly the cards that
+// describe a public page. Exported for that test only.
+export const SOCIAL_CARD_PATHS: ReadonlySet<string> = new Set([
+  "/opengraph-image",
+  "/twitter-image",
+  "/opengraph-image-pwu6ef",
+  "/twitter-image-pwu6ef",
+]);
 
 export function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
+  if (SOCIAL_CARD_PATHS.has(pathname)) return true;
   return PUBLIC_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );

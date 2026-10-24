@@ -17,30 +17,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { GitBranch, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { relativeTime } from "@/components/operations/utils";
 import {
-  GitBranch,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
-import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
-
-interface CanonicalRepo {
-  repo: string;
-  mirror_state?: string | null;
-  last_reconciled_at?: string | null;
-  created_at?: string | null;
-}
-
-interface ReposResponse {
-  repos: CanonicalRepo[];
-}
-
-const FETCH_OPTS: RequestInit = {
-  credentials: "include",
-  cache: "no-store",
-};
+  fetchRepos as fetchReposRequest,
+  registerRepo,
+  removeRepo,
+  type CanonicalRepo,
+} from "@/lib/api/operations/repos";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
 
 function mirrorBadgeVariant(state: string | null | undefined) {
   switch (state) {
@@ -75,9 +60,7 @@ export default function ReposSettingsPage() {
 
   const fetchRepos = useCallback(async () => {
     try {
-      const res = await fetch(`${OPERATIONS_API}/repos`, FETCH_OPTS);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = (await res.json()) as ReposResponse;
+      const data = await fetchReposRequest();
       setRepos(data.repos ?? []);
     } catch {
       toast.error("Failed to load repositories");
@@ -98,22 +81,13 @@ export default function ReposSettingsPage() {
     }
     setAdding(true);
     try {
-      const res = await fetch(`${OPERATIONS_API}/repos`, {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: trimmed }),
-      });
-      if (!res.ok) {
-        const detail = await res.text();
-        throw new Error(detail || `${res.status}`);
-      }
+      await registerRepo(trimmed);
       toast.success(`Registered ${trimmed}`);
       setSlug("");
       await fetchRepos();
     } catch (err) {
       toast.error(
-        `Failed to register repository: ${err instanceof Error ? err.message : String(err)}`
+        `Failed to register repository: ${operationsErrorMessage(err)}`
       );
     } finally {
       setAdding(false);
@@ -122,11 +96,7 @@ export default function ReposSettingsPage() {
 
   const handleDelete = async (repo: string) => {
     try {
-      const res = await fetch(
-        `${OPERATIONS_API}/repos?repo=${encodeURIComponent(repo)}`,
-        { ...FETCH_OPTS, method: "DELETE" }
-      );
-      if (!res.ok) throw new Error(`${res.status}`);
+      await removeRepo(repo);
       toast.success(`Removed ${repo}`);
       await fetchRepos();
     } catch {

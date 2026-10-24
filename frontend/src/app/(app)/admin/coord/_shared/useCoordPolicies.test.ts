@@ -27,7 +27,7 @@ vi.mock("sonner", () => ({
 }));
 
 const listCoordPolicies = vi.fn();
-vi.mock("./coordPolicyApi", () => ({
+vi.mock("@/lib/api/operations/coordPolicies", () => ({
   listCoordPolicies: (...a: never[]) => listCoordPolicies(...a),
   createCoordPolicy: vi.fn(),
   deleteCoordPolicy: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock("./coordPolicyApi", () => ({
 }));
 
 import { useCoordPolicies } from "./useCoordPolicies";
-import type { CoordPolicyRow } from "./coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 const ALL = () => true;
 

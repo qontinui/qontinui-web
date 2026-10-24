@@ -35,6 +35,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_ids,
     ephemeral_database,
     load_revision_module,
     run_alembic,
@@ -200,13 +201,12 @@ def test_the_declared_parent_is_exactly_one_real_sibling() -> None:
 def test_exactly_one_revision_declares_this_parent() -> None:
     """No sibling fork: this revision is the ONLY child of its parent."""
     parent = _declared_parent()
-    pattern = re.compile(
-        rf'^down_revision(?:: [^=]+)?\s*=\s*["\']{re.escape(parent)}["\']', re.M
-    )
+    # Every file's parents read through the head gate's own parser, so a
+    # wrapped assignment or a merge tuple naming ``parent`` counts as a child.
     children = [
         f.name
-        for f in (backend_root() / "alembic" / "versions").glob("*.py")
-        if pattern.search(f.read_text(encoding="utf-8"))
+        for f in sorted((backend_root() / "alembic" / "versions").glob("*.py"))
+        if parent in (declared_parent_revision_ids(f.read_text(encoding="utf-8")) or [])
     ]
     assert children == [_REVISION_FILENAME], children
 

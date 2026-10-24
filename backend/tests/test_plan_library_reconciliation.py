@@ -83,6 +83,15 @@ def _stem(name: str) -> str:
     return f"2026-09-03-{name}-{uuid4().hex[:10]}"
 
 
+def _walk_order(stems: list[str]) -> list[str]:
+    """The route's page order: :func:`crud.stem_position` (date prefix, then a
+    uuid5 of the stem) — immutable, so it is NOT alphabetical within a day."""
+    return sorted(
+        stems,
+        key=lambda s: (crud.stem_position(s).at, crud.stem_position(s).id),
+    )
+
+
 # ===========================================================================
 # Layer 0 — the vendored spec (D6 + D7)
 # ===========================================================================
@@ -344,6 +353,7 @@ def _coord(
     by_slug: dict[str, dict[str, Any]] | None = None,
     default_delivery: dict[str, Any] | None = None,
     default_citations: list[dict[str, Any]] | None = None,
+    list_extra: dict[str, Any] | None = None,
 ) -> AsyncMock:
     """A coord that answers, on the OPERATOR door tier the test user opens.
 
@@ -357,7 +367,12 @@ def _coord(
 
     async def _fake(path: str, **_: Any) -> Any:
         if path in ("/coord/work-units", "/coord/agent-work-units"):
-            return {"work_units": units, "limit": 500, "offset": 0}
+            return {
+                "work_units": units,
+                "limit": 500,
+                "offset": 0,
+                **(list_extra or {}),
+            }
         slug = path.rsplit("/", 1)[-1]
         if slug not in index:
             raise AssertionError(f"unexpected coord by-slug read for {slug!r}")
@@ -679,17 +694,19 @@ class TestAxisCIsPerPage:
         So axis C is derived for the page — and every other row is classified
         ``UNKNOWN_AXIS_UNREADABLE`` and kept in the denominator, never dropped.
         """
-        stems = sorted(_stem(f"page{i}") for i in range(5))
+        stems = _walk_order([_stem(f"page{i}") for i in range(5)])
         for stem in stems:
             await _plan_artifact(
                 async_db_session, org_id=None, slug=stem, status="draft"
             )
         fake = _coord([_unit(stem, status="vetted") for stem in stems])
         with _patched(fake):
-            resp = await client.get(RECONCILIATION, params={"limit": 2, "offset": 0})
+            resp = await client.get(RECONCILIATION, params={"limit": 2})
         payload = resp.json()
 
         assert payload["total"] == 5
+        assert payload["truncated"] is True
+        assert payload["next_cursor"]
         assert len(payload["items"]) == 2
         assert payload["axis_c_scope"] == "page"
         assert payload["axis_c_computed_count"] == 2
@@ -714,17 +731,25 @@ class TestAxisCIsPerPage:
     async def test_the_off_page_reason_names_axis_c(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
-        stems = sorted(_stem(f"reason{i}") for i in range(3))
+        stems = _walk_order([_stem(f"reason{i}") for i in range(3)])
         for stem in stems:
             await _plan_artifact(
                 async_db_session, org_id=None, slug=stem, status="draft"
             )
         with _patched(_coord([_unit(s, status="vetted") for s in stems])):
-            resp = await client.get(RECONCILIATION, params={"limit": 1, "offset": 2})
+            cursor = None
+            for _ in range(3):
+                params: dict[str, Any] = {"limit": 1}
+                if cursor is not None:
+                    params["cursor"] = cursor
+                resp = await client.get(RECONCILIATION, params=params)
+                cursor = resp.json()["next_cursor"]
         payload = resp.json()
         assert [row["slug"] for row in payload["items"]] == [stems[2]]
-        assert payload["offset"] == 2
-        assert payload["ordering"] == "slug_asc"
+        assert payload["total"] == 1, "counted from the third page's own start"
+        assert payload["next_cursor"] is None
+        assert payload["facets"]["denominator"] == 3
+        assert payload["ordering"] == "stem_date_asc"
         # The returned row IS on the page, so its axis C was derived.
         assert payload["items"][0]["axis_c"]["computed"] is True
         assert _AXIS_C_OFF_PAGE.startswith("axis C")
@@ -896,9 +921,20 @@ class TestStrictQuery:
         with _patched(_coord([])):
             resp = await client.get(
                 RECONCILIATION,
-                params={"offset": 0, "limit": 10, "include_coord": "true"},
+                params={"limit": 10, "include_coord": "true"},
             )
         assert resp.status_code == 200
+
+    async def test_offset_is_deleted_not_deprecated(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Plan 2026-09-05-every-bounded-read-… Phase 4 (D2): the walk is keyset,
+        and an ``offset`` is now an undeclared key — a typed 422, never a
+        silently ignored one."""
+        with _patched(_coord([])):
+            resp = await client.get(RECONCILIATION, params={"offset": 0})
+        assert resp.status_code == 422
+        assert "unknown_query_parameter" in resp.text
 
 
 @_ASYNC
@@ -942,3 +978,367 @@ class TestThisSurfaceNeverWrites:
         # And coord was only ever READ.
         for call in fake.await_args_list:
             assert "params" in call.kwargs or call.args
+
+
+# ===========================================================================
+# Plan 2026-09-19-plan-library-cannot-answer-what-to-work-on-next — Phases
+# 0c / 2 / 3: the ``q`` filter, ``status_class``, vet freshness, custody.
+# ===========================================================================
+
+
+@_ASYNC
+class TestQFilter:
+    """``q`` narrows the STEM population before paging, with the list route's
+    own semantics: a literal slug substring OR the full-text arm."""
+
+    async def test_a_hyphenated_compound_finds_prose_with_its_part_words(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        hit = _stem("ci-scope")
+        miss = _stem("other")
+        await _plan_artifact(
+            async_db_session,
+            org_id=None,
+            slug=hit,
+            status="draft",
+            body=_body("draft") + "Scope the devops unfiltered push trigger.\n",
+        )
+        await _plan_artifact(async_db_session, org_id=None, slug=miss, status="draft")
+        with _patched(_coord([])):
+            resp = await client.get(
+                RECONCILIATION, params={"q": "devops-unfiltered-push-trigger"}
+            )
+        payload = resp.json()
+        assert resp.status_code == 200
+        assert [row["slug"] for row in payload["items"]] == [hit]
+        assert payload["total"] == 1
+        assert payload["q"] == "devops-unfiltered-push-trigger"
+
+    async def test_a_full_slug_matches_a_coord_only_stem_by_slug_alone(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """No artifact, so no body — the slug arm is the only way in."""
+        target = _stem("coord-only")
+        units = [_unit(target, status="draft"), _unit(_stem("noise"), status="draft")]
+        with _patched(_coord(units)):
+            resp = await client.get(RECONCILIATION, params={"q": f"{target}.md"})
+        payload = resp.json()
+        assert [row["slug"] for row in payload["items"]] == [target]
+        assert payload["total"] == 1
+
+    async def test_like_metacharacters_match_literally(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        under = "2026-09-03-a_b-literal"
+        under_decoy = "2026-09-03-axb-literal"
+        pct = "2026-09-03-100%-done"
+        pct_decoy = "2026-09-03-100x-done"
+        units = [
+            _unit(slug, status="draft") for slug in (under, under_decoy, pct, pct_decoy)
+        ]
+        with _patched(_coord(units)):
+            by_under = (
+                await client.get(RECONCILIATION, params={"q": "A_B-LITERAL"})
+            ).json()
+            by_pct = (
+                await client.get(RECONCILIATION, params={"q": "100%-done"})
+            ).json()
+        assert [row["slug"] for row in by_under["items"]] == [under]
+        assert [row["slug"] for row in by_pct["items"]] == [pct]
+
+    async def test_total_and_facets_describe_the_filtered_population(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        keep = [_stem("keepme") for _ in range(3)]
+        units = [_unit(slug, status="draft") for slug in keep] + [
+            _unit(_stem("dropme"), status="draft") for _ in range(4)
+        ]
+        with _patched(_coord(units)):
+            payload = (
+                await client.get(RECONCILIATION, params={"q": "keepme", "limit": 2})
+            ).json()
+        assert payload["total"] == 3
+        assert len(payload["items"]) == 2
+        assert payload["facets"]["denominator"] == 3
+        assert sum(payload["facets"]["by_class"].values()) == 3
+        assert payload["document_missing_count"] == 3
+
+    async def test_no_q_echoes_none_and_keeps_the_whole_population(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        units = [_unit(_stem("all"), status="draft") for _ in range(2)]
+        with _patched(_coord(units)):
+            payload = (await client.get(RECONCILIATION)).json()
+        assert payload["q"] is None
+        assert payload["total"] == 2
+
+    async def test_q_is_bounded(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        with _patched(_coord([])):
+            resp = await client.get(RECONCILIATION, params={"q": "x" * 201})
+        assert resp.status_code == 422
+
+
+@_ASYNC
+class TestAxisAAnnotations:
+    async def test_status_class_is_coords_own_forwarded_verbatim(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Web never re-derives the class: whatever coord's row says (of the
+        five) is what the row carries — even where a web-side classifier
+        would have disagreed."""
+        expected = {
+            _stem("free"): ("in_progress", "free_known"),
+            _stem("attested"): ("vetted", "attested"),
+            _stem("derived"): ("shipped", "derived"),
+            _stem("offvocab"): ("Shipped", "off_vocabulary"),
+            _stem("unset"): ("  ", "unset"),
+            # coord's word wins over any local reading of the status.
+            _stem("coordsays"): ("draft", "attested"),
+        }
+        units = []
+        for slug, (st, cls) in expected.items():
+            unit = _unit(slug, status=st)
+            unit["status_class"] = cls
+            units.append(unit)
+        doc_only = _stem("doc-only")
+        await _plan_artifact(
+            async_db_session, org_id=None, slug=doc_only, status="draft"
+        )
+        with _patched(_coord(units)):
+            rows = _by_slug(
+                (await client.get(RECONCILIATION, params={"limit": 100})).json()
+            )
+        for slug, (_, cls) in expected.items():
+            assert rows[slug]["axis_a"]["status_class"] == cls, slug
+        # No unit → nothing to classify: None, never a guessed class.
+        assert rows[doc_only]["axis_a"]["present"] is False
+        assert rows[doc_only]["axis_a"]["status_class"] is None
+
+    async def test_status_class_absent_unknown_or_statusless_is_none(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """An older coord that omits the field, a word outside the five, and
+        a row with no ``status`` string at all are each UNKNOWN — never a
+        confident class (a missing status must not read ``unset``)."""
+        omitted = _stem("omitted")
+        unknown = _stem("unknownword")
+        statusless = _stem("statusless")
+        omitted_unit = _unit(omitted, status="shipped")  # no status_class key
+        unknown_unit = _unit(unknown, status="shipped")
+        unknown_unit["status_class"] = "something_new"
+        statusless_unit = _unit(statusless, status="draft")
+        del statusless_unit["status"]
+        statusless_unit["status_class"] = "unset"
+        with _patched(_coord([omitted_unit, unknown_unit, statusless_unit])):
+            rows = _by_slug(
+                (await client.get(RECONCILIATION, params={"limit": 100})).json()
+            )
+        for slug in (omitted, unknown, statusless):
+            assert rows[slug]["axis_a"]["present"] is True, slug
+            assert rows[slug]["axis_a"]["status_class"] is None, slug
+
+    async def test_status_class_is_none_when_axis_a_is_unreadable(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        stem = _stem("unreadable")
+        await _plan_artifact(async_db_session, org_id=None, slug=stem, status="draft")
+        with _patched(_coord([])):
+            row = (
+                await client.get(RECONCILIATION, params={"include_coord": "false"})
+            ).json()["items"][0]
+        assert row["axis_a"]["readable"] is False
+        assert row["axis_a"]["status_class"] is None
+        assert row["axis_a"]["vet_state"] is None
+        assert row["axis_a"]["live_sessions"] is None
+        assert row["axis_a"]["custody_resolved"] is None
+
+    async def test_vet_state_passes_through_and_absent_is_none(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        moved = _stem("moved")
+        never = _stem("never")
+        moved_unit = _unit(moved, status="vetted")
+        moved_unit["vet_state"] = "moved"
+        moved_unit["vet_checked_at"] = "2026-10-01T12:00:00Z"
+        never_unit = _unit(never, status="vetted")
+        never_unit["vet_state"] = None
+        never_unit["vet_checked_at"] = None
+        with _patched(_coord([moved_unit, never_unit])):
+            rows = _by_slug((await client.get(RECONCILIATION)).json())
+        assert rows[moved]["axis_a"]["vet_state"] == "moved"
+        assert rows[moved]["axis_a"]["vet_checked_at"].startswith("2026-10-01T12:00:00")
+        assert rows[never]["axis_a"]["vet_state"] is None
+        assert rows[never]["axis_a"]["vet_checked_at"] is None
+
+
+def _session(custody: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "device_id": str(uuid4()),
+        "correlation_topic": "topic",
+        "intent_globs": None,
+        "updated_at": "2026-10-06T00:00:00Z",
+        "expires_at": "2026-10-06T00:05:00Z",
+        **extra,
+    }
+    if custody is not None:
+        row["custody"] = custody
+    return row
+
+
+def _list_params(fake: AsyncMock) -> list[dict[str, str]]:
+    return [
+        call.kwargs.get("params") or {}
+        for call in fake.call_args_list
+        if call.args[0] in ("/coord/work-units", "/coord/agent-work-units")
+    ]
+
+
+@_ASYNC
+class TestCustody:
+    async def test_include_custody_forwards_both_flags(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        fake = _coord([], list_extra={"resolve_session_names": True})
+        with _patched(fake):
+            await client.get(RECONCILIATION, params={"include_custody": "true"})
+        (params,) = _list_params(fake)
+        assert params["include_live_sessions"] == "true"
+        assert params["resolve_session_names"] == "true"
+
+    async def test_without_include_custody_nothing_is_asked_or_carried(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        stem = _stem("nocustody")
+        unit = _unit(stem, status="draft")
+        # Even if coord sent sessions unasked, this request did not ask.
+        unit["live_sessions"] = [_session({"state": "unresolved"})]
+        fake = _coord([unit])
+        with _patched(fake):
+            row = (await client.get(RECONCILIATION)).json()["items"][0]
+        (params,) = _list_params(fake)
+        assert "include_live_sessions" not in params
+        assert "resolve_session_names" not in params
+        assert row["axis_a"]["live_sessions"] is None
+        assert row["axis_a"]["custody_resolved"] is None
+
+    async def test_every_custody_shape_is_carried_faithfully(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        stem = _stem("custody")
+        empty = _stem("nosessions")
+        missing = _stem("nokey")
+        unit = _unit(stem, status="in_progress")
+        unit["live_sessions"] = [
+            _session({"state": "sole", "session_name": "plan-foo"}),
+            _session({"state": "sole", "session_name": None}),
+            _session({"state": "ambiguous", "live_session_count": 3}),
+            _session({"state": "unresolved"}),
+            _session({"state": "something-new"}),
+            _session(None),
+        ]
+        empty_unit = _unit(empty, status="draft")
+        empty_unit["live_sessions"] = []
+        missing_unit = _unit(missing, status="draft")
+        fake = _coord(
+            [unit, empty_unit, missing_unit],
+            list_extra={"resolve_session_names": True},
+        )
+        with _patched(fake):
+            rows = _by_slug(
+                (
+                    await client.get(RECONCILIATION, params={"include_custody": "true"})
+                ).json()
+            )
+        axis = rows[stem]["axis_a"]
+        assert axis["custody_resolved"] is True
+        custodies = [s["custody"] for s in axis["live_sessions"]]
+        assert custodies == [
+            {"state": "sole", "session_name": "plan-foo", "live_session_count": None},
+            {"state": "sole", "session_name": None, "live_session_count": None},
+            {"state": "ambiguous", "session_name": None, "live_session_count": 3},
+            {"state": "unresolved", "session_name": None, "live_session_count": None},
+            # Unrecognised and missing states are UNKNOWN, never coerced.
+            None,
+            None,
+        ]
+        first = axis["live_sessions"][0]
+        assert first["correlation_topic"] == "topic"
+        assert first["expires_at"].startswith("2026-10-06T00:05:00")
+        assert rows[empty]["axis_a"]["live_sessions"] == []
+        assert rows[missing]["axis_a"]["live_sessions"] is None
+
+    async def test_an_older_coord_without_the_echo_is_unresolved(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        stem = _stem("oldcoord")
+        unit = _unit(stem, status="in_progress")
+        unit["live_sessions"] = [_session(None)]
+        fake = _coord([unit])  # no ``resolve_session_names`` echo
+        with _patched(fake):
+            row = (
+                await client.get(RECONCILIATION, params={"include_custody": "true"})
+            ).json()["items"][0]
+        assert row["axis_a"]["custody_resolved"] is False
+        assert row["axis_a"]["live_sessions"][0]["custody"] is None
+
+    async def test_a_malformed_session_makes_the_list_unknown_not_shorter(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        stem = _stem("malformed")
+        unit = _unit(stem, status="in_progress")
+        unit["live_sessions"] = [_session({"state": "unresolved"}), {"topic": "x"}]
+        fake = _coord([unit], list_extra={"resolve_session_names": True})
+        with _patched(fake):
+            row = (
+                await client.get(RECONCILIATION, params={"include_custody": "true"})
+            ).json()["items"][0]
+        assert row["axis_a"]["live_sessions"] is None
+
+    async def test_one_page_without_the_echo_nulls_every_custody(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``custody_resolved: false`` must be true of EVERY row: a custody
+        object from a page that did echo may not survive beside it. The
+        session rows themselves are kept."""
+        echoed = _stem("echoedpage")
+        silent = _stem("silentpage")
+        echoed_unit = _unit(echoed, status="in_progress")
+        echoed_unit["live_sessions"] = [
+            _session({"state": "sole", "session_name": "plan-foo"})
+        ]
+        silent_unit = _unit(silent, status="in_progress")
+        silent_unit["live_sessions"] = [_session(None)]
+
+        async def _paged(path: str, **kwargs: Any) -> Any:
+            if path in ("/coord/work-units", "/coord/agent-work-units"):
+                offset = int((kwargs.get("params") or {}).get("offset", "0"))
+                if offset == 0:
+                    return {"work_units": [echoed_unit], "resolve_session_names": True}
+                if offset == 1:
+                    return {"work_units": [silent_unit]}
+                return {"work_units": [], "resolve_session_names": True}
+            slug = path.rsplit("/", 1)[-1]
+            unit = echoed_unit if slug == echoed else silent_unit
+            return {
+                "work_unit": unit,
+                "recent_history": [],
+                "citations": [],
+                "delivery": _delivery(shipped=False, evidence_complete=True),
+            }
+
+        with (
+            patch("app.api.v1.endpoints.plan_library._COORD_UNIT_PAGE_LIMIT", 1),
+            _patched(AsyncMock(side_effect=_paged)),
+        ):
+            rows = _by_slug(
+                (
+                    await client.get(RECONCILIATION, params={"include_custody": "true"})
+                ).json()
+            )
+        for slug in (echoed, silent):
+            axis = rows[slug]["axis_a"]
+            assert axis["custody_resolved"] is False, slug
+            assert len(axis["live_sessions"]) == 1, slug
+            assert axis["live_sessions"][0]["custody"] is None, slug

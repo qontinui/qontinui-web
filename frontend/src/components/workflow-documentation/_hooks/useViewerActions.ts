@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { WorkflowDocumentationService } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentationService } from "@/services/workflow-documentation";
 
 export function useViewerActions(workflowId: string, workflowName: string) {
   const [copiedLink, setCopiedLink] = useState(false);

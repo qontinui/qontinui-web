@@ -15,7 +15,17 @@ import type { RegisteredDevice } from "@/types/runner";
 
 const getRunnersMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  runnerService: { getRunners: (...args: unknown[]) => getRunnersMock(...args) },
+  runnerService: {
+    getRunners: (...args: unknown[]) => getRunnersMock(...args),
+  },
+}));
+vi.mock("@/components/operations/useDeviceStatusStream", () => ({
+  useDeviceStatusStream: () => ({ byHostname: new Map() }),
+}));
+vi.mock("@/lib/api/device_credentials", () => ({
+  getDeviceCredentialOverview: async () => ({ devices: [] }),
+  authorizeDeviceRedeem: vi.fn(),
+  revokeDeviceMachineCredential: vi.fn(),
 }));
 vi.mock("@/hooks/useRealtimeConnections", () => ({
   useRealtimeConnections: () => ({ runners: [] }),
@@ -118,7 +128,9 @@ describe("RegisteredDevicesList tenant bindings", () => {
       "title",
       `Tenant ${TENANT_B} · last active never`
     );
-    expect(within(boundRow).queryByTestId("tenant-bindings-unknown")).toBeNull();
+    expect(
+      within(boundRow).queryByTestId("tenant-bindings-unknown")
+    ).toBeNull();
     expect(within(boundRow).queryByTestId("tenant-bindings-none")).toBeNull();
   });
 

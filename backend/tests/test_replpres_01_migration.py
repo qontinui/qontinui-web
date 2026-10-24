@@ -151,6 +151,7 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    declared_parent_revision_id,
     ephemeral_database,
     index_exists,
     run_alembic,
@@ -760,11 +761,11 @@ def test_replpres_01_chains_onto_memseq_01() -> None:
     somewhere else would both pass while walking different graphs.
     """
     source = _revision_source()
-    assert re.search(
-        rf'^down_revision[^=]*=\s*"{_PARENT_REVISION_ID}"',
-        source,
-        re.MULTILINE,
-    ), f"replpres_01 must declare down_revision = {_PARENT_REVISION_ID!r}"
+    declared = declared_parent_revision_id(source, "replpres_01_replica_presence.py")
+    assert declared == _PARENT_REVISION_ID, (
+        f"replpres_01 must declare down_revision = {_PARENT_REVISION_ID!r}, "
+        f"not {declared!r}"
+    )
     assert re.search(rf'^revision[^=]*=\s*"{_REVISION_ID}"', source, re.MULTILINE), (
         f"the file this test reads must be revision {_REVISION_ID!r}; if it "
         "was renamed, _revision_source() is pointing at the wrong file and "

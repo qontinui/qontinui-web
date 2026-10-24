@@ -28,6 +28,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 API_PREFIX = "/api/v1/operations"
 
 COORD_BODY = {
@@ -95,12 +97,12 @@ def _patch_identity(is_admin: bool = True, effective_roles=("admin",)):
     identity = MagicMock()
     identity.is_admin = is_admin
     with (
-        patch(
-            "app.api.v1.endpoints.operations.get_coord_identity",
+        patch_ops(
+            "get_coord_identity",
             AsyncMock(return_value=identity),
         ),
-        patch(
-            "app.api.v1.endpoints.operations._effective_tenant_roles",
+        patch_ops(
+            "_effective_tenant_roles",
             MagicMock(return_value=tuple(effective_roles)),
         ),
     ):
@@ -178,6 +180,26 @@ class TestGetCiHosting:
         assert body["tenant_default"]["level"] is None
         assert body["tenant_default"]["unknown_reason"] == "missing"
         assert body["repos"] == []
+        # No list at all is UNKNOWN, not "this tenant has no repos".
+        assert body["repos_unknown_reason"] == "no_repos_reported"
+
+    def test_an_unreadable_repo_list_carries_coords_reason(self, client: TestClient):
+        """Coord answers `repos: []` plus `repos_unknown_reason` when it could
+        not list the tenant's repos — the empty list must not read as none."""
+        payload = {
+            **COORD_BODY,
+            "repos": [],
+            "repos_unknown_reason": "schema_object_missing:tenant_repos",
+        }
+        with _patch_coord_get(_mock_response(200, payload)), _patch_identity():
+            body = client.get(f"{API_PREFIX}/ci-hosting").json()
+        assert body["repos"] == []
+        assert body["repos_unknown_reason"] == "schema_object_missing:tenant_repos"
+
+    def test_a_readable_repo_list_has_no_unknown_reason(self, client: TestClient):
+        with _patch_coord_get(_mock_response(200, COORD_BODY)), _patch_identity():
+            body = client.get(f"{API_PREFIX}/ci-hosting").json()
+        assert body["repos_unknown_reason"] is None
 
     def test_forwards_the_repo_filter(self, client: TestClient):
         with (

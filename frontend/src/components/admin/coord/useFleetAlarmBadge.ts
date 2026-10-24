@@ -71,7 +71,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
-import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { createLogger } from "@/lib/logger";
 import {
@@ -80,13 +79,11 @@ import {
   type ResourceSamplesResponse,
 } from "@/components/operations/fleetResources";
 import {
-  FLEET_HEALTH_API,
+  fetchFleetHealth,
+  fetchFleetResourceSamples,
   type FleetHealthPayload,
-} from "@/components/operations/useFleetHealth";
-import {
-  DEFAULT_WINDOW_SECS,
-  FLEET_RESOURCE_SAMPLES_API,
-} from "@/components/operations/useFleetResourceSamples";
+} from "@/lib/api/operations/coordFleet";
+import { DEFAULT_WINDOW_SECS } from "@/components/operations/useFleetResourceSamples";
 
 const log = createLogger("useFleetAlarmBadge");
 
@@ -213,12 +210,9 @@ export function useFleetAlarmBadge(): FleetAlarm {
       // No client retries (plan
       // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
       // D5): the next tick is the retry.
-      httpClient.get<FleetHealthPayload>(
-        FLEET_HEALTH_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      ),
-      httpClient.get<ResourceSamplesResponse>(
-        `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${DEFAULT_WINDOW_SECS}`,
+      fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS),
+      fetchFleetResourceSamples(
+        DEFAULT_WINDOW_SECS,
         COORD_DASHBOARD_POLL_OPTIONS
       ),
     ]);

@@ -106,7 +106,7 @@ function ProjectList() {
 
 **Owns:**
 
-- Canvas state (`canvas-store.ts`)
+- Canvas state (`stores/canvas/`)
   - Viewport (zoom, pan position)
   - Selected nodes/edges (ONLY IDs, not full data)
   - Clipboard (copied nodes)

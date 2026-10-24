@@ -72,13 +72,17 @@ def repo_relative(path: Path | None, fallback: str = "") -> str:
     ONE home on purpose: this had already been copied into two gate scripts
     and was diverging (one called ``.resolve()`` and the other did not, so the
     same input rendered two different strings).
+
+    Rendered with ``/`` on every OS (``as_posix``): the string lands in CI logs
+    and PR comments, where a Windows ``backend\\alembic\\...`` is a different
+    path from the one every other reader sees.
     """
     if path is None:
         return fallback
     try:
-        return str(path.resolve().relative_to(REPO_ROOT))
+        return path.resolve().relative_to(REPO_ROOT).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
 
 
 def err(message: str) -> None:

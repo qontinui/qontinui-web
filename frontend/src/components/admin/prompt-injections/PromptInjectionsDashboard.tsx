@@ -499,7 +499,8 @@ function InjectionsTable({
          * that fact in the past tense instead, which is the only tense the
          * evidence supports.
          *
-         * `PlanLibraryList.tsx:337` gates on `items.length === 0 && !error`
+         * `PlanLibraryList.tsx:312` (its `plan-library-empty` branch) gates on
+         * `items.length === 0 && !error`
          * for the same reason. This spelling differs from it deliberately —
          * see the module doc on why plan-library is the right OUTPUT and the
          * wrong predicate.

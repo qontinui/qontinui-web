@@ -6,8 +6,7 @@
  *
  * Short-lived (5-minute TTL), single-use codes the operator mints from
  * the dashboard and types into the runner's Settings UI to pair a new
- * device. Distinct from long-lived runner tokens — those live in
- * `runner_tokens.ts`.
+ * device.
  */
 
 import { httpClient } from "@/services/service-factory";

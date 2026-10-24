@@ -49,11 +49,6 @@ const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
  * against the caller's coord memberships (the test's `_FORWARDED_TO_COORD` /
  * `_VALIDATED_LOCALLY`). WebSocket routes cannot carry the header at all and
  * are checked separately (they read the selection from a query param).
- *
- * `/api/v1/fleet/test-targets` is deliberately ABSENT: its PUT re-stamps
- * `coord.test_targets.tenant_id` with no `coord.tenant_devices` binding
- * check, so a selection the device is not bound to would hide the
- * designation from the device's runner. See the guard's `_EXCLUSIONS`.
  */
 const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
@@ -115,6 +110,21 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // today — the coord memory page reads `/api/v1/operations/memory/list` —
   // so this entry is for future callers, which then scope correctly.
   "/api/v1/memory/",
+  // Content-addressed image store — the same `get_memory_tenant` operator
+  // arm: every `web.image_assets` / `web.image_slot_candidates` row and every
+  // object key is scoped by the tenant `get_coord_identity` resolves, so
+  // without the header a multi-tenant operator would read (and upload into)
+  // the home project's images under another project's name. Its first
+  // dashboard caller is the taste inbox (plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phases 13 and 23).
+  "/api/v1/image-assets",
+  // The taste inbox — the same `get_memory_tenant` operator arm for the queue
+  // read and the pair push, and `require_coord_tenant_admin_target` for label
+  // writes: every `web.taste_pairs` row is the selected project's, so without
+  // the header a multi-tenant operator would label (and read) the home
+  // project's queue under another project's name. Plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
+  "/api/v1/taste/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.
@@ -122,6 +132,26 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // Session repository — `get_tenant_id` / `require_coord_tenant_admin`
   // coord proxies; relaunch lands in the tenant the operator selected.
   "/api/v1/session-repository",
+  // Test-host designations — the PUT and DELETE proxy to coord's
+  // `/coord/trees/test-targets` writer behind `get_tenant_id`, and coord
+  // refuses a device the selected project has no `coord.tenant_devices`
+  // binding for (surfaced as a 409 naming the project). So the designation
+  // lands in the project the operator selected, or is refused — never
+  // stamped into a project whose runner poll cannot see it. The GET list is
+  // device-owner scoped and ignores the header. Plan
+  // 2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to.
+  "/api/v1/fleet/test-targets",
+  // Build records — `get_tenant_id` / `require_coord_tenant_admin_target`
+  // coord proxies, plus the publish step that freezes a snapshot owned by the
+  // selected tenant. Does NOT match the unauthenticated
+  // `/api/v1/public/build-records/…`, which resolves no tenant. Plan
+  // 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
+  "/api/v1/build-records/",
+  // Overlord operator labels — `require_coord_tenant_admin` gates the write, so
+  // admin is checked in the SELECTED project, not the home one. Plan
+  // 2026-10-01-overlord-session-supervisor-classifies-stops-and-absorbs-
+  // avoidable-escalations, Phase 2b.
+  "/api/v1/admin/coord/overlord/",
 ];
 
 function readActiveTenantId(): string | null {

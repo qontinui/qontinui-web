@@ -815,4 +815,3 @@ connections: {
 ---
 
 **Maintained by:** Qontinui Development Team
-**Questions?** See [main documentation](../README.md)

@@ -36,6 +36,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 
 def _build_test_app(*, server_tenant=None, authenticated: bool = True) -> FastAPI:
     """Build a minimal FastAPI app exposing the operations router.
@@ -393,7 +395,7 @@ class TestLineageBearerForwarding:
 
         token = mod._caller_bearer.set("tok-lineage")
         try:
-            with patch.object(mod.httpx, "AsyncClient", _Client):
+            with patch_ops("httpx.AsyncClient", _Client):
                 result = await mod._proxy_coord_get(
                     "/coord/lineage/recent",
                     params={"limit": 100},
@@ -436,7 +438,7 @@ class TestLineageBearerForwarding:
         # Ensure no bearer is set for this call.
         token = mod._caller_bearer.set(None)
         try:
-            with patch.object(mod.httpx, "AsyncClient", _Client):
+            with patch_ops("httpx.AsyncClient", _Client):
                 await mod._proxy_coord_get(
                     "/coord/lineage/stats",
                     tenant_id=uuid4(),

@@ -63,6 +63,17 @@ export interface AgentQuestionRow {
   withdrawal_evidence?: unknown;
   /** The ask-time reference, same shape as `withdrawal_evidence`. */
   asked_about?: unknown;
+  // The decision this row MIRRORS, added by alembic revision
+  // `coord_agent_questions_effect` (plan
+  // `2026-09-12-one-decision-row-one-inbox-clause-model-is-the-home-for-proposed-policy`
+  // Phase 1). `'none'` for an ordinary question; `gate` / `proposal` /
+  // `clause` for a mirror row. Both are omitted by a coord build that predates
+  // the columns, so both are optional — `questionEffect.ts` reads them.
+  effect_kind?: string | null;
+  // JSONB: always a flat string `id` plus kind-specific keys
+  // (`{gate_id, work_unit_id, phase_name}` | `{proposal_id, …}` |
+  // `{kind, name, clause_id}`). `unknown` here; narrowed in `questionEffect.ts`.
+  effect_ref?: unknown;
 }
 
 /**

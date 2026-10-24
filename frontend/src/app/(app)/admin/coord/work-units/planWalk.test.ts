@@ -16,8 +16,8 @@ import {
   serverOrderFor,
   timeSpan,
   walkWorkUnits,
-  type PlansListResponse,
 } from "./planWalk";
+import type { PlansListResponse } from "@/lib/api/operations/coordPlans";
 
 function row(slug: string, authored_at: string | null = null): CoordPlanRow {
   return { slug, authored_at, updated_at: "2026-09-19T00:00:00Z" };
@@ -56,6 +56,16 @@ function scripted(pages: Record<string, PlansListResponse | Error>) {
 
 const always = () => true;
 
+/**
+ * The walker's page reader over a URL-keyed script: each page is asked for as
+ * `/api/plans?<query>`, so the scripts above key on the cursor in a URL and
+ * the tests assert on the URLs exactly as the page's reader would send them.
+ */
+function pageOf(get: (url: string) => Promise<unknown>) {
+  return (query: URLSearchParams) =>
+    get(`/api/plans?${query.toString()}`) as Promise<PlansListResponse>;
+}
+
 describe("serverOrderFor", () => {
   it("walks every sort except the two updated_* views", () => {
     expect(serverOrderFor("authored_desc")).toBe("authored_desc");
@@ -92,8 +102,7 @@ describe("walkWorkUnits", () => {
     });
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -124,8 +133,7 @@ describe("walkWorkUnits", () => {
     });
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -142,8 +150,7 @@ describe("walkWorkUnits", () => {
   it("an older coord's short page is single-page and not truncated", async () => {
     const { get } = scripted({ first: { work_units: [row("x")] } });
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -165,8 +172,7 @@ describe("walkWorkUnits", () => {
     });
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -181,10 +187,50 @@ describe("walkWorkUnits", () => {
     expect(out?.rows).toHaveLength(WALK_PAGE_LIMIT);
   });
 
+  it("names a refused later page by its refusal sentence, never the raw body", async () => {
+    const body = JSON.stringify({
+      error: "workspace_root_unresolved",
+      refusal: {
+        code: "workspace_root_unresolved",
+        next_action: { kind: "set_setting", target: "workspace_root" },
+        glossary_terms: [],
+        observed_at: "2026-09-29T00:00:00Z",
+        source: "web_backend",
+      },
+    });
+    const { get } = scripted({
+      first: {
+        order: "authored_desc",
+        work_units: fullPage("a"),
+        next_cursor: {
+          after_authored_at: "2026-09-01T00:00:00Z",
+          after_slug: "a-499",
+        },
+      },
+      "a-499": new Error(
+        `GET /api/v1/operations/coord/plans failed: 409 - ${body}`
+      ),
+    });
+
+    const out = await walkWorkUnits(
+      pageOf(get),
+      base(),
+      "authored_desc",
+      always
+    );
+
+    expect(out).toMatchObject({
+      kind: "partial",
+      reason: "error",
+      error:
+        'No workspace folder could be found for this operation. Set the "workspace_root" setting, then try again.',
+    });
+  });
+
   it("throws when the FIRST page fails — nothing was read", async () => {
     const { get } = scripted({ first: new Error("HTTP 503") });
     await expect(
-      walkWorkUnits(get, "/api/plans", base(), "authored_desc", always)
+      walkWorkUnits(pageOf(get), base(), "authored_desc", always)
     ).rejects.toThrow("HTTP 503");
   });
 
@@ -203,8 +249,7 @@ describe("walkWorkUnits", () => {
     }) as unknown as <T>(u: string) => Promise<T>;
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -230,8 +275,7 @@ describe("walkWorkUnits", () => {
     })) as unknown as <T>(u: string) => Promise<T>;
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -259,8 +303,7 @@ describe("walkWorkUnits", () => {
     }) as unknown as <T>(u: string) => Promise<T>;
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -310,8 +353,7 @@ describe("walkWorkUnits", () => {
     }) as <T>(u: string) => Promise<T>;
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -341,8 +383,7 @@ describe("walkWorkUnits", () => {
     }) as <T>(u: string) => Promise<T>;
 
     const out = await walkWorkUnits(
-      wrapped,
-      "/api/plans",
+      pageOf(wrapped),
       base(),
       "authored_desc",
       () => current
@@ -361,8 +402,7 @@ describe("walkWorkUnits", () => {
     });
 
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "updated_desc",
       always
@@ -382,8 +422,7 @@ describe("walkWorkUnits", () => {
       row(`r${i}`)
     );
     const served = await walkWorkUnits(
-      async <T>() => ({ work_units: full, total: 3268 }) as T,
-      "/api/plans",
+      pageOf(async <T>() => ({ work_units: full, total: 3268 }) as T),
       base(),
       "updated_desc",
       always
@@ -391,8 +430,9 @@ describe("walkWorkUnits", () => {
     expect(served).toMatchObject({ kind: "single_page", total: 3268 });
 
     const unserved = await walkWorkUnits(
-      async <T>() => ({ work_units: full, count: WALK_PAGE_LIMIT }) as T,
-      "/api/plans",
+      pageOf(
+        async <T>() => ({ work_units: full, count: WALK_PAGE_LIMIT }) as T
+      ),
       base(),
       "updated_desc",
       always
@@ -503,8 +543,7 @@ describe("walkWorkUnits — the per-page body_signal blocks", () => {
       first: { work_units: [row("a")], body_signal: { ...readable } },
     });
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "updated_desc",
       always
@@ -539,8 +578,7 @@ describe("walkWorkUnits — the per-page body_signal blocks", () => {
       },
     });
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -566,8 +604,7 @@ describe("walkWorkUnits — the per-page body_signal blocks", () => {
       "a-499": new Error("coord blipped"),
     });
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "authored_desc",
       always
@@ -579,8 +616,7 @@ describe("walkWorkUnits — the per-page body_signal blocks", () => {
   it("a backend that predates the signals reports null, never a block of falses", async () => {
     const { get } = scripted({ first: { work_units: [row("a")] } });
     const out = await walkWorkUnits(
-      get,
-      "/api/plans",
+      pageOf(get),
       base(),
       "updated_desc",
       always

@@ -21,14 +21,13 @@ import { TaskRunCard } from "./TaskRunCard";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
-import { httpClient } from "@/services/service-factory";
 import {
   formatBytes,
-  OPERATIONS_API,
   POLL_INTERVAL_MS,
   relativeTime,
   volumeSeverity,
 } from "./utils";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import {
   resolveMachineVolumes,
@@ -39,7 +38,12 @@ import {
 import { useFleetVolumes } from "./useFleetVolumes";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { isCiRunnerDevice } from "./useFleetHealth";
-import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
+import {
+  fetchFleetStatus,
+  fetchFleetTasks,
+  type FleetHealthDevice,
+} from "@/lib/api/operations/coordFleet";
+import type { UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
 import { resolveDeviceDrain, resolveDrainTarget } from "./fleetDrain";
 import type { UseFleetDrainResult } from "./useFleetDrain";
@@ -105,7 +109,13 @@ function buildMachineGroups(
    * requires both), so `fleet.ci_runners` alone is empty for exactly the hosts
    * an operator came here to look at. See `ciRunnerMirror.ts`.
    */
-  ciRunners: CiRunnersByHost
+  ciRunners: CiRunnersByHost,
+  /**
+   * The fleet-health body's `runner_reports_scrape_up`, stamped onto every
+   * matched row so a `null` runner report can be told apart from coord's own
+   * read failing. `undefined` = a coord predating the flag.
+   */
+  runnerReportsScrapeUp: boolean | undefined
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
   const displayNames: Record<string, string> =
@@ -276,6 +286,15 @@ function buildMachineGroups(
       // normalised to `{dark: false}`, which would be this join inventing a
       // measurement coord never made.
       credential_dark: device.credential_dark,
+      // The runner's own reports (plan
+      // `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+      // Phase 5), carried through verbatim for the same reason as
+      // `credential_dark`: `undefined`/`null` is UNKNOWN, and normalising it
+      // to `[]` here would be this join inventing a measurement.
+      wedge_incidents: device.wedge_incidents,
+      capability: device.capability,
+      runner_reports: device.runner_reports,
+      runner_reports_scrape_up: runnerReportsScrapeUp,
       ciRunner: isCiRunnerDevice(device),
     };
     if (group) {
@@ -457,28 +476,46 @@ export function FleetOverview({
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const [fleetRes, tasksRes] = await Promise.allSettled([
-        httpClient.fetch(`${OPERATIONS_API}/fleet`),
-        httpClient.fetch(`${OPERATIONS_API}/fleet/tasks`),
+        fetchFleetStatus(),
+        fetchFleetTasks(),
       ]);
 
-      if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
-        const data: FleetStatus = await fleetRes.value.json();
+      // A 2xx whose body does not parse is not "unreachable": it fails the
+      // whole refresh with its own message, as it did when this component
+      // parsed the Response itself — tasks are skipped and `lastUpdated` is
+      // not stamped. The same holds for `/fleet/tasks` below.
+      if (
+        fleetRes.status === "rejected" &&
+        fleetRes.reason instanceof SyntaxError
+      ) {
+        throw fleetRes.reason;
+      }
+
+      if (fleetRes.status === "fulfilled") {
         if (!isCurrent()) return;
-        setFleet(data);
+        setFleet(fleetRes.value);
         setError(null);
       } else {
         if (!isCurrent()) return;
-        const reason =
-          fleetRes.status === "rejected"
-            ? (fleetRes.reason as Error).message
-            : `HTTP ${fleetRes.value.status}`;
+        // A non-2xx reads `HTTP <status>`, as it always has; a transport
+        // failure is its own message.
+        const reason = statusOnlyErrorText(
+          fleetRes.reason,
+          String(fleetRes.reason)
+        );
         setError(`Operations API unreachable: ${reason}`);
       }
 
-      if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
-        const data: AggregatedTaskRuns = await tasksRes.value.json();
+      if (
+        tasksRes.status === "rejected" &&
+        tasksRes.reason instanceof SyntaxError
+      ) {
+        throw tasksRes.reason;
+      }
+
+      if (tasksRes.status === "fulfilled") {
         if (!isCurrent()) return;
-        setTasks(data);
+        setTasks(tasksRes.value);
       } else {
         if (!isCurrent()) return;
         // Tasks endpoint failing is non-critical
@@ -507,6 +544,7 @@ export function FleetOverview({
   // Stable identity: `?? []` would allocate a fresh array every render and
   // defeat the memo below.
   const coordDevices = health.data?.devices ?? EMPTY_DEVICES;
+  const runnerReportsScrapeUp = health.data?.runner_reports_scrape_up;
 
   // The mirror WINS for status and labels where both carry a host: it is the
   // copy derived from GitHub's own listing, and the routing verdict has to be
@@ -527,7 +565,8 @@ export function FleetOverview({
             symbolClaims.byMachine,
             volumes,
             coordDevices,
-            mergedCiRunners
+            mergedCiRunners,
+            runnerReportsScrapeUp
           )
         : // The runner-inventory read failed or has not landed, but coord's
           // device list may have. Those machines still exist — render them
@@ -539,7 +578,8 @@ export function FleetOverview({
             symbolClaims.byMachine,
             volumes,
             coordDevices,
-            mergedCiRunners
+            mergedCiRunners,
+            runnerReportsScrapeUp
           ),
     [
       fleet,
@@ -548,6 +588,7 @@ export function FleetOverview({
       volumes,
       coordDevices,
       mergedCiRunners,
+      runnerReportsScrapeUp,
     ]
   );
 

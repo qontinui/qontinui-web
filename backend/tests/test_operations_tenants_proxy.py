@@ -38,6 +38,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops, setattr_ops
+
 API_PREFIX = "/api/v1/operations"
 
 # The raw caller token the proxy must forward to coord verbatim.
@@ -147,8 +149,8 @@ def _configure_mock_client(MockClient, mock_instance) -> None:
 
 
 def _patch_identity(identity: Any):
-    return patch(
-        "app.api.v1.endpoints.operations.get_coord_identity",
+    return patch_ops(
+        "get_coord_identity",
         new=AsyncMock(return_value=identity),
     )
 
@@ -686,9 +688,10 @@ class TestRenameUserTenant:
         from app.api.v1.endpoints import operations
         from app.middleware.rate_limit import user_limiter
 
-        limits = user_limiter._route_limits[
-            "app.api.v1.endpoints.operations.rename_user_tenant"
-        ]
+        # slowapi keys on ``<module>.<name>`` of the decorated function;
+        # derived so the key follows the route if operations is split.
+        route = operations.rename_user_tenant
+        limits = user_limiter._route_limits[f"{route.__module__}.{route.__name__}"]
         assert [limit.scope for limit in limits] == ["tenant-rename"]
         # NOT `assert _TENANT_RENAME_RATE_LIMIT == "10 per minute"`: that
         # restates a constant defined one line as
@@ -849,8 +852,8 @@ def _run_rename_with_cognito(
         patch.object(
             cognito_admin, "remove_user_from_group", fake.remove_user_from_group
         ),
-        patch("app.api.v1.endpoints.operations._write_cognito_group_audit", new=audit),
-        patch("app.api.v1.endpoints.operations._coord_group_blast_radius", new=radius),
+        patch_ops("_write_cognito_group_audit", new=audit),
+        patch_ops("_coord_group_blast_radius", new=radius),
     ):
         instance = MagicMock()
         instance.patch = AsyncMock(return_value=mock_resp)
@@ -900,11 +903,8 @@ class TestRenameHomeGroupMigration:
         The budget is driven to zero rather than waited out: a test that sleeps
         for the real budget is a test nobody runs twice.
         """
-        from app.api.v1.endpoints import operations
 
-        monkeypatch.setattr(
-            operations, "_HOME_GROUP_MIGRATION_BUDGET_SECONDS", 0, raising=True
-        )
+        setattr_ops(monkeypatch, "_HOME_GROUP_MIGRATION_BUDGET_SECONDS", 0)
         fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
         resp, _audit = _run_rename_with_cognito(admin_client, fake)
 

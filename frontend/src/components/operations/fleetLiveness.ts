@@ -28,7 +28,7 @@
  *   this, it did not fail to say anything.
  */
 
-import type { FleetHealthDevice } from "./useFleetHealth";
+import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 
 /** Traffic-light level, same vocabulary as `console/HealthStrip`. */
 export type FleetLivenessLevel = "green" | "amber" | "red";
@@ -38,7 +38,14 @@ export interface FleetLivenessSummary {
   headline: string;
   /** The signals behind the verdict, in plain language. */
   detail: string;
-  total: number;
+  /**
+   * How many devices coord's list holds, or `null` when no list has been
+   * read at all (`answered` is false: the first read is still in flight, or
+   * it failed with nothing read before it). `null` is "unknown", never `0`: an empty list coord
+   * ANSWERED is `0`, and the badge must not render the one as the other
+   * (`[policy: unknown-must-not-render-as-a-default]`).
+   */
+  total: number | null;
   healthy: number;
   degraded: number;
   /** `partitioned` + `abandoned` — coord cannot reach the device. */
@@ -70,8 +77,14 @@ export function summarizeFleetLiveness(input: {
   devices: FleetHealthDevice[];
   loading: boolean;
   error: string | null;
+  /**
+   * Whether coord's device list has answered at least once. A failed poll
+   * keeps the last answer, so an error over an ANSWERED empty list is still a
+   * known `0`; only an unanswered read is `null`.
+   */
+  answered: boolean;
 }): FleetLivenessSummary {
-  const { devices, loading, error } = input;
+  const { devices, loading, error, answered } = input;
   let healthy = 0;
   let degraded = 0;
   let unreachable = 0;
@@ -96,18 +109,20 @@ export function summarizeFleetLiveness(input: {
   if (error) {
     return {
       ...counts,
+      total: answered ? devices.length : null,
       level: "amber",
       headline: "Fleet health unavailable",
       detail:
         `${error} -- this says nothing about the machines themselves. ` +
-        (devices.length > 0
+        (answered
           ? "The rows below are the last read, not a current one."
           : "Nothing has been read yet in this session."),
     };
   }
-  if (loading && devices.length === 0) {
+  if (loading && !answered) {
     return {
       ...counts,
+      total: null,
       level: "amber",
       headline: "Reading fleet health",
       detail: "Coord's device list has not answered yet.",

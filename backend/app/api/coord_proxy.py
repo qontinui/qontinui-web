@@ -11,15 +11,19 @@ proxy endpoints (e.g. the superuser gates/rollout dashboard at
 ``/admin-dev/overview``) can depend on ONE module instead of reaching into
 ``operations`` or growing a third private copy.
 
-Why re-export rather than relocate the bodies: the existing proxy test
-suite patches ``app.api.v1.endpoints.operations.httpx.AsyncClient`` to stub
-coord (13 test files) and imports ``get_tenant_id`` from ``operations``.
-Moving ``_proxy_coord_get``'s body here would resolve ``httpx`` in *this*
-module's namespace, silently defeating those patches. Keeping the canonical
-implementations in ``operations`` (and re-exporting the names) preserves the
-patch target and the existing call sites while still giving new code a clean,
-single import point. If/when those tests are repointed, the bodies can move
-here without touching importers.
+The bodies still live in ``operations`` and are re-exported here; moving
+them is the core move of plan
+``2026-10-04-web-coord-http-client-is-copied-across-operations-and-six-modules``,
+after which ``operations`` re-imports them so existing ``from …operations
+import X`` sites and ``dependency_overrides[get_tenant_id]`` keep working.
+The ``patch("app.api.v1.endpoints.operations.httpx.AsyncClient")`` target the
+proxy tests use does NOT pin them there: ``operations.httpx`` is the global
+``httpx`` module, so that patch replaces ``httpx.AsyncClient`` for every
+caller, wherever its body lives — it only needs ``operations`` to keep an
+``httpx`` attribute. What a move DOES defeat is a string patch on an imported
+name (``…operations.get_coord_identity``); those go through
+``tests/_ops_patch.py::patch_ops``, which patches this module and every
+loaded operations module that binds the name.
 """
 
 from app.api.v1.endpoints.operations import (

@@ -19,7 +19,11 @@
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console/attention";
 import { ATTENTION_BY_KIND } from "@/components/operations/prPipeline";
-import { UNKNOWN_AMBER } from "@/components/console/statusRow";
+import {
+  AUTHOR_RED,
+  UNKNOWN_AMBER,
+  WAITING_AMBER,
+} from "@/components/console/statusRow";
 import type { PrMergeStatus } from "@/services/admin-dev-service";
 import {
   derivePrStatus,
@@ -56,7 +60,9 @@ describe("alignment with prPipeline — same condition, same reading", () => {
   // `/fleet` and `/prs` name the same domain in two vocabularies. A row that
   // disagrees is a row where an operator gets two different answers about
   // whose move it is, depending which tab they opened.
-  const COUNTERPART: ReadonlyArray<[PrMergeStatus, keyof typeof ATTENTION_BY_KIND]> = [
+  const COUNTERPART: ReadonlyArray<
+    [PrMergeStatus, keyof typeof ATTENTION_BY_KIND]
+  > = [
     ["ready", "ready"],
     ["queued", "queued"],
     ["ci-pending", "checks-pending"],
@@ -105,7 +111,9 @@ describe("the readings the palette audit cannot make", () => {
     // coord's residue token spans members with opposite readings (`main-red`
     // and `has-cross-repo-dependency` self-clear; `has-blocking-label` needs a
     // human, `dry-run-mode` is operator config), so neither red nor the
-    // self-clearing promise is honest about it.
+    // self-clearing promise is honest about it. `ci-failed-stale-base` names
+    // its clearer (coord's own freshen); `ci-failed-infra-kill` has none (no
+    // auto re-run yet) and so sits at the floor with `terminal-proposal-held`.
     const amber = ALL.filter(
       (k) => PR_ATTENTION_BY_MERGE_STATUS[k] === "waiting"
     ).sort();
@@ -113,7 +121,10 @@ describe("the readings the palette audit cannot make", () => {
       [
         "awaiting-specialist-review",
         "behind-base",
+        "ci-failed-infra-kill",
+        "ci-failed-stale-base",
         "predicate-blocked",
+        "terminal-proposal-held",
         "unknown",
       ].sort()
     );
@@ -140,6 +151,131 @@ describe("the readings the palette audit cannot make", () => {
     });
   });
 
+  it("floors `terminal-proposal-held` with predicate-blocked, never author red", () => {
+    // The HELD half split out of `ready-but-unlanded`. That token is `author`
+    // red; this one must not be, because its members' moves are mixed —
+    // linearize / close / push are the author's, a hardcap
+    // cancel-unblock is the operator's. coord names the move in
+    // `blocking_summary`, which surfaces as the row reason.
+    expect(PR_ATTENTION_BY_MERGE_STATUS["ready-but-unlanded"]).toBe("author");
+    expect(PR_ATTENTION_BY_MERGE_STATUS["terminal-proposal-held"]).toBe(
+      "waiting"
+    );
+    expect(PR_MERGE_STATUS_CLASS["terminal-proposal-held"]).toBe(UNKNOWN_AMBER);
+    expect(PR_AUTHOR_GLYPH_STATUSES.has("terminal-proposal-held")).toBe(false);
+    expect(mergeStatusLabel("terminal-proposal-held")).toBe(
+      "terminal proposal held"
+    );
+    expect(
+      derivePrStatus({
+        merge_status: "terminal-proposal-held",
+        blocking_summary: "already landed — close the PR",
+      })
+    ).toMatchObject({
+      kind: "terminal-proposal-held",
+      attention: "waiting",
+      reason: "already landed — close the PR",
+    });
+  });
+
+  it("paints `dependency-upstream-closed` author red, out of the predicate-blocked floor", () => {
+    // coord's dead-edge token (qontinui-coord#2819): the dep label names an
+    // upstream PR that is CLOSED and did not land. Its generic sibling
+    // `has-cross-repo-dependency` stays in `predicate-blocked`, where it
+    // self-clears; this one never does — coord classifies it `AuthorActs` —
+    // so the self-clearing amber would be exactly the reassurance the token
+    // was split out to retract. Without a row here it would also fall to
+    // `unknown`, i.e. the ignorance floor, for a state coord fully diagnosed.
+    expect(PR_ATTENTION_BY_MERGE_STATUS["dependency-upstream-closed"]).toBe(
+      "author"
+    );
+    expect(PR_MERGE_STATUS_CLASS["dependency-upstream-closed"]).toBe(
+      AUTHOR_RED
+    );
+    expect(PR_AUTHOR_GLYPH_STATUSES.has("dependency-upstream-closed")).toBe(
+      true
+    );
+    expect(mergeStatusLabel("dependency-upstream-closed")).toBe(
+      "dependency upstream closed"
+    );
+    expect(
+      derivePrStatus({
+        merge_status: "dependency-upstream-closed",
+        blocking_summary: "upstream qontinui-coord#1664 is closed",
+      })
+    ).toMatchObject({
+      kind: "dependency-upstream-closed",
+      attention: "author",
+      reason: "upstream qontinui-coord#1664 is closed",
+    });
+  });
+
+  describe("the CI-red tokens that are NOT the author's", () => {
+    // coord splits two reds out of `ci-failed` precisely because `ci-failed`
+    // reads "needs its author": `ci-failed-stale-base` (the red may be main's;
+    // coord's BEHIND freshen is the remedy) and `ci-failed-infra-kill` (every
+    // failing check run was a self-hosted runner kill with zero failed steps;
+    // the remedy is a re-run once the runner is healthy — qontinui-coord#2723).
+    // Unmapped, each fell to `unknown`: the ignorance floor for states coord
+    // fully diagnosed. Mapped as `author`, each would re-tell the very story
+    // coord split it out to retract.
+    const CASES = [
+      [
+        "ci-failed-stale-base",
+        "ci failed stale base",
+        "base is stale",
+        WAITING_AMBER,
+      ],
+      [
+        "ci-failed-infra-kill",
+        "ci failed infra kill",
+        "runner killed",
+        UNKNOWN_AMBER,
+      ],
+    ] as const;
+
+    for (const [token, label, summary, palette] of CASES) {
+      it(`does not attribute \`${token}\` to the author`, () => {
+        expect(PR_ATTENTION_BY_MERGE_STATUS[token]).toBe("waiting");
+        expect(PR_AUTHOR_GLYPH_STATUSES.has(token)).toBe(false);
+        expect(PR_MERGE_STATUS_CLASS[token]).not.toBe(AUTHOR_RED);
+        expect(/\bbg-red-/.test(PR_MERGE_STATUS_CLASS[token])).toBe(false);
+      });
+
+      it(`renders \`${token}\` as itself, not the unknown fallback`, () => {
+        // The row's kind is the token, never `unknown`.
+        expect(PR_MERGE_STATUS_CLASS[token]).toBe(palette);
+        expect(mergeStatusLabel(token)).toBe(label);
+        expect(
+          derivePrStatus({ merge_status: token, blocking_summary: summary })
+        ).toEqual({
+          kind: token,
+          label,
+          reason: summary,
+          attention: "waiting",
+        });
+      });
+    }
+
+    it("gives the stale-base red the self-clearing amber, and the infra kill the floor", () => {
+      // coord's freshen clears a stale-base red on its own; nothing clears an
+      // infra kill yet (no auto re-run), so the self-clearing amber would lie
+      // — the `terminal-proposal-held` precedent. The train-activity tab
+      // grades the same infra kill `blocking` (its "operator action needed"),
+      // asserted in `trainActivity.test.ts`; the difference is documented at
+      // the palette row.
+      expect(PR_MERGE_STATUS_CLASS["ci-failed-stale-base"]).toBe(
+        PR_MERGE_STATUS_CLASS["behind-base"]
+      );
+      expect(PR_MERGE_STATUS_CLASS["ci-failed-infra-kill"]).toBe(
+        PR_MERGE_STATUS_CLASS["terminal-proposal-held"]
+      );
+      expect(PR_ATTENTION_BY_MERGE_STATUS["ci-failed-infra-kill"]).toBe(
+        PR_ATTENTION_BY_MERGE_STATUS["terminal-proposal-held"]
+      );
+    });
+  });
+
   it("grades required-checks-missing with ci-failed, not with behind-base", () => {
     // It reached `PrMergeStatus` after this module was written, so nothing but
     // this test pins WHICH sibling it copied. coord maps the code to the `ci`
@@ -157,9 +293,9 @@ describe("the readings the palette audit cannot make", () => {
     expect(PR_MERGE_STATUS_CLASS["required-checks-missing"]).toBe(
       PR_MERGE_STATUS_CLASS["ci-failed"]
     );
-    expect(/bg-amber-/.test(PR_MERGE_STATUS_CLASS["required-checks-missing"])).toBe(
-      false
-    );
+    expect(
+      /bg-amber-/.test(PR_MERGE_STATUS_CLASS["required-checks-missing"])
+    ).toBe(false);
     expect(PR_AUTHOR_GLYPH_STATUSES.has("required-checks-missing")).toBe(true);
     // And the badge text stays human, not the raw enum.
     expect(mergeStatusLabel("required-checks-missing")).toBe(
@@ -207,5 +343,8 @@ describe("derivePrStatus", () => {
 
   it("mergeStatusLabel never leaks a raw kebab enum", () => {
     expect(mergeStatusLabel("ready-but-unlanded")).toBe("ready but unlanded");
+    expect(mergeStatusLabel("terminal-proposal-held")).toBe(
+      "terminal proposal held"
+    );
   });
 });

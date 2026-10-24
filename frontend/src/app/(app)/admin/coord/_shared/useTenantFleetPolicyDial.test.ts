@@ -17,11 +17,21 @@ const putMock = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const method = init.method ?? "GET";
+      const body = JSON.parse(init.body ?? "null");
+      let out: unknown;
+      if (method === "GET") out = await getMock(url);
+      else if (method === "PUT") out = await putMock(url, body);
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      // A mock that resolves a `Response` (an error path) is answered
+      // as-is, so a non-2xx goes through `readJson` like the real one.
+      return out instanceof Response
+        ? out
+        : new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 vi.mock("sonner", () => ({
@@ -65,7 +75,7 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
     // Refresh starts, and is still in flight when the write lands.
     const slowRead = deferred<ReturnType<typeof view>>();
     getMock.mockReturnValueOnce(slowRead.promise);
-    let refresh!: Promise<void>;
+    let refresh!: Promise<boolean>;
     act(() => {
       refresh = result.current.reload();
     });
@@ -105,7 +115,7 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
 
     const slowRead = deferred<ReturnType<typeof view>>();
     getMock.mockReturnValueOnce(slowRead.promise);
-    let refresh!: Promise<void>;
+    let refresh!: Promise<boolean>;
     act(() => {
       refresh = result.current.reload();
     });
@@ -143,12 +153,14 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
 
     const slowRead = deferred<ReturnType<typeof view>>();
     getMock.mockReturnValueOnce(slowRead.promise);
-    let refresh!: Promise<void>;
+    let refresh!: Promise<boolean>;
     act(() => {
       refresh = result.current.reload();
     });
 
-    putMock.mockRejectedValue(new Error("admin_required"));
+    putMock.mockImplementation(
+      async () => new Response("admin_required", { status: 403 })
+    );
     await act(async () => {
       await result.current.setLevel("on");
     });
@@ -192,5 +204,69 @@ describe("useTenantFleetPolicyDial — a read that began before a write", () => 
 
     expect(result.current.policy?.effective_level).toBe("on");
     expect(result.current.readbackError).toBeNull();
+  });
+});
+
+describe("useTenantFleetPolicyDial — reload says whether its read was applied", () => {
+  it("resolves true for a read that landed, false for one that failed", async () => {
+    getMock.mockResolvedValueOnce(view("off"));
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial")
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    getMock.mockResolvedValueOnce(view("on"));
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    expect(applied).toBe(true);
+    expect(result.current.policy?.effective_level).toBe("on");
+
+    getMock.mockRejectedValueOnce(new Error("HTTP 502"));
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    // Failed: the last confirmed value stays, and the caller is told so.
+    expect(applied).toBe(false);
+    expect(result.current.policy?.effective_level).toBe("on");
+  });
+
+  it("resolves false for a read discarded because a write landed meanwhile", async () => {
+    getMock.mockResolvedValueOnce(view("off"));
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial")
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const slowRead = deferred<ReturnType<typeof view>>();
+    getMock.mockReturnValueOnce(slowRead.promise);
+    let refresh!: Promise<boolean>;
+    act(() => {
+      refresh = result.current.reload();
+    });
+
+    putMock.mockResolvedValue({
+      ok: true,
+      domain: "some_dial",
+      written_level: "on",
+      written_master_enabled: true,
+      versioned: true,
+      version: 2,
+      updated_by: null,
+      effective: view("on"),
+      readback_error: null,
+    });
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    let applied: boolean | undefined;
+    await act(async () => {
+      slowRead.resolve(view("off"));
+      applied = await refresh;
+    });
+    expect(applied).toBe(false);
+    expect(result.current.policy?.effective_level).toBe("on");
   });
 });

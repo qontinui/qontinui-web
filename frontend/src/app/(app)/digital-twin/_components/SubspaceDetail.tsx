@@ -12,11 +12,19 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Code2, Loader2, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Code2,
+  Loader2,
+  MessageSquare,
+  Sparkles,
+} from "lucide-react";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
+import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
-import { STATUS_STYLES } from "../_lib/status-presentation";
-import type { ResolvedSubspace } from "../_lib/types";
+import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
+import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
+import type { DriftVerdict, ResolvedSubspace } from "../_lib/types";
 
 interface SubspaceDetailProps {
   row: ResolvedSubspace | null;
@@ -33,16 +41,24 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
 }
 
 /**
- * Detail drawer for one sub-space. For live snapshot observers it fetches the
- * raw DriftVerdict (the exact JSON an AI agent receives) and renders both a
- * human-digestible summary and the raw JSON on demand. For all rows it shows the
- * backing coord tool / observer module + research doc.
+ * Detail drawer for one sub-space. For live-probed observers answered on the
+ * twin door it fetches the raw answer (the exact JSON an AI agent receives)
+ * and renders both a human-digestible summary and the raw JSON on demand. A
+ * `report` door's answer is not a DriftVerdict, so it gets no verdict
+ * summary — only its raw JSON. An `envelope` door (the admin outbound budget)
+ * is not on the twin door at all, so there is no raw read to fetch here: its
+ * summary and credibility envelope come from the probe's own metrics. For
+ * all rows it shows the twin and lifecycle stages, the backing coord tool /
+ * observer module, the research doc and, while the row is still being built,
+ * the plan building it.
  */
 export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
-  const isSnapshot = row?.query_kind === "snapshot";
+  const readsRaw = !!row && row.liveProbed && row.doorShape !== "envelope";
+  const isReport = row?.doorShape === "report";
+  const isEnvelope = !!row && row.liveProbed && row.doorShape === "envelope";
   const { data, isLoading, isError, error } = useSubspaceRaw(
     row?.id ?? null,
-    !!row && isSnapshot,
+    !!row && readsRaw
   );
   const [showRaw, setShowRaw] = useState(false);
 
@@ -57,11 +73,47 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
     label: "Toggle the raw DriftVerdict JSON in the sub-space drawer",
     type: "button",
   });
+  const { ref: askRef } = useUIElement({
+    id: "digital-twin-drawer-ask",
+    label: "Ask the Twin about this sub-space (opens the Completeness tab)",
+    type: "button",
+  });
+  const { ref: openDeliveryRef } = useUIElement({
+    id: "digital-twin-drawer-open-delivery",
+    label: "Open the Delivery tab from the sub-space drawer",
+    type: "button",
+  });
+  const navigation = useTwinNavigation();
+  // Close the drawer, then go. (The drawer has no DialogTrigger, so Radix
+  // returns focus nowhere on close and the destination keeps it.)
+  const navigate = (go: (nav: NonNullable<typeof navigation>) => void) => {
+    if (!navigation) return;
+    onOpenChange(false);
+    go(navigation);
+  };
 
   if (!row) return null;
-  const style = STATUS_STYLES[row.cellStatus];
+  const style = presentStatus(row);
   const verdict = data?.verdict;
-  const summary = verdict ? summarizeVerdict(row.id, verdict) : null;
+  // An envelope door has no raw read here; the probe already carried its
+  // top-level DriftVerdict fields, so its live envelope is those metrics.
+  const envelopeVerdict: DriftVerdict | null =
+    isEnvelope && row.metrics
+      ? {
+          coverage: row.metrics.coverage,
+          credibility: row.metrics.credibility,
+          posterior: row.metrics.posterior,
+          staleness_seconds: row.metrics.staleness_seconds,
+          provenance: row.metrics.provenance,
+          drift_class: row.metrics.drift_class ?? undefined,
+        }
+      : null;
+  const summary =
+    verdict && !isReport
+      ? summarizeVerdict(row.id, verdict)
+      : envelopeVerdict
+        ? summarizeVerdict(row.id, envelopeVerdict)
+        : null;
 
   return (
     <Dialog open={!!row} onOpenChange={onOpenChange}>
@@ -78,9 +130,12 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
         </DialogHeader>
 
         <div className="max-h-[70vh] overflow-y-auto pr-1 text-sm">
-          {/* Human-digestible summary (snapshot observers only). */}
-          {isSnapshot && (
-            <div className="mb-3 rounded-md border border-border bg-muted/40 p-3">
+          {/* Human-digestible summary (live-probed observers only). */}
+          {(readsRaw || isEnvelope) && (
+            <div
+              data-testid="digital-twin-drawer-summary"
+              className="mb-3 rounded-md border border-border bg-muted/40 p-3"
+            >
               <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                 <Sparkles className="size-3.5" /> Summary
               </div>
@@ -97,15 +152,73 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                 </p>
               )}
               {summary && <p className="text-sm">{summary.prose}</p>}
+              {isEnvelope && !envelopeVerdict && (
+                <p className="text-sm text-muted-foreground">
+                  The probe returned no credibility envelope.
+                </p>
+              )}
+              {isReport && verdict && (
+                <p className="text-sm">
+                  coord answers this sub-space with its own report, not a
+                  verdict — served, not graded. The raw data below is the
+                  report.
+                </p>
+              )}
             </div>
           )}
 
           <Field label="Status" value={style.label} />
           <p className="pb-2 text-xs text-muted-foreground">{style.meaning}</p>
+          <Field label="Twin" value={twinPlantInfo(row.twin).label} />
+          <Field
+            label="Lifecycle stages"
+            value={inLifecycleOrder(row.stages)
+              .map((stage) => stageInfo(stage).label)
+              .join(", ")}
+          />
           <Field label="Tier" value={`Tier ${row.tier}`} />
           <Field label="Layer" value={row.layer} />
           <Field label="Research status" value={row.research_status} />
-          <Field label="Query kind" value={row.query_kind} />
+          {/* What the row's query_kind + ask_via mean HERE — the raw
+              query_kind reads `parameterized` even for a tool coord's own
+              catalog lists as kind `snapshot`. */}
+          <Field label="On this page" value={pageAccessLabel(row)} />
+          {/* Act on that answer: the drawer closes and the page goes there.
+              Only where the row really is askable — `not-on-this-page` and
+              claim-only rows get no button. */}
+          {navigation &&
+            row.query_kind === "parameterized" &&
+            (row.ask_via === "ask-the-twin" ||
+              row.ask_via === "delivery-tab") && (
+              <div className="flex justify-end pb-1">
+                {row.ask_via === "ask-the-twin" && (
+                  <Button
+                    ref={askRef}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={() =>
+                      navigate((nav) => nav.askTheTwin(askTheTwinQuestion(row)))
+                    }
+                  >
+                    <MessageSquare aria-hidden="true" className="size-3.5" />
+                    Ask the Twin about this
+                  </Button>
+                )}
+                {row.ask_via === "delivery-tab" && (
+                  <Button
+                    ref={openDeliveryRef}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={() => navigate((nav) => nav.openTab("delivery"))}
+                  >
+                    Open the Delivery tab
+                    <ArrowRight aria-hidden="true" className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            )}
 
           {summary && (
             <>
@@ -151,9 +264,15 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
             label="Research"
             value={<code className="text-xs">{row.research_doc}</code>}
           />
+          {row.plan && (
+            <Field
+              label="Planned in"
+              value={<code className="text-xs">{row.plan}</code>}
+            />
+          )}
 
           {/* Raw data view — the exact JSON an AI agent receives. */}
-          {isSnapshot && verdict && (
+          {readsRaw && verdict && (
             <>
               <Separator className="my-2" />
               <div className="flex items-center justify-between">

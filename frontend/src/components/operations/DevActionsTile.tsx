@@ -14,14 +14,14 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { devActionDetailUrl, relativeTime } from "./utils";
+import { relativeTime } from "./utils";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { fetchDevActionDetail } from "@/lib/api/operations/devActions";
 import { useDevActionsStream } from "./useDevActionsStream";
 import { CollapsiblePanel } from "@/components/console";
 import type {
   DevAction,
   DevActionCategory,
-  DevActionDetail,
   DevActionOutcome,
 } from "./types";
 
@@ -231,11 +231,7 @@ function DevActionRow({ action }: { action: DevAction }) {
   const loadOutcomes = useCallback(async () => {
     setOutcomeState({ loading: true, outcomes: null, error: null });
     try {
-      const resp = await httpClient.fetch(devActionDetailUrl(action.action_id));
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as DevActionDetail;
+      const data = await fetchDevActionDetail(action.action_id);
       setOutcomeState({
         loading: false,
         outcomes: data.outcomes ?? [],
@@ -245,7 +241,7 @@ function DevActionRow({ action }: { action: DevAction }) {
       setOutcomeState({
         loading: false,
         outcomes: null,
-        error: err instanceof Error ? err.message : "fetch failed",
+        error: statusOnlyErrorText(err, "fetch failed"),
       });
     }
   }, [action.action_id]);

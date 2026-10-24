@@ -147,6 +147,17 @@ async def _plan(
     return row
 
 
+async def _captured_at(db: AsyncSession, row: WorkArtifact, at: datetime) -> None:
+    """Pin a row's capture time — the candidate walk's immutable sort key.
+
+    A TEST seam only: nothing in ``app/`` ever moves ``created_at`` (pinned by
+    ``tests/test_plan_library_keyset.py``'s D8 grep), which is exactly why
+    the walk can key on it.
+    """
+    row.created_at = at
+    await db.commit()
+
+
 # ===========================================================================
 # Layer 1 — the local signals (CRUD)
 # ===========================================================================
@@ -292,21 +303,24 @@ class TestCandidateSelection:
         unmet = [d for d in deps[plan.id] if not crud.is_terminal_status(d.status)]
         assert [d.id for d in unmet] == [blocker.id]
 
-    async def test_ordering_is_oldest_vetted_first_and_stable(
+    async def test_ordering_is_oldest_captured_first_and_stable(
         self, async_db_session: AsyncSession
     ) -> None:
         org = uuid4()
         base = datetime(2026, 1, 1, tzinfo=UTC)
         expected = []
-        # Insert out of order; the read must sort them.
-        for offset in (5, 1, 9, 3):
+        # Insert out of order; the read must sort them on the IMMUTABLE
+        # capture time. ``authored_at`` runs the OTHER way on purpose: the
+        # upsert rewrites it, so it can never key the walk (D8).
+        for days in (5, 1, 9, 3):
             row = await _plan(
                 async_db_session,
                 org_id=org,
-                slug=_slug(f"aged{offset}"),
-                authored_at=base + timedelta(days=offset),
+                slug=_slug(f"aged{days}"),
+                authored_at=base - timedelta(days=days),
             )
-            expected.append((offset, row.id))
+            await _captured_at(async_db_session, row, base + timedelta(days=days))
+            expected.append((days, row.id))
         expected.sort()
 
         rows, _ = await crud.list_plan_candidates(async_db_session, org_id=org)
@@ -324,23 +338,28 @@ class TestCandidateSelection:
         org = uuid4()
         same = datetime(2026, 2, 2, tzinfo=UTC)
         for _ in range(4):
-            await _plan(
+            row = await _plan(
                 async_db_session,
                 org_id=org,
                 slug=_slug("tied"),
                 authored_at=same,
             )
+            await _captured_at(async_db_session, row, same)
         rows, _ = await crud.list_plan_candidates(async_db_session, org_id=org)
         ordered = _artifacts(rows)
         assert [r.id for r in ordered] == sorted(r.id for r in ordered)
 
         page1, total = await crud.list_plan_candidates(
-            async_db_session, org_id=org, offset=0, limit=2
+            async_db_session, org_id=org, limit=2
         )
-        page2, _ = await crud.list_plan_candidates(
-            async_db_session, org_id=org, offset=2, limit=2
+        page2, rest = await crud.list_plan_candidates(
+            async_db_session,
+            org_id=org,
+            after=crud.candidate_position(page1[-1]),
+            limit=2,
         )
         assert total == 4
+        assert rest == 2, "the count is from the second page's own start"
         assert [r.id for r in _artifacts(page1 + page2)] == [r.id for r in ordered]
 
     async def test_unmet_depends_on_excludes_shipped_targets(
@@ -574,10 +593,18 @@ class TestCandidatesCarryCorpusHealth:
         )
 
         # A page past the end: no items, but the block still describes the
-        # whole corpus rather than this (empty) page.
+        # whole corpus rather than this (empty) page. The cursor is a real one
+        # for this scope (the NULL org bucket, include_coord=false), at a
+        # position past every row.
+        from app.api.v1.endpoints.plan_library import candidates_fingerprint
+        from app.core.bounded_read import KeysetPosition
+
+        past_the_end = candidates_fingerprint(None, include_coord=False).encode(
+            KeysetPosition(at=datetime(9999, 1, 1, tzinfo=UTC), id=uuid4())
+        )
         resp = await client.get(
             CANDIDATES,
-            params={"limit": 1, "offset": 50, "include_coord": "false"},
+            params={"limit": 1, "cursor": past_the_end, "include_coord": "false"},
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -709,7 +736,7 @@ class TestCandidatesHttp:
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["ordering"] == "oldest_vetted_first"
+        assert body["ordering"] == "oldest_captured_first"
         row = next(i for i in body["items"] if i["id"] == str(plan.id))
         assert row["status"] == "VETTED"
         assert sorted(row["repos"]) == ["coord", "qontinui-web"]
@@ -1138,12 +1165,19 @@ class TestCandidatesHttp:
             "app.api.v1.endpoints.plan_library._proxy_coord_get",
             new=AsyncMock(return_value={}),
         ):
-            resp = await client.get(CANDIDATES, params={"offset": 1, "limit": 1})
+            first = await client.get(CANDIDATES, params={"limit": 1})
+            body = first.json()
+            assert body["truncated"] is True
+            assert body["next_cursor"]
+            resp = await client.get(
+                CANDIDATES, params={"limit": 1, "cursor": body["next_cursor"]}
+            )
         body = resp.json()
-        assert body["offset"] == 1
+        assert "offset" not in body
         assert body["limit"] == 1
         assert len(body["items"]) == 1
-        assert body["total"] >= 3
+        assert body["total"] >= 2
+        assert body["bound_kind"] == "exact"
 
 
 # ===========================================================================
@@ -3879,14 +3913,14 @@ class TestWorkUnitOnlyRows:
         ]
         assert body["total"] == 3
 
-    async def test_work_unit_rows_order_on_first_in_progress_then_created(
+    async def test_work_unit_rows_order_on_created_never_on_first_in_progress(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
-        """The documented stable default, on this arm's own timestamps.
+        """The walk is on the unit's IMMUTABLE ``created_at``.
 
-        ``coalesce(first_in_progress_at, created_at) ASC`` — coord reports
-        ``first_in_progress_at`` ABSENT rather than zero when no transition
-        was recorded, so the fallback is explicit rather than left to the sort.
+        ``first_in_progress_at`` moves when coord records a transition, so a
+        keyset over it would drop a unit that transitioned mid-walk (D8). It
+        stays the row's ``age_days`` anchor — display only.
         """
         units = [
             # created LAST, but entered in_progress FIRST.
@@ -3915,9 +3949,9 @@ class TestWorkUnitOnlyRows:
 
         assert resp.status_code == 200, resp.text
         assert [r["slug"] for r in resp.json()["items"]] == [
-            "2026-09-03-late-created",
             "2026-09-03-mid",
             "2026-09-03-no-transition",
+            "2026-09-03-late-created",
         ]
 
 
@@ -4126,12 +4160,12 @@ class TestTheUnionPagesAndCountsOverBothArms:
         """``total`` is the union's size and the pages tile it exactly once."""
         base = datetime(2026, 4, 1, tzinfo=UTC)
         for i in range(3):
-            await _plan(
+            row = await _plan(
                 async_db_session,
                 org_id=None,
                 slug=_slug(f"art-{i}"),
-                authored_at=base + timedelta(days=i * 2),
             )
+            await _captured_at(async_db_session, row, base + timedelta(days=i * 2))
         units = [
             _coord_unit(
                 f"2026-04-0{i + 1}-unit-{i}",
@@ -4141,43 +4175,63 @@ class TestTheUnionPagesAndCountsOverBothArms:
         ]
         fake = _coord_with_population(units)
 
+        paged: list[str] = []
+        totals: list[int] = []
         with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
             whole = await client.get(CANDIDATES, params={"limit": 100})
-            page1 = await client.get(CANDIDATES, params={"limit": 2, "offset": 0})
-            page2 = await client.get(CANDIDATES, params={"limit": 2, "offset": 2})
-            page3 = await client.get(CANDIDATES, params={"limit": 2, "offset": 4})
+            cursor: str | None = None
+            while True:
+                params: dict[str, Any] = {"limit": 2}
+                if cursor is not None:
+                    params["cursor"] = cursor
+                page = await client.get(CANDIDATES, params=params)
+                assert page.status_code == 200, page.text
+                totals.append(page.json()["total"])
+                paged.extend(r["slug"] for r in page.json()["items"])
+                cursor = page.json()["next_cursor"]
+                if cursor is None:
+                    break
 
         assert whole.status_code == 200, whole.text
         assert whole.json()["total"] == 6
         ordered = [r["slug"] for r in whole.json()["items"]]
         # The two arms interleave on their own timestamps — this is the check
         # that the merge is a merge and not a concatenation.
-        assert len({r["document_state"] for r in whole.json()["items"]}) == 2
+        assert [r["document_state"] for r in whole.json()["items"]] == [
+            "present",
+            "unsynced",
+        ] * 3
 
-        paged: list[str] = []
-        for page in (page1, page2, page3):
-            assert page.status_code == 200, page.text
-            assert page.json()["total"] == 6
-            paged.extend(r["slug"] for r in page.json()["items"])
         assert paged == ordered, "the pages do not tile the union"
+        # Each page counts from its own start: 6, then 4, then 2.
+        assert totals == [6, 4, 2]
 
-    async def test_an_artifact_wins_a_tie_so_an_all_artifact_page_is_unchanged(
+    async def test_a_cross_arm_tie_breaks_on_the_uuid(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
-        """Ties go to the document layer, so nothing about the old page moves."""
+        """Both arms key on ``(created_at, id)`` — ONE total order — so a
+        timestamp tie between an artifact and a unit breaks on the uuid,
+        exactly as PostgreSQL orders uuids, and a cursor between them resumes
+        without dropping or repeating either."""
         same = datetime(2026, 6, 6, tzinfo=UTC)
-        await _plan(
-            async_db_session, org_id=None, slug=_slug("tie-art"), authored_at=same
-        )
+        row = await _plan(async_db_session, org_id=None, slug=_slug("tie-art"))
+        await _captured_at(async_db_session, row, same)
+        unit = _coord_unit("2026-06-06-tie-unit", created_at=same.isoformat())
 
         with patch(
             "app.api.v1.endpoints.plan_library._proxy_coord_get",
-            new=_coord_with_population(
-                [_coord_unit("2026-06-06-tie-unit", created_at=same.isoformat())]
-            ),
+            new=_coord_with_population([unit]),
         ):
-            resp = await client.get(CANDIDATES, params={"limit": 100})
+            whole = await client.get(CANDIDATES, params={"limit": 100})
+            first = await client.get(CANDIDATES, params={"limit": 1})
+            second = await client.get(
+                CANDIDATES, params={"limit": 1, "cursor": first.json()["next_cursor"]}
+            )
 
-        assert resp.status_code == 200, resp.text
-        states = [r["document_state"] for r in resp.json()["items"]]
-        assert states == ["present", "unsynced"]
+        assert whole.status_code == 200, whole.text
+        expected = sorted([(row.id, row.slug), (UUID(unit["id"]), unit["slug"])])
+        assert [r["slug"] for r in whole.json()["items"]] == [s for _, s in expected]
+        assert [r["slug"] for r in first.json()["items"] + second.json()["items"]] == [
+            s for _, s in expected
+        ]
+        assert second.json()["next_cursor"] is None

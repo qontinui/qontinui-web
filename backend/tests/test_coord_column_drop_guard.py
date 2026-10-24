@@ -1422,10 +1422,15 @@ def test_the_fixtures_are_the_recorded_revisions() -> None:
 # separate places in the tree went on saying there were three, and nothing
 # failed for 90 commits.
 #
-# Three lanes invoke this script, and the gate's own docstring says so:
+# Four lanes invoke this script, and the gate's own docstring says so:
 #
 #   * .github/workflows/coord-column-drop-guard.yml, step "Check coord.* drops
 #     against coord's read contract (PR)" — the PR gate.
+#   * .github/workflows/web-guards.yml, step "coord-column-drop-guard: Check coord.* drops against coord's read contract" — the
+#     consolidated one-job guard lane (plan
+#     2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work),
+#     running the same command beside the per-guard workflow until a
+#     later phase of that plan deletes the per-guard file.
 #   * .qontinui/ci.toml, step `coord-column-drop-guard` — the
 #     runner-as-CI-node lane, invoking this same script rather than mirroring a
 #     command string, so the two cannot drift. It relies on a runner checkout
@@ -1445,6 +1450,7 @@ _SCRIPT_REF = "scripts/ci/check_coord_column_drops.py"
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/coord-column-drop-guard.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }
@@ -1769,7 +1775,7 @@ def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
 def test_the_scripts_docstring_names_every_lane() -> None:
     """The roster in prose must be the roster in the tree.
 
-    The gate opens by naming its three lanes and what each is for. That prose is
+    The gate opens by naming its four lanes and what each is for. That prose is
     what a reader trusts instead of grepping, so a lane added without touching
     it leaves the script describing a shape the repo no longer has.
     """

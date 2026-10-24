@@ -88,10 +88,10 @@ on:
 #     but the LAST push of a burst gets skipped, so a burst's final state can stay
 #     unmapped indefinitely -- whereas queueing always leaves a pending run.
 #
-# Note `frontend-coverage-producer.yml` keeps `cancel-in-progress: true` on
-# purpose: at ~14 min it is far under the push interval and measured 18/20
-# `success`. The defect was never the flag -- it is the ratio of runtime to push
-# cadence. If this suite is ever sharded down near that ratio, revisit.
+# `frontend-coverage-producer.yml` used to keep `cancel-in-progress: true`, on
+# the reasoning that at ~14 min it ran far under the push interval. By
+# 2026-09-26 it measured median 16.3 min with 3 of the last 40 push-on-main runs
+# `cancelled`, so it now uses `false` too, for the reasons above.
 #
 # Plan: 2026-09-20-backend-coverage-producer-cancels-itself-into-producing-nothing
 concurrency:
@@ -99,6 +99,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Benign supersession, DECLARED (coord reads this; plan
+  # 2026-10-01-coord-train-waits-on-redundant-post-land-verification
+  # Decision 4): this workflow is a non-gating coverage producer, so a newer
+  # main run superseding an older one loses no verification. Coord's no-reap
+  # gate does not wait on it, its main-green read does not count it, and its
+  # main-red fingerprint ignores it (a non-passing run here held web's train at
+  # main-red on 2026-09-30). Remove this line and coord treats the workflow as
+  # verification again.
+  COORD_SUPERSESSION: benign
   PYTHON_VERSION: '3.12'
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
@@ -337,7 +346,6 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
-            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 

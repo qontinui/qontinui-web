@@ -43,6 +43,7 @@ from tests._alembic_harness import (
     backend_root,
     can_connect,
     column_info,
+    declared_parent_revision_id,
     ephemeral_database,
     index_exists,
     run_alembic,
@@ -70,13 +71,8 @@ def _source() -> str:
 
 def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
     """`_PARENT_REVISION_ID` is the revision's real parent — no database needed."""
-    match = re.search(
-        r'^down_revision[^=]*=\s*["\'](?P<parent>[^"\']+)["\']',
-        _source(),
-        re.MULTILINE,
-    )
-    assert match is not None
-    assert match.group("parent") == _PARENT_REVISION_ID
+    declared = declared_parent_revision_id(_source(), _REVISION_FILENAME)
+    assert declared == _PARENT_REVISION_ID
 
 
 def test_the_down_revision_is_on_one_line() -> None:

@@ -10,15 +10,19 @@ name: Style Gate (shadow)
 # rust-vision-core crate) per route in BOTH of its gating modes and reports the
 # findings in the job summary:
 #
-#   * `analyze` — runs the 4 page-wide analyzers (layout, elements, typography,
-#     color) with NO element ids and NO specs required. The crate has five, but
-#     `--analyzer all` resolves to these four: `dynamic` needs two frames, which
-#     this bin does not accept, so `parse_analyzer` REJECTS it with a usage
-#     error rather than including it. This is the broad,
+#   * `analyze` — runs the 5 page-wide analyzers (layout, elements, typography,
+#     color, image) with NO element ids and NO specs required. The crate has six,
+#     but `--analyzer all` resolves to these five: `dynamic` needs two frames,
+#     which this bin does not accept, so `parse_analyzer` REJECTS it with a usage
+#     error rather than including it. `image` reports per-image VALUES and only
+#     Info findings, answers Blocked only without a frame (this gate always
+#     passes one) and Degraded (green) on an image-free route, so it cannot
+#     move this pass's exit code. This is the broad,
 #     day-one signal: it works the moment a snapshot+frame exist. Invoked with
 #     `--analyzer all --fail-on critical`, so it exits 2 iff a finding is at/above
-#     CRITICAL (and 0 otherwise — without --fail-on the bin always exits 0, so the
-#     flag is what gives us a gate signal at all).
+#     CRITICAL or an analyzer's verdict is BLOCKED (and 0 otherwise — without
+#     --fail-on the bin always exits 0, so the flag is what gives us a gate signal
+#     at all).
 #
 #   * `assert` — runs the committed invariant specs (Phase 2). These are precise
 #     but thin on day one: most DSL assertions (no_overlap, contrast_meets_wcag,
@@ -88,10 +92,23 @@ on:
         required: false
         default: "0"
 
-# Cancel an in-progress run when a newer commit lands on the same ref.
+# Cancel an in-progress first-attempt PR run when a newer commit lands on the
+# same PR (see below for every other run).
+#
+# PR-SCOPED SUPERSESSION, re-run- and push-safe (shared hosted-job cap relief,
+# 2026-10-05; pattern: qontinui-claude-config#1475). Only a FIRST-attempt
+# `pull_request` run uses the bare per-PR group below and cancels within it.
+# Every other run -- push (incl. merge-candidate*/**, coord's candidate CI),
+# schedule, workflow_dispatch, and EVERY re-run (run_attempt > 1) -- appends
+# `-run-<id>-<attempt>`, so it is the sole member of its group: never
+# cancelled, never reaped while pending, and a re-run of an older head can no
+# longer cancel the current head's run. The existing literal prefix is kept
+# because coord models a template by interpolating only `github.event_name` /
+# `github.ref` and collapsing every other expression (the suffix included) to
+# "" -- so coord's modelled group is byte-identical to before the suffix.
 concurrency:
-  group: style-gate-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: style-gate-${{ github.workflow }}-${{ github.ref }}${{ !(github.event_name == 'pull_request' && github.run_attempt == 1) && format('-run-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions): read the
 # repo; `actions: read` is for the job-timeout explainer's
@@ -164,6 +181,12 @@ jobs:
       # The style-gate spec self-enables the per-user co-pilot pref + seeds
       # consent; the build-time relay surface mirrors Spec CI.
       NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
+      # `next dev` renders two dev-only overlays (its indicator, bottom-left, and
+      # the React Query Devtools toggle, bottom-right). Both land in the frame and
+      # the snapshot, and vision-audit reports them as CRITICAL layout occlusions
+      # on /runner (seen with the fac2f604 pin, qontinui-web#1879). This flag
+      # stops the app rendering either (next.config.mjs, query-provider.tsx).
+      NEXT_PUBLIC_HIDE_DEV_OVERLAYS: "1"
 
     steps:
       # Stamp THIS JOB's start time. Must stay the FIRST step of the job.
@@ -242,9 +265,12 @@ jobs:
             echo "Mode: SHADOW (Stage A) — report-only, gate findings do NOT fail this check."
           fi
 
-      # The qontinui-schemas repo is public (AGPL) — mirrors the unauthenticated
+      # The qontinui-schemas repo is public — mirrors the unauthenticated
       # clone convention in backend-ci.yml / migrate.yml. Clone into a sibling of
       # the workspace (../qontinui-schemas) and check out the pinned SHA.
+      # Licensing: the repo is AGPL-3.0-or-later, but the analyzer this job builds
+      # (the rust-vision-core crate and its `vision-audit` binary) is MIT — see
+      # rust-vision-core/LICENSE in qontinui-schemas.
       - name: Checkout pinned qontinui-schemas (analyzer source)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -255,7 +281,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: stable
 
@@ -864,9 +890,9 @@ jobs:
       # row per route and a labeled cell for each pass (analyze | assert).
       #
       #   * analyze — page-wide, NO element ids / NO spec needed. Invoked with
-      #       analyze --snapshot S --frame F --analyzer all --fail-on critical
-      #     so it exits 2 iff a finding is at/above CRITICAL (without --fail-on
-      #     the bin always exits 0). Needs only snapshot+frame to run; the broad
+      #       analyze --snapshot S --frame F --scale-factor 1 --analyzer all --fail-on critical
+      #     so it exits 2 iff a finding is at/above CRITICAL or an analyzer's
+      #     verdict is BLOCKED (without --fail-on the bin always exits 0). Needs only snapshot+frame to run; the broad
       #     day-one signal.
       #   * assert — the committed invariant spec ($SPEC_DIR/<id>.json). Pass
       #     --baseline-dir ONLY when a per-route baseline exists (else
@@ -977,9 +1003,18 @@ jobs:
             # 2>&1 1>FILE: stderr (human summary) is captured into $an_err for the
             # table cell; stdout (the machine-readable per-finding JSON) is saved
             # to the findings artifact for burn-in triage.
+            # --scale-factor 1: vision-audit maps every CSS-pixel bbox onto the
+            # frame through this value, and every frame here is DPR 1. The
+            # style-gate project spreads devices["Desktop Chrome"]
+            # (frontend/playwright.config.ts), whose deviceScaleFactor is 1; the
+            # public lane's browser.newContext takes Playwright's default of 1.
+            # style-capture.spec.ts ASSERTS window.devicePixelRatio === 1 before
+            # it writes each snapshot-and-frame pair and fails that capture
+            # loudly otherwise, so this literal cannot drift silently.
             an_err="$("$VISION_AUDIT" analyze \
               --snapshot "$snap" \
               --frame "$frame" \
+              --scale-factor 1 \
               --analyzer all \
               --fail-on critical 2>&1 1>"$FINDINGS_DIR/$id.analyze.json")"
             an_rc=$?
@@ -1008,6 +1043,7 @@ jobs:
               as_err="$("$VISION_AUDIT" assert \
                 --snapshot "$snap" \
                 --frame "$frame" \
+                --scale-factor 1 \
                 --assertions "$spec" \
                 $baseline_args 2>&1 1>"$FINDINGS_DIR/$id.assert.json")"
               as_rc=$?
@@ -1156,7 +1192,7 @@ jobs:
           # declared at this job's `timeout-minutes`.
           JOB_TIMEOUT_MINUTES: '30'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow declares `concurrency: cancel-in-progress: true`, so a newer push to the same ref supersedes the run - that, a manual cancel, or coord's merge train reaping a merge-candidate/* ref are the external causes
+            this workflow's `concurrency:` block sets `cancel-in-progress` from the expression `github.event_name == 'pull_request' && github.run_attempt == 1`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here - on a first-attempt pull_request run a newer push to the same PR supersedes it (and a reopen supersedes the same-head run it re-does); every other run (push, schedule, dispatch, any re-run) is alone in a per-run group and is never auto-superseded or reaped while pending, so a manual cancel or coord's merge train reaping a merge-candidate/* ref are the remaining external causes
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,

@@ -41,6 +41,13 @@ vi.mock("@/lib/api/agent-registry", async () => {
   };
 });
 
+// The per-repo follow-up dials panel reads its own routes and has its own
+// suite (`_components/RepoFollowupDialsPanel.test.tsx`); stub it here so this
+// page's tests stay about the registry rows.
+vi.mock("./_components/RepoFollowupDialsPanel", () => ({
+  RepoFollowupDialsPanel: () => null,
+}));
+
 import { AgentPrefError } from "@/lib/api/agent-registry";
 import CoordAgentRegistryPage from "./page";
 

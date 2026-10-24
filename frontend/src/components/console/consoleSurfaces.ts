@@ -34,10 +34,7 @@
  */
 
 import type { AttentionMap, AuditablePalette } from "./attention";
-import {
-  AUTHOR_GLYPH_KINDS,
-  STATUS_BADGE_CLASS,
-} from "./statusRow";
+import { AUTHOR_GLYPH_KINDS, STATUS_BADGE_CLASS } from "./statusRow";
 import { ATTENTION_BY_KIND as PIPELINE_ATTENTION } from "@/components/operations/prPipeline";
 // Wave 1 surfaces.
 import {
@@ -108,6 +105,14 @@ import {
   FINDING_AUTHOR_GLYPH_RETENTIONS,
   FINDING_RETENTION_CLASS,
 } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
+// The operator-touch aggregate — plan
+// `2026-08-27-operator-touch-read-and-surface` Phase C3. Same shape as
+// findings: a `*Status.ts` in a `_lib/` beside its own route.
+import {
+  TOUCH_ATTENTION_BY_KIND,
+  TOUCH_AUTHOR_GLYPH_KINDS,
+  TOUCH_KIND_CLASS,
+} from "@/app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus";
 // Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a —
 // the v2 decision-domain editor. Same shape as gate-clearance: a `*Status.ts`
 // beside its own route.
@@ -212,13 +217,40 @@ import {
   SERVICE_AUTHOR_GLYPH_KINDS,
   SERVICE_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
-// GitHub-hosted CI on the Dev Ops page — plan
+// The spawn ledger — plan
+// `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+// Phase 5. Its shared kinds take the gate-continuation table's own entries.
+import {
+  SPAWN_ATTENTION_BY_KIND,
+  SPAWN_AUTHOR_GLYPH_KINDS,
+  SPAWN_KIND_CLASS,
+} from "@/app/(app)/admin/coord/spawns/_lib/spawnStatus";
+// GitHub-hosted CI on the Dev Ops ▸ CI page — plan
 // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
 import {
   HOSTED_CI_ATTENTION_BY_KIND,
   HOSTED_CI_AUTHOR_GLYPH_KINDS,
   HOSTED_CI_BADGE_CLASS,
-} from "@/app/(app)/admin/coord/devops/_lib/hostedCiStatus";
+} from "@/app/(app)/admin/coord/ci/_lib/hostedCiStatus";
+import {
+  MODEL_ACCESS_ATTENTION_BY_KIND,
+  MODEL_ACCESS_AUTHOR_GLYPH_KINDS,
+  MODEL_ACCESS_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ci/_lib/ciModelAccessStatus";
+// Image generation's per-repo overrides (tenant policy) — plan
+// `2026-10-13-image-generation-and-visual-judgment` Phase 12.
+import {
+  IMAGE_GENERATION_ATTENTION_BY_KIND,
+  IMAGE_GENERATION_AUTHOR_GLYPH_KINDS,
+  IMAGE_GENERATION_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus";
+// Per-repo follow-up dials (agent registry) — plan
+// `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
+import {
+  FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
+  FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS,
+  FOLLOWUP_SCOPE_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/agent-registry/_lib/repoFollowupStatus";
 // The CI dashboard — plan `2026-10-04-ci-dashboard-in-the-dev-ops-console`
 // Phase 3. One module, two orthogonal tables: a pool's verdict and a repo's.
 import {
@@ -229,6 +261,33 @@ import {
   CI_REPO_AUTHOR_GLYPH_KINDS,
   CI_REPO_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/ci/_lib/ciDashboardStatus";
+import {
+  CAPABILITY_ATTENTION_BY_STATE,
+  CAPABILITY_AUTHOR_GLYPH_KINDS,
+  CAPABILITY_BADGE_CLASS,
+  WEDGE_ATTENTION_BY_STATE,
+  WEDGE_AUTHOR_GLYPH_KINDS,
+  WEDGE_BADGE_CLASS,
+} from "@/components/operations/runnerReportStatus";
+import {
+  DOMAIN_COST_VERDICT_ATTENTION_BY_KIND,
+  DOMAIN_COST_VERDICT_AUTHOR_GLYPH_KINDS,
+  DOMAIN_COST_VERDICT_BADGE_CLASS,
+} from "@/components/operations/domainCostStatus";
+// Operator action items — plan
+// `2026-10-12-operator-action-items-pushed-to-the-phone` Phase 3.
+// The PR hold control — plan `2026-10-04-coord-pr-hold-without-github-drafts`
+// Phase 4.
+import {
+  PR_HOLD_ATTENTION_BY_KIND,
+  PR_HOLD_AUTHOR_GLYPH_KINDS,
+  PR_HOLD_BADGE_CLASS,
+} from "@/components/operations/prHoldStatus";
+import {
+  ACTION_ITEM_ATTENTION_BY_KIND,
+  ACTION_ITEM_AUTHOR_GLYPH_KINDS,
+  ACTION_ITEM_BADGE_CLASS,
+} from "@/components/admin/coord/actionItemStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -251,12 +310,30 @@ export interface ConsoleSurface {
  */
 export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   {
+    surface: "PR hold control (/admin/coord/prs, /admin/coord/pipeline)",
+    module: "components/operations/prHoldStatus.ts",
+    attentionByKind: PR_HOLD_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: PR_HOLD_BADGE_CLASS,
+      authorGlyphKinds: PR_HOLD_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
     surface: "findings (/admin/coord/findings)",
     module: "app/(app)/admin/coord/findings/_lib/findingStatus.ts",
     attentionByKind: FINDING_ATTENTION_BY_RETENTION,
     palette: {
       badgeClass: FINDING_RETENTION_CLASS,
       authorGlyphKinds: FINDING_AUTHOR_GLYPH_RETENTIONS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "operator touches (/admin/coord/operator-touches)",
+    module: "app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus.ts",
+    attentionByKind: TOUCH_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: TOUCH_KIND_CLASS,
+      authorGlyphKinds: TOUCH_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
@@ -270,7 +347,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   },
   // --- Phase 3 Wave 1 -------------------------------------------------------
   {
-    surface: "work units (/admin/coord/work-units, /admin/coord/spawn, /history)",
+    surface:
+      "work units (/admin/coord/work-units, /admin/coord/spawn, /history)",
     module: "components/admin/coord/planStatus.ts",
     attentionByKind: PLAN_ATTENTION_BY_TONE,
     palette: {
@@ -366,7 +444,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     attentionByKind: POLICY_PROPOSAL_ATTENTION_BY_KIND,
     palette: {
       badgeClass: POLICY_PROPOSAL_KIND_CLASS,
-      authorGlyphKinds: POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      authorGlyphKinds:
+        POLICY_PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
@@ -384,7 +463,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     attentionByKind: DECISION_POLICY_ATTENTION_BY_KIND,
     palette: {
       badgeClass: DECISION_POLICY_CLASS,
-      authorGlyphKinds: DECISION_POLICY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+      authorGlyphKinds:
+        DECISION_POLICY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- Phase 3 Wave 4 — Family C, the tables --------------------------------
@@ -523,6 +603,40 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
         RUNNER_SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
+  // --- the operations ratchet's readout ------------------------------------
+  // Plan `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+  // Phase 8. Two tables on the Dev Ops machine rows — the runner's own
+  // capability verdicts (`unknown` amber by floor: a record coord aged, or a
+  // state this build has no label for) and its wedge incidents — and the
+  // domain cost verdict on the Overview.
+  {
+    surface: "runner capability (/admin/coord/devops)",
+    module: "components/operations/runnerReportStatus.ts",
+    attentionByKind: CAPABILITY_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: CAPABILITY_BADGE_CLASS,
+      authorGlyphKinds: CAPABILITY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "runner wedge incidents (/admin/coord/devops)",
+    module: "components/operations/runnerReportStatus.ts",
+    attentionByKind: WEDGE_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: WEDGE_BADGE_CLASS,
+      authorGlyphKinds: WEDGE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "domain cost verdict (/overview)",
+    module: "components/operations/domainCostStatus.ts",
+    attentionByKind: DOMAIN_COST_VERDICT_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: DOMAIN_COST_VERDICT_BADGE_CLASS,
+      authorGlyphKinds:
+        DOMAIN_COST_VERDICT_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   // --- the consolidated sessions console ------------------------------------
   {
     surface: "sessions (/sessions)",
@@ -571,7 +685,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     },
   },
   {
-    surface: "computers — watched services (/admin/coord/computers/[computerId])",
+    surface:
+      "computers — watched services (/admin/coord/computers/[computerId])",
     module: "app/(app)/admin/coord/computers/_lib/computerStatus.ts",
     attentionByKind: SERVICE_ATTENTION_BY_KIND,
     palette: {
@@ -579,14 +694,65 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       authorGlyphKinds: SERVICE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
+  // --- the spawn ledger --------------------------------------------------
+  {
+    // The gates page's continuation vocabulary plus the two ledger-only
+    // states (`queued`, `superseded`), so both surfaces paint a shared word
+    // the same way.
+    surface: "spawn requests (/admin/coord/spawns)",
+    module: "app/(app)/admin/coord/spawns/_lib/spawnStatus.ts",
+    attentionByKind: SPAWN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SPAWN_KIND_CLASS,
+      authorGlyphKinds: SPAWN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   // --- GitHub-hosted CI (Dev Ops) ----------------------------------------
   {
-    surface: "GitHub-hosted CI (/admin/coord/devops)",
-    module: "app/(app)/admin/coord/devops/_lib/hostedCiStatus.ts",
+    surface: "GitHub-hosted CI (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/hostedCiStatus.ts",
     attentionByKind: HOSTED_CI_ATTENTION_BY_KIND,
     palette: {
       badgeClass: HOSTED_CI_BADGE_CLASS,
       authorGlyphKinds: HOSTED_CI_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- model access for CI steps (Dev Ops) -------------------------------
+  {
+    // On and off are both a setting in effect, so calm; only an unreadable
+    // (or row-less `off`) value is amber — never painted as the `on` default.
+    surface: "model access for CI steps (/admin/coord/ci)",
+    module: "app/(app)/admin/coord/ci/_lib/ciModelAccessStatus.ts",
+    attentionByKind: MODEL_ACCESS_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: MODEL_ACCESS_BADGE_CLASS,
+      authorGlyphKinds: MODEL_ACCESS_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- image generation's per-repo overrides (tenant policy) -------------
+  {
+    // A level in effect (`off` included) is a setting somebody chose, so
+    // calm; only a level this console cannot read is amber.
+    surface: "image generation repo overrides (/admin/coord/tenant-policy)",
+    module: "app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus.ts",
+    attentionByKind: IMAGE_GENERATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: IMAGE_GENERATION_BADGE_CLASS,
+      authorGlyphKinds:
+        IMAGE_GENERATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- per-repo follow-up dials (agent registry) -------------------------
+  {
+    // A configured scope (even `none`) is a setting in effect, so calm; only
+    // an unreadable preference is amber — never painted as the `all` default.
+    surface: "post-merge follow-up scope (/admin/coord/agent-registry)",
+    module: "app/(app)/admin/coord/agent-registry/_lib/repoFollowupStatus.ts",
+    attentionByKind: FOLLOWUP_SCOPE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: FOLLOWUP_SCOPE_BADGE_CLASS,
+      authorGlyphKinds:
+        FOLLOWUP_SCOPE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the CI dashboard ------------------------------------------------------
@@ -609,6 +775,15 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: CI_REPO_BADGE_CLASS,
       authorGlyphKinds: CI_REPO_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "action items (/admin/coord/action-items)",
+    module: "components/admin/coord/actionItemStatus.ts",
+    attentionByKind: ACTION_ITEM_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: ACTION_ITEM_BADGE_CLASS,
+      authorGlyphKinds: ACTION_ITEM_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];

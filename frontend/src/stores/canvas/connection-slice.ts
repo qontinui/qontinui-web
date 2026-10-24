@@ -9,6 +9,7 @@
 
 import type { StateCreator } from "zustand";
 import type { CanvasStore, ConnectionSlice, Connection } from "./types";
+import { isValidConnectionType } from "./utils";
 
 export const createConnectionSlice: StateCreator<
   CanvasStore,
@@ -36,19 +37,23 @@ export const createConnectionSlice: StateCreator<
         state.workflow.connections[sourceId] = {};
       }
 
-      const sourceConnections = state.workflow.connections[sourceId];
-      if (!sourceConnections[outputType as keyof typeof sourceConnections]) {
-        (sourceConnections[
-          outputType as keyof typeof sourceConnections
-        ] as Connection[][]) = [];
+      const sourceConns = state.workflow.connections[sourceId];
+      if (!sourceConns) return;
+
+      if (!isValidConnectionType(outputType)) {
+        return;
       }
 
+      if (!(sourceConns as Record<string, unknown>)[outputType]) {
+        (sourceConns as Record<string, unknown>)[outputType] = [];
+      }
+
+      const outputArray = (sourceConns as Record<string, unknown>)[outputType];
+      if (!outputArray || !Array.isArray(outputArray)) return;
+
       // Ensure output index array exists
-      const connArray = sourceConnections[
-        outputType as keyof typeof sourceConnections
-      ] as Connection[][];
-      while (connArray.length <= outputIndex) {
-        connArray.push([]);
+      while (outputArray.length <= outputIndex) {
+        outputArray.push([]);
       }
 
       // Add connection
@@ -58,7 +63,10 @@ export const createConnectionSlice: StateCreator<
         index: targetIndex,
       };
 
-      connArray[outputIndex]?.push(connection);
+      const targetArray = outputArray[outputIndex];
+      if (targetArray && Array.isArray(targetArray)) {
+        targetArray.push(connection);
+      }
       state.isDirty = true;
     });
     get().recordHistory("Add connection");
@@ -71,16 +79,23 @@ export const createConnectionSlice: StateCreator<
     targetId: string
   ) => {
     set((state) => {
-      const sourceConnections = state.workflow?.connections[sourceId];
-      if (!sourceConnections) return;
-      const connArray = sourceConnections[
-        outputType as keyof typeof sourceConnections
-      ] as Connection[][] | undefined;
-      if (!connArray?.[outputIndex]) return;
+      const sourceConns = state.workflow?.connections[sourceId];
+      if (!sourceConns) return;
 
-      connArray[outputIndex] = connArray[outputIndex].filter(
-        (conn: Connection) => conn.action !== targetId
-      );
+      if (!isValidConnectionType(outputType)) {
+        return;
+      }
+
+      const outputs = (sourceConns as Record<string, unknown>)[outputType];
+      if (!outputs || !Array.isArray(outputs)) return;
+
+      const targetOutputs = outputs[outputIndex];
+      if (targetOutputs && Array.isArray(targetOutputs)) {
+        const filtered = targetOutputs.filter(
+          (conn: Connection) => conn.action !== targetId
+        );
+        outputs[outputIndex] = filtered;
+      }
 
       state.isDirty = true;
     });

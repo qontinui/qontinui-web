@@ -91,7 +91,17 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
+/**
+ * What issued a read: the first read of a QUESTION, a background POLL tick,
+ * or an explicit REFRESH. A page may ask for an expensive part of its answer
+ * only on the reads an operator caused — the plans page resolves live custody
+ * on `question` and `refresh`, never on `poll`.
+ */
+export type ReadTrigger = "question" | "poll" | "refresh";
+
 export interface ReadGuard {
+  /** Why this read was issued — see {@link ReadTrigger}. */
+  readonly trigger: ReadTrigger;
   /**
    * Nothing newer has been issued for this question, so the read may set the
    * DATA. Consult before `setData` / clearing the error on a success.
@@ -140,15 +150,19 @@ export function useGuardedPoll({
   const reqGen = useRef(0);
   const pollInFlight = useRef(false);
 
-  const issue = useCallback(() => {
-    const question = questionGen.current;
-    const req = ++reqGen.current;
-    return read({
-      isNewest: () =>
-        question === questionGen.current && req === reqGen.current,
-      isCurrentQuestion: () => question === questionGen.current,
-    });
-  }, [read]);
+  const issue = useCallback(
+    (trigger: ReadTrigger) => {
+      const question = questionGen.current;
+      const req = ++reqGen.current;
+      return read({
+        trigger,
+        isNewest: () =>
+          question === questionGen.current && req === reqGen.current,
+        isCurrentQuestion: () => question === questionGen.current,
+      });
+    },
+    [read]
+  );
 
   useEffect(() => {
     // `read`'s identity IS the question, so this effect re-runs exactly when
@@ -162,11 +176,11 @@ export function useGuardedPoll({
     };
     onQuestionChange?.();
     pollInFlight.current = true;
-    void issue().finally(release);
+    void issue("question").finally(release);
     const id = setInterval(() => {
       if (pollInFlight.current) return;
       pollInFlight.current = true;
-      void issue().finally(release);
+      void issue("poll").finally(release);
     }, intervalMs);
     return () => {
       clearInterval(id);
@@ -180,8 +194,8 @@ export function useGuardedPoll({
       if (tookLock) pollInFlight.current = true;
       const question = questionGen.current;
       const running = also
-        ? Promise.all([issue(), also()])
-        : Promise.resolve(issue());
+        ? Promise.all([issue("refresh"), also()])
+        : Promise.resolve(issue("refresh"));
       return running.finally(() => {
         if (tookLock && question === questionGen.current) {
           pollInFlight.current = false;

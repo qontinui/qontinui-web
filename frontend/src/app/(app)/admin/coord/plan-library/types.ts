@@ -25,6 +25,8 @@
  *   row" (`none`) from "off because someone turned it off".
  */
 
+import type { BoundedReadMeta } from "@/components/admin/coord/cursorPager";
+
 // ───────────────────────────── artifacts ─────────────────────────────
 
 export const WORK_ARTIFACT_KINDS = [
@@ -38,9 +40,46 @@ export const WORK_ARTIFACT_KINDS = [
   // `investigation_report` (the `/chart` gap verdicts) so the two families
   // stay separable on the kind filter. `plan_library_04_diagnostic_refutes`.
   "diagnostic",
+  // The specification family (`plan_library_11_spec_artifacts`): analyst
+  // artifacts with a stable `spec_ref` and a closed per-kind status lifecycle.
+  "request",
+  "requirement",
+  "interface_mapping",
+  "story",
+  "test_case",
+  "doc_correction",
 ] as const;
 
 export type WorkArtifactKind = (typeof WORK_ARTIFACT_KINDS)[number];
+
+/**
+ * The specification family. Mirrors `SPEC_ARTIFACT_KINDS` in
+ * `backend/app/models/work_artifact.py`. A spec artifact's kind is fixed for
+ * life (its `spec_ref` prefix names it) and no other artifact can be re-kinded
+ * into the family — the backend answers 409 `spec_family_boundary` — so the
+ * kind-correction control offers only kinds on the artifact's own side.
+ */
+export const SPEC_ARTIFACT_KINDS = [
+  "request",
+  "requirement",
+  "interface_mapping",
+  "story",
+  "test_case",
+  "doc_correction",
+] as const satisfies readonly WorkArtifactKind[];
+
+export function isSpecKind(kind: string): boolean {
+  return (SPEC_ARTIFACT_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * The kinds an artifact of `kind` may be corrected to: just itself for a spec
+ * artifact, every non-spec kind otherwise.
+ */
+export function correctableKinds(kind: string): readonly WorkArtifactKind[] {
+  if (isSpecKind(kind)) return [kind as WorkArtifactKind];
+  return WORK_ARTIFACT_KINDS.filter((k) => !isSpecKind(k));
+}
 
 export const KIND_LABELS: Record<WorkArtifactKind, string> = {
   investigation_prompt: "Investigation prompt",
@@ -50,6 +89,12 @@ export const KIND_LABELS: Record<WorkArtifactKind, string> = {
   handoff: "Handoff",
   plan: "Plan",
   diagnostic: "Diagnostic",
+  request: "Request",
+  requirement: "Requirement",
+  interface_mapping: "Interface mapping",
+  story: "Story",
+  test_case: "Test case",
+  doc_correction: "Doc correction",
 };
 
 /** Render an unrecognised kind as itself rather than as blank. */
@@ -57,25 +102,25 @@ export function kindLabel(kind: string): string {
   return KIND_LABELS[kind as WorkArtifactKind] ?? kind;
 }
 
-export const CAPTURE_DOORS = ["runner_scan", "agent", "operator"] as const;
-export type CaptureDoor = (typeof CAPTURE_DOORS)[number];
+export const WORK_ARTIFACT_RELATIONS = [
+  "produced_report",
+  "feeds",
+  "authored_plan",
+  "supersedes",
+  "depends_on",
+  // One-ended: `to_id` is null until someone claims the surfaced work.
+  "spawned_followup",
+  // A measurement that FALSIFIES the target claim. Two-ended.
+  "refutes",
+  // Traceability (`plan_library_11_spec_artifacts`) — all two-ended.
+  "derives_from",
+  "refines",
+  "implements",
+  "verifies",
+  "traces_to",
+] as const;
 
-export const CAPTURE_DOOR_LABELS: Record<CaptureDoor, string> = {
-  runner_scan: "Runner scan",
-  agent: "Agent write door",
-  operator: "Operator",
-};
-
-export type WorkArtifactRelation =
-  | "produced_report"
-  | "feeds"
-  | "authored_plan"
-  | "supersedes"
-  | "depends_on"
-  /** One-ended: `to_id` is null until someone claims the surfaced work. */
-  | "spawned_followup"
-  /** A measurement that FALSIFIES the target claim. Two-ended. */
-  | "refutes";
+export type WorkArtifactRelation = (typeof WORK_ARTIFACT_RELATIONS)[number];
 
 /**
  * How current a row's `status` can be taken to be — the closed vocabulary of
@@ -122,8 +167,16 @@ export interface WorkArtifactSummary {
   /** `true` when a human/agent asserted the kind and re-scans may not move it. */
   kind_locked: boolean;
   slug: string;
+  /**
+   * The stable, human-readable ID of a specification artifact (`REQ-0042`),
+   * assigned once on create and never reused. `null` on every other kind.
+   */
+  spec_ref: string | null;
   title: string;
-  /** Opaque free text mirroring plan front-matter. No vocabulary. */
+  /**
+   * Opaque free text mirroring plan front-matter for most kinds; for a spec
+   * kind, a member of that kind's closed lifecycle.
+   */
   status: string;
   content_sha256: string;
   source_path: string | null;
@@ -204,61 +257,16 @@ export interface CorpusHealth {
   scan_roots: ScanRootListResponse;
 }
 
-export interface WorkArtifactListResponse {
-  items: WorkArtifactSummary[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  corpus_health: CorpusHealth;
-}
-
-// ───────────────────────────── divergence ─────────────────────────────
-
-export interface DivergentVariant {
-  id: string;
-  kind: string;
-  kind_locked: boolean;
-  content_sha256: string;
-  source_repo: string | null;
-  source_path: string | null;
-  title: string;
-  status: string;
-  current_version: number;
-  updated_at: string;
-}
-
-/** Same `(kind, slug)`, different content digest. */
-export interface DivergentGroup {
-  kind: string;
-  slug: string;
-  variant_count: number;
-  variants: DivergentVariant[];
-}
-
 /**
- * Same `(slug, source_repo)`, DIFFERENT kind — a fork whose whole
- * distinguishing feature is the kind, which grouping by `(kind, slug)`
- * structurally cannot see.
- *
- * `resolvable: false` means no single corrected (`kind_locked`) row exists to
- * prefer, so the scanner refuses to pick and an operator must correct one.
+ * `GET /api/v1/plan-library` — the all-kinds artifact list. A keyset walk,
+ * newest captured first: the shared bounded-read keys describe `items`, and
+ * `total` counts from THIS page's start (the whole filtered corpus on the
+ * first page). Pass `next_cursor` back as `cursor` for the next page.
  */
-export interface KindForkGroup {
-  slug: string;
-  source_repo: string | null;
-  kinds: string[];
-  variant_count: number;
-  resolvable: boolean;
-  variants: DivergentVariant[];
-}
-
-export interface DivergentResponse {
-  groups: DivergentGroup[];
-  total: number;
-  kind_forks: KindForkGroup[];
-  kind_fork_total: number;
+export interface WorkArtifactListResponse extends BoundedReadMeta {
+  items: WorkArtifactSummary[];
+  ordering: "newest_captured_first";
+  corpus_health: CorpusHealth;
 }
 
 // ─────────────────────────── capture health ───────────────────────────
@@ -307,9 +315,11 @@ export type DocumentState = "present" | "unsynced" | "absent";
  * `unavailable` means `total` counts the document layer only — UNKNOWN,
  * never "coord has no work units". Distinct from `coord_available`, which
  * reports the page-wide circuit: a 4xx on the population door is coord
- * ANSWERING and leaves that flag true.
+ * ANSWERING and leaves that flag true. `truncated` means the arm was read
+ * but coord's list did not end within web's page cap: the work-unit half is
+ * a LOWER BOUND and the page's bound is never `exact`.
  */
-export type WorkUnitPopulationState = "included" | "unavailable";
+export type WorkUnitPopulationState = "included" | "truncated" | "unavailable";
 
 export interface CandidateLinkedPr {
   repo: string | null;
@@ -372,14 +382,14 @@ export interface PlanCandidate {
   status_currency: StatusCurrency | null;
 }
 
-export interface PlanCandidateResponse {
+/**
+ * `GET /plan-library/candidates` — a keyset walk, oldest captured first. The
+ * shared bounded-read keys describe `items`; pass `next_cursor` back as
+ * `cursor`.
+ */
+export interface PlanCandidateResponse extends BoundedReadMeta {
   items: PlanCandidate[];
-  /** This page's length (`items.length`); `total` is the unpaged total. */
-  count: number;
-  total: number;
-  offset: number;
-  limit: number;
-  ordering: "oldest_vetted_first";
+  ordering: "oldest_captured_first";
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;
@@ -427,13 +437,42 @@ export type CitationScopeBackfillWriteLevel =
 export const CITATION_SCOPE_BACKFILL_WRITE_DEFAULT_LEVEL: CitationScopeBackfillWriteLevel =
   "dry_run";
 
-// `FleetPolicyView` / `FleetPolicyWriteResult` moved to the shared module when
-// the `policy_write` dial became a second consumer — one wire contract, one
-// definition. Re-exported here so this file's public surface is unchanged.
-export type {
-  FleetPolicyView,
-  FleetPolicyWriteResult,
-} from "../_shared/fleetPolicy";
+// ──────────────────── model routing (per difficulty) ────────────────────
+
+/**
+ * The model families a difficulty level may route to — the
+ * `claude_code_agent_tool_v1` selector vocabulary (the Claude Code Agent
+ * tool's `model` enum). A family resolves to that family's LATEST model, so no
+ * version is ever chosen here. Pinned against `ModelRoutingUpdate` in both
+ * OpenAPI snapshots by `types.wire.test.ts`. Plan
+ * `2026-10-08-operator-editable-model-family-per-plan-difficulty`.
+ */
+export const MODEL_FAMILIES = ["fable", "opus", "sonnet", "haiku"] as const;
+export type ModelFamily = (typeof MODEL_FAMILIES)[number];
+
+/** The levels the map covers, strongest first (the order the panel shows). */
+export const MODEL_ROUTING_LEVELS = ["high", "medium", "low"] as const;
+export type ModelRoutingLevel = (typeof MODEL_ROUTING_LEVELS)[number];
+
+/** `PUT /api/v1/plan-library/model-routing` — the FULL map, every level. */
+export type ModelRoutingUpdate = Record<ModelRoutingLevel, ModelFamily>;
+
+/** `GET`/`PUT /api/v1/plan-library/model-routing` (`ModelRoutingResponse`). */
+export interface ModelRoutingResponse {
+  /** What `GET /plan-library`, `/candidates` and `/difficulty` serve. */
+  model_selectors: Record<string, string>;
+  /** Display copy derived from `model_selectors`, e.g. `Opus (latest)`. */
+  model_tiers: Record<string, string>;
+  model_selector_vocabulary: string;
+  /** Per level: a stored row answered, or the shipped default did. */
+  sources: Record<string, "stored" | "default">;
+  default_selectors: Record<string, string>;
+  families: { family: string; display: string }[];
+  updated_at?: string | null;
+  updated_by_user_id?: string | null;
+  /** False for a principal with no personal organization (the NULL bucket). */
+  can_edit: boolean;
+}
 
 // ──────────────────── scan sources (per-device readings) ────────────────────
 

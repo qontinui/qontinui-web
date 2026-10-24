@@ -13,13 +13,11 @@ Qontinui provides two powerful automation systems:
 Enterprise-grade features for creating, managing, and optimizing automation workflows.
 
 - **[Workflow Builder Overview](./workflow-builder/README.md)** - Complete overview and getting started guide
-- **[Organization & Folders](./workflow-builder/organization.md)** - Hierarchical folder structure with tags and search
+- **[Organization & Folders](./workflow-builder/organization.md)** - Hierarchical folder structure
 - **[Dependencies](./workflow-builder/dependencies.md)** - Analyze workflow relationships and detect circular dependencies
-- **[Reusable Components](./workflow-builder/components.md)** - Create modular, parameterized workflow components
 - **[Testing Framework](./workflow-builder/testing.md)** - Comprehensive testing with assertions and test suites
-- **[Analytics & Metrics](./workflow-builder/analytics.md)** - Track performance metrics and identify bottlenecks
+- **[Analytics & Metrics](./workflow-builder/analytics.md)** - Track execution metrics and analyze workflow complexity
 - **[Documentation System](./workflow-builder/documentation.md)** - Auto-generate and maintain workflow documentation
-- **[Version Control](./workflow-builder/version-control.md)** - Git-like branches, versions, tags, and merging
 
 #### 2. State Machine (Images, States & Transitions)
 
@@ -180,8 +178,7 @@ Technical reference for developers.
   - Complete type definitions and interfaces
 
 ### Workflow Builder API
-- **[Workflow API Reference](./workflow-builder/api-reference.md)** - Workflow builder APIs
-- **[Data Models](./workflow-builder/data-models.md)** - Type definitions and schemas
+- Each [Workflow Builder guide](./workflow-builder/README.md) names its service; the services and their types live in `frontend/src/services/`
 
 ## Getting Started
 
@@ -196,8 +193,7 @@ Technical reference for developers.
 **Workflow Builder:**
 1. **Start Here**: Read the [Workflow Builder Overview](./workflow-builder/README.md)
 2. **Learn Organization**: [Organization Guide](./workflow-builder/organization.md)
-3. **Try Examples**: [Complete Examples](./workflow-builder/examples.md)
-4. **Follow Best Practices**: [Best Practices Guide](./workflow-builder/best-practices.md)
+3. **Follow Best Practices**: [Best Practices Guide](./workflow-builder/best-practices.md)
 
 ### For Developers
 
@@ -207,15 +203,13 @@ Technical reference for developers.
 3. **Examples**: Each guide includes code examples
 
 **Workflow Builder:**
-1. **API Reference**: [Complete API Documentation](./workflow-builder/api-reference.md)
-2. **Data Models**: [Type Definitions](./workflow-builder/data-models.md)
-3. **Examples**: [Code Examples](./workflow-builder/examples.md)
+1. **Services**: each feature guide names its service under `frontend/src/services/`, where its types are defined
 
 ### For QA/Test Engineers
 
 1. **Testing Framework**: [Testing Guide](./workflow-builder/testing.md)
 2. **Validation**: [Transition Validation](./transitions/validation.md)
-3. **Analytics**: [Performance & Metrics](./workflow-builder/analytics.md)
+3. **Analytics**: [Metrics & Complexity](./workflow-builder/analytics.md)
 
 ## Collaboration & Team Features
 
@@ -290,17 +284,10 @@ docs/
     ├── README.md                 # Overview and getting started
     ├── organization.md           # Folder management
     ├── dependencies.md           # Dependency analysis
-    ├── components.md             # Reusable components
     ├── testing.md                # Testing framework
-    ├── analytics.md              # Analytics and performance
+    ├── analytics.md              # Analytics and complexity
     ├── documentation.md          # Documentation system
-    ├── version-control.md        # Version control
-    ├── api-reference.md          # Complete API reference
-    ├── data-models.md            # Type definitions
-    ├── migration-guide.md        # Migration from legacy
-    ├── best-practices.md         # Best practices
-    ├── troubleshooting.md        # Troubleshooting guide
-    └── examples.md               # Complete examples
+    └── best-practices.md         # Best practices
 ```
 
 ## Quick Links by Role
@@ -319,15 +306,13 @@ docs/
 
 ### Developers
 - [API Reference](./api-reference/resource-services.md) - State machine APIs
-- [Workflow API](./workflow-builder/api-reference.md) - Workflow APIs
 - [Collaboration API](./collaboration/api-reference.md) - Collaboration APIs
 - [Developer Guide](./collaboration/developer-guide.md) - Implementation guide
-- [Data Models](./workflow-builder/data-models.md) - Type definitions
 
 ### QA Engineers
 - [Testing Guide](./workflow-builder/testing.md) - Test framework
 - [Validation](./transitions/validation.md) - State validation
-- [Analytics](./workflow-builder/analytics.md) - Performance metrics
+- [Analytics](./workflow-builder/analytics.md) - Execution metrics
 - [Comments & Reviews](./collaboration/comments-and-reviews.md) - Review workflow
 
 ### Project Managers
@@ -366,7 +351,6 @@ docs/
 - [Image Issues](./image-library/README.md#troubleshooting)
 - [State Issues](./state-builder/README.md#troubleshooting)
 - [Transition Issues](./transitions/README.md#troubleshooting)
-- [Workflow Issues](./workflow-builder/troubleshooting.md)
 
 ## Feature Comparison
 
@@ -381,7 +365,7 @@ docs/
 **Use Workflow Builder when:**
 - Sequential action flows
 - Complex logic and branching
-- Reusable components needed
+- Reusable sub-workflows (RUN_WORKFLOW) needed
 - API/service automation
 
 **Use Both when:**
@@ -427,13 +411,11 @@ docs/
 - **Image Library**: [Troubleshooting](./image-library/README.md#troubleshooting)
 - **State Builder**: [Troubleshooting](./state-builder/README.md#troubleshooting)
 - **Transitions**: [Troubleshooting](./transitions/README.md#troubleshooting)
-- **Workflows**: [Troubleshooting Guide](./workflow-builder/troubleshooting.md)
 
 ### Additional Resources
 
 - **Best Practices**: [Large Projects](./best-practices/large-projects.md)
 - **API Reference**: [Complete API Docs](./api-reference/resource-services.md)
-- **Examples**: [Workflow Examples](./workflow-builder/examples.md)
 
 ## Keyboard Shortcuts
 

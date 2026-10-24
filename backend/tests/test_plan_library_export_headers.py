@@ -21,12 +21,16 @@ withheld. Publishing a set by accident is what this file makes impossible.
 
 from __future__ import annotations
 
+import json
+
 from app.api.v1.endpoints.plan_library import (
     ARTIFACT_EXPORT_HEADERS,
     CORPUS_EXPORT_HEADERS,
     _artifact_export_provenance,
+    _corpus_export_meta,
     _corpus_export_provenance,
 )
+from app.core.bounded_read import BoundedReadMeta
 from app.main import CORS_EXPOSE_HEADERS
 from tests.test_cors_expose_headers_cover_emitted import CORS_SAFELISTED
 
@@ -57,7 +61,9 @@ def test_the_artifact_producer_emits_exactly_the_declared_names() -> None:
 
 
 def test_the_corpus_producer_emits_exactly_the_declared_names() -> None:
-    sent = _corpus_export_provenance(artifact_count=12, truncated=False)
+    sent = _corpus_export_provenance(
+        _corpus_export_meta(artifact_count=12, truncated=False, limit=50)
+    )
 
     assert set(sent) == set(CORPUS_EXPORT_HEADERS)
     assert len(CORPUS_EXPORT_HEADERS) == len(set(CORPUS_EXPORT_HEADERS))
@@ -66,19 +72,34 @@ def test_the_corpus_producer_emits_exactly_the_declared_names() -> None:
 def test_the_truncation_signal_is_sent_on_both_branches() -> None:
     """Its absence must never be the answer.
 
-    ``X-Export-Truncated`` is emitted whether or not the corpus was truncated
+    ``X-Bounded-Read`` is emitted whether or not the corpus was truncated
     so that a reader cannot take a missing header for "nothing was dropped".
     That reasoning only holds while the header is READABLE — which is what
-    the publication test below is for.
+    the publication test below is for. Its value is the shared
+    ``BoundedReadMeta``: all ten keys, ``null`` included.
     """
-    assert _corpus_export_provenance(artifact_count=5000, truncated=True) == {
-        "X-Export-Artifact-Count": "5000",
-        "X-Export-Truncated": "true",
-    }
-    assert _corpus_export_provenance(artifact_count=7, truncated=False) == {
-        "X-Export-Artifact-Count": "7",
-        "X-Export-Truncated": "false",
-    }
+    cut = json.loads(
+        _corpus_export_provenance(
+            _corpus_export_meta(artifact_count=5000, truncated=True, limit=5000)
+        )["X-Bounded-Read"]
+    )
+    assert set(cut) == set(BoundedReadMeta.model_fields)
+    assert (cut["count"], cut["truncated"], cut["bound_kind"]) == (
+        5000,
+        True,
+        "at_least",
+    )
+    assert cut["enumerate_via"] == "GET /api/v1/plan-library"
+    whole = json.loads(
+        _corpus_export_provenance(
+            _corpus_export_meta(artifact_count=7, truncated=False, limit=5000)
+        )["X-Bounded-Read"]
+    )
+    assert (whole["count"], whole["truncated"], whole["bound_kind"]) == (
+        7,
+        False,
+        "complete",
+    )
 
 
 def test_every_declared_name_is_published_to_browsers() -> None:

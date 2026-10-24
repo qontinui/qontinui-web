@@ -759,6 +759,7 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/operations/fleet",
     "https://api.test/api/v1/admin-dev/overview",
     "https://api.test/api/v1/admin/agent-sessions",
+    "https://api.test/api/v1/admin/coord/overlord/labels",
     // Project Overview. Every `overview.*` row is keyed on the active tenant
     // and the backend resolves it from this header ALONE, so a missing entry
     // here silently serves (and writes) the operator's home project under
@@ -783,8 +784,21 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/design-policies",
     "https://api.test/api/v1/digital-twin/subspaces",
     "https://api.test/api/v1/memory/records",
+    // The image store: rows and object keys are the active tenant's.
+    "https://api.test/api/v1/image-assets",
+    "https://api.test/api/v1/image-assets/slot-candidates?repo=qontinui-web&slot_id=home.hero",
+    `https://api.test/api/v1/image-assets/${"a".repeat(64)}`,
+    // The taste inbox: its queue and labels are the active tenant's.
+    "https://api.test/api/v1/taste/inbox?limit=5",
+    "https://api.test/api/v1/taste/pairs/00000000-0000-0000-0000-000000000001/label",
     "https://api.test/api/v1/plan-library/candidates",
     "https://api.test/api/v1/session-repository/unfinished",
+    // Test-host designation writes: coord binding-checks the device against
+    // the selected project, so the selection decides where it lands (or the
+    // 409 that names the project it is not bound to).
+    "https://api.test/api/v1/fleet/test-targets/dev-1/web",
+    "https://api.test/api/v1/build-records/products",
+    "https://api.test/api/v1/build-records/my-product/publish",
   ];
 
   for (const url of SCOPED_URLS) {
@@ -821,7 +835,10 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
   it.each([
     "https://api.test/api/v1/workflows/0b6c1f1e-1111-4111-8111-111111111111",
     "https://api.test/api/v1/devices/abc",
-  ])("does NOT attach the header on workflow/device CRUD: %s", async (url) => {
+    // The unauthenticated build-record page resolves no tenant; the
+    // `/api/v1/build-records/` prefix must not reach it.
+    "https://api.test/api/v1/public/build-records/my-product",
+  ])("does NOT attach the header on unscoped reads: %s", async (url) => {
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
     const captured = captureFetchHeaders();
     const client = new HttpClient(
@@ -834,10 +851,8 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
   // The narrow-prefix choices: siblings of a scoped family that ignore the
   // tenant must stay header-free (see the drift guard's _EXCLUSIONS).
   it.each([
+    // `/fleet/test-targets` is scoped; its `/fleet` siblings are not.
     "https://api.test/api/v1/fleet/apps",
-    // Tenant-resolving, but excluded until the PUT goes through coord's
-    // binding-checked upsert (drift guard _EXCLUSIONS).
-    "https://api.test/api/v1/fleet/test-targets/dev-1/web",
     "https://api.test/api/v1/users/me/preferences",
     "https://api.test/api/v1/auth/users/me",
     "https://api.test/api/v1/devices/abc/dispatch",

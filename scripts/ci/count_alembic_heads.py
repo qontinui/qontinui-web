@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Alembic sibling-head gate: the chain must have exactly one head.
 
-THE single home of this gate's logic. Four lanes invoke this one script:
+THE single home of this gate's logic. Five lanes invoke this one script:
 
   * ``.github/workflows/alembic-graph-pr.yml``, step "Count alembic heads"
     — the PR gate; a forked chain FAILS the check.
+  * ``.github/workflows/web-guards.yml``, step
+    "alembic-graph-pr: Count alembic heads"
+    — the consolidated one-job guard lane, running the same command
+    beside the per-guard workflow until a later phase deletes that file
+    (plan
+    ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``).
   * ``.qontinui/ci.toml``, step ``alembic-single-head`` — same, locally.
   * ``.pre-commit-config.yaml``, hook ``alembic-single-head`` — the
     shift-left lane, on commits that touch ``backend/alembic/versions/``.

@@ -5,6 +5,8 @@ on:
     branches: [main, develop]
     paths:
       - "frontend/**"
+      # The docs reference check (npm run check:doc-refs) reads docs/ too.
+      - "docs/**"
       - ".github/workflows/frontend-ci.yml"
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
@@ -13,6 +15,8 @@ on:
     branches: [main, develop]
     paths:
       - "frontend/**"
+      # The docs reference check (npm run check:doc-refs) reads docs/ too.
+      - "docs/**"
       - ".github/workflows/frontend-ci.yml"
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
@@ -23,6 +27,30 @@ on:
 # that needs more declares its own `permissions:`.
 permissions:
   contents: read
+
+# PR-SCOPED SUPERSESSION (shared hosted-job cap relief, 2026-10-05). A FIRST-
+# attempt `pull_request` run joins a per-workflow, per-PR group and cancels the
+# run it supersedes there: a `synchronize` cancels the older head's run, and a
+# `reopened` cancels the same-head run it re-does (coord's ci-abandoned
+# recovery is a close+reopen). Every OTHER run -- whichever of push (main,
+# develop, merge-candidate*/** -- coord's candidate CI), schedule,
+# workflow_dispatch and workflow_run this file has, and EVERY re-run (run_attempt > 1) -- gets a
+# group unique to its run id + attempt, so it is never cancelled, never reaped
+# while pending, and never queues behind anything.
+# The group is ONE expression on purpose: coord models a group template by
+# interpolating only `github.event_name` / `github.ref` and collapsing every
+# other expression to "" (qontinui-coord ci_observer.rs resolve_group_template),
+# and run_is_reaper_at_risk never matches an empty group, so no push run here is
+# modelled as reapable by a land. (KNOWN coord gap: the budget-cancel candidate
+# scan in stuck_pr_watcher.rs compares groups with `=`, so every "" group
+# matches every other one and suppresses its auto re-run; fix belongs in coord.)
+# RESIDUAL: two pushes seconds apart can have
+# their runs CREATED out of order, so the older head's run cancels the newer
+# head's; the next push (or a close+reopen) heals it.
+# Pattern: qontinui-claude-config#1475.
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && github.run_attempt == 1) && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}-{2}', github.workflow, github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 
 jobs:
   lint-and-typecheck:
@@ -52,9 +80,33 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Docs must not teach imports, methods, components or anchors that do
+      # not exist. Plain Node with no dependencies, so it runs before
+      # `npm ci` and fails fast. Scans docs/, frontend/docs/ and
+      # frontend/public/docs/ against frontend/src.
+      - name: Docs code references resolve
+        working-directory: ./frontend
+        run: npm run check:doc-refs
+
       - name: Install dependencies
         working-directory: ./frontend
         run: npm ci
+
+      # generated-types.ts is a pure function of the committed, backend-ci-
+      # gated openapi-schema.json. Nothing checked that, and it fell to 51 of
+      # 859 paths before anyone noticed (coord finding 01de0d9c). Regenerate
+      # it with the repo's own generator and fail on any byte of drift. A
+      # backend PR that changes the schema therefore also commits the
+      # regenerated types. The file is in .prettierignore, so it stays raw
+      # generator output.
+      - name: Generated API types match the OpenAPI snapshot
+        working-directory: ./frontend
+        run: |
+          npm run generate-api-types:local
+          if ! git diff --exit-code --stat -- src/lib/api-client/generated-types.ts; then
+            echo "::error file=frontend/src/lib/api-client/generated-types.ts::generated-types.ts is stale against src/lib/api-client/openapi-schema.json. Run 'npm run generate-api-types:local' in frontend/ and commit the result."
+            exit 1
+          fi
 
       # `npm run lint` is `next lint` (src/) followed by `lint:config`: the
       # files beside src/ — next.config.mjs, config/ (the rewrite resolver)
@@ -79,6 +131,20 @@ jobs:
       - name: Unit tests
         working-directory: ./frontend
         run: npm test
+
+      # The image-slot placeholder inventory (plan
+      # 2026-10-13-image-generation-and-visual-judgment, Phase 14 step 4): every
+      # declared slot, and whether it ships a placeholder where it is placed,
+      # in this job's step summary plus one ::notice per such placement. A
+      # placeholder is a FINDING, never a failure (images are reversible, and
+      # only promoted checks gate). The only red this step can produce is a
+      # defect in the inventory's own inputs, which `npm test` above already
+      # asserted, so it adds the listing rather than a second gate.
+      - name: Image-slot placeholder inventory
+        working-directory: ./frontend
+        env:
+          IMAGE_SLOT_INVENTORY_REPORT: "1"
+        run: npm run image-slots:inventory
 
       # ADVISORY, last, bounded, and unable to fail the job: has schemas main
       # moved past fleet-nouns.pin.toml? A drift is a ::warning:: with the bump

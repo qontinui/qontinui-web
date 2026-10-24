@@ -7,22 +7,28 @@ Create Date: 2026-07-23
 Substrate slice (§2b) of the worktree-reclaim census-freshness plan
 (``2026-07-23-worktree-reclaim-census-freshness-lock``).
 
-Creates one **append-only** ``coord.*`` table consumed by qontinui-coord
-(Rust), which cannot author DDL — Alembic in qontinui-web is the sole author
-of the ``coord.*`` schema (enforced coord-side by
-``tests/coord_schema_authorship.rs``):
+Creates one ``coord.*`` table (append-only as first shipped; see the
+``'arm'`` note below) consumed by qontinui-coord (Rust), which cannot author
+DDL — Alembic in qontinui-web is the sole author of the ``coord.*`` schema
+(enforced coord-side by ``tests/coord_schema_authorship.rs``):
 
-* ``coord.worktree_reclaim_events`` — one row per observed worktree removal:
-  which device, which repo/path disappeared, and the reclaim instruction
-  class (``action``, e.g. ``'remove'``) whose disappearance was observed.
-  Coord renders the monotonic ``coord_worktree_reclaim_removals_total{device}``
-  counter from this table so the metric survives deploys. The consuming coord
-  PR fails open until this migration has run.
+* ``coord.worktree_reclaim_events`` — reclaim-attribution rows keyed by
+  ``action`` (free ``TEXT``, no DDL needed to add a value). ``'remove'`` is one
+  row per observed worktree removal: which device, which repo/path
+  disappeared. Coord renders the monotonic
+  ``coord_worktree_reclaim_removals_total{device}`` counter from the
+  ``action = 'remove'`` rows only, so the metric survives deploys. Since
+  qontinui-coord#2605 (``570bef576``) the table ALSO carries ``action = 'arm'``
+  rows: the persisted attribution arming set (a path coord instructed removed
+  and is waiting to see disappear), rehydrated on a coord process's first
+  tick for each device and deleted when its ``'remove'`` row is written —
+  so it is no longer append-only, and ``count(*)`` is not a removal count.
+  The consuming coord PR fails open until this migration has run.
 
 Design notes (mirrors ``twin_07_coord_worktree_census`` conventions):
 
-* No unique constraints — intentionally a history oplog; the same
-  ``(device_id, repo, path)`` tuple may recur across reclaim cycles.
+* No unique constraints — intentionally a history oplog (for ``'remove'``);
+  the same ``(device_id, repo, path)`` tuple may recur across reclaim cycles.
 * **No foreign keys** — deliberate. Sibling coord tables
   (``worktree_census``, gates, work_units) carry no FKs; an FK here would
   couple prune order across tables and revives a known incident class
@@ -49,7 +55,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # --- coord.worktree_reclaim_events : one row per observed removal --------
+    # --- coord.worktree_reclaim_events : 'remove' + 'arm' rows (see docstring) -
     op.create_table(
         "worktree_reclaim_events",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),

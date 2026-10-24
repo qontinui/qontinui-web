@@ -23,6 +23,12 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.bridge_audit_log import BridgeAuditLog
+from app.models.build_record import (
+    BuildRecordPendingNotPublic,
+    BuildRecordPublicSlug,
+    BuildRecordSnapshot,
+    GithubRateBudget,
+)
 from app.models.capture import (
     CaptureAction,
     CaptureDetectedElement,
@@ -79,6 +85,7 @@ from app.models.execution_tree_event import (
 from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.feedback_score import FeedbackScore
 from app.models.finding_category_config import FindingCategoryConfig
+from app.models.image_asset import ImageAsset, ImageSlotCandidate
 from app.models.known_issue import KnownIssue
 from app.models.machine_display_name import MachineDisplayName
 from app.models.notification import (
@@ -109,6 +116,7 @@ from app.models.overview import (
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
+from app.models.plan_model_route import PlanDifficultyModelRoute
 from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
@@ -176,6 +184,7 @@ from app.models.task_run import (  # New unified names; Backward compatibility a
     TaskType,
 )
 from app.models.task_run_verification_result import TaskRunVerificationResult
+from app.models.taste import TasteLabelClock, TastePair, TasteSettings
 from app.models.template_candidate import TemplateCandidate
 from app.models.test_deficiency import (
     DeficiencySeverity,
@@ -238,6 +247,7 @@ from app.models.visual_comparison_result import (
 from app.models.work_artifact import (
     WorkArtifact,
     WorkArtifactEdge,
+    WorkArtifactEdgeAnchor,
     WorkArtifactVersion,
 )
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
@@ -305,12 +315,25 @@ __all__ = [
     "AuditLog",
     # UI Bridge co-pilot audit (§4.8)
     "BridgeAuditLog",
+    # Public build-record snapshots (web.build_record_*), Phase 1 of
+    # 2026-10-09-factory-built-product-portfolio-and-launch-kit
+    "BuildRecordPublicSlug",
+    "BuildRecordSnapshot",
+    "BuildRecordPendingNotPublic",
+    "GithubRateBudget",
     # Analytics
     "AnalyticsEvent",
     # Detected Issues
     "DetectedIssue",
     # Finding Category Configs
     "FindingCategoryConfig",
+    # Content-addressed image store (web.image_assets / web.image_slot_candidates)
+    "ImageAsset",
+    "ImageSlotCandidate",
+    # Taste inbox (web.taste_pairs / web.taste_label_clock / web.taste_settings)
+    "TasteLabelClock",
+    "TastePair",
+    "TasteSettings",
     # Design/UX Policies
     "DesignPolicy",
     # Discoveries
@@ -533,10 +556,14 @@ __all__ = [
     "WorkArtifact",
     "WorkArtifactVersion",
     "WorkArtifactEdge",
+    "WorkArtifactEdgeAnchor",
     # Per-device plan-scan-source readings (agent.plan_scan_root_observations)
     "PlanScanRootObservation",
     # Per-device refused scan-source reports (agent.plan_scan_root_refusals)
     "PlanScanRootRefusal",
+    # Operator-chosen model family per plan difficulty
+    # (agent.plan_difficulty_model_routes)
+    "PlanDifficultyModelRoute",
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",

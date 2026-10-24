@@ -134,6 +134,21 @@ _EXCLUSIONS: dict[str, str] = {
     "/api/v1/devices/pair-confirm": (
         "identity is a gate only; coord resolves the tenant from the pair flow"
     ),
+    # The operator credential controls (plan 2026-09-26-authenticate-and-
+    # perpetually-renew-a-specific-runner-from-qontinui-web) admit a device
+    # whose tenant is ANY of the caller's coord memberships
+    # (``identity.tenant_ids()``), never the selection: the Project selector
+    # must not hide, or refuse to authenticate/revoke, one of the caller's own
+    # runners. The tenant a bound code is minted in is the DEVICE's.
+    "/api/v1/devices/credential-overview": (
+        "scoped by the caller's full membership set, not the selection"
+    ),
+    "/api/v1/devices/{device_id}/authorize-redeem": (
+        "membership-set gate; the code's tenant is the device's own"
+    ),
+    "/api/v1/devices/{device_id}/machine-credential/revoke": (
+        "membership-set gate; revokes one device, scopes no rows"
+    ),
     # The helper-role grant POST does not forward the header, so it lands in
     # the caller's home tenant; the ``already_granted`` check must read that
     # same tenant. Sending the header would make the check and the write
@@ -167,22 +182,39 @@ _EXCLUSIONS: dict[str, str] = {
     "/api/v1/scheduled-runs/{run_id}/run-now": (
         "dispatches as NO_CALLER: the scheduler path never reads the header"
     ),
-    # The designation PUT stamps AND overwrites ``coord.test_targets.tenant_id``
-    # from ``get_tenant_id`` checking only device ownership and app existence,
-    # while coord's own writer requires a ``coord.tenant_devices`` binding and
-    # the runner poll returns only rows whose tenant is one of the device's
-    # bindings. With the header, an operator switched to a project the device
-    # is not bound to would re-stamp the row there and the designation would
-    # silently vanish from the device's runner. Follow-up: route the PUT
-    # through coord's binding-checked test-targets upsert, then add the prefix.
-    # Do NOT drop this entry without that backend fix: it is the only thing
-    # that fails if the prefix is re-added (the raw-read rule cannot see it).
-    "/api/v1/fleet/test-targets/{device_id}/{app_id}": (
-        "PUT re-stamps tenant_id with no coord.tenant_devices binding check; "
-        "follow-up: route it through coord's binding-checked upsert, then add "
-        "the prefix"
-    ),
 }
+
+# ``operations`` is being split into a package of per-domain modules (plan
+# 2026-10-04-web-operations-py-is-one-router-for-every-coord-domain). Every
+# module-keyed table below names the PACKAGE, and :func:`_module_key` folds
+# any module under it onto that key, so a route moved to
+# ``operations.<domain>`` stays covered by the entries it had — rather than
+# reding, or, worse, silently dropping out of the check.
+_OPERATIONS_PACKAGE = "app.api.v1.endpoints.operations"
+
+
+def _module_key(module_name: str) -> str:
+    """The table key for ``module_name``: the operations package for the
+    package and any module under it, the module itself otherwise."""
+    if module_name == _OPERATIONS_PACKAGE or module_name.startswith(
+        _OPERATIONS_PACKAGE + "."
+    ):
+        return _OPERATIONS_PACKAGE
+    return module_name
+
+
+def _package_of(func: Any) -> str:
+    """The package a function's relative imports resolve against.
+
+    ``__package__`` from its globals is exact for a module and for a package
+    ``__init__`` alike; ``__module__.rpartition`` is wrong for the latter (it
+    drops the package's own name), which is what ``operations`` becomes.
+    """
+    package = getattr(func, "__globals__", {}).get("__package__")
+    if isinstance(package, str):
+        return package
+    return str(func.__module__ or "").rpartition(".")[0]
+
 
 # Modules whose raw header read is legitimate on a COVERED route: each
 # captures the header and forwards it verbatim to coord, whose
@@ -190,11 +222,15 @@ _EXCLUSIONS: dict[str, str] = {
 # selection keeps the home tenant). A raw read in any module outside this list
 # and _VALIDATED_LOCALLY fails ``test_covered_raw_header_reads_are_validated``.
 _FORWARDED_TO_COORD: dict[str, str] = {
-    "app.api.v1.endpoints.operations": "_tenant_headers forwards it to coord",
+    _OPERATIONS_PACKAGE: "_tenant_headers forwards it to coord",
     "app.api.v1.endpoints.agent_registry": (
         "captured into operations' ContextVar; _tenant_headers forwards it"
     ),
     "app.api.v1.endpoints.agent_sessions": "_coord_headers forwards it to coord",
+    "app.api.v1.endpoints.repo_followup_dials": (
+        "reads it only for can_edit's _effective_tenant_roles (membership-"
+        "matched); operations' _tenant_headers forwards it to coord"
+    ),
     "app.api.v1.endpoints.prompt_injections": "_coord_headers forwards it to coord",
     "app.services.coord_device_resolve": (
         "CoordCaller carries it to coord's /coord/devices/resolve, which "
@@ -207,11 +243,22 @@ _FORWARDED_TO_COORD: dict[str, str] = {
 # selection degrades to home) before using it for anything local, such as a
 # cache key. They also forward it to coord.
 _VALIDATED_LOCALLY: dict[str, str] = {
+    "app.api.v1.endpoints.overlord_labels": (
+        "never forwards the client's raw value: it sends the tenant "
+        "require_coord_tenant_admin resolved, which is membership-checked "
+        "against the caller's coord operator roles"
+    ),
     "app.api.v1.endpoints.admin_dev": (
         "_capture_bearer_best_effort matches the selection against identity.tenants"
     ),
     "app.api.v1.endpoints.digital_twin": (
         "subspaces keys its cache on _effective_tenant_id(identity, header)"
+    ),
+    "app.api.v1.endpoints.taste": (
+        "reads it only for get_can_label's _effective_tenant_roles, which "
+        "matches it against identity.tenants (a non-member selection degrades "
+        "to home); every row is scoped by the tenant get_memory_tenant / "
+        "require_coord_tenant_admin_target resolve, never by the raw value"
     ),
 }
 
@@ -257,6 +304,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/devices/{device_id}/machine-credential/exchange",
                 "/api/v1/devices/{device_id}/machine-credential/mint",
                 "/api/v1/devices/{device_id}/machine-credential/self-mint",
+                "/api/v1/devices/{device_id}/pending-redeem",
             }
         ),
     ),
@@ -265,7 +313,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         "tenant was burned at mint time",
         frozenset({"/api/v1/devices/pair-codes/{code}/redeem"}),
     ),
-    "app.api.v1.endpoints.operations": (
+    _OPERATIONS_PACKAGE: (
         "the in-process fleet beacon (device-owner scoped), local runner "
         "control, and superuser Cognito pool admin — none reaches coord",
         frozenset(
@@ -283,10 +331,26 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
             }
         ),
     ),
+    "app.api.v1.endpoints.plan_library_followups": (
+        "names _soft_tenant_id only for POST /followups/reconcile (which reads "
+        "coord's land record); the anchor, resolution and match routes are "
+        "organization-scoped web-DB reads and writes of follow-up edges and "
+        "resolve no coord tenant",
+        frozenset(
+            {
+                "/api/v1/plan-library/edges/{edge_id}/anchors",
+                "/api/v1/plan-library/edges/{edge_id}/resolution",
+                "/api/v1/plan-library/followups/match",
+            }
+        ),
+    ),
     "app.api.v1.endpoints.plan_library": (
         "organization-scoped web-DB plan bodies; only candidates, "
         "reconciliation and by-id add the coord overlay; /vocabulary is a "
-        "static description of the write doors' closed fields (auth only)",
+        "static description of the write doors' closed fields (auth only); "
+        "/model-routing is the caller's personal organization's stored "
+        "level -> model-family map (web DB, _resolve_org_id), never the "
+        "selected coord tenant",
         frozenset(
             {
                 "/api/v1/plan-library",
@@ -296,6 +360,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/plan-library/edges/{edge_id}",
                 "/api/v1/plan-library/export",
                 "/api/v1/plan-library/followups",
+                "/api/v1/plan-library/model-routing",
                 "/api/v1/plan-library/vocabulary",
                 "/api/v1/plan-library/{artifact_id}/edges",
                 "/api/v1/plan-library/{artifact_id}/export",
@@ -354,7 +419,9 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"/api/v1/dispatch/status/{app_id}"}),
     ),
     "app.api.v1.endpoints.fleet_targets": (
-        "device-owner scoped reads/writes; only the designation PUT stamps a tenant",
+        "device-owner scoped reads and the project.apps config edit; only the "
+        "designation PUT/DELETE resolve a tenant (they forward it to coord's "
+        "binding-checked test-targets writer)",
         frozenset(
             {
                 "/api/v1/fleet/apps",
@@ -649,7 +716,7 @@ class _Classifier:
             return
         names: set[str] = set()
         values: list[Any] = []
-        package = str(func.__module__ or "").rpartition(".")[0]
+        package = _package_of(func)
         for co in _code_objects(code):
             names.update(co.co_names)
             for const in co.co_consts:
@@ -682,7 +749,7 @@ def _provided_classes(provider: Any, classifier: _Classifier) -> list[type]:
     code = getattr(func, "__code__", None)
     if code is None:
         return []
-    package = str(func.__module__ or "").rpartition(".")[0]
+    package = _package_of(func)
     values: list[Any] = []
     for co in _code_objects(code):
         values.extend(func.__globals__.get(n) for n in co.co_names)
@@ -755,6 +822,17 @@ def _live_routes() -> list[Any]:
 # --------------------------------------------------------------------------
 # Tests
 # --------------------------------------------------------------------------
+
+
+def test_operations_domain_modules_key_to_the_package():
+    """A route moved to ``operations.<domain>`` is judged under the package's
+    entries; a sibling module that merely shares the name prefix is not."""
+    assert _module_key(_OPERATIONS_PACKAGE) == _OPERATIONS_PACKAGE
+    assert _module_key(_OPERATIONS_PACKAGE + ".fleet") == _OPERATIONS_PACKAGE
+    assert _module_key(_OPERATIONS_PACKAGE + "_x") == _OPERATIONS_PACKAGE + "_x"
+    assert _module_key(plan_library.__name__) == plan_library.__name__
+    assert operations in _key_modules(_OPERATIONS_PACKAGE)
+    assert _package_of(_module_key) == __package__
 
 
 def test_prefix_parse_reads_the_whole_array():
@@ -961,9 +1039,10 @@ def _unvalidated_header_reads(
     found: dict[str, list[str]] = {}
     for path, ev in covered.items():
         bad = sorted(
-            e.removeprefix("header@")
+            _module_key(e.removeprefix("header@"))
             for e in ev
-            if e.startswith("header@") and e.removeprefix("header@") not in trusted
+            if e.startswith("header@")
+            and _module_key(e.removeprefix("header@")) not in trusted
         )
         if bad:
             found[path] = bad
@@ -994,7 +1073,7 @@ def test_covered_raw_header_reads_are_validated():
         "_VALIDATED_LOCALLY with why."
     )
     used = {
-        e.removeprefix("header@")
+        _module_key(e.removeprefix("header@"))
         for ev in covered.values()
         for e in ev
         if e.startswith("header@")
@@ -1097,13 +1176,27 @@ def test_ws_check_flags_a_socket_ignoring_the_selection():
 _RESOLVER_TOKENS = tuple(sorted(set(_RESOLVERS.values())))
 
 
+def _key_modules(key: str) -> list[types.ModuleType]:
+    """Every loaded module :func:`_module_key` folds onto ``key``."""
+    return [
+        module
+        for name, module in sorted(sys.modules.items())
+        if module is not None and _module_key(name) == key
+    ]
+
+
 def _names_a_resolver(module_name: str, cache: dict[str, bool]) -> bool:
+    """Whether the source of ``module_name``'s KEY names a resolver or the
+    header — for the operations package, the source of every module under it,
+    so a domain module is judged as it was while it shared one file."""
     if module_name not in cache:
-        module = sys.modules.get(module_name)
-        try:
-            source = inspect.getsource(module) if module is not None else ""
-        except (OSError, TypeError):
-            source = ""
+        sources = []
+        for module in _key_modules(module_name):
+            try:
+                sources.append(inspect.getsource(module))
+            except (OSError, TypeError):
+                continue
+        source = "\n".join(sources)
         cache[module_name] = _HEADER in source.casefold() or any(
             token in source for token in _RESOLVER_TOKENS
         )
@@ -1124,7 +1217,7 @@ def test_module_source_cross_check():
     for route in _live_routes():
         if not isinstance(route, APIRoute | APIWebSocketRoute):
             continue
-        module = route.endpoint.__module__
+        module = _module_key(route.endpoint.__module__)
         if route.path in resolving or not _names_a_resolver(module, cache):
             continue
         seen.setdefault(module, set()).add(route.path)

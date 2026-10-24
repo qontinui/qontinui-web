@@ -1,0 +1,78 @@
+{
+  "devices": [
+    {
+      "device_id": "c1c1c1c1-0000-4000-8000-00000000f2v1",
+      "hostname": "spec-ci-readout-box",
+      "state": "healthy",
+      "heartbeat_state": "healthy",
+      "credential_dark": {
+        "dark": false
+      },
+      "ci_runner_status": null,
+      "within_dispatch_window": true,
+      "wedge_incidents": [
+        {
+          "kind": "backend_wedged",
+          "began_at": "2026-09-30T09:40:00Z",
+          "ended_at": null,
+          "ended_by": null,
+          "build_id": "spec-ci-build"
+        },
+        {
+          "kind": "ui_thread_wedged",
+          "began_at": "2026-09-29T08:00:00Z",
+          "ended_at": "2026-09-29T08:05:00Z",
+          "ended_by": "cleared",
+          "build_id": "spec-ci-build"
+        }
+      ],
+      "capability": [
+        {
+          "mechanism": "render-memory-cache",
+          "state": "OPERATIVE",
+          "reason": null,
+          "written_at": "2026-09-30T09:00:00Z"
+        },
+        {
+          "mechanism": "dev-start.ps1",
+          "state": "INOPERATIVE-ON-THIS-MACHINE",
+          "reason": "windows-by-substance",
+          "written_at": "2026-09-30T09:00:00Z"
+        },
+        {
+          "mechanism": "cargo-sweep",
+          "state": "DEGRADED",
+          "reason": "6 degraded runs",
+          "written_at": "2026-09-30T09:00:00Z"
+        }
+      ],
+      "runner_reports": {
+        "wedge_incidents": {
+          "absent_reason": null,
+          "received_at": "2026-09-30T09:59:00Z",
+          "stale": false,
+          "dropped_entries": 0,
+          "omitted_by_runner": 0,
+          "error": null
+        },
+        "capability": {
+          "absent_reason": null,
+          "received_at": "2026-09-30T09:59:00Z",
+          "stale": false,
+          "dropped_entries": 0,
+          "omitted_by_runner": 0,
+          "error": null
+        },
+        "stale_after_secs": 900
+      }
+    }
+  ],
+  "credential_dark_scrape_up": true,
+  "runner_reports_scrape_up": true,
+  "build_resolvability": {
+    "value": 0.875,
+    "coverage_n": 7,
+    "population_n": 8,
+    "basis": "roster devices with a non-empty coord.devices.served_git_sha (fleet heartbeat git_sha)"
+  }
+}

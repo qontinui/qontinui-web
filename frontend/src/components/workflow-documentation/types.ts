@@ -1,5 +1,5 @@
 import { Workflow, Action } from "@/lib/action-schema/action-types";
-import { ActionComment } from "@/services/workflow-documentation-service";
+import { ActionComment } from "@/services/workflow-documentation";
 
 export interface ViewerTOCItem {
   level: number;

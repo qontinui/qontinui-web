@@ -16,7 +16,7 @@ import type {
 } from "@/contexts/automation-context/types";
 import { workflowComplexityAnalyzer } from "../workflow-complexity-analyzer";
 import { WorkflowDependencyAnalyzer } from "../workflow-dependency-analyzer";
-import { WorkflowDocumentationService } from "../workflow-documentation-service";
+import { WorkflowDocumentationService } from "../workflow-documentation";
 import { getWorkflowTestingService } from "../workflow-testing-service";
 import type {
   WorkflowAnalysis,

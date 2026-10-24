@@ -17,7 +17,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useCanvasStore } from "@/stores/canvas-store";
+import { useCanvasStore } from "@/stores/canvas";
 import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
 import { PropertyEditorWrapper } from "./property-adapter";
 import { WorkflowProperties } from "./WorkflowProperties";

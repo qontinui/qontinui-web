@@ -4,20 +4,26 @@ Backs the ``/digital-twin`` web dashboard (Phase 1: the completeness matrix).
 The frontend owns the *denominator* — the full sub-space taxonomy manifest
 (including not-yet-built rows) under
 ``frontend/src/app/(app)/digital-twin/_lib/subspaces.manifest.json``. This
-backend supplies the *numerator*: a live probe of each fleet-wide **snapshot**
-twin observer, returning the same ``DriftVerdict`` envelope an AI agent would
-receive (the product goal). The frontend joins the two by sub-space ``id``.
+backend supplies the *numerator*: a live probe of every sub-space coord's
+served catalog DECLARES probeable, returning the same ``DriftVerdict`` envelope
+an AI agent would receive (the product goal). The frontend joins the two by
+sub-space id.
 
 Read path (vetted): the browser carries an operator Cognito bearer, which we
-forward to coord's SSO-gated ``GET /coord/twin/{subspace}/verdict`` routes
-(``twin_routes.rs`` on coord's ``boundary_reads_sso`` family). We reuse the
-exact bearer-forwarding + tenant-resolution helpers proven in ``operations.py``
-so there is one ContextVar and one auth posture.
+forward to coord — first to ``GET /coord/twin/catalog`` for the declared list,
+then to each declared ``door`` (coord's SSO-gated
+``GET /coord/twin/{subspace}/verdict`` routes in ``twin_routes.rs``, or the
+admin outbound door). We reuse the exact bearer-forwarding + tenant-resolution
+helpers proven in ``operations.py`` so there is one ContextVar and one auth
+posture.
 
-Only **snapshot** sub-spaces (no required args → a meaningful whole-sub-space
-verdict) are live-probed. Parameterized-query sub-spaces (ci/log/ast/type/
-origin_resolution) are interactive-only and surfaced from the manifest's static
-status in Phase 2's explorer, not here.
+Only declared sub-spaces (no required args → a meaningful whole-sub-space
+verdict) are live-probed. Every other manifest row (ci/log/ast/type/
+origin_resolution, the process + intent rows, …) renders the manifest's static
+claim. Where a coord tool answers such a row, the row's ``ask_via`` says where
+on the page it can be asked: Ask the Twin, the Delivery tab, or nowhere —
+coord withholds the tools of some rows (log, ast, type and origin_resolution
+among them) from the device session Ask the Twin runs on.
 """
 
 import asyncio
@@ -54,35 +60,45 @@ router = APIRouter()
 # "error", never hang the matrix.
 _TWIN_PROBE_TIMEOUT = httpx.Timeout(8.0, connect=4.0)
 
-# The fleet-wide SNAPSHOT sub-spaces the matrix live-probes. Mirrors the
-# ``subspace_tool`` map in coord ``twin_routes.rs`` (guarded there by a unit
-# test). If this list and coord's map drift, coord answers 404 for an unmapped
-# id and the cell degrades to ``no_snapshot_tool`` — benign, never a crash.
-_PROBEABLE_SUBSPACES: tuple[str, ...] = (
-    "release",
-    "schema",
-    "infra",
-    "infra_health",
-    "config",
-    "health",
-    "deps",
-    "route_serving",
-    # NOTE: `auth` is intentionally absent — coord_query_auth_config exposes
-    # Cognito pool wiring / tenancy graph (the most recon-sensitive sub-space),
-    # so coord drops it from its snapshot map (/coord/twin/auth/verdict 404s) and
-    # we don't probe it. The manifest marks `auth` parameterized (interactive
-    # explorer only).
-    "client_telemetry",
-    "worktree",
-)
+# The matrix probes exactly what coord DECLARES (plan
+# ``2026-10-11-twin-honesty-and-reachability`` Phase 9, design decision D6).
+# coord's served catalog (``GET /coord/twin/catalog``, ``twin_probe_door.rs``
+# ``served_catalog``) carries, per row, ``snapshot`` (the twin door serves a
+# no-argument read for it), ``door`` (the HTTP path that answers it),
+# ``door_shape`` (how that answer is laid out) and ``access`` (who may read it).
+# Until that plan this module kept a hand copy of coord's snapshot map, which
+# drifted from it: a sub-space coord served sat unprobed, and the post-phase-16
+# process reads (workers, the merge train, webhooks, the scheduler) and the
+# admin outbound door could never become live cells.
+#
+# A row is probed when coord serves it as a snapshot, OR when its declared door
+# is an ``envelope`` door — the admin outbound door
+# ``/admin/coord/outbound-budget``, a no-argument read coord deliberately keeps
+# off the twin door (D8), so its ``snapshot`` flag is false although a blank GET
+# answers it.
+_ENVELOPE_DOOR = "envelope"
+_REPORT_DOOR = "report"
+# coord's twin router (``twin_routes.rs`` ``twin_reads_sso``). Its access
+# classes are keyed on the caller's TENANT; every other door may be keyed on
+# the operator.
+_TWIN_DOOR_PREFIX = "/coord/twin/"
+
+# The last declared probe list a catalog read produced. The catalog is
+# fleet-global metadata (the same for every tenant), so one module-level copy
+# serves every tenant's degraded matrix: when coord or the catalog cannot be
+# read, the matrix degrades to error cells for the ids coord last declared, and
+# to an EMPTY degraded matrix when it never declared any — never to an
+# invented id list.
+_LAST_DECLARED: list[dict[str, Any]] | None = None
 
 # Coverage at/above this counts as a fully-wired observer. Below it (but > 0 and
 # not blind) is "partial". Observers routinely report coverage < 1 because a
 # slice is unconfigured for this tenant/deploy — that is honest, not broken.
 _FULL_COVERAGE_THRESHOLD = 0.99
 
-# Short per-tenant TTL cache over the whole matrix fan-out. The matrix fires ~11
-# live coord observer reads per load; without this, N dashboard viewers = N×11
+# Short per-tenant TTL cache over the whole matrix fan-out (the catalog read
+# plus every declared probe). The matrix fires one live coord read per declared
+# sub-space per load; without this, N dashboard viewers = N× that many
 # coord reads. React Query already throttles a single client; this bounds the
 # coord load across all viewers of a tenant. Small + in-process (per worker) by
 # design — staleness is acceptable for a completeness view.
@@ -92,6 +108,15 @@ _FULL_COVERAGE_THRESHOLD = 0.99
 # probed verdicts to the selection we forward. Keying on home while forwarding
 # the selection would file tenant B's matrix under tenant A and serve it to A —
 # a cross-tenant read that outlives the request that caused it.
+#
+# Only the TWIN-door probes (``/coord/twin/...``) are cached. coord gates those
+# per TENANT, so every operator of one effective tenant gets the same answer.
+# A door outside the twin router (the admin outbound door) is gated per
+# OPERATOR — ``require_role("admin")`` — so its answer is never shared: it is
+# probed on every request with that request's own bearer (see
+# ``_is_operator_gated``). Caching it would serve one admin's outbound budget to
+# a non-admin of the same tenant for the TTL, and a non-admin's refusal to the
+# admin.
 _MATRIX_CACHE: dict[str, tuple[float, Any]] = {}
 _MATRIX_CACHE_TTL_S = 30.0
 
@@ -132,17 +157,103 @@ def _envelope_metrics(verdict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _declared_probes(catalog: Any) -> list[dict[str, Any]] | None:
+    """The probe list coord's served catalog declares, or ``None`` when the
+    body declares nothing readable.
+
+    One entry per catalog row that is probeable with a blank GET — coord serves
+    it as a snapshot (``snapshot: true``), or its door is an ``envelope`` door
+    (see ``_ENVELOPE_DOOR``) — carrying ``subspace``, ``door``, ``door_shape``
+    and ``access`` verbatim.
+
+    ``None`` (never an empty list) for a body that is not a catalog, and for a
+    catalog served by a coord predating the declaration (no row carries a
+    ``snapshot`` flag): an empty list would render "coord declares no
+    sub-space", which that coord never said.
+    """
+    if not isinstance(catalog, dict):
+        return None
+    entries = catalog.get("entries")
+    if not isinstance(entries, list):
+        return None
+    rows = [e for e in entries if isinstance(e, dict)]
+    if not any(isinstance(e.get("snapshot"), bool) for e in rows):
+        return None
+    declared: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in rows:
+        subspace = entry.get("subspace")
+        door = entry.get("door")
+        door_shape = entry.get("door_shape")
+        if not isinstance(subspace, str) or not subspace or subspace in seen:
+            continue
+        if not isinstance(door, str) or not door.startswith("/"):
+            continue
+        if entry.get("snapshot") is not True and door_shape != _ENVELOPE_DOOR:
+            continue
+        seen.add(subspace)
+        declared.append(
+            {
+                "subspace": subspace,
+                "door": door,
+                "door_shape": door_shape if isinstance(door_shape, str) else None,
+                "access": entry.get("access"),
+            }
+        )
+    return declared
+
+
+async def _fetch_declared(
+    client: httpx.AsyncClient, headers: dict[str, str]
+) -> list[dict[str, Any]] | None:
+    """Read coord's served catalog and return its declared probe list.
+
+    Never raises: an unreachable coord, a non-200 answer or an unparseable body
+    is ``None``, and the caller degrades the matrix.
+    """
+    try:
+        resp = await client.get(
+            f"{settings.COORD_URL}/coord/twin/catalog", headers=headers
+        )
+    except httpx.HTTPError as exc:  # ConnectError, TimeoutException and friends
+        logger.warning("twin_catalog_unreachable", error=str(exc))
+        return None
+    if resp.status_code != 200:
+        logger.warning("twin_catalog_refused", http_status=resp.status_code)
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    return _declared_probes(body)
+
+
 async def _probe_subspace(
     client: httpx.AsyncClient,
-    subspace: str,
+    probe: dict[str, Any],
     headers: dict[str, str],
 ) -> dict[str, Any]:
-    """Probe one sub-space's coord verdict route, tolerating every failure.
+    """Probe one declared sub-space at its declared door, tolerating every
+    failure.
 
     Never raises: a coord error, an unreachable coord, or a tool failure all map
-    to an honest cell status rather than aborting the whole matrix.
+    to an honest cell status rather than aborting the whole matrix. The body is
+    read by the catalog's ``door_shape``:
+
+    - ``verdict_wrapper`` — ``{subspace, tool, verdict}``; the DriftVerdict sits
+      under ``verdict``.
+    - ``envelope`` — the DriftVerdict fields sit at the top level (the admin
+      outbound door's ``OutboundBudgetResponse``), graded by the same
+      ``_classify``.
+    - ``report`` — ``{subspace, tool, verdict}`` where ``verdict`` is the tool's
+      own report, not a DriftVerdict. It carries no coverage or drift class, so
+      it is not graded at all: the cell reads ``served`` ("coord answered, and
+      what it answered is not a verdict"), never a ``partial`` made up from a
+      missing coverage.
     """
-    url = f"{settings.COORD_URL}/coord/twin/{subspace}/verdict"
+    subspace: str = probe["subspace"]
+    door_shape = probe.get("door_shape")
+    url = f"{settings.COORD_URL}{probe['door']}"
     try:
         resp = await client.get(url, headers=headers)
     except httpx.TimeoutException:
@@ -152,14 +263,16 @@ async def _probe_subspace(
         return {"id": subspace, "status": "error", "error": "coord_unreachable"}
 
     if resp.status_code == 403:
-        # coord's twin tenant gate (require_twin_tenant) denied this operator —
-        # their home tenant is outside COORD_TWIN_ALLOWED_TENANT_IDS. Distinct
-        # from a tool failure: it's an access decision, surfaced as "restricted"
-        # so the UI shows a friendly access message instead of an all-error grid.
-        return {"id": subspace, "status": "restricted"}
+        # An access decision for THIS sub-space: coord's per-sub-space class
+        # (a Qontinui-internal infra verdict read by another tenant), the coarse
+        # twin tenant gate, or the admin gate on the outbound door. It marks
+        # only this cell; the matrix-level `restricted` flag is set only when
+        # every probe answered this way.
+        return {"id": subspace, "status": "restricted", "door_shape": door_shape}
     if resp.status_code == 404:
-        # coord serves no snapshot tool for this id (parameterized/not-built).
-        return {"id": subspace, "status": "no_snapshot_tool"}
+        # coord declared a door that does not answer — coord's catalog and its
+        # router disagree. The page renders it as an error, never a silent ok.
+        return {"id": subspace, "status": "no_snapshot_tool", "door_shape": door_shape}
     if resp.status_code >= 400:
         # Tool failed (e.g. hard live-read failure) — honest "error", never ok.
         detail: Any
@@ -173,30 +286,81 @@ async def _probe_subspace(
             "error": "coord_tool_failed",
             "http_status": resp.status_code,
             "detail": detail,
+            "door_shape": door_shape,
         }
 
-    body = resp.json()
-    verdict = body.get("verdict") if isinstance(body, dict) else None
-    if not isinstance(verdict, dict):
-        return {"id": subspace, "status": "error", "error": "malformed_verdict"}
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        return {
+            "id": subspace,
+            "status": "error",
+            "error": "malformed_verdict",
+            "door_shape": door_shape,
+        }
 
+    verdict: Any = body if door_shape == _ENVELOPE_DOOR else body.get("verdict")
+    if not isinstance(verdict, dict):
+        return {
+            "id": subspace,
+            "status": "error",
+            "error": "malformed_verdict",
+            "door_shape": door_shape,
+        }
+
+    if door_shape == _REPORT_DOOR:
+        return {
+            "id": subspace,
+            "status": "served",
+            "tool": body.get("tool"),
+            "door_shape": door_shape,
+        }
     return {
         "id": subspace,
         "status": _classify(verdict),
         "tool": body.get("tool"),
         "metrics": _envelope_metrics(verdict),
+        "door_shape": door_shape,
     }
 
 
+def _is_operator_gated(probe: dict[str, Any]) -> bool:
+    """Whether a declared door may answer per OPERATOR rather than per tenant.
+    Such a probe is never cached (see ``_MATRIX_CACHE``).
+
+    Either condition makes it so:
+
+    - coord's own declaration: ``access`` is ``null`` exactly for a door the
+      twin router does not serve (its access classes are all tenant-keyed), so
+      the door's own gate — ``require_role("admin")`` on the outbound door —
+      governs it;
+    - the path: any door outside the twin router, so a future per-operator door
+      coord forgets to declare ``access: null`` for is still never cached.
+    """
+    return probe.get("access") is None or not str(probe["door"]).startswith(
+        _TWIN_DOOR_PREFIX
+    )
+
+
 def _degraded_matrix(reason: str) -> dict[str, Any]:
-    """An all-error matrix returned (HTTP 200) when coord / the tenant cannot be
-    resolved — honest degradation, never a 5xx. The page must not hard-fail when
-    coord is down, and the Spec CI crawl gate flags a new route that 5xx's."""
+    """The matrix returned (HTTP 200) when coord, the tenant or coord's catalog
+    cannot be read — honest degradation, never a 5xx. The page must not
+    hard-fail when coord is down, and the Spec CI crawl gate flags a new route
+    that 5xx's.
+
+    Its cells are the ids coord LAST declared (``_LAST_DECLARED``), each an
+    ``error`` carrying ``reason``. With no declaration ever read in this
+    process, it is an empty matrix flagged ``degraded`` — the page then shows
+    every manifest row's own status, and no sub-space id is invented here.
+    """
+    declared = _LAST_DECLARED or []
     return {
         "subspaces": [
-            {"id": s, "status": "error", "error": reason} for s in _PROBEABLE_SUBSPACES
+            {"id": p["subspace"], "status": "error", "error": reason} for p in declared
         ],
-        "probed": len(_PROBEABLE_SUBSPACES),
+        "probed": len(declared),
         "degraded": True,
     }
 
@@ -207,14 +371,15 @@ async def get_twin_subspaces(
     _user=Depends(get_current_active_user_async),
 ) -> Any:
     """Live numerator for the completeness matrix: a per-sub-space probe of
-    every fleet-wide snapshot twin observer.
+    every sub-space coord's served catalog declares probeable.
 
     Per-tenant: the tenant is resolved best-effort (and the caller's Cognito
     bearer **plus their tenant-switcher selection** captured for forwarding).
     The matrix reflects what coord can observe for *their* tenant — flag-gated
-    / tenant-scoped observers legitimately read ``blind`` for some tenants. If
-    coord/the tenant is unavailable we DEGRADE to an all-error matrix (HTTP
-    200), never 5xx.
+    / tenant-scoped observers legitimately read ``blind`` for some tenants, and
+    a Qontinui-internal sub-space reads ``restricted`` for another tenant. If
+    coord, the tenant or the catalog is unavailable we DEGRADE (HTTP 200, see
+    ``_degraded_matrix``), never 5xx.
 
     Tenant selection (plan
     ``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``
@@ -235,6 +400,8 @@ async def get_twin_subspaces(
     ``apply_active_tenant_override``, which degrades a non-member selection to
     home rather than widening).
     """
+    global _LAST_DECLARED
+
     active_tenant = request.headers.get(ACTIVE_TENANT_HEADER)
     capture_caller_bearer(request)
     tenant_id: UUID | None = None
@@ -251,27 +418,59 @@ async def get_twin_subspaces(
 
     cache_key = str(effective_id)
     now = time.monotonic()
-    cached = _MATRIX_CACHE.get(cache_key)
-    if cached is not None and now - cached[0] < _MATRIX_CACHE_TTL_S:
-        return cached[1]
-
     headers = _tenant_headers(effective_id)
     async with httpx.AsyncClient(timeout=_TWIN_PROBE_TIMEOUT) as client:
-        results = await asyncio.gather(
-            *(_probe_subspace(client, s, headers) for s in _PROBEABLE_SUBSPACES)
-        )
-    # coord's twin tenant gate (when armed) 403s every route for an operator
-    # outside COORD_TWIN_ALLOWED_TENANT_IDS. Surface that as a top-level
-    # `restricted` flag so the UI shows a friendly access message rather than an
-    # all-"error" grid (an access decision, not an outage).
-    restricted = any(r.get("status") == "restricted" for r in results)
-    payload = {
-        "subspaces": list(results),
+        cached = _MATRIX_CACHE.get(cache_key)
+        if cached is not None and now - cached[0] < _MATRIX_CACHE_TTL_S:
+            declared, shared = cached[1]
+            # Operator-gated doors: this request's own answer, never the cache's.
+            own_results = await asyncio.gather(
+                *(
+                    _probe_subspace(client, p, headers)
+                    for p in declared
+                    if _is_operator_gated(p)
+                )
+            )
+        else:
+            fetched = await _fetch_declared(client, headers)
+            if fetched is None:
+                # Not cached: the next request retries the catalog rather than
+                # serving a degraded matrix for the whole TTL.
+                return _degraded_matrix("catalog_unavailable")
+            declared = fetched
+            # One concurrent fan-out; the results are split afterwards into the
+            # shared (cached) half and this request's own operator-gated half.
+            fanned = await asyncio.gather(
+                *(_probe_subspace(client, p, headers) for p in declared)
+            )
+            shared = {
+                r["id"]: r
+                for p, r in zip(declared, fanned, strict=True)
+                if not _is_operator_gated(p)
+            }
+            own_results = [
+                r
+                for p, r in zip(declared, fanned, strict=True)
+                if _is_operator_gated(p)
+            ]
+            _MATRIX_CACHE[cache_key] = (now, (declared, shared))
+            _LAST_DECLARED = declared
+    own = {r["id"]: r for r in own_results}
+    results = [
+        own[p["subspace"]] if _is_operator_gated(p) else shared[p["subspace"]]
+        for p in declared
+    ]
+    # The matrix-level `restricted` flag means the coarse gate is armed against
+    # this operator: EVERY probe was refused. A single refused sub-space (a
+    # Qontinui-internal verdict read by another tenant, or the admin-gated
+    # outbound door read by a non-admin) marks only its own cell, so an
+    # operator keeps their own `memory` and `worktree` cells beside it.
+    restricted = bool(results) and all(r.get("status") == "restricted" for r in results)
+    return {
+        "subspaces": results,
         "probed": len(results),
         "restricted": restricted,
     }
-    _MATRIX_CACHE[cache_key] = (now, payload)
-    return payload
 
 
 @router.get("/subspace/{subspace_id}/raw")

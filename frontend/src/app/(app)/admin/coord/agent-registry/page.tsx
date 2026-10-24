@@ -55,6 +55,7 @@ import {
   putAgentRegistryDefaults,
   type AdminAgentRegistryRow,
 } from "@/lib/api/agent-registry";
+import { RepoFollowupDialsPanel } from "./_components/RepoFollowupDialsPanel";
 
 // R3 — the colour families, IMPORTED. They used to be re-declared here,
 // exemplar (`components/operations/MergePipeline.tsx`) so a second surface
@@ -614,6 +615,14 @@ export default function CoordAgentRegistryPage() {
           );
         })}
       </div>
+
+      {/* Per-repo follow-up dials (plan
+          2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind
+          Phase 4b) — the other half of "which sessions get spawned": the
+          rows above decide which agents run, this decides which merges spawn
+          a follow-up at all. Collapsible and last, so it never displaces the
+          registry (R7). */}
+      <RepoFollowupDialsPanel />
     </div>
   );
 }

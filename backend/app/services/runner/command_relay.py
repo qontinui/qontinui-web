@@ -26,7 +26,7 @@ class RunnerNotConnectedError(RuntimeError):
     Surfaced by :meth:`CommandRelayService.dispatch_and_wait` at the
     pre-publish gate. HTTP callers should translate this into a structured
     503 envelope via
-    :func:`app.services.runner.runner_selector.runner_bridge_503_no_runner`.
+    :func:`app.services.runner.device_selector.dispatch_or_http_error`.
     """
 
     def __init__(self, runner_id: str) -> None:

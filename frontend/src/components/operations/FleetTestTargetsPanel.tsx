@@ -13,7 +13,9 @@
  *  - Per-device/per-app freshness badges (fresh | building | failed | unknown),
  *    joined server-side from project.app_deploy_state.
  *  - Designate-test-host + auto_fresh toggle (PUT/DELETE
- *    /api/v1/fleet/test-targets/{device_id}/{app_id}, writing coord.test_targets).
+ *    /api/v1/fleet/test-targets/{device_id}/{app_id}; the backend forwards
+ *    them to coord's binding-checked coord.test_targets writer in the
+ *    selected project, and a refusal is toasted with its own message).
  *  - "Run on fresh host" affordance (POST /api/v1/dispatch/fresh-host).
  */
 
@@ -23,6 +25,7 @@ import { Rocket, Server, Trash2, Save, RefreshCw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
+import { designationErrorText } from "./fleetTestTargets";
 import { CollapsiblePanel } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -196,7 +199,10 @@ function AppCard({
         );
         onChanged();
       } catch (e) {
-        toast.error(`Designation failed: ${errMsg(e)}`);
+        // A refusal (e.g. the selected project is not one the device is bound
+        // to) carries its own operator-facing message; show that, not the URL
+        // and raw JSON.
+        toast.error(`Designation failed: ${designationErrorText(e)}`);
       }
     },
     [app.app_id, onChanged]
@@ -210,7 +216,7 @@ function AppCard({
         );
         onChanged();
       } catch (e) {
-        toast.error(`Remove failed: ${errMsg(e)}`);
+        toast.error(`Remove failed: ${designationErrorText(e)}`);
       }
     },
     [app.app_id, onChanged]

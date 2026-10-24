@@ -62,38 +62,51 @@ import asyncio
 import hashlib
 import re
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from typing import Literal
+from uuid import UUID, uuid5
 
 from sqlalchemy import (
     ColumnElement,
+    DateTime,
     Select,
     Text,
+    Uuid,
     cast,
+    exists,
     false,
     func,
+    literal,
     or_,
     select,
     text,
     true,
+    tuple_,
     update,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import InstrumentedAttribute, load_only
 
+from app.core.bounded_read import KeysetPosition, SortKey
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
     NOTE_TRIM_CHARS,
+    OPEN_FOLLOWUP_SQL,
     SEARCH_TSVECTOR_SQL,
-    SPAWNED_FOLLOWUP_RELATION,
+    SPEC_ARTIFACT_KINDS,
     TERMINAL_STATUSES,
+    UNCLAIMED_FOLLOWUP_SQL,
     WorkArtifact,
     WorkArtifactEdge,
+    WorkArtifactEdgeAnchor,
+    WorkArtifactSpecRefCounter,
     WorkArtifactVersion,
+    format_spec_ref,
 )
 from app.services.plan_difficulty import RUBRIC_VERSION, compute_difficulty
 
@@ -127,6 +140,83 @@ _PROMPT_CHAIN_MAX_DEPTH = 10
 
 _NON_ALNUM = re.compile(r"[^A-Z0-9]+")
 
+# ── keyset sort keys (plan ``2026-09-05-every-bounded-read-…`` Phase 4) ──
+#
+# Every one walks an IMMUTABLE ``created_at`` with the row's unique id as the
+# tiebreak (D8): ``agent.work_artifacts.created_at`` and
+# ``agent.work_artifact_edges.created_at`` have no UPDATE site anywhere, which
+# ``tests/test_plan_library_keyset.py`` pins by grepping the backend for one.
+# ``authored_at`` is NOT eligible even though D8 names it: the upsert rewrites
+# it from whatever the scanner re-derives (:func:`_assign_head_metadata`).
+
+#: ``GET /plan-library`` — newest captured first.
+ARTIFACT_LIST_SORT_KEY = SortKey("agent.work_artifacts:created_at,id")
+
+#: ``GET /plan-library/candidates`` — oldest first over BOTH arms of the
+#: union: an artifact's ``(created_at, id)`` and a coord work unit's own
+#: immutable ``(created_at, id)``, compared as one total order.
+CANDIDATE_SORT_KEY = SortKey("plan-candidates:created_at,id asc")
+
+#: ``GET /plan-library/followups`` (and ``/candidates``' ``open_followups``)
+#: — oldest first.
+FOLLOWUP_SORT_KEY = SortKey("agent.work_artifact_edges:created_at,id asc")
+
+#: ``GET /plan-library/reconciliation`` — its rows are STEMS, a union of two
+#: stores with no row of their own, so the position is derived from the stem
+#: alone (:func:`stem_position`): immutable by construction, because a stem
+#: is an identity and never changes.
+RECONCILIATION_SORT_KEY = SortKey("plan-stems:stem-date,stem-uuid5 asc")
+
+#: The namespace of :func:`stem_position`'s uuid5 tiebreak.
+_STEM_NAMESPACE = UUID("8a3d1f0e-5c2b-5e7a-9b4d-6f1e2c3a4b5d")
+
+_STEM_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+_UNDATED_STEM = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _keyset_cut(
+    at_column: InstrumentedAttribute[datetime],
+    id_column: InstrumentedAttribute[UUID],
+    after: KeysetPosition,
+    *,
+    descending: bool,
+) -> ColumnElement[bool]:
+    """The row comparison that resumes a keyset walk strictly after ``after``.
+
+    ``(at, id) < (k, i)`` for a ``DESC`` walk, ``>`` for ``ASC`` — the SAME
+    columns, in the same order, as the statement's ``ORDER BY`` (SortKey
+    clause 3), so the cut and the sort can never disagree.
+    """
+    columns = tuple_(at_column, id_column)
+    position = tuple_(
+        literal(after.at, DateTime(timezone=True)),
+        literal(after.id, Uuid()),
+    )
+    return columns < position if descending else columns > position
+
+
+def stem_position(stem: str) -> KeysetPosition:
+    """A plan stem's :data:`RECONCILIATION_SORT_KEY` position.
+
+    ``at`` is the stem's own ``YYYY-MM-DD`` prefix (midnight UTC) — plan stems
+    are date-prefixed, so the walk is chronological by authoring day; a stem
+    with no valid date prefix sorts first, at the Unix epoch. ``id`` is a
+    uuid5 of the stem, the unique tiebreak (distinct stems never share one).
+    Both are pure functions of the stem, so no write anywhere can move a
+    stem's position (D8) — the property ``slug_asc`` paging under ``OFFSET``
+    never had, because every stem added ahead of the window shifted it.
+    """
+    at = _UNDATED_STEM
+    match = _STEM_DATE.match(stem)
+    if match is not None:
+        try:
+            year, month, day = (int(part) for part in match.groups())
+            at = datetime(year, month, day, tzinfo=UTC)
+        except ValueError:
+            at = _UNDATED_STEM
+    return KeysetPosition(at=at, id=uuid5(_STEM_NAMESPACE, stem))
+
 
 class AmbiguousArtifactKind(Exception):
     """A kind-less resolution matched several rows with no locked winner.
@@ -152,6 +242,133 @@ class AmbiguousArtifactKind(Exception):
             f"{len(candidates)} rows with kinds {self.candidate_kinds} and no "
             "single kind_locked row to prefer"
         )
+
+
+class SpecFamilyBoundary(Exception):
+    """A write would cross the specification-family boundary.
+
+    A specification artifact's ``spec_ref`` prefix names its kind
+    (``REQ-0042`` is a requirement), and the ref is the artifact's stable
+    identity — so its kind is fixed for life, a non-spec artifact cannot
+    become one either, and a write of the other family may not update one.
+    Raised before anything is written; surfaced as a 409. Two cases, told
+    apart by ``reason`` so the caller gets the sentence that fits:
+
+    * ``"kind_change"`` — a kind correction (``PATCH .../kind``, or a kind
+      move on the upsert path) into, out of, or within the spec family. A
+      different kind of thing is a NEW artifact linked by ``derives_from`` /
+      ``refines``.
+    * ``"key_resolves_to_other_family"`` — an upsert whose target row is of
+      the other family. The heuristic scan path filters its candidates to the
+      incoming kind's family first (:func:`_same_family`), so a scanned plan
+      sharing a spec row's ``(org, slug, source_repo)`` lands on its own plan
+      row; this arm is the backstop for any path that still resolves across.
+    """
+
+    def __init__(
+        self,
+        *,
+        from_kind: str,
+        to_kind: str,
+        spec_ref: str | None,
+        reason: Literal["kind_change", "key_resolves_to_other_family"] = "kind_change",
+    ) -> None:
+        self.from_kind = from_kind
+        self.to_kind = to_kind
+        self.spec_ref = spec_ref
+        self.reason = reason
+        ref = f" ({spec_ref})" if spec_ref else ""
+        if reason == "key_resolves_to_other_family":
+            if is_spec_kind(from_kind):
+                message = (
+                    f"this key resolves to a specification artifact{ref}, a "
+                    f"{from_kind!r}; a {to_kind!r} write cannot update it. "
+                    "Write the artifact under a different slug or source_repo"
+                )
+            else:
+                message = (
+                    f"this key resolves to a non-specification artifact, a "
+                    f"{from_kind!r}; a {to_kind!r} write cannot update it. "
+                    "Create the specification artifact under its own slug"
+                )
+        else:
+            message = (
+                f"cannot change kind {from_kind!r} -> {to_kind!r}: a "
+                f"specification artifact's kind is fixed by its stable "
+                f"spec_ref{ref}, and no other artifact can become one; create "
+                "a new artifact and link it with derives_from or refines instead"
+            )
+        super().__init__(message)
+
+
+def is_spec_kind(kind: str) -> bool:
+    """Whether ``kind`` is in the specification family."""
+    return kind in SPEC_ARTIFACT_KINDS
+
+
+def _same_family(rows: list[WorkArtifact], kind: str) -> list[WorkArtifact]:
+    """Only the rows in ``kind``'s family (spec or non-spec).
+
+    Applied to the heuristic scan's kind-less candidates BEFORE
+    :func:`resolve_scan_target`: a scanned plan that shares a spec row's
+    ``(org, slug, source_repo)`` must neither land on that row nor count it
+    toward an ambiguity — it lands on, or inserts, its own plan row. The
+    identity index includes ``kind``, so the two rows coexist.
+    """
+    spec = is_spec_kind(kind)
+    return [row for row in rows if is_spec_kind(row.kind) == spec]
+
+
+def _check_key_family(existing: WorkArtifact, kind: str) -> None:
+    """Backstop: refuse an upsert whose resolved row is of the other family."""
+    if is_spec_kind(existing.kind) != is_spec_kind(kind):
+        raise SpecFamilyBoundary(
+            from_kind=existing.kind,
+            to_kind=kind,
+            spec_ref=existing.spec_ref,
+            reason="key_resolves_to_other_family",
+        )
+
+
+def _check_spec_family_boundary(row: WorkArtifact, kind: str) -> None:
+    """Raise :class:`SpecFamilyBoundary` for a kind change the family forbids.
+
+    Unchanged kinds always pass. Between two non-spec kinds — the scanner's
+    heuristic correction space — always passes. Anything touching a spec kind
+    on either side is refused.
+    """
+    if row.kind == kind:
+        return
+    if is_spec_kind(row.kind) or is_spec_kind(kind):
+        raise SpecFamilyBoundary(
+            from_kind=row.kind, to_kind=kind, spec_ref=row.spec_ref
+        )
+
+
+async def allocate_spec_ref(db: AsyncSession, *, org_id: UUID | None, kind: str) -> str:
+    """Hand out the next ``spec_ref`` for ``kind`` in ``org_id``'s scope.
+
+    One atomic statement — ``INSERT … ON CONFLICT (organization_scope, kind)
+    DO UPDATE SET last_number = last_number + 1 RETURNING last_number`` — so
+    two concurrent creates serialize on the counter row and can never draw
+    the same number. The counter only moves forward, which is what makes a
+    ref never reused: a deleted ``REQ-0042`` leaves 42 spent. It runs in the
+    CALLER's transaction, so a create that rolls back un-spends its number
+    along with everything else (a later commit-then-delete does not).
+    """
+    scope = org_id if org_id is not None else NIL_ORGANIZATION_ID
+    counter = WorkArtifactSpecRefCounter.__table__
+    stmt = (
+        pg_insert(counter)
+        .values(organization_scope=scope, kind=kind, last_number=1)
+        .on_conflict_do_update(
+            index_elements=[counter.c.organization_scope, counter.c.kind],
+            set_={"last_number": counter.c.last_number + 1},
+        )
+        .returning(counter.c.last_number)
+    )
+    number = int((await db.execute(stmt)).scalar_one())
+    return format_spec_ref(kind, number)
 
 
 class ArtifactKindConflict(Exception):
@@ -380,6 +597,7 @@ def _apply_filters(
     work_unit_slug: str | None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    spec_ref: str | None = None,
 ) -> Select:
     """Apply the shared list/count filters to a statement.
 
@@ -436,6 +654,10 @@ def _apply_filters(
         )
     if slug is not None:
         stmt = stmt.where(WorkArtifact.slug == slug)
+    if spec_ref is not None:
+        # Exact; ``uq_work_artifacts_spec_ref`` makes it at most one row per
+        # organization scope.
+        stmt = stmt.where(WorkArtifact.spec_ref == spec_ref)
     return stmt
 
 
@@ -451,10 +673,26 @@ async def list_artifacts(
     work_unit_slug: str | None = None,
     intent_ref: str | None = None,
     slug: str | None = None,
-    offset: int = 0,
+    spec_ref: str | None = None,
+    after: KeysetPosition | None = None,
     limit: int = 50,
 ) -> tuple[list[WorkArtifact], int]:
-    """A filtered page of artifacts plus the unpaged total."""
+    """A filtered page of artifacts, newest-CAPTURED first, plus the exact
+    count of matching rows from the page's start position onward.
+
+    A keyset walk over :data:`ARTIFACT_LIST_SORT_KEY` — ``(created_at, id)
+    DESC`` — resumed strictly after ``after`` (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+    Phase 4, which deleted the ``OFFSET`` this used to page with: an offset
+    over a live corpus skips a row for every row deleted ahead of it). The
+    order used to be ``updated_at DESC``, which a keyset cannot walk — every
+    upsert moves the key (D8) — so the walk is on the immutable capture time
+    and "recently updated" is a client-side sort over what it read.
+
+    The count carries the same keyset predicate, so it is the bounded-read
+    ``total`` (``truncated`` ⇔ ``total > len(rows)``); on the first page it is
+    the whole filtered corpus.
+    """
     base = _apply_filters(
         select(WorkArtifact),
         org_id=org_id,
@@ -466,6 +704,7 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
     )
 
     count_stmt = _apply_filters(
@@ -479,15 +718,24 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
     )
+    if after is not None:
+        # The row comparison IS the sort: ``(created_at, id) < (k, i)`` under
+        # ``ORDER BY created_at DESC, id DESC`` (SortKey clause 3).
+        before = _keyset_cut(
+            WorkArtifact.created_at, WorkArtifact.id, after, descending=True
+        )
+        base = base.where(before)
+        count_stmt = count_stmt.where(before)
     total = int((await db.execute(count_stmt)).scalar_one())
 
     rows = (
         (
             await db.execute(
-                base.order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id.desc())
-                .offset(offset)
-                .limit(limit)
+                base.order_by(
+                    WorkArtifact.created_at.desc(), WorkArtifact.id.desc()
+                ).limit(limit)
             )
         )
         .scalars()
@@ -975,8 +1223,12 @@ async def upsert_artifact(
     digest = compute_content_sha256(body)
 
     if kind_is_heuristic:
-        matches = await list_by_scan_identity(
-            db, org_id=org_id, slug=slug, source_repo=source_repo
+        # Own family only — see ``_same_family``.
+        matches = _same_family(
+            await list_by_scan_identity(
+                db, org_id=org_id, slug=slug, source_repo=source_repo
+            ),
+            kind,
         )
         # Raises AmbiguousArtifactKind on an unresolvable fork — deliberately
         # NOT caught here: no row is touched and the endpoint 409s.
@@ -991,6 +1243,13 @@ async def upsert_artifact(
             organization_id=org_id,
             created_by_user_id=user_id,
             kind=kind,
+            # Spent BEFORE the flush, in this transaction: the race arm below
+            # rolls back and so returns the number along with the row.
+            spec_ref=(
+                await allocate_spec_ref(db, org_id=org_id, kind=kind)
+                if is_spec_kind(kind)
+                else None
+            ),
             # A heuristic kind is a guess and must stay correctable; an
             # explicit one is an assertion and locks immediately.
             kind_locked=not kind_is_heuristic,
@@ -1019,8 +1278,11 @@ async def upsert_artifact(
             await db.rollback()
             if kind_is_heuristic:
                 existing = resolve_scan_target(
-                    await list_by_scan_identity(
-                        db, org_id=org_id, slug=slug, source_repo=source_repo
+                    _same_family(
+                        await list_by_scan_identity(
+                            db, org_id=org_id, slug=slug, source_repo=source_repo
+                        ),
+                        kind,
                     ),
                     slug=slug,
                     source_repo=source_repo,
@@ -1047,6 +1309,13 @@ async def upsert_artifact(
             return artifact, True, True
 
     assert existing is not None  # narrowed by both branches above
+
+    # Backstop. The scan path already resolves within the incoming kind's
+    # family (``_same_family``) and the exact-identity path cannot return
+    # another kind, so this should never fire — but if any path resolved
+    # across, ``kind_locked`` would keep the kind while the write overwrote a
+    # spec row's status, title, body and source_path. Refuse before writing.
+    _check_key_family(existing, kind)
 
     metadata = _HeadMetadata(
         title=title,
@@ -1084,6 +1353,9 @@ async def upsert_artifact(
     may_move_kind = not (kind_is_heuristic and existing.kind_locked)
 
     if may_move_kind and existing.kind != kind:
+        # Cross-family writes were refused above; this catches a move
+        # between two spec kinds (a spec row's kind is fixed by its ref).
+        _check_spec_family_boundary(existing, kind)
         # Only reachable on the heuristic path against an UNLOCKED row: the
         # exact-identity lookup can never hand back a differing kind. Moving
         # onto a kind another row already occupies would violate
@@ -1307,6 +1579,9 @@ async def set_artifact_kind(
     # in-memory NULLs, writes nothing, and leaves that rating on a row that
     # is no longer a plan. The lock also serializes this against an upsert.
     await db.refresh(artifact, with_for_update=True)
+    # Before the identity check: a forbidden move is refused whatever the
+    # target identity holds.
+    _check_spec_family_boundary(artifact, kind)
     if artifact.kind != kind:
         clash = await get_by_identity(
             db,
@@ -1347,12 +1622,23 @@ async def create_edge(
     relation: str,
     note: str | None,
     created_by: str | None,
+    on_write: Callable[[WorkArtifactEdge, bool], Awaitable[bool]] | None = None,
 ) -> tuple[WorkArtifactEdge, bool]:
     """Create one edge, or return the existing identical one.
 
     Returns ``(edge, created)``. Re-posting the same
     ``(from, to, relation)`` triple is idempotent rather than a 409 — the
     library is fed by repeatable scans.
+
+    ``on_write(edge, created)``, when given, runs INSIDE the same transaction,
+    after the new row is flushed (``created``) or the existing one found, and
+    before the commit — so what it adds commits or rolls back WITH the edge. It
+    returns whether it wrote anything; on an existing row nothing is committed
+    unless it did.
+    The follow-up door uses it to write a new follow-up's anchors and size
+    class atomically (``app.crud.work_artifact_followups.write_followup_facts``);
+    a crash between two commits would otherwise leave a follow-up whose
+    anchors were silently lost.
 
     ``to_artifact`` may be ``None`` for :data:`SPAWNED_FOLLOWUP_RELATION`, the
     ONE-ENDED edge that records work a plan surfaced but did not do
@@ -1392,7 +1678,7 @@ async def create_edge(
         )
     found = (await db.execute(stmt)).scalars().first()
     if found is not None:
-        return found, False
+        return await _settle_found_edge(db, found, on_write)
 
     edge = WorkArtifactEdge(
         from_id=from_artifact.id,
@@ -1403,15 +1689,33 @@ async def create_edge(
     )
     db.add(edge)
     try:
+        if on_write is not None:
+            await db.flush()
+            await on_write(edge, True)
         await db.commit()
     except IntegrityError:
         await db.rollback()
         found = (await db.execute(stmt)).scalars().first()
         if found is None:  # pragma: no cover — the row must exist now
             raise
-        return found, False
+        return await _settle_found_edge(db, found, on_write)
     await db.refresh(edge)
     return edge, True
+
+
+async def _settle_found_edge(
+    db: AsyncSession,
+    found: WorkArtifactEdge,
+    on_write: Callable[[WorkArtifactEdge, bool], Awaitable[bool]] | None,
+) -> tuple[WorkArtifactEdge, bool]:
+    """An idempotent re-post landed on ``found``: let ``on_write`` see it,
+    and commit only when it reports a write."""
+    if on_write is None:
+        return found, False
+    if await on_write(found, False):
+        await db.commit()
+        await db.refresh(found)
+    return found, False
 
 
 # ===========================================================================
@@ -1437,6 +1741,25 @@ class FollowupAlreadyClaimed(Exception):
         )
 
 
+class FollowupResolved(Exception):
+    """The follow-up was already closed by a resolution, so it cannot be claimed.
+
+    A resolved follow-up (``fixing`` — a PR holds it — or one of the resting
+    states) left the open queue through its resolution; pointing an artifact
+    at it as well would give it two ways out. Surfaced as a 409 naming the
+    resolution: reopen it first (``POST /plan-library/edges/{id}/resolution``
+    ``{"resolution": "open", ...}``) if an artifact should own it instead.
+    """
+
+    def __init__(self, *, edge_id: UUID, resolution: str) -> None:
+        self.edge_id = edge_id
+        self.resolution = resolution
+        super().__init__(
+            f"follow-up edge {edge_id} is resolved ({resolution}); "
+            "it cannot also be claimed"
+        )
+
+
 async def get_edge(
     db: AsyncSession, edge_id: UUID, *, org_id: UUID | None
 ) -> tuple[WorkArtifactEdge, WorkArtifact] | None:
@@ -1458,53 +1781,144 @@ async def get_edge(
     return row[0], row[1]
 
 
+#: ``GET /plan-library/followups?state=`` → the predicate it selects. Each is
+#: built on the LITERAL unclaimed / open predicate from the model, so the
+#: planner can prove a partial index from it (a bound ``relation = $1`` cannot
+#: be proven under a generic prepared plan): ``open`` walks
+#: ``ix_work_artifact_edges_open_followup_queue_created_id``, every other state
+#: ``ix_work_artifact_edges_open_followups_created_id``.
+FOLLOWUP_STATE_SQL: dict[str, str] = {
+    "open": OPEN_FOLLOWUP_SQL,
+    "fixing": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'fixing'",
+    "fixed": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'fixed'",
+    "already_fixed": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'already_fixed'",
+    "dismissed": f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution = 'dismissed'",
+    "resolved": (
+        f"{UNCLAIMED_FOLLOWUP_SQL} "
+        "AND resolution IN ('fixed', 'already_fixed', 'dismissed')"
+    ),
+}
+
+#: The ``size_class`` filter value that selects UNCLASSIFIED (NULL) rows.
+UNCLASSIFIED_SIZE_CLASS = "unclassified"
+
+
+def sql_predicate(sql: str) -> ColumnElement[bool]:
+    """A LITERAL SQL predicate (:data:`FOLLOWUP_STATE_SQL`'s, the model's
+    ``*_FOLLOWUP_SQL``) as a boolean WHERE term, rendered verbatim and
+    parenthesised.
+
+    Verbatim is the point: the planner proves a partial index's predicate
+    from the literals it sees, which a bound ``relation = $1`` would hide. The
+    cast states what ``text()`` is at runtime — a valid WHERE term — which its
+    static type (``TextClause``) does not say.
+    """
+    return typing.cast(ColumnElement[bool], text(f"({sql})"))
+
+
+def _followup_filters(
+    *,
+    org_id: UUID | None,
+    state: str,
+    repo: str | None,
+    size_class: str | None,
+    anchored: bool | None,
+) -> list[ColumnElement[bool]]:
+    """The WHERE of a ``/followups`` read, before its keyset cut.
+
+    ``repo`` keeps follow-ups with at least one anchor in that repo;
+    ``anchored`` keeps those with (``True``) or without (``False``) any anchor
+    at all; ``size_class`` keeps one class, or ``unclassified`` for NULL.
+    """
+    filters: list[ColumnElement[bool]] = [
+        _org_scope(org_id),
+        sql_predicate(FOLLOWUP_STATE_SQL[state]),
+    ]
+    if repo is not None:
+        filters.append(
+            exists().where(
+                WorkArtifactEdgeAnchor.edge_id == WorkArtifactEdge.id,
+                WorkArtifactEdgeAnchor.repo == repo,
+            )
+        )
+    if anchored is not None:
+        has_anchor = exists().where(
+            WorkArtifactEdgeAnchor.edge_id == WorkArtifactEdge.id
+        )
+        filters.append(has_anchor if anchored else ~has_anchor)
+    if size_class == UNCLASSIFIED_SIZE_CLASS:
+        filters.append(WorkArtifactEdge.size_class.is_(None))
+    elif size_class is not None:
+        filters.append(WorkArtifactEdge.size_class == size_class)
+    return filters
+
+
 async def list_open_followups(
     db: AsyncSession,
     *,
     org_id: UUID | None,
-    offset: int = 0,
+    after: KeysetPosition | None = None,
     limit: int = 50,
+    state: str = "open",
+    repo: str | None = None,
+    size_class: str | None = None,
+    anchored: bool | None = None,
 ) -> tuple[list[tuple[WorkArtifactEdge, WorkArtifact]], int]:
-    """Unclaimed ``spawned_followup`` edges + their originating artifact.
+    """Unowned ``spawned_followup`` edges in one state + their originating artifact.
 
-    "Open" is exactly ``to_id IS NULL``: work that was identified and has no
-    artifact owning it. A claimed follow-up is an ordinary two-ended
-    provenance edge and drops out of this read while staying visible on the
-    originating artifact's edge list — nothing is deleted by claiming.
+    **Open** — the default — is exactly :data:`OPEN_FOLLOWUP_SQL`: no artifact
+    owns it (``to_id IS NULL``) and nothing closed it (``resolution IS NULL``).
+    A claimed follow-up is an ordinary two-ended provenance edge and never
+    appears here (it stays on the originating artifact's edge list); a
+    resolved one appears only under its ``state`` (:data:`FOLLOWUP_STATE_SQL`).
+    Nothing is deleted by either.
 
-    Ordered OLDEST FIRST (``created_at ASC``, ``id`` breaking ties for stable
-    paging). That is the useful default rather than an arbitrary one: an old
-    unowned follow-up is work the fleet has known about and repeatedly not
-    picked up, which is the interesting row. Returns the page plus the unpaged
-    total, so a bounded page can never read as the whole queue.
+    ``repo`` / ``size_class`` / ``anchored`` narrow it further — see
+    :func:`_followup_filters`.
+
+    Ordered OLDEST FIRST — a keyset walk over :data:`FOLLOWUP_SORT_KEY`,
+    ``(created_at, id) ASC``, resumed strictly after ``after``. That is the
+    useful default rather than an arbitrary one: an old unowned follow-up is
+    work the fleet has known about and repeatedly not picked up, which is the
+    interesting row. Returns the page plus the exact count of matching
+    follow-ups from the page's start position onward (the whole set on the
+    first page), so a bounded page can never read as the whole queue.
     """
+    filters = _followup_filters(
+        org_id=org_id,
+        state=state,
+        repo=repo,
+        size_class=size_class,
+        anchored=anchored,
+    )
+    if after is not None:
+        filters.append(
+            _keyset_cut(
+                WorkArtifactEdge.created_at,
+                WorkArtifactEdge.id,
+                after,
+                descending=False,
+            )
+        )
     base = (
         select(WorkArtifactEdge, WorkArtifact)
         .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
-        .where(
-            _org_scope(org_id),
-            WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
-            WorkArtifactEdge.to_id.is_(None),
-        )
+        .where(*filters)
     )
 
     count_stmt = (
         select(func.count())
         .select_from(WorkArtifactEdge)
         .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
-        .where(
-            _org_scope(org_id),
-            WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
-            WorkArtifactEdge.to_id.is_(None),
-        )
+        .where(*filters)
     )
     total = int((await db.execute(count_stmt)).scalar_one())
 
     rows = (
         await db.execute(
-            base.order_by(WorkArtifactEdge.created_at.asc(), WorkArtifactEdge.id.asc())
-            .offset(offset)
-            .limit(limit)
+            base.order_by(
+                WorkArtifactEdge.created_at.asc(), WorkArtifactEdge.id.asc()
+            ).limit(limit)
         )
     ).all()
     return [(row[0], row[1]) for row in rows], total
@@ -1520,7 +1934,8 @@ async def claim_followup(
     updated, which is what keeps the claim traceable back to the plan that
     surfaced the work.
 
-    Raises :class:`FollowupAlreadyClaimed` when ``to_id`` is already set. The
+    Raises :class:`FollowupAlreadyClaimed` when ``to_id`` is already set, and
+    :class:`FollowupResolved` when a resolution already closed it. The
     check is made under a row lock rather than from the caller's earlier read:
     two agents claiming the same follow-up concurrently would otherwise both
     see ``to_id IS NULL``, both write, and the second would overwrite the first
@@ -1545,6 +1960,13 @@ async def claim_followup(
 
     if edge.to_id is not None:
         raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=edge.to_id)
+
+    if edge.resolution is not None:
+        # Claimed and resolved are two different ways out of the queue, and a
+        # row holds at most one (``ck_work_artifact_edges_resolution_unclaimed``).
+        # Checked here, under the lock, so the 409 names the resolution rather
+        # than surfacing the CHECK as an IntegrityError.
+        raise FollowupResolved(edge_id=edge_id, resolution=edge.resolution)
 
     edge.to_id = to_id
     try:
@@ -1823,6 +2245,13 @@ async def find_kind_forks(
 
     Returns ``(slug, source_repo, rows)`` with ``rows`` ordered locked-first so
     the operator can see immediately whether a winner already exists.
+
+    Kinds are counted WITHIN one family (spec / non-spec). A spec artifact and
+    a plan that share ``(slug, source_repo)`` are a legitimate pair, not a
+    fork: the scanner resolves within its own family (``_same_family``), so
+    the pair never makes a scan ambiguous, and neither row is a misfiled copy
+    of the other. A key whose rows fork inside one family is reported with
+    that family's rows only (and twice, once per family, if both fork).
     """
     # ONE Label object reused across SELECT / GROUP BY / ORDER BY. Spelling
     # ``coalesce(source_repo, '')`` three times instead would emit three
@@ -1831,23 +2260,25 @@ async def find_kind_forks(
     # GROUP BY copy and the query fails with "source_repo must appear in the
     # GROUP BY clause". (Observed, not theorised.)
     repo_key = func.coalesce(WorkArtifact.source_repo, "").label("repo_key")
+    # Same single-Label discipline for the family key.
+    is_spec = WorkArtifact.kind.in_(SPEC_ARTIFACT_KINDS).label("is_spec")
     group_stmt = (
-        select(WorkArtifact.slug, repo_key)
+        select(WorkArtifact.slug, repo_key, is_spec)
         .where(_org_scope(org_id))
-        .group_by(WorkArtifact.slug, repo_key)
+        .group_by(WorkArtifact.slug, repo_key, is_spec)
         .having(func.count(func.distinct(WorkArtifact.kind)) > 1)
-        .order_by(WorkArtifact.slug, repo_key)
+        .order_by(WorkArtifact.slug, repo_key, is_spec)
     )
     groups = list((await db.execute(group_stmt)).all())
     if not groups:
         return []
 
-    keys = {(g.slug, g.repo_key) for g in groups}
+    keys = {(g.slug, g.repo_key, bool(g.is_spec)) for g in groups}
     rows_stmt = (
         select(WorkArtifact)
         .where(
             _org_scope(org_id),
-            WorkArtifact.slug.in_({s for s, _ in keys}),
+            WorkArtifact.slug.in_({s for s, _, _ in keys}),
         )
         .order_by(
             WorkArtifact.slug,
@@ -1858,15 +2289,18 @@ async def find_kind_forks(
     )
     rows = (await db.execute(rows_stmt)).scalars().all()
 
-    buckets: dict[tuple[str, str], list[WorkArtifact]] = {k: [] for k in keys}
+    buckets: dict[tuple[str, str, bool], list[WorkArtifact]] = {k: [] for k in keys}
     for row in rows:
-        # The slug IN-list can pull in a (slug, repo) pair that is not itself
-        # forked; keep only the real groups.
-        bucket = buckets.get((row.slug, row.source_repo or ""))
+        # The slug IN-list can pull in a (slug, repo, family) that is not
+        # itself forked; keep only the real groups.
+        bucket = buckets.get((row.slug, row.source_repo or "", is_spec_kind(row.kind)))
         if bucket is not None:
             bucket.append(row)
 
-    return [(g.slug, g.repo_key or None, buckets[(g.slug, g.repo_key)]) for g in groups]
+    return [
+        (g.slug, g.repo_key or None, buckets[(g.slug, g.repo_key, bool(g.is_spec))])
+        for g in groups
+    ]
 
 
 # ===========================================================================
@@ -1948,6 +2382,11 @@ class CandidateWorkUnit:
     the artifact half uses, so an unrecognised word counts as NOT-yet-terminal.
     """
 
+    #: coord's ``work_units.id`` — the unit's unique, immutable identity and
+    #: the keyset tiebreak of :data:`CANDIDATE_SORT_KEY`. The candidate
+    #: projection REJECTS a row without one (it could not be placed in the
+    #: walk); the reconciliation projection keys on the stem and keeps it.
+    id: UUID | None
     slug: str
     status: str
     title: str | None
@@ -1962,11 +2401,13 @@ class CandidateWorkUnit:
     repos: tuple[str, ...]
     created_at: datetime
     updated_at: datetime
-    #: ``coalesce(first_in_progress_at, created_at)`` — this arm's half of the
-    #: stable ordering. ``first_in_progress_at`` is coord's own derivation from
-    #: its status history and is ABSENT rather than zero when no transition was
-    #: recorded, which is why the fallback is explicit here rather than left to
-    #: the sort.
+    #: ``coalesce(first_in_progress_at, created_at)`` — the anchor the row's
+    #: ``age_days`` is measured from. DISPLAY ONLY: ``first_in_progress_at``
+    #: moves when coord records a transition, so it can never be a keyset sort
+    #: key (D8); the walk is on ``(created_at, id)``. ``first_in_progress_at``
+    #: is coord's own derivation from its status history and is ABSENT rather
+    #: than zero when no transition was recorded, which is why the fallback is
+    #: explicit here.
     order_key: datetime
 
 
@@ -2009,11 +2450,6 @@ def _plan_candidate_filters(org_id: UUID | None) -> tuple[ColumnElement[bool], .
         WorkArtifact.kind == "plan",
         _terminal_token_sql().not_in(tuple(sorted(TERMINAL_STATUSES))),
     )
-
-
-def _artifact_order_key() -> ColumnElement[datetime]:
-    """``coalesce(authored_at, created_at)`` — the artifact arm's sort key."""
-    return func.coalesce(WorkArtifact.authored_at, WorkArtifact.created_at)
 
 
 def _aware(moment: datetime) -> datetime:
@@ -2071,12 +2507,12 @@ def _unclaimed_work_units(
 ) -> list[CandidateWorkUnit]:
     """The work-unit arm: plan-shaped, non-terminal, and NOT already a row.
 
-    Sorted by this arm's half of the stable default — ``coalesce(
-    first_in_progress_at, created_at) ASC``, slug breaking ties so paging is
-    deterministic. No re-weighting and no cap: open question 2 of the plan
-    settles that a ``vetted``-first ordering would be exactly the "guess frozen
-    into SQL" design decision D6 forbids, and 411 of the 635 units carried an
-    empty status, which would make it a guess over the least-known rows.
+    Sorted on this arm's half of :data:`CANDIDATE_SORT_KEY` — the unit's own
+    immutable ``(created_at, id)`` ASC. No re-weighting and no cap: open
+    question 2 of the plan settles that a ``vetted``-first ordering would be
+    exactly the "guess frozen into SQL" design decision D6 forbids, and 411 of
+    the 635 units carried an empty status, which would make it a guess over the
+    least-known rows.
     """
     return sorted(
         (
@@ -2086,45 +2522,33 @@ def _unclaimed_work_units(
             and is_plan_shaped_slug(unit.slug)
             and not is_terminal_status(unit.status)
         ),
-        key=lambda unit: (_aware(unit.order_key), unit.slug),
+        key=_unit_key,
     )
 
 
-def _merge_arms(
-    artifact_keys: Sequence[tuple[datetime, UUID]],
-    work_units: Sequence[CandidateWorkUnit],
-) -> list[UUID | CandidateWorkUnit]:
-    """Interleave the two already-sorted arms into one ordered population.
+def _unit_key(unit: CandidateWorkUnit) -> tuple[datetime, UUID]:
+    """A work unit's :data:`CANDIDATE_SORT_KEY` position."""
+    if unit.id is None:  # pragma: no cover — the candidate projection refuses it
+        raise ValueError(f"work unit {unit.slug!r} has no id to place in the walk")
+    return _aware(unit.created_at), unit.id
 
-    A hand-written merge rather than a ``sorted()`` over the concatenation,
-    for one reason: each arm carries its OWN tie-breaker (``id`` for the
-    artifacts, ``slug`` for the work units) and those are not comparable with
-    each other. Merging preserves each arm's internal order verbatim while
-    ordering ACROSS the arms on the timestamp alone, so the artifact half of
-    any page is exactly the sequence the pre-union SQL produced.
 
-    Ties between the arms go to the artifact (``<=``), so a page containing no
-    work-unit rows is bit-for-bit the old page.
-    """
-    merged: list[UUID | CandidateWorkUnit] = []
-    i = j = 0
-    while i < len(artifact_keys) and j < len(work_units):
-        if artifact_keys[i][0] <= _aware(work_units[j].order_key):
-            merged.append(artifact_keys[i][1])
-            i += 1
-        else:
-            merged.append(work_units[j])
-            j += 1
-    merged.extend(key for _, key in artifact_keys[i:])
-    merged.extend(work_units[j:])
-    return merged
+def candidate_position(row: PlanCandidateRow) -> KeysetPosition:
+    """The :data:`CANDIDATE_SORT_KEY` position of one candidate row, whichever
+    arm produced it — what the route mints ``next_cursor`` from."""
+    if row.artifact is not None:
+        return KeysetPosition(at=_aware(row.artifact.created_at), id=row.artifact.id)
+    if row.work_unit is None:  # pragma: no cover — PlanCandidateRow sets one
+        raise ValueError("a PlanCandidateRow carries neither arm")
+    at, unit_id = _unit_key(row.work_unit)
+    return KeysetPosition(at=at, id=unit_id)
 
 
 async def list_plan_candidates(
     db: AsyncSession,
     *,
     org_id: UUID | None,
-    offset: int = 0,
+    after: KeysetPosition | None = None,
     limit: int = 25,
     work_units: Sequence[CandidateWorkUnit] | None = None,
 ) -> tuple[list[PlanCandidateRow], int]:
@@ -2139,78 +2563,80 @@ async def list_plan_candidates(
     ``work_units`` is coord's half, already fetched by the endpoint layer in
     ONE list read (web never reads coord's Postgres). Pass ``None`` — which is
     what a coord outage, and ``include_coord=false``, both produce — and this
-    degrades to the document-layer-only population it returned before the
-    union, byte for byte: the same single query, the same count, the same
-    ordering. **The union can only ever ADD rows**, so this read never returns
-    fewer than it used to, which is what keeps the route's own invariant 5
-    ("an unavailable coord is UNKNOWN, never empty") true of the population as
-    well as of the per-row fields.
+    degrades to the document-layer-only population. **The union can only ever
+    ADD rows**, which is what keeps the route's own invariant 5 ("an
+    unavailable coord is UNKNOWN, never empty") true of the population as well
+    as of the per-row fields.
 
     Terminal classification is the SAME on both arms — :func:`terminal_token`
     against :data:`app.models.work_artifact.TERMINAL_STATUSES`, in SQL for the
     artifacts and in Python for the work units — so an unrecognised status
-    counts as not-yet-terminal on either side. That matters more for coord's
-    half than for the library's: it carried 59 distinct status strings on
-    2026-09-03, 492 of them the empty string.
+    counts as not-yet-terminal on either side.
 
-    Ordering is a STABLE DEFAULT and nothing more. The artifact arm keeps
-    ``coalesce(authored_at, created_at) ASC, id ASC`` exactly; the work-unit
-    arm sorts on ``coalesce(first_in_progress_at, created_at) ASC, slug ASC``;
-    and where the two arms tie on the timestamp the artifact wins, so a page
-    that contains no work-unit rows is identical to the pre-union page. There
-    is no scoring pass on either side.
+    **Ordering is a keyset walk, and nothing more** (plan
+    ``2026-09-05-every-bounded-read-is-a-page-that-reads-as-a-corpus``
+    Phase 4). Both arms sort on their row's IMMUTABLE ``(created_at, id)``,
+    compared as ONE total order — an artifact's id and a work unit's id are
+    both uuids, ordered as PostgreSQL orders them (big-endian bytes, which is
+    Python's ``UUID`` ordering too) — and the page resumes strictly after
+    ``after``. The order used to be ``coalesce(authored_at, created_at)`` /
+    ``coalesce(first_in_progress_at, created_at)`` under ``OFFSET``; both
+    keys move (the upsert rewrites ``authored_at``, a status transition sets
+    ``first_in_progress_at``), and a keyset over a moving key drops rows
+    silently (D8). There is no scoring pass on either side.
 
-    ``total`` and paging are computed over the whole union. The merge is done
-    here rather than in SQL because coord's half arrives over HTTP: only the
-    first ``offset + limit`` rows of either arm can appear in the requested
-    window, so the artifact arm is read as ``(id, order_key)`` pairs to that
-    bound — no bodies — and only the ids that survive the merge are hydrated.
+    Returns ``(page, total)``: ``total`` is the exact count of candidates from
+    the page's start position onward across both arms, so ``total > len(page)``
+    is exactly "more exist". Only the first ``limit`` rows of EITHER arm past
+    ``after`` can land on the page, so the artifact arm is read as
+    ``(id, created_at)`` pairs to that bound — no bodies — and only the ids
+    that survive the merge are hydrated.
     """
-    filters = _plan_candidate_filters(org_id)
-    order_key = _artifact_order_key()
-    base = select(WorkArtifact).where(*filters)
+    filters = list(_plan_candidate_filters(org_id))
+    if after is not None:
+        filters.append(
+            _keyset_cut(
+                WorkArtifact.created_at, WorkArtifact.id, after, descending=False
+            )
+        )
+    order = (WorkArtifact.created_at.asc(), WorkArtifact.id.asc())
+
+    count_stmt = select(func.count()).select_from(WorkArtifact).where(*filters)
+    artifact_total = int((await db.execute(count_stmt)).scalar_one())
 
     if work_units is None:
-        count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
-        total = int((await db.execute(count_stmt)).scalar_one())
         rows = (
             (
                 await db.execute(
-                    base.order_by(order_key.asc(), WorkArtifact.id.asc())
-                    .offset(offset)
-                    .limit(limit)
+                    select(WorkArtifact).where(*filters).order_by(*order).limit(limit)
                 )
             )
             .scalars()
             .all()
         )
-        return [PlanCandidateRow(artifact=row) for row in rows], total
+        return [PlanCandidateRow(artifact=row) for row in rows], artifact_total
 
     claimed = await _slugs_claimed_by_plan_artifacts(
         db, org_id=org_id, slugs=[unit.slug for unit in work_units]
     )
     extra = _unclaimed_work_units(work_units, claimed)
-
-    count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
-    artifact_total = int((await db.execute(count_stmt)).scalar_one())
+    if after is not None:
+        extra = [unit for unit in extra if _unit_key(unit) > (after.at, after.id)]
     total = artifact_total + len(extra)
 
-    # Only the first ``offset + limit`` rows of EITHER arm can land in the
-    # requested window, so neither arm is read past that bound. The artifact
-    # arm is read as ``(id, sort key)`` pairs — the full ORM row carries
-    # ``body``, and hydrating a whole arm to throw most of it away is how a
-    # widened population turns into a memory problem.
-    window = offset + limit
     key_stmt = (
-        select(WorkArtifact.id, order_key.label("order_key"))
+        select(WorkArtifact.id, WorkArtifact.created_at)
         .where(*filters)
-        .order_by(order_key.asc(), WorkArtifact.id.asc())
-        .limit(window)
+        .order_by(*order)
+        .limit(limit)
     )
-    artifact_keys = [
-        (_aware(row.order_key), row.id) for row in (await db.execute(key_stmt))
+    entries: list[tuple[tuple[datetime, UUID], UUID | CandidateWorkUnit]] = [
+        ((_aware(row.created_at), row.id), row.id)
+        for row in (await db.execute(key_stmt))
     ]
-    merged = _merge_arms(artifact_keys, extra[:window])[offset : offset + limit]
+    entries.extend((_unit_key(unit), unit) for unit in extra[:limit])
+    entries.sort(key=lambda entry: entry[0])
+    merged = [entry for _, entry in entries[:limit]]
 
     page_ids = [entry for entry in merged if isinstance(entry, UUID)]
     hydrated: dict[UUID, WorkArtifact] = {}
@@ -2430,3 +2856,34 @@ async def load_artifact_bodies(
         WorkArtifact.id.in_(list(ids))
     )
     return {row.id: row.body for row in (await db.execute(stmt)).all()}
+
+
+def stem_matches_q(q: str, stem: str) -> bool:
+    """Does ``q``'s SLUG arm match this plan stem?
+
+    The in-memory twin of :func:`_search_predicate`'s ``slug ILIKE`` arm, for a
+    population that is not one table — reconciliation's stems are coord units
+    ∪ artifacts, and a coord-only stem has no row for the SQL arm to read. It
+    uses the SAME :func:`_slug_needle` gate (so a short or punctuation-only
+    ``q`` matches nothing here, exactly as there) and the same semantics: a
+    case-insensitive, LITERAL substring — ``%`` and ``_`` are ordinary
+    characters, never wildcards.
+    """
+    needle = _slug_needle(q)
+    return bool(needle) and needle.lower() in stem.lower()
+
+
+async def plan_artifact_ids_matching_q(
+    db: AsyncSession, *, org_id: UUID | None, q: str
+) -> set[UUID]:
+    """The ids of every ``kind='plan'`` artifact in scope that ``q`` matches.
+
+    Through :func:`_search_predicate` — the list route's own ``q`` — so the
+    reconciliation filter inherits its hyphen normalization and its slug arm
+    rather than growing a second, drifting definition of "matches". Ids only:
+    the caller already holds the projected rows.
+    """
+    stmt = select(WorkArtifact.id).where(
+        _org_scope(org_id), WorkArtifact.kind == "plan", _search_predicate(q)
+    )
+    return set((await db.execute(stmt)).scalars().all())

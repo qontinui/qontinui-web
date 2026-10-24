@@ -46,7 +46,7 @@ What these tests pin:
    gate's ``ls-files`` call, copied verbatim, would have been wrong here.
 8. A collision exits 1 and NAMES both members; an empty index exits 2, never
    0 — the vacuous-pass class ``_gate_lib`` exists to prevent.
-9. The LANE ROSTER — exactly three files invoke this script, the three the
+9. The LANE ROSTER — exactly four files invoke this script, the four the
    tree documents, and the script's own docstring names every one.
 """
 
@@ -76,6 +76,7 @@ GATE_SCRIPT = REPO_ROOT / _SCRIPT_REF
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/path-case-collisions.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }

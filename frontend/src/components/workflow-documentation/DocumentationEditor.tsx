@@ -5,7 +5,7 @@ import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
-} from "@/services/workflow-documentation-service";
+} from "@/services/workflow-documentation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";

@@ -18,7 +18,7 @@ import {
   WorkflowDocumentationService,
   WorkflowDocumentation,
   ActionComment,
-} from "@/services/workflow-documentation-service";
+} from "@/services/workflow-documentation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, MessageSquare, Edit, Sparkles } from "lucide-react";

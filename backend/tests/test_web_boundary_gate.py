@@ -6,10 +6,15 @@ OCR — runner-side concerns); the two sides talk over the WebSocket bridge and
 share types through ``qontinui-schemas``. Phase 5 of plan
 ``2026-08-08-ci-tool-registry-and-canonical-configuration-parity`` extracted
 that logic out of a multi-line shell ``run:`` block so a second and third lane
-could invoke it instead of re-implementing it. Three lanes do:
+could invoke it instead of re-implementing it. Four lanes do:
 
 * ``.github/workflows/web-boundary-lint.yml``, step "Scan backend/app for
   qontinui.* boundary violations" — the PR gate, the one with teeth.
+* ``.github/workflows/web-guards.yml``, step "web-boundary-lint: Scan backend/app for qontinui.* boundary violations" — the
+  consolidated one-job guard lane (plan
+  ``2026-09-26-web-guard-workflows-are-thirteen-scheduling-slots-for-three-minutes-of-work``),
+  running the same command beside the per-guard workflow until a later
+  phase of that plan deletes the per-guard file.
 * ``.qontinui/ci.toml``, step ``web-boundary-lint`` — the runner-as-CI-node
   lane. It is argv-only and deliberately shell-free, which is *why* the logic
   had to leave the workflow's ``run:`` block: the pipes and ``$(...)`` it used
@@ -18,8 +23,8 @@ could invoke it instead of re-implementing it. Three lanes do:
 * ``.pre-commit-config.yaml``, hook ``web-boundary-lint`` — ``--files`` mode,
   for feedback before the push rather than after it.
 
-This module asserts that roster is EXACTLY those three, in both directions: a
-fourth invocation appearing is a failure, and one of the three ceasing to
+This module asserts that roster is EXACTLY those four, in both directions: a
+fifth invocation appearing is a failure, and one of the four ceasing to
 invoke the script is a failure too. That second arm is the quieter defect — a
 gate that stops running looks like a gate that passes.
 
@@ -59,6 +64,7 @@ _SCRIPT_REF = "scripts/ci/check_web_boundary.py"
 _DECLARED_LANES = frozenset(
     {
         ".github/workflows/web-boundary-lint.yml",
+        ".github/workflows/web-guards.yml",
         ".pre-commit-config.yaml",
         ".qontinui/ci.toml",
     }
@@ -86,7 +92,7 @@ def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
 def test_the_scripts_docstring_names_every_lane() -> None:
     """The roster in prose must be the roster in the tree.
 
-    The gate opens by naming its three lanes, and so do both YAML files. That
+    The gate opens by naming its four lanes, and so do both YAML files. That
     prose is what a reader trusts instead of grepping, so a lane added without
     touching it leaves the script describing a shape the repo no longer has.
     """

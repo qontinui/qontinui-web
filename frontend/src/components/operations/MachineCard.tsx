@@ -21,10 +21,10 @@ import {
   HelpCircle,
 } from "lucide-react";
 import type { Runner } from "@qontinui/shared-types";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { renameMachine } from "@/lib/api/operations/coordFleet";
 import {
   formatBytes,
-  machineRenameUrl,
   percentFree,
   readingAgeMs,
   relativeTime,
@@ -39,6 +39,8 @@ import {
   resolveCoordCredential,
 } from "./coordCredentialStatus";
 import { CiRunnerBadge } from "./CiRunnerBadge";
+import { resolveRunnerReports } from "./runnerReportStatus";
+import { RunnerReportsSection } from "./RunnerReportsSection";
 import {
   DeviceCrossLinks,
   deviceStateBadgeVariant,
@@ -449,25 +451,22 @@ export function MachineCard({
     setRenameError(null);
 
     try {
-      const res = await httpClient.fetch(machineRenameUrl(hostname), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: next }),
-        // Safe to re-issue: `rename_machine` UPSERTs the (user, hostname) row
-        // (DELETEs it for an empty name) — pure assignment, repeat is a no-op.
-        idempotent: true,
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      // Safe to re-issue (`renameMachine` is `idempotent`): `rename_machine`
+      // UPSERTs the (user, hostname) row — pure assignment.
+      await renameMachine(hostname, next);
       // Re-fetch the fleet so the authoritative name lands; the
       // `displayName`-keyed effect then drops the optimistic override.
       onRenamed?.();
     } catch (err) {
       // Revert the optimistic name and surface a subtle inline error.
       setOptimisticName(null);
+      const status = httpStatusOf(err);
       setRenameError(
-        err instanceof Error ? err.message : "Failed to rename machine"
+        status !== null
+          ? `HTTP ${status}`
+          : err instanceof Error
+            ? err.message
+            : "Failed to rename machine"
       );
     } finally {
       setSaving(false);
@@ -596,8 +595,10 @@ export function MachineCard({
   // coord device, the stream row's report counts only if it is THAT device's
   // (`device_id` equal): two coord devices sharing a hostname fold onto one
   // row, and the row must not borrow a report from the one it is not showing.
-  // The lookup hands back the bag WITH the row's `updated_at`, so a report
-  // past its staleness bound reads `unknown` here exactly as on the strip.
+  // The lookup hands back the bag WITH when coord received it (the per-key
+  // `_coord_received_at` stamp, not the row's `updated_at`, which any writer
+  // bumps), so a report past its staleness bound reads `unknown` here exactly
+  // as on the strip.
   const reportedCredential = machine.coordHealth?.matched
     ? reportedCoordCredentialFor(
         machine.coordHealth.device_id,
@@ -625,6 +626,20 @@ export function MachineCard({
    */
   const credentialSince = credential?.since
     ? relativeTime(credential.since, { now: nowMs })
+    : null;
+
+  /**
+   * What only the RUNNER can see about this machine — its wedge incidents and
+   * its capability verdicts (plan
+   * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
+   * Phase 8, over coord's Phase 5 fields). Resolved only for a row matched to
+   * a coord device: the reports ride coord's device row, so a row coord's
+   * read does not name has no report to be unknown ABOUT — its coord-state
+   * badge already says why. `null` reports resolve to "unknown — <reason>"
+   * inside `resolveRunnerReports`, never to "none".
+   */
+  const runnerReports = machine.coordHealth?.matched
+    ? resolveRunnerReports(machine.coordHealth)
     : null;
 
   // Pick OS from first runner
@@ -785,10 +800,18 @@ export function MachineCard({
           </div>
         )}
 
-        {/* Free disk space (disk-monitoring Phase 1). Deliberately the FIRST
-            section on the card: Phase 0 measured 3.57 TB of reclaimable cargo
-            targets on a single box that had previously hit 0 bytes free, so
-            this is the headline number, not a footnote. */}
+        {/* The runner's own reports. Above the disk section on purpose: an
+            OPEN wedge incident means every session on this machine is
+            stranded right now, which outranks how full its disk is. */}
+        {runnerReports && (
+          <RunnerReportsSection reports={runnerReports} nowMs={nowMs} />
+        )}
+
+        {/* Free disk space (disk-monitoring Phase 1). The first MEASUREMENT
+            section on the card, after only the runner's own wedge report:
+            Phase 0 measured 3.57 TB of reclaimable cargo targets on a single
+            box that had previously hit 0 bytes free, so this is a headline
+            number, not a footnote. */}
         <DiskSection volumes={machine.volumes} />
 
         {/* Runner instances. Suppressed entirely when the runner inventory

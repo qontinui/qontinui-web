@@ -27,6 +27,8 @@ import pytest
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.testclient import TestClient
 
+from tests._ops_patch import patch_ops
+
 # Stable tenant_id the in-test resolver returns; tests assert the
 # coord call carries it on `?tenant_id=…`.
 _FIXTURE_TENANT_ID = UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
@@ -447,20 +449,20 @@ class TestDeviceStatusWsBridge:
             return _fixture_identity()
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.get_current_user_from_ws",
+            patch_ops(
+                "get_current_user_from_ws",
                 fake_get_user_from_ws,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_coord_identity_for_token",
+            patch_ops(
+                "get_coord_identity_for_token",
                 fake_get_identity,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.mint_device_status_token",
+            patch_ops(
+                "mint_device_status_token",
                 fake_mint,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.websockets_connect",
+            patch_ops(
+                "websockets_connect",
                 fake_connect,
             ),
         ):
@@ -527,20 +529,20 @@ class TestDeviceStatusWsBridge:
             return _fixture_identity()
 
         with (
-            patch(
-                "app.api.v1.endpoints.operations.get_current_user_from_ws",
+            patch_ops(
+                "get_current_user_from_ws",
                 fake_get_user_from_ws,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.get_coord_identity_for_token",
+            patch_ops(
+                "get_coord_identity_for_token",
                 fake_get_identity,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.mint_device_status_token",
+            patch_ops(
+                "mint_device_status_token",
                 fake_mint,
             ),
-            patch(
-                "app.api.v1.endpoints.operations.websockets_connect",
+            patch_ops(
+                "websockets_connect",
                 fake_connect,
             ),
         ):

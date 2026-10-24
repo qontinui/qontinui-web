@@ -10,14 +10,20 @@ SQLAlchemy table was retired in favour of ``coord.devices``. The HTTP
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import structlog
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
+from app.crud import runner_crud
 from app.models.device import Device
+from app.services.runner.command_relay import (
+    RunnerCommandTimeoutError,
+    RunnerNotConnectedError,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,18 +95,130 @@ def device_bridge_503_no_device(endpoint: str) -> HTTPException:
     )
 
 
-# Legacy aliases — preserved for in-process compat while the broader
-# fleet of WS-bridge HTTP handlers still imports the runner_* names.
-# These will be removed in a follow-up cleanup once every consumer has
-# been migrated to the device_* names.
-pick_active_runner_for_user = pick_active_device_for_user
-runner_bridge_503_no_runner = device_bridge_503_no_device
+async def get_owned_runner_or_404(
+    db: AsyncSession,
+    user_id: UUID,
+    runner_id: UUID,
+) -> Device:
+    """Return the caller's runner ``runner_id``, or raise 404 ``runner_not_found``.
+
+    The ownership core of every explicit ``?runner_id=`` selection: an id
+    that does not exist and an id owned by another user are the same 404,
+    so the response never confirms that a foreign runner exists. This is
+    the one place the authorization-bearing comparison is written.
+    """
+    owned_runner = await runner_crud.get_runner(db, runner_id=runner_id)
+    if owned_runner is None or owned_runner.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "runner_not_found", "runner_id": str(runner_id)},
+        )
+    return owned_runner
+
+
+async def resolve_runner_for_request(
+    runner_id: UUID | None,
+    user_id: UUID,
+    db: AsyncSession,
+    manager: Any,
+    endpoint: str,
+) -> Device:
+    """Pick the runner an HTTP request dispatches to, or raise.
+
+    - ``runner_id`` given: it must be the caller's (else 404
+      ``runner_not_found``) and REGISTERED with this process
+      (``is_runner_connected``; else 503 ``no_runner_connected``). It is
+      never silently swapped for another runner.
+    - ``runner_id`` absent: the user's most-recently-heartbeat-active
+      runner with a LIVE socket (:func:`pick_active_device_for_user`),
+      else 503.
+
+    The explicit arm deliberately keeps the weaker registration predicate;
+    ``dispatch_and_wait``'s own gate refuses a stale socket, so both arms
+    end in the same 503 for a dead runner.
+
+    Service-level callers with no explicit selection pass ``runner_id=None``
+    to get the auto-pick arm with its 503.
+    """
+    if runner_id is not None:
+        owned_runner = await get_owned_runner_or_404(db, user_id, runner_id)
+        if not manager.registry.is_runner_connected(str(owned_runner.id)):
+            raise device_bridge_503_no_device(endpoint)
+        return owned_runner
+    picked = await pick_active_device_for_user(user_id, db, manager.registry)
+    if picked is None:
+        raise device_bridge_503_no_device(endpoint)
+    return picked
+
+
+async def dispatch_or_http_error(
+    manager: Any,
+    runner: Device,
+    cmd: dict[str, Any],
+    request_id: UUID,
+    endpoint: str,
+    timeout_s: float,
+    log_prefix: str,
+    *,
+    log: Any = None,
+    timeout_log_fields: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Dispatch ``cmd`` to ``runner`` and return the raw runner response.
+
+    Maps the two relay failures onto the WS-bridge HTTP contract:
+
+    - ``RunnerNotConnectedError`` → warning
+      ``<log_prefix>_runner_disconnected_mid_dispatch``, then 503
+      ``no_runner_connected`` for ``endpoint``.
+    - ``RunnerCommandTimeoutError`` → error ``<log_prefix>_timeout``, then
+      504 ``{"error": "runner_timeout", "endpoint", "request_id"}``.
+
+    A runner-reported ``error`` in the response is NOT mapped here: each
+    caller owns that shape (500, ``found=False``, a soft fallback, ...).
+
+    Args:
+        log: the caller's structlog logger, so the events keep the
+            caller's logger name. Defaults to this module's logger.
+        timeout_log_fields: extra keyword fields for the timeout event,
+            for a caller whose event already carried them.
+    """
+    log = log if log is not None else logger
+    try:
+        raw_response: dict[str, Any] = await manager.relay.dispatch_and_wait(
+            str(runner.id),
+            cmd,
+            request_id=str(request_id),
+            timeout_s=timeout_s,
+        )
+    except RunnerNotConnectedError:
+        log.warning(
+            f"{log_prefix}_runner_disconnected_mid_dispatch",
+            runner_id=str(runner.id),
+            request_id=str(request_id),
+        )
+        raise device_bridge_503_no_device(endpoint)
+    except RunnerCommandTimeoutError:
+        log.error(
+            f"{log_prefix}_timeout",
+            runner_id=str(runner.id),
+            request_id=str(request_id),
+            **dict(timeout_log_fields or {}),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={
+                "error": "runner_timeout",
+                "endpoint": endpoint,
+                "request_id": str(request_id),
+            },
+        )
+    return raw_response
 
 
 __all__ = [
     "pick_active_device_for_user",
     "device_bridge_503_no_device",
-    # Legacy
-    "pick_active_runner_for_user",
-    "runner_bridge_503_no_runner",
+    "get_owned_runner_or_404",
+    "resolve_runner_for_request",
+    "dispatch_or_http_error",
 ]
