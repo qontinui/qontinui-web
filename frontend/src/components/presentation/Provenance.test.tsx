@@ -6,6 +6,8 @@
 
 import type { ReactNode } from "react";
 import { act, render, screen } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UNKNOWN_AMBER } from "@/components/console/statusRow";
 import { FixedPresentationMode } from "./PresentationModeProvider";
@@ -91,11 +93,60 @@ describe("Provenance", () => {
   it("keeps the age advancing on the shared clock", () => {
     vi.useFakeTimers({ now: NOW });
     presenting(<Provenance source="coord" asOf={NOW.toISOString()} />);
-    expect(chip()).toHaveTextContent("as of 0s ago");
+    expect(chip()).toHaveTextContent("as of under a minute ago");
     act(() => {
       vi.advanceTimersByTime(4 * PRESENTATION_CLOCK_TICK_MS);
     });
     expect(chip()).toHaveTextContent("as of 1m ago");
+  });
+
+  it("never states a seconds count the 15-second tick would leave behind", () => {
+    vi.useFakeTimers({ now: NOW });
+    presenting(
+      <Provenance
+        source="coord"
+        asOf={new Date(NOW.getTime() - 59_000).toISOString()}
+      />
+    );
+    expect(chip()).toHaveTextContent("as of under a minute ago");
+    expect(chip()?.textContent).not.toMatch(/\d+s ago/);
+  });
+
+  it("states the instant on the server, and hydrates without a mismatch", async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+    const ui = (
+      <FixedPresentationMode presenting>
+        <Provenance
+          source="coord"
+          asOf={new Date(NOW.getTime() - 3 * 60_000).toISOString()}
+        />
+      </FixedPresentationMode>
+    );
+    const html = renderToString(ui);
+    // UTC, to the minute: the same text on any server and in any browser.
+    // (`<!-- -->` is React's separator between adjacent text nodes.)
+    const text = html.replace(/<!-- -->/g, "");
+    expect(text).toContain("as of 2026-10-23 11:57 UTC");
+    expect(text).toContain(
+      'title="Source: coord. As of 2026-10-23 11:57 UTC."'
+    );
+    expect(text).not.toContain("ago");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = html;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, ui);
+    });
+    expect(errors).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-provenance]")).toHaveTextContent(
+      "as of 3m ago"
+    );
+    errors.mockRestore();
+    act(() => root?.unmount());
+    container.remove();
   });
 
   it("names the absolute time in its title", () => {

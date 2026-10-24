@@ -11,9 +11,11 @@
  *
  * Pass EVERY identifier the surface holds (device id, hostname, display name):
  * that is what links a panel that knows a device id to one that knows the
- * hostname. The alias hook reads the registry through `useSyncExternalStore`
- * with a generic server snapshot, so a server render never touches module
- * state and the hydration render never disagrees with the HTML.
+ * hostname. Both hooks consult the registry only once the client renders: on
+ * a server render and during hydration they return {@link SERVER_MACHINE_ALIAS}
+ * (through `useSyncExternalStore`'s server snapshot), so a server render never
+ * assigns a letter in module state that every request and tenant of the
+ * process would share, and the hydration render never disagrees with the HTML.
  */
 
 import { useCallback, useSyncExternalStore } from "react";
@@ -28,6 +30,15 @@ export const UNKNOWN_MACHINE_NAME = "unknown machine";
 
 /** Assigned aliases never change, so there is nothing to subscribe to. */
 const subscribeNever = () => () => {};
+
+/** `false` on a server render and during hydration; `true` once on the client. */
+function useOnTheClient(): boolean {
+  return useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false
+  );
+}
 
 function operatorName(
   identity: MachineIdentity,
@@ -71,12 +82,15 @@ export function useMachineAliaser(): (
   label?: string | null
 ) => string {
   const { presenting } = usePresentationMode();
+  const onTheClient = useOnTheClient();
   return useCallback(
     (identity: MachineIdentity, label?: string | null) =>
-      presenting
-        ? sessionMachineAliases.aliasFor(identity)
-        : operatorName(identity, label),
-    [presenting]
+      !presenting
+        ? operatorName(identity, label)
+        : onTheClient
+          ? sessionMachineAliases.aliasFor(identity)
+          : SERVER_MACHINE_ALIAS,
+    [presenting, onTheClient]
   );
 }
 

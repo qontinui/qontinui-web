@@ -8,7 +8,20 @@
 import type { ReactNode, Ref } from "react";
 import { describe, expect, it } from "vitest";
 import { useUIComponent, useUIElement } from "@qontinui/ui-bridge/react";
-import { FilterTabs, RecordRow, RefreshButton } from "@/components/console";
+import {
+  FilterChips,
+  FilterTabs,
+  NAVIGATION_ONLY_PROPS,
+  RecordRow,
+  RefreshButton,
+} from "@/components/console";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Caption,
   CostFigure,
@@ -94,6 +107,16 @@ function SafeSurface() {
         onRefresh={() => {}}
         label="Refresh machines"
         title="Re-reads coord"
+      />
+      <FilterChips
+        label="kind:"
+        options={[
+          { value: "red", label: "red", count: 2 },
+          { value: "stalled", label: "stalled", count: 0 },
+        ]}
+        selected={["red"]}
+        onToggle={() => {}}
+        onClear={() => {}}
       />
       <RecordRow
         identity="A"
@@ -220,6 +243,37 @@ describe("(a) no enabled control except navigation-only ones", () => {
         </div>
       ),
       "enabled-control"
+    );
+  });
+
+  it("fails on the UI kit's Select — a combobox's list is a choice that can write", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <Select value="supervised" onValueChange={() => {}}>
+          <SelectTrigger aria-label="Autonomy level">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="supervised">supervised</SelectItem>
+          </SelectContent>
+        </Select>
+      ),
+      "enabled-control"
+    );
+  });
+
+  it("passes a view-only Select whose trigger claims navigation-only", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <Select value="24h" onValueChange={() => {}}>
+          <SelectTrigger aria-label="Window" {...NAVIGATION_ONLY_PROPS}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="24h">last 24 hours</SelectItem>
+          </SelectContent>
+        </Select>
+      )
     );
   });
 
@@ -372,6 +426,70 @@ describe("(c) no cost", () => {
     );
     expectPresentationSafe(
       renderInPresentationMode(<p>12 machines · 40% busy</p>)
+    );
+  });
+});
+
+describe("(e) no identity", () => {
+  it("fails on an email address — personal data", () => {
+    expectOnly(
+      renderInPresentationMode(<p>Signed in as presenter@example.test</p>),
+      "identifier"
+    );
+  });
+
+  it("fails on a UUID, in text or in a tooltip", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <p>device 0b9d6a54-0000-4000-8000-0000000000aa</p>
+      ),
+      "identifier"
+    );
+    expectOnly(
+      renderInPresentationMode(
+        <span title="Claimed by device:0b9d6a54-0000-4000-8000-0000000000aa">
+          claimed
+        </span>
+      ),
+      "identifier"
+    );
+  });
+
+  it("fails on a name the test forbids, ignoring case, in text or attributes", () => {
+    const forbidden = ["build-host-1", "Partner Portal"];
+    const first = renderInPresentationMode(<p>Runner: BUILD-HOST-1</p>);
+    expect(
+      findPresentationViolations(first, { forbidden }).map((v) => v.kind)
+    ).toEqual(["foreign-identity"]);
+    first.unmount();
+    expect(
+      findPresentationViolations(
+        renderInPresentationMode(<span aria-label="partner portal">x</span>),
+        { forbidden }
+      ).map((v) => v.kind)
+    ).toEqual(["foreign-identity"]);
+  });
+
+  it("fails on a forbidden name split across elements", () => {
+    const found = findPresentationViolations(
+      renderInPresentationMode(
+        <p>
+          <span>build-</span>
+          <span>host-1</span>
+        </p>
+      ),
+      { forbidden: ["build-host-1"] }
+    );
+    expect(found.map((v) => v.kind)).toEqual(["foreign-identity"]);
+    expect(found[0]?.detail).toContain("across adjacent elements");
+  });
+
+  it("passes the alias the lens renders in the name's place", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <MachineName identity={{ hostname: "build-host-1" }} />
+      ),
+      { forbidden: ["build-host-1"] }
     );
   });
 });

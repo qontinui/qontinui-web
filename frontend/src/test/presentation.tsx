@@ -3,13 +3,19 @@
  * assert it is safe to show an outsider (plan
  * `2026-10-23-console-presentation-spaces` D3).
  *
- * Every lens page carries a presentation-mode render test built on this:
+ * A lens page is shown in presentation mode only once it is registered as
+ * presentation-ready, and the registration names the page test that proves
+ * it — a presentation-mode render built on this helper
+ * (`components/presentation/presentationReadiness.ts`):
  *
  *     const view = renderInPresentationMode(<DevOpsPage />, {
  *       scope: { status: "ready", scope: { firstPartyOwners: ["acme"], confidentialTerms: [] } },
  *     });
  *     await screen.findByTestId("coord-devops-health-strip");
- *     expectPresentationSafe(view, { captions: ["dev-ops.page"] });
+ *     expectPresentationSafe(view, {
+ *       captions: ["dev-ops.page"],
+ *       forbidden: ["build-host-1", "0b9d6a54"], // the fixture's real names
+ *     });
  *
  * `expectPresentationSafe` fails, listing every offender, on:
  *
@@ -17,10 +23,11 @@
  *   `[contenteditable]` or ARIA widget that is not disabled and is not
  *   navigation-only. Navigation-only means: carries `NAVIGATION_ONLY_PROPS`
  *   (`data-presentation-nav`), or is a link (`a[href]`, `role="link"`), a tab
- *   (`role="tab"`), or a pure disclosure (`aria-expanded` with no
- *   `aria-haspopup` — opening a menu or a dialog is NOT a pure disclosure,
- *   because what it opens can write). Hidden content is scanned too: a control
- *   one click away is still in front of the audience.
+ *   (`role="tab"`), or a pure disclosure — a BUTTON with `aria-expanded` and
+ *   no `aria-haspopup`. Opening a menu or a dialog is not a pure disclosure,
+ *   because what it opens can write; neither is a `combobox` (the UI kit's
+ *   Select trigger), whose list is a choice that can write. Hidden content is
+ *   scanned too: a control one click away is still in front of the audience.
  * - **(b) a write registration** — a mounted UI Bridge component action, or a
  *   connected element's custom action, whose declared `effect` is `write` or
  *   `destructive`, or that declares NO effect: unclassified is not safe (D3.2:
@@ -29,6 +36,12 @@
  *   equivalent" label, or any currency figure (`$12`, `€0.40`, `3 USD`) in
  *   text or in a `title` / `aria-label` / `alt` / `placeholder` / input value.
  * - **(d) a missing caption** — each key in `options.captions` must render.
+ * - **(e) an identity** — an email address (personal data) or a UUID (an
+ *   internal identifier) in text or in a `title` / `aria-label` / `alt` /
+ *   `placeholder` / input value, always; and any of `options.forbidden` — the
+ *   fixture's hostnames, device ids, other parties' names — anywhere, matched
+ *   ignoring case. A page test passes the real names its fixture holds, so the
+ *   check sees exactly what the lens was meant to hide (D3.3).
  *
  * ## How (b) observes the registry
  *
@@ -123,7 +136,9 @@ export type PresentationViolationKind =
   | "cost-figure"
   | "cost-label"
   | "currency-figure"
-  | "missing-caption";
+  | "missing-caption"
+  | "identifier"
+  | "foreign-identity";
 
 export interface PresentationViolation {
   readonly kind: PresentationViolationKind;
@@ -133,6 +148,12 @@ export interface PresentationViolation {
 export interface PresentationSafetyOptions {
   /** Caption keys that must render (`data-presentation-caption`). */
   readonly captions?: readonly CaptionKey[];
+  /**
+   * Strings the render must not show anywhere — the fixture's hostnames,
+   * device ids, other parties' names. Matched ignoring case, in text and in
+   * the text attributes.
+   */
+  readonly forbidden?: readonly string[];
 }
 
 interface BridgeModule {
@@ -315,7 +336,10 @@ function controlAllowance(el: Element): string | null {
   const popup = el.getAttribute("aria-haspopup");
   if (
     el.hasAttribute("aria-expanded") &&
-    (popup === null || popup === "false")
+    (popup === null || popup === "false") &&
+    // A combobox (a Radix Select trigger: `aria-expanded`, no
+    // `aria-haspopup`) opens a list whose choice can write.
+    (role === null || role === "button")
   ) {
     return "disclosure";
   }
@@ -502,6 +526,63 @@ function captionViolations(
 }
 
 // ---------------------------------------------------------------------------
+// (e) identities
+// ---------------------------------------------------------------------------
+
+/** An email address — personal data an evaluator is never shown. */
+const EMAIL =
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
+/** A UUID — an internal identifier (device, session, tenant, agent ids). */
+const UUID =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+
+function identityViolations(
+  root: Element,
+  forbidden: readonly string[]
+): PresentationViolation[] {
+  const out: PresentationViolation[] = [];
+  const needles = forbidden
+    .map((f) => f.trim())
+    .filter(Boolean)
+    .map((f) => ({ f, lower: f.toLowerCase() }));
+  const found = new Set<string>();
+  for (const { text, owner } of textNodes(root)) {
+    const where = describeElement(owner);
+    if (EMAIL.test(text)) {
+      out.push({
+        kind: "identifier",
+        detail: `${where} shows an email address — personal data`,
+      });
+    }
+    if (UUID.test(text)) {
+      out.push({
+        kind: "identifier",
+        detail: `${where} shows an internal identifier (a UUID)`,
+      });
+    }
+    const lower = text.toLowerCase();
+    for (const { f, lower: needle } of needles) {
+      if (lower.includes(needle)) {
+        found.add(needle);
+        out.push({ kind: "foreign-identity", detail: `${where} shows "${f}"` });
+      }
+    }
+  }
+  // A name split across elements is in no single text node, but it is on the
+  // screen.
+  const whole = (root.textContent ?? "").toLowerCase();
+  for (const { f, lower: needle } of needles) {
+    if (!found.has(needle) && whole.includes(needle)) {
+      out.push({
+        kind: "foreign-identity",
+        detail: `"${f}" is rendered across adjacent elements`,
+      });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 
 /** Every way the render is not safe to show; empty when it is. */
 export function findPresentationViolations(
@@ -514,6 +595,7 @@ export function findPresentationViolations(
     ...registrationViolations(view.uiBridge),
     ...costViolations(root),
     ...captionViolations(root, options.captions ?? []),
+    ...identityViolations(root, options.forbidden ?? []),
   ];
 }
 

@@ -29,10 +29,7 @@ export interface PresentationShellProps {
 export function PresentationShell({ children, store }: PresentationShellProps) {
   const pathname = usePathname() ?? "";
   return (
-    <PresentationModeProvider
-      enabled={isLensTreePath(pathname)}
-      store={store}
-    >
+    <PresentationModeProvider enabled={isLensTreePath(pathname)} store={store}>
       {children}
     </PresentationModeProvider>
   );

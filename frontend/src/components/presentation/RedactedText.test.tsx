@@ -6,8 +6,10 @@
  */
 
 import type { ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PresentationScopeProvider,
   type PresentationScopeState,
@@ -183,5 +185,49 @@ describe("useRedactor", () => {
     const { container } = render(inLens(true, READY, <Labels items={items} />));
     expect(screen.getByText("Ship the lens")).toBeInTheDocument();
     expect(container.innerHTML).not.toContain("Portal login redesign");
+  });
+});
+
+describe("RedactedText — server and hydration renders", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const NOW = new Date("2026-10-23T12:00:00Z");
+  const ui = inLens(
+    true,
+    READY,
+    <RedactedText
+      text={FOREIGN_TITLE}
+      repo="client-co/storefront"
+      descriptor={{
+        ...DESCRIPTOR,
+        at: new Date(NOW.getTime() - 3 * 60_000).toISOString(),
+      }}
+      data-testid="title"
+    />
+  );
+
+  it("states the descriptor's instant on the server, and hydrates without a mismatch", async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+    const html = renderToString(ui).replace(/<!-- -->/g, "");
+    expect(html).toContain("Plan · onboarding · draft · 2026-10-23 11:57 UTC");
+    expect(html).not.toContain(FOREIGN_TITLE);
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = html;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, ui);
+    });
+    expect(errors).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="title"]')).toHaveTextContent(
+      "Plan · onboarding · draft · 3m ago"
+    );
+    errors.mockRestore();
+    act(() => root?.unmount());
+    container.remove();
   });
 });

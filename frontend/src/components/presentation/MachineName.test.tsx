@@ -5,9 +5,10 @@
  * panel — and no hostname anywhere in a presentation-mode DOM.
  */
 
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionMachineAliases } from "./machineAliases";
 import {
   MachineName,
@@ -167,5 +168,48 @@ describe("useMachineAliaser", () => {
       "Machine A",
       "Machine B",
     ]);
+  });
+
+  const MACHINES = [{ hostname: "build-host-1" }, { hostname: "laptop-7" }];
+  const presentingOptions = (
+    <FixedPresentationMode presenting>
+      <Options machines={MACHINES} />
+    </FixedPresentationMode>
+  );
+
+  it("names every machine generically on the server, assigning no letter", () => {
+    const html = renderToString(presentingOptions);
+    expect(
+      html.match(new RegExp(`>${SERVER_MACHINE_ALIAS}<`, "g"))
+    ).toHaveLength(2);
+    expect(html).not.toContain("Machine A");
+    expect(html).not.toContain("build-host-1");
+    // The process-wide registry was untouched: the first client sight is A.
+    render(
+      <FixedPresentationMode presenting>
+        <MachineName identity={LAPTOP} data-testid="first" />
+      </FixedPresentationMode>
+    );
+    expect(screen.getByTestId("first")).toHaveTextContent("Machine A");
+  });
+
+  it("hydrates the server HTML without a mismatch, then aliases on the client", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = renderToString(presentingOptions);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, presentingOptions);
+    });
+
+    expect(errors).not.toHaveBeenCalled();
+    expect(
+      [...container.querySelectorAll("option")].map((o) => o.textContent)
+    ).toEqual(["Machine A", "Machine B"]);
+    errors.mockRestore();
+    act(() => root?.unmount());
+    container.remove();
   });
 });
