@@ -83,6 +83,26 @@ export interface FlowVerdictPass {
   histogram: Record<string, number>;
 }
 
+/**
+ * One runner's pass counts in the window. `unchanged` is decided per
+ * `(device_id, runner_port)`, so whether an empty unchanged list can be
+ * trusted is a per-runner question — never one a tenant-wide total answers.
+ */
+export interface FlowRunnerPasses {
+  /** `null` for a pass written by a non-device token. */
+  device_id: string | null;
+  runner_port: number;
+  passes: number;
+  full_passes: number;
+  latest_full_pass_at: string | null;
+}
+
+/** The thresholds coord actually applied to this answer. */
+export interface FlowParams {
+  unchanged_min_passes: number;
+  nudge_window_passes: number;
+}
+
 /** coord's `GET /coord/overlord/flow` answer (contract §2). */
 export interface OverlordFlowResponse {
   ok: true;
@@ -97,6 +117,10 @@ export interface OverlordFlowResponse {
   unknown_share: FlowUnknownShare[];
   /** Oldest first. */
   verdict_series: FlowVerdictPass[];
+  /** Per-runner pass counts; absent on a coord that predates the field. */
+  full_passes_by_runner?: FlowRunnerPasses[];
+  /** The thresholds applied; absent on a coord that predates the field. */
+  params?: FlowParams;
 }
 
 /**
