@@ -205,26 +205,29 @@ describe("CoordPlanDetailPage — Delivery KPIs", () => {
   });
 
   it("never renders a figure from aggregates, whatever they hold", async () => {
-    const body = payload([unit(SLUG)]);
-    // Sentinels no unit figure produces. Checked as digit runs, so the common
-    // ways a tile would format a leak are caught ("$777.78", "777,777,777",
-    // "31.4%", "0.314", "987,654,321"); a figure scaled or rounded past these
-    // runs (an integer percent, "987.7M") is not.
-    body.aggregates.cost_per_shipped_task_microusd_median = kpi(777_777_777);
-    body.aggregates.lead_time_seconds_median = kpi(987_654_321);
-    body.aggregates.land_rate = kpi(0.31415);
-    route(body);
-    render(<CoordPlanDetailPage />);
-    await screen.findByTestId("coord-plan-kpis-block");
-    // The page prints the wall-clock read time ("Read 2026-03-14 03:14Z"), whose
-    // digits can contain any short run; drop timestamps before looking.
-    const text = (document.body.textContent ?? "").replace(
-      /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z?/g,
-      ""
-    );
-    const digits = text.replace(/[^0-9]/g, "");
-    for (const run of ["777", "987654", "314"]) {
-      expect(digits).not.toContain(run);
+    // The page prints the read time and a relative "authored Nd ago", both from
+    // the wall clock, and their digits can contain any short run on some date.
+    // Freeze Date (only) so the digit check below sees the same text every day.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-24T12:01:00Z"));
+    try {
+      const body = payload([unit(SLUG)]);
+      // Sentinels no unit figure produces. Checked as digit runs, so the common
+      // ways a tile would format a leak are caught ("$777.78", "777,777,777",
+      // "31.4%", "0.314", "987,654,321"); a figure scaled or rounded past these
+      // runs (an integer percent, "987.7M") is not.
+      body.aggregates.cost_per_shipped_task_microusd_median = kpi(777_777_777);
+      body.aggregates.lead_time_seconds_median = kpi(987_654_321);
+      body.aggregates.land_rate = kpi(0.31415);
+      route(body);
+      render(<CoordPlanDetailPage />);
+      await screen.findByTestId("coord-plan-kpis-block");
+      const digits = (document.body.textContent ?? "").replace(/[^0-9]/g, "");
+      for (const run of ["777", "987654", "314"]) {
+        expect(digits).not.toContain(run);
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
