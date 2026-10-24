@@ -132,8 +132,10 @@ pass, one row per terminal screened in it.
 ``coord.overlord_pass_rows`` — one row per terminal per pass
 ============================================================
 
-``pass_id UUID NOT NULL REFERENCES coord.overlord_passes ON DELETE CASCADE``
-    The pass the row belongs to. Rows never outlive their pass.
+``pass_id UUID NOT NULL``
+    The pass the row belongs to. ``FOREIGN KEY (pass_id, tenant_id) REFERENCES
+    coord.overlord_passes (pass_id, tenant_id) ON DELETE CASCADE``: rows never
+    outlive their pass, and a row can only carry its own pass's tenant.
 
 ``terminal_id TEXT NOT NULL``
     The runner terminal id. ``PRIMARY KEY (pass_id, terminal_id)``: a pass
@@ -142,9 +144,10 @@ pass, one row per terminal screened in it.
 
 ``tenant_id UUID NOT NULL``
     The same tenant as the pass, copied by coord in the same INSERT
-    transaction. Same-tenant is coord's write-boundary invariant (a row is only
-    ever written alongside its own pass), so it is not re-proved here; it is
-    denormalised so every read can be tenant-first without a join.
+    transaction, and ENFORCED here by the composite foreign key above (target:
+    ``uq_overlord_passes_pass_tenant``), so a coord bug can never file a row
+    under another tenant. Denormalised so every read can be tenant-first without
+    a join.
 
 ``observed_at TIMESTAMPTZ NOT NULL``
     When this terminal was screened. Triage defaults it to the pass's
@@ -294,6 +297,8 @@ def upgrade() -> None:
             verdict_histogram  JSONB NOT NULL DEFAULT '{}'::jsonb,
             overlord_versions  JSONB NOT NULL DEFAULT '{}'::jsonb,
             row_count          INTEGER NOT NULL,
+            -- The target of the rows table's (pass_id, tenant_id) foreign key.
+            CONSTRAINT uq_overlord_passes_pass_tenant UNIQUE (pass_id, tenant_id),
             CONSTRAINT ck_overlord_passes_runner_port
                 CHECK (runner_port BETWEEN 1 AND 65535),
             CONSTRAINT ck_overlord_passes_scope
@@ -302,7 +307,8 @@ def upgrade() -> None:
                 CHECK (mode IN ('report', 'act')),
             CONSTRAINT ck_overlord_passes_skipped_steps
                 CHECK (cardinality(skipped_steps) = 0
-                       OR (array_to_string(skipped_steps, ',', '')
+                       OR (array_ndims(skipped_steps) = 1
+                           AND array_to_string(skipped_steps, ',', '')
                                ~ '^[a-z][a-z_]*(,[a-z][a-z_]*)*$'
                            AND cardinality(regexp_split_to_array(
                                    array_to_string(skipped_steps, ',', ''), ','))
@@ -333,8 +339,7 @@ def upgrade() -> None:
     op.execute(
         r"""
         CREATE TABLE IF NOT EXISTS coord.overlord_pass_rows (
-            pass_id               UUID NOT NULL
-                REFERENCES coord.overlord_passes (pass_id) ON DELETE CASCADE,
+            pass_id               UUID NOT NULL,
             terminal_id           TEXT NOT NULL,
             tenant_id             UUID NOT NULL,
             observed_at           TIMESTAMPTZ NOT NULL,
@@ -351,6 +356,12 @@ def upgrade() -> None:
             action_outcome        TEXT NULL,
             detail                JSONB NOT NULL DEFAULT '{}'::jsonb,
             CONSTRAINT pk_overlord_pass_rows PRIMARY KEY (pass_id, terminal_id),
+            -- The row's tenant is its pass's tenant, enforced by the schema
+            -- rather than only by coord's write boundary.
+            CONSTRAINT fk_overlord_pass_rows_pass
+                FOREIGN KEY (pass_id, tenant_id)
+                REFERENCES coord.overlord_passes (pass_id, tenant_id)
+                ON DELETE CASCADE,
             CONSTRAINT ck_overlord_pass_rows_screen_verdict
                 CHECK (screen_verdict IS NULL
                        OR screen_verdict ~ '^[A-Z][A-Z-]*$'),
@@ -358,7 +369,8 @@ def upgrade() -> None:
                 CHECK (verdict ~ '^[A-Z][A-Z-]*$'),
             CONSTRAINT ck_overlord_pass_rows_reason_codes
                 CHECK (cardinality(reason_codes) = 0
-                       OR (array_to_string(reason_codes, ',', '')
+                       OR (array_ndims(reason_codes) = 1
+                           AND array_to_string(reason_codes, ',', '')
                                ~ '^[a-z][a-z0-9_.]*(,[a-z][a-z0-9_.]*)*$'
                            AND cardinality(regexp_split_to_array(
                                    array_to_string(reason_codes, ',', ''), ','))
