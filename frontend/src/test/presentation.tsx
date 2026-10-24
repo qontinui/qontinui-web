@@ -82,6 +82,16 @@
  * scope (default UNKNOWN, as production has until a scope provider says
  * otherwise: every `RedactedText` withholds). Supply the caller's own
  * providers through `wrapper`, as with RTL's `render`.
+ *
+ * ## What a check records for readiness
+ *
+ * In a test file that proves a presentation-ready route, every run of
+ * `findPresentationViolations` (and so of `expectPresentationSafe`) also
+ * records on the running test what it saw — whether the route's own page
+ * component was mounted in the view, under a presenting lens; how many
+ * violations it found; whether (b) read the real provider's registry
+ * (`readinessRecorder.ts`). The run, not this file, then decides whether the
+ * route is proven (`readinessEvidence.ts`). Elsewhere a check records nothing.
  */
 
 import type { ComponentType, ReactElement, ReactNode } from "react";

@@ -29,19 +29,22 @@
  * **To present a page, register it here IN THE SAME CHANGE as the page test
  * that proves it**: a presentation-mode render of the page that passes
  * `expectPresentationSafe` (`src/test/presentation.tsx`). `provenBy` names
- * that test file, and `presentationReadiness.test.ts` fails unless it proves
- * the route (`src/test/readinessProof.ts`): it asserts the helper where a
- * failure fails a test that runs, every time it runs — on the unconditional
- * path of the test's body (no `if`, `?:`, `&&`, loop, early `return`,
- * swallowing `catch`, or callback such as `expect(() => …)` or a timer
- * between them), in a test that no modifier, option, context `skip`, empty
- * `.each` table or registration condition can stop — over a render that
- * always evaluates this route's own page module, imported and not mocked, with
- * the page check itself not mocked. So a route cannot be declared ready on a
- * promise, nor on a proof that never ran, nor on one that runs only in some
- * builds. Over-withholding costs a placeholder instead
- * of a page, which D3 accepts; a page shown before it is safe costs a write
- * control, a hostname or a client's name in front of an evaluator.
+ * that test file. What makes it a proof is read from the RUN, not from the
+ * test's source (`src/test/readinessEvidence.ts`): a run that executes
+ * `presentationReadiness.test.ts` — `npm run test`, so CI — fails unless that
+ * same run also ran the proof and, in it, a test that FINISHED passed (so not
+ * skipped at run time, from wherever, nor failed, nor concurrent) ran the
+ * page check over a view in which this route's page module's own default
+ * export was mounted, under a presenting lens, the check finding nothing and
+ * seeing the real UI Bridge provider's registry. So a route cannot be declared
+ * ready on a promise, on a proof that did not run, or on one that ran over
+ * something other than the page. A run that filters the readiness test out
+ * claims nothing either way. Out of reach: a proof that writes that evidence
+ * itself, or mocks or edits the checker's own modules, the reporter, the
+ * setup file or the vitest config; and the state the proof checks the page
+ * in, which is the proof's choice. Over-withholding costs a placeholder
+ * instead of a page, which D3 accepts; a page shown before it is safe costs a
+ * write control, a hostname or a client's name in front of an evaluator.
  */
 
 /** A lens page that renders in presentation mode, and the test proving it may. */
