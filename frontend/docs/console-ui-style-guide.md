@@ -1888,8 +1888,10 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   surface caption and "Shown in the operator view only" instead — over-withholding
   costs a placeholder, a page shown before it is safe costs a write control in
   front of a client. Register a page **in the same PR** as its page test (below);
-  the registry's own test fails an entry whose test is missing, never runs the
-  helper, or never imports that route's own page module. The console's landing
+  the registry's own test fails an entry whose test is missing, or does not run
+  the helper in a test that runs (not skipped, todo, conditional or expected to
+  fail, nor in a function nobody calls) over a render of that route's own page
+  module, imported and not mocked (`src/test/readinessProof.ts`). The console's landing
   redirect (`/admin/coord`, one sentence) is registered from the start: a
   withheld page never mounts, so it would never redirect.
 

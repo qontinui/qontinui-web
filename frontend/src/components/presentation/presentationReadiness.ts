@@ -29,11 +29,14 @@
  * **To present a page, register it here IN THE SAME CHANGE as the page test
  * that proves it**: a presentation-mode render of the page that passes
  * `expectPresentationSafe` (`src/test/presentation.tsx`). `provenBy` names
- * that test file, and `presentationReadiness.test.ts` fails when the file is
- * missing or never calls the helper — so a route cannot be declared ready on
- * a promise. Over-withholding costs a placeholder instead of a page, which D3
- * accepts; a page shown before it is safe costs a write control, a hostname
- * or a client's name in front of an evaluator.
+ * that test file, and `presentationReadiness.test.ts` fails unless it proves
+ * the route (`src/test/readinessProof.ts`): it asserts the helper, in a test
+ * that runs — not skipped, todo, conditional or expected to fail, nor in a
+ * function nobody calls — over a render of this route's own page module,
+ * imported and not mocked. So a route cannot be declared ready on a promise,
+ * nor on a proof that never ran. Over-withholding costs a placeholder instead
+ * of a page, which D3 accepts; a page shown before it is safe costs a write
+ * control, a hostname or a client's name in front of an evaluator.
  */
 
 /** A lens page that renders in presentation mode, and the test proving it may. */

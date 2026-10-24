@@ -10,21 +10,23 @@
  *   around that tree in operator mode (`PresentationShell` keys on it); an
  *   entry with no lens layout puts the shell in a mode no page shares.
  * - every `PRESENTATION_READY_ROUTES` entry must name a page test that
- *   ASSERTS the helper — `expectPresentationSafe(…)`, or
+ *   PROVES it (`src/test/readinessProof.ts` says how it is read): it asserts
+ *   the helper — `expectPresentationSafe(…)`, or
  *   `expect(findPresentationViolations(…)).toEqual([])`; a finder whose
- *   answer is discarded asserts nothing — AND imports that route's own page
- *   module without mocking it. A test that renders some other page, one panel
- *   of it, or a stand-in `vi.mock` put in the page's place proves nothing
- *   about the page the entry un-withholds. The file is read as TypeScript, so
- *   a call in a comment or a string is no call. Phase 1 registers only the
- *   console's landing redirect; the check is proven able to fail on fixtures
- *   below.
+ *   answer is discarded asserts nothing — in a test that RUNS (not skipped,
+ *   todo, conditional or expected to fail, nor in a function nobody calls),
+ *   over a render whose JSX names the route's own page module, imported and
+ *   not mocked. A test that renders some other page, one panel of it while
+ *   merely importing the page, or a stand-in `vi.mock` put in the page's
+ *   place, proves nothing about the page the entry un-withholds; nor does one
+ *   that never runs. Phase 1 registers only the console's landing redirect;
+ *   the check is proven able to fail on fixtures below.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, posix, relative, sep } from "node:path";
-import ts from "typescript";
+import { dirname, join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readyRouteProblems } from "@/test/readinessProof";
 import {
   LENS_TREES,
   PRESENTATION_READY_ROUTES,
@@ -75,210 +77,9 @@ const PAGE_MODULES: ReadonlyMap<string, string> = new Map(
   ])
 );
 
-/** What a proof file does, read from its syntax tree (comments and strings are not code). */
-interface ProofFacts {
-  /** The modules it imports for their values — statically or by `import()`. */
-  readonly imports: readonly string[];
-  /** The modules it puts a stand-in in place of (`vi.mock`, `vi.doMock`). */
-  readonly mocked: readonly string[];
-  /** Whether it ASSERTS the helper (see {@link isHelperAssertion}). */
-  readonly assertsHelper: boolean;
-}
-
-/** `"./page"` or `import("./page")` — the module a `vi.mock` names. */
-function mockedSpecifier(arg: ts.Expression | undefined): string | null {
-  if (arg === undefined) return null;
-  if (ts.isStringLiteralLike(arg)) return arg.text;
-  if (
-    ts.isCallExpression(arg) &&
-    arg.expression.kind === ts.SyntaxKind.ImportKeyword &&
-    arg.arguments[0] !== undefined &&
-    ts.isStringLiteralLike(arg.arguments[0])
-  ) {
-    return arg.arguments[0].text;
-  }
-  return null;
-}
-
-function calls(node: ts.CallExpression, name: string): boolean {
-  return ts.isIdentifier(node.expression) && node.expression.text === name;
-}
-
-/** `x` without the parentheses around it, upward: the node its parent sees. */
-function outermost(node: ts.Node): ts.Node {
-  let current = node;
-  while (ts.isParenthesizedExpression(current.parent)) current = current.parent;
-  return current;
-}
-
-/**
- * Whether `call` runs the helper AS AN ASSERTION: `expectPresentationSafe(…)`,
- * or `findPresentationViolations(…)` — optionally `.map(describeViolation)`
- * — as the value of `expect(…)` asserted empty with `.toEqual([])`,
- * `.toStrictEqual([])` or `.toHaveLength(0)`. A finder whose answer is
- * discarded, kept in a variable, or asserted anything else asserts nothing.
- */
-function isHelperAssertion(call: ts.CallExpression): boolean {
-  if (calls(call, "expectPresentationSafe")) return true;
-  if (!calls(call, "findPresentationViolations")) return false;
-  let value: ts.Node = outermost(call);
-  const mapped = value.parent;
-  const mapper =
-    ts.isPropertyAccessExpression(mapped) &&
-    mapped.expression === value &&
-    mapped.name.text === "map" &&
-    ts.isCallExpression(mapped.parent) &&
-    mapped.parent.expression === mapped &&
-    mapped.parent.arguments.length === 1
-      ? mapped.parent.arguments[0]
-      : undefined;
-  if (
-    mapper !== undefined &&
-    ts.isIdentifier(mapper) &&
-    mapper.text === "describeViolation"
-  ) {
-    value = outermost(mapped.parent);
-  }
-  const expectCall = value.parent;
-  if (
-    !ts.isCallExpression(expectCall) ||
-    !calls(expectCall, "expect") ||
-    expectCall.arguments[0] !== value
-  ) {
-    return false;
-  }
-  const matcher = expectCall.parent;
-  if (
-    !ts.isPropertyAccessExpression(matcher) ||
-    matcher.expression !== expectCall ||
-    !ts.isCallExpression(matcher.parent) ||
-    matcher.parent.expression !== matcher
-  ) {
-    return false;
-  }
-  const args = matcher.parent.arguments;
-  const only = args.length === 1 ? args[0] : undefined;
-  switch (matcher.name.text) {
-    case "toEqual":
-    case "toStrictEqual":
-      return (
-        only !== undefined &&
-        ts.isArrayLiteralExpression(only) &&
-        only.elements.length === 0
-      );
-    case "toHaveLength":
-      return (
-        only !== undefined && ts.isNumericLiteral(only) && only.text === "0"
-      );
-    default:
-      return false;
-  }
-}
-
-function proofFacts(file: string, text: string): ProofFacts {
-  const source = ts.createSourceFile(
-    file,
-    text,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX
-  );
-  const imports: string[] = [];
-  const mocked: string[] = [];
-  let assertsHelper = false;
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isImportDeclaration(node) &&
-      ts.isStringLiteral(node.moduleSpecifier) &&
-      !node.importClause?.isTypeOnly
-    ) {
-      imports.push(node.moduleSpecifier.text);
-    }
-    if (ts.isCallExpression(node)) {
-      const callee = node.expression;
-      if (
-        callee.kind === ts.SyntaxKind.ImportKeyword &&
-        node.arguments[0] !== undefined &&
-        ts.isStringLiteralLike(node.arguments[0])
-      ) {
-        imports.push(node.arguments[0].text);
-      }
-      if (
-        ts.isPropertyAccessExpression(callee) &&
-        ts.isIdentifier(callee.expression) &&
-        callee.expression.text === "vi" &&
-        (callee.name.text === "mock" || callee.name.text === "doMock")
-      ) {
-        const target = mockedSpecifier(node.arguments[0]);
-        if (target !== null) mocked.push(target);
-      }
-      if (isHelperAssertion(node)) assertsHelper = true;
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return { imports, mocked, assertsHelper };
-}
-
-/** `specifier`, imported from the `src/`-relative `from`, as a `src/`-relative module path. */
-function resolvedModule(specifier: string, from: string): string | null {
-  const bare = specifier.replace(/\.(tsx?|jsx?)$/, "");
-  if (bare.startsWith("@/")) return posix.normalize(bare.slice(2));
-  if (bare.startsWith("./") || bare.startsWith("../")) {
-    return posix.normalize(posix.join(posix.dirname(from), bare));
-  }
-  return null;
-}
-
-/**
- * Why `entry` is not a proven ready route; empty when it is. `read` returns a
- * `src/`-relative file's text, or `null` when there is no such file; `pageOf`
- * the route's `src/`-relative page module, or `null` when there is none.
- */
-function readyRouteProblems(
-  entry: PresentationReadyRoute,
-  read: (srcRelative: string) => string | null,
-  pageOf: (route: string) => string | null = (route) =>
-    PAGE_MODULES.get(route) ?? null
-): string[] {
-  const problems: string[] = [];
-  if (!isLensTreePath(entry.route)) {
-    problems.push(
-      `${entry.route}: not under a lens tree (${LENS_TREES.join(", ")})`
-    );
-  }
-  if (!/\.test\.tsx?$/.test(entry.provenBy)) {
-    problems.push(
-      `${entry.route}: provenBy ${entry.provenBy} is not a test file`
-    );
-  }
-  const page = pageOf(entry.route);
-  if (page === null) {
-    problems.push(`${entry.route}: no page module serves this route`);
-  }
-  const source = read(entry.provenBy);
-  if (source === null) {
-    problems.push(`${entry.route}: provenBy ${entry.provenBy} does not exist`);
-    return problems;
-  }
-  const facts = proofFacts(entry.provenBy, source);
-  if (!facts.assertsHelper) {
-    problems.push(
-      `${entry.route}: ${entry.provenBy} never calls expectPresentationSafe, nor asserts findPresentationViolations empty`
-    );
-  }
-  const isPage = (specifier: string) =>
-    resolvedModule(specifier, entry.provenBy) === page;
-  if (page !== null && !facts.imports.some(isPage)) {
-    problems.push(
-      `${entry.route}: ${entry.provenBy} does not render the page — it never imports ${page}`
-    );
-  } else if (page !== null && facts.mocked.some(isPage)) {
-    problems.push(
-      `${entry.route}: ${entry.provenBy} does not render the page — it mocks ${page}, so what renders is a stand-in`
-    );
-  }
-  return problems;
+/** The route's page module, from the real tree. */
+function realPageOf(route: string): string | null {
+  return PAGE_MODULES.get(route) ?? null;
 }
 
 function readSrc(srcRelative: string): string | null {
@@ -381,7 +182,7 @@ describe("every presentation-ready route is proven", () => {
   it("names a page test that runs expectPresentationSafe, for a route inside a lens tree", () => {
     expect(
       PRESENTATION_READY_ROUTES.flatMap((entry) =>
-        readyRouteProblems(entry, readSrc)
+        readyRouteProblems(entry, readSrc, realPageOf)
       )
     ).toEqual([]);
   });
@@ -393,43 +194,168 @@ describe("every presentation-ready route is proven", () => {
 
   describe("the proof check itself can fail", () => {
     const DEVOPS_PAGE = "app/(app)/admin/coord/devops/page";
+    const PAGE = 'import DevOpsPage from "./page";\n';
+    const PANEL_IMPORT =
+      'import { HealthPanel } from "./_components/HealthPanel";\n';
+    const RENDER = "const view = renderInPresentationMode(<DevOpsPage />);";
+    const PANEL = "const view = renderInPresentationMode(<HealthPanel />);";
+    /** `body` inside a test that runs. */
+    const inTest = (body: string) =>
+      `it("is safe to show", () => {\n${body}\n});`;
     const files: Record<string, string> = {
-      "app/(app)/admin/coord/devops/page.test.tsx":
-        'import DevOpsPage from "./page";\nexpectPresentationSafe(view, {});',
-      "app/(app)/admin/coord/devops/aliased.test.tsx":
-        'import Page from "@/app/(app)/admin/coord/devops/page";\nexpect(findPresentationViolations(view)).toEqual([]);',
-      "app/(app)/admin/coord/devops/panel.test.tsx":
-        'import { HealthPanel } from "./_components/HealthPanel";\nexpectPresentationSafe(view, {});',
-      "app/(app)/admin/coord/devops/other.test.tsx":
-        'import Page from "../spawns/page";\nexpectPresentationSafe(view, {});',
-      "app/(app)/admin/coord/devops/mocked.test.tsx":
-        'vi.mock("./page");\nexpectPresentationSafe(view, {});',
-      "app/(app)/admin/coord/devops/stand-in.test.tsx":
-        'vi.mock("./page", () => ({ default: () => null }));\nimport Page from "./page";\nexpectPresentationSafe(view, {});',
-      "app/(app)/admin/coord/devops/stand-in-by-import.test.tsx":
-        'import Page from "@/app/(app)/admin/coord/devops/page";\nvi.mock(import("./page"), () => ({ default: () => null }));\nexpectPresentationSafe(view, {});',
-      "app/(app)/admin/coord/devops/discarded.test.tsx":
-        'import DevOpsPage from "./page";\nfindPresentationViolations(view);',
-      "app/(app)/admin/coord/devops/kept.test.tsx":
-        'import DevOpsPage from "./page";\nconst found = findPresentationViolations(view);\nexpect(found).toBeDefined();',
-      "app/(app)/admin/coord/devops/not-empty.test.tsx":
-        'import DevOpsPage from "./page";\nexpect(findPresentationViolations(view)).not.toEqual([]);',
-      "app/(app)/admin/coord/devops/equal-to-a-list.test.tsx":
-        'import DevOpsPage from "./page";\nexpect(findPresentationViolations(view)).toEqual(expected);',
-      "app/(app)/admin/coord/devops/in-a-string.test.tsx":
-        'import DevOpsPage from "./page";\nconst s = "expectPresentationSafe(view)";',
-      "app/(app)/admin/coord/devops/mapped.test.tsx":
-        'import DevOpsPage from "./page";\nexpect(\n  findPresentationViolations(view, { forbidden }).map(describeViolation)\n).toEqual([]);',
-      "app/(app)/admin/coord/devops/mocks-another.test.tsx":
-        'vi.mock("@/services/service-factory", () => ({}));\nimport DevOpsPage from "./page";\nexpect(findPresentationViolations(view)).toHaveLength(0);',
-      "app/(app)/admin/coord/devops/commented.test.tsx":
-        'import DevOpsPage from "./page";\n// expectPresentationSafe(view);',
-      "app/(app)/admin/coord/devops/silent.test.tsx":
-        'import DevOpsPage from "./page";\nexpect(view).toBeTruthy();',
-      // The generic helper suite runs the helper, but over no page at all.
-      "test/presentation.test.tsx": "expectPresentationSafe(view, {});",
+      // ── proofs ──────────────────────────────────────────────────────────
+      "page.test.tsx":
+        PAGE + inTest(`${RENDER}\nexpectPresentationSafe(view, {});`),
+      "aliased.test.tsx":
+        'import Page from "@/app/(app)/admin/coord/devops/page";\n' +
+        inTest(
+          "expect(findPresentationViolations(renderInPresentationMode(<Page />))).toEqual([]);"
+        ),
+      "mapped.test.tsx":
+        PAGE +
+        inTest(
+          `${RENDER}\nexpect(\n  findPresentationViolations(view, { forbidden }).map(describeViolation)\n).toEqual([]);`
+        ),
+      "mocks-another.test.tsx":
+        'vi.mock("@/services/service-factory", () => ({}));\n' +
+        PAGE +
+        'test("is safe", async () => {\n  const view = renderInPresentationMode(<Providers><DevOpsPage /></Providers>);\n  await screen.findByTestId("coord-devops");\n  expect(findPresentationViolations(view)).toHaveLength(0);\n});',
+      "in-describe.test.tsx":
+        PAGE +
+        `describe("dev ops", () => {\n  it.only("is safe", () => {\n    ${RENDER}\n    expectPresentationSafe(view);\n  });\n});`,
+      "each.test.tsx":
+        PAGE +
+        'it.each(["a", "b"])("is safe with %s", () => {\n  expectPresentationSafe(renderInPresentationMode(<DevOpsPage />));\n});',
+      "before-each.test.tsx":
+        PAGE +
+        "let view: PresentationView;\nbeforeEach(() => {\n  view = renderInPresentationMode(<DevOpsPage />);\n});\n" +
+        'it("is safe", () => {\n  expectPresentationSafe(view);\n});',
+      "render-helper.test.tsx":
+        PAGE +
+        "function renderPage() {\n  return renderInPresentationMode(<DevOpsPage />);\n}\n" +
+        inTest("const view = renderPage();\nexpectPresentationSafe(view);"),
+      "assert-helper.test.tsx":
+        PAGE +
+        "const proveSafe = () => {\n  expectPresentationSafe(renderInPresentationMode(<DevOpsPage />));\n};\n" +
+        'it("is safe", () => proveSafe());',
+      "handed.test.tsx":
+        PAGE +
+        "function proveSafe() {\n  expectPresentationSafe(renderInPresentationMode(<DevOpsPage />));\n}\n" +
+        'it("is safe", proveSafe);',
+      "waited.test.tsx":
+        PAGE +
+        'it("is safe", async () => {\n  const view = renderInPresentationMode(<DevOpsPage />);\n  await waitFor(() => expectPresentationSafe(view));\n});',
+      "loaded.test.tsx":
+        'it("is safe", async () => {\n  const { default: Page } = await import("./page");\n  expectPresentationSafe(renderInPresentationMode(<Page />));\n});',
+      "namespace.test.tsx":
+        'import * as devops from "./page";\n' +
+        inTest(
+          "expectPresentationSafe(renderInPresentationMode(<devops.default />));"
+        ),
+      // ── not proofs: the helper is not asserted ──────────────────────────
+      "silent.test.tsx": PAGE + inTest(`${RENDER}\nexpect(view).toBeTruthy();`),
+      "commented.test.tsx":
+        PAGE + inTest(`${RENDER}\n// expectPresentationSafe(view);`),
+      "discarded.test.tsx":
+        PAGE + inTest(`${RENDER}\nfindPresentationViolations(view);`),
+      "kept.test.tsx":
+        PAGE +
+        inTest(
+          `${RENDER}\nconst found = findPresentationViolations(view);\nexpect(found).toBeDefined();`
+        ),
+      "not-empty.test.tsx":
+        PAGE +
+        inTest(
+          `${RENDER}\nexpect(findPresentationViolations(view)).not.toEqual([]);`
+        ),
+      "equal-to-a-list.test.tsx":
+        PAGE +
+        inTest(
+          `${RENDER}\nexpect(findPresentationViolations(view)).toEqual(expected);`
+        ),
+      "in-a-string.test.tsx":
+        PAGE + inTest(`${RENDER}\nconst s = "expectPresentationSafe(view)";`),
+      // ── not proofs: the assertion never runs ────────────────────────────
+      "skipped.test.tsx":
+        PAGE +
+        `it.skip("is safe", () => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      "skipped-describe.test.tsx":
+        PAGE +
+        `describe.skip("dev ops", () => {\n  it("is safe", () => {\n    ${RENDER}\n    expectPresentationSafe(view);\n  });\n});`,
+      "uncalled.test.tsx":
+        PAGE +
+        "function proveSafe() {\n  expectPresentationSafe(renderInPresentationMode(<DevOpsPage />));\n}\n" +
+        'it.todo("is safe");',
+      "skip-if.test.tsx":
+        PAGE +
+        `it.skipIf(!composed)("is safe", () => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      "run-if.test.tsx":
+        PAGE +
+        `it.runIf(composed)("is safe", () => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      "xit.test.tsx":
+        PAGE +
+        `xit("is safe", () => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      "xdescribe.test.tsx":
+        PAGE +
+        `xdescribe("dev ops", () => {\n  it("is safe", () => {\n    ${RENDER}\n    expectPresentationSafe(view);\n  });\n});`,
+      "describe-skip-if.test.tsx":
+        PAGE +
+        `describe.skipIf(ci)("dev ops", () => {\n  it("is safe", () => {\n    ${RENDER}\n    expectPresentationSafe(view);\n  });\n});`,
+      "fails.test.tsx":
+        PAGE +
+        `it.fails("is safe", () => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      "module-level.test.tsx":
+        PAGE +
+        "expectPresentationSafe(renderInPresentationMode(<DevOpsPage />));",
+      "in-a-hook.test.tsx":
+        PAGE +
+        "beforeEach(() => {\n  expectPresentationSafe(renderInPresentationMode(<DevOpsPage />));\n});\n" +
+        'it("renders", () => {});',
+      // ── not proofs: the assertion runs over something else ──────────────
+      "panel.test.tsx":
+        PANEL_IMPORT + inTest(`${PANEL}\nexpectPresentationSafe(view, {});`),
+      "panel-beside-page.test.tsx":
+        PAGE + PANEL_IMPORT + inTest(`${PANEL}\nexpectPresentationSafe(view);`),
+      "page-then-panel.test.tsx":
+        PAGE +
+        PANEL_IMPORT +
+        inTest(
+          "const page = renderInPresentationMode(<DevOpsPage />);\nconst panel = renderInPresentationMode(<HealthPanel />);\nexpectPresentationSafe(panel);"
+        ),
+      "reassigned.test.tsx":
+        PAGE +
+        PANEL_IMPORT +
+        "let view: PresentationView;\nbeforeEach(() => {\n  view = renderInPresentationMode(<DevOpsPage />);\n});\n" +
+        'it("is safe", () => {\n  view = renderInPresentationMode(<HealthPanel />);\n  expectPresentationSafe(view);\n});',
+      "other.test.tsx":
+        'import Page from "../spawns/page";\n' +
+        inTest(
+          "expectPresentationSafe(renderInPresentationMode(<Page />), {});"
+        ),
+      "mocked.test.tsx":
+        'vi.mock("./page");\n' + inTest("expectPresentationSafe(view, {});"),
+      "stand-in.test.tsx":
+        'vi.mock("./page", () => ({ default: () => null }));\nimport Page from "./page";\n' +
+        inTest(
+          "expectPresentationSafe(renderInPresentationMode(<Page />), {});"
+        ),
+      "stand-in-by-import.test.tsx":
+        'import Page from "@/app/(app)/admin/coord/devops/page";\nvi.mock(import("./page"), () => ({ default: () => null }));\n' +
+        inTest(
+          "expectPresentationSafe(renderInPresentationMode(<Page />), {});"
+        ),
     };
-    const read = (f: string) => files[f] ?? null;
+    const DIR = "app/(app)/admin/coord/devops/";
+    // The generic helper suite runs the helper, but over no page at all.
+    const HELPER_SUITE = "test/presentation.test.tsx";
+    const read = (f: string) =>
+      f === HELPER_SUITE
+        ? inTest(
+            "expectPresentationSafe(renderInPresentationMode(<p>x</p>), {});"
+          )
+        : f.startsWith(DIR)
+          ? (files[f.slice(DIR.length)] ?? null)
+          : null;
     const pageOf = (route: string) =>
       route === "/admin/coord/devops" ? DEVOPS_PAGE : null;
     const devops = (provenBy: string): PresentationReadyRoute => ({
@@ -451,106 +377,180 @@ describe("every presentation-ready route is proven", () => {
         "mocks a service, not the page, and asserts the finder has none",
         "mocks-another.test.tsx",
       ],
+      ["asserts inside a describe, in an it.only", "in-describe.test.tsx"],
+      ["asserts in every row of an it.each", "each.test.tsx"],
+      [
+        "renders in a beforeEach and asserts in the test",
+        "before-each.test.tsx",
+      ],
+      ["renders through a helper of its own", "render-helper.test.tsx"],
+      ["asserts in a helper a running test calls", "assert-helper.test.tsx"],
+      ["hands its assertion to the test by name", "handed.test.tsx"],
+      ["asserts inside waitFor", "waited.test.tsx"],
+      ["loads its page with import()", "loaded.test.tsx"],
+      ["imports its page as a namespace", "namespace.test.tsx"],
     ])("passes a lens route whose test %s", (_name, file) => {
-      expect(
-        readyRouteProblems(
-          devops(`app/(app)/admin/coord/devops/${file}`),
-          read,
-          pageOf
-        )
-      ).toEqual([]);
+      expect(readyRouteProblems(devops(`${DIR}${file}`), read, pageOf)).toEqual(
+        []
+      );
     });
 
+    const NEVER_CALLS = "never calls expectPresentationSafe";
+    const NEVER_RUNS = "never runs its helper assertion";
+    const NOT_THE_PAGE = "does not render the page";
+    const OVER_SOMETHING_ELSE =
+      "no test that runs asserts the helper over a render naming";
+
     it.each<[string, PresentationReadyRoute, string]>([
-      [
-        "a missing test",
-        devops("app/(app)/admin/coord/devops/none.test.tsx"),
-        "does not exist",
-      ],
+      ["a missing test", devops(`${DIR}none.test.tsx`), "does not exist"],
       [
         "a test that never runs the helper",
-        devops("app/(app)/admin/coord/devops/silent.test.tsx"),
-        "never calls expectPresentationSafe",
+        devops(`${DIR}silent.test.tsx`),
+        NEVER_CALLS,
       ],
       [
         "a helper call that is only a comment",
-        devops("app/(app)/admin/coord/devops/commented.test.tsx"),
-        "never calls expectPresentationSafe",
+        devops(`${DIR}commented.test.tsx`),
+        NEVER_CALLS,
+      ],
+      [
+        "a finder whose answer is discarded",
+        devops(`${DIR}discarded.test.tsx`),
+        NEVER_CALLS,
+      ],
+      [
+        "a finder whose answer is kept but never asserted empty",
+        devops(`${DIR}kept.test.tsx`),
+        NEVER_CALLS,
+      ],
+      [
+        "a finder asserted NOT empty",
+        devops(`${DIR}not-empty.test.tsx`),
+        NEVER_CALLS,
+      ],
+      [
+        "a finder asserted equal to a list that may not be empty",
+        devops(`${DIR}equal-to-a-list.test.tsx`),
+        NEVER_CALLS,
+      ],
+      [
+        "a helper call that is only a string",
+        devops(`${DIR}in-a-string.test.tsx`),
+        NEVER_CALLS,
+      ],
+      [
+        "its only assertion in an it.skip",
+        devops(`${DIR}skipped.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion under a describe.skip",
+        devops(`${DIR}skipped-describe.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion in a function nobody calls, beside an it.todo",
+        devops(`${DIR}uncalled.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion in a test skipped on a condition",
+        devops(`${DIR}skip-if.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion in a test run on a condition",
+        devops(`${DIR}run-if.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion in an xit",
+        devops(`${DIR}xit.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion under an xdescribe",
+        devops(`${DIR}xdescribe.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion under a describe skipped on a condition",
+        devops(`${DIR}describe-skip-if.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion in a test expected to fail",
+        devops(`${DIR}fails.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion at module level, in no test",
+        devops(`${DIR}module-level.test.tsx`),
+        NEVER_RUNS,
+      ],
+      [
+        "its only assertion in a hook",
+        devops(`${DIR}in-a-hook.test.tsx`),
+        NEVER_RUNS,
       ],
       [
         "a test that runs the helper over one panel of the page",
-        devops("app/(app)/admin/coord/devops/panel.test.tsx"),
-        "does not render the page",
+        devops(`${DIR}panel.test.tsx`),
+        NOT_THE_PAGE,
+      ],
+      [
+        "a test that imports the page but asserts over one panel of it",
+        devops(`${DIR}panel-beside-page.test.tsx`),
+        OVER_SOMETHING_ELSE,
+      ],
+      [
+        "a test that renders the page but asserts over a panel's render",
+        devops(`${DIR}page-then-panel.test.tsx`),
+        OVER_SOMETHING_ELSE,
+      ],
+      [
+        "a test that re-assigns the page's view to a panel before asserting",
+        devops(`${DIR}reassigned.test.tsx`),
+        OVER_SOMETHING_ELSE,
       ],
       [
         "a test that renders another route's page",
-        devops("app/(app)/admin/coord/devops/other.test.tsx"),
-        "does not render the page",
+        devops(`${DIR}other.test.tsx`),
+        NOT_THE_PAGE,
       ],
       [
         "a test that only mocks the page",
-        devops("app/(app)/admin/coord/devops/mocked.test.tsx"),
-        "does not render the page",
+        devops(`${DIR}mocked.test.tsx`),
+        NOT_THE_PAGE,
       ],
       [
         "a test that imports the page and mocks it with a stand-in",
-        devops("app/(app)/admin/coord/devops/stand-in.test.tsx"),
+        devops(`${DIR}stand-in.test.tsx`),
         "it mocks app/(app)/admin/coord/devops/page",
       ],
       [
         "a test that mocks the page by import() under another spelling",
-        devops("app/(app)/admin/coord/devops/stand-in-by-import.test.tsx"),
+        devops(`${DIR}stand-in-by-import.test.tsx`),
         "it mocks app/(app)/admin/coord/devops/page",
       ],
       [
-        "a finder whose answer is discarded",
-        devops("app/(app)/admin/coord/devops/discarded.test.tsx"),
-        "never calls expectPresentationSafe",
-      ],
-      [
-        "a finder whose answer is kept but never asserted empty",
-        devops("app/(app)/admin/coord/devops/kept.test.tsx"),
-        "never calls expectPresentationSafe",
-      ],
-      [
-        "a finder asserted NOT empty",
-        devops("app/(app)/admin/coord/devops/not-empty.test.tsx"),
-        "never calls expectPresentationSafe",
-      ],
-      [
-        "a finder asserted equal to a list that may not be empty",
-        devops("app/(app)/admin/coord/devops/equal-to-a-list.test.tsx"),
-        "never calls expectPresentationSafe",
-      ],
-      [
-        "a helper call that is only a string",
-        devops("app/(app)/admin/coord/devops/in-a-string.test.tsx"),
-        "never calls expectPresentationSafe",
-      ],
-      [
         "the helper's own suite, which renders no page",
-        devops("test/presentation.test.tsx"),
-        "does not render the page",
+        devops(HELPER_SUITE),
+        NOT_THE_PAGE,
       ],
       [
         "a route outside every lens tree",
-        {
-          route: "/settings",
-          provenBy: "app/(app)/admin/coord/devops/page.test.tsx",
-        },
+        { route: "/settings", provenBy: `${DIR}page.test.tsx` },
         "not under a lens tree",
       ],
       [
         "a route no page serves",
-        {
-          route: "/admin/coord/nowhere",
-          provenBy: "app/(app)/admin/coord/devops/page.test.tsx",
-        },
+        { route: "/admin/coord/nowhere", provenBy: `${DIR}page.test.tsx` },
         "no page module serves this route",
       ],
       [
         "a proof that is not a test",
-        devops("app/(app)/admin/coord/devops/page.tsx"),
+        devops(`${DIR}page.tsx`),
         "is not a test file",
       ],
     ])("fails %s", (_name, entry, problem) => {
