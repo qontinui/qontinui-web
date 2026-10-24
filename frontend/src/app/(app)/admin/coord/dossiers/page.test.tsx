@@ -188,6 +188,27 @@ describe("CoordDossiersPage", () => {
     expect(screen.queryByTestId("coord-dossiers-load-more")).toBeNull();
   });
 
+  it("a typed search re-queries once it settles, not per keystroke", async () => {
+    httpGet.mockResolvedValue(page([dossier()]));
+    render(<CoordDossiersPage />);
+    await screen.findAllByTestId("coord-dossier-row");
+
+    await userEvent.type(screen.getByTestId("coord-dossiers-q"), "sib");
+    await waitFor(() => expect(lastQuery().get("q")).toBe("sib"));
+    expect(urls().filter((u) => /[?&]q=s(&|$)/.test(u))).toEqual([]);
+  });
+
+  it("a non-numeric recurrence bound is flagged and not sent", async () => {
+    httpGet.mockResolvedValue(page([dossier()]));
+    render(<CoordDossiersPage />);
+    await screen.findAllByTestId("coord-dossier-row");
+
+    const input = screen.getByTestId("coord-dossiers-recurrence-min");
+    await userEvent.type(input, "abc");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(urls().some((u) => u.includes("recurrence_min"))).toBe(false);
+  });
+
   it("a degraded answer reads as unknown, never as no dossiers", async () => {
     httpGet.mockResolvedValue({
       available: false,

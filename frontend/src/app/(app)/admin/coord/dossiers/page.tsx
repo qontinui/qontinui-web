@@ -104,6 +104,19 @@ const OPEN_BY_FILTER: Record<OpenFilter, boolean | null> = {
   none: false,
 };
 
+/** How long a typed filter must settle before it re-queries. */
+const DEBOUNCE_MS = 300;
+
+/** `value`, once it has held still for `ms`. The first value is immediate. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
+}
+
 /** A non-negative integer from an input, or `null` for blank or junk. */
 function intOrNull(raw: string): number | null {
   const t = raw.trim();
@@ -191,12 +204,28 @@ export default function CoordDossiersPage() {
   const [error, setError] = useState<BackendErrorReading | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const recMin = intOrNull(recurrenceMin);
-  const recMax = intOrNull(recurrenceMax);
+  // Typed filters settle for DEBOUNCE_MS before they re-query, so a word typed
+  // into the search box is one read, not one per keystroke (each read resets
+  // the walk and blanks the list).
+  const debouncedText = useDebounced(
+    [q, recurrenceMin, recurrenceMax, lastSeenSince, lastSeenUntil].join(
+      "\u0000"
+    ),
+    DEBOUNCE_MS
+  );
+  const [dq, dRecMin, dRecMax, dSince, dUntil] = debouncedText.split("\u0000");
+  const recMin = intOrNull(dRecMin ?? "");
+  const recMax = intOrNull(dRecMax ?? "");
+  // A recurrence bound that is not a whole number is NOT sent — say so on the
+  // field rather than show a list that looks filtered and is not.
+  const recMinInvalid =
+    recurrenceMin.trim() !== "" && intOrNull(recurrenceMin) === null;
+  const recMaxInvalid =
+    recurrenceMax.trim() !== "" && intOrNull(recurrenceMax) === null;
   const hasOpen = OPEN_BY_FILTER[openFilter];
-  const qTrim = q.trim();
-  const sinceTrim = lastSeenSince.trim();
-  const untilTrim = lastSeenUntil.trim();
+  const qTrim = (dq ?? "").trim();
+  const sinceTrim = (dSince ?? "").trim();
+  const untilTrim = (dUntil ?? "").trim();
   const readinessKey = readiness.join(",");
   const remediationKey = remediation.join(",");
 
@@ -443,21 +472,39 @@ export default function CoordDossiersPage() {
           data-testid="coord-dossiers-q"
         />
         <Input
-          className="h-8 w-[110px] text-xs"
           placeholder="min recurrences"
           inputMode="numeric"
           value={recurrenceMin}
           onChange={(e) => setRecurrenceMin(e.target.value)}
           aria-label="Minimum recurrences"
+          aria-invalid={recMinInvalid}
+          title={
+            recMinInvalid
+              ? "Not a whole number, so this bound is not applied"
+              : undefined
+          }
+          className={cn(
+            "h-8 w-[110px] text-xs",
+            recMinInvalid && "border-destructive"
+          )}
           data-testid="coord-dossiers-recurrence-min"
         />
         <Input
-          className="h-8 w-[110px] text-xs"
           placeholder="max recurrences"
           inputMode="numeric"
           value={recurrenceMax}
           onChange={(e) => setRecurrenceMax(e.target.value)}
           aria-label="Maximum recurrences"
+          aria-invalid={recMaxInvalid}
+          title={
+            recMaxInvalid
+              ? "Not a whole number, so this bound is not applied"
+              : undefined
+          }
+          className={cn(
+            "h-8 w-[110px] text-xs",
+            recMaxInvalid && "border-destructive"
+          )}
           data-testid="coord-dossiers-recurrence-max"
         />
         <Input

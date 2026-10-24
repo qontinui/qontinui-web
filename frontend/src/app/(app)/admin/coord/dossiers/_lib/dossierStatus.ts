@@ -238,9 +238,18 @@ export function recurrenceLabel(value: number | null | undefined): string {
  * work unit for it (a link would open a page that says "not found").
  */
 export function remediationHref(r: DossierRemediation): string | null {
-  const plan = (r.plan ?? "").trim();
-  if (plan === "" || !r.live_status) return null;
-  return `/admin/coord/work-units/${encodeURIComponent(plan)}`;
+  const stem = planStem(r.plan);
+  if (stem === "" || !r.live_status) return null;
+  return `/admin/coord/work-units/${encodeURIComponent(stem)}`;
+}
+
+/**
+ * The work-unit slug a ledger plan string names — coord's own normalisation
+ * (`dossiers.rs`: strip any directory, then a trailing `.md`), so a ledger
+ * entry spelled `plans/<stem>.md` links to the unit coord resolved.
+ */
+export function planStem(plan: string | null | undefined): string {
+  return (plan ?? "").trim().replace(/^.*\//, "").replace(/\.md$/, "");
 }
 
 /**

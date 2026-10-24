@@ -62,6 +62,10 @@ describe("dossierStatus", () => {
     expect(
       remediationHref({ plan: "2026-10-03-a b", live_status: "in_progress" })
     ).toBe("/admin/coord/work-units/2026-10-03-a%20b");
+    // coord resolves the stem with the directory and `.md` stripped; so must the link.
+    expect(
+      remediationHref({ plan: "plans/2026-10-03-x.md", live_status: "draft" })
+    ).toBe("/admin/coord/work-units/2026-10-03-x");
     expect(remediationHref({ plan: "x", live_status: null })).toBeNull();
     expect(remediationHref({ plan: " ", live_status: "draft" })).toBeNull();
   });
