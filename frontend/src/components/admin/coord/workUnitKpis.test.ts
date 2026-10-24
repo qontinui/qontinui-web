@@ -14,7 +14,13 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { kpi, payload, unit, unknown } from "@/test/kpisFixtures";
+import {
+  kpi,
+  notRequestedAggregates,
+  payload,
+  unit,
+  unknown,
+} from "@/test/kpisFixtures";
 import {
   KPI_COLUMNS,
   LIST_PRICE_LABEL,
@@ -22,6 +28,7 @@ import {
   describeKpi,
   describeKpiIndex,
   formatCompactCount,
+  formatCount,
   formatMicroUsd,
   formatSeconds,
   indexKpis,
@@ -249,12 +256,83 @@ describe("formatters", () => {
       "no_red_main_attribution",
       "revert_probe_not_run",
       "empty_population",
+      "not_requested",
     ]) {
       expect(reasonWords(r)).not.toBe(r);
       expect(reasonWords(r)).not.toContain("_");
     }
     expect(reasonWords(null)).toBe("no reason given");
     expect(reasonWords("   ")).toBe("no reason given");
+  });
+});
+
+describe("not_requested (a single-unit read's aggregates)", () => {
+  it("is worded as not computed for a single-unit read", () => {
+    expect(reasonWords("not_requested")).toBe(
+      "not computed for a single-unit read"
+    );
+  });
+
+  it("renders every such aggregate as UNKNOWN — never a number, and not an error", () => {
+    const aggregates = notRequestedAggregates(250);
+    for (const figure of Object.values(aggregates)) {
+      for (const format of [formatSeconds, formatMicroUsd, formatCount]) {
+        const v = describeKpi(figure, format);
+        expect(v.kind).toBe("unknown");
+        expect(v.text).toBe("unknown");
+        expect(v.reason).toBe("not_requested");
+        expect(v.partial).toBe(false);
+        expect(v.detail).toBe(
+          "unknown — not computed for a single-unit read (0 of 250 observed)"
+        );
+        expect(v.text).not.toMatch(/\d|\$/);
+      }
+    }
+  });
+});
+
+describe("interventions the contract calls not established", () => {
+  const BASIS =
+    "operator-reaching touches: 2 classified, 3 unclassified (disposition unknown)";
+  const unestablished = () =>
+    unit("a", {
+      interventions: unknown("not_established", {
+        coverage_n: 2,
+        population_n: 5,
+        basis: BASIS,
+      }),
+      interventions_split: {
+        policy_authorized_true: null,
+        policy_authorized_false: null,
+        policy_authorized_unknown: null,
+      },
+    });
+
+  it("is UNKNOWN on the chip, with its reason and the basis on the hover — never 0", () => {
+    const view = unitColumnViews(unestablished()).interventions;
+    expect(view.kind).toBe("unknown");
+    expect(view.text).toBe("unknown");
+    expect(view.reason).toBe("not_established");
+    expect(view.text).not.toMatch(/\d/);
+    const interventions = KPI_COLUMNS.find((c) => c.key === "interventions")!;
+    expect(kpiTitle(interventions.label, view)).toContain(BASIS);
+  });
+
+  it("is UNKNOWN in the block, with the basis in the row", () => {
+    const row = unitBlockRows(unestablished()).find(
+      (r) => r.id === "interventions"
+    )!;
+    expect(row.view.kind).toBe("unknown");
+    expect(row.view.detail).toBe("unknown — not established (2 of 5 observed)");
+    expect(row.view.basis).toBe(BASIS);
+  });
+
+  it("renders an all-null split as 'not reported' three times, not as three zeros", () => {
+    const text = interventionsSplitText(unestablished());
+    expect(text).toBe(
+      "policy-authorized not reported · not policy-authorized not reported · authorization unknown not reported"
+    );
+    expect(text).not.toMatch(/\d/);
   });
 });
 

@@ -143,6 +143,33 @@ describe("KPI chips on a PlanRow", () => {
     expect(cost.getAttribute("title")).toContain("no usage rows recorded");
   });
 
+  it("shows an interventions figure coord has not established as unknown, with the basis on the hover — never 0", () => {
+    renderRow(
+      cellFor("2026-10-01-a-plan", [
+        unit("2026-10-01-a-plan", {
+          interventions: unknown("not_established", {
+            coverage_n: 2,
+            population_n: 5,
+            basis: "operator-reaching touches: 2 classified, 3 unclassified",
+          }),
+          interventions_split: {
+            policy_authorized_true: null,
+            policy_authorized_false: null,
+            policy_authorized_unknown: null,
+          },
+        }),
+      ])
+    );
+    const chip = screen.getByTestId("coord-plan-kpi-interventions");
+    expect(chip).toHaveTextContent("interventionsunknown");
+    expect(chip).toHaveAttribute("data-kpi-state", "unknown");
+    expect(chip).toHaveAttribute("data-kpi-reason", "not_established");
+    expect(chip.textContent).not.toMatch(/\d/);
+    expect(chip.getAttribute("title")).toContain(
+      "operator-reaching touches: 2 classified, 3 unclassified"
+    );
+  });
+
   it("prints partial coverage as (n/m) beside the number", () => {
     renderRow(
       cellFor("2026-10-01-a-plan", [
@@ -285,6 +312,39 @@ describe("KpiBlock", () => {
       "Input tokens: unknown — no usage rows recorded (0 of 3 observed)"
     );
     expect(row.textContent).not.toMatch(/: 0\b/);
+  });
+
+  it("shows unestablished interventions as unknown with the basis visible, and the all-null split as not reported", () => {
+    render(
+      <KpiBlock
+        cell={cellFor("a", [
+          unit("a", {
+            interventions: unknown("not_established", {
+              coverage_n: 2,
+              population_n: 5,
+              basis: "operator-reaching touches: 2 classified, 3 unclassified",
+            }),
+            interventions_split: {
+              policy_authorized_true: null,
+              policy_authorized_false: null,
+              policy_authorized_unknown: null,
+            },
+          }),
+        ])}
+      />
+    );
+    const row = screen.getByTestId("coord-plan-kpi-row-interventions");
+    expect(row).toHaveAttribute("data-kpi-state", "unknown");
+    expect(row).toHaveAttribute("data-kpi-reason", "not_established");
+    expect(row).toHaveTextContent(
+      "Interventions: unknown — not established (2 of 5 observed) — operator-reaching touches: 2 classified, 3 unclassified"
+    );
+    expect(row.textContent).not.toMatch(/: 0\b/);
+    const split = screen.getByTestId("coord-plan-kpi-row-interventions-split");
+    expect(split).toHaveTextContent(
+      "policy-authorized not reported · not policy-authorized not reported · authorization unknown not reported"
+    );
+    expect(split.textContent).not.toMatch(/\d/);
   });
 
   it("shows a value-with-a-reason row as unknown with the reason, not as a number", () => {

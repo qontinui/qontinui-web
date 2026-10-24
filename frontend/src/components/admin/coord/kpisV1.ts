@@ -25,10 +25,16 @@
 export const KPIS_SCHEMA = "kpis/v1";
 
 /**
- * `reason` on an UNKNOWN figure. Coord's closed vocabulary — typed as `string`
- * rather than a union so a reason newer than this build still renders (as its
- * raw code) instead of failing the whole read; `workUnitKpis.ts` words the
- * ones it knows.
+ * `reason` on an UNKNOWN figure. Coord's closed vocabulary (`not_yet_measured`,
+ * `no_usage_rows`, `no_cited_prs`, `not_landed`, `not_established`,
+ * `door_unavailable`, `no_red_main_attribution`, `revert_probe_not_run`,
+ * `empty_population`, `not_requested`) — typed as `string` rather than a union
+ * so a reason newer than this build still renders (as its raw code) instead of
+ * failing the whole read; `workUnitKpis.ts` words the ones it knows.
+ *
+ * `not_requested` is not an error: a single-unit `slug=` read does not
+ * recompute the population aggregates, so every aggregate in that answer
+ * carries it. It is UNKNOWN like any other reason, and never a number.
  */
 export type KpiReason = string;
 

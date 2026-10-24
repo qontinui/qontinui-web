@@ -73,6 +73,7 @@ const REASON_WORDS: Record<string, string> = {
   no_red_main_attribution: "no red-main attribution recorded",
   revert_probe_not_run: "revert probe has not run",
   empty_population: "empty population",
+  not_requested: "not computed for a single-unit read",
   // Ours, not coord's: the figure was absent from an answer that should carry it.
   not_served: "not served by this coord",
 };

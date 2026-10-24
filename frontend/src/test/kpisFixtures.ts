@@ -97,6 +97,30 @@ function aggregates(): KpisAggregates {
   };
 }
 
+/**
+ * The aggregates block of a single-unit `slug=` read: coord does not recompute
+ * the population, so every aggregate is UNKNOWN with `not_requested`, over the
+ * window's full shipped count.
+ */
+export function notRequestedAggregates(populationN: number): KpisAggregates {
+  const one = (): Kpi<number> => ({
+    value: null,
+    coverage_n: 0,
+    population_n: populationN,
+    basis: "not computed for a single-unit read",
+    reason: "not_requested",
+  });
+  return {
+    lead_time_seconds_median: one(),
+    lead_time_seconds_p90: one(),
+    autonomy_rate: one(),
+    cost_per_shipped_task_microusd_median: one(),
+    land_rate: one(),
+    red_to_green_per_pr_median: one(),
+    rework_rate: one(),
+  };
+}
+
 /** A complete 200 body over `units`. */
 export function payload(
   units: KpiUnit[],

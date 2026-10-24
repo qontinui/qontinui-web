@@ -19,7 +19,13 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import { kpi, payload, unit, unknown } from "@/test/kpisFixtures";
+import {
+  kpi,
+  notRequestedAggregates,
+  payload,
+  unit,
+  unknown,
+} from "@/test/kpisFixtures";
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", async () => {
@@ -163,6 +169,82 @@ describe("CoordPlanDetailPage — Delivery KPIs", () => {
     expect(
       within(block).getByTestId("coord-plan-kpi-row-ci_attempts")
     ).toHaveAttribute("data-kpi-partial", "true");
+  });
+
+  it("renders the unit's own figures normally when every aggregate is not_requested", async () => {
+    // A slug read does not recompute the population: every aggregate is
+    // {value:null, reason:"not_requested"}. That is not this unit's problem.
+    route(
+      payload([unit(SLUG)], {
+        aggregates: notRequestedAggregates(250),
+        population: { shipped_units: 250, units_returned: 1, truncated: false },
+      })
+    );
+    render(<CoordPlanDetailPage />);
+    const block = await screen.findByTestId("coord-plan-kpis-block");
+
+    expect(
+      within(block).getByTestId("coord-plan-kpi-row-lead_time")
+    ).toHaveTextContent("Lead time: 1h 30m (1 of 1 observed)");
+    expect(
+      within(block).getByTestId("coord-plan-kpi-row-cost")
+    ).toHaveTextContent("$2.50 list-price equivalent");
+    expect(
+      within(block).getByTestId("coord-plan-kpi-row-ci_attempts")
+    ).toHaveTextContent("CI attempts: 4");
+    for (const row of block.querySelectorAll("[data-kpi-state]")) {
+      expect(row.getAttribute("data-kpi-state")).toBe("known");
+    }
+    // Nothing of the aggregates reaches the page: not the reason, not its words.
+    expect(document.body.textContent).not.toMatch(
+      /not_requested|not computed for a single-unit read/
+    );
+    expect(screen.getByTestId("coord-plan-kpis-summary")).toHaveTextContent(
+      "recorded"
+    );
+  });
+
+  it("never renders a figure from aggregates, whatever they hold", async () => {
+    const body = payload([unit(SLUG)]);
+    // Sentinels no unit figure produces.
+    body.aggregates.cost_per_shipped_task_microusd_median = kpi(777_000_000);
+    body.aggregates.lead_time_seconds_median = kpi(123_456_789);
+    body.aggregates.land_rate = kpi(0.4242);
+    route(body);
+    render(<CoordPlanDetailPage />);
+    await screen.findByTestId("coord-plan-kpis-block");
+    expect(document.body.textContent).not.toMatch(
+      /777\.00|\$777|123,456|3y|0\.4242|42%|1428d/
+    );
+  });
+
+  it("shows unestablished interventions as unknown with the basis in the row, and an all-null split as not reported", async () => {
+    route(
+      payload([
+        unit(SLUG, {
+          interventions: unknown("not_established", {
+            coverage_n: 2,
+            population_n: 5,
+            basis: "operator-reaching touches: 2 classified, 3 unclassified",
+          }),
+          interventions_split: {
+            policy_authorized_true: null,
+            policy_authorized_false: null,
+            policy_authorized_unknown: null,
+          },
+        }),
+      ])
+    );
+    render(<CoordPlanDetailPage />);
+    const row = await screen.findByTestId("coord-plan-kpi-row-interventions");
+    expect(row).toHaveAttribute("data-kpi-state", "unknown");
+    expect(row).toHaveTextContent(
+      "unknown — not established (2 of 5 observed) — operator-reaching touches: 2 classified, 3 unclassified"
+    );
+    expect(row.textContent).not.toMatch(/: 0\b/);
+    expect(
+      screen.getByTestId("coord-plan-kpi-row-interventions-split").textContent
+    ).not.toMatch(/\d/);
   });
 
   it("says 'No KPIs recorded' — not zeros — when coord has no row for the unit", async () => {
