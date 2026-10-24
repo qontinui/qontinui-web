@@ -112,9 +112,13 @@ describe("CoordLayout — entered through the header toggle", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     await waitFor(() =>
-      expect(container).toHaveTextContent(`${wire.FIRST_PARTY} main is RED`)
+      expect(container).toHaveTextContent(
+        `${wire.FIRST_PARTY}'s main branch is failing its checks`
+      )
     );
-    expect(container).toHaveTextContent("A repository main is RED");
+    expect(container).toHaveTextContent(
+      "A repository's main branch is failing its checks"
+    );
     expect(container.innerHTML).not.toContain("client-org");
     // The page itself is withheld until it is prepared for presentation.
     expect(screen.queryByText("Console page")).toBeNull();

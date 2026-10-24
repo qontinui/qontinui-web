@@ -9,6 +9,10 @@
  * The REAL layout, lens and gate; the page is a probe that reports the mode it
  * was handed and keeps a control behind `OperatorOnly`. Readiness is the
  * test's to declare (`readiness.routes`), through the real matcher.
+ *
+ * The toggle is the layout's, in its bar OUTSIDE the gate: pressed, it stays
+ * where it was and keeps keyboard focus, in both directions (review round 2
+ * found the page-header toggle unmounted by its own press).
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -130,6 +134,27 @@ describe("DigitalTwinLayout — not yet prepared for presentation", () => {
       "false"
     );
     expect(screen.getByText("Ask the twin")).toBeInTheDocument();
+  });
+
+  it("keeps the pressed toggle in place, and focused, both ways", () => {
+    renderTwin("");
+    const toggle = screen.getByRole("button", { name: "Presentation mode" });
+    expect(screen.getByTestId("digital-twin-lens-bar")).toContainElement(
+      toggle
+    );
+    toggle.focus();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId("twin-page")).toBeNull();
+    expect(toggle.isConnected).toBe(true);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(document.activeElement).toBe(toggle);
+
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("twin-page")).toBeInTheDocument();
+    expect(toggle.isConnected).toBe(true);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(document.activeElement).toBe(toggle);
   });
 
   it("renders the page for the operator", () => {

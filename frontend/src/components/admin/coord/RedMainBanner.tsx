@@ -72,8 +72,17 @@
  * - a claimant is named by its kind, and a machine by its session alias
  *   ("Machine A") — never by a device, agent or session id, in the text or in
  *   the tooltip;
- * - coord's remediation is its state alone, without the run reference or the
- *   fix session's agent id.
+ * - coord's remediation is its state alone, in plain words, without the run
+ *   reference or the fix session's agent id.
+ *
+ * And it is written for an evaluator, not the operator. The operator's
+ * headline speaks the merge train's own vocabulary (`main-red`, candidates,
+ * rebased CI, push baselines); the presentation headline is its own plain
+ * sentence ({@link presentationHeadline}) — the main branch is failing its
+ * checks, how many open pull requests are affected, and that the merge train
+ * still lands one whose own checks pass — with each product term rendered
+ * through `GlossaryTerm`, and a `Provenance` chip saying where it came from
+ * and when coord last confirmed it.
  *
  * A field added to the parsed row later renders nothing in presentation mode
  * until someone decides here how it may.
@@ -84,10 +93,15 @@ import { AlertTriangle } from "lucide-react";
 import { fetchOpenAlertsOfKind } from "@/lib/api/operations/alerts";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
+  CaptionCopy,
+  Provenance,
   redactionVerdict,
+  term,
   useMachineAliaser,
   usePresentationMode,
   usePresentationScopeState,
+  type CaptionSegment,
+  type CaptionText,
   type PresentationScopeState,
 } from "@/components/presentation";
 
@@ -169,6 +183,19 @@ const STALE_AFTER_MS = 2 * POLL_INTERVAL_MS;
 
 const RUNNING_LABEL = "fix session running";
 const SELF_HEAL_LABEL = "auto-rerun in flight";
+
+/** Coord's remediation, in an evaluator's words (presentation mode). */
+const PRESENTED_REMEDIATION: Readonly<
+  Record<Exclude<FixSessionState["kind"], "none">, string>
+> = {
+  self_heal: "re-running its failed checks",
+  running: "an agent is fixing it",
+  stalled: "an agent's fix has stalled",
+  failed: "an agent's fix failed",
+};
+
+/** Where the banner's facts come from, for the presentation chip. */
+export const RED_MAIN_PROVENANCE_SOURCE = "coord red-main alerts";
 
 /** A row's repository in presentation mode when the scope does not clear it. */
 export const WITHHELD_REPOSITORY = "A repository";
@@ -451,11 +478,7 @@ export function parseBaselineFreshness(raw: unknown): {
   return { baselineFreshness: "not_contradicted", staleWorkflows: [] };
 }
 
-/**
- * Everything the headline states, with the repository and the stale-baseline
- * note already decided — so the operator headline and the presentation one
- * are one sentence with different inputs, not two sentences to keep in step.
- */
+/** Everything the operator's headline states. */
 interface HeadlineFacts {
   readonly repo: string;
   readonly since?: string;
@@ -496,13 +519,6 @@ function namedStaleNote(a: RedMainAlert): string {
     : "";
 }
 
-/** The partial-baseline note for a withheld row: how many, never which. */
-function countedStaleNote(a: RedMainAlert): string {
-  if (a.baselineFreshness !== "partial") return "";
-  const n = a.staleWorkflows.length;
-  return ` (stale push baseline on ${n} ${n === 1 ? "workflow" : "workflows"}, contradicted by newer passing runs)`;
-}
-
 /**
  * The banner headline (D2 wording), as the operator reads it. Pure — exported
  * for the vitest suite.
@@ -519,6 +535,81 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
     },
     nowMs
   );
+}
+
+function plural(n: number, one: string): string {
+  return `${n} ${n === 1 ? one : `${one}s`}`;
+}
+
+/**
+ * How long a main has been failing, in an evaluator's words — `" for 3
+ * hours"` — or `""` when the episode's start is unknown or unreadable (the
+ * presentation headline then states no duration rather than a raw timestamp).
+ * Pure — exported for the vitest suite.
+ */
+export function plainDuration(iso: string | undefined, nowMs: number): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const mins = Math.max(0, Math.floor((nowMs - t) / 60_000));
+  if (mins < 1) return " for under a minute";
+  if (mins < 60) return ` for ${plural(mins, "minute")}`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return ` for ${plural(hours, "hour")}`;
+  return ` for ${plural(Math.floor(hours / 24), "day")}`;
+}
+
+/** What the presentation headline states, every name already decided. */
+interface PresentationFacts {
+  /** The repository's name, or {@link WITHHELD_REPOSITORY}. */
+  readonly repo: string;
+  readonly since?: string;
+  readonly blockedPrCount: number;
+  readonly baselineFreshness: BaselineFreshness;
+  /** The failing checks a newer run passed, NAMED only on a cleared row. */
+  readonly staleWorkflows: readonly string[];
+  readonly named: boolean;
+}
+
+/**
+ * The banner headline in presentation mode: one plain sentence, with the
+ * merge train's vocabulary translated and its product terms through
+ * `GlossaryTerm` (`term(...)`). Pure — exported for the vitest suite.
+ */
+export function presentationHeadline(
+  f: PresentationFacts,
+  nowMs: number
+): CaptionText {
+  const branch = `${f.repo}'s main branch`;
+  const affected =
+    f.blockedPrCount === 1
+      ? "1 open pull request is affected"
+      : `${f.blockedPrCount} open pull requests are affected`;
+  const lands: CaptionSegment[] = [
+    `${affected}; the `,
+    term("merge_train", "merge train"),
+    " still lands a pull request whose own checks pass.",
+  ];
+  if (f.baselineFreshness === "all_contradicted") {
+    return [
+      `${branch}: status `,
+      term("unknown", "UNKNOWN"),
+      " — the checks that failed have since passed on a newer run, and the next push will settle it. ",
+      ...lands,
+    ];
+  }
+  const n = f.staleWorkflows.length;
+  const recovered =
+    f.baselineFreshness === "partial" && n > 0
+      ? ` ${plural(n, "failing check")} ${n === 1 ? "has" : "have"} since passed on a newer run${
+          f.named ? ` (${f.staleWorkflows.join(", ")})` : ""
+        }.`
+      : "";
+  return [
+    `${branch} is failing its checks${plainDuration(f.since, nowMs)}. `,
+    ...lands,
+    recovered,
+  ].filter((segment) => segment !== "");
 }
 
 /** The claim chip as it renders. */
@@ -653,17 +744,14 @@ export function remediationText(
   fixSession: FixSessionState,
   presenting: boolean
 ): RemediationText | null {
-  const agent =
-    !presenting && fixSession.agentId
-      ? ` · ${truncateAgentId(fixSession.agentId)}`
-      : "";
+  if (fixSession.kind === "none") return null;
+  if (presenting) return { text: PRESENTED_REMEDIATION[fixSession.kind] };
+  const agent = fixSession.agentId
+    ? ` · ${truncateAgentId(fixSession.agentId)}`
+    : "";
   switch (fixSession.kind) {
-    case "none":
-      return null;
     case "self_heal":
-      return presenting
-        ? { text: SELF_HEAL_LABEL }
-        : { text: SELF_HEAL_LABEL, title: fixSession.raw };
+      return { text: SELF_HEAL_LABEL, title: fixSession.raw };
     case "running":
       return { text: `${RUNNING_LABEL}${agent}` };
     case "stalled":
@@ -675,14 +763,21 @@ export function remediationText(
 /** The workflows line, or `null` when there is no workflow to name. */
 function workflowsLine(
   freshness: BaselineFreshness,
-  workflows: readonly string[]
+  workflows: readonly string[],
+  presenting: boolean
 ): string | null {
   if (workflows.length === 0) return null;
   // When newer passing runs contradict every red push baseline, coord's
   // evidence says these workflows are NOT currently failing — label them as
   // the stale baseline, never "failing".
   const label =
-    freshness === "all_contradicted" ? "red push baseline" : "failing";
+    freshness === "all_contradicted"
+      ? presenting
+        ? "checks that failed"
+        : "red push baseline"
+      : presenting
+        ? "failing checks"
+        : "failing";
   return `${label}: ${workflows.join(", ")}`;
 }
 
@@ -692,7 +787,8 @@ export interface RedMainRowView {
   /** Whether the presentation lens withheld the row; `null` in operator mode. */
   readonly withheld: boolean | null;
   readonly baselineFreshness: BaselineFreshness;
-  readonly headline: string;
+  /** The operator's sentence, or the presentation lens's (with glossary terms). */
+  readonly headline: CaptionText;
   /** `"failing: CI, release"`, or `null` when there is none to name. */
   readonly workflows: string | null;
   readonly remediation: RemediationText | null;
@@ -726,7 +822,7 @@ export function redMainRowView(
       withheld: null,
       baselineFreshness: a.baselineFreshness,
       headline: redMainHeadline(a, nowMs),
-      workflows: workflowsLine(a.baselineFreshness, a.workflows),
+      workflows: workflowsLine(a.baselineFreshness, a.workflows, false),
       remediation: remediationText(a.fixSession, false),
       claim: claimChip(a.claim, null),
     };
@@ -745,18 +841,20 @@ export function redMainRowView(
     alertKey: a.alertKey,
     withheld: !named,
     baselineFreshness: a.baselineFreshness,
-    headline: headlineFrom(
+    headline: presentationHeadline(
       {
         repo: named ? a.repo : WITHHELD_REPOSITORY,
         since: a.since,
         blockedPrCount: a.blockedPrCount,
-        queuedProposalCount: a.queuedProposalCount,
         baselineFreshness: a.baselineFreshness,
-        staleNote: named ? namedStaleNote(a) : countedStaleNote(a),
+        staleWorkflows: a.staleWorkflows,
+        named,
       },
       nowMs
     ),
-    workflows: named ? workflowsLine(a.baselineFreshness, a.workflows) : null,
+    workflows: named
+      ? workflowsLine(a.baselineFreshness, a.workflows, true)
+      : null,
     remediation: remediationText(a.fixSession, true),
     claim: claimChip(a.claim, { aliasDevice: lens.aliasDevice }),
   };
@@ -955,7 +1053,9 @@ export function RedMainBanner() {
               className="h-4 w-4 shrink-0 text-red-300"
               aria-hidden
             />
-            <span className="text-sm font-semibold">{a.headline}</span>
+            <span className="text-sm font-semibold">
+              <CaptionCopy text={a.headline} />
+            </span>
             {a.workflows !== null && (
               <span
                 className="text-xs font-mono text-red-100"
@@ -964,7 +1064,19 @@ export function RedMainBanner() {
                 {a.workflows}
               </span>
             )}
-            {stale && lastSuccessAt !== null && (
+            {/* Presentation mode: where this came from, and when coord last
+                confirmed it — the age says how old the claim is, so the
+                operator's staleness note below is not needed beside it. */}
+            <Provenance
+              source={RED_MAIN_PROVENANCE_SOURCE}
+              asOf={lastSuccessAt}
+              // The row's own light-on-red text: the chip's muted grey is
+              // unreadable on this bar. Always the KNOWN style here — a row
+              // renders only after a read coord answered.
+              className="border-red-300/40 text-red-100"
+              data-testid="red-main-provenance"
+            />
+            {!presenting && stale && lastSuccessAt !== null && (
               // The banner stays up on a read outage BY DESIGN, but it must not
               // pass an unconfirmed claim off as a live one.
               <span

@@ -43,9 +43,9 @@ function PageBody() {
   return <button type="button">Drain this machine</button>;
 }
 
-function renderGate(presenting: boolean | null, withToggle = false) {
+function renderGate(presenting: boolean | null) {
   const gate = (
-    <PresentationPage withToggle={withToggle}>
+    <PresentationPage>
       <PageBody />
     </PresentationPage>
   );
@@ -126,16 +126,8 @@ describe("PresentationPage", () => {
     expect(rendered).toHaveBeenCalled();
   });
 
-  it("offers the mode toggle in the placeholder only when asked", () => {
+  it("never carries the mode toggle itself: a layout's toggle sits outside the gate", () => {
     renderGate(true);
     expect(screen.queryByText("Presentation mode")).not.toBeInTheDocument();
-  });
-
-  it("offers it when the layout's header carries none", () => {
-    renderGate(true, true);
-    // Under a fixed lens the toggle is its non-interactive chip.
-    expect(screen.getByTestId("presentation-mode-chip")).toHaveTextContent(
-      "Presentation mode"
-    );
   });
 });

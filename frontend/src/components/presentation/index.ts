@@ -18,6 +18,7 @@
  * | `PresentationModeToggle` | the header control; the "Presentation mode" chip while presenting |
  * | `Caption` + `./captions` | captions from ONE registry composed of one file per lens surface (D5) |
  * | `LENS_SURFACES`, `TOUR_SURFACE` | the five lens pages in tour order, and the tour |
+ * | `usePresentationHref`, `presentationHref` | a link to a lens page that carries `?present=1` while presenting, so a new tab opened from it still presents |
  * | `Provenance` | source + as-of beside a number; UNKNOWN when either is unknown |
  * | `OperatorOnly` | the boundary every write control sits inside (D3.2) |
  * | `RedactedText`, `useRedactor`, `PresentationScopeProvider` | free text only when provably first-party (D3.3); fails closed while the scope is unknown |
@@ -129,6 +130,8 @@ export {
   presentationHref,
 } from "./lensSurfaces";
 export type { LensSurface, LensSurfaceId } from "./lensSurfaces";
+
+export { lensLinkHref, usePresentationHref } from "./presentationLinks";
 
 export {
   PROVENANCE_UNKNOWN,

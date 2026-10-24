@@ -16,15 +16,21 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
+import { GLOSSARY } from "@qontinui/shared-types/glossary";
 import {
   FixedPresentationMode,
   PresentationScopeProvider,
+  captionSegments,
   sessionMachineAliases,
+  type CaptionText,
   type PresentationScopeState,
 } from "@/components/presentation";
 import {
+  RED_MAIN_PROVENANCE_SOURCE,
   WITHHELD_REPOSITORY,
   RedMainBanner,
+  plainDuration,
+  presentationHeadline,
   claimChip,
   compactPrincipal,
   presentableClaimant,
@@ -41,6 +47,17 @@ import {
   type FixSessionState,
   type RedMainAlert,
 } from "./RedMainBanner";
+
+/** Caption copy as the words on screen, glossary terms included. */
+function plain(text: CaptionText): string {
+  return captionSegments(text)
+    .map((segment) =>
+      typeof segment === "string"
+        ? segment
+        : (segment.text ?? GLOSSARY[segment.term].term)
+    )
+    .join("");
+}
 
 /**
  * Tests for the red-main banner (plan
@@ -942,7 +959,9 @@ describe("<RedMainBanner> in presentation mode (plan 2026-10-23-console-presenta
 
     const banner = await screen.findByTestId("red-main-banner-row");
     expect(banner).toHaveAttribute("data-redacted", "true");
-    expect(banner).toHaveTextContent(`${WITHHELD_REPOSITORY} main is RED`);
+    expect(banner).toHaveTextContent(
+      `${WITHHELD_REPOSITORY}'s main branch is failing its checks`
+    );
     expect(screen.queryByTestId("red-main-workflows")).toBeNull();
     expect(container.innerHTML).not.toContain("qontinui-web");
   });
@@ -970,9 +989,13 @@ describe("<RedMainBanner> in presentation mode (plan 2026-10-23-console-presenta
     const withheld = rows.find(
       (r) => r.getAttribute("data-redacted") === "true"
     );
-    expect(shown).toHaveTextContent(`${FIRST_PARTY} main is RED`);
-    expect(shown).toHaveTextContent("failing: CI");
-    expect(withheld).toHaveTextContent(`${WITHHELD_REPOSITORY} main is RED`);
+    expect(shown).toHaveTextContent(
+      `${FIRST_PARTY}'s main branch is failing its checks`
+    );
+    expect(shown).toHaveTextContent("failing checks: CI");
+    expect(withheld).toHaveTextContent(
+      `${WITHHELD_REPOSITORY}'s main branch is failing its checks`
+    );
     expect(container.innerHTML).not.toContain("client-org");
     expect(container.innerHTML).not.toContain("deploy");
   });
@@ -987,6 +1010,70 @@ describe("<RedMainBanner> in presentation mode (plan 2026-10-23-console-presenta
     const banner = await screen.findByTestId("red-main-banner-row");
     expect(banner).toHaveTextContent(`${FOREIGN} main is RED`);
     expect(banner).not.toHaveAttribute("data-redacted");
+    // The operator's rows carry their own staleness note, not the chip.
+    expect(screen.queryByTestId("red-main-provenance")).toBeNull();
+  });
+
+  it("says where the row came from and when coord confirmed it, and explains its terms", async () => {
+    getMock.mockResolvedValue([row(FIRST_PARTY, ["CI"])]);
+    render(
+      <FixedPresentationMode presenting>
+        <RedMainBanner />
+      </FixedPresentationMode>
+    );
+    const banner = await screen.findByTestId("red-main-banner-row");
+    const chip = screen.getByTestId("red-main-provenance");
+    expect(banner).toContainElement(chip);
+    expect(chip).toHaveTextContent(`source: ${RED_MAIN_PROVENANCE_SOURCE}`);
+    expect(chip).toHaveAttribute("data-provenance-known", "true");
+    expect(
+      banner.querySelector('[data-glossary-term="merge_train"]')
+    ).not.toBeNull();
+  });
+});
+
+describe("plainDuration", () => {
+  const now = Date.parse("2026-07-06T12:00:00Z");
+  it.each<[string | undefined, string]>([
+    ["2026-07-06T11:59:30Z", " for under a minute"],
+    ["2026-07-06T11:59:00Z", " for 1 minute"],
+    ["2026-07-06T11:15:00Z", " for 45 minutes"],
+    ["2026-07-06T11:00:00Z", " for 1 hour"],
+    ["2026-07-05T12:00:00Z", " for 24 hours"],
+    ["2026-07-03T12:00:00Z", " for 3 days"],
+    // No start, or an unreadable one, states no duration at all.
+    [undefined, ""],
+    ["not a time", ""],
+  ])("%s → %j", (iso, words) => {
+    expect(plainDuration(iso, now)).toBe(words);
+  });
+});
+
+describe("presentationHeadline", () => {
+  const now = Date.parse("2026-07-06T12:00:00Z");
+  it("names a cleared row's recovered checks, and counts a withheld row's", () => {
+    const facts = {
+      repo: "qontinui/qontinui-web",
+      since: "2026-07-06T09:00:00Z",
+      blockedPrCount: 3,
+      baselineFreshness: "partial" as const,
+      staleWorkflows: ["CI", "lint"],
+      named: true,
+    };
+    expect(plain(presentationHeadline(facts, now))).toBe(
+      "qontinui/qontinui-web's main branch is failing its checks for 3 hours. " +
+        "3 open pull requests are affected; the merge train still lands a pull " +
+        "request whose own checks pass. 2 failing checks have since passed on a " +
+        "newer run (CI, lint)."
+    );
+    expect(
+      plain(
+        presentationHeadline(
+          { ...facts, repo: WITHHELD_REPOSITORY, named: false },
+          now
+        )
+      )
+    ).not.toContain("lint");
   });
 });
 
@@ -1074,9 +1161,11 @@ describe("<RedMainBanner> in presentation mode — nothing leaks past the allowl
     const banner = await screen.findByTestId("red-main-banner-row");
     expect(banner).toHaveAttribute("data-redacted", "true");
     expect(banner).toHaveAttribute("data-baseline-freshness", "partial");
-    expect(banner).toHaveTextContent("A repository main is RED since");
     expect(banner).toHaveTextContent(
-      "(stale push baseline on 1 workflow, contradicted by newer passing runs)"
+      "A repository's main branch is failing its checks for"
+    );
+    expect(banner).toHaveTextContent(
+      "1 failing check has since passed on a newer run."
     );
     expect(container.innerHTML).not.toContain("deploy-portal-prod");
     expect(container.innerHTML).not.toContain("lint-portal");
@@ -1117,10 +1206,10 @@ describe("<RedMainBanner> in presentation mode — nothing leaks past the allowl
     const banner = await screen.findByTestId("red-main-banner-row");
     expect(banner).toHaveAttribute("data-redacted", "false");
     expect(banner).toHaveTextContent(
-      "(stale push baseline, contradicted by newer passing runs: CI)"
+      "1 failing check has since passed on a newer run (CI)."
     );
     expect(screen.getByTestId("red-main-workflows")).toHaveTextContent(
-      "failing: CI, release"
+      "failing checks: CI, release"
     );
   });
 
@@ -1185,8 +1274,8 @@ describe("<RedMainBanner> in presentation mode — nothing leaks past the allowl
 
     const notes = await screen.findAllByTestId("red-main-remediation");
     expect(notes.map((n) => n.textContent)).toEqual([
-      "fix session running",
-      "auto-rerun in flight",
+      "an agent is fixing it",
+      "re-running its failed checks",
     ]);
     for (const note of notes) expect(note).not.toHaveAttribute("title");
     expect(container.innerHTML).not.toContain(RUN);
@@ -1312,7 +1401,7 @@ describe("remediationText", () => {
     [
       { kind: "self_heal", raw: "auto-rerun-failed-jobs:42" },
       true,
-      { text: "auto-rerun in flight" },
+      { text: "re-running its failed checks" },
     ],
     [
       { kind: "running", agentId: "abcdefgh-1234-5678" },
@@ -1322,7 +1411,7 @@ describe("remediationText", () => {
     [
       { kind: "running", agentId: "abcdefgh-1234-5678" },
       true,
-      { text: "fix session running" },
+      { text: "an agent is fixing it" },
     ],
     [
       { kind: "failed", agentId: "abc" },
@@ -1332,7 +1421,12 @@ describe("remediationText", () => {
     [
       { kind: "stalled", agentId: "abc" },
       true,
-      { text: "fix session stalled" },
+      { text: "an agent's fix has stalled" },
+    ],
+    [
+      { kind: "failed", agentId: "abc" },
+      true,
+      { text: "an agent's fix failed" },
     ],
   ])("%j (presenting: %s)", (fixSession, presenting, expected) => {
     expect(remediationText(fixSession, presenting)).toEqual(expected);
@@ -1363,16 +1457,66 @@ describe("redMainRowView", () => {
     expect(view.workflows).toBe("failing: deploy, lint");
   });
 
-  it("counts two stale baselines in the plural on a withheld row", () => {
+  it("counts two stale baselines in the plural on a withheld row, in plain words", () => {
     const view = redMainRowView(partial, now, lens({ status: "unknown" }));
     expect(view.withheld).toBe(true);
     expect(view.workflows).toBeNull();
-    expect(view.headline).toBe(
-      "🔴 A repository main is RED since 1h 0m ago — 1 PR read main-red, " +
-        "merge-queue depth unknown; a candidate lands only if its own rebased " +
-        "CI is green (stale push baseline on 2 workflows, contradicted by newer " +
-        "passing runs)"
+    expect(plain(view.headline)).toBe(
+      "A repository's main branch is failing its checks for 1 hour. 1 open " +
+        "pull request is affected; the merge train still lands a pull request " +
+        "whose own checks pass. 2 failing checks have since passed on a newer run."
     );
+  });
+
+  it("speaks no merge-train vocabulary to an evaluator, and explains its product terms", () => {
+    for (const freshness of [
+      "partial",
+      "all_contradicted",
+      "not_contradicted",
+      "unread",
+    ] as const) {
+      const view = redMainRowView(
+        { ...partial, baselineFreshness: freshness },
+        now,
+        lens({ status: "unknown" })
+      );
+      const words = plain(view.headline);
+      for (const internal of [
+        "main-red",
+        "candidate",
+        "rebased",
+        "push baseline",
+        "main is RED",
+        "proposal",
+        "🔴",
+        "⚠️",
+      ]) {
+        expect(words, `${freshness}: "${internal}"`).not.toContain(internal);
+      }
+      const terms = captionSegments(view.headline).flatMap((segment) =>
+        typeof segment === "string" ? [] : [segment.term]
+      );
+      expect(terms, freshness).toContain("merge_train");
+    }
+  });
+
+  it("says a main whose failing checks all passed since is UNKNOWN, through the glossary", () => {
+    const view = redMainRowView(
+      { ...partial, baselineFreshness: "all_contradicted" },
+      now,
+      lens({ status: "unknown" })
+    );
+    expect(plain(view.headline)).toBe(
+      "A repository's main branch: status UNKNOWN — the checks that failed " +
+        "have since passed on a newer run, and the next push will settle it. " +
+        "1 open pull request is affected; the merge train still lands a pull " +
+        "request whose own checks pass."
+    );
+    expect(
+      captionSegments(view.headline).some(
+        (segment) => typeof segment !== "string" && segment.term === "unknown"
+      )
+    ).toBe(true);
   });
 
   it("withholds on every scope state that is not ready", () => {

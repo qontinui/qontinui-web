@@ -1882,9 +1882,15 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
 - The mode is per browser, never per tenant: `?present=1|0` on the URL wins, then
   the tab's last choice, then the viewer's remembered setting (localStorage, a
   convenience — a tab that opens presenting on it keeps presenting), then off.
-  The header's `PresentationModeToggle` flips it; while presenting it is the
-  "Presentation mode" chip. A mode not yet resolved (a server or hydration render)
-  counts as presenting, so every guard fails closed.
+  The `PresentationModeToggle` flips it; while presenting it is the
+  "Presentation mode" chip. It lives in the lens layout's own chrome — the
+  console's header, the digital twin's lens bar — OUTSIDE the page gate below,
+  never in a page body, which its own press would unmount. A mode not yet
+  resolved (a server or hydration render) counts as presenting, so every guard
+  fails closed.
+- A link to another lens page carries the presentation while presenting
+  (`usePresentationHref`: `?present=1` on its URL), so one opened in a new tab —
+  which starts with no tab choice of its own — still presents.
 - It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
   to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
   while presenting, the sidebar names only the active project, aliases the runner,
@@ -1896,8 +1902,10 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   surface caption and "Shown in the operator view only" instead — over-withholding
   costs a placeholder, a page shown before it is safe costs a write control in
   front of a client. Register a page **in the same PR** as its page test (below);
-  the registry's own test fails an entry whose test is missing or never runs the
-  helper.
+  the registry's own test fails an entry whose test is missing, never runs the
+  helper, or never imports that route's own page module. The console's landing
+  redirect (`/admin/coord`, one sentence) is registered from the start: a
+  withheld page never mounts, so it would never redirect.
 
 **Captions before data** (the departure from R1 and R9). `Caption` renders a page's
 or a panel's `{ title, oneLiner, whyItMatters }` ahead of its data: in presentation
