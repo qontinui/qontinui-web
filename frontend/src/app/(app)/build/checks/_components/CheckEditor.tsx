@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Settings,
   AlertTriangle,
@@ -10,7 +9,6 @@ import {
 } from "lucide-react";
 import { EditorHeader, EditorSection, ExecutionPanel, MonacoField, type ExecutionResult } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
-import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
 import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,8 +45,6 @@ export function CheckEditor({ item, form, setForm, isDirty, isNew, isSaving, onS
   // Calls that START work go to the new-work target (explicit choice or
   // coord's resolved pick); a refused call carries coord's outcome.
   const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   const updateField = <K extends keyof CheckForm>(field: K, value: CheckForm[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -79,19 +75,6 @@ export function CheckEditor({ item, form, setForm, isDirty, isNew, isSaving, onS
       description: defaults.description || prev.description,
       auto_fix: defaults.auto_fix,
     }));
-  };
-
-  const handleAiGenerate = async (_prompt: string) => {
-    setAiGenerating(true);
-    setAiError(null);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      setAiError("AI generation not implemented yet");
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      setAiGenerating(false);
-    }
   };
 
   return (
@@ -328,21 +311,6 @@ export function CheckEditor({ item, form, setForm, isDirty, isNew, isSaving, onS
 
         {/* AI Workspace Scanner */}
         <AiWorkspaceScanner onAcceptChecks={onAcceptAiChecks} />
-
-        {/* AI Generator */}
-        <AiGeneratorPanel
-          title="Generate with AI"
-          accentColor="purple"
-          templates={[
-            { label: "Linter", prompt: "Create an ESLint check for a TypeScript project" },
-            { label: "Formatter", prompt: "Create a Prettier format check" },
-            { label: "Type Check", prompt: "Create a TypeScript type-checking check" },
-          ]}
-          placeholder="Describe the check you want to generate..."
-          generating={aiGenerating}
-          error={aiError}
-          onGenerate={handleAiGenerate}
-        />
       </div>
     </div>
   );
