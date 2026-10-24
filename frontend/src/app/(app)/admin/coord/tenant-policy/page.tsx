@@ -26,12 +26,18 @@
  *   Phase 3);
  * * image generation — the `image_generation` fleet-policy dial Studio is to
  *   read before each image request (no Studio build reads it yet) (`on` | `local_only` | `off`), with per-repo
- *   overrides (plan `2026-10-13-image-generation-and-visual-judgment` Phase 12).
+ *   overrides (plan `2026-10-13-image-generation-and-visual-judgment` Phase 12);
+ * * GitHub host — the tenant's row in `coord.tenant_github_hosts`, which points
+ *   coord at a GitHub Enterprise Server or GHE.com instance instead of
+ *   github.com (plan `2026-10-10-spec-front-end-phase-9-generic-boundary`
+ *   Phase 3). Its own door, `/operations/tenant/github-host`, not a
+ *   fleet-policy dial.
  *
  * Authz: like every `/admin/coord` page, any tenant member may VIEW it; the
  * write is gated by coord-tenant admin on the backend
  * (`require_coord_tenant_admin` on the shared `PUT /operations/fleet-policy`
- * door every switch here uses) and again by coord (`rbac::is_tenant_admin`),
+ * door every dial here uses, and on the GitHub host's own PUT/DELETE) and
+ * again by coord (`rbac::is_tenant_admin`),
  * and only reflected here via `can_edit`.
  *
  * Deliberately absent: `session_coordination_enabled`, which shares the coord
@@ -41,6 +47,7 @@
 import { AccountSelectionPanel } from "./_components/AccountSelectionPanel";
 import { CommandSafetyRewritePanel } from "./_components/CommandSafetyRewritePanel";
 import { EgressPanel } from "./_components/EgressPanel";
+import { GithubHostPanel } from "./_components/GithubHostPanel";
 import { ImageGenerationPanel } from "./_components/ImageGenerationPanel";
 import { PermissionPromptCapturePanel } from "./_components/PermissionPromptCapturePanel";
 
@@ -52,6 +59,7 @@ export default function TenantPolicyPage() {
       <PermissionPromptCapturePanel />
       <AccountSelectionPanel />
       <ImageGenerationPanel />
+      <GithubHostPanel />
     </div>
   );
 }

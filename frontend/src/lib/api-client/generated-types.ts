@@ -16528,6 +16528,45 @@ export interface paths {
         patch: operations["api_v1_operations_tenant_policy_resume_unfinished_patch"];
         trace?: never;
     };
+    "/api/v1/operations/tenant/github-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tenant Github Host
+         * @description Read the tenant's effective GitHub host (github.com when unconfigured).
+         *
+         *     ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+         *     roles in the EFFECTIVE tenant plus the superuser bypass — because the
+         *     writes go through ``require_coord_tenant_admin``.
+         */
+        get: operations["api_v1_operations_tenant_github_host_get"];
+        /**
+         * Put Tenant Github Host
+         * @description Set the tenant's GitHub host (GitHub Enterprise Server or GHE.com).
+         *
+         *     Tenant-admin gated web-side; coord re-checks and answers the typed
+         *     refusals listed above, which pass through as structured ``detail``.
+         *     Coord's echo is the stored row, so it is returned rather than re-read.
+         */
+        put: operations["api_v1_operations_tenant_github_host_put"];
+        post?: never;
+        /**
+         * Delete Tenant Github Host
+         * @description Return the tenant to github.com. Idempotent.
+         *
+         *     Coord refuses with ``repos_registered_on_another_host`` (409) while the
+         *     tenant still has repos enrolled on the configured host.
+         */
+        delete: operations["api_v1_operations_tenant_github_host_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/tenants": {
         parameters: {
             query?: never;
@@ -51908,6 +51947,40 @@ export interface components {
             display_name: string;
         };
         /**
+         * TenantGithubHostPut
+         * @description Body of ``PUT /tenant/github-host`` — coord's ``PutGithubHostRequest``.
+         *
+         *     Coord validates the shape (https, a host, no credentials, query, fragment;
+         *     ``web_base`` an origin) and that the host is public; the console does not
+         *     pre-judge either, so coord's ``invalid_github_host`` detail is the one
+         *     message the operator sees.
+         */
+        TenantGithubHostPut: {
+            /** Api Base */
+            api_base: string;
+            /** Web Base */
+            web_base: string;
+        };
+        /**
+         * TenantGithubHostView
+         * @description The tenant's effective GitHub host, as coord resolves it.
+         *
+         *     ``configured`` is ``None`` when coord's answer did not carry it — UNKNOWN,
+         *     never "the github.com default". The bases are ``None`` on the same terms.
+         */
+        TenantGithubHostView: {
+            /** Api Base */
+            api_base: string | null;
+            /** Can Edit */
+            can_edit: boolean;
+            /** Configured */
+            configured: boolean | null;
+            /** Graphql Url */
+            graphql_url: string | null;
+            /** Web Base */
+            web_base: string | null;
+        };
+        /**
          * TenantRenameIn
          * @description Body for ``PATCH /operations/tenants/{tenant_id}`` — a partial rename.
          *
@@ -79268,6 +79341,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantGithubHostPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
                 };
             };
         };
