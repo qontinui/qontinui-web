@@ -10,8 +10,10 @@ import {
   metricTitle,
   metricValue,
   parseFlowReadFailure,
+  passWord,
   percentWords,
   readFlowBody,
+  scopeCounts,
   sessionHref,
 } from "./overlordFlowStatus";
 
@@ -66,14 +68,14 @@ describe("readFlowBody", () => {
   });
 
   it("picks the most recent pass's unknown share whatever the list order", () => {
-    expect(readFlowBody(FULL_FLOW)!.latestUnknown?.pass_id).toBe("p-new");
+    expect(readFlowBody(FULL_FLOW)!.latestUnknown?.passId).toBe("p-new");
     expect(
       readFlowBody({ ok: true, unknown_share: [] })!.latestUnknown
     ).toBeNull();
   });
 
   it("sorts the verdict series oldest first", () => {
-    expect(readFlowBody(FULL_FLOW)!.series!.map((p) => p.pass_id)).toEqual([
+    expect(readFlowBody(FULL_FLOW)!.series!.map((p) => p.passId)).toEqual([
       "p-old",
       "p-filtered",
       "p-new",
@@ -86,6 +88,82 @@ describe("readFlowBody", () => {
       unchanged: [{ key: "k" }, FULL_FLOW.unchanged[0]],
     })!;
     expect(v.unchanged).toHaveLength(1);
+  });
+});
+
+describe("latest unknown share", () => {
+  const entry = {
+    pass_id: "p1",
+    started_at: "2026-10-23T20:00:00Z",
+    rows: 40,
+    unknown_rows: 2,
+  };
+
+  it("keeps an absent or non-number share UNKNOWN, never 'no data'", () => {
+    for (const share of [undefined, "5%", Number.NaN]) {
+      const v = readFlowBody({
+        ok: true,
+        unknown_share: [{ ...entry, share }],
+      })!;
+      expect(v.latestUnknown?.share).toBeUndefined();
+    }
+    const nulled = readFlowBody({
+      ok: true,
+      unknown_share: [{ ...entry, share: null }],
+    })!;
+    expect(nulled.latestUnknown?.share).toBeNull();
+  });
+
+  it("is unknown when entries arrived and none could be read", () => {
+    const v = readFlowBody({
+      ok: true,
+      unknown_share: [{ pass_id: "p1" }, "garbage", { ...entry, rows: "40" }],
+    })!;
+    expect(v.latestUnknown).toBeUndefined();
+  });
+
+  it("is 'no pass' (null) only for an empty list", () => {
+    expect(
+      readFlowBody({ ok: true, unknown_share: [] })!.latestUnknown
+    ).toBeNull();
+  });
+});
+
+describe("pass scope and mode", () => {
+  it("keeps an unrecognised scope or mode as null, never a default", () => {
+    const v = readFlowBody({
+      ok: true,
+      verdict_series: [
+        {
+          pass_id: "p1",
+          started_at: "2026-10-23T20:00:00Z",
+          scope: "partial",
+          mode: "dry-run",
+          histogram: { BUSY: 1 },
+        },
+        {
+          pass_id: "p2",
+          started_at: "2026-10-23T21:00:00Z",
+          scope: "filtered",
+          mode: "act",
+          histogram: { BUSY: 1 },
+        },
+        {
+          pass_id: "p3",
+          started_at: "2026-10-23T22:00:00Z",
+          histogram: { BUSY: 1 },
+        },
+      ],
+    })!;
+    expect(v.series!.map((p) => [p.scope, p.mode])).toEqual([
+      [null, null],
+      ["filtered", "act"],
+      [null, null],
+    ]);
+    const points = histogramPoints(v.series!);
+    expect(scopeCounts(points)).toEqual({ filtered: 1, unknown: 2 });
+    expect(passWord(points[0]!.scope)).toBe("unknown");
+    expect(passWord(points[1]!.mode)).toBe("act");
   });
 });
 
@@ -110,6 +188,13 @@ describe("metric words", () => {
     expect(percentWords(0.4)).toBe("40%");
     expect(percentWords(0.996)).toBe(">99%");
     expect(percentWords(1)).toBe("100%");
+  });
+
+  it("renders a non-finite number as unknown, never as a percentage", () => {
+    for (const n of [Number.NaN, Number.POSITIVE_INFINITY, -Infinity]) {
+      expect(percentWords(n)).toBe("–");
+      expect(durationWords(n)).toBe("–");
+    }
   });
 });
 
@@ -236,13 +321,30 @@ describe("histogramPoints", () => {
       UNKNOWN: 2,
     });
     expect(newest!.total).toBe(40);
+    expect(newest!.topSeries).toBe("UNKNOWN");
     expect(newest!.breakdown[0]).toEqual(["BUSY", 33]);
   });
 
   it("gives an empty pass a zero total, not a missing bar", () => {
     const [only] = histogramPoints(readFlowBody(NULL_FLOW)!.series!);
     expect(only!.total).toBe(0);
+    expect(only!.topSeries).toBeNull();
     expect(only!.breakdown).toEqual([]);
+  });
+});
+
+describe("topSeries", () => {
+  it("is the topmost NON-ZERO segment, whichever verdict it is", () => {
+    const [p] = histogramPoints([
+      {
+        passId: "p",
+        startedAt: "2026-10-23T20:00:00Z",
+        scope: "full",
+        mode: "report",
+        histogram: { BUSY: 4, STOPPED: 1 },
+      },
+    ]);
+    expect(p!.topSeries).toBe("STOPPED");
   });
 });
 

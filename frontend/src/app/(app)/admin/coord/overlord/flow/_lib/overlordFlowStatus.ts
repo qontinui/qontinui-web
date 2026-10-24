@@ -28,11 +28,7 @@ import {
   UNKNOWN_COUNTS_DETAIL,
 } from "@/components/console";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
-import type {
-  FlowUnchangedSession,
-  FlowUnknownShare,
-  FlowVerdictPass,
-} from "@/lib/api/operations/overlordFlow";
+import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
 
 // ---------------------------------------------------------------------------
 // Window picker
@@ -83,6 +79,32 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v !== "" ? v : null;
 }
 
+/**
+ * The latest pass's UNKNOWN share as the page holds it. `share` is a
+ * {@link Metric}: coord's explicit `null` (an empty pass) is "no data", while a
+ * share that did not arrive or is not a number is unknown — never "no data".
+ */
+export interface LatestUnknownShare {
+  passId: string;
+  startedAt: string;
+  rows: number;
+  unknownRows: number;
+  share: Metric;
+}
+
+/** A pass's scope and mode as SENT; a value this build does not know is `null`. */
+export type PassScope = "full" | "filtered" | null;
+export type PassMode = "report" | "act" | null;
+
+/** One pass of coord's `verdict_series`, narrowed. */
+export interface VerdictPass {
+  passId: string;
+  startedAt: string;
+  scope: PassScope;
+  mode: PassMode;
+  histogram: Record<string, number>;
+}
+
 export interface FlowView {
   since: string | null;
   until: string | null;
@@ -107,10 +129,14 @@ export interface FlowView {
   };
   /** `null` = the list did not arrive (unknown), `[]` = coord found none. */
   unchanged: FlowUnchangedSession[] | null;
-  /** The most recent pass's UNKNOWN share; `null` = no pass, `undefined` = list absent. */
-  latestUnknown: FlowUnknownShare | null | undefined;
+  /**
+   * The most recent pass's UNKNOWN share. `null` = coord sent an empty list
+   * (no pass in the window); `undefined` = the list is absent, or it has
+   * entries and none of them could be read — unknown, not "no pass".
+   */
+  latestUnknown: LatestUnknownShare | null | undefined;
   /** Oldest first; `null` = the series did not arrive. */
-  series: FlowVerdictPass[] | null;
+  series: VerdictPass[] | null;
 }
 
 /**
@@ -160,9 +186,19 @@ function unchangedOf(raw: unknown): FlowUnchangedSession[] | null {
   });
 }
 
-function seriesOf(raw: unknown): FlowVerdictPass[] | null {
+/** `full` / `filtered` as sent; anything else is unknown, never a default. */
+function scopeOf(v: unknown): PassScope {
+  return v === "full" || v === "filtered" ? v : null;
+}
+
+/** `report` / `act` as sent; anything else is unknown, never a default. */
+function modeOf(v: unknown): PassMode {
+  return v === "report" || v === "act" ? v : null;
+}
+
+function seriesOf(raw: unknown): VerdictPass[] | null {
   if (!Array.isArray(raw)) return null;
-  const passes = raw.flatMap((p): FlowVerdictPass[] => {
+  const passes = raw.flatMap((p): VerdictPass[] => {
     if (!isObj(p)) return [];
     const passId = str(p.pass_id);
     const startedAt = str(p.started_at);
@@ -173,22 +209,24 @@ function seriesOf(raw: unknown): FlowVerdictPass[] | null {
     }
     return [
       {
-        pass_id: passId,
-        started_at: startedAt,
-        scope: p.scope === "filtered" ? "filtered" : "full",
-        mode: p.mode === "act" ? "act" : "report",
+        passId,
+        startedAt,
+        scope: scopeOf(p.scope),
+        mode: modeOf(p.mode),
         histogram,
       },
     ];
   });
   return passes.sort(
-    (a, b) => Date.parse(a.started_at) - Date.parse(b.started_at)
+    (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)
   );
 }
 
-function latestUnknownOf(raw: unknown): FlowUnknownShare | null | undefined {
+function latestUnknownOf(raw: unknown): LatestUnknownShare | null | undefined {
   if (!Array.isArray(raw)) return undefined;
-  let latest: FlowUnknownShare | null = null;
+  // An EMPTY list is coord saying "no pass in this window".
+  if (raw.length === 0) return null;
+  let latest: LatestUnknownShare | undefined;
   for (const s of raw) {
     if (!isObj(s)) continue;
     const passId = str(s.pass_id);
@@ -203,18 +241,19 @@ function latestUnknownOf(raw: unknown): FlowUnknownShare | null | undefined {
     ) {
       continue;
     }
-    const share = metric(s.share);
-    const entry: FlowUnknownShare = {
-      pass_id: passId,
-      started_at: startedAt,
+    const entry: LatestUnknownShare = {
+      passId,
+      startedAt,
       rows,
-      unknown_rows: unknownRows,
-      share: share === undefined ? null : share,
+      unknownRows,
+      // Kept a Metric: an absent or non-number share stays UNKNOWN.
+      share: metric(s.share),
     };
-    if (!latest || Date.parse(startedAt) > Date.parse(latest.started_at)) {
+    if (!latest || Date.parse(startedAt) > Date.parse(latest.startedAt)) {
       latest = entry;
     }
   }
+  // Entries arrived and none could be read: unknown, not "no pass".
   return latest;
 }
 
@@ -261,8 +300,12 @@ export function readFlowBody(body: unknown): FlowView | null {
 /** The explicit label for coord's `null` — "not measurable", never a zero. */
 export const NO_DATA = "no data";
 
+/** What a formatter renders for a number it cannot format: unknown, `–`. */
+export const UNKNOWN_VALUE = "–";
+
 /** `5400` → `1h 30m`. Seconds under a minute stay seconds. */
 export function durationWords(secs: number): string {
+  if (!Number.isFinite(secs)) return UNKNOWN_VALUE;
   const s = Math.max(0, Math.round(secs));
   if (s < 60) return `${s}s`;
   const days = Math.floor(s / 86400);
@@ -275,6 +318,7 @@ export function durationWords(secs: number): string {
 
 /** `0.4` → `40%`, rounded to a whole percent, kept off 0%/100% unless exact. */
 export function percentWords(fraction: number): string {
+  if (!Number.isFinite(fraction)) return UNKNOWN_VALUE;
   if (fraction <= 0) return "0%";
   if (fraction >= 1) return "100%";
   const pct = Math.round(fraction * 100);
@@ -521,20 +565,29 @@ export const CHARTED_VERDICTS = ["BUSY", "STOPPED", "FINISHED"] as const;
 export const OTHER_SERIES = "other";
 export const UNKNOWN_SERIES = "UNKNOWN";
 
+/** The stack, bottom segment first. */
+export const STACK_ORDER: readonly string[] = [
+  ...CHARTED_VERDICTS,
+  OTHER_SERIES,
+  UNKNOWN_SERIES,
+];
+
 export interface HistogramPoint {
   passId: string;
   startedAt: string;
-  scope: "full" | "filtered";
-  mode: "report" | "act";
+  scope: PassScope;
+  mode: PassMode;
   total: number;
   /** One key per charted series, plus `other` and `UNKNOWN`. */
   counts: Record<string, number>;
+  /** The topmost NON-ZERO segment of this bar (the one whose top is rounded). */
+  topSeries: string | null;
   /** The full histogram, sorted by count — for the tooltip and the table. */
   breakdown: Array<[string, number]>;
 }
 
 /** Fold each pass's histogram into the charted series. Oldest first. */
-export function histogramPoints(series: FlowVerdictPass[]): HistogramPoint[] {
+export function histogramPoints(series: VerdictPass[]): HistogramPoint[] {
   const charted = new Set<string>(CHARTED_VERDICTS);
   return series.map((p) => {
     const counts: Record<string, number> = {
@@ -554,16 +607,35 @@ export function histogramPoints(series: FlowVerdictPass[]): HistogramPoint[] {
     const breakdown = Object.entries(p.histogram).sort(
       (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
     );
+    const topSeries =
+      [...STACK_ORDER].reverse().find((k) => (counts[k] ?? 0) > 0) ?? null;
     return {
-      passId: p.pass_id,
-      startedAt: p.started_at,
+      passId: p.passId,
+      startedAt: p.startedAt,
       scope: p.scope,
       mode: p.mode,
       total,
       counts,
+      topSeries,
       breakdown,
     };
   });
+}
+
+/** How many passes in a series were filtered, and how many sent an unknown scope. */
+export function scopeCounts(points: HistogramPoint[]): {
+  filtered: number;
+  unknown: number;
+} {
+  return {
+    filtered: points.filter((p) => p.scope === "filtered").length,
+    unknown: points.filter((p) => p.scope === null).length,
+  };
+}
+
+/** A pass's scope or mode in words; one this build does not know is "unknown". */
+export function passWord(value: PassScope | PassMode): string {
+  return value ?? "unknown";
 }
 
 /** Where the per-session console view is, when a Claude session id was proven. */

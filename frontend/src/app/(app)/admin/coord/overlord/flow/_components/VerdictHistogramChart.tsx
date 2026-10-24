@@ -17,6 +17,8 @@
  *   `verdict_series`), so a FILTERED pass (`--only` / `--tab`) is a short bar
  *   because it screened fewer terminals, not because fewer sessions existed.
  *   The caption counts them, and the tooltip and table name each bar's scope.
+ *   A scope or mode this build does not recognise is "unknown" there, and the
+ *   caption never claims every pass screened every terminal while one is.
  * - **The verdict vocabulary is open** (contract §2), so three verdicts get
  *   categorical slots (`chartCategorical`, fixed order — a slot follows the
  *   verdict, never its rank), UNKNOWN gets its own muted series, and every
@@ -30,17 +32,21 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
+  Rectangle,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { CollapsiblePanel, absoluteTime } from "@/components/console";
+import type { BarShapeProps } from "recharts";
 import { chartCategorical, colors } from "@/config/theme";
 import {
   CHARTED_VERDICTS,
   OTHER_SERIES,
   UNKNOWN_SERIES,
+  passWord,
+  scopeCounts,
   verdictWords,
   type HistogramPoint,
 } from "../_lib/overlordFlowStatus";
@@ -91,7 +97,8 @@ function PassTooltip({
     >
       <div className="font-medium">{passLabel(point.startedAt)}</div>
       <div className="text-muted-foreground">
-        {point.scope} pass · {point.mode} · {point.total} rows
+        {passWord(point.scope)} pass · {passWord(point.mode)} · {point.total}{" "}
+        rows
       </div>
       {point.breakdown.map(([verdict, n]) => (
         <div key={verdict} className="font-mono tabular-nums">
@@ -110,7 +117,7 @@ export function VerdictHistogramChart({
   points: HistogramPoint[] | null;
   windowWords: string;
 }) {
-  const filtered = points?.filter((p) => p.scope === "filtered").length ?? 0;
+  const scopes = points ? scopeCounts(points) : { filtered: 0, unknown: 0 };
   // Recharts reads flat keys, so each bar's counts are spread onto it.
   const data = points?.map((p) => ({ ...p, ...p.counts })) ?? [];
   return (
@@ -177,20 +184,39 @@ export function VerdictHistogramChart({
                   content={<PassTooltip />}
                 />
                 <Legend wrapperStyle={{ fontSize: "11px" }} />
-                {SERIES.map((s, i) => (
+                {SERIES.map((s) => (
                   <Bar
                     key={s.key}
                     dataKey={s.key}
                     name={s.name}
                     stackId="verdicts"
                     fill={s.color}
-                    // A 2px surface gap between stacked segments, so adjacent
-                    // fills never touch (dataviz mark spec).
-                    stroke={colors.surface.canvas}
-                    strokeWidth={1}
-                    radius={i === SERIES.length - 1 ? [2, 2, 0, 0] : 0}
                     maxBarSize={28}
                     isAnimationActive={false}
+                    // Each segment carries a 2px surface-coloured stroke,
+                    // centred on its edge: 1px of it falls inside each of two
+                    // adjacent segments, so stacked fills are separated by a
+                    // 2px gap and never touch (dataviz mark spec). Only the
+                    // bar's topmost NON-ZERO segment gets the rounded top, so
+                    // a bar ending in any verdict is rounded, not only one
+                    // ending in UNKNOWN.
+                    shape={(props: BarShapeProps) => {
+                      const top =
+                        (props.payload as HistogramPoint | undefined)
+                          ?.topSeries === s.key;
+                      return (
+                        <Rectangle
+                          x={props.x}
+                          y={props.y}
+                          width={props.width}
+                          height={props.height}
+                          fill={s.color}
+                          stroke={colors.surface.canvas}
+                          strokeWidth={2}
+                          radius={top ? [2, 2, 0, 0] : 0}
+                        />
+                      );
+                    }}
                   />
                 ))}
               </BarChart>
@@ -223,8 +249,8 @@ export function VerdictHistogramChart({
                   <th scope="row" title={absoluteTime(p.startedAt)}>
                     {passLabel(p.startedAt)}
                   </th>
-                  <td>{p.scope}</td>
-                  <td>{p.mode}</td>
+                  <td>{passWord(p.scope)}</td>
+                  <td>{passWord(p.mode)}</td>
                   <td data-series="total">{p.total}</td>
                   <td data-series="breakdown">
                     {p.breakdown.length === 0
@@ -240,9 +266,13 @@ export function VerdictHistogramChart({
             data-testid="overlord-flow-histogram-caption"
           >
             One bar per pass, from that pass&apos;s own stored histogram.
-            {filtered > 0
-              ? ` ${filtered} of the ${points.length} passes were filtered (--only / --tab): their bars are short because they screened fewer terminals, not because fewer sessions existed.`
-              : " Every pass shown screened every terminal."}{" "}
+            {scopes.filtered > 0 &&
+              ` ${scopes.filtered} of the ${points.length} passes were filtered (--only / --tab): their bars are short because they screened fewer terminals, not because fewer sessions existed.`}
+            {scopes.unknown > 0 &&
+              ` ${scopes.unknown} of the ${points.length} passes sent a scope this page does not know, so whether they screened every terminal is unknown.`}
+            {scopes.filtered === 0 &&
+              scopes.unknown === 0 &&
+              " Every pass shown screened every terminal."}{" "}
             Verdicts other than {CHARTED_VERDICTS.map(verdictWords).join(", ")}{" "}
             and unknown are grouped as &ldquo;every other verdict&rdquo;; hover
             a bar for its full breakdown.
