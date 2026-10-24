@@ -21,6 +21,7 @@ import {
   type RunnerDotStatus,
 } from "@/components/runner/runner-state";
 import type { RunnerLocality } from "@/lib/runner/locality";
+import { useMachineAliaser } from "@/components/presentation";
 import {
   isNothingEligible,
   type ResolvedRunnerState,
@@ -69,7 +70,8 @@ function unresolvedLabel(
 function resolverNotice(
   pin: RunnerPin | null,
   resolution: ResolvedRunnerState,
-  activeRunner: Runner | null
+  activeRunner: Runner | null,
+  runnerName: string | null
 ): string | null {
   switch (resolution.status) {
     case "unavailable":
@@ -78,7 +80,7 @@ function resolverNotice(
       if (!activeRunner) return "Resolver unavailable";
       return pin?.id === activeRunner.id
         ? "Resolver unavailable — using your pick"
-        : `Resolver unavailable — showing ${activeRunner.name ?? "this runner"}'s data`;
+        : `Resolver unavailable — showing ${runnerName ?? "this runner"}'s data`;
     case "no_capable":
     case "all_drained":
     case "all_offline":
@@ -102,22 +104,38 @@ function resolverNotice(
  * the runner reads currently address with its measured locality, plus the
  * resolver's state. Where work runs is chosen on the execution surfaces
  * ("Run on:"), where the choice means something (plan Phase 4).
+ *
+ * The runner is a machine, so a presentation names it by its session alias
+ * ("Machine A"), the same letter every lens panel gives it (plan
+ * `2026-10-23-console-presentation-spaces` D3.3).
  */
 export function RunnerStatusLine({ isCollapsed }: RunnerStatusLineProps) {
   const { activeRunner, runners, pin, listState, localityById, resolution } =
     useActiveRunner();
+  const nameMachine = useMachineAliaser();
 
   const status = getStatus(activeRunner, listState, localityById);
   const locality =
     activeRunner === null
       ? null
       : LOCALITY_PHRASE[runnerLocality(activeRunner, localityById)];
-  const label = activeRunner
-    ? `Runner: ${activeRunner.name ?? "unnamed"}`
-    : unresolvedLabel(listState, runners.length, resolution);
+  const runnerName = activeRunner
+    ? nameMachine(
+        {
+          deviceId: activeRunner.id,
+          hostname: activeRunner.hostname,
+          displayName: activeRunner.name,
+        },
+        activeRunner.name ?? "unnamed"
+      )
+    : null;
+  const label =
+    runnerName !== null
+      ? `Runner: ${runnerName}`
+      : unresolvedLabel(listState, runners.length, resolution);
   const notice =
     listState === "loaded" && runners.length > 0
-      ? resolverNotice(pin, resolution, activeRunner)
+      ? resolverNotice(pin, resolution, activeRunner, runnerName)
       : null;
   const summary = [label, locality].filter(Boolean).join(" · ");
 

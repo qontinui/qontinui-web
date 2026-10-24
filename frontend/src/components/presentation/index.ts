@@ -11,7 +11,9 @@
  *
  * | Export | What it is |
  * |---|---|
- * | `PresentationLens` | what a layout mounts; the lens trees are the console layout and the digital-twin layout |
+ * | `PresentationLens` | what a layout mounts; the lens trees (`LENS_TREES`) are the console layout and the digital-twin layout |
+ * | `PresentationShell` | the app shell's one mode provider, enabled on a lens-tree route, so the sidebar beside a lens page is in its mode |
+ * | `PresentationPage`, `PRESENTATION_READY_ROUTES` | the gate around a lens page's body: in presentation mode a page renders only when registered as ready with the test that proves it; any other page is withheld (D3 fails closed) |
  * | `PresentationModeProvider`, `usePresentationMode`, `FixedPresentationMode` | the mode, resolved by D2's order (`?present=` wins, then the tab's choice, then the viewer's setting, then off); unresolved fails closed |
  * | `PresentationModeToggle` | the header control; the "Presentation mode" chip while presenting |
  * | `Caption` + `./captions` | captions from ONE registry composed of one file per lens surface (D5) |
@@ -30,6 +32,25 @@
  */
 
 export { PresentationLens } from "./PresentationLens";
+export { PresentationShell } from "./PresentationShell";
+export type { PresentationShellProps } from "./PresentationShell";
+
+export {
+  PresentationPage,
+  WITHHELD_PAGE_TEXT,
+  WITHHELD_PAGE_TITLE,
+} from "./PresentationPage";
+export type { PresentationPageProps } from "./PresentationPage";
+
+export {
+  LENS_TREES,
+  PRESENTATION_READY_ROUTES,
+  isLensTreePath,
+  isPresentationReady,
+  normalizePath,
+  routeMatches,
+} from "./presentationReadiness";
+export type { PresentationReadyRoute } from "./presentationReadiness";
 
 export {
   FixedPresentationMode,
@@ -42,7 +63,11 @@ export type {
   PresentationModeValue,
 } from "./PresentationModeProvider";
 
-export { PresentationModeToggle } from "./PresentationModeToggle";
+export {
+  PRESENTATION_TOGGLE_TITLE_OFF,
+  PRESENTATION_TOGGLE_TITLE_ON,
+  PresentationModeToggle,
+} from "./PresentationModeToggle";
 export type { PresentationModeToggleProps } from "./PresentationModeToggle";
 
 export {

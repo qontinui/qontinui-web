@@ -21,6 +21,7 @@ import { SidebarNav } from "./_components/SidebarNav";
 import { SidebarFooter } from "./_components/SidebarFooter";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SidebarDrawer, SIDEBAR_DRAWER_ID } from "./SidebarDrawer";
+import { OperatorOnly } from "@/components/presentation";
 
 interface UnifiedSidebarProps {
   className?: string;
@@ -172,25 +173,31 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
           bodyCollapsed && "items-center"
         )}
       >
-        {mode === "visual" &&
-          (mounted ? (
-            <ProjectSwitcher
-              isCollapsed={bodyCollapsed}
-              projects={projects}
-              currentProject={currentProject}
-              onProjectChange={handleProjectChange}
-              onCreateProject={handleCreateProject}
-              loading={projectsLoading}
-            />
-          ) : (
-            <div
-              className={cn(
-                "h-8 rounded-md bg-surface-raised/50 animate-pulse",
-                bodyCollapsed ? "w-8" : "w-full"
-              )}
-            />
-          ))}
-        <SearchTrigger isCollapsed={bodyCollapsed} />
+        {/* In presentation mode (plan 2026-10-23-console-presentation-spaces
+            D3) neither renders: the visual project switcher lists projects and
+            creates them, and search reaches every surface, operator-only ones
+            included. */}
+        <OperatorOnly>
+          {mode === "visual" &&
+            (mounted ? (
+              <ProjectSwitcher
+                isCollapsed={bodyCollapsed}
+                projects={projects}
+                currentProject={currentProject}
+                onProjectChange={handleProjectChange}
+                onCreateProject={handleCreateProject}
+                loading={projectsLoading}
+              />
+            ) : (
+              <div
+                className={cn(
+                  "h-8 rounded-md bg-surface-raised/50 animate-pulse",
+                  bodyCollapsed ? "w-8" : "w-full"
+                )}
+              />
+            ))}
+          <SearchTrigger isCollapsed={bodyCollapsed} />
+        </OperatorOnly>
       </div>
 
       <SidebarNav

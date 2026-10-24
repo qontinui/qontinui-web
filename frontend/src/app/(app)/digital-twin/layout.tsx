@@ -10,15 +10,24 @@
  * page header, renders it in presentation mode. Both layouts share one mode
  * store, so a presentation carries across a client-side navigation between
  * the twin and the console in either direction.
+ *
+ * The page body is gated like every lens page (`PresentationPage`): until the
+ * twin is registered as presentation-ready, presentation mode withholds it
+ * behind its caption. The page's own header carries the toggle, so the
+ * withheld placeholder offers it instead (`withToggle`).
  */
 
 import type { ReactNode } from "react";
-import { PresentationLens } from "@/components/presentation";
+import { PresentationLens, PresentationPage } from "@/components/presentation";
 
 export default function DigitalTwinLayout({
   children,
 }: {
   children: ReactNode;
 }) {
-  return <PresentationLens>{children}</PresentationLens>;
+  return (
+    <PresentationLens>
+      <PresentationPage withToggle>{children}</PresentationPage>
+    </PresentationLens>
+  );
 }
