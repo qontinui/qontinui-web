@@ -228,8 +228,9 @@ function sessionStorageGetter(): Storage | null {
 
 /**
  * The registry every lens surface in the tab shares. Persisted to
- * sessionStorage. Client-only: `useMachineName` never consults it during a
- * server or hydration render, so no server-side module state is mutated.
+ * sessionStorage. Client-only: neither `useMachineName` nor
+ * `useMachineAliaser` consults it during a server or hydration render, so no
+ * server-side module state is mutated.
  */
 export const sessionMachineAliases = new MachineAliasRegistry({
   storage: sessionStorageGetter,
