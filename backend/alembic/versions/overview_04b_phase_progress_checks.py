@@ -1,7 +1,7 @@
 """overview.phases — the database refuses incoherent phase progress
 
 Revision ID: overview_04b_phase_progress_checks
-Revises: overview_04_timeline
+Revises: citecand_01
 Create Date: 2026-10-03
 
 Until now only the API (``phase_progress_problem`` in
@@ -69,7 +69,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "overview_04b_phase_progress_checks"
-down_revision: str | Sequence[str] | None = "overview_04_timeline"
+down_revision: str | Sequence[str] | None = "citecand_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

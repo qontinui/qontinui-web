@@ -1079,7 +1079,7 @@ def test_the_rule_is_against_the_given_today() -> None:
 # ===========================================================================
 
 _REVISION = "overview_04b_phase_progress_checks"
-_PARENT = "overview_04_timeline"
+_PARENT = "citecand_01"
 _CHECKS = (
     "ck_overview_phases_actual_end_has_start",
     "ck_overview_phases_gate_decision_dated",
