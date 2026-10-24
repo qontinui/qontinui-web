@@ -114,13 +114,35 @@ jobs:
           persist-credentials: false
       - name: Detect alembic migration changes
         id: detect
-        # The base sha reaches the script through `env:`, never as an inline
-        # expression in `run:` (zizmor template-injection hygiene).
+        # The base ref and head sha reach the script through `env:`, never as
+        # inline expressions in `run:` (zizmor template-injection hygiene).
+        #
+        # The base is the base branch's CURRENT TIP, resolved from the
+        # `fetch-depth: 0` checkout's `refs/remotes/origin/*` -- NOT
+        # `github.event.pull_request.base.sha`, which on a PR that is behind
+        # its base is the stale merge base. Diffed three-dot against that
+        # stale sha, the merge ref's `HEAD` carries everything main landed
+        # since, so this read main's migrations as the PR's. Three-dot from
+        # the tip to the PR HEAD sha is merge-base-relative: exactly the PR's
+        # own changes, the same set `tested` qualifies.
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          base="$BASE_SHA"
-          if git diff --name-only "$base"...HEAD | grep -qE '^backend/alembic/versions/.*\.py$'; then
+          set -euo pipefail
+          if ! base=$(git rev-parse --quiet --verify "refs/remotes/origin/${BASE_REF}^{commit}") || ! [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the base branch tip refs/remotes/origin/${BASE_REF} does not resolve in this checkout, so which migrations this PR changes is UNKNOWN -- not passed."
+            exit 1
+          fi
+          echo "Base tip: origin/${BASE_REF} = $base"
+          if ! changed=$(git diff --name-only "$base"..."$HEAD_SHA"); then
+            echo "::error::git diff $base...$HEAD_SHA failed, so which migrations this PR changes is UNKNOWN -- not passed."
+            exit 1
+          fi
+          # A here-string, not `printf | grep -q`: under `pipefail` an early
+          # `grep -q` exit can SIGPIPE the writer and fail the pipeline,
+          # which the `if` would read as "no migration".
+          if grep -qE '^backend/alembic/versions/.*\.py$' <<<"$changed"; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
             echo "Alembic migration changes detected — reversibility test will run."
           else
@@ -861,8 +883,21 @@ jobs:
   # 0 alone is never read as a pass (a top-level `sys.exit(0)` in a
   # migration exits 0 with nothing checked).
   # The changed set is computed three-dot from the PR HEAD sha
-  # (`base...<head sha>`), the same sha the overlay reads, so the file that
-  # is counted and the file that is tested come from one ref.
+  # (`<base tip>...<head sha>`), the same sha the overlay reads, so the file
+  # that is counted and the file that is tested come from one ref.
+  #
+  # THE BASE IS THE BASE BRANCH'S CURRENT TIP (`MRT_BASE_TIP`, resolved from
+  # `refs/remotes/origin/<base_ref>` by the qualifying step), never
+  # `github.event.pull_request.base.sha`. On a PR that is behind its base,
+  # that sha is the stale merge base, and coord's alembic re-point watcher
+  # rewrites a migration's `down_revision` onto main's CURRENT head without
+  # merging main into the branch -- so an overlay onto the stale base lacks
+  # the parent revision and every re-pointed PR went red on a `KeyError`
+  # (qontinui-web#1537, #1525; plan
+  # 2026-10-24-migration-reversal-overlays-onto-stale-pr-base-not-base-tip).
+  # The tip is what coord's rebase-ff land lands onto, so it is the only base
+  # the verdict is evidence about. Three-dot from the tip is still
+  # merge-base-relative, so the changed set is the PR's own diff.
   #
   # ⚠️ TRUST BOUNDARY -- read before relying on this check. The migration
   # file is UNTRUSTED CODE, and this job EXECUTES it: alembic imports it to
@@ -937,9 +972,11 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      # The PR merge ref, with full history: `detect`'s three-dot diff needs
-      # the merge base, and the overlay below needs the PR head sha, which is
-      # a parent of the merge commit.
+      # The PR merge ref, with full history: the three-dot diff below needs
+      # the merge base, the overlay needs the PR head sha (a parent of the
+      # merge commit), and the base tip is read from the
+      # `+refs/heads/*:refs/remotes/origin/*` fetch a `fetch-depth: 0`
+      # checkout performs.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
@@ -974,19 +1011,33 @@ jobs:
       # "Non-executable edits only" concludes the job.
       - name: Qualify the PR's migration and switch to the base tree
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # The base TIP: the base branch as it stands now, which is what
+          # coord's rebase-ff land lands onto -- NOT
+          # `github.event.pull_request.base.sha`, the stale merge base on a PR
+          # that is behind (see the job header). Resolved once, here, in a
+          # trusted shell before any PR code runs, and handed to every later
+          # step as MRT_BASE_TIP. An unresolvable ref is UNKNOWN, never a
+          # fallback to the event's sha.
+          if ! BASE_TIP=$(git rev-parse --quiet --verify "refs/remotes/origin/${BASE_REF}^{commit}") || ! [[ "$BASE_TIP" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Migration Reversal Tested - condition (b) failed::the base branch tip refs/remotes/origin/${BASE_REF} does not resolve to a commit in this checkout, so the base this PR's migration lands on is UNKNOWN -- not passed."
+            exit 1
+          fi
+          echo "Base tip: origin/${BASE_REF} = $BASE_TIP"
           # Rename detection is forced on (`-M`), and NUL-separated output
           # (`-z`) is parsed rather than whitespace-split, so no path spelling
           # can smuggle a second entry past the count.
           # Three-dot from the HEAD SHA (not the merge ref's `HEAD`), so the
-          # changed set and the overlay below read the same commit.
-          git diff -z --name-status -M "$BASE_SHA"..."$HEAD_SHA" > "$RUNNER_TEMP/mrt-diff.bin"
+          # changed set and the overlay below read the same commit. Three-dot
+          # is merge-base-relative, so from the tip it is still exactly the
+          # PR's own diff -- nothing main landed since the PR branched.
+          git diff -z --name-status -M "$BASE_TIP"..."$HEAD_SHA" > "$RUNNER_TEMP/mrt-diff.bin"
           python3 scripts/ci/mrt_qualify.py \
             --diff "$RUNNER_TEMP/mrt-diff.bin" \
-            --base "$BASE_SHA" \
+            --base "$BASE_TIP" \
             --head "$HEAD_SHA" \
             --env-out "$RUNNER_TEMP/mrt-env"
 
@@ -995,6 +1046,7 @@ jobs:
           # the next step). An exit 0 alone is not a verdict: the file must
           # say which of the two outcomes this is.
           cat "$RUNNER_TEMP/mrt-env" >> "$GITHUB_ENV"
+          echo "MRT_BASE_TIP=$BASE_TIP" >> "$GITHUB_ENV"
           doc_only=$(sed -n 's/^MRT_DOC_ONLY=//p' "$RUNNER_TEMP/mrt-env")
           case "$doc_only" in
             1)
@@ -1028,37 +1080,38 @@ jobs:
 
           # Condition (b), continued: the path must NOT already exist at the
           # base TIP. The changed set above is three-dot (from the merge base),
-          # but the overlay below lands on the base tip, so a stale-base PR
+          # but the overlay below lands on the base tip ($BASE_TIP, resolved
+          # above -- not the event's stale base sha), so a stale-base PR
           # whose "added" file was meanwhile added on the base too would
           # otherwise REPLACE the base's own copy -- a file, and a revision id,
           # the base already has. `cat-file -e` exits 0 iff the object exists.
           # The base commit must resolve first, so "path absent" below can
           # only mean absent, never "base object unreadable".
-          if ! git rev-parse --quiet --verify "$BASE_SHA^{commit}" >/dev/null; then
-            echo "::error title=Migration Reversal Tested - condition (b) failed::the base commit $BASE_SHA does not resolve in this checkout, so whether $MRT_MIGRATION already exists at the base tip is UNKNOWN -- not passed."
+          if ! git rev-parse --quiet --verify "$BASE_TIP^{commit}" >/dev/null; then
+            echo "::error title=Migration Reversal Tested - condition (b) failed::the base commit $BASE_TIP does not resolve in this checkout, so whether $MRT_MIGRATION already exists at the base tip is UNKNOWN -- not passed."
             exit 1
           fi
-          if git cat-file -e "$BASE_SHA:$MRT_MIGRATION" 2>/dev/null; then
-            echo "::error title=Migration Reversal Tested - condition (b) failed::$MRT_MIGRATION already exists at the base tip $BASE_SHA. This PR's branch is stale: the file it adds has since been added on the base, so overlaying it would REPLACE a base migration rather than add a new one. Rebase onto the current base and give the migration its own file."
+          if git cat-file -e "$BASE_TIP:$MRT_MIGRATION" 2>/dev/null; then
+            echo "::error title=Migration Reversal Tested - condition (b) failed::$MRT_MIGRATION already exists at the base tip $BASE_TIP. This PR's branch is stale: the file it adds has since been added on the base, so overlaying it would REPLACE a base migration rather than add a new one. Rebase onto the current base and give the migration its own file."
             exit 1
           fi
 
           # Detach onto the BASE. Everything -- env.py, alembic.ini, app/,
           # pyproject.toml, poetry.lock, every existing migration -- is now
           # the base's; the overlay step below adds exactly one file.
-          git checkout --quiet --detach "$BASE_SHA"
+          git checkout --quiet --detach "$BASE_TIP"
           # A pure base tree: no tracked difference from the base, and nothing
           # untracked under versions/ (an untracked .py there is loaded by
           # alembic just like a tracked one). Each read is captured on its own
           # line so a git failure aborts under `set -e` instead of reading as
           # "empty, therefore clean".
           untracked=$(git status --porcelain --untracked-files=all -- backend/alembic/versions)
-          if [ -n "$untracked" ] || ! git diff --quiet "$BASE_SHA"; then
-            echo "::error title=Migration Reversal Tested - isolation failed::the tree is not the pure base $BASE_SHA after the switch:"
+          if [ -n "$untracked" ] || ! git diff --quiet "$BASE_TIP"; then
+            echo "::error title=Migration Reversal Tested - isolation failed::the tree is not the pure base $BASE_TIP after the switch:"
             git status --short
             exit 1
           fi
-          echo "Tree is the pure base $BASE_SHA."
+          echo "Tree is the pure base $BASE_TIP."
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
@@ -1110,18 +1163,25 @@ jobs:
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
           ENVIRONMENT: development
           TESTING: 1
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           cd backend
           set -euo pipefail
+          # The base tip the qualifying step resolved (MRT_BASE_TIP; see the
+          # job header) -- never the event's stale base sha. Absent or not a
+          # sha is UNKNOWN, never "compare against nothing".
+          BASE_TIP="${MRT_BASE_TIP:-}"
+          if ! [[ "$BASE_TIP" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Migration Reversal Tested - isolation failed::MRT_BASE_TIP ('${BASE_TIP}') is not a commit sha, so the base tree this step reads is UNKNOWN -- not passed."
+            exit 1
+          fi
           # A pure base tree: no tracked difference from the base, and nothing
           # untracked under versions/ (an untracked .py there is loaded by
           # alembic just like a tracked one). Each read is captured on its own
           # line so a git failure aborts under `set -e` instead of reading as
           # "empty, therefore clean".
           untracked=$(git status --porcelain --untracked-files=all -- alembic/versions)
-          if [ -n "$untracked" ] || ! git diff --quiet "$BASE_SHA"; then
-            echo "::error title=Migration Reversal Tested - isolation failed::the tree is not the pure base $BASE_SHA, so the base revision set cannot be read from trusted code alone:"
+          if [ -n "$untracked" ] || ! git diff --quiet "$BASE_TIP"; then
+            echo "::error title=Migration Reversal Tested - isolation failed::the tree is not the pure base $BASE_TIP, so the base revision set cannot be read from trusted code alone:"
             git status --short
             exit 1
           fi
@@ -1145,20 +1205,30 @@ jobs:
       - name: Overlay the PR's migration onto the base tree
         if: env.MRT_DOC_ONLY != '1'
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # The base tip the qualifying step resolved (MRT_BASE_TIP; see the
+          # job header) -- never the event's stale base sha. Absent or not a
+          # sha is UNKNOWN, never "compare against nothing".
+          BASE_TIP="${MRT_BASE_TIP:-}"
+          if ! [[ "$BASE_TIP" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Migration Reversal Tested - isolation failed::MRT_BASE_TIP ('${BASE_TIP}') is not a commit sha, so the base tree this step reads is UNKNOWN -- not passed."
+            exit 1
+          fi
           git checkout "$HEAD_SHA" -- "$MRT_MIGRATION"
           if [ ! -f "$MRT_MIGRATION" ] || [ -L "$MRT_MIGRATION" ]; then
             echo "::error title=Migration Reversal Tested - condition (a) failed::after the overlay, $MRT_MIGRATION is not a regular file in the working tree (missing or a symlink)."
             exit 1
           fi
-          echo "Tree is base $BASE_SHA plus $MRT_MIGRATION from head $HEAD_SHA:"
+          echo "Tree is base tip $BASE_TIP plus $MRT_MIGRATION from head $HEAD_SHA:"
           git status --short
           # Prove the overlay is the ONLY difference from the base, rather
           # than trusting the two commands above to have done exactly that.
-          others=$(git diff --name-only "$BASE_SHA" | grep -vxF "$MRT_MIGRATION" || true)
+          # The diff is captured on its own line so a git failure aborts
+          # under `set -e` instead of reading as "no other difference".
+          changed=$(git diff --name-only "$BASE_TIP")
+          others=$(grep -vxF -- "$MRT_MIGRATION" <<<"$changed" || true)
           if [ -n "$others" ]; then
             others=${others//$'\n'/, }
             echo "::error title=Migration Reversal Tested - isolation failed::files other than $MRT_MIGRATION differ from the base: $others"
@@ -1349,11 +1419,18 @@ jobs:
           ENVIRONMENT: development
           TESTING: 1
           PGPASSWORD: test_password
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           cd backend
           set -euo pipefail
+          # The base tip the qualifying step resolved (MRT_BASE_TIP; see the
+          # job header) -- never the event's stale base sha. Absent or not a
+          # sha is UNKNOWN, never "compare against nothing".
+          BASE_TIP="${MRT_BASE_TIP:-}"
+          if ! [[ "$BASE_TIP" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Migration Reversal Tested - condition (e) failed::MRT_BASE_TIP ('${BASE_TIP}') is not a commit sha, so the base tree this step reads is UNKNOWN -- not passed."
+            exit 1
+          fi
           # MRT_HEAD / MRT_DOWN were parsed from the identity verdict by the
           # previous step's trusted shell. "None" is a root revision.
           : "${MRT_HEAD:?}" "${MRT_DOWN:?}"
@@ -1656,7 +1733,7 @@ jobs:
             exit 1
           fi
           # Record exactly which inputs were tested, from this trusted shell.
-          tested="MRT_TESTED base=$BASE_SHA head=$HEAD_SHA rev=$MRT_HEAD"
+          tested="MRT_TESTED base=$BASE_TIP head=$HEAD_SHA rev=$MRT_HEAD"
           {
             echo "### Migration Reversal Tested"
             echo
