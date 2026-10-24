@@ -421,14 +421,19 @@ class TestOverlordPassesProxy:
         assert resp.status_code == 503
         assert resp.json() == body
 
-    @pytest.mark.parametrize("bad", ["not-a-uuid", "..", "%2E%2E", "1234"])
-    def test_a_malformed_pass_id_never_reaches_coord(
+    @pytest.mark.parametrize("bad", ["not-a-uuid", "%2E%2E", "1234"])
+    def test_a_malformed_pass_id_is_a_422_and_never_reaches_coord(
         self, auth_client: TestClient, bad: str
     ):
         """``pass_id`` is spliced into the coord URL PATH, so anything but a
-        UUID is refused at this edge — coord is never called with it."""
+        UUID is refused AT THIS ROUTE — the encoded ``%2E%2E`` included, which
+        arrives as the segment ``..`` — and coord is never called with it.
+
+        A bare ``..`` is not a case here: the client normalises it away before
+        the request is sent, so it would 404 on a different path and prove
+        nothing about this route."""
         resp, mock_instance = _get(
             auth_client, f"{PASSES_ROUTE}/{bad}", _mock_response(200, {"ok": True})
         )
-        assert resp.status_code in (404, 422)
+        assert resp.status_code == 422
         mock_instance.get.assert_not_called()

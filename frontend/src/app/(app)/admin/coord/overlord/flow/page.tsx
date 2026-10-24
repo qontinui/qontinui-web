@@ -45,6 +45,7 @@ import { VerdictHistogramChart } from "./_components/VerdictHistogramChart";
 import {
   FLOW_WINDOWS,
   MALFORMED_FAILURE,
+  NO_DATA,
   deriveFlowHealth,
   durationWords,
   failureSentence,
@@ -189,6 +190,8 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
   ];
 }
 
+const NO_PASS_TITLE = "no data — no pass was recorded in this window";
+
 function unknownShareStats(v: FlowView | null): Stat[] {
   const latest = v?.latestUnknown;
   const share =
@@ -204,7 +207,7 @@ function unknownShareStats(v: FlowView | null): Stat[] {
       value: metricValue(share, percentWords),
       title:
         latest === null
-          ? "no data — no pass was recorded in this window"
+          ? NO_PASS_TITLE
           : share === null
             ? "no data — the latest pass screened no terminal"
             : share === undefined
@@ -216,7 +219,16 @@ function unknownShareStats(v: FlowView | null): Stat[] {
     {
       key: "rows",
       label: "of rows",
-      value: latest ? `${latest.unknown_rows}/${latest.rows}` : null,
+      // Coord's empty list says the same thing for both stats: no pass, so
+      // "no data" — never a `–` (unknown) beside a "no data" share.
+      value:
+        latest === null
+          ? NO_DATA
+          : latest
+            ? `${latest.unknownRows}/${latest.rows}`
+            : null,
+      title:
+        latest === null ? NO_PASS_TITLE : latest ? undefined : UNKNOWN_TITLE,
       "data-testid": "overlord-flow-unknown-rows",
     },
   ];
@@ -389,6 +401,16 @@ export default function CoordOverlordFlowPage() {
               >
                 None at the last good read — the latest refresh failed, so this
                 may no longer hold.
+              </p>
+            ) : shown && shown.passesConsidered === 0 ? (
+              // An empty list over NO pass is not an all-clear: nothing was
+              // screened, so nothing could be seen staying unchanged.
+              <p
+                className="text-sm text-muted-foreground italic m-0"
+                data-testid="overlord-flow-unchanged-no-pass"
+              >
+                No triage pass recorded in {win.words} — no session could be
+                seen staying unchanged, so this is not an all-clear.
               </p>
             ) : (
               <p
