@@ -1,7 +1,7 @@
 """coord.ci_dispatch_read_tokens — the Local-lane sibling-read door's audit and mint cap
 
 Revision ID: ci_read_token_02
-Revises: build_records_01_export
+Revises: wthr_01
 Create Date: 2026-10-13
 
 Phase 3 of plan
@@ -61,7 +61,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ci_read_token_02"
-down_revision: str | Sequence[str] | None = "build_records_01_export"
+down_revision: str | Sequence[str] | None = "wthr_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
