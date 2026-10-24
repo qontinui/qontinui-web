@@ -312,6 +312,10 @@ def upgrade() -> None:
         'column and this one together.'
         """
     )
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
 def downgrade() -> None:
@@ -341,6 +345,8 @@ def downgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '3s'")
     # Dropped in the inverse of the upgrade's add order.
     for table in reversed(_TABLES):
-        op.execute(
-            f"ALTER TABLE {table} DROP COLUMN IF EXISTS {_PUBLISH_MODE_COLUMN}"
-        )
+        op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {_PUBLISH_MODE_COLUMN}")
+    # env.py runs every pending migration in ONE enclosing transaction, so
+    # without a reset this SET LOCAL would silently apply to any migration
+    # that runs after this one in the same batch (e.g. a fresh-DB replay).
+    op.execute("SET LOCAL lock_timeout = DEFAULT")
