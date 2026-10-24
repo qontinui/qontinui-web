@@ -580,6 +580,14 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
     "is handed to `withRetry` (line 4), which this check does not read as running it",
   ],
   [
+    "its only assertion handed to an awaited function this check does not know",
+    PAGE +
+      inAsyncTest(
+        `${RENDER}\nawait withRetry(() => expectPresentationSafe(view));`
+      ),
+    "is handed to `withRetry` (line 4), which this check does not read as running it",
+  ],
+  [
     "its only assertion in a waitFor nobody awaits",
     PAGE + inTest(`${RENDER}\nwaitFor(() => expectPresentationSafe(view));`),
     "the `waitFor` running it (line 4) is neither awaited nor returned",
