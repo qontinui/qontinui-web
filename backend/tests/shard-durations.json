@@ -333,6 +333,8 @@
   "tests/test_ops_split_transform.py": 1.4,
   "tests/test_organization_service.py": 0.3,
   "tests/test_overlord_01_interventions_migration.py": 9.6,
+  "tests/test_overview_05_page_sources_migration.py": 47.7,
+  "tests/test_overview_agent_publishing.py": 36.1,
   "tests/test_overview_authoring.py": 9.8,
   "tests/test_overview_documents.py": 11.0,
   "tests/test_overview_estimates_api.py": 24.3,
