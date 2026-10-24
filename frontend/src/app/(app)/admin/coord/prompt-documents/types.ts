@@ -1789,6 +1789,7 @@ export interface AutoPublishStatusResponse {
  */
 export type AutoPublishWorkerStatus =
   | "alive"
+  | "erroring"
   | "stale"
   | "dead"
   | "not_leader_here"
@@ -1797,8 +1798,11 @@ export type AutoPublishWorkerStatus =
 /** One worker's observation, from the auto-publish status read. */
 export interface AutoPublishWorkerObservation {
   status: AutoPublishWorkerStatus | (string & {});
-  /** Why coord could not classify the worker — present only for `unknown`. */
-  unknown_reason?: string;
+  /**
+   * Why the status is `unknown` or `erroring` — coord's own sentence. `null`
+   * (or absent, from an older coord) for every other status.
+   */
+  unknown_reason?: string | null;
   /**
    * The ledger's last tick of ANY kind. A follower's `follower_skip` refreshes
    * it, so it is NEVER evidence that a pass ran — only the stale/dead "since".

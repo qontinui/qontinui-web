@@ -65,6 +65,18 @@ export function describeObservedPass(
         title: absoluteTime(pass.last_work_tick_at),
       };
     }
+    case "erroring": {
+      // The loop runs and is FAILING: its body errors on every tick, or its
+      // last pass returned a failure code (`ran:publish_failed`, …). Not
+      // UNKNOWN — coord observed it — and never a healthy "last pass".
+      const code = pass.last_decision_code ?? "the body errors on every tick";
+      return {
+        text: `Observed: running but failing — ${code}`,
+        tone: "attention",
+        reason: pass.unknown_reason || undefined,
+        title: pass.unknown_reason ? `Coord: ${pass.unknown_reason}` : undefined,
+      };
+    }
     case "stale":
     case "dead": {
       // The last tick of any kind is the honest "since" for a loop that

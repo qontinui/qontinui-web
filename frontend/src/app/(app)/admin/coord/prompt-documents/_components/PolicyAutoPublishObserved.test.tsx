@@ -9,7 +9,8 @@
  *
  * What is pinned, and how each would fail silently:
  *
- * 1. **One arm per worker status**, each with its own sentence.
+ * 1. **One arm per worker status**, each with its own sentence — `erroring`
+ *    included: a loop coord observed FAILING is not UNKNOWN.
  * 2. **"Last pass" is `last_work_tick_at`, never `last_tick_at`.** A follower's
  *    `follower_skip` keeps `last_tick_at` fresh on a coord where no pass ran.
  * 3. **Absent field, failed request, coord's `unknown` and an unrecognised
@@ -232,6 +233,52 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(await observed()).toHaveTextContent(
       "Observed: no live replica is running the auto-publisher"
     );
+  });
+
+  it("erroring: names the failure code and coord's reason, never UNKNOWN or a healthy last pass", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "erroring",
+          unknown_reason:
+            "`prompt_document_auto_publish.pass` is running but reported a failure (ran:publish_failed)",
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: minutesAgo(3),
+          last_decision_code: "ran:publish_failed",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: running but failing — ran:publish_failed"
+    );
+    expect(line).toHaveTextContent("is running but reported a failure");
+    expect(line).not.toHaveTextContent(UNKNOWN);
+    expect(line).not.toHaveTextContent(/last pass/);
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("erroring with no decision code (the body errors every tick): says so", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "erroring",
+          unknown_reason: "error_streak",
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: minutesAgo(0),
+          last_decision_code: null,
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: running but failing — the body errors on every tick"
+    );
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
   it("unknown: renders UNKNOWN and carries coord's reason", async () => {
