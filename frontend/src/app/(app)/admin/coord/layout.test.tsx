@@ -43,13 +43,22 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
   usePathname: () => window.location.pathname,
 }));
-vi.mock("@/components/admin/coord/CoordNav", () => ({
-  default: () => (
-    <nav data-testid="coord-nav">
-      <a href="/admin/coord/notifications">Notifications</a>
-    </nav>
-  ),
-}));
+// A navigation link built the way the real CoordNav builds its header links:
+// carrying the presentation while presenting (`usePresentationHref`).
+vi.mock("@/components/admin/coord/CoordNav", async () => {
+  const { usePresentationHref } = await import("@/components/presentation");
+  return {
+    default: function CoordNavStandIn() {
+      return (
+        <nav data-testid="coord-nav">
+          <a href={usePresentationHref("/admin/coord/notifications")}>
+            Notifications
+          </a>
+        </nav>
+      );
+    },
+  };
+});
 vi.mock("@/components/admin/coord/RedMainBanner", () => ({
   default: () => null,
 }));

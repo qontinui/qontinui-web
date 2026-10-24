@@ -32,6 +32,7 @@ import {
   PresentationModeToggle,
   Provenance,
   RedactedText,
+  usePresentationHref,
 } from "@/components/presentation";
 import {
   CURRENCY_FIGURE,
@@ -88,6 +89,11 @@ function ElementWithCustomAction() {
   );
 }
 
+/** A link to another lens page, built the way a lens page builds one. */
+function LensLink({ to, children }: { to: string; children: ReactNode }) {
+  return <a href={usePresentationHref(to)}>{children}</a>;
+}
+
 /** A lens page composed the way later phases build theirs. */
 function SafeSurface() {
   return (
@@ -132,7 +138,7 @@ function SafeSurface() {
         descriptor={{ kind: "Plan", status: "draft" }}
       />
       <CostFigure amount={12.5} source="reported" />
-      <a href="/admin/coord/runners">Runners</a>
+      <LensLink to="/admin/coord/runners">Runners</LensLink>
       <div role="tablist">
         <button type="button" role="tab" aria-selected="true">
           Machines
@@ -340,6 +346,39 @@ describe("(a) no enabled control except navigation-only ones", () => {
     ]);
     expect(found[0].detail).toContain('"drain-machine"');
     expect(found[0].detail).toContain("does not list");
+  });
+
+  it("fails on a link to a lens page that drops the presentation — a new tab would show the operator view", () => {
+    const view = renderInPresentationMode(
+      <div>
+        <a href="/admin/coord/runners">Runners</a>
+        <a href="/digital-twin?present=0">Twin</a>
+        <a href={`${window.location.origin}/admin/coord/devops#machines`}>
+          Dev Ops
+        </a>
+      </div>
+    );
+    const found = findPresentationViolations(view);
+    expect(found.map((v) => v.kind)).toEqual([
+      "presentation-dropping-link",
+      "presentation-dropping-link",
+      "presentation-dropping-link",
+    ]);
+    expect(found[0]?.detail).toContain("/admin/coord/runners");
+    expect(found[0]?.detail).toContain("usePresentationHref");
+  });
+
+  it("passes a lens link that carries the presentation, and a link out of the lens", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <div>
+          <LensLink to="/admin/coord/runners">Runners</LensLink>
+          <a href="/admin/coord/devops?present=1#machines">Dev Ops</a>
+          <a href="/settings">Settings</a>
+          <a href="https://docs.example.test/admin/coord">Docs</a>
+        </div>
+      )
+    );
   });
 
   it("scans portals too, not only the container", () => {

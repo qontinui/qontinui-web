@@ -1874,7 +1874,9 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   fails closed.
 - A link to another lens page carries the presentation while presenting
   (`usePresentationHref`: `?present=1` on its URL), so one opened in a new tab —
-  which starts with no tab choice of its own — still presents.
+  which starts with no tab choice of its own — still presents. The page check
+  below fails a lens link that does not (`presentation-dropping-link`), so a page
+  added later cannot forget it.
 - It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
   to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
   while presenting, the sidebar names only the active project, aliases the runner,
@@ -1980,7 +1982,8 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
 **The test every presentation-ready page carries.** A presentation-mode render of the
 real page with `renderInPresentationMode` and `expectPresentationSafe(view, {
 captions, forbidden })` (`src/test/presentation.tsx`): no enabled control that is
-not navigation-only, no write or undeclared UI Bridge registration, no cost, every
+not navigation-only, no link to a lens page without `?present=1`, no write or
+undeclared UI Bridge registration, no cost, every
 listed caption, no email address or UUID, and none of the `forbidden` strings — the
 real hostnames, device ids and other parties' names the fixture holds.
 
