@@ -38,6 +38,9 @@ vi.mock("@/components/operations/OnboardingDoctor", () => ({
 vi.mock("@/components/operations/ConnectedOrgs", () => ({
   ConnectedOrgs: () => null,
 }));
+vi.mock("@/components/operations/RepoTenantBindings", () => ({
+  RepoTenantBindings: () => null,
+}));
 
 import OnboardingStatusPage from "./page";
 

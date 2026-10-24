@@ -2859,6 +2859,120 @@ async def post_pr_merge_onboarding_restore_repo(
     return JSONResponse(content=content, status_code=resp.status_code)
 
 
+# ---- Per-repo tenant bindings (list / bind / unbind) ------------------------
+#
+# A binding makes one repo governed by a tenant other than its GitHub org's
+# tenant (plan `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant`,
+# Phase 7, D8). Coord owns the table and every authorization decision: the
+# operator arm `GET/POST/DELETE /coord/onboarding/repo-bindings` resolves the
+# ACTIVE tenant from the forwarded bearer + `X-Qontinui-Active-Tenant`, lists
+# only bindings where that tenant is the bound tenant or the org's tenant, and
+# re-checks admin in BOTH tenants for a bind (D4 O4) and in the bound OR the
+# org tenant for an unbind (D4 rule 2). This proxy adds the web-side
+# active-tenant admin gate and nothing else.
+#
+# Coord's typed refusals (`400 invalid_repo`, `404 tenant_not_found` /
+# `binding_not_found`, `422 org_unbound` + `remedy`, `403
+# not_admin_in_both_tenants` + `failed_tenant`, `403
+# not_admin_in_bound_or_org_tenant`, `409 in_flight_merge_proposals` +
+# `proposal_ids`, `503 migration_pending`, `500 authz_lookup_failed`) pass
+# through with their status and body unchanged, so the page can name the code.
+COORD_REPO_BINDINGS_PATH = "/coord/onboarding/repo-bindings"
+
+
+class RepoBindRequest(BaseModel):
+    """Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
+
+    ``repo`` is ``owner/name``; coord normalizes it case-insensitively and
+    answers ``400 invalid_repo`` for anything else. ``target_tenant`` is the
+    tenant uuid the repo is bound to; it is a plain string here so a malformed
+    value reaches coord and comes back as coord's own refusal rather than a
+    web-side validation shape. ``reason`` is recorded in the audit rows coord
+    writes per affected tenant; ``decision_ref`` is optional free text.
+    """
+
+    repo: str
+    target_tenant: str
+    reason: str
+    decision_ref: str | None = None
+
+
+class RepoUnbindRequest(BaseModel):
+    """Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).
+
+    Unbinding returns governance to the org's tenant. ``reason`` is required
+    and must be non-blank; coord enforces that and records it in the audit.
+    """
+
+    repo: str
+    reason: str
+
+
+@router.get("/pr-merge/onboarding/repo-bindings")
+async def get_pr_merge_onboarding_repo_bindings(
+    repo: str | None = Query(
+        None, description="Narrow the list to one `owner/name` repository."
+    ),
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> JSONResponse:
+    """List the repo-tenant bindings visible to the active tenant.
+
+    Proxies coord's ``GET /coord/onboarding/repo-bindings[?repo=]``. The 200
+    body is ``{"bindings": [...], "measured_at": <rfc3339>}``; each binding
+    carries ``caller_side: "bound" | "org"`` — whether the active tenant is the
+    tenant the repo is bound TO, or the tenant of the org it was bound AWAY
+    from. ``repo`` is forwarded only when supplied. Status + body verbatim.
+    """
+    params = {"repo": repo} if repo is not None else None
+    return await _proxy_coord_verbatim(
+        "GET", COORD_REPO_BINDINGS_PATH, tenant_id=tenant_id, params=params
+    )
+
+
+@router.post("/pr-merge/onboarding/repo-bindings")
+async def post_pr_merge_onboarding_repo_binding(
+    body: RepoBindRequest,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> JSONResponse:
+    """Bind a repo to a tenant (or rebind it to another one).
+
+    Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
+    repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
+    audit row per affected tenant and an operator notification, and answers
+    ``{repo, from_tenant, to_tenant, governed_by, moved, binding_written,
+    audit_ids, notified, idempotent}``. ``decision_ref`` is omitted from the
+    wire when absent. Status + body verbatim.
+    """
+    return await _proxy_coord_verbatim(
+        "POST",
+        COORD_REPO_BINDINGS_PATH,
+        tenant_id=tenant_id,
+        json_body=body.model_dump(exclude_none=True),
+    )
+
+
+@router.delete("/pr-merge/onboarding/repo-bindings")
+async def delete_pr_merge_onboarding_repo_binding(
+    body: RepoUnbindRequest,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> JSONResponse:
+    """Unbind a repo, returning its governance to the org's tenant.
+
+    Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
+    ``{repo, reason}``. An admin of either the bound tenant (release) or the
+    org's tenant (reclaim) may unbind; coord decides. The 200 body has the
+    bind response's shape with ``governed_by: "org"`` and ``binding_written:
+    false``; ``404 binding_not_found`` when there is no binding. Status + body
+    verbatim.
+    """
+    return await _proxy_coord_verbatim(
+        "DELETE",
+        COORD_REPO_BINDINGS_PATH,
+        tenant_id=tenant_id,
+        json_body=body.model_dump(),
+    )
+
+
 # ---- Coord device pairing — Step 1 of the onboarding wizard -------------
 #
 # The wizard's Pair Device step (``MergeOrchestrationOnboarding.tsx``,

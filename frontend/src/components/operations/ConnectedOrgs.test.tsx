@@ -46,6 +46,7 @@ vi.mock("@/contexts/auth-context", () => ({
 
 import {
   ConnectedOrgs,
+  groupBoundAway,
   mergePostureLabel,
   pollTimeoutMessage,
 } from "./ConnectedOrgs";
@@ -477,5 +478,102 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     expect(pollTimeoutMessage("restore", 2)).toBe(
       "Re-enroll is taking longer than expected — refresh to check."
     );
+  });
+});
+
+describe("<ConnectedOrgs> repos bound to another tenant", () => {
+  const MERYTS_ORG = {
+    account_login: "Meryts",
+    account_type: "Organization",
+    installation_id: 333,
+    repos: [
+      { repo: "Meryts/site", merge_enabled: null, profile_source: "auto" },
+      {
+        repo: "Meryts/bauhaus-b2b-shop",
+        state: "unenrolled",
+        merge_enabled: null,
+        profile_source: null,
+        unenrolled_at: "2026-10-01T09:00:00Z",
+        unenrolled_by: "ops@example.com",
+        unenroll_reason: "moved",
+      },
+    ],
+  };
+  const BOUND_AWAY = [
+    {
+      repo: "meryts/bauhaus-b2b-dev-notes",
+      bound_tenant_id: "ce1ec20c-9cf1-427a-857d-81d6449cc6e4",
+      bound_tenant_slug: "bauhaus-b2b",
+    },
+    {
+      repo: "meryts/bauhaus-b2b-shop",
+      bound_tenant_id: "ce1ec20c-9cf1-427a-857d-81d6449cc6e4",
+      bound_tenant_slug: "bauhaus-b2b",
+    },
+  ];
+
+  beforeEach(() => {
+    accountsMock.mockReset();
+    fetchMock.mockReset();
+    authState.isCoordAdmin = true;
+  });
+
+  it("renders bound-away repos under their org as 'bound to <slug>' with no Re-enroll", async () => {
+    accountsMock.mockResolvedValue({
+      accounts: [MERYTS_ORG],
+      bound_away: BOUND_AWAY,
+    });
+    render(<ConnectedOrgs />);
+
+    const devNotes = await screen.findByTestId(
+      "connected-org-repo-bound-away-meryts/bauhaus-b2b-dev-notes"
+    );
+    expect(devNotes.textContent).toContain("bound to bauhaus-b2b");
+    // The tombstoned row of a bound-away repo is the binding's, not a
+    // Re-enroll candidate: it renders as bound away, once.
+    expect(
+      screen.getByTestId(
+        "connected-org-repo-bound-away-meryts/bauhaus-b2b-shop"
+      )
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("reenroll-repo-Meryts/bauhaus-b2b-shop")
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(
+        "connected-org-repo-unenrolled-Meryts/bauhaus-b2b-shop"
+      )
+    ).toBeNull();
+    // The org's own enrolled repo is untouched.
+    expect(screen.getByTestId("connected-org-repo-Meryts/site")).toBeTruthy();
+  });
+
+  it("renders nothing new when coord does not send bound_away", async () => {
+    accountsMock.mockResolvedValue({ accounts: [MERYTS_ORG] });
+    render(<ConnectedOrgs />);
+
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(screen.queryByText(/bound to/)).toBeNull();
+    // Without the field, the tombstone keeps its Re-enroll as before.
+    expect(
+      screen.getByTestId("reenroll-repo-Meryts/bauhaus-b2b-shop")
+    ).toBeTruthy();
+  });
+
+  it("groupBoundAway keeps a repo no listed org owns instead of dropping it", () => {
+    const stray = {
+      repo: "elsewhere/repo",
+      bound_tenant_id: "t",
+      bound_tenant_slug: "other",
+    };
+    const { byLogin, unmatched } = groupBoundAway(
+      [...BOUND_AWAY, stray],
+      [MERYTS_ORG]
+    );
+    expect(byLogin.get("meryts")?.map((b) => b.repo)).toEqual([
+      "meryts/bauhaus-b2b-dev-notes",
+      "meryts/bauhaus-b2b-shop",
+    ]);
+    expect(unmatched).toEqual([stray]);
   });
 });

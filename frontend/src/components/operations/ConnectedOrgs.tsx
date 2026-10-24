@@ -41,9 +41,17 @@
  *   timeout message for a deliberate refusal. Un-enrolled rows now render
  *   greyed with who/when/why and an admin-gated Re-enroll, and the poll's
  *   terminal message names them.
+ *
+ * And one from plan `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant`
+ * (Phase 7, D8): a repo of one of this tenant's orgs that a per-repo binding
+ * governs from ANOTHER tenant reads "bound to <slug>" and offers no Re-enroll —
+ * re-enrolling it here would contradict the binding, and the way back is an
+ * unbind on the Repository tenant bindings card. The rows come from coord's
+ * `bound_away[]`; a coord that does not send the field gets nothing new
+ * rendered, because absent is "not reported", never "none".
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +66,7 @@ import {
   fetchOnboardingAccounts,
   restoreRepo,
   type AccountRepo,
+  type BoundAwayRepo,
   type ConnectedAccount,
   type MergePosture,
 } from "@/lib/api/operations/prMergeOnboarding";
@@ -109,6 +118,56 @@ export function mergePostureLabel(
 
 function isUnenrolled(r: AccountRepo): boolean {
   return r.state === "unenrolled";
+}
+
+/** The `owner` half of `owner/name`, lowercased (coord's key is lowercased). */
+function repoOwner(repo: string): string {
+  return repo.split("/")[0]?.toLowerCase() ?? "";
+}
+
+/**
+ * Split coord's `bound_away[]` by org: the entries whose owner is an account
+ * on this card, keyed by lowercased login, and the ones no account owns. The
+ * second list is rendered too rather than dropped — a row nobody can see is
+ * the gap D8 closes.
+ */
+export function groupBoundAway(
+  boundAway: readonly BoundAwayRepo[],
+  accounts: readonly ConnectedAccount[]
+): { byLogin: Map<string, BoundAwayRepo[]>; unmatched: BoundAwayRepo[] } {
+  const logins = new Set(accounts.map((a) => a.account_login.toLowerCase()));
+  const byLogin = new Map<string, BoundAwayRepo[]>();
+  const unmatched: BoundAwayRepo[] = [];
+  for (const b of boundAway) {
+    const owner = repoOwner(b.repo);
+    if (logins.has(owner)) {
+      byLogin.set(owner, [...(byLogin.get(owner) ?? []), b]);
+    } else {
+      unmatched.push(b);
+    }
+  }
+  return { byLogin, unmatched };
+}
+
+/** One "bound to <slug>" row: no link, no Re-enroll. */
+function BoundAwayRow({ entry }: { entry: BoundAwayRepo }) {
+  return (
+    <li
+      className="flex items-center gap-2 flex-wrap text-muted-foreground"
+      data-testid={`connected-org-repo-bound-away-${entry.repo}`}
+      data-ui-bridge-id="operations.connected-org-repo-bound-away"
+    >
+      <span className="text-sm font-mono">{entry.repo}</span>
+      <Badge
+        variant="outline"
+        className="text-[10px]"
+        title={`Governed by tenant ${entry.bound_tenant_slug} through a per-repo binding. Unbind it on the Repository tenant bindings card to return it here.`}
+        data-testid={`bound-away-tenant-${entry.repo}`}
+      >
+        bound to {entry.bound_tenant_slug}
+      </Badge>
+    </li>
+  );
 }
 
 // Map coord's status + error code onto a human message. The enroll proxy passes
@@ -175,16 +234,27 @@ export function pollTimeoutMessage(
 
 function AccountRow({
   account,
+  boundAway,
   refetch,
 }: {
   account: ConnectedAccount;
+  /**
+   * This org's repos that a binding governs from another tenant, from coord's
+   * `bound_away[]`; empty when coord reported none or did not send the field.
+   */
+  boundAway: readonly BoundAwayRepo[];
   /**
    * `polled` marks a read the post-enroll poll issues: one request, no 5xx
    * retry chain (the next tick is the retry).
    */
   refetch: (polled?: boolean) => Promise<void>;
 }) {
-  const repos = account.repos ?? [];
+  // A bound-away repo is the binding's to govern, so it never renders as an
+  // enrolled or a Re-enroll-able row here, whatever else coord lists for it.
+  const boundAwayKeys = new Set(boundAway.map((b) => b.repo.toLowerCase()));
+  const repos = (account.repos ?? []).filter(
+    (r) => !boundAwayKeys.has(r.repo.toLowerCase())
+  );
   const enrolledRepos = repos.filter((r) => !isUnenrolled(r));
   const unenrolledRepos = repos.filter(isUnenrolled);
   const hasRepos = enrolledRepos.length > 0;
@@ -399,7 +469,7 @@ function AccountRow({
           {enrollError}
         </p>
       )}
-      {repos.length > 0 && (
+      {(repos.length > 0 || boundAway.length > 0) && (
         <ul className="mt-2 space-y-1 pl-6">
           {enrolledRepos.map((r) => (
             <li key={r.repo} className="flex items-center gap-2 flex-wrap">
@@ -488,6 +558,9 @@ function AccountRow({
               </CoordAdminOnly>
             </li>
           ))}
+          {boundAway.map((b) => (
+            <BoundAwayRow key={b.repo} entry={b} />
+          ))}
         </ul>
       )}
     </li>
@@ -496,6 +569,11 @@ function AccountRow({
 
 export function ConnectedOrgs() {
   const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null);
+  // `undefined` = coord did not send `bound_away` (an older coord): render
+  // nothing new. `[]` = coord measured none.
+  const [boundAway, setBoundAway] = useState<BoundAwayRepo[] | undefined>(
+    undefined
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -505,11 +583,19 @@ export function ConnectedOrgs() {
         polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       setAccounts(body.accounts ?? []);
+      setBoundAway(
+        Array.isArray(body.bound_away) ? body.bound_away : undefined
+      );
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
+
+  const grouped = useMemo(
+    () => groupBoundAway(boundAway ?? [], accounts ?? []),
+    [boundAway, accounts]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -551,9 +637,27 @@ export function ConnectedOrgs() {
               <AccountRow
                 key={a.installation_id || a.account_login}
                 account={a}
+                boundAway={
+                  grouped.byLogin.get(a.account_login.toLowerCase()) ?? []
+                }
                 refetch={refetch}
               />
             ))}
+            {grouped.unmatched.length > 0 && (
+              <li
+                data-testid="connected-orgs-bound-away-unmatched"
+                data-ui-bridge-id="operations.connected-orgs-bound-away-unmatched"
+              >
+                <p className="text-xs text-muted-foreground">
+                  Bound to another tenant (organization not listed above)
+                </p>
+                <ul className="mt-1 space-y-1 pl-6">
+                  {grouped.unmatched.map((b) => (
+                    <BoundAwayRow key={b.repo} entry={b} />
+                  ))}
+                </ul>
+              </li>
+            )}
           </ul>
         ) : (
           <div className="space-y-2" data-testid="connected-orgs-empty">

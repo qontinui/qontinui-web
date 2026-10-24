@@ -2,7 +2,8 @@
  * `/operations/pr-merge/onboarding/*` and `/operations/coord/devices/pair-start`:
  * connecting a GitHub org (connect-state mint, claim, App config, the keyed
  * pending-installation read), the connected-accounts list with its enroll and
- * restore writes, the onboarding doctor, and the merge-orchestration wizard
+ * restore writes, the per-repo tenant bindings (list, bind, unbind), the
+ * onboarding doctor, and the merge-orchestration wizard
  * (device pairing, preconditions, the async repo audit, accept).
  *
  * Part of the typed `/operations` client (plan
@@ -250,9 +251,36 @@ export interface ConnectedAccount {
   repos: AccountRepo[];
 }
 
-/** `get_pr_merge_onboarding_accounts`'s body. */
+/**
+ * A repo of one of the active tenant's orgs that a per-repo binding governs
+ * from ANOTHER tenant (plan
+ * `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant`, D8). The
+ * org's row reads "bound to <bound_tenant_slug>" and offers no Re-enroll.
+ */
+export interface BoundAwayRepo {
+  repo: string;
+  bound_tenant_id: string;
+  bound_tenant_slug: string;
+}
+
+/** A repo bound TO the active tenant from an org another tenant owns. */
+export interface BoundHereRepo {
+  repo: string;
+  org_tenant_slug: string | null;
+  bound_by: string;
+  reason: string;
+  created_at: string;
+}
+
+/**
+ * `get_pr_merge_onboarding_accounts`'s body. `bound_here` / `bound_away` are
+ * ABSENT on a coord that predates the binding plan's Phase 5 — absent means
+ * "not reported", never "none", so a reader renders nothing new for it.
+ */
 export interface AccountsResponse {
   accounts: ConnectedAccount[];
+  bound_here?: BoundHereRepo[];
+  bound_away?: BoundAwayRepo[];
 }
 
 /**
@@ -314,6 +342,123 @@ export async function restoreRepo(repo: string): Promise<EnrollSpawned | null> {
     maxRetries: 0,
   });
   return readJson<EnrollSpawned>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+// ----------------------------------------------------------------------------
+// Per-repo tenant bindings — list, bind, unbind
+// (coord-owned contract `GET/POST/DELETE /coord/onboarding/repo-bindings`,
+// plan `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant` Phase 7)
+// ----------------------------------------------------------------------------
+
+/**
+ * One binding as coord lists it. `repo` is coord's lowercased key.
+ * `caller_side` says which party the ACTIVE tenant is: `"bound"` — the repo is
+ * bound to this tenant; `"org"` — this tenant owns the repo's org and the repo
+ * is bound away from it.
+ */
+export interface RepoTenantBinding {
+  repo: string;
+  tenant_id: string;
+  tenant_slug: string;
+  org_tenant_id: string | null;
+  org_tenant_slug: string | null;
+  bound_by: string;
+  reason: string;
+  decision_ref: string | null;
+  created_at: string;
+  updated_at: string;
+  caller_side: "bound" | "org";
+}
+
+/** `get_pr_merge_onboarding_repo_bindings`'s 200 body. */
+export interface RepoBindingsResponse {
+  bindings: RepoTenantBinding[];
+  measured_at: string;
+}
+
+/** `post_pr_merge_onboarding_repo_binding`'s body (coord `BindRequest`). */
+export interface RepoBindRequest {
+  repo: string;
+  target_tenant: string;
+  reason: string;
+  decision_ref?: string;
+}
+
+/** `delete_pr_merge_onboarding_repo_binding`'s body (coord `UnbindRequest`). */
+export interface RepoUnbindRequest {
+  repo: string;
+  reason: string;
+}
+
+/**
+ * The bind / unbind answer. For an unbind `to_tenant` is the org's tenant,
+ * `governed_by` is `"org"` and `binding_written` is false.
+ */
+export interface RepoBindingResult {
+  repo: string;
+  from_tenant: string | null;
+  to_tenant: string;
+  governed_by: "binding" | "org";
+  moved: { tenant_repos: number; profile: number; canonical: number };
+  binding_written: boolean;
+  audit_ids: string[];
+  notified: boolean;
+  idempotent: boolean;
+}
+
+/**
+ * `GET /pr-merge/onboarding/repo-bindings` —
+ * `get_pr_merge_onboarding_repo_bindings`. Lists the bindings where the
+ * active tenant is the bound tenant or the org's tenant. A rejection carries
+ * coord's typed error body (`{error, message}`) for `httpBodyOf`.
+ */
+export async function fetchRepoTenantBindings(
+  options: HttpOptions = {}
+): Promise<RepoBindingsResponse> {
+  const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<RepoBindingsResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `POST /pr-merge/onboarding/repo-bindings` —
+ * `post_pr_merge_onboarding_repo_binding`. Moves a repo's governance and
+ * writes audit rows plus an operator notification, so it is never re-sent
+ * (`idempotent: false`, `maxRetries: 0`).
+ */
+export async function bindRepoTenant(
+  body: RepoBindRequest
+): Promise<RepoBindingResult> {
+  const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+    maxRetries: 0,
+  });
+  return readJson<RepoBindingResult>(res, `POST ${url}`);
+}
+
+/**
+ * `DELETE /pr-merge/onboarding/repo-bindings` —
+ * `delete_pr_merge_onboarding_repo_binding`. Returns the repo to its org's
+ * tenant; never re-sent (`idempotent: false`, `maxRetries: 0`).
+ */
+export async function unbindRepoTenant(
+  body: RepoUnbindRequest
+): Promise<RepoBindingResult> {
+  const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    body: JSON.stringify(body),
+    idempotent: false,
+    maxRetries: 0,
+  });
+  return readJson<RepoBindingResult>(res, `DELETE ${url}`);
 }
 
 // ----------------------------------------------------------------------------

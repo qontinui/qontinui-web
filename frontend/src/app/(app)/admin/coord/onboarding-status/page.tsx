@@ -81,6 +81,7 @@ import { Button } from "@/components/ui/button";
 import { ConnectedOrgs } from "@/components/operations/ConnectedOrgs";
 import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
+import { RepoTenantBindings } from "@/components/operations/RepoTenantBindings";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { StatusBadge } from "@/components/console";
@@ -694,6 +695,13 @@ export default function OnboardingStatusPage() {
           zero enrolled repos reads as success here (closing the empty-org
           dead-end); each repo links to `?repo=` which loads the doctor below. */}
       {phase === null && !repo && <ConnectedOrgs />}
+
+      {/* Repositories governed by a per-repo tenant binding (plan
+          `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant` D8):
+          a repo bound to this tenant is invisible under the connected orgs,
+          which list only this tenant's own org logins, so it is listed here —
+          beside the orgs, with bind and unbind. */}
+      {phase === null && !repo && <RepoTenantBindings />}
 
       {phase === "handoff" && (
         <ClaimBanner

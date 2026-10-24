@@ -15470,6 +15470,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/pr-merge/onboarding/repo-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pr Merge Onboarding Repo Bindings
+         * @description List the repo-tenant bindings visible to the active tenant.
+         *
+         *     Proxies coord's ``GET /coord/onboarding/repo-bindings[?repo=]``. The 200
+         *     body is ``{"bindings": [...], "measured_at": <rfc3339>}``; each binding
+         *     carries ``caller_side: "bound" | "org"`` — whether the active tenant is the
+         *     tenant the repo is bound TO, or the tenant of the org it was bound AWAY
+         *     from. ``repo`` is forwarded only when supplied. Status + body verbatim.
+         */
+        get: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_get"];
+        put?: never;
+        /**
+         * Post Pr Merge Onboarding Repo Binding
+         * @description Bind a repo to a tenant (or rebind it to another one).
+         *
+         *     Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
+         *     repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
+         *     audit row per affected tenant and an operator notification, and answers
+         *     ``{repo, from_tenant, to_tenant, governed_by, moved, binding_written,
+         *     audit_ids, notified, idempotent}``. ``decision_ref`` is omitted from the
+         *     wire when absent. Status + body verbatim.
+         */
+        post: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_post"];
+        /**
+         * Delete Pr Merge Onboarding Repo Binding
+         * @description Unbind a repo, returning its governance to the org's tenant.
+         *
+         *     Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
+         *     ``{repo, reason}``. An admin of either the bound tenant (release) or the
+         *     org's tenant (reclaim) may unbind; coord decides. The 200 body has the
+         *     bind response's shape with ``governed_by: "org"`` and ``binding_written:
+         *     false``; ``404 binding_not_found`` when there is no binding. Status + body
+         *     verbatim.
+         */
+        delete: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
         parameters: {
             query?: never;
@@ -47035,6 +47083,27 @@ export interface components {
             viewport_width?: number | null;
         };
         /**
+         * RepoBindRequest
+         * @description Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
+         *
+         *     ``repo`` is ``owner/name``; coord normalizes it case-insensitively and
+         *     answers ``400 invalid_repo`` for anything else. ``target_tenant`` is the
+         *     tenant uuid the repo is bound to; it is a plain string here so a malformed
+         *     value reaches coord and comes back as coord's own refusal rather than a
+         *     web-side validation shape. ``reason`` is recorded in the audit rows coord
+         *     writes per affected tenant; ``decision_ref`` is optional free text.
+         */
+        RepoBindRequest: {
+            /** Decision Ref */
+            decision_ref?: string | null;
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
+            /** Target Tenant */
+            target_tenant: string;
+        };
+        /**
          * RepoCiRow
          * @description One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
          *
@@ -47171,6 +47240,19 @@ export interface components {
             name: string;
             /** Owner */
             owner: string;
+        };
+        /**
+         * RepoUnbindRequest
+         * @description Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).
+         *
+         *     Unbinding returns governance to the org's tenant. ``reason`` is required
+         *     and must be non-blank; coord enforces that and records it in the audit.
+         */
+        RepoUnbindRequest: {
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
         };
         /**
          * ReposApplyDispatchRequest
@@ -78564,6 +78646,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_get: {
+        parameters: {
+            query?: {
+                /** @description Narrow the list to one `owner/name` repository. */
+                repo?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoBindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoUnbindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
