@@ -1905,21 +1905,31 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   costs a placeholder, a page shown before it is safe costs a write control in
   front of a client. Register a page **in the same PR** as its page test (below).
   Whether that test proves the page is read from the **run**, not from its source
-  (`src/test/readinessEvidence.ts`): the page check records, on the test that is
-  running, whether the route's own page component was mounted in the view it
-  checked, under a presenting lens, and what it found; and a run that executes the
-  registry's own test (`npm run test`, so CI) fails unless that same run ran the
-  proof and, in it, a test that **finished passed** — not skipped at run time from
-  wherever, not failed, not concurrent — holds such a record with no violation and
-  the real UI Bridge provider observed. A proof filtered out of that run is
-  UNKNOWN, which fails it; a run that filters the registry's test out claims
+  (`src/test/readinessEvidence.ts`). The page check records, on the test that is
+  running, which render it read; whether the route's own page component was
+  mounted there under a presenting lens, rendering something and all of it inside
+  the element the check read; whether check (b) read that render's own UI Bridge
+  registry; and what it found. The registry's own test arms the requirement by a
+  record on itself, so it holds wherever that file lives, and a run it armed
+  (`npm run test`, so CI) fails unless that same run ran the proof, and in it a
+  test that **finished passed** — not skipped at run time from wherever, not
+  failed, not concurrent — holds a render whose last such check found no
+  violation through that registry. A render whose last check found a violation,
+  in any test of the proof however it ended, refuses the route: the run's own
+  evidence outweighs a clean check elsewhere (a check polled with `waitFor`
+  counts by its last attempt). A proof filtered out of that run is UNKNOWN,
+  which fails it; a run the test did not arm (one that filters it out) claims
   nothing. The run's log names each route it proved and the test that proved it.
   Beyond its reach: a proof that writes the record itself, or mocks or edits the
-  checker, its reporter, `setup.ts` or the vitest config; and the state the proof
-  checks the page in, which is the proof's to choose (a fixture that never loads
-  data proves the empty page). The console's landing redirect (`/admin/coord`,
-  one sentence) is registered from the start: a withheld page never mounts, so it
-  would never redirect.
+  checker, its reporter, the registry's test, `setup.ts` or the vitest config; a
+  proof that mocks a module the page renders — a child component (a
+  `DeviceDrainControl` stubbed to render nothing), a lens primitive — so the
+  render is not production's, since only the page module itself is checked to
+  be the real one (mock data sources only: the API client, the hooks that fetch,
+  the router); and the state the proof checks the page in, which is the proof's
+  to choose (a fixture that never loads data proves the empty page). The
+  console's landing redirect (`/admin/coord`, one sentence) is registered from
+  the start: a withheld page never mounts, so it would never redirect.
 
 **Captions before data** (the departure from R1 and R9). `Caption` renders a page's
 or a panel's `{ title, oneLiner, whyItMatters }` ahead of its data: in presentation
@@ -2025,8 +2035,13 @@ real hostnames, device ids and other parties' names the fixture holds. The check
 also fails a view that is not on the screen when it runs — unmounted, cleaned up,
 rendered detached, or rendering nothing but the helper's own sentinel (a wrapper
 that drops its children, an `OperatorOnly` around the whole render) — because over
-nothing every other check passes. Render the page itself, with its fixture's data
-loaded, and keep the view mounted until the check has run.
+nothing every other check passes; and a UI Bridge registry the render does not
+register with (`unread-registry`): a view assembled from two renders, or a render
+that mounts a `UIBridgeProvider` of its own in its `wrapper` or in the page. Render
+the page itself, with its fixture's data loaded; keep the view mounted until the
+check has run; leave the provider to the helper; and keep what the page portals
+(a dialog, a toast) inside the element the check reads — a page that renders any
+of its output outside it is not proven.
 
 ---
 

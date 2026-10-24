@@ -61,9 +61,14 @@
  * one, `readinessTargets.ts`, `readinessRecorder.ts`, `uiBridgeBinding.ts`,
  * `reactTree.ts`, `presentation.tsx`), or edits them, the reporter, the
  * readiness test, `setup.ts` or the vitest config: the evidence is only as
- * honest as the code that writes it. And the state the page was checked in is
- * the proof's choice: a fixture that never loads data proves the empty page,
- * not the loaded one.
+ * honest as the code that writes it. A proof that mocks a module the page
+ * RENDERS — a child component (a `DeviceDrainControl` stubbed to render
+ * nothing), a lens primitive — so the render the check reads is not
+ * production's: identity is checked for the page module only, so the page's
+ * own component still mounts and presents around the stub. Mock data sources
+ * only — the API client, the hooks that fetch, the router. And the state the
+ * page was checked in is the proof's choice: a fixture that never loads data
+ * proves the empty page, not the loaded one.
  *
  * This module is pure and imports nothing, so the vitest config can bundle it
  * for the reporter.
