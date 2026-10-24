@@ -342,9 +342,12 @@ const PLAIN_STEPS: ReadonlySet<ts.SyntaxKind> = new Set([
   ts.SyntaxKind.TemplateExpression,
   ts.SyntaxKind.TemplateSpan,
   ts.SyntaxKind.TaggedTemplateExpression,
-  // A declaration evaluates its initializer; a default inside its binding
-  // pattern sits under a BindingElement, which is not plain.
+  // A declaration evaluates its initializer. Its binding pattern holds only
+  // BindingElements, whose defaults run for a missing value alone, and
+  // computed keys: neither is plain, so the pattern itself can be.
   ts.SyntaxKind.VariableDeclaration,
+  ts.SyntaxKind.ArrayBindingPattern,
+  ts.SyntaxKind.ObjectBindingPattern,
   ts.SyntaxKind.VariableDeclarationList,
   ts.SyntaxKind.VariableStatement,
   ts.SyntaxKind.ExpressionStatement,
@@ -431,9 +434,10 @@ export function stepProblem(
     return `${subject} is in a \`catch\` block ${at(parent)}, which runs only when its \`try\` throws`;
   }
   if (ts.isTryStatement(parent)) {
-    // A `finally` block runs every time its `try` statement does, and what it
-    // throws replaces whatever was leaving — a return or another exception.
-    if (parent.finallyBlock === child) return null;
+    // The `catch` clause is judged by its own step above; a `finally` block
+    // runs every time its `try` statement does, and what it throws replaces
+    // whatever was leaving — a return or another exception.
+    if (parent.tryBlock !== child) return null;
     if (parent.catchClause) {
       return `${subject} is in a \`try\` with a \`catch\` ${at(parent)}, which swallows what it throws`;
     }

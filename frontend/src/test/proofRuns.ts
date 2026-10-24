@@ -228,6 +228,14 @@ function label(fn: FunctionNode): string {
   return name !== null ? `\`${name}\`` : `the callback ${at(fn)}`;
 }
 
+/** The function whose `arguments` the identifier `id` reads: the nearest one that is not an arrow. */
+function ownArgumentsOf(id: ts.Identifier): ts.Node | null {
+  for (let node: ts.Node | undefined = id.parent; node; node = node.parent) {
+    if (ts.isFunctionLike(node) && !ts.isArrowFunction(node)) return node;
+  }
+  return null;
+}
+
 /** Whether an `.each` / `.for` table provably has a row. */
 function hasRows(table: ts.Expression | undefined): boolean {
   if (table === undefined) return false;
@@ -615,13 +623,28 @@ export class RunReader {
       : `a \`.only\` ${at(other)} elsewhere in the file skips ${owner}, which is not marked \`.only\` itself`;
   }
 
-  /** Why the context parameter at `index` of `fn` can reach `skip`; `null` when it cannot. */
+  /**
+   * Why the context `fn` is handed as argument `index` can reach `skip`;
+   * `null` when it cannot. The context arrives in the parameter at `index`,
+   * or in a rest parameter before it — and in `arguments` for a function that
+   * is not an arrow.
+   */
   private contextSkipProblem(fn: FunctionNode, index: number): Verdict {
-    const param = fn.parameters[index];
-    if (param === undefined) return null;
-    if (param.dotDotDotToken) {
-      return `its context is gathered by a rest parameter ${at(param)}, which this check cannot follow to \`skip\``;
+    if (!ts.isArrowFunction(fn)) {
+      const read = this.identifiers.find(
+        (id) =>
+          id.text === "arguments" &&
+          isWithin(id, fn) &&
+          ownArgumentsOf(id) === fn
+      );
+      if (read !== undefined) {
+        return `it reads \`arguments\` ${at(read)}, which holds its context`;
+      }
     }
+    const param =
+      fn.parameters[index] ??
+      fn.parameters.find((p) => p.dotDotDotToken !== undefined);
+    if (param === undefined) return null;
     const name = param.name;
     if (ts.isIdentifier(name)) {
       for (const id of this.identifiers) {
