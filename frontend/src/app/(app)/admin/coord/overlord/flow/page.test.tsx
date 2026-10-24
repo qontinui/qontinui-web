@@ -235,6 +235,60 @@ describe("/admin/coord/overlord/flow", () => {
     expect(s).toHaveTextContent("unchanged 0");
   });
 
+  it("says 'no data' for both latest-pass stats when no pass was recorded", async () => {
+    fetchFlow.mockResolvedValue({ ...NULL_FLOW, unknown_share: [] });
+    render(<CoordOverlordFlowPage />);
+    const share = await screen.findByTestId("overlord-flow-unknown-share");
+    await waitFor(() => expect(share).toHaveTextContent("unknownno data"));
+    const rows = screen.getByTestId("overlord-flow-unknown-rows");
+    expect(rows).toHaveTextContent("of rowsno data");
+    expect(rows.textContent).not.toContain("–");
+  });
+
+  it("does not read an empty unchanged list over NO pass as an all-clear", async () => {
+    fetchFlow.mockResolvedValue({
+      ...NULL_FLOW,
+      passes_considered: 0,
+      full_passes_considered: 0,
+      unknown_share: [],
+      verdict_series: [],
+    });
+    render(<CoordOverlordFlowPage />);
+    const noPass = await screen.findByTestId("overlord-flow-unchanged-no-pass");
+    expect(noPass).toHaveTextContent(
+      "No triage pass recorded in the last 7 days"
+    );
+    expect(noPass).toHaveTextContent("not an all-clear");
+    expect(screen.queryByTestId("overlord-flow-unchanged-empty")).toBeNull();
+  });
+
+  it("renders a pass scope it does not know as unknown, not as full", async () => {
+    fetchFlow.mockResolvedValue({
+      ...FULL_FLOW,
+      verdict_series: [
+        {
+          pass_id: "p-odd",
+          started_at: "2026-10-23T20:00:00Z",
+          scope: "partial",
+          mode: "dry-run",
+          histogram: { BUSY: 2 },
+        },
+      ],
+    });
+    render(<CoordOverlordFlowPage />);
+    const [pass] = await screen.findAllByTestId("overlord-flow-histogram-pass");
+    const cells = within(pass!).getAllByRole("cell");
+    expect(cells[0]).toHaveTextContent("unknown");
+    expect(cells[1]).toHaveTextContent("unknown");
+    const caption = screen.getByTestId("overlord-flow-histogram-caption");
+    expect(caption).toHaveTextContent(
+      "1 of the 1 passes sent a scope this page does not know"
+    );
+    expect(caption).not.toHaveTextContent(
+      "Every pass shown screened every terminal"
+    );
+  });
+
   it("asks for each window's hours and drops the old numbers on a switch", async () => {
     fetchFlow.mockResolvedValueOnce(FULL_FLOW);
     render(<CoordOverlordFlowPage />);
@@ -260,6 +314,24 @@ describe("/admin/coord/overlord/flow", () => {
     await waitFor(() =>
       expect(fetchFlow).toHaveBeenLastCalledWith("window_hours=720")
     );
+    // What renders for 30d is the 30d answer, in 30d words.
+    expect(screen.getByTestId("overlord-flow-window-30d")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("overlord-flow-ttc-median")).toHaveTextContent(
+        "medianno data"
+      )
+    );
+    expect(screen.queryByTestId("overlord-flow-unknown")).toBeNull();
+    expect(
+      screen.getByTestId("overlord-flow-unchanged-empty")
+    ).toHaveTextContent("in the last 30 days");
+    expect(screen.getByTestId("overlord-flow-histogram")).toHaveTextContent(
+      "1 pass in the last 30 days"
+    );
+    expect(await strip()).toHaveTextContent("over the last 30 days");
   });
 
   it("keeps the last good numbers on a failed refresh, and says they are stale", async () => {
