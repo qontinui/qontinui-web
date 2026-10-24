@@ -743,6 +743,9 @@ export const GROUPS: NavGroup[] = [
         // the `permission_prompt_capture` dial deciding whether those sessions
         // record their permission prompts as coord findings (plan
         // `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`),
+        // the `permission_auto_accept` dial deciding whether runners accept
+        // the tool permission prompts those sessions raise (plan
+        // `2026-10-23-runner-sessions-stop-at-permission-dialogs-so-accept-them-by-default-with-a-tenant-switch`),
         // the `account_selection_mode` dial runners force-apply unless the
         // machine is pinned (plan
         // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),
