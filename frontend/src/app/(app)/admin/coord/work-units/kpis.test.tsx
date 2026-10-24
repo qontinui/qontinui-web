@@ -130,13 +130,13 @@ describe("/admin/coord/work-units KPI cells", () => {
     await renderLoaded();
     await kpiState("loaded");
 
-    const row = rowFor("2026-10-01-measured");
+    const unitRow = rowFor("2026-10-01-measured");
     expect(
-      within(row).getByTestId("coord-plan-kpi-lead_time")
+      within(unitRow).getByTestId("coord-plan-kpi-lead_time")
     ).toHaveTextContent("lead2h");
-    expect(within(row).getByTestId("coord-plan-kpi-cost")).toHaveTextContent(
-      "list-price equiv.$2.50"
-    );
+    expect(
+      within(unitRow).getByTestId("coord-plan-kpi-cost")
+    ).toHaveTextContent("list-price equiv.$2.50");
     // The other rows are not given this unit's figures.
     expect(
       within(rowFor("2026-10-02-unmeasured")).queryByTestId(
