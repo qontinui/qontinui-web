@@ -45,7 +45,9 @@
  * reads the same store (`record`) — asking for the read itself, since nothing
  * there is presenting — and hands it the saved answer (`accept`, with the
  * selection the save was sent under), so a save is in force in this tab
- * immediately.
+ * immediately. After a save that did not answer it re-reads with
+ * `rereadNow`, which starts a read AFTER the save (never joining one sent
+ * before it) and says how that read went, so the form says what it observed.
  *
  * This is the presentation folder's only network module, and
  * `noNetwork.test.tsx` names it as such.
@@ -121,6 +123,18 @@ export function presentationScopeStateOf(
   };
 }
 
+/** How a re-read the caller started went (`rereadNow`). */
+export type PresentationScopeReread =
+  | { readonly status: "read"; readonly record: PresentationScopeRecord }
+  | { readonly status: "failed"; readonly failure: string }
+  /**
+   * Its answer was discarded unread: `accept` or `invalidate` (another tab
+   * changed the active project) replaced the world it was read for.
+   */
+  | { readonly status: "superseded" };
+
+const SUPERSEDED: PresentationScopeReread = { status: "superseded" };
+
 export interface PresentationScopeStoreOptions {
   /** The read. Default: `fetchPresentationScope`. */
   load?: (signal: AbortSignal) => Promise<PresentationScopeRecord>;
@@ -146,6 +160,12 @@ export interface PresentationScopeStore {
   ensureFresh(): void;
   /** Read now, whatever is held (joins a read already in flight). */
   reload(): Promise<void>;
+  /**
+   * Read again NOW, abandoning any read already in flight — one sent before
+   * the caller's reason to re-read (a save that did not answer) may carry
+   * what was stored before it — and say how THIS read went.
+   */
+  rereadNow(): Promise<PresentationScopeReread>;
   /**
    * Hold `record` — a save's answer — as the active project's scope, but only
    * while the selection is still `sentUnder`, the one the save's request
@@ -181,7 +201,7 @@ export function createPresentationScopeStore(
   const watchStorage = options.watchStorage ?? typeof window !== "undefined";
 
   let snapshot = NOTHING_READ;
-  let inflight: Promise<void> | null = null;
+  let inflight: Promise<PresentationScopeReread> | null = null;
   let controller: AbortController | null = null;
   // Bumped by `accept` and `invalidate`: a read started before either answers
   // for a world that no longer exists, and is discarded.
@@ -201,7 +221,7 @@ export function createPresentationScopeStore(
     inflight = null;
   };
 
-  const read = (): Promise<void> => {
+  const read = (): Promise<PresentationScopeReread> => {
     if (inflight) return inflight;
     const selection = readSelection();
     const mine = generation;
@@ -217,10 +237,10 @@ export function createPresentationScopeStore(
         selection,
       });
     }
-    inflight = (async () => {
+    inflight = (async (): Promise<PresentationScopeReread> => {
       try {
         const record = await load(ac.signal);
-        if (mine !== generation) return;
+        if (mine !== generation) return SUPERSEDED;
         set({
           state: presentationScopeStateOf(record),
           record,
@@ -229,8 +249,9 @@ export function createPresentationScopeStore(
           failedAt: null,
           failure: null,
         });
+        return { status: "read", record };
       } catch (err) {
-        if (mine !== generation) return;
+        if (mine !== generation) return SUPERSEDED;
         const failure = failureText(err);
         set({
           ...snapshot,
@@ -239,6 +260,7 @@ export function createPresentationScopeStore(
           failedAt: now(),
           failure,
         });
+        return { status: "failed", failure };
       } finally {
         if (mine === generation) {
           inflight = null;
@@ -287,7 +309,13 @@ export function createPresentationScopeStore(
     ensureFresh() {
       if (store.msUntilRecheck() === 0) void read();
     },
-    reload: () => read(),
+    reload: async () => {
+      await read();
+    },
+    rereadNow() {
+      abandonRead();
+      return read();
+    },
     accept(record, sentUnder) {
       if (sentUnder !== readSelection()) return false;
       abandonRead();

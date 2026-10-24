@@ -8,7 +8,9 @@
  * mocked at its export, and fails with the real errors the client throws
  * (`BackendError`, and `PresentationScopeConflict` for a 409). Enumerated: an
  * admin, a member, a staged save, a refusal (403), a version conflict (409),
- * a project conflict (409), an UNKNOWN outcome (a timeout, a 5xx), a
+ * a project conflict (409), an UNKNOWN outcome (a timeout, a 5xx), what the
+ * re-read after a save observed (in flight, read, failed, and never a read
+ * sent before the save), a later read failing under a held record, a
  * re-read under an open edit, the project changing under an open edit and
  * under a save in flight, an unreadable scope, owners coord could not list,
  * and the panel in presentation mode.
@@ -524,11 +526,202 @@ describe("PresentationScopePanel — an answer naming another project", () => {
       { target: { value: "Globex" } }
     );
     fireEvent.click(screen.getByTestId("presentation-scope-save"));
-    expect(
-      await screen.findByTestId("presentation-scope-saved")
-    ).toHaveTextContent("has re-read its scope");
-    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    const saved = await screen.findByTestId("presentation-scope-saved");
+    await waitFor(() =>
+      expect(saved).toHaveTextContent("its scope, read after the save")
+    );
+    expect(load).toHaveBeenCalledTimes(2);
     expect(store.getSnapshot().record?.tenant_id).toBe(TENANT);
+  });
+
+  it("says so when reading the project selected now fails", async () => {
+    api.savePresentationScope.mockResolvedValueOnce(
+      record({ tenant_id: OTHER_TENANT }, { version: 4 })
+    );
+    renderPanel();
+    fireEvent.change(
+      await screen.findByTestId("presentation-scope-terms-input"),
+      { target: { value: "Globex" } }
+    );
+    load.mockRejectedValue(new Error("HTTP 503"));
+    fireEvent.click(screen.getByTestId("presentation-scope-save"));
+    const saved = await screen.findByTestId("presentation-scope-saved");
+    await waitFor(() =>
+      expect(saved).toHaveTextContent(
+        "reading its scope failed (HTTP 503), so what it stores is UNKNOWN here"
+      )
+    );
+    expect(saved).not.toHaveTextContent("read after the save");
+  });
+});
+
+describe("PresentationScopePanel — what the re-read after a save observed", () => {
+  async function terms(): Promise<HTMLTextAreaElement> {
+    return (await screen.findByTestId(
+      "presentation-scope-terms-input"
+    )) as HTMLTextAreaElement;
+  }
+  const timeout = () =>
+    new Error(
+      "Request timeout - backend may be starting up. Please try again."
+    );
+
+  it("says the re-read failed too, so what is stored is UNKNOWN and the lists are from before", async () => {
+    api.savePresentationScope.mockRejectedValueOnce(timeout());
+    renderPanel();
+    fireEvent.change(await terms(), { target: { value: "Globex" } });
+    load.mockRejectedValue(new Error("HTTP 503"));
+    fireEvent.click(screen.getByTestId("presentation-scope-save"));
+    const notice = await screen.findByTestId(
+      "presentation-scope-outcome-unknown"
+    );
+    await waitFor(() =>
+      expect(notice).toHaveTextContent(
+        "reading the scope again failed too (HTTP 503), so what is stored is UNKNOWN: the lists above are from before the save"
+      )
+    );
+    expect(notice).not.toHaveTextContent("were read after the save failed");
+    // The lists still shown are labelled as the last read, and why.
+    expect(screen.getByTestId("presentation-scope-stale")).toHaveTextContent(
+      "The latest read of the presentation scope failed (HTTP 503)"
+    );
+    expect(screen.getByTestId("presentation-scope-in-force")).toHaveTextContent(
+      "Last read (not in force)"
+    );
+    expect((await terms()).value).toBe("Globex");
+  });
+
+  it("reads after the failed save, never joining a read sent before it", async () => {
+    api.savePresentationScope.mockRejectedValueOnce(timeout());
+    renderPanel();
+    fireEvent.change(await terms(), { target: { value: "Globex" } });
+    // A refresh is in flight when the save fails; its answer would be what
+    // was stored BEFORE the save.
+    let answerStale: (r: PresentationScopeRecord) => void = () => {};
+    load.mockImplementationOnce(
+      () =>
+        new Promise<PresentationScopeRecord>((resolve) => {
+          answerStale = resolve;
+        })
+    );
+    act(() => {
+      void store.reload();
+    });
+    // The PUT committed before its answer was lost: a read after it sees v4.
+    load.mockResolvedValue(
+      record({}, { confidential_terms: ["Globex"], version: 4 })
+    );
+    fireEvent.click(screen.getByTestId("presentation-scope-save"));
+    const notice = await screen.findByTestId(
+      "presentation-scope-outcome-unknown"
+    );
+    await waitFor(() =>
+      expect(notice).toHaveTextContent(
+        "the lists above were read after the save failed"
+      )
+    );
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId("presentation-scope-form")).toHaveTextContent(
+      "(version 4)"
+    );
+    // The read sent before the save, answering late, changes nothing.
+    await act(async () => {
+      answerStale(record());
+    });
+    expect(screen.getByTestId("presentation-scope-form")).toHaveTextContent(
+      "(version 4)"
+    );
+  });
+
+  it("says the stored scope is being read while the re-read is in flight", async () => {
+    api.savePresentationScope.mockRejectedValueOnce(timeout());
+    renderPanel();
+    fireEvent.change(await terms(), { target: { value: "Globex" } });
+    let answer: (r: PresentationScopeRecord) => void = () => {};
+    load.mockImplementationOnce(
+      () =>
+        new Promise<PresentationScopeRecord>((resolve) => {
+          answer = resolve;
+        })
+    );
+    fireEvent.click(screen.getByTestId("presentation-scope-save"));
+    expect(
+      await screen.findByTestId("presentation-scope-outcome-unknown")
+    ).toHaveTextContent("what is stored is being read");
+    await act(async () => {
+      answer(record({}, { confidential_terms: ["Globex"], version: 4 }));
+    });
+    expect(
+      screen.getByTestId("presentation-scope-outcome-unknown")
+    ).toHaveTextContent("the lists above were read after the save failed");
+  });
+
+  it("after a conflict whose re-read fails, says so and keeps the edit bound to what it was made against", async () => {
+    renderPanel();
+    fireEvent.change(await terms(), {
+      target: { value: "Acme Corp\nGlobex" },
+    });
+    // Another admin saves version 4; the panel's own re-read brings it in
+    // under the open edit, which stays bound to version 3.
+    load.mockResolvedValue(
+      record({}, { confidential_terms: ["Initech"], version: 4 })
+    );
+    await act(async () => {
+      await store.reload();
+    });
+    expect(screen.getByTestId("presentation-scope-form")).toHaveTextContent(
+      "(version 4)"
+    );
+    api.savePresentationScope.mockRejectedValueOnce(conflict("version"));
+    load.mockRejectedValue(new Error("HTTP 502"));
+    fireEvent.click(screen.getByTestId("presentation-scope-save"));
+    const notice = await screen.findByTestId("presentation-scope-conflict");
+    await waitFor(() =>
+      expect(notice).toHaveTextContent(
+        "Reading what is stored now failed (HTTP 502), so it is UNKNOWN"
+      )
+    );
+    expect(notice).not.toHaveTextContent(
+      "The lists above are what is stored now"
+    );
+    expect((await terms()).value).toBe("Acme Corp\nGlobex");
+    // Not re-bound to the version 4 held from before the save: what is
+    // stored now is unknown, so the next save is still a compare-and-set
+    // against version 3, the version the edit was made from.
+    api.savePresentationScope.mockRejectedValueOnce(conflict("version"));
+    fireEvent.click(screen.getByTestId("presentation-scope-save"));
+    await waitFor(() =>
+      expect(api.savePresentationScope).toHaveBeenCalledTimes(2)
+    );
+    expect(api.savePresentationScope.mock.calls[0][0]).toMatchObject({
+      expected_version: 3,
+    });
+    expect(api.savePresentationScope.mock.calls[1][0]).toMatchObject({
+      expected_version: 3,
+    });
+  });
+
+  it("labels a held record as the last read when a later read fails, and clears it on success", async () => {
+    renderPanel();
+    await screen.findByTestId("presentation-scope-in-force");
+    expect(screen.queryByTestId("presentation-scope-stale")).toBeNull();
+    load.mockRejectedValueOnce(new Error("HTTP 504"));
+    await act(async () => {
+      await store.reload();
+    });
+    expect(screen.getByTestId("presentation-scope-stale")).toHaveTextContent(
+      "failed (HTTP 504)"
+    );
+    expect(screen.getByTestId("presentation-scope-in-force")).toHaveTextContent(
+      "Last read (not in force)"
+    );
+    await act(async () => {
+      await store.reload();
+    });
+    expect(screen.queryByTestId("presentation-scope-stale")).toBeNull();
+    expect(screen.getByTestId("presentation-scope-in-force")).toHaveTextContent(
+      "In force"
+    );
   });
 });
 

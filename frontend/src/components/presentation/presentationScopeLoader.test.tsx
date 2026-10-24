@@ -275,6 +275,53 @@ describe("the store", () => {
     expect(r.store.msUntilRecheck()).toBe(0);
   });
 
+  it("re-reads NOW with a fresh read, abandoning one sent before, and says how it went", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].resolve(record());
+    await flush();
+    // A refresh is in flight: it was sent before whatever prompts the re-read.
+    r.clock.t += 60_000;
+    r.store.ensureFresh();
+    expect(r.load).toHaveBeenCalledTimes(2);
+    const reread = r.store.rereadNow();
+    expect(r.calls[1].signal.aborted).toBe(true);
+    expect(r.load).toHaveBeenCalledTimes(3);
+    const after = record({ confidential_terms: ["Globex"] });
+    r.calls[2].resolve(after);
+    await expect(reread).resolves.toEqual({ status: "read", record: after });
+    // The abandoned read answering late changes nothing.
+    r.calls[1].resolve(record({ confidential_terms: ["stale"] }));
+    await flush();
+    expect(r.store.getSnapshot().record).toBe(after);
+  });
+
+  it("says a re-read failed, keeping the earlier record held and the scope withheld", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    const before = record();
+    r.calls[0].resolve(before);
+    await flush();
+    const reread = r.store.rereadNow();
+    r.calls[1].reject(new Error("HTTP 503"));
+    await expect(reread).resolves.toEqual({
+      status: "failed",
+      failure: "HTTP 503",
+    });
+    expect(r.store.getSnapshot().record).toBe(before);
+    expect(r.store.getSnapshot().failure).toBe("HTTP 503");
+    expect(r.store.getSnapshot().state.status).toBe("error");
+  });
+
+  it("says a re-read was superseded when another tab switched project under it", async () => {
+    const r = rig();
+    const reread = r.store.rereadNow();
+    r.store.invalidate();
+    r.calls[0].resolve(record());
+    await expect(reread).resolves.toEqual({ status: "superseded" });
+    expect(r.store.getSnapshot().record).toBeNull();
+  });
+
   it("invalidate forgets everything, and a read in flight cannot bring it back", async () => {
     const r = rig();
     r.store.ensureFresh();
