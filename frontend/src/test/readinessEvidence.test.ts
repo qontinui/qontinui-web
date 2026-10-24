@@ -36,6 +36,7 @@ const TARGET: ReadinessTarget = {
 const SAFE: PresentationCheckRecord = {
   presented: [ROUTE],
   operator: [],
+  unread: [],
   violations: 0,
   registry: "provider",
 };
@@ -135,12 +136,32 @@ const REFUSED: ReadonlyArray<readonly [string, readonly RunModule[], string]> =
     [
       "a check that saw the UI Bridge through a registry view the test supplied",
       run(proof(test({ checks: [check({ registry: "caller" })] }))),
-      "seeing the UI Bridge through a registry view the test supplied, so check (b) never read the real provider's registry",
+      "seeing the UI Bridge through a registry view the test supplied, so check (b) never read the registry the page registers with",
     ],
     [
       "a check that did not observe the UI Bridge at all",
       run(proof(test({ checks: [check({ registry: "unobservable" })] }))),
       "seeing the UI Bridge through nothing (unobservable)",
+    ],
+    [
+      "a check whose registry was another render's — a view assembled from two renders",
+      run(proof(test({ checks: [check({ registry: "another-render" })] }))),
+      "seeing the UI Bridge through another render's registry, not the checked render's",
+    ],
+    [
+      "a check over a render that mounted a UIBridgeProvider of its own",
+      run(proof(test({ checks: [check({ registry: "another-provider" })] }))),
+      "seeing the UI Bridge through the helper's registry while the render mounted a UIBridgeProvider of its own",
+    ],
+    [
+      "a check whose registry could not be tied to the checked render",
+      run(proof(test({ checks: [check({ registry: "unbound" })] }))),
+      "seeing the UI Bridge through a registry the check could not tie to the checked render",
+    ],
+    [
+      "a check over the page mounted, but its output not read — portaled out of what the check read, or nothing",
+      run(proof(test({ checks: [check({ presented: [], unread: [ROUTE] })] }))),
+      'the page\'s own component was mounted in "dev ops > is safe to show", but the check did not read what it rendered',
     ],
     [
       "a check over the page in the operator view",
@@ -290,8 +311,19 @@ describe("provesRoute", () => {
     expect(provesRoute(SAFE, OTHER_ROUTE)).toBe(false);
     expect(provesRoute(check({ violations: 1 }), ROUTE)).toBe(false);
     expect(provesRoute(check({ registry: "caller" }), ROUTE)).toBe(false);
+    for (const registry of [
+      "another-render",
+      "another-provider",
+      "unbound",
+      "unobservable",
+    ] as const) {
+      expect(provesRoute(check({ registry }), ROUTE)).toBe(false);
+    }
     expect(
       provesRoute(check({ presented: [], operator: [ROUTE] }), ROUTE)
     ).toBe(false);
+    expect(provesRoute(check({ presented: [], unread: [ROUTE] }), ROUTE)).toBe(
+      false
+    );
   });
 });

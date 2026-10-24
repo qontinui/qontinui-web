@@ -15,12 +15,16 @@
  *    check (`findPresentationViolations`, and so `expectPresentationSafe`)
  *    adds a {@link PresentationCheckRecord} to the running test's
  *    `meta.presentationChecks`: which ready routes had their page module's OWN
- *    default export mounted in the checked view's React root, and whether a
- *    presenting lens was above it; how many violations the check found; and
- *    how check (b) saw the UI Bridge. "Own" is identity with the module loaded
- *    unmocked before the file's tests ran (`readinessTargets.ts`), so a
- *    stand-in mocked into the page's place is not the page
- *    (`readinessRecorder.ts`).
+ *    default export mounted in the checked view's React root, rendering
+ *    something and all of it inside the element the check read, and whether
+ *    a presenting lens was above it; how many violations the check found; and
+ *    whether check (b) read the registry of the checked render's own real
+ *    provider. "Own" is identity with the module loaded unmocked before the
+ *    file's tests ran (`readinessTargets.ts`), so a stand-in mocked into the
+ *    page's place is not the page (`readinessRecorder.ts`). A page portaled
+ *    out of what the check read is `unread`, not presented; a view assembled
+ *    from two renders, or a render that mounts a `UIBridgeProvider` of its
+ *    own, is a check (b) failure (`uiBridgeBinding.ts`).
  * 2. **The run decides.** When the run ends, `readinessReporter.ts` hands
  *    every test's records and final state to {@link readinessVerdict}. A route
  *    is proven only by a test that FINISHED `passed` — so not skipped at run
@@ -77,10 +81,22 @@ export interface ProvidedReadiness {
   readonly targets: readonly ReadinessTarget[];
 }
 
-/** How check (b) saw UI Bridge registrations in one check. */
+/**
+ * How check (b) saw UI Bridge registrations in one check (read by
+ * `uiBridgeBinding.ts` as the check runs).
+ */
 export type RegistryObservation =
-  /** The real `UIBridgeProvider`'s registry, read back by the helper. */
+  /**
+   * The registry the helper read back from the checked render's own real
+   * `UIBridgeProvider` — the only UI Bridge registry in the render's tree.
+   */
   | "provider"
+  /** The real provider's registry, read back by a render other than the one checked. */
+  | "another-render"
+  /** The checked render's, but its tree also holds a provider whose registry (b) did not read. */
+  | "another-provider"
+  /** The real provider's registry, not tied to the checked render's tree. */
+  | "unbound"
   /** A registry view the test supplied (`uiBridge: { registry }`). */
   | "caller"
   /** Not at all (`uiBridge: { unobservable }`). */
@@ -90,11 +106,18 @@ export type RegistryObservation =
 export interface PresentationCheckRecord {
   /**
    * The ready routes whose page module's own default export was mounted in
-   * the checked view's React root, with a presenting lens above it.
+   * the checked view's React root, rendered something, and rendered all of it
+   * inside the element the check read — with a presenting lens above it.
    */
   readonly presented: readonly string[];
-  /** The ready routes whose page was mounted there with the lens NOT presenting. */
+  /** The ready routes whose page was mounted and read so, with the lens NOT presenting. */
   readonly operator: readonly string[];
+  /**
+   * The ready routes whose page was mounted there, but whose output the check
+   * did not read: it rendered nothing, or rendered some of it outside the
+   * element the check read (a portal out of it, a detached element).
+   */
+  readonly unread: readonly string[];
   /** How many violations the check found. */
   readonly violations: number;
   readonly registry: RegistryObservation;
@@ -156,6 +179,17 @@ export function provesRoute(
   );
 }
 
+/** How a reason names each way check (b) can have seen the UI Bridge. */
+const REGISTRY_SEEN: Readonly<Record<RegistryObservation, string>> = {
+  provider: "the real provider's registry",
+  "another-render": "another render's registry, not the checked render's",
+  "another-provider":
+    "the helper's registry while the render mounted a UIBridgeProvider of its own",
+  unbound: "a registry the check could not tie to the checked render",
+  caller: "a registry view the test supplied",
+  unobservable: "nothing (unobservable)",
+};
+
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -206,12 +240,16 @@ function whyNotProven(proof: RunModule, route: string): string {
     (c) => c.presented.includes(route) && c.registry !== "provider"
   );
   if (unobserved !== undefined) {
-    const how = unobserved.checks.find((c) => c.presented.includes(route));
+    const how = unobserved.checks.find(
+      (c) => c.presented.includes(route) && c.registry !== "provider"
+    );
     return `the page check ran over the page in "${unobserved.name}" seeing the UI Bridge through ${
-      how?.registry === "caller"
-        ? "a registry view the test supplied"
-        : "nothing (unobservable)"
-    }, so check (b) never read the real provider's registry`;
+      REGISTRY_SEEN[how?.registry ?? "unobservable"]
+    }, so check (b) never read the registry the page registers with`;
+  }
+  const unread = withChecks(tests, (c) => c.unread.includes(route));
+  if (unread !== undefined) {
+    return `the page's own component was mounted in "${unread.name}", but the check did not read what it rendered — it rendered nothing, or rendered some of it outside the element the check read (a portal out of it, a detached element, a narrowed baseElement)`;
   }
   const operator = withChecks(tests, (c) => c.operator.includes(route));
   if (operator !== undefined) {

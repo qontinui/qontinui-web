@@ -73,6 +73,7 @@ const LANDING = PRESENTATION_READY_ROUTES.find(
 const SAFE: PresentationCheckRecord = {
   presented: ["/admin/coord"],
   operator: [],
+  unread: [],
   violations: 0,
   registry: "provider",
 };

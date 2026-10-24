@@ -41,7 +41,12 @@
  * - **(b) a write registration** — a mounted UI Bridge component action, or a
  *   connected element's custom action, whose declared `effect` is `write` or
  *   `destructive`, or that declares NO effect: unclassified is not safe (D3.2:
- *   "UI Bridge registrations on lens pages declare `effect`").
+ *   "UI Bridge registrations on lens pages declare `effect`"). And an
+ *   `unread-registry`: the registry (b) reads must be the one the checked
+ *   render registers with — not another render's (a view assembled from two
+ *   renders), and not one a provider of the render's own (in a `wrapper`, or
+ *   in the page) took the page's registrations away from
+ *   (`uiBridgeBinding.ts`).
  * - **(c) a cost** — `CostFigure`'s operator-mode figure, the "list-price
  *   equivalent" label, or any currency figure (`$12`, `€0.40`, `3 USD`) in
  *   text or in a `title` / `aria-label` / `alt` / `placeholder` / input value.
@@ -76,7 +81,10 @@
  * provider's registry real but empty, so the render also mounts a sentinel
  * that registers one component and one element through the SDK's own hooks,
  * and throws unless the registry recorded both. The sentinels are left out of
- * the checks.
+ * the checks. The registry read back is tied to its render: check (b) fails a
+ * view that is another render, or whose tree holds a second `UIBridgeProvider`
+ * (a `wrapper` that mounts one, a page that does) — so do not add a provider
+ * to the wrapper; the helper mounts the real one.
  *
  * The render is a `FixedPresentationMode` lens with the given presentation
  * scope (default UNKNOWN, as production has until a scope provider says
@@ -88,10 +96,12 @@
  * In a test file that proves a presentation-ready route, every run of
  * `findPresentationViolations` (and so of `expectPresentationSafe`) also
  * records on the running test what it saw — whether the route's own page
- * component was mounted in the view, under a presenting lens; how many
- * violations it found; whether (b) read the real provider's registry
- * (`readinessRecorder.ts`). The run, not this file, then decides whether the
- * route is proven (`readinessEvidence.ts`). Elsewhere a check records nothing.
+ * component was mounted in the view, rendering something and all of it
+ * inside the element the checks read, under a presenting lens; how many
+ * violations it found; whether (b) read the registry of the checked render's
+ * own real provider (`readinessRecorder.ts`). The run, not this file, then
+ * decides whether the route is proven (`readinessEvidence.ts`). Elsewhere a
+ * check records nothing.
  */
 
 import type { ComponentType, ReactElement, ReactNode } from "react";
@@ -117,10 +127,8 @@ import {
 } from "@/components/presentation";
 import { CURRENCY_FIGURE } from "./currencyTokens";
 import { reactRootOf } from "./reactTree";
-import {
-  markProviderObservation,
-  recordPresentationCheck,
-} from "./readinessRecorder";
+import { recordPresentationCheck } from "./readinessRecorder";
+import { markProviderReadBack, registryBinding } from "./uiBridgeBinding";
 
 /** The part of a UI Bridge registry check (b) reads. */
 export interface UiBridgeRegistryView {
@@ -189,6 +197,7 @@ export type PresentationViolationKind =
   | "presentation-dropping-link"
   | "write-registration"
   | "undeclared-registration"
+  | "unread-registry"
   | "cost-figure"
   | "cost-label"
   | "currency-figure"
@@ -376,7 +385,13 @@ export function renderInPresentationMode(
       );
     }
     observed = { registry: withoutSentinels(registry) };
-    markProviderObservation(observed);
+    // Check (b) reads `observed` only as THIS render's registry: the view it
+    // checks must be this render, holding no provider of its own.
+    markProviderReadBack(observed, {
+      container: result.container,
+      registry,
+      provider: bridge?.Provider,
+    });
   } else {
     observed = uiBridge;
   }
@@ -623,10 +638,16 @@ function effectViolation(
 }
 
 function registrationViolations(
-  observed: UiBridgeObserved
+  view: PresentationView
 ): PresentationViolation[] {
-  if (!("registry" in observed)) return [];
   const out: PresentationViolation[] = [];
+  // The registry read must be the one this render registers with: a view
+  // assembled from two renders, or a render mounting a provider of its own,
+  // would leave (b) reading a registry that holds none of the page's actions.
+  const { unread } = registryBinding(view);
+  if (unread !== null) out.push({ kind: "unread-registry", detail: unread });
+  const observed = view.uiBridge;
+  if (!("registry" in observed)) return out;
   for (const component of observed.registry.getAllComponents()) {
     if (component.mounted === false) continue;
     for (const action of component.actions ?? []) {
@@ -823,13 +844,14 @@ export function findPresentationViolations(
   const violations = [
     ...mountViolations(view, root),
     ...controlViolations(root),
-    ...registrationViolations(view.uiBridge),
+    ...registrationViolations(view),
     ...costViolations(root),
     ...captionViolations(root, options.captions ?? []),
     ...identityViolations(root, options.forbidden ?? []),
   ];
-  // The readiness evidence: in a ready route's proof, what this check saw.
-  recordPresentationCheck(view, violations.length);
+  // The readiness evidence: in a ready route's proof, what this check saw —
+  // of the page's output, only what it read inside `root`.
+  recordPresentationCheck(view, violations.length, root);
   return violations;
 }
 
