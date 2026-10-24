@@ -15,20 +15,27 @@
  *
  * A caller passes every identifier it has (`MachineIdentity`). Aliases key on
  * the STRONG identifiers — the device id and the hostname — and every strong
- * identifier an identity carries is linked to one alias: the first already
- * known, in that order, else the next letter. So a panel that knows only a
- * hostname and a panel that knows the device id and the hostname land on one
- * letter. Two coord devices on one host share their host's letter: a machine
- * here is a computer.
+ * identifier an identity carries is linked to one alias. So a panel that knows
+ * only a hostname and a panel that knows the device id and the hostname land
+ * on one letter. Two coord devices on one host share their host's letter: a
+ * machine here is a computer.
+ *
+ * Panels discover a machine in any order. A device-id-only panel (Machine A)
+ * and a hostname-only panel (Machine B) can meet the same computer before any
+ * panel holding both has linked them; when one does, the two letters are
+ * MERGED: the machine keeps the earlier letter on every panel, the later one is
+ * retired and never reissued, and the registry notifies its subscribers so a
+ * panel that already rendered the retired letter re-renders with the kept one.
+ * One computer must never read as two machines to an audience.
  *
  * A display name is a label someone typed, and two computers may both be
  * called "Workstation", so it is used ONLY when an identity carries no strong
  * identifier at all — it never links two strong identities together, which
  * would give two machines one letter.
  *
- * Aliases are assigned in first-seen order and never change once assigned, so
- * nothing already rendered is ever contradicted; an identity with nothing to
- * key on gets {@link UNIDENTIFIED_MACHINE}, never a letter it might share.
+ * Otherwise aliases are assigned in first-seen order and never change once
+ * assigned; an identity with nothing to key on gets
+ * {@link UNIDENTIFIED_MACHINE}, never a letter it might share.
  *
  * ## Persistence
  *
@@ -128,10 +135,42 @@ export class MachineAliasRegistry {
   private byKey = new Map<string, number>();
   private next = 0;
   private loaded = false;
+  private readonly listeners = new Set<() => void>();
+  /** Bumped on every merge — the snapshot a subscriber compares. */
+  private merges = 0;
+  private notifyScheduled = false;
 
   constructor(options: MachineAliasRegistryOptions = {}) {
     this.getStorage = options.storage ?? null;
     this.storageKey = options.storageKey ?? MACHINE_ALIAS_STORAGE_KEY;
+  }
+
+  /**
+   * Be told when two letters merge (see the module doc). Shaped for
+   * `useSyncExternalStore`, with {@link mergeCount} as the snapshot.
+   */
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  /** How many merges this registry has made — changes exactly when one does. */
+  mergeCount = (): number => this.merges;
+
+  /**
+   * Notify AFTER the render that caused the merge: a merge is found while some
+   * component renders an alias, and React must not be told to update another
+   * component in the middle of that render.
+   */
+  private scheduleNotify(): void {
+    if (this.notifyScheduled) return;
+    this.notifyScheduled = true;
+    queueMicrotask(() => {
+      this.notifyScheduled = false;
+      for (const listener of [...this.listeners]) listener();
+    });
   }
 
   /** The machine's alias, assigning the next letter on first sight. */
@@ -145,18 +184,30 @@ export class MachineAliasRegistry {
     const keys = machineIdentityKeys(identity).map(hashKey);
     if (keys.length === 0) return null;
     this.load();
-    let index: number | undefined;
-    for (const key of keys) {
-      index = this.byKey.get(key);
-      if (index !== undefined) break;
-    }
+    const known = keys
+      .map((key) => this.byKey.get(key))
+      .filter((i): i is number => i !== undefined);
     let changed = false;
-    if (index === undefined) {
+    let index: number;
+    if (known.length === 0) {
       index = this.next++;
       changed = true;
+    } else {
+      index = Math.min(...known);
+      // This identity proves the letters its keys carry are ONE machine: keep
+      // the earliest, retire the rest everywhere they were given.
+      const retired = new Set(known.filter((i) => i !== index));
+      if (retired.size > 0) {
+        for (const [key, i] of this.byKey) {
+          if (retired.has(i)) this.byKey.set(key, index);
+        }
+        this.merges += 1;
+        changed = true;
+        this.scheduleNotify();
+      }
     }
     for (const key of keys) {
-      if (!this.byKey.has(key)) {
+      if (this.byKey.get(key) !== index) {
         this.byKey.set(key, index);
         changed = true;
       }

@@ -21,7 +21,8 @@ import { SidebarNav } from "./_components/SidebarNav";
 import { SidebarFooter } from "./_components/SidebarFooter";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SidebarDrawer, SIDEBAR_DRAWER_ID } from "./SidebarDrawer";
-import { OperatorOnly } from "@/components/presentation";
+import { OperatorOnly, usePresentationMode } from "@/components/presentation";
+import { lensNavItems } from "./presentationNav";
 
 interface UnifiedSidebarProps {
   className?: string;
@@ -63,6 +64,7 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
     menuButtonRef,
   } = useSidebar();
   const { mode } = useProductMode();
+  const { presenting } = usePresentationMode();
   const router = useRouter();
 
   const {
@@ -203,7 +205,11 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
       <SidebarNav
         isCollapsed={bodyCollapsed}
         mounted={mounted}
-        visibleNavItems={visibleNavItems}
+        // While presenting, only the way to other lens pages: an entry out of
+        // the lens leads to a page with no presentation mode at all.
+        visibleNavItems={
+          presenting ? lensNavItems(visibleNavItems) : visibleNavItems
+        }
         projectId={projectId}
         isRouteActive={isRouteActive}
         onNavigate={navigateAndDismiss}
