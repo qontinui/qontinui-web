@@ -202,13 +202,15 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
-  it("alive but coord says not nominal: never the healthy tone, and coord's reason is shown", async () => {
+  it("alive but coord says not nominal (a future reason): never the healthy tone, and coord's reason is shown", async () => {
+    // No reason coord serves today pairs with `alive` (the round-6 lease case
+    // has its own arm above); this guards whatever reason a later coord adds.
     statusGet.mockResolvedValue(
       status({
         pass: {
           status: "alive",
           nominal: false,
-          reason: "body_in_flight",
+          reason: "a_reason_this_build_does_not_know",
           unknown_reason: null,
           last_tick_at: minutesAgo(0),
           last_work_tick_at: minutesAgo(4),
@@ -220,7 +222,7 @@ describe("the observed auto-publisher, per worker status", () => {
 
     const line = await observed();
     expect(line).toHaveTextContent("Observed: last pass 4m ago — ran:published");
-    expect(line).toHaveTextContent("body_in_flight");
+    expect(line).toHaveTextContent("a_reason_this_build_does_not_know");
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 

@@ -77,6 +77,7 @@ export function describeObservedPass(
             ? `Observed: loop alive, last tick did no pass work — ${pass.last_decision_code}`
             : "Observed: loop alive, no pass body recorded yet",
           tone: "attention",
+          reason: pass.nominal === false ? pass.reason || undefined : undefined,
         };
       }
       // Present but unparseable is not a pass we can place in time — say so
