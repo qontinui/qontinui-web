@@ -26,14 +26,29 @@ vi.mock("@/components/admin/coord/CoordNav", () => ({
 const wire = vi.hoisted(() => {
   const FIRST_PARTY = "qontinui/qontinui-web";
   const FOREIGN = "client-org/portal";
-  const alertRow = (repo: string, workflows: string[]) => ({
+  const DEVICE = "0b9d6a54-0000-4000-8000-0000000000aa";
+  const SESSION = "5f3c2e1d-1111-4222-8333-444455556666";
+  const RUN = "987654321";
+  const alertRow = (
+    repo: string,
+    workflows: string[],
+    detail: Record<string, unknown> = {},
+    extra: Record<string, unknown> = {}
+  ) => ({
     id: repo.length,
     alert_key: `red_main:${repo}`,
     severity: "critical",
     kind: "red_main",
     summary: `Main CI for ${repo} is RED`,
     first_seen_at: "2026-07-06T01:00:00Z",
-    detail: { repo, workflows, blocked_pr_count: 1, fix_session: "none" },
+    detail: {
+      repo,
+      workflows,
+      blocked_pr_count: 1,
+      fix_session: "none",
+      ...detail,
+    },
+    ...extra,
   });
   const scope = {
     tenant_id: "00000000-0000-0000-0000-00000000000a",
@@ -63,13 +78,36 @@ const wire = vi.hoisted(() => {
   return {
     FIRST_PARTY,
     FOREIGN,
+    DEVICE,
+    SESSION,
+    RUN,
     urls: [] as string[],
     respond(url: string): Response {
       if (url.includes("/presentation/scope")) return json(scope);
       if (url.includes("/alerts")) {
         return json([
-          alertRow(FIRST_PARTY, ["CI"]),
-          alertRow(FOREIGN, ["deploy"]),
+          // First-party, claimed by an agent on a device, with coord's own
+          // self-heal re-run in flight.
+          alertRow(
+            FIRST_PARTY,
+            ["CI"],
+            { fix_session: `auto-rerun-failed-jobs:${RUN}` },
+            {
+              claimed: true,
+              claim: { claimed_by: `device:${DEVICE}:session:${SESSION}` },
+            }
+          ),
+          // Foreign, with a stale push baseline on one of its workflows.
+          alertRow(FOREIGN, ["deploy", "lint-portal"], {
+            baseline_freshness: {
+              read: "ok",
+              all_contradicted: false,
+              workflows: [
+                { workflow: "deploy", verdict: "corroborated" },
+                { workflow: "lint-portal", verdict: "contradicted" },
+              ],
+            },
+          }),
         ]);
       }
       return new Response("null", { status: 404 });
@@ -126,6 +164,17 @@ describe("CoordLayout — entered through a console URL", () => {
     expect(
       screen.getByRole("button", { name: "Presentation mode" })
     ).toHaveAttribute("aria-pressed", "true");
+    // The redacted row names none of its workflows, stale ones included.
+    expect(container.innerHTML).not.toContain("lint-portal");
+    expect(container).toHaveTextContent(
+      "stale push baseline on 1 workflow, contradicted by newer passing runs"
+    );
+    // The claimant is a kind and a machine alias, never an id; coord's run
+    // reference is not shown.
+    expect(container).toHaveTextContent("claimed by an agent on Machine A");
+    expect(container.innerHTML).not.toContain(wire.DEVICE.slice(0, 8));
+    expect(container.innerHTML).not.toContain(wire.SESSION.slice(0, 8));
+    expect(container.innerHTML).not.toContain(wire.RUN);
     // A console page nobody prepared for presentation is withheld, not shown:
     // its caption and a plain statement stand in for it.
     expect(screen.queryByText("Console page")).toBeNull();
