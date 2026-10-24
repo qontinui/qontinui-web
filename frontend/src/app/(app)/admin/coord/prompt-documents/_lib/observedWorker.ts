@@ -66,11 +66,16 @@ export function describeObservedPass(
           title: "Coord could not read the auto-publisher's lease holder",
         };
       }
-      // A leader that has never run a body is not nominal: the loop ticks,
-      // but nothing it was built to do has happened yet.
+      // No body execution on the holder's latest tick. With a code, the tick
+      // DID run and deliberately did no pass work — every skip (`skip:switch_off`
+      // when the operator turned it off) is an idle tick — so "no pass ever
+      // ran" would be false. Without one, nothing it was built to do has
+      // happened yet. Neither is nominal.
       if (!pass.last_work_tick_at) {
         return {
-          text: "Observed: loop alive, no pass body recorded yet",
+          text: pass.last_decision_code
+            ? `Observed: loop alive, last tick did no pass work — ${pass.last_decision_code}`
+            : "Observed: loop alive, no pass body recorded yet",
           tone: "attention",
         };
       }
@@ -84,10 +89,15 @@ export function describeObservedPass(
         absent: "at an unknown time",
       });
       const code = pass.last_decision_code ?? "no decision code recorded";
+      // Coord's own `nominal: false` outranks a parseable time: an `alive`
+      // loop coord calls unhealthy never renders in the healthy tone, and its
+      // reason is shown. (Absent from an older coord, which reads as before.)
+      const unhealthy = pass.nominal === false;
       return {
         text: `Observed: last pass ${when} — ${code}`,
-        tone: parseable ? "nominal" : "attention",
+        tone: parseable && !unhealthy ? "nominal" : "attention",
         title: absoluteTime(pass.last_work_tick_at),
+        reason: unhealthy ? pass.reason || undefined : undefined,
       };
     }
     case "erroring": {

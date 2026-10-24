@@ -178,6 +178,52 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(await observed()).toHaveAttribute("data-observed-tone", "attention");
   });
 
+  it("alive whose last tick skipped: says the tick did no pass work, never that no pass ever ran", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          nominal: true,
+          reason: null,
+          unknown_reason: null,
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: null,
+          last_decision_code: "skip:switch_off",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: loop alive, last tick did no pass work — skip:switch_off"
+    );
+    expect(line).not.toHaveTextContent(/no pass body recorded/);
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("alive but coord says not nominal: never the healthy tone, and coord's reason is shown", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          nominal: false,
+          reason: "body_in_flight",
+          unknown_reason: null,
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: minutesAgo(4),
+          last_decision_code: "ran:published",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent("Observed: last pass 4m ago — ran:published");
+    expect(line).toHaveTextContent("body_in_flight");
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
   it("alive with an unreadable lease: never claims no pass ran, and is not nominal", async () => {
     statusGet.mockResolvedValue(
       status({
