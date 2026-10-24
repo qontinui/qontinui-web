@@ -21,13 +21,20 @@
  * route's own page under a presenting lens, the last check over that render
  * finding nothing (and no render's last check finding anything); the
  * end-of-run step fails the run otherwise. The arming test fails when that
- * step's reporter is not in the run, and the test after it fails when the
- * arming record is missing.
+ * step's reporter is not in the run, and the suite's afterAll fails when the
+ * arming test ran without recording the arming.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, inject, it } from "vitest";
+import {
+  afterAll,
+  describe,
+  expect,
+  inject,
+  it,
+  type TestContext,
+} from "vitest";
 import {
   appFilesNamed,
   appPageModules,
@@ -191,6 +198,15 @@ describe("LENS_TREES are exactly the layouts that mount the lens", () => {
 });
 
 describe("every presentation-ready route is proven", () => {
+  /** The arming test as it ran; undefined when it did not run (a filtered run). */
+  let arming: TestContext["task"] | undefined;
+
+  // Whenever the arming test ran, it must have armed the run: read after
+  // every test of this suite, so it holds in any order the run takes.
+  afterAll(() => {
+    if (arming !== undefined) expect(arming.meta[ARMED_META_KEY]).toBe(true);
+  });
+
   it("names, for a route inside a lens tree that a page serves, a test file that exists", () => {
     expect(
       PRESENTATION_READY_ROUTES.flatMap((entry) =>
@@ -245,6 +261,7 @@ describe("every presentation-ready route is proven", () => {
   });
 
   it(ARMING_TEST, ({ task }) => {
+    arming = task;
     // This record, on this test, is what makes the end-of-run step require
     // every ready route's evidence in this run (readinessEvidence.ts). It is
     // read from the run, so it moves with this file wherever the file goes.
@@ -255,12 +272,5 @@ describe("every presentation-ready route is proven", () => {
       srcDir: SRC,
       targets: readyRouteTargets(SRC),
     });
-  });
-
-  it("is armed: the run reports the arming test above with its arming record", ({
-    task,
-  }) => {
-    const arming = task.suite?.tasks.find((t) => t.name === ARMING_TEST);
-    expect(arming?.meta[ARMED_META_KEY]).toBe(true);
   });
 });
