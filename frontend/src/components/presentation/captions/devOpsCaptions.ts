@@ -18,7 +18,9 @@ export const DEV_OPS_CAPTIONS = {
     // Only what this page itself shows. Not "work is placed only where there
     // is room": coord refuses automated fix sessions over a machine's ceiling,
     // but other work is counted, never refused (qontinui-coord
-    // spawn_admission.rs), so that sentence would not be true.
-    whyItMatters: copy`Each ${term("device", "machine")} reports its own health and load, so a machine that is struggling or offline is visible here, not discovered when work stops moving.`,
+    // spawn_admission.rs), so that sentence would not be true. And no "here":
+    // a withheld page's placeholder shows its title and one-liner only, so a
+    // why-it-matters never sits above "kept off screen" pointing at the page.
+    whyItMatters: copy`Each ${term("device", "machine")} reports its own health and load, so a machine that is struggling or offline shows in its own report rather than being discovered when work stops moving.`,
   },
 } as const satisfies SurfaceCaptions<"dev-ops">;

@@ -1902,8 +1902,11 @@ nothing (or, `persistent`, the title and one-liner at the console's sizes, for a
 page whose own heading is its caption). Copy lives in ONE registry composed of one
 file per lens surface (`captions/`); product terms in it go through `GlossaryTerm`
 via `term(...)`, never as plain text (the registry's test fails a glossary term's
-name left plain); and every sentence is a claim about the product, so it is checked
-against the code like any other claim.
+name left plain, singular or plural — a synonym, such as "machine" for a device,
+it cannot see); and every sentence is a claim about the product, so it is checked
+against the code like any other claim. A withheld page's placeholder shows its
+caption's title and one-liner only (`Caption brief`), never why its content
+matters, since that content is off screen.
 
 **Provenance beside every figure.** `Provenance` is the chip `source: … · as of …`
 beside each number a lens page shows. An unknown source or time renders `UNKNOWN`
@@ -1956,8 +1959,16 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
   to be one machine merge to the earlier.
 - `CostFigure` is the only component that renders a per-task cost, always beside
   "list-price equivalent, not your bill", and in presentation mode never — a
-  descriptor instead. `costRenders.test.ts` scans every module a lens page and its
-  shell can reach and fails on a cost rendered any other way.
+  descriptor instead. `costRenders.test.ts` (over `src/test/costRenderScan.ts`)
+  scans every `app/` and `components/` module a lens page and its shell can reach
+  and fails on the shapes it knows: a money-named value, key or import (a
+  destructured key and an aliased import included), an `Intl` currency format
+  however `NumberFormat` is reached, a currency symbol or code glued to a value
+  (in text, a template, a concatenation, or an element of its own), a literal
+  figure or the label, and an import of any function anywhere under `src/` whose
+  body formats a currency or glues a symbol, or wraps one that does. A figure that
+  arrives as an opaque string is past it: that is what the rendered-page check
+  below is for.
 
 **The test every presentation-ready page carries.** A presentation-mode render of the
 real page with `renderInPresentationMode` and `expectPresentationSafe(view, {

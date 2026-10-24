@@ -114,4 +114,21 @@ describe("Caption", () => {
       document.querySelector('[data-caption-part="why-it-matters"]')
     ).not.toBeNull();
   });
+
+  it("renders a brief caption's title and one-liner only, even in presentation mode", () => {
+    render(
+      <FixedPresentationMode presenting>
+        <Caption id="dev-ops.page" level={1} brief />
+      </FixedPresentationMode>
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Dev Ops" })
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-caption-part="one-liner"]')
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-caption-part="why-it-matters"]')
+    ).toBeNull();
+  });
 });

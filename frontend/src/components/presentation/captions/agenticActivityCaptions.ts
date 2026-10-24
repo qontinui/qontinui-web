@@ -12,11 +12,13 @@ import { copy, term, type SurfaceCaptions } from "./captionTypes";
 export const AGENTIC_ACTIVITY_CAPTIONS = {
   "agentic-activity.page": {
     title: "Agentic activity",
-    oneLiner: copy`Every ${term("agent_session", "agent session")} the system started on its own, why it started, and where it ran.`,
-    // Not "each path has its own switch, and it binds": some switches are
-    // recorded but only logged (shadow), some are environment-only, and one
-    // switch covers every gate continuation. The page lists each path WITH
-    // whether its switch is enforced, and the copy says exactly that.
-    whyItMatters: copy`Each automated path that starts agents is listed with its switch, its scope and whether that switch is enforced or only recorded, so the ${term("operator", "operator")} can see exactly how much autonomy each path has been given.`,
+    // Only what the page shows today: the spawn ledger — every request coord
+    // was asked to place, where it went, how long it waited and how it ended
+    // (`admin/coord/spawns/page.tsx`). The ledger holds operator-started
+    // sessions too, so not "started on its own". The spawn-path matrix — each
+    // path with its switch and whether it is enforced — is a later phase's
+    // panel, and its caption arrives with it.
+    oneLiner: copy`Every ${term("agent_session", "agent session")} the ${term("coord", "coordination service")} was asked to start: where it went, how long it waited, and how it ended.`,
+    whyItMatters: copy`Each request is a row naming where it came from, so what the system starts on its own and what a person asked for can be told apart, and how every request ended stays on record.`,
   },
 } as const satisfies SurfaceCaptions<"agentic-activity">;

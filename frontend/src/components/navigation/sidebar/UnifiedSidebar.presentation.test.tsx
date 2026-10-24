@@ -204,6 +204,8 @@ describe("UnifiedSidebar in presentation mode", () => {
     const { container } = renderInPresentationMode(<UnifiedSidebar />);
     const project = await screen.findByTestId("coord-project-presented");
     expect(project).toHaveTextContent(fx.OWN_PROJECT);
+    // Truncated to the rail, so the whole name is its tooltip.
+    expect(project.querySelector(`[title="${fx.OWN_PROJECT}"]`)).not.toBeNull();
     expect(screen.queryByTestId("coord-project-new")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(container.innerHTML).not.toContain(fx.OTHER_PROJECT);

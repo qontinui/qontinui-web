@@ -12,8 +12,10 @@
  * is not rendered at all, so none of its controls, hostnames, costs or
  * titles reach the screen, the accessibility tree or the UI Bridge registry.
  * In its place: the surface's caption when the route is one of the five lens
- * surfaces, and a plain statement that the page is shown in the operator view
- * only — an honest "not part of the presentation", never a blank.
+ * surfaces — its title and one-liner, never why its content matters, since
+ * that content is not shown — and a plain statement that the page is shown
+ * in the operator view only: an honest "not part of the presentation", never
+ * a blank.
  *
  * The layout's own chrome (the console header, the red-main banner) sits
  * outside this gate and is presentation-safe on its own.
@@ -53,7 +55,9 @@ export function PresentationPage({ children }: PresentationPageProps) {
       data-testid="presentation-withheld-page"
       data-presentation-withheld=""
     >
-      {surface && <Caption id={surface.captionKey} level={1} />}
+      {/* Brief: what the page is, not why its content matters — the line
+          below says that content is off screen. */}
+      {surface && <Caption id={surface.captionKey} level={1} brief />}
       <div className="max-w-2xl space-y-1 rounded-md border border-border bg-card px-4 py-3">
         <p className="text-sm font-medium text-foreground">
           {WITHHELD_PAGE_TITLE}

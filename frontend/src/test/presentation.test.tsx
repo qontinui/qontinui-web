@@ -448,10 +448,23 @@ describe("(c) no cost", () => {
     );
   });
 
+  it.each(["$.50", "12,00 €", "12¢", "€-3", "$ 1,234.56", "5 GBP"])(
+    "reads %j as a currency figure",
+    (figure) => {
+      expect(CURRENCY_FIGURE.test(figure)).toBe(true);
+      expectOnly(
+        renderInPresentationMode(<p>It came to {figure} today</p>),
+        "currency-figure"
+      );
+    }
+  );
+
   it("does not mistake an ordinary number for a cost", () => {
     expect(CURRENCY_FIGURE.test("12 machines, 3 USB ports, v2.4.0")).toBe(
       false
     );
+    // A `$` after a digit is a pattern's anchor, not a price.
+    expect(CURRENCY_FIGURE.test("^0$")).toBe(false);
     expectPresentationSafe(
       renderInPresentationMode(<p>12 machines · 40% busy</p>)
     );

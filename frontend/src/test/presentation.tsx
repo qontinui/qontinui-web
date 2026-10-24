@@ -57,7 +57,12 @@
  * that, so it must say how instead: pass `uiBridge: { registry }` (a view over
  * whatever its mock recorded) or `uiBridge: { unobservable: "<reason>" }`.
  * Neither is defaulted, so a mocked bridge can never make (b) pass by seeing
- * nothing.
+ * nothing. A PARTIAL mock — the real provider kept, the registration hooks
+ * stubbed (`{ ...importOriginal(), useUIComponent: … }`) — would leave the
+ * provider's registry real but empty, so the render also mounts a sentinel
+ * that registers one component and one element through the SDK's own hooks,
+ * and throws unless the registry recorded both. The sentinels are left out of
+ * the checks.
  *
  * The render is a `FixedPresentationMode` lens with the given presentation
  * scope (default UNKNOWN, as production has until a scope provider says
@@ -169,6 +174,14 @@ interface BridgeModule {
   readonly useBridge: () => { readonly registry?: unknown } | null;
 }
 
+/** The ids the helper's own sentinel registrations carry. */
+const SENTINEL_COMPONENT_ID = "presentation-helper.sentinel-component";
+const SENTINEL_ELEMENT_ID = "presentation-helper.sentinel-element";
+const SENTINEL_IDS: ReadonlySet<string> = new Set([
+  SENTINEL_COMPONENT_ID,
+  SENTINEL_ELEMENT_ID,
+]);
+
 /** The real SDK, or `null` when the test file mocked it away. */
 function realBridge(): BridgeModule | null {
   try {
@@ -185,6 +198,45 @@ function realBridge(): BridgeModule | null {
     // A vitest module mock throws on an export its factory did not define.
     return null;
   }
+}
+
+/**
+ * Registers one component and one element through the SDK's hooks, as any
+ * page would. If either never reaches the registry, the hooks are not the
+ * SDK's — a partial mock — and nothing the page registers would reach it
+ * either.
+ */
+function BridgeSentinel() {
+  uiBridgeReact.useUIComponent({
+    id: SENTINEL_COMPONENT_ID,
+    name: "Presentation helper sentinel",
+    actions: [
+      {
+        id: "observe",
+        label: "Observe",
+        effect: "read",
+        handler: async () => true,
+      },
+    ],
+  });
+  const { ref } = uiBridgeReact.useUIElement({
+    id: SENTINEL_ELEMENT_ID,
+    label: "Presentation helper sentinel",
+    type: "button",
+  });
+  return <span ref={ref} hidden data-presentation-sentinel="" />;
+}
+
+/** `registry` without the helper's own sentinel registrations. */
+function withoutSentinels(
+  registry: UiBridgeRegistryView
+): UiBridgeRegistryView {
+  return {
+    getAllComponents: () =>
+      registry.getAllComponents().filter((c) => !SENTINEL_IDS.has(c.id)),
+    getAllElements: () =>
+      registry.getAllElements().filter((e) => !SENTINEL_IDS.has(e.id)),
+  };
 }
 
 function isRegistryView(value: unknown): value is UiBridgeRegistryView {
@@ -247,6 +299,7 @@ export function renderInPresentationMode(
     return (
       <Provider>
         <RegistryProbe useBridge={bridge.useBridge} />
+        <BridgeSentinel />
         {lens}
       </Provider>
     );
@@ -256,13 +309,28 @@ export function renderInPresentationMode(
 
   let observed: UiBridgeObserved;
   if (uiBridge === "provider") {
-    if (probe.registry === null) {
+    const registry = probe.registry;
+    if (registry === null) {
       throw new Error(
         "renderInPresentationMode: the UIBridgeProvider exposed no registry, so check (b) " +
           "would see nothing. Pass `uiBridge: { registry }` or `uiBridge: { unobservable }`."
       );
     }
-    observed = { registry: probe.registry };
+    const sawComponent = registry
+      .getAllComponents()
+      .some((c) => c.id === SENTINEL_COMPONENT_ID);
+    const sawElement = registry
+      .getAllElements()
+      .some((e) => e.id === SENTINEL_ELEMENT_ID);
+    if (!sawComponent || !sawElement) {
+      throw new Error(
+        "renderInPresentationMode: the UI Bridge registry did not record the helper's own " +
+          "sentinel registrations, so the SDK's registration hooks are stubbed in this test " +
+          "file (a partial mock of @qontinui/ui-bridge/react) and check (b) would see " +
+          "nothing. Pass `uiBridge: { registry }` or `uiBridge: { unobservable }`."
+      );
+    }
+    observed = { registry: withoutSentinels(registry) };
   } else {
     observed = uiBridge;
   }
@@ -455,9 +523,13 @@ function registrationViolations(
 // ---------------------------------------------------------------------------
 
 const CURRENCY_CODES = "USD|EUR|GBP|JPY|CHF|CAD|AUD|INR|CNY";
-/** A currency symbol or ISO code next to a number, either order. */
+/**
+ * A currency symbol or ISO code next to a number, either order: `$12`,
+ * `$.50`, `€-3`, `12 USD`, `12,00 €` and `12¢`. A `$` AFTER a digit is not
+ * one — `^0$` in a pattern string would read as a figure.
+ */
 export const CURRENCY_FIGURE = new RegExp(
-  `[$€£¥₹]\\s?-?\\d|\\b(?:${CURRENCY_CODES})\\s?-?\\d|\\d\\s?(?:${CURRENCY_CODES})\\b`
+  `[$€£¥₹]\\s?-?\\.?\\d|\\b(?:${CURRENCY_CODES})\\s?-?\\d|\\d\\s?(?:${CURRENCY_CODES})\\b|\\d\\s?[€£¥₹¢]`
 );
 const COST_LABEL_FRAGMENT = "list-price equivalent";
 
