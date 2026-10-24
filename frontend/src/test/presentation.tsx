@@ -52,6 +52,16 @@
  *   fixture's hostnames, device ids, other parties' names — anywhere, matched
  *   ignoring case. A page test passes the real names its fixture holds, so the
  *   check sees exactly what the lens was meant to hide (D3.3).
+ * - **(f) a view that is not on the screen** — checks (a)–(e) look for what
+ *   is shown, so over nothing they pass whatever the page would render. A
+ *   render's view (one carrying its `container`, as `renderInPresentationMode`
+ *   returns it) fails when, as the check runs, its React root has been
+ *   unmounted (`unmount()`), its container is not inside the document the
+ *   check reads (cleaned up, or rendered somewhere detached), or the container
+ *   holds nothing but the helper's own sentinel — a `wrapper` that drops its
+ *   children, an `OperatorOnly` around the whole render, a page that rendered
+ *   nothing. A view without a `container` is a statement about the document,
+ *   and is read as the document.
  *
  * ## How (b) observes the registry
  *
@@ -96,6 +106,7 @@ import {
   type PresentationScopeState,
 } from "@/components/presentation";
 import { CURRENCY_FIGURE } from "./currencyTokens";
+import { reactRootOf } from "./reactTree";
 
 /** The part of a UI Bridge registry check (b) reads. */
 export interface UiBridgeRegistryView {
@@ -145,11 +156,21 @@ export type PresentationRenderResult = RenderResult & {
 
 /** What the checks read: where to look, and the registry observation. */
 export interface PresentationView {
+  /** Where checks (a)–(e) look; default `document.body`, so portals are read too. */
   readonly baseElement?: Element;
+  /**
+   * The render's own container — RTL's `container`, which
+   * `renderInPresentationMode`'s result carries. With it, check (f) reads
+   * whether the render is still on the screen. Without it, the view is a
+   * statement about the document, and is read as the document.
+   */
+  readonly container?: Element;
   readonly uiBridge: UiBridgeObserved;
 }
 
 export type PresentationViolationKind =
+  | "unmounted-view"
+  | "empty-view"
   | "enabled-control"
   | "presentation-dropping-link"
   | "write-registration"
@@ -189,6 +210,8 @@ const SENTINEL_IDS: ReadonlySet<string> = new Set([
   SENTINEL_COMPONENT_ID,
   SENTINEL_ELEMENT_ID,
 ]);
+/** The attribute on the sentinel's element: not the page, so check (f) skips it. */
+const SENTINEL_ATTRIBUTE = "data-presentation-sentinel";
 
 /** The real SDK, or `null` when the test file mocked it away. */
 function realBridge(): BridgeModule | null {
@@ -232,7 +255,7 @@ function BridgeSentinel() {
     label: "Presentation helper sentinel",
     type: "button",
   });
-  return <span ref={ref} hidden data-presentation-sentinel="" />;
+  return <span ref={ref} hidden {...{ [SENTINEL_ATTRIBUTE]: "" }} />;
 }
 
 /** `registry` without the helper's own sentinel registrations. */
@@ -343,6 +366,65 @@ export function renderInPresentationMode(
     observed = uiBridge;
   }
   return Object.assign(result, { uiBridge: observed });
+}
+
+// ---------------------------------------------------------------------------
+// (f) the view is on the screen
+// ---------------------------------------------------------------------------
+
+/** Whether `container` holds nothing but the helper's sentinel and blank text. */
+function rendersNothing(container: Element): boolean {
+  for (const node of container.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if ((node.textContent ?? "").trim() !== "") return false;
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (!(node as Element).hasAttribute(SENTINEL_ATTRIBUTE)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Why the render `view` is not on the screen as the check runs; empty when it
+ * is, or when the view carries no container (a statement about the document).
+ */
+function mountViolations(
+  view: PresentationView,
+  root: Element
+): PresentationViolation[] {
+  const container = view.container;
+  if (container === undefined) return [];
+  if (!container.isConnected || !root.contains(container)) {
+    return [
+      {
+        kind: "unmounted-view",
+        detail:
+          "the view's container is not inside the document the check reads, so none of it is on the screen — it was cleaned up, or rendered into a detached element",
+      },
+    ];
+  }
+  const reactRoot = reactRootOf(container);
+  if (reactRoot.state !== "mounted") {
+    return [
+      {
+        kind: "unmounted-view",
+        detail:
+          reactRoot.state === "unmounted"
+            ? "the view was unmounted before the check ran (`unmount()`), so nothing it rendered is on the screen"
+            : "the view's container holds no React root this check can read, so what it shows cannot be told apart from nothing",
+      },
+    ];
+  }
+  if (rendersNothing(container)) {
+    return [
+      {
+        kind: "empty-view",
+        detail:
+          "the view renders nothing but the helper's own sentinel — a wrapper that drops its children, an OperatorOnly around the whole render, or a page that rendered nothing — so the checks would pass whatever the page shows",
+      },
+    ];
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -724,6 +806,7 @@ export function findPresentationViolations(
 ): PresentationViolation[] {
   const root = view.baseElement ?? document.body;
   return [
+    ...mountViolations(view, root),
     ...controlViolations(root),
     ...registrationViolations(view.uiBridge),
     ...costViolations(root),
