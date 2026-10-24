@@ -40,6 +40,11 @@ import {
   resolveSrcModule,
   type CurrencyFormatters,
 } from "@/test/currencyFormatters";
+import {
+  CURRENCY_CODES,
+  CURRENCY_FIGURE,
+  CURRENCY_SYMBOLS,
+} from "@/test/currencyTokens";
 
 const scope = discoverScope();
 
@@ -135,77 +140,179 @@ describe("no lens surface renders money outside CostFigure", () => {
     );
   });
 
-  it.each<[string, string, string]>([
+  /** A finding from the classifier (`currencyFormatters.ts`), not from a money NAME. */
+  const FORMATTER = "currency formatter";
+  /** The glued-symbol findings, by what they found. */
+  const GLUED_AFTER = "glued after a JSX value";
+  const GLUED_BEFORE = "glued to a JSX value";
+  const OWN_ELEMENT = "in its own element, beside a JSX value";
+  const CODE_VALUE = "a currency code `currency` beside a JSX value";
+
+  // Each case names the guard it exercises by the rule and the detail that
+  // guard reports, so it goes red when THAT guard is removed — not merely when
+  // the page holds some finding. The locals are not money-named (`m`, `mod`,
+  // `fmt`): a money-named one would be flagged by its name whatever the
+  // classifier said.
+  it.each<[string, string, string, CostRule, string]>([
     [
       "a cost read through a renamed destructuring",
       "",
       "{(() => { const { cost_usd: c } = fleet; return <span>{c}</span>; })()}",
+      "money-value",
+      "a money value `cost_usd`",
     ],
     [
       "the repo's own currency formatter, from outside app/ and components/",
       'import { formatCurrency } from "@/data/model-costs/calc";\n',
       "<span>{formatCurrency(fleet.amount, currency)}</span>",
+      "money-value",
+      FORMATTER,
     ],
     [
       "that formatter imported under another name",
       'import { formatCurrency as fmt } from "@/data/model-costs/calc";\n',
       "<span>{fmt(fleet.amount, currency)}</span>",
+      "money-value",
+      FORMATTER,
     ],
     [
       "that formatter imported the way the repo imports it, through its barrel",
       'import { formatCurrency } from "@/data/model-costs";\n',
       "<span>{formatCurrency(fleet.amount, currency)}</span>",
+      "money-value",
+      FORMATTER,
     ],
     [
       "that formatter through its barrel, under another name",
       'import { formatCurrency as fmt } from "@/data/model-costs";\n',
       "<span>{fmt(fleet.amount, currency)}</span>",
+      "money-value",
+      FORMATTER,
     ],
     [
       "that formatter read through a namespace import of its module",
       'import * as calc from "@/data/model-costs/calc";\n',
       "<span>{calc.formatCurrency(fleet.amount, currency)}</span>",
+      "money-value",
+      `${FORMATTER} \`formatCurrency\` (data/model-costs/calc.ts), read through the namespace \`calc\``,
     ],
     [
       "that formatter read through a namespace import of its barrel",
-      'import * as costs from "@/data/model-costs";\n',
-      "<span>{costs.formatCurrency(fleet.amount, currency)}</span>",
+      'import * as m from "@/data/model-costs";\n',
+      "<span>{m.formatCurrency(fleet.amount, currency)}</span>",
+      "money-value",
+      `${FORMATTER} \`formatCurrency\` (data/model-costs/index.ts), read through the namespace \`m\``,
     ],
     [
       "its module loaded with import()",
-      'const costs = import("@/data/model-costs");\n',
-      "<span>{String(costs)}</span>",
+      'const mod = import("@/data/model-costs");\n',
+      "<span>{String(mod)}</span>",
+      "money-value",
+      `loads data/model-costs/index.ts, which exports the ${FORMATTER}(s)`,
     ],
     [
       "a symbol in an element of its own, beside the figure",
       "",
       '<span><span className="unit">$</span>{fleet.amount}</span>',
+      "glued-symbol",
+      OWN_ELEMENT,
     ],
     [
       'a code after the {" "} spacer Prettier writes',
       "",
       '<span>{fleet.amount}{" "}USD</span>',
+      "glued-symbol",
+      GLUED_AFTER,
     ],
     [
       "a code after the spacer, in Prettier's wrapped form",
       "",
       '<span>\n  {fleet.amount}{" "}\n  USD\n</span>',
+      "glued-symbol",
+      GLUED_AFTER,
     ],
     [
       "a currency code value beside the figure",
       "",
       "<span>{fleet.amount} {fleet.currency}</span>",
+      "glued-symbol",
+      CODE_VALUE,
     ],
-  ])("goes red on a real lens page with %s", (_name, imports, render) => {
-    const page = "app/(app)/admin/coord/devops/page.tsx";
-    const real = sourceOf(page);
-    const withCost = `${imports}${real.replace(
-      /<Caption id="dev-ops\.page" \/>/,
-      `<Caption id="dev-ops.page" />${render}`
-    )}`;
-    expect(withCost).not.toBe(real);
-    expect(scanSource(page, withCost, scope.context)).not.toEqual([]);
-  });
+    [
+      "a code after a no-break space written as &nbsp;",
+      "",
+      "<span>{fleet.amount}&nbsp;USD</span>",
+      "glued-symbol",
+      GLUED_AFTER,
+    ],
+    [
+      "a symbol before a no-break space written as &nbsp;",
+      "",
+      "<span>$&nbsp;{fleet.total}</span>",
+      "glued-symbol",
+      GLUED_BEFORE,
+    ],
+    [
+      "a code after a numeric no-break space",
+      "",
+      "<span>{fleet.amount}&#160;EUR</span>",
+      "glued-symbol",
+      GLUED_AFTER,
+    ],
+    [
+      "a sign after a thin space written as &thinsp;",
+      "",
+      "<span>{fleet.amount}&thinsp;€</span>",
+      "glued-symbol",
+      GLUED_AFTER,
+    ],
+    [
+      "a code value after &nbsp;",
+      "",
+      "<span>{fleet.amount}&nbsp;{fleet.currency}</span>",
+      "glued-symbol",
+      CODE_VALUE,
+    ],
+    [
+      "a code in its own element after &nbsp;",
+      "",
+      "<span>{fleet.amount}&nbsp;<small>USD</small></span>",
+      "glued-symbol",
+      OWN_ELEMENT,
+    ],
+    [
+      "a code shown by a logical child",
+      "",
+      '<span>{fleet.amount}{showUnit && " USD"}</span>',
+      "glued-symbol",
+      GLUED_AFTER,
+    ],
+    [
+      "a code shown by a conditional child",
+      "",
+      '<span>{fleet.amount}{showUnit ? " USD" : ""}</span>',
+      "glued-symbol",
+      GLUED_AFTER,
+    ],
+  ])(
+    "goes red on a real lens page with %s",
+    (_name, imports, render, rule, detail) => {
+      const page = "app/(app)/admin/coord/devops/page.tsx";
+      const real = sourceOf(page);
+      // A replacer FUNCTION: a replacement string would read `$&` in a
+      // fixture (`$&nbsp;`) as "the matched text".
+      const withCost = `${imports}${real.replace(
+        /<Caption id="dev-ops\.page" \/>/,
+        (caption) => `${caption}${render}`
+      )}`;
+      expect(withCost).toContain(render);
+      const found = scanSource(page, withCost, scope.context);
+      expect(
+        found.filter((v) => v.rule === rule && v.detail.includes(detail)),
+        found.map(describeCostViolation).join("\n")
+      ).not.toEqual([]);
+    }
+  );
 });
 
 /** Classify a synthetic tree the way `discoverContext` classifies the real one. */
@@ -285,6 +392,65 @@ describe("currency formatters are found by what they do, anywhere under src/", (
         .get("data/model-costs/index.ts")
         ?.has("formatCurrency")
     ).toBe(true);
+  });
+
+  // The classifier keeps no currency text of its own: which code formats
+  // money is the scan's rules' answer, asked of every module. One fixture per
+  // code and symbol the vocabulary holds, so a code added there is covered
+  // here the same day.
+  it.each([...CURRENCY_CODES])(
+    "classifies a formatter whose only money text is the code %s",
+    (code) => {
+      const { formatters, context } = classify({
+        "lib/glued.ts": `export const glued = (n: number) => n + " ${code}";`,
+        "lib/Shown.tsx": `export function Shown({ n }: { n: number }) { return <span>{n}&nbsp;${code}</span>; }`,
+      });
+      expect(exportsOf(formatters, "lib/glued.ts")).toEqual(["glued"]);
+      expect(exportsOf(formatters, "lib/Shown.tsx")).toEqual(["Shown"]);
+      expect(
+        scanSource(
+          "app/(app)/x/page.tsx",
+          'import { glued } from "@/lib/glued";\n<b>{glued(x)}</b>',
+          context
+        ).filter((v) => v.detail.includes("currency formatter"))
+      ).not.toEqual([]);
+    }
+  );
+
+  it.each([...CURRENCY_SYMBOLS])(
+    "classifies a formatter whose only money text is the symbol %s",
+    (symbol) => {
+      const { formatters } = classify({
+        "lib/glued.ts": `export const glued = (n: number) => "${symbol}" + n;`,
+      });
+      expect(exportsOf(formatters, "lib/glued.ts")).toEqual(["glued"]);
+    }
+  );
+
+  it.each<[string, string]>([
+    [
+      "a sign written as a unicode escape",
+      'export const glued = (n: number) => "\\u20AC" + n;',
+    ],
+    [
+      "a sign written as a character reference",
+      "export const Glued = ({ n }: { n: number }) => <span>&euro;{n}</span>;",
+    ],
+    [
+      "a code after a no-break space reference",
+      "export const Glued = ({ n }: { n: number }) => <span>{n}&nbsp;CHF</span>;",
+    ],
+    [
+      "a code shown by a conditional child",
+      'export const Glued = ({ n, on }: { n: number; on: boolean }) => <span>{n}{on ? " CAD" : ""}</span>;',
+    ],
+    [
+      "number-format options the scan cannot read",
+      'export const glued = (n: number, o: Intl.NumberFormatOptions) => n.toLocaleString("en", o);',
+    ],
+  ])("classifies a formatter with %s", (_name, text) => {
+    const { formatters } = classify({ "lib/glued.tsx": text });
+    expect(formatters.get("lib/glued.tsx")?.size ?? 0).toBe(1);
   });
 
   it("declares the cost home's raw formatter, and nothing else of it", () => {
@@ -709,6 +875,134 @@ describe("each rule catches the shape it names", () => {
       'const s = "12,00 €";',
       "literal-figure",
     ],
+    // JSX text keeps character references raw in the syntax tree
+    // (`&nbsp;USD`); the page shows the character. Every rule reads it decoded.
+    [
+      "a code after a no-break space reference",
+      "<span>{x}&nbsp;USD</span>",
+      "glued-symbol",
+    ],
+    [
+      "a symbol before a no-break space reference",
+      "<span>$&nbsp;{x}</span>",
+      "glued-symbol",
+    ],
+    [
+      "a code after a decimal no-break space",
+      "<span>{x}&#160;EUR</span>",
+      "glued-symbol",
+    ],
+    [
+      "a code after a hex no-break space",
+      "<span>{x}&#xA0;EUR</span>",
+      "glued-symbol",
+    ],
+    [
+      "a sign after an en space reference",
+      "<span>{x}&ensp;£</span>",
+      "glued-symbol",
+    ],
+    [
+      "a code after an em space reference",
+      "<span>{x}&emsp;GBP</span>",
+      "glued-symbol",
+    ],
+    [
+      "a sign after a thin space reference",
+      "<span>{x}&thinsp;€</span>",
+      "glued-symbol",
+    ],
+    [
+      "a code after a zero-width space",
+      "<span>{x}&#8203;USD</span>",
+      "glued-symbol",
+    ],
+    [
+      "a code after a no-break space character",
+      "<span>{x} USD</span>",
+      "glued-symbol",
+    ],
+    ["a sign written as a reference", "<span>&euro;{x}</span>", "glued-symbol"],
+    [
+      "a sign written as a hex reference",
+      "<span>&#x20AC;{x}</span>",
+      "glued-symbol",
+    ],
+    [
+      "a cent sign written as a reference",
+      "<span>{x}&cent;</span>",
+      "glued-symbol",
+    ],
+    [
+      "a code value after a no-break space reference",
+      "<span>{x}&nbsp;{row.currency}</span>",
+      "glued-symbol",
+    ],
+    [
+      "a code element after a no-break space reference",
+      "<span>{x}&nbsp;<small>USD</small></span>",
+      "glued-symbol",
+    ],
+    [
+      "a code element holding a no-break space reference",
+      "<span>{x}<small>&nbsp;USD</small></span>",
+      "glued-symbol",
+    ],
+    [
+      "a code shown by a logical child",
+      '<span>{x}{showUnit && " USD"}</span>',
+      "glued-symbol",
+    ],
+    [
+      "a code shown by a conditional child",
+      '<span>{x}{showUnit ? " USD" : ""}</span>',
+      "glued-symbol",
+    ],
+    [
+      "a code shown by a ?? child",
+      '<span>{x}{unit ?? " USD"}</span>',
+      "glued-symbol",
+    ],
+    [
+      "a symbol chosen by a conditional child",
+      '<span>{euro ? "€" : "$"}{x}</span>',
+      "glued-symbol",
+    ],
+    [
+      "a symbol chosen by a conditional, as a child of its own",
+      '<span>{euro ? "€" : "$"}</span>',
+      "glued-symbol",
+    ],
+    [
+      "a symbol element chosen by a conditional",
+      '<span>{x}<small>{euro ? "€" : "$"}</small></span>',
+      "glued-symbol",
+    ],
+    [
+      "a code element after a conditional spacer",
+      '<span>{x}{wide ? " " : ""}<small>USD</small></span>',
+      "glued-symbol",
+    ],
+    [
+      "a figure written with a no-break space reference",
+      "<p>42&nbsp;USD</p>",
+      "literal-figure",
+    ],
+    [
+      "a figure written with a sign reference",
+      "<p>&euro;42</p>",
+      "literal-figure",
+    ],
+    [
+      "a figure in an attribute, written with a reference",
+      '<span title="&#36;42">x</span>',
+      "literal-figure",
+    ],
+    [
+      "the label written with a no-break space reference",
+      "<span>list-price&nbsp;equivalent</span>",
+      "literal-figure",
+    ],
   ])("%s", (_name, source, rule) => {
     expect(rulesIn(source)).toContain(rule);
   });
@@ -790,9 +1084,47 @@ describe("and passes what is not a money render", () => {
     ["percent", "<b>{percent}%</b>"],
     ["a currency code shown on its own", "<p>Currency: {currency}</p>"],
     ["a spacer between a count and its noun", '<p>{count}{" "}sessions</p>'],
+    [
+      "a no-break space reference between a count and its noun",
+      "<p>{count}&nbsp;sessions</p>",
+    ],
+    ["a copyright reference beside a year", "<p>&copy; 2026 Acme Corp</p>"],
+    ["references that are not money", "<p>{a}&nbsp;&mdash;&nbsp;{b}</p>"],
+    ["a conditional child of words", '<p>{open ? "Open" : "Closed"}</p>'],
+    [
+      "a logical child of a noun beside a count",
+      '<p>{count}{showUnit && " runs"}</p>',
+    ],
+    ["a conditional that renders nothing", '<p>{n}{cond ? "" : null}</p>'],
   ])("%s", (_name, source) => {
     expect(rulesIn(source)).toEqual([]);
   });
+});
+
+describe("one currency vocabulary, read by both layers", () => {
+  it.each([...CURRENCY_CODES])(
+    "%s is a figure to the page check and glued to the source scan",
+    (code) => {
+      expect(CURRENCY_FIGURE.test(`12 ${code}`)).toBe(true);
+      expect(CURRENCY_FIGURE.test(`${code} 12`)).toBe(true);
+      expect(rulesIn(`<span>{x} ${code}</span>`)).toContain("glued-symbol");
+      expect(rulesIn(`<span>${code} {x}</span>`)).toContain("glued-symbol");
+      expect(rulesIn(`const s = \`\${x} ${code}\`;`)).toContain("glued-symbol");
+    }
+  );
+
+  it.each([...CURRENCY_SYMBOLS])(
+    "%s is a figure to the page check and glued to the source scan",
+    (symbol) => {
+      // `$` is written before its figure and `¢` after; the rest either way.
+      expect(
+        CURRENCY_FIGURE.test(`${symbol}12`) ||
+          CURRENCY_FIGURE.test(`12${symbol}`)
+      ).toBe(true);
+      expect(rulesIn(`<span>{x}${symbol}</span>`)).toContain("glued-symbol");
+      expect(rulesIn(`<span>${symbol}{x}</span>`)).toContain("glued-symbol");
+    }
+  );
 });
 
 describe("the presentation package re-exports its own CostFigure", () => {

@@ -62,10 +62,17 @@
  *   element holding nothing but a currency symbol or code beside a value
  *   (`<span>$</span>{x}`, `{x}<small>USD</small>`), or a currency CODE value
  *   (`currency`, `currencyCode`) written into a template or beside a JSX value
- *   (`{x} {row.currency}`). What renders nothing between the two — whitespace,
- *   the `{" "}` spacer Prettier writes when it wraps `{x} USD`, an empty
- *   `{/* … *\/}` — does not unglue them. A plain string child (`{"}"}`) is
- *   text, not a computed value.
+ *   (`{x} {row.currency}`). What renders nothing between the two — whitespace
+ *   (a no-break, en, em or thin space included), a zero-width character, the
+ *   `{" "}` spacer Prettier writes when it wraps `{x} USD`, an empty
+ *   `{/* … *\/}` — does not unglue them. JSX text and JSX attribute strings
+ *   are read as they render, with their character references decoded
+ *   (`{x}&nbsp;USD`, `&euro;{x}`, `&#160;`); a child that renders one of
+ *   several things — a conditional, `&&`, `||` or `??` child
+ *   (`{showUnit && " USD"}`) — is read for each thing it can render. A plain
+ *   string child (`{"}"}`) is text, not a computed value. The symbols and
+ *   codes are one vocabulary with the rendered-page check's
+ *   (`currencyTokens.ts`).
  * - **literal-figure** — a currency figure written into text (`"$12"`,
  *   `"5 EUR"`), or the cost label itself (`"list-price equivalent"`), which
  *   belongs only beside a `CostFigure`'s figure.
@@ -107,7 +114,7 @@ import {
   resolveSrcModule,
   type CurrencyFormatters,
 } from "./currencyFormatters";
-import { CURRENCY_FIGURE } from "./presentation";
+import { CURRENCY_FIGURE, CURRENCY_TOKEN_PATTERN } from "./currencyTokens";
 
 /** The one module allowed to render a cost figure. */
 export const COST_HOME = "components/presentation/CostFigure.tsx";
@@ -150,16 +157,71 @@ export const NON_MONEY_COMPOUNDS: ReadonlyArray<{
 
 const COST_LABEL_FRAGMENT = "list-price equivalent";
 
-/** The ISO 4217 codes the rendered-page check knows (`CURRENCY_FIGURE`). */
-const CURRENCY_CODES = "USD|EUR|GBP|JPY|CHF|CAD|AUD|INR|CNY";
-/** A currency symbol, or an ISO code standing as a word. */
-const CURRENCY_TOKEN = `(?:[$€£¥₹¢]|\\b(?:${CURRENCY_CODES})\\b)`;
+/**
+ * A currency symbol, or an ISO code standing as a word — from the one
+ * vocabulary the rendered-page check reads too (`currencyTokens.ts`).
+ */
+const CURRENCY_TOKEN = CURRENCY_TOKEN_PATTERN;
+/** Characters that render as nothing: soft hyphen, zero-width ones, word joiner. */
+const INVISIBLE = "\\u00ad\\u200b-\\u200f\\u2060";
+/**
+ * What renders as nothing between two things: whitespace (a no-break, en, em
+ * or thin space included — `\s` holds them all) or an invisible character.
+ */
+const GAP = `[\\s${INVISIBLE}]*`;
 /** Text whose LAST thing is a currency token — glued to what follows it. */
-const CURRENCY_AT_END = new RegExp(`${CURRENCY_TOKEN}\\s*$`);
+const CURRENCY_AT_END = new RegExp(`${CURRENCY_TOKEN}${GAP}$`);
 /** Text whose FIRST thing is a currency token — glued to what precedes it. */
-const CURRENCY_AT_START = new RegExp(`^\\s*${CURRENCY_TOKEN}`);
+const CURRENCY_AT_START = new RegExp(`^${GAP}${CURRENCY_TOKEN}`);
 /** Text that is nothing but a currency token. */
-const CURRENCY_ONLY = new RegExp(`^\\s*${CURRENCY_TOKEN}\\s*$`);
+const CURRENCY_ONLY = new RegExp(`^${GAP}${CURRENCY_TOKEN}${GAP}$`);
+/** Text that renders nothing visible. */
+const BLANK = new RegExp(`^${GAP}$`);
+
+/**
+ * The named character references JSX decodes that can matter to a money
+ * rule: those that render as whitespace or nothing (so they cannot unglue a
+ * symbol from its figure) and the currency signs. Every other named reference
+ * JSX knows decodes to a character that is neither, so it is left as written;
+ * numeric references (`&#160;`, `&#x20AC;`) are all decoded.
+ */
+const NAMED_REFERENCES: ReadonlyMap<string, string> = new Map([
+  ["nbsp", " "],
+  ["ensp", " "],
+  ["emsp", " "],
+  ["thinsp", " "],
+  ["zwnj", "‌"],
+  ["zwj", "‍"],
+  ["lrm", "‎"],
+  ["rlm", "‏"],
+  ["shy", "­"],
+  ["cent", "¢"],
+  ["pound", "£"],
+  ["yen", "¥"],
+  ["euro", "€"],
+]);
+
+const CHARACTER_REFERENCE =
+  /&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([A-Za-z][A-Za-z0-9]*));/g;
+
+/**
+ * JSX text as it renders. The parser keeps character references raw — a
+ * `JsxText` reads `&nbsp;USD` — while the page shows a no-break space before
+ * `USD`, so every rule reads JSX text, and JSX attribute strings, decoded.
+ */
+function decodeJsxText(text: string): string {
+  return text.replace(
+    CHARACTER_REFERENCE,
+    (whole, dec?: string, hex?: string, name?: string) => {
+      if (name !== undefined) return NAMED_REFERENCES.get(name) ?? whole;
+      const code =
+        dec !== undefined
+          ? Number.parseInt(dec, 10)
+          : Number.parseInt(hex ?? "", 16);
+      return code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    }
+  );
+}
 
 /** The module a sanctioned `CostFigure` is imported from. */
 const COST_FIGURE_MODULES: ReadonlySet<string> = new Set([
@@ -284,34 +346,137 @@ function tagName(node: ts.JsxOpeningElement | ts.JsxSelfClosingElement) {
   return node.tagName.getText();
 }
 
+/** One way a JSX child can render (see {@link childRenders}). */
+type ChildRender =
+  /** Text: JSX text (character references decoded), or a string. */
+  | { readonly kind: "text"; readonly text: string }
+  /** Nothing: `null`, `undefined`, a boolean, `{}` or `{/* … *\/}`. */
+  | { readonly kind: "nothing" }
+  /** A currency CODE value: `{currency}`, `{row.currencyCode}`. */
+  | { readonly kind: "code"; readonly name: string }
+  /** An element holding nothing but a currency token: `<span>$</span>`. */
+  | { readonly kind: "token-element" }
+  /** A computed value: an element, a call, a read. */
+  | { readonly kind: "value" };
+
 /**
- * The text a JSX child renders as text: JSX text, or a string child
- * (`{"Total: $"}`, `` {`USD`} ``); `null` for anything else.
+ * The expressions a JSX child's expression can render: each branch of a
+ * conditional (`c ? " USD" : ""`), both sides of `||` and `??`, and the right
+ * of `&&` — whose left is a guard, read as rendering nothing.
  */
-function jsxChildText(child: ts.Node | undefined): string | null {
-  if (child === undefined) return null;
-  if (ts.isJsxText(child)) return child.text;
-  if (ts.isJsxExpression(child) && child.expression) {
-    const value = unwrapExpression(child.expression);
-    if (
-      ts.isStringLiteral(value) ||
-      ts.isNoSubstitutionTemplateLiteral(value)
-    ) {
-      return value.text;
+function renderedBranches(expression: ts.Expression): ts.Expression[] {
+  const value = unwrapExpression(expression);
+  if (ts.isConditionalExpression(value)) {
+    return [
+      ...renderedBranches(value.whenTrue),
+      ...renderedBranches(value.whenFalse),
+    ];
+  }
+  if (ts.isBinaryExpression(value)) {
+    switch (value.operatorToken.kind) {
+      case ts.SyntaxKind.AmpersandAmpersandToken:
+        return renderedBranches(value.right);
+      case ts.SyntaxKind.BarBarToken:
+      case ts.SyntaxKind.QuestionQuestionToken:
+        return [
+          ...renderedBranches(value.left),
+          ...renderedBranches(value.right),
+        ];
     }
   }
-  return null;
+  return [value];
+}
+
+/** What one rendered branch of a JSX child's expression is. */
+function branchRender(value: ts.Expression): ChildRender {
+  if (ts.isStringLiteralLike(value)) return { kind: "text", text: value.text };
+  if (
+    value.kind === ts.SyntaxKind.NullKeyword ||
+    value.kind === ts.SyntaxKind.TrueKeyword ||
+    value.kind === ts.SyntaxKind.FalseKeyword ||
+    (ts.isIdentifier(value) && value.text === "undefined")
+  ) {
+    return { kind: "nothing" };
+  }
+  if (ts.isJsxElement(value) || ts.isJsxFragment(value)) {
+    return isCurrencyOnly(value.children)
+      ? { kind: "token-element" }
+      : { kind: "value" };
+  }
+  const name = ts.isIdentifier(value)
+    ? value.text
+    : ts.isPropertyAccessExpression(value)
+      ? value.name.text
+      : null;
+  return name !== null && isCurrencyCodeName(name)
+    ? { kind: "code", name }
+    : { kind: "value" };
+}
+
+const childRenderCache = new WeakMap<ts.Node, readonly ChildRender[]>();
+
+/**
+ * Every way a JSX child can render: JSX text, read as it renders (character
+ * references decoded — `&nbsp;` is a no-break space, `&euro;` a euro sign); a
+ * string child (`{"Total: $"}`); each branch of a conditional or logical
+ * child (`{showUnit && " USD"}`); an element; or a computed value.
+ */
+function childRenders(child: ts.Node): readonly ChildRender[] {
+  let renders = childRenderCache.get(child);
+  if (renders === undefined) {
+    if (ts.isJsxText(child)) {
+      renders = [{ kind: "text", text: decodeJsxText(child.text) }];
+    } else if (ts.isJsxElement(child) || ts.isJsxFragment(child)) {
+      renders = [
+        isCurrencyOnly(child.children)
+          ? { kind: "token-element" }
+          : { kind: "value" },
+      ];
+    } else if (!ts.isJsxExpression(child)) {
+      renders = [{ kind: "value" }];
+    } else if (!child.expression) {
+      renders = [{ kind: "nothing" }];
+    } else {
+      renders = renderedBranches(child.expression).map(branchRender);
+    }
+    childRenderCache.set(child, renders);
+  }
+  return renders;
+}
+
+/** Whether a rendering shows nothing visible. */
+function isEmptyRender(render: ChildRender): boolean {
+  return (
+    render.kind === "nothing" ||
+    (render.kind === "text" && BLANK.test(render.text))
+  );
+}
+
+/** Whether a rendering is a currency token: a symbol or code, its element, or a code value. */
+function isTokenRender(render: ChildRender): boolean {
+  return (
+    render.kind === "code" ||
+    render.kind === "token-element" ||
+    (render.kind === "text" && CURRENCY_ONLY.test(render.text))
+  );
 }
 
 /**
- * A JSX child that renders nothing between its neighbours — whitespace, the
- * `{" "}` spacer Prettier writes when it wraps `{x} USD`, an empty
- * `{/* … *\/}` — and so cannot unglue a symbol from a value.
+ * A JSX child that renders nothing between its neighbours — whitespace (an
+ * `&nbsp;` or `&thinsp;` included), the `{" "}` spacer Prettier writes when it
+ * wraps `{x} USD`, an empty `{/* … *\/}`, a conditional that shows only those
+ * — and so cannot unglue a symbol from a value. An element is never
+ * transparent.
  */
 function isTransparentChild(child: ts.Node): boolean {
-  if (ts.isJsxExpression(child) && !child.expression) return true;
-  const text = jsxChildText(child);
-  return text !== null && text.trim() === "";
+  if (
+    ts.isJsxElement(child) ||
+    ts.isJsxFragment(child) ||
+    ts.isJsxSelfClosingElement(child)
+  ) {
+    return false;
+  }
+  return childRenders(child).every(isEmptyRender);
 }
 
 /** The nearest child before (`step` -1) or after (+1) `children[at]` that renders something. */
@@ -327,44 +492,35 @@ function jsxNeighbour(
   return undefined;
 }
 
-/** `{currency}`, `{row.currencyCode}` — a JSX child that holds a currency CODE value. */
-function currencyCodeChild(child: ts.Node): string | null {
-  if (!ts.isJsxExpression(child) || !child.expression) return null;
-  const value = unwrapExpression(child.expression);
-  const name = ts.isIdentifier(value)
-    ? value.text
-    : ts.isPropertyAccessExpression(value)
-      ? value.name.text
-      : null;
-  return name !== null && isCurrencyCodeName(name) ? name : null;
-}
-
 /**
- * A computed value among JSX children: an element, or an expression that is
- * not a plain string (`{"}"}` beside a regex's `$` anchor is text, not a
- * figure). An element holding nothing but a currency symbol is the symbol,
- * not a value.
+ * A computed value among JSX children: an element, or an expression one of
+ * whose branches is not a plain string (`{"}"}` beside a regex's `$` anchor is
+ * text, not a figure). An element holding nothing but a currency symbol is the
+ * symbol, not a value; a currency code value is a value as well as a token.
  */
 function isJsxValue(sibling: ts.Node | undefined): boolean {
-  if (sibling === undefined || ts.isJsxText(sibling)) return false;
-  if (ts.isJsxElement(sibling)) return !isCurrencyOnlyElement(sibling);
-  if (!ts.isJsxExpression(sibling)) return true;
-  if (!sibling.expression) return false;
-  return jsxChildText(sibling) === null;
+  return (
+    sibling !== undefined &&
+    childRenders(sibling).some(
+      (render) => render.kind === "value" || render.kind === "code"
+    )
+  );
 }
 
 /**
- * `<span>$</span>`, `<small> USD </small>`, `<small>{currency}</small>` — an
- * element that is only a currency token.
+ * `<span>$</span>`, `<small>&nbsp;USD</small>`, `<small>{currency}</small>`,
+ * `<small>{eur ? "€" : "$"}</small>` — children whose one visible child only
+ * ever renders a currency token.
  */
-function isCurrencyOnlyElement(node: ts.JsxElement): boolean {
-  const children = node.children.filter((child) => !isTransparentChild(child));
-  const only = children.length === 1 ? children[0] : undefined;
+function isCurrencyOnly(children: ts.NodeArray<ts.JsxChild>): boolean {
+  const visible = children.filter((child) => !isTransparentChild(child));
+  const only = visible.length === 1 ? visible[0] : undefined;
   if (only === undefined) return false;
-  const text = jsxChildText(only);
-  return text !== null
-    ? CURRENCY_ONLY.test(text)
-    : currencyCodeChild(only) !== null;
+  const renders = childRenders(only);
+  return (
+    renders.some(isTokenRender) &&
+    renders.every((render) => isTokenRender(render) || isEmptyRender(render))
+  );
 }
 
 /** `x`, `(x)`, `x as const`, `x satisfies T`, `x!` — down to `x`. */
@@ -827,43 +983,46 @@ export function scanParsed(
     }
     if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
       // What renders beside what: a symbol or code is glued to the nearest
-      // child on its side that renders anything, whatever whitespace or
-      // `{" "}` spacer lies between.
+      // child on its side that renders anything, whatever whitespace,
+      // `&nbsp;` or `{" "}` spacer lies between — and a child that renders
+      // one of several things (`{showUnit && " USD"}`) is read for each.
       const children = node.children;
       children.forEach((child, at) => {
+        const renders = childRenders(child);
         const before = jsxNeighbour(children, at, -1);
         const after = jsxNeighbour(children, at, 1);
-        const childText = jsxChildText(child);
-        if (childText !== null) {
-          if (CURRENCY_AT_END.test(childText) && isJsxValue(after)) {
-            flag(
-              child,
-              "glued-symbol",
-              "a currency symbol or code glued to a JSX value"
-            );
-          }
-          if (CURRENCY_AT_START.test(childText) && isJsxValue(before)) {
-            flag(
-              child,
-              "glued-symbol",
-              "a currency symbol or code glued after a JSX value"
-            );
-          }
-          return;
+        const texts = renders.flatMap((r) =>
+          r.kind === "text" ? [r.text] : []
+        );
+        if (texts.some((t) => CURRENCY_AT_END.test(t)) && isJsxValue(after)) {
+          flag(
+            child,
+            "glued-symbol",
+            "a currency symbol or code glued to a JSX value"
+          );
+        }
+        if (
+          texts.some((t) => CURRENCY_AT_START.test(t)) &&
+          isJsxValue(before)
+        ) {
+          flag(
+            child,
+            "glued-symbol",
+            "a currency symbol or code glued after a JSX value"
+          );
         }
         // `<span>$</span>{x}`, `{x}<small>USD</small>`: the symbol in its
         // own element is glued to the value beside it as surely as JSX text
         // is — and so is a currency CODE value, `{x} {row.currency}`.
-        const code = currencyCodeChild(child);
+        const code = renders.find((r) => r.kind === "code");
         const token =
-          code !== null ||
-          (ts.isJsxElement(child) && isCurrencyOnlyElement(child));
+          code !== undefined || renders.some((r) => r.kind === "token-element");
         if (token && (isJsxValue(before) || isJsxValue(after))) {
           flag(
             child,
             "glued-symbol",
-            code !== null
-              ? `a currency code \`${code}\` beside a JSX value`
+            code !== undefined
+              ? `a currency code \`${code.name}\` beside a JSX value`
               : "a currency symbol or code in its own element, beside a JSX value"
           );
         }
@@ -872,16 +1031,13 @@ export function scanParsed(
     if (
       ts.isJsxExpression(node) &&
       node.expression &&
-      !ts.isJsxAttribute(node.parent)
+      !ts.isJsxAttribute(node.parent) &&
+      renderedBranches(node.expression).some(
+        (branch) =>
+          ts.isStringLiteralLike(branch) && CURRENCY_ONLY.test(branch.text)
+      )
     ) {
-      const value = unwrapExpression(node.expression);
-      if (
-        (ts.isStringLiteralLike(value) ||
-          ts.isNoSubstitutionTemplateLiteral(value)) &&
-        CURRENCY_ONLY.test(value.text)
-      ) {
-        flag(node, "glued-symbol", "a currency symbol or code as a JSX child");
-      }
+      flag(node, "glued-symbol", "a currency symbol or code as a JSX child");
     }
     if (
       ts.isBinaryExpression(node) &&
@@ -907,7 +1063,14 @@ export function scanParsed(
       ts.isTemplateMiddle(node) ||
       ts.isTemplateTail(node)
     ) {
-      const value = node.text;
+      // JSX text and JSX attribute strings render with their character
+      // references decoded (`42&nbsp;USD`, `title="&euro;5"`); JS strings
+      // render as written.
+      const value =
+        ts.isJsxText(node) ||
+        (ts.isStringLiteral(node) && ts.isJsxAttribute(node.parent))
+          ? decodeJsxText(node.text)
+          : node.text;
       if (CURRENCY_FIGURE.test(value) && !isReplacementString(node)) {
         flag(
           node,
@@ -915,7 +1078,9 @@ export function scanParsed(
           `a currency figure in text: ${JSON.stringify(value.trim().slice(0, 40))}`
         );
       }
-      if (value.toLowerCase().includes(COST_LABEL_FRAGMENT)) {
+      if (
+        value.replace(/\s+/g, " ").toLowerCase().includes(COST_LABEL_FRAGMENT)
+      ) {
         flag(node, "literal-figure", "the cost label outside CostFigure");
       }
       if (

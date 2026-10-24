@@ -95,6 +95,7 @@ import {
   type CaptionKey,
   type PresentationScopeState,
 } from "@/components/presentation";
+import { CURRENCY_FIGURE } from "./currencyTokens";
 
 /** The part of a UI Bridge registry check (b) reads. */
 export interface UiBridgeRegistryView {
@@ -558,15 +559,14 @@ function registrationViolations(
 // (c) cost
 // ---------------------------------------------------------------------------
 
-const CURRENCY_CODES = "USD|EUR|GBP|JPY|CHF|CAD|AUD|INR|CNY";
 /**
  * A currency symbol or ISO code next to a number, either order: `$12`,
- * `$.50`, `€-3`, `12 USD`, `12,00 €` and `12¢`. A `$` AFTER a digit is not
- * one — `^0$` in a pattern string would read as a figure.
+ * `$.50`, `€-3`, `12 USD`, `12,00 €` and `12¢`. Built in `currencyTokens.ts`
+ * from the one currency vocabulary the source scan (`costRenderScan.ts`)
+ * reads too, and re-exported here for the callers that import it from this
+ * helper.
  */
-export const CURRENCY_FIGURE = new RegExp(
-  `[$€£¥₹]\\s?-?\\.?\\d|\\b(?:${CURRENCY_CODES})\\s?-?\\d|\\d\\s?(?:${CURRENCY_CODES})\\b|\\d\\s?[€£¥₹¢]`
-);
+export { CURRENCY_FIGURE };
 const COST_LABEL_FRAGMENT = "list-price equivalent";
 
 const TEXT_ATTRIBUTES = [
