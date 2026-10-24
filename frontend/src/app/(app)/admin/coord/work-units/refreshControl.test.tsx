@@ -42,6 +42,19 @@ vi.mock("./usePlanDifficulty", () => ({
   }),
 }));
 
+// The page's THIRD read — the work-unit KPIs (`useWorkUnitKpis`, plan
+// `2026-10-09-kpi-telemetry-and-dashboards` Phase 4) — also goes through
+// `get` and would otherwise take a response off, and add a call to, the spy
+// this file sequences and counts. What is under test here is the work-unit
+// read, so the KPIs stay pending; `useWorkUnitKpis` and the KPI cells have
+// their own coverage (`kpis.test.tsx`).
+vi.mock("./useWorkUnitKpis", () => ({
+  useWorkUnitKpis: () => ({
+    index: { state: "pending" },
+    refresh: () => Promise.resolve(),
+  }),
+}));
+
 vi.mock("@/services/service-factory", async () => {
   // The plan reads go through `httpClient.fetch` (the typed /operations
   // client); `withVerbFetch` routes them through the same `get` mock.
