@@ -107,6 +107,10 @@ import {
 } from "@/components/presentation";
 import { CURRENCY_FIGURE } from "./currencyTokens";
 import { reactRootOf } from "./reactTree";
+import {
+  markProviderObservation,
+  recordPresentationCheck,
+} from "./readinessRecorder";
 
 /** The part of a UI Bridge registry check (b) reads. */
 export interface UiBridgeRegistryView {
@@ -362,6 +366,7 @@ export function renderInPresentationMode(
       );
     }
     observed = { registry: withoutSentinels(registry) };
+    markProviderObservation(observed);
   } else {
     observed = uiBridge;
   }
@@ -805,7 +810,7 @@ export function findPresentationViolations(
   options: PresentationSafetyOptions = {}
 ): PresentationViolation[] {
   const root = view.baseElement ?? document.body;
-  return [
+  const violations = [
     ...mountViolations(view, root),
     ...controlViolations(root),
     ...registrationViolations(view.uiBridge),
@@ -813,6 +818,9 @@ export function findPresentationViolations(
     ...captionViolations(root, options.captions ?? []),
     ...identityViolations(root, options.forbidden ?? []),
   ];
+  // The readiness evidence: in a ready route's proof, what this check saw.
+  recordPresentationCheck(view, violations.length);
+  return violations;
 }
 
 /** One line per violation, for an assertion message. */

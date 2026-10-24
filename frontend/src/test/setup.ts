@@ -4,12 +4,20 @@
  * Global test setup and configuration for all unit/integration tests
  */
 
-import { expect, afterEach, vi } from "vitest";
+import { expect, afterEach, beforeAll, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import * as matchers from "@testing-library/jest-dom/matchers";
+import { loadReadinessTargets } from "./readinessTargets";
 
 // Extend Vitest's expect with jest-dom matchers
 expect.extend(matchers);
+
+// Presentation readiness evidence (src/test/readinessEvidence.ts): in a file
+// that proves a presentation-ready route, load that route's page module
+// unmocked before the tests run, so the page check can tell the page's own
+// component from a stand-in. Every other file: nothing. readinessTargets.ts
+// imports no app module, so it cannot pre-empt a test file's vi.mock calls.
+beforeAll(loadReadinessTargets);
 
 // Cleanup after each test
 afterEach(() => {
