@@ -111,15 +111,17 @@ export function SessionTimeoutWarning() {
 
   return (
     <Dialog open={showWarning} onOpenChange={setShowWarning} modal={true}>
-      {/* A decision, not a notice: no corner close button, as outside clicks
-          are already refused. Dismissing it without choosing let the session
-          run out unannounced, and in presentation mode the decision's two
-          buttons are the only controls it may show (`presenterSafety.ts`). */}
+      {/* A decision, not a notice: its two buttons are the only way out. No
+          corner close button, and neither an outside click nor Escape
+          dismisses it — dismissing it without choosing let the session run
+          out unannounced, and in presentation mode the decision's two buttons
+          are the only controls it may show (`presenterSafety.ts`). */}
       <DialogContent
         className="sm:max-w-md"
         showCloseButton={false}
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <div className="flex items-center gap-2">
