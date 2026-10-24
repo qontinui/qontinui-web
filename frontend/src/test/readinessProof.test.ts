@@ -192,6 +192,16 @@ const PROOFS: ReadonlyArray<readonly [string, string]> = [
       inTest(`${RENDER}\nexpectPresentationSafe(view);`),
   ],
   [
+    "asserts in a function test",
+    PAGE +
+      `it("is safe", function () {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+  ],
+  [
+    "asserts in a function test whose nested function reads its own arguments",
+    PAGE +
+      `it("is safe", function () {\n  const count = function (...rows: string[]) {\n    return arguments.length + rows.length;\n  };\n  expect(count("a")).toBe(2);\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+  ],
+  [
     "asserts inside an awaited waitFor",
     PAGE +
       inAsyncTest(
@@ -830,6 +840,18 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
     "it takes `task` from its context (line 2), which this check does not know cannot reach `skip`",
   ],
   [
+    "its only assertion in an it.for whose rest parameter gathers row and context",
+    PAGE +
+      `it.for(["a"])("is safe with %s", (...all) => {\n  all.at(1).skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+    "it reads `all.at` (line 3), which this check does not know cannot reach `skip`",
+  ],
+  [
+    "its only assertion in a function test that reads its arguments",
+    PAGE +
+      `it("is safe", function () {\n  arguments[0].skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+    "it reads `arguments` (line 3), which holds its context",
+  ],
+  [
     "its only assertion in a test that hands its context on",
     PAGE +
       `it("is safe", (ctx) => {\n  skipUnlessComposed(ctx);\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
@@ -839,12 +861,12 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
     "its only assertion in a test that gathers its context in a rest parameter",
     PAGE +
       `it("is safe", (...args) => {\n  args.at(0).skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
-    "its context is gathered by a rest parameter",
+    "it reads `args.at` (line 3), which this check does not know cannot reach `skip`",
   ],
   [
     "its only assertion in a test that gathers its context's remaining fields",
     PAGE +
-      `it("is safe", ({ expect, ...rest }) => {\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
+      `it("is safe", ({ ...expect }) => {\n  expect.skip();\n  ${RENDER}\n  expectPresentationSafe(view);\n});`,
     "it gathers its context's remaining fields",
   ],
   [
