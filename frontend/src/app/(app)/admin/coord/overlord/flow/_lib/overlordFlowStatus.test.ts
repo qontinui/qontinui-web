@@ -15,13 +15,15 @@ import {
   readFlowBody,
   scopeCounts,
   sessionHref,
+  UNCHANGED_MIN_PASSES,
+  unchangedIsObservable,
 } from "./overlordFlowStatus";
 
 describe("flowQuery", () => {
   it("maps each window onto contract §2's window_hours", () => {
-    expect(flowQuery("24h")).toBe("window_hours=24");
-    expect(flowQuery("7d")).toBe("window_hours=168");
-    expect(flowQuery("30d")).toBe("window_hours=720");
+    expect(flowQuery("24h")).toBe("window_hours=24&unchanged_min_passes=3");
+    expect(flowQuery("7d")).toBe("window_hours=168&unchanged_min_passes=3");
+    expect(flowQuery("30d")).toBe("window_hours=720&unchanged_min_passes=3");
   });
 });
 
@@ -286,6 +288,38 @@ describe("deriveFlowHealth", () => {
     }
   });
 
+  it("never goes green while too few FULL passes ran to see an unchanged session", () => {
+    for (const full of [0, 1, 2, undefined]) {
+      const h = deriveFlowHealth({
+        view: { ...view, fullPassesConsidered: full, unchanged: [] },
+        loaded: true,
+        failed: false,
+        failure: null,
+        windowId: "7d",
+      });
+      expect(h.level, String(full)).toBe("amber");
+      expect(h.headline).toBe("Unchanged sessions cannot be seen yet");
+      expect(h.detail).toMatch(
+        full === undefined
+          ? /did not say how many full passes ran/
+          : /^fewer than 3 full passes in the last 7 days/
+      );
+    }
+  });
+
+  it("gates on the full-pass count it asked coord to apply", () => {
+    expect(UNCHANGED_MIN_PASSES).toBe(3);
+    expect(unchangedIsObservable({ ...view, fullPassesConsidered: 3 })).toBe(
+      true
+    );
+    expect(unchangedIsObservable({ ...view, fullPassesConsidered: 2 })).toBe(
+      false
+    );
+    expect(
+      unchangedIsObservable({ ...view, fullPassesConsidered: undefined })
+    ).toBe(false);
+  });
+
   it("is amber with unchanged sessions and green with none", () => {
     expect(
       deriveFlowHealth({
@@ -298,7 +332,7 @@ describe("deriveFlowHealth", () => {
     ).toBe("amber");
     expect(
       deriveFlowHealth({
-        view: { ...view, unchanged: [] },
+        view: { ...view, fullPassesConsidered: 3, unchanged: [] },
         loaded: true,
         failed: false,
         failure: null,
