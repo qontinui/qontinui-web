@@ -8,8 +8,8 @@
  * the claim behind it — a presentation-mode render of the route's page passes
  * the page check — is read from the RUN, not from the test's source. Reading
  * source cannot settle it: whether arbitrary code skips the test, unmounts the
- * view or swaps the page out is not decidable from the text, and five review
- * rounds of a static reader each found new shapes it accepted.
+ * view or swaps the page out is not decidable from the text, and each review
+ * round of the static reader this replaced found new shapes it accepted.
  *
  * 1. **The check records what it saw.** In a proof file, every run of the page
  *    check (`findPresentationViolations`, and so `expectPresentationSafe`)
