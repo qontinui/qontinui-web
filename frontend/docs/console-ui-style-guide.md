@@ -1889,9 +1889,16 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   costs a placeholder, a page shown before it is safe costs a write control in
   front of a client. Register a page **in the same PR** as its page test (below);
   the registry's own test fails an entry whose test is missing, or does not run
-  the helper in a test that runs (not skipped, todo, conditional or expected to
-  fail, nor in a function nobody calls) over a render of that route's own page
-  module, imported and not mocked (`src/test/readinessProof.ts`). The console's landing
+  the helper where a failure fails a test that runs, every time it runs — on the
+  unconditional path of the test's body (no `if`, `?:`, `&&`, loop, early
+  `return`, swallowing `catch`, or deferring callback such as
+  `expect(() => …).toThrow()`, `.then` or a timer between them; `waitFor` and
+  `act` count when awaited), in a test that no `.skip` / `.skipIf` / `.runIf` /
+  `.fails` / `.todo`, option, context `skip`, empty `.each` table or registration
+  condition can stop — over a render that always evaluates that route's own page
+  module, imported and not mocked, with the page check itself not mocked
+  (`src/test/readinessProof.ts`; its refusals name the reason and the line, and
+  `src/test/readinessProof.test.ts` holds one fixture per shape). The console's landing
   redirect (`/admin/coord`, one sentence) is registered from the start: a
   withheld page never mounts, so it would never redirect.
 

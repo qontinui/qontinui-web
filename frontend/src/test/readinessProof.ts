@@ -3,7 +3,7 @@
  * `PRESENTATION_READY_ROUTES` entry claims: that a presentation-mode render
  * of the route's own page passes the page check (plan
  * `2026-10-23-console-presentation-spaces` D3.2; served policy `testing`
- * `a-green-run-must-prove-it-ran`).
+ * `a-green-run-must-prove-it-ran` and `a-test-must-be-able-to-fail`).
  *
  * The test file is read as TypeScript, so a call in a comment or a string is
  * no call. It proves the route only when ALL of these hold:
@@ -11,29 +11,44 @@
  * 1. **It asserts the helper** — `expectPresentationSafe(…)`, or
  *    `findPresentationViolations(…)` (optionally `.map(describeViolation)`) as
  *    the value of `expect(…)` asserted empty. A finder whose answer is
- *    discarded, kept, or asserted anything else asserts nothing.
- * 2. **That assertion runs in a test that runs** — inside the callback of an
- *    `it` / `test` (`.each`, `.only`, `.concurrent` and the like included)
- *    that is not `.skip`, `.todo`, `.skipIf`, `.runIf` or `.fails`, nor
- *    `xit` / `xtest`, under no `describe` that is skipped the same ways
- *    (`xdescribe` included). An assertion in a named local function counts
- *    where a test that runs calls that function (or is handed it); one in a
- *    function nobody calls, at module level, or in a hook, does not. A build
- *    that skips its own proof (`it.skipIf(!composed)`) proves nothing for the
- *    build it skips in, so a conditional test does not count either.
+ *    discarded, kept, or asserted anything else asserts nothing. The helper
+ *    module (`src/test/presentation`) is not mocked: a stand-in asserts
+ *    nothing either.
+ * 2. **That assertion runs where its failure fails a test that runs**, every
+ *    time that test runs (`proofRuns.ts` reads it): on the unconditional path
+ *    of the test's own body — not under an `if`, `?:`, `&&`, loop or `switch`,
+ *    nor after an early `return`, nor in a `try` whose `catch` swallows it; or
+ *    of a helper the test calls (awaited, when the helper is async), or of a
+ *    callback handed to `waitFor` / `vi.waitFor` / `act` that is awaited or
+ *    returned (in a file that does not mock Testing Library) — never of a
+ *    callback handed to anything else (`expect(() => …).toThrow()` would pass
+ *    on an unsafe page; a `.then`, a timer or a `forEach` runs it late or not
+ *    at all). The test itself runs: no `.skip`, `.todo`, `.skipIf`, `.runIf`
+ *    or `.fails` (nor `xit` / `xdescribe`), no options that set `skip`, `todo`
+ *    or `fails`, its own `.only` when anything else in the file has one, no
+ *    context `skip` it or a `beforeEach` / `aroundEach` could call, no `.each`
+ *    over a table that may be empty, and registered on the unconditional path
+ *    of the module or of a suite that is registered the same way. A build that
+ *    skips its own proof proves nothing for the build it skips in, so no
+ *    condition — at collection or at run time — counts.
  * 3. **It runs over a render of the page** — the asserted view is a render
  *    whose JSX names the page module's binding (`<DevOpsPage />`, however
- *    deep in wrappers), directly, through the variable it was assigned to
- *    (every assignment of it, if it has several), or through a local function
- *    whose body renders it. The binding is the page module's default export,
- *    imported (`import Page from`, `{ default as Page }`, `* as ns` →
- *    `<ns.default />`) or loaded (`await import(…)`, `require(…)`). A view of
- *    one panel of the page — or of anything else — is not one, even while the
- *    page module is imported beside it. A view that is a function's parameter
- *    is not traced back to its callers, so it fails closed: assert where the
- *    render is.
+ *    deep in wrappers) where evaluating the render evaluates it — not in one
+ *    branch of a `?:` or `&&`, nor in a callback such as a render prop —
+ *    directly, through the variable it was assigned to (every value it can
+ *    hold), or through a local function every one of whose returns renders it.
+ *    The binding is the page module's default export, imported
+ *    (`import Page from`, `{ default as Page }`, `* as ns` → `<ns.default />`)
+ *    or loaded (`await import(…)`, `require(…)`). A view of one panel of the
+ *    page — or of anything else — is not one, even while the page module is
+ *    imported beside it. A view that is a function's parameter is not traced
+ *    back to its callers, so it fails closed: assert where the render is.
  * 4. **It imports that page, and does not mock it** (`vi.mock`, `vi.doMock`,
  *    by specifier or `import()`): a stand-in renders in the page's place.
+ *
+ * Names are read as this repo's tests use them (`it`, `describe`, `waitFor`,
+ * `expectPresentationSafe`, …): a file that defines its own function under one
+ * of those names is not what this guards against.
  */
 
 import { posix } from "node:path";
@@ -43,11 +58,30 @@ import {
   isLensTreePath,
   type PresentationReadyRoute,
 } from "@/components/presentation/presentationReadiness";
+import { RunReader } from "./proofRuns";
+import {
+  declarationOf,
+  isFunctionNode,
+  lineOf,
+  localFunction,
+  mockTarget,
+  outermost,
+  returnedValues,
+  stepProblem,
+  unwrap,
+} from "./proofSyntax";
+
+/** The page check's module, `src/`-relative: mocking it mocks the assertion. */
+const HELPER_MODULE = "test/presentation";
 
 /** One helper assertion in a proof file, and what is known about it. */
 export interface HelperAssertion {
-  /** Whether it runs in a test that runs (rule 2). */
+  /** The line it is on, 1-based. */
+  readonly line: number;
+  /** Whether it runs where its failure fails a test that runs (rule 2). */
   readonly runs: boolean;
+  /** Why it does not (rule 2); `null` when it does. */
+  readonly why: string | null;
   /** Whether what it asserts over is a render of the page (rule 3). */
   readonly overPage: boolean;
 }
@@ -62,56 +96,27 @@ export interface ProofFacts {
   readonly assertions: readonly HelperAssertion[];
 }
 
-/** `"./page"` or `import("./page")` — the module a `vi.mock` names. */
-function mockedSpecifier(arg: ts.Expression | undefined): string | null {
-  if (arg === undefined) return null;
-  if (ts.isStringLiteralLike(arg)) return arg.text;
-  if (
-    ts.isCallExpression(arg) &&
-    arg.expression.kind === ts.SyntaxKind.ImportKeyword &&
-    arg.arguments[0] !== undefined &&
-    ts.isStringLiteralLike(arg.arguments[0])
-  ) {
-    return arg.arguments[0].text;
-  }
-  return null;
-}
-
 function calls(node: ts.CallExpression, name: string): boolean {
   return ts.isIdentifier(node.expression) && node.expression.text === name;
 }
 
-/** `x` without the parentheses around it, upward: the node its parent sees. */
-function outermost(node: ts.Node): ts.Node {
-  let current = node;
-  while (ts.isParenthesizedExpression(current.parent)) current = current.parent;
-  return current;
+// ---------------------------------------------------------------------------
+// Rule 1: is this call a helper assertion?
+// ---------------------------------------------------------------------------
+
+/** A helper assertion: what it checks, and the call whose throw is its failure. */
+interface Asserted {
+  /** The view it checks: the helper's first argument (`undefined` when it has none). */
+  readonly view: ts.Expression | undefined;
+  /** The helper call, or the `expect(…).toEqual([])` matcher call around the finder. */
+  readonly assertion: ts.CallExpression;
 }
 
-/** `x`, `(x)`, `await x`, `x as T`, `x!`, `x satisfies T` — down to `x`. */
-function unwrap(node: ts.Expression): ts.Expression {
-  let current = node;
-  while (
-    ts.isParenthesizedExpression(current) ||
-    ts.isAwaitExpression(current) ||
-    ts.isAsExpression(current) ||
-    ts.isNonNullExpression(current) ||
-    ts.isSatisfiesExpression(current) ||
-    ts.isTypeAssertionExpression(current)
-  ) {
-    current = current.expression;
+/** `call` as a helper assertion (rule 1); `null` when it is not one. */
+function assertedView(call: ts.CallExpression): Asserted | null {
+  if (calls(call, "expectPresentationSafe")) {
+    return { view: call.arguments[0], assertion: call };
   }
-  return current;
-}
-
-/**
- * Whether `call` runs the helper AS AN ASSERTION (rule 1): `null` when it does
- * not; else the expression it asserts over (`undefined` when it has none).
- */
-function assertedView(
-  call: ts.CallExpression
-): ts.Expression | undefined | null {
-  if (calls(call, "expectPresentationSafe")) return call.arguments[0];
   if (!calls(call, "findPresentationViolations")) return null;
   let value: ts.Node = outermost(call);
   const mapped = value.parent;
@@ -160,355 +165,110 @@ function assertedView(
       only !== undefined &&
       ts.isNumericLiteral(only) &&
       only.text === "0");
-  return assertsEmpty ? call.arguments[0] : null;
-}
-
-// ---------------------------------------------------------------------------
-// Rule 2: does the assertion run in a test that runs?
-// ---------------------------------------------------------------------------
-
-/** Where code runs when the file runs its tests. */
-type RunContext =
-  /** Inside a test that runs. */
-  | "test"
-  /** At collection: module level, or the body of a suite that runs. */
-  | "collect"
-  /** Not at all, or not provably: skipped, conditional, uncalled, a hook. */
-  | "never";
-
-const TEST_FUNCTIONS: ReadonlySet<string> = new Set([
-  "it",
-  "test",
-  "xit",
-  "xtest",
-]);
-const SUITE_FUNCTIONS: ReadonlySet<string> = new Set([
-  "describe",
-  "suite",
-  "xdescribe",
-]);
-const HOOK_FUNCTIONS: ReadonlySet<string> = new Set([
-  "beforeEach",
-  "beforeAll",
-  "afterEach",
-  "afterAll",
-]);
-/** A base name that never runs what it is handed. */
-const SKIPPING_BASES: ReadonlySet<string> = new Set([
-  "xit",
-  "xtest",
-  "xdescribe",
-]);
-/**
- * Modifiers after which the callback does not run, runs only on a condition,
- * or runs expecting to FAIL — a passing assertion inside `it.fails` makes the
- * test red, the opposite of a proof.
- */
-const NOT_RUN_MODIFIERS: ReadonlySet<string> = new Set([
-  "skip",
-  "todo",
-  "skipIf",
-  "runIf",
-  "fails",
-]);
-
-/**
- * `it`, `it.only`, `it.each(table)`, `describe.skip`, `it.skipIf(c)`: the base
- * name and the modifiers, in order; `null` for any other callee.
- */
-function calleeChain(
-  callee: ts.Expression
-): { readonly base: string; readonly modifiers: readonly string[] } | null {
-  const modifiers: string[] = [];
-  let current = callee;
-  for (;;) {
-    if (ts.isIdentifier(current)) return { base: current.text, modifiers };
-    if (ts.isPropertyAccessExpression(current)) {
-      modifiers.unshift(current.name.text);
-      current = current.expression;
-    } else if (ts.isCallExpression(current)) {
-      // `it.each(table)(name, fn)`, `it.skipIf(cond)(name, fn)`.
-      current = current.expression;
-    } else {
-      return null;
-    }
-  }
-}
-
-type FunctionNode =
-  | ts.ArrowFunction
-  | ts.FunctionExpression
-  | ts.FunctionDeclaration;
-
-function isFunctionNode(node: ts.Node): node is FunctionNode {
-  return (
-    ts.isArrowFunction(node) ||
-    ts.isFunctionExpression(node) ||
-    ts.isFunctionDeclaration(node)
-  );
-}
-
-/** The local name a function is bound to: `function f`, `const f = () =>`. */
-function functionName(fn: FunctionNode): string | null {
-  if (ts.isFunctionDeclaration(fn)) return fn.name?.text ?? null;
-  const parent = outermost(fn).parent;
-  return ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)
-    ? parent.name.text
+  return assertsEmpty
+    ? { view: call.arguments[0], assertion: matcher.parent }
     : null;
 }
 
-/** Reads the analysis needs of one proof file's syntax tree. */
-class ProofReader {
-  private readonly contexts = new Map<ts.Node, RunContext>();
-  private readonly identifiers: ts.Identifier[] = [];
+// ---------------------------------------------------------------------------
+// Rule 3: is the asserted view a render of the page?
+// ---------------------------------------------------------------------------
 
-  constructor(readonly source: ts.SourceFile) {
-    const collect = (node: ts.Node): void => {
-      if (ts.isIdentifier(node)) this.identifiers.push(node);
-      ts.forEachChild(node, collect);
-    };
-    collect(source);
-  }
-
-  /** Where `node` runs (see {@link RunContext}). */
-  contextOf(node: ts.Node): RunContext {
-    let fn: ts.Node | undefined = node.parent;
-    while (fn !== undefined && !isFunctionNode(fn)) fn = fn.parent;
-    if (fn === undefined) return "collect";
-    const known = this.contexts.get(fn);
-    if (known !== undefined) return known;
-    // A cycle (a function that calls itself) resolves to "never" while it is
-    // being worked out.
-    this.contexts.set(fn, "never");
-    const context = this.functionContext(fn);
-    this.contexts.set(fn, context);
-    return context;
-  }
-
-  /** Where the body of `fn` runs. */
-  private functionContext(fn: FunctionNode): RunContext {
-    const handedTo = outermost(fn).parent;
-    if (ts.isCallExpression(handedTo)) {
-      if (handedTo.expression === outermost(fn)) {
-        return this.contextOf(handedTo); // an IIFE runs where it is called
-      }
-      const asCallback = this.callbackContext(handedTo);
-      if (asCallback !== null) return asCallback;
-    }
-    const name = functionName(fn);
-    if (name !== null) return this.calledFrom(name, fn);
-    // Anything else handed to a call (`waitFor(() => …)`, `act(…)`,
-    // `rows.forEach(…)`) runs where that call runs; a function anywhere else
-    // (an object's method, a returned closure) is not provably called.
-    return ts.isCallExpression(handedTo) ? this.contextOf(handedTo) : "never";
-  }
-
-  /**
-   * Where a callback handed to `call` runs, when `call` is a test, a suite or
-   * a hook; `null` for any other call.
-   */
-  private callbackContext(call: ts.CallExpression): RunContext | null {
-    const chain = calleeChain(call.expression);
-    if (chain === null) return null;
-    const isTest = TEST_FUNCTIONS.has(chain.base);
-    const isSuite = SUITE_FUNCTIONS.has(chain.base);
-    if (HOOK_FUNCTIONS.has(chain.base)) return "never";
-    if (!isTest && !isSuite) return null;
+/** Whether `node` is evaluated every time its ancestor `root` is. */
+function evaluatedWith(node: ts.Node, root: ts.Node): boolean {
+  for (let child = node; child !== root; child = child.parent) {
+    const parent: ts.Node | undefined = child.parent;
     if (
-      SKIPPING_BASES.has(chain.base) ||
-      chain.modifiers.some((m) => NOT_RUN_MODIFIERS.has(m))
+      parent === undefined ||
+      isFunctionNode(parent) ||
+      stepProblem(parent, child, "the page") !== null
     ) {
-      return "never";
+      return false;
     }
-    // A test or a suite runs what it is handed only where it is collected.
-    if (this.contextOf(call) !== "collect") return "never";
-    return isTest ? "test" : "collect";
   }
-
-  /**
-   * Where a named local function's body runs: the best of where it is called
-   * (`f()`) and where it is handed to a test or suite (`it("x", f)`).
-   */
-  private calledFrom(name: string, fn: FunctionNode): RunContext {
-    let best: RunContext = "never";
-    for (const id of this.identifiers) {
-      if (id.text !== name || isWithin(id, fn) || isDeclarationName(id)) {
-        continue;
-      }
-      const parent = outermost(id).parent;
-      let context: RunContext = "never";
-      if (ts.isCallExpression(parent)) {
-        // Called (`f()`), handed to a test or suite (`it("x", f)`), or handed
-        // to any other call (`waitFor(f)`), which runs it where it runs.
-        context =
-          parent.expression === outermost(id)
-            ? this.contextOf(parent)
-            : (this.callbackContext(parent) ?? this.contextOf(parent));
-      }
-      if (context === "test") return "test";
-      if (context === "collect") best = "collect";
-    }
-    return best;
-  }
-
-  // -------------------------------------------------------------------------
-  // Rule 3: is the asserted view a render of the page?
-  // -------------------------------------------------------------------------
-
-  /**
-   * Whether `expression` is, or is made from, a render whose JSX names one of
-   * `pageTags`: directly, through the variable it reads (every assignment of
-   * it), or through a local function whose body renders one.
-   */
-  rendersPage(
-    expression: ts.Expression,
-    pageTags: ReadonlySet<string>,
-    visiting: Set<ts.Node> = new Set()
-  ): boolean {
-    const value = unwrap(expression);
-    if (visiting.has(value)) return false;
-    visiting.add(value);
-    if (containsTag(value, pageTags)) return true;
-    if (ts.isIdentifier(value)) {
-      const sources = this.valuesOf(value);
-      return (
-        sources.length > 0 &&
-        sources.every((s) => this.rendersPage(s, pageTags, visiting))
-      );
-    }
-    if (ts.isCallExpression(value) && ts.isIdentifier(value.expression)) {
-      const fn = this.localFunction(value.expression);
-      return fn !== null && containsTag(fn, pageTags);
-    }
-    return false;
-  }
-
-  /**
-   * Every value the variable `id` reads can hold: its declaration's
-   * initializer and each assignment to it. Empty when it is a parameter or
-   * is not declared in this file.
-   */
-  private valuesOf(id: ts.Identifier): ts.Expression[] {
-    const declaration = this.declarationOf(id);
-    if (declaration === null) return [];
-    const out: ts.Expression[] = [];
-    if (declaration.initializer) out.push(declaration.initializer);
-    const scope = declaration.parent.parent.parent;
-    const visit = (node: ts.Node): void => {
-      if (
-        ts.isBinaryExpression(node) &&
-        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-        ts.isIdentifier(node.left) &&
-        node.left.text === id.text
-      ) {
-        out.push(node.right);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(scope);
-    return out;
-  }
-
-  /** The innermost `const` / `let` / `var` declaring `id`'s name in scope of `id`. */
-  private declarationOf(id: ts.Identifier): ts.VariableDeclaration | null {
-    for (let at: ts.Node | undefined = id.parent; at; at = at.parent) {
-      if (isFunctionNode(at)) {
-        const isParameter = at.parameters.some((p) =>
-          bindsName(p.name, id.text)
-        );
-        if (isParameter) return null;
-      }
-      if (ts.isBlock(at) || ts.isSourceFile(at) || ts.isModuleBlock(at)) {
-        for (const statement of at.statements) {
-          if (!ts.isVariableStatement(statement)) continue;
-          for (const declaration of statement.declarationList.declarations) {
-            if (
-              ts.isIdentifier(declaration.name) &&
-              declaration.name.text === id.text
-            ) {
-              return declaration;
-            }
-          }
-        }
-      }
-    }
-    return null;
-  }
-
-  /** The local function a call names: `function f() {}` or `const f = () => …`. */
-  private localFunction(name: ts.Identifier): ts.Node | null {
-    for (let at: ts.Node | undefined = name.parent; at; at = at.parent) {
-      if (!(ts.isBlock(at) || ts.isSourceFile(at))) continue;
-      for (const statement of at.statements) {
-        if (
-          ts.isFunctionDeclaration(statement) &&
-          statement.name?.text === name.text &&
-          statement.body
-        ) {
-          return statement;
-        }
-        if (!ts.isVariableStatement(statement)) continue;
-        for (const declaration of statement.declarationList.declarations) {
-          const init = declaration.initializer;
-          if (
-            ts.isIdentifier(declaration.name) &&
-            declaration.name.text === name.text &&
-            init !== undefined &&
-            (ts.isArrowFunction(unwrap(init)) ||
-              ts.isFunctionExpression(unwrap(init)))
-          ) {
-            return init;
-          }
-        }
-      }
-    }
-    return null;
-  }
+  return true;
 }
 
-function isWithin(node: ts.Node, ancestor: ts.Node): boolean {
-  for (let at: ts.Node | undefined = node.parent; at; at = at.parent) {
-    if (at === ancestor) return true;
-  }
-  return false;
-}
-
-/** Whether `id` is the name a declaration binds rather than a reference. */
-function isDeclarationName(id: ts.Identifier): boolean {
-  const parent = id.parent;
-  return (
-    (ts.isFunctionDeclaration(parent) ||
-      ts.isVariableDeclaration(parent) ||
-      ts.isParameter(parent) ||
-      ts.isBindingElement(parent)) &&
-    parent.name === id
-  );
-}
-
-function bindsName(name: ts.BindingName, wanted: string): boolean {
-  if (ts.isIdentifier(name)) return name.text === wanted;
-  return name.elements.some(
-    (element) =>
-      !ts.isOmittedExpression(element) && bindsName(element.name, wanted)
-  );
-}
-
-/** Whether a JSX element under `node` is named one of `tags`. */
-function containsTag(node: ts.Node, tags: ReadonlySet<string>): boolean {
+/** Whether evaluating `value` evaluates a JSX element named one of `tags`. */
+function rendersTag(value: ts.Node, tags: ReadonlySet<string>): boolean {
   let found = false;
-  const visit = (n: ts.Node): void => {
+  const visit = (node: ts.Node): void => {
     if (found) return;
     if (
-      (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) &&
-      tags.has(n.tagName.getText())
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      tags.has(node.tagName.getText()) &&
+      evaluatedWith(node, value)
     ) {
       found = true;
       return;
     }
-    ts.forEachChild(n, visit);
+    ts.forEachChild(node, visit);
   };
-  visit(node);
+  visit(value);
   return found;
+}
+
+/**
+ * Every value the variable `id` reads can hold: its declaration's
+ * initializer and each assignment to it. Empty when it is a parameter or
+ * is not declared in this file.
+ */
+function valuesOf(id: ts.Identifier): ts.Expression[] {
+  const declaration = declarationOf(id);
+  if (declaration === null) return [];
+  const out: ts.Expression[] = [];
+  if (declaration.initializer) out.push(declaration.initializer);
+  const scope = declaration.parent.parent.parent;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left) &&
+      node.left.text === id.text
+    ) {
+      out.push(node.right);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return out;
+}
+
+/**
+ * Whether `expression` is, or is made from, a render that evaluates JSX
+ * naming one of `pageTags`: directly, through the variable it reads (every
+ * value it can hold), or through a local function every one of whose returns
+ * is such a render. `path` holds what is being traced, against cycles.
+ */
+function rendersPage(
+  expression: ts.Expression,
+  pageTags: ReadonlySet<string>,
+  path: Set<ts.Node> = new Set()
+): boolean {
+  const value = unwrap(expression);
+  if (path.has(value)) return false;
+  path.add(value);
+  try {
+    if (rendersTag(value, pageTags)) return true;
+    if (ts.isIdentifier(value)) {
+      const sources = valuesOf(value);
+      return (
+        sources.length > 0 &&
+        sources.every((s) => rendersPage(s, pageTags, path))
+      );
+    }
+    if (ts.isCallExpression(value) && ts.isIdentifier(value.expression)) {
+      const fn = localFunction(value.expression);
+      const returned = fn === null ? [] : returnedValues(fn);
+      return (
+        returned.length > 0 &&
+        returned.every((r) => rendersPage(r, pageTags, path))
+      );
+    }
+    return false;
+  } finally {
+    path.delete(value);
+  }
 }
 
 /**
@@ -593,7 +353,7 @@ export function proofFacts(
     true,
     ts.ScriptKind.TSX
   );
-  const reader = new ProofReader(source);
+  const runs = new RunReader(source);
   const pageTags = pageTagsIn(source, isPage);
   const imports: string[] = [];
   const mocked: string[] = [];
@@ -615,20 +375,17 @@ export function proofFacts(
       ) {
         imports.push(node.arguments[0].text);
       }
-      if (
-        ts.isPropertyAccessExpression(callee) &&
-        ts.isIdentifier(callee.expression) &&
-        callee.expression.text === "vi" &&
-        (callee.name.text === "mock" || callee.name.text === "doMock")
-      ) {
-        const target = mockedSpecifier(node.arguments[0]);
-        if (target !== null) mocked.push(target);
-      }
-      const view = assertedView(node);
-      if (view !== null) {
+      const target = mockTarget(node);
+      if (target !== null) mocked.push(target);
+      const asserted = assertedView(node);
+      if (asserted !== null) {
+        const why = runs.assertionProblem(asserted.assertion);
         assertions.push({
-          runs: reader.contextOf(node) === "test",
-          overPage: view !== undefined && reader.rendersPage(view, pageTags),
+          line: lineOf(node),
+          runs: why === null,
+          why,
+          overPage:
+            asserted.view !== undefined && rendersPage(asserted.view, pageTags),
         });
       }
     }
@@ -688,8 +445,20 @@ export function readyRouteProblems(
       `${entry.route}: ${entry.provenBy} never calls expectPresentationSafe, nor asserts findPresentationViolations empty`
     );
   } else if (running.length === 0) {
+    const reasons = [
+      ...new Set(facts.assertions.map((a) => `line ${a.line}: ${a.why}`)),
+    ];
     problems.push(
-      `${entry.route}: ${entry.provenBy} never runs its helper assertion — none is in a test that runs (an it or test not skipped, todo, conditional or expected to fail, under no skipped describe)`
+      `${entry.route}: ${entry.provenBy} never runs its helper assertion where a failure fails a test that runs — ${reasons.join("; ")}`
+    );
+  }
+  if (
+    facts.mocked.some(
+      (s) => resolvedModule(s, entry.provenBy) === HELPER_MODULE
+    )
+  ) {
+    problems.push(
+      `${entry.route}: ${entry.provenBy} mocks the page check (src/${HELPER_MODULE}), so what asserts is a stand-in`
     );
   }
   if (page !== null && !facts.imports.some(isPage)) {
@@ -706,7 +475,7 @@ export function readyRouteProblems(
     !running.some((a) => a.overPage)
   ) {
     problems.push(
-      `${entry.route}: ${entry.provenBy} does not render the page — no test that runs asserts the helper over a render naming ${page}'s export`
+      `${entry.route}: ${entry.provenBy} does not render the page — no test that runs asserts the helper over a render naming ${page}'s export where the render always evaluates it (not in one branch of a \`?:\` or \`&&\`, nor in a callback)`
     );
   }
   return problems;
