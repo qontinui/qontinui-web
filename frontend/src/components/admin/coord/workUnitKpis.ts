@@ -195,7 +195,8 @@ export interface DescribeKpiOptions {
  * The only function that turns a `Kpi`'s `value` into text.
  *
  * - `value === null` (or a figure that is missing from the answer) →
- *   `unknown`, with the reason in words and the coverage. Never `0`.
+ *   `unknown`, with the reason in words and, except under `options.exact`, the
+ *   coverage. Never `0`.
  * - a NON-NULL `reason` also means `unknown`, whatever `value` holds. The
  *   contract says `reason` is non-null iff `value` is null, so a figure that
  *   carries both is coord contradicting itself, and the number is not shown:
