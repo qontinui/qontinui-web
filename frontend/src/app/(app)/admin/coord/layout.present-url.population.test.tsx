@@ -176,6 +176,13 @@ describe("CoordLayout — entered through a console URL", () => {
     expect(container).toHaveTextContent(
       "1 failing check has since passed on a newer run."
     );
+    // Each row says where it came from and when coord last confirmed it.
+    expect(
+      screen.getAllByTestId("red-main-provenance").map((c) => c.textContent)
+    ).toEqual([
+      expect.stringContaining("source: coord red-main alerts"),
+      expect.stringContaining("source: coord red-main alerts"),
+    ]);
     // The claimant is a kind and a machine alias, never an id; coord's run
     // reference is not shown.
     expect(container).toHaveTextContent("claimed by an agent on Machine A");
