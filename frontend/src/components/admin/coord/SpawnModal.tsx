@@ -744,7 +744,7 @@ export function SpawnModal({
 
             {/* Phase 2: say what the machine will do BEFORE offering to
                 override it. `known: false` is rendered as an emphasised
-                unknown rather than the `least_usage` default, because the
+                unknown rather than the runner's default, because the
                 default is what the runner does — not what we observed. */}
             <p
               id="spawn-account-mode"
