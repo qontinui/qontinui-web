@@ -1,18 +1,19 @@
 /**
  * currencyFormatters — every EXPORT anywhere under `src/` that formats money,
  * found by what its code DOES rather than by its name (plan
- * `2026-10-23-console-presentation-spaces` D3.1; review rounds 2 and 3 of
+ * `2026-10-23-console-presentation-spaces` D3.1; review rounds 2–4 of
  * Phase 1).
  *
- * The cost scan (`costRenderScan.ts`) reads the `app/` and `components/`
- * modules a lens page can reach. A formatter living in `lib/` or `data/` is
- * not one of them: `formatCurrency` in `data/model-costs/calc.ts`, which the
- * repo imports through the `data/model-costs` barrel (`export * from
- * "./calc"`). A lens page rendering `{formatCurrency(fleet.amount, currency)}`
- * would show an unlabelled figure with nothing in the scan saying so — neither
- * the call (`currency` is not a money word: "status currency" is a freshness
- * reading) nor the formatter's `style: "currency"` (a folder the scan does not
- * read).
+ * The cost scan (`costRenderScan.ts`) reads every module under `src/` a lens
+ * page can load, so a formatter a lens page imports is scanned in its own
+ * module. What this module adds is the import SITE: the repo's own
+ * `formatCurrency` lives in `data/model-costs/calc.ts` and is imported
+ * through the `data/model-costs` barrel (`export * from "./calc"`), and in a
+ * lens page `{formatCurrency(fleet.amount, currency)}` says nothing about
+ * money by its names — `currency` is not a money word ("status currency" is a
+ * freshness reading). Classified by what its code does, the import itself is
+ * the finding, in the page that pulled the formatter in — under any name,
+ * through any barrel, namespace or `import()`.
  *
  * So this module classifies a module's top-level VALUE bindings, then its
  * exports:
@@ -50,11 +51,10 @@
  * was never classified.) Each time a module turns out to export a formatter,
  * the modules that import from it are classified again.
  *
- * What it cannot see: a figure formatted somewhere it is not handed code for —
- * the composed build's cloud overlay (outside `src/`; its OSS mirror,
- * `cloud-absent/`, is read through the `@cloud/` alias), a package, or a value
- * that arrives already formatted from the backend. That is the rendered-page
- * check's to catch (`expectPresentationSafe`, `src/test/presentation.tsx`).
+ * What it cannot see is what it is not handed code for — the composed build's
+ * cloud overlay (outside `src/`; its OSS mirror, `cloud-absent/`, is read
+ * through the `@cloud/` alias), a package, the backend — and the cost scan's
+ * header says what is past both layers there.
  */
 
 import { dirname, join, posix, relative, sep } from "node:path";
@@ -154,6 +154,78 @@ export function loadedSpecifier(node: ts.Node): string | undefined {
   return loads && first !== undefined && ts.isStringLiteralLike(first)
     ? first.text
     : undefined;
+}
+
+/**
+ * Whether an import declaration loads no code: `import type …`, or one whose
+ * every binding is `type` (`import { type A, type B } from …`), which the
+ * compilers elide. A side-effect `import "…"` and `import {} from …` load
+ * their module.
+ */
+function importsOnlyTypes(node: ts.ImportDeclaration): boolean {
+  const clause = node.importClause;
+  if (!clause) return false;
+  if (clause.isTypeOnly) return true;
+  if (clause.name) return false;
+  const bindings = clause.namedBindings;
+  if (!bindings || ts.isNamespaceImport(bindings)) return false;
+  return (
+    bindings.elements.length > 0 &&
+    bindings.elements.every((element) => element.isTypeOnly)
+  );
+}
+
+/** Whether a re-export passes on only types: `export type { … } from`, or every element `type`. */
+function exportsOnlyTypes(node: ts.ExportDeclaration): boolean {
+  if (node.isTypeOnly) return true;
+  const clause = node.exportClause;
+  return (
+    clause !== undefined &&
+    ts.isNamedExports(clause) &&
+    clause.elements.length > 0 &&
+    clause.elements.every((element) => element.isTypeOnly)
+  );
+}
+
+/**
+ * Every module `source` LOADS when it runs, read from its syntax tree: each
+ * import and re-export that is not types only (a side-effect `import "…"`
+ * included), `import x = require("…")`, and each literal `import("…")` /
+ * `require("…")` anywhere in it. A type-only import brings no code into a
+ * page, so it is not followed.
+ */
+export function runtimeSpecifiers(source: ts.SourceFile): string[] {
+  const out: string[] = [];
+  for (const statement of source.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      !importsOnlyTypes(statement)
+    ) {
+      out.push(statement.moduleSpecifier.text);
+    } else if (
+      ts.isExportDeclaration(statement) &&
+      statement.moduleSpecifier !== undefined &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      !exportsOnlyTypes(statement)
+    ) {
+      out.push(statement.moduleSpecifier.text);
+    } else if (
+      ts.isImportEqualsDeclaration(statement) &&
+      !statement.isTypeOnly &&
+      ts.isExternalModuleReference(statement.moduleReference) &&
+      ts.isStringLiteral(statement.moduleReference.expression)
+    ) {
+      out.push(statement.moduleReference.expression.text);
+    }
+  }
+  const visit = (node: ts.Node): void => {
+    const loaded = loadedSpecifier(node);
+    if (loaded !== undefined) out.push(loaded);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return out;
 }
 
 /** What one export of a module exports. */

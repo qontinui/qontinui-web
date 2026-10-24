@@ -1962,22 +1962,30 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
 - `CostFigure` is the only component that renders a per-task cost, always beside
   "list-price equivalent, not your bill", and in presentation mode never — a
   descriptor instead. `costRenders.test.ts` (over `src/test/costRenderScan.ts`)
-  scans every `app/` and `components/` module a lens page and its shell can reach
-  and fails on the shapes it knows: a money-named value, key or import (a
-  destructured key and an aliased import included), an `Intl` currency format
-  however `NumberFormat` is reached, a currency symbol or code glued to a value
-  (in text, a string child, a template, a concatenation, or an element of its
-  own, across any whitespace or `{" "}` spacer), a currency code value beside one,
-  a literal figure or the label — and any way of reaching a CURRENCY FORMATTER
-  from anywhere under `src/`: an export (a function, a class or a value such as a
-  `NumberFormat` instance) whose code formats a currency or glues a symbol, or
-  reads one that does, under every name its module exports it by — through a
-  barrel's `export *` or `export { … } from`, an export list, or as the default.
-  Named, default and namespace imports of one (`ns.formatCurrency`, or the
-  namespace handed on whole), re-exports, and a literal `import()` of its module
-  all fail (`src/test/currencyFormatters.ts`). A figure that arrives already
-  formatted — from the backend, a package, or the composed build's cloud overlay
-  outside `src/` — is past it: that is what the rendered-page check below is for.
+  scans every module under `src/` a lens page and its shell can load — a
+  component wherever it lives, and the `lib/`, `hooks/`, `services/`, `stores/`
+  and `data/` modules beside it (a type-only import loads no code and is not
+  followed) — and fails on the shapes it knows: a money-named value, key or
+  import (a destructured key and an aliased import included), an `Intl` currency
+  format however `NumberFormat` is reached, a currency symbol or code glued to a
+  value (in text, a string child, a template, a concatenation, or an element of
+  its own, across any whitespace — `&nbsp;` and the other character references
+  included — or `{" "}` spacer, and in every branch of a conditional or `&&`
+  child), a currency code value beside one, a literal figure or the label — and
+  any way of reaching a CURRENCY FORMATTER from anywhere under `src/`: an export
+  (a function, a class or a value such as a `NumberFormat` instance) whose code
+  formats a currency or glues a symbol, or reads one that does, under every name
+  its module exports it by — through a barrel's `export *` or `export { … }
+  from`, an export list, or as the default. Named, default and namespace imports
+  of one (`ns.formatCurrency`, or the namespace handed on whole), re-exports, and
+  a literal `import()` of its module all fail (`src/test/currencyFormatters.ts`).
+  So a helper that formats a cost, or hands one to a page under a name that does
+  not say money, fails in its own module, and the finding names the chain of
+  loads from the lens page. What is past the scan is what is not in `src/`: a
+  figure from the backend, a package or the composed build's cloud overlay. The
+  rendered-page check below catches one that carries a symbol or a code; a bare
+  number under a name that does not say money is caught by neither, which is why
+  a cost field is always named as one (`cost_usd`).
 
 **The test every presentation-ready page carries.** A presentation-mode render of the
 real page with `renderInPresentationMode` and `expectPresentationSafe(view, {
