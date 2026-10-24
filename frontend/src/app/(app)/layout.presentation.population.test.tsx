@@ -11,27 +11,27 @@
  * `next/dynamic` is `React.lazy`, so the sidebar loads as it does in the
  * browser, behind its Suspense boundary.
  *
- * The shell's own controls are rendered, not mocked away, so the whole shell
- * can be checked in presentation mode (review round 2 found write controls
- * there the mocks hid): the composed build's beta banner (its real slot
- * wrapper, filled with a stand-in offering the banner's two buttons), the
- * offline sync queue (a stand-in with its "Sync now"), and the REAL co-pilot
- * banner in its active state — the hooks behind it faked to "a relayed
- * command just landed". The session-expiry dialog and the recording indicator
- * are checked whole in their own tests (`session-timeout-warning.test.tsx`,
- * `RecordingIndicator.test.tsx`), since each needs a world of its own to
- * show at all.
+ * The shell's own controls are rendered, not mocked away (review round 2 found
+ * write controls there the mocks hid): the composed build's beta banner (its
+ * real slot wrapper, filled with a stand-in offering the banner's two
+ * buttons), the offline sync queue (a stand-in with its "Sync now"), and the
+ * REAL co-pilot banner in its active state — the hooks behind it faked to "a
+ * relayed command just landed". The whole shell is checked the way a lens
+ * page is in `layout.presentation-controls.population.test.tsx`, which needs
+ * the phase's own helpers to do it; the session-expiry dialog and the
+ * recording indicator are checked whole in their own tests
+ * (`session-timeout-warning.test.tsx`, `RecordingIndicator.test.tsx`), since
+ * each needs a world of its own to show at all.
  *
- * The file imports nothing the phase added, so without the phase it fails on
+ * This file imports nothing the phase added, so without the phase it fails on
  * its assertions (the shell shows the presenter's email and "New project"),
- * not on an import.
+ * not on an import. A case that needs a phase helper goes in the controls
+ * file, never here.
  */
 
 import { lazy, type ComponentType } from "react";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PRESENTER_SAFETY_ATTRIBUTE } from "@/components/console/presenterSafety";
-import { findPresentationViolations } from "@/test/presentation";
 
 const fx = vi.hoisted(() => {
   const DEVICE = "0b9d6a54-0000-4000-8000-0000000000aa";
@@ -271,51 +271,6 @@ describe("the app shell beside a lens page", () => {
     // Only the way to other lens pages.
     expect(screen.getByRole("button", { name: "Dev Ops" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Costs" })).toBeNull();
-  });
-
-  it("shows no write control anywhere in the shell while presenting — only the presenter's own safety controls", async () => {
-    visit("/admin/coord/devops", "present=1");
-    render(
-      <AppLayout>
-        <p>Console page</p>
-      </AppLayout>
-    );
-    await screen.findByText("Runner: Machine A", {}, { timeout: LAZY_MS });
-    expect(
-      await screen.findByTestId(
-        "co-pilot-active-banner",
-        {},
-        { timeout: LAZY_MS }
-      )
-    ).toBeTruthy();
-
-    // The co-pilot banner stays, and so does Stop — a listed safety control —
-    // but not the account-wide opt-out, a durable preference write.
-    expect(
-      screen
-        .getByTestId("co-pilot-active-banner-stop")
-        .getAttribute(PRESENTER_SAFETY_ATTRIBUTE)
-    ).toBe("co-pilot-stop");
-    expect(
-      screen.queryByTestId("co-pilot-active-banner-disable-account")
-    ).toBeNull();
-    // Neither the beta banner's buttons nor the sync queue's.
-    expect(screen.queryByTestId("beta-banner")).toBeNull();
-    expect(screen.queryByTestId("sync-queue-sync-now")).toBeNull();
-
-    // The whole shell, every control on the page, checked as a lens page is.
-    expect(
-      findPresentationViolations(
-        {
-          baseElement: document.body,
-          uiBridge: {
-            unobservable:
-              "the shell test fakes no UI Bridge provider; the shell's own controls are checked as DOM",
-          },
-        },
-        { forbidden: [fx.EMAIL, fx.OTHER_PROJECT, fx.RUNNER_NAME] }
-      )
-    ).toEqual([]);
   });
 
   it("is the operator's shell on a route outside every lens, whatever the URL asks", async () => {

@@ -147,7 +147,7 @@ function ScopePanel({
         : null
       : null;
 
-  const change = (patch: Partial<ScopeDraft>) => {
+  const updateDraft = (patch: Partial<ScopeDraft>) => {
     if (!form || !record) return;
     setEdit({
       draft: { ...form, ...patch },
@@ -279,7 +279,7 @@ function ScopePanel({
               outcome={outcome}
               version={record.configured.version}
               editedFrom={editedFrom}
-              onEdit={change}
+              onEdit={updateDraft}
               onSave={save}
               onRevert={() => {
                 setEdit(null);
@@ -400,7 +400,7 @@ interface ScopeFormProps {
   version: number;
   /** The stored version the edit was made against, when it is not `version`. */
   editedFrom: number | null;
-  onEdit: (change: Partial<ScopeDraft>) => void;
+  onEdit: (patch: Partial<ScopeDraft>) => void;
   onSave: () => void;
   onRevert: () => void;
 }
