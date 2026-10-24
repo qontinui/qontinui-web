@@ -31,7 +31,14 @@
  * - **The outcome** — what the save observed: saved, refused (a 4xx, nothing
  *   written), or UNKNOWN (a timeout, a lost connection or a 5xx: the backend
  *   may have committed before the answer was lost), in which case the panel
- *   re-reads and says so rather than claiming either.
+ *   re-reads and says so rather than claiming either. Every re-read after a
+ *   save is a fresh one (`rereadNow`: a read already in flight was sent
+ *   before the save and may carry what was stored before it), and the notice
+ *   says how it went — being read, read after the save, or failed too, which
+ *   leaves what is stored UNKNOWN and the lists from before the save.
+ * - **A stale read** — when the latest read failed while an earlier one is
+ *   held, the lists are labelled as the last read, not as in force:
+ *   presentation mode withholds every title until a read succeeds.
  *
  * It reads and writes through the lens's own scope store
  * (`defaultPresentationScopeStore`), so a save is in force in this tab at
@@ -52,6 +59,7 @@ import {
   OperatorOnly,
   defaultPresentationScopeStore,
   usePresentationScopeSnapshot,
+  type PresentationScopeReread,
   type PresentationScopeStore,
 } from "@/components/presentation";
 import { Badge } from "@/components/ui/badge";
@@ -83,6 +91,11 @@ export interface PresentationScopePanelProps {
   store?: PresentationScopeStore;
 }
 
+/** How the re-read a save started has gone so far. */
+type RereadState = { readonly status: "pending" } | PresentationScopeReread;
+
+const REREAD_PENDING: RereadState = { status: "pending" };
+
 type SaveOutcome =
   | {
       readonly kind: "saved";
@@ -90,10 +103,16 @@ type SaveOutcome =
       /** Whether the answer is in force in this tab: false when the active
        *  project changed while the save was in flight. */
       readonly held: boolean;
+      /** The re-read of the project selected now, when not held. */
+      readonly reread: RereadState | null;
     }
-  | { readonly kind: "conflict" }
+  | { readonly kind: "conflict"; readonly reread: RereadState }
   | { readonly kind: "refused"; readonly message: string }
-  | { readonly kind: "unknown"; readonly message: string };
+  | {
+      readonly kind: "unknown";
+      readonly message: string;
+      readonly reread: RereadState;
+    };
 
 export function PresentationScopePanel(props: PresentationScopePanelProps) {
   return (
@@ -157,6 +176,21 @@ function ScopePanel({
     setOutcome(null);
   };
 
+  /**
+   * Show the outcome `outcomeOf` builds with its re-read started, then —
+   * once THAT read answers — with how it went. The form is read-only while
+   * it runs (the save is still settling), so nothing replaces the outcome
+   * meanwhile.
+   */
+  const rereadInto = async (
+    outcomeOf: (reread: RereadState) => SaveOutcome
+  ): Promise<PresentationScopeReread> => {
+    setOutcome(outcomeOf(REREAD_PENDING));
+    const reread = await store.rereadNow();
+    setOutcome(outcomeOf(reread));
+    return reread;
+  };
+
   const save = async () => {
     if (!record || !ownEdit || edit === null) return;
     const sent = edit;
@@ -170,22 +204,38 @@ function ScopePanel({
       const held =
         saved.tenant_id === sent.base.tenantId &&
         store.accept(saved, sentUnder);
-      // Saved either way; when the project changed meanwhile, read the one
-      // selected now rather than hold another project's answer as its scope.
-      if (!held) void store.reload();
       setEdit(null);
-      setOutcome({ kind: "saved", version: saved.configured.version, held });
+      const version = saved.configured.version;
+      if (held) {
+        setOutcome({ kind: "saved", version, held, reread: null });
+      } else {
+        // Saved, but the project changed meanwhile: read the one selected
+        // now rather than hold another project's answer as its scope.
+        await rereadInto((reread) => ({
+          kind: "saved",
+          version,
+          held,
+          reread,
+        }));
+      }
     } catch (err) {
       const failure = saveFailureOf(err);
       if (failure.kind === "conflict") {
-        // The stored scope moved since the edit began. Show what is stored
-        // now and keep the edit, re-bound to what was re-read: the notice
-        // asks the operator to check it, and their next save is against it.
-        setOutcome({ kind: "conflict" });
-        await store.reload();
-        const reread = store.getSnapshot();
+        // The stored scope moved since the edit began. Read what is stored
+        // now and keep the edit, re-bound to what was read: the notice asks
+        // the operator to check it, and their next save is against it. A
+        // read that failed re-binds nothing — what is stored is unknown, and
+        // a save against it would be refused again.
+        const reread = await rereadInto((state) => ({
+          kind: "conflict",
+          reread: state,
+        }));
+        const snapshotNow = store.getSnapshot();
         const current =
-          reread.selection === store.currentSelection() ? reread.record : null;
+          reread.status === "read" &&
+          snapshotNow.selection === store.currentSelection()
+            ? snapshotNow.record
+            : null;
         if (current !== null && editIsFor(sent, current)) {
           setEdit({ draft: sent.draft, base: baseOf(current) });
         }
@@ -193,12 +243,11 @@ function ScopePanel({
         // The active project is not the one this edit was made for: nothing
         // was written. Read the project selected now; the edit stays bound to
         // its own project, so it is set aside rather than shown here.
-        await store.reload();
+        await store.rereadNow();
       } else if (failure.kind === "unknown") {
         // The save may have been committed before its answer was lost: say
-        // so, and re-read what is stored instead of claiming either.
-        setOutcome(failure);
-        await store.reload();
+        // so, and read what is stored AFTER it instead of claiming either.
+        await rereadInto((reread) => ({ ...failure, reread }));
       } else {
         setOutcome(failure);
       }
@@ -213,6 +262,10 @@ function ScopePanel({
       snapshot.state.status === "unknown");
   const readFailure =
     record === null && snapshot.failure !== null ? snapshot.failure : null;
+  // The latest read failed while an earlier one is held: those lists are the
+  // last read, not what presentation mode applies (it withholds every title).
+  const staleFailure =
+    record !== null && snapshot.failure !== null ? snapshot.failure : null;
 
   return (
     <section
@@ -252,7 +305,15 @@ function ScopePanel({
         </Notice>
       ) : (
         <div className="mt-4 space-y-4">
-          <InForce record={record} />
+          {staleFailure !== null && (
+            <Notice testId="presentation-scope-stale">
+              The latest read of the presentation scope failed ({staleFailure}),
+              so what is stored now is unknown and presentation mode withholds
+              every title until a read succeeds. The lists below are from an
+              earlier read.
+            </Notice>
+          )}
+          <InForce record={record} current={staleFailure === null} />
           <Defaults record={record} />
           {setAside && (
             <Notice testId="presentation-scope-set-aside">
@@ -301,12 +362,23 @@ function ScopePanel({
   );
 }
 
-/** The two lists the lens applies right now. */
-function InForce({ record }: { record: PresentationScopeRecord }) {
+/**
+ * The two lists the lens applies right now — or, when the latest read failed
+ * (`current` false), the two an earlier read returned, which it does not.
+ */
+function InForce({
+  record,
+  current,
+}: {
+  record: PresentationScopeRecord;
+  current: boolean;
+}) {
   const owners = record.first_party_owners;
   return (
     <div className="space-y-2" data-testid="presentation-scope-in-force">
-      <h3 className="text-xs font-semibold text-foreground">In force</h3>
+      <h3 className="text-xs font-semibold text-foreground">
+        {current ? "In force" : "Last read (not in force)"}
+      </h3>
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         <span className="text-muted-foreground">First-party owners</span>
         {owners === null ? (
@@ -543,9 +615,9 @@ function ScopeForm({
             className="text-xs text-muted-foreground"
             data-testid="presentation-scope-saved"
           >
-            {outcome.held
+            {outcome.held || outcome.reread === null
               ? `Saved (version ${outcome.version}); in force in this tab now.`
-              : `Saved (version ${outcome.version}). The active project changed while it was saving, so this page shows the project selected now and has re-read its scope.`}
+              : `Saved (version ${outcome.version}). The active project changed while it was saving, so this page shows the project selected now: ${movedRereadText(outcome.reread)}`}
           </span>
         )}
       </div>
@@ -553,9 +625,8 @@ function ScopeForm({
       {outcome?.kind === "conflict" && (
         <Notice testId="presentation-scope-conflict">
           The stored scope changed after this edit began — another admin saved,
-          or an earlier attempt of this save landed. The lists above are what is
-          stored now; your edit is kept below — check it against them and save
-          again.
+          or an earlier attempt of this save landed.{" "}
+          {conflictRereadText(outcome.reread)}
         </Notice>
       )}
       {outcome?.kind === "refused" && (
@@ -563,13 +634,54 @@ function ScopeForm({
       )}
       {outcome?.kind === "unknown" && (
         <Notice testId="presentation-scope-outcome-unknown">
-          {outcome.message} It may or may not have been stored: the lists above
-          have been re-read, so check them before saving again. Your edit is
-          kept below.
+          {outcome.message} It may or may not have been stored
+          {unknownRereadText(outcome.reread)} Your edit is kept below.
         </Notice>
       )}
     </form>
   );
+}
+
+/** What the re-read after a save to a project no longer selected observed. */
+function movedRereadText(reread: RereadState): string {
+  switch (reread.status) {
+    case "pending":
+      return "its scope is being read.";
+    case "read":
+      return "its scope, read after the save.";
+    case "failed":
+      return `reading its scope failed (${reread.failure}), so what it stores is UNKNOWN here.`;
+    case "superseded":
+      return "reading its scope was interrupted by another change of project, so what it stores is UNKNOWN here until it is read.";
+  }
+}
+
+/** What the re-read after a refused compare-and-set observed. */
+function conflictRereadText(reread: RereadState): string {
+  switch (reread.status) {
+    case "pending":
+      return "What is stored now is being read; your edit is kept below.";
+    case "read":
+      return "The lists above are what is stored now, read after this save; your edit is kept below — check it against them and save again.";
+    case "failed":
+      return `Reading what is stored now failed (${reread.failure}), so it is UNKNOWN: the lists above are from before this save. Your edit is kept below — refresh before saving again.`;
+    case "superseded":
+      return "Reading what is stored now was interrupted by a change of project, so it is UNKNOWN. Your edit is kept below — refresh before saving again.";
+  }
+}
+
+/** What the re-read after a save whose outcome is unknown observed (continues a sentence). */
+function unknownRereadText(reread: RereadState): string {
+  switch (reread.status) {
+    case "pending":
+      return "; what is stored is being read.";
+    case "read":
+      return ": the lists above were read after the save failed, so check them before saving again.";
+    case "failed":
+      return `, and reading the scope again failed too (${reread.failure}), so what is stored is UNKNOWN: the lists above are from before the save.`;
+    case "superseded":
+      return ", and reading the scope again was interrupted by a change of project, so what is stored is UNKNOWN.";
+  }
 }
 
 function Chips({

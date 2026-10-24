@@ -169,6 +169,7 @@ export {
   usePresentationScopeSnapshot,
 } from "./presentationScopeLoader";
 export type {
+  PresentationScopeReread,
   PresentationScopeSnapshot,
   PresentationScopeStore,
   PresentationScopeStoreOptions,
