@@ -372,8 +372,9 @@ const LOOPS: ReadonlySet<ts.SyntaxKind> = new Set([
 /**
  * `null` when `parent` evaluates `child` every time `parent` is evaluated and
  * lets what it throws out; otherwise why not, worded about `subject` (the
- * assertion, a call, a test). `parent` is never a function: a walk stops at
- * the function holding the node, which is read by where it is called.
+ * assertion, a call, a test). No function is plain — evaluating one creates it
+ * without running its body — so rule 2's walk stops at the function holding a
+ * node and reads it by where it is called instead.
  */
 export function stepProblem(
   parent: ts.Node,

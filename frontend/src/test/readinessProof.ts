@@ -61,7 +61,6 @@ import {
 import { RunReader } from "./proofRuns";
 import {
   declarationOf,
-  isFunctionNode,
   lineOf,
   localFunction,
   mockTarget,
@@ -174,13 +173,16 @@ function assertedView(call: ts.CallExpression): Asserted | null {
 // Rule 3: is the asserted view a render of the page?
 // ---------------------------------------------------------------------------
 
-/** Whether `node` is evaluated every time its ancestor `root` is. */
+/**
+ * Whether `node` is evaluated every time its ancestor `root` is. A function on
+ * the way (a render prop, a `.map` callback) is not: `stepProblem` reads no
+ * function as plain, since evaluating one creates it without running its body.
+ */
 function evaluatedWith(node: ts.Node, root: ts.Node): boolean {
   for (let child = node; child !== root; child = child.parent) {
     const parent: ts.Node | undefined = child.parent;
     if (
       parent === undefined ||
-      isFunctionNode(parent) ||
       stepProblem(parent, child, "the page") !== null
     ) {
       return false;

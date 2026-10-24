@@ -592,6 +592,12 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
     "is handed to `waitFor` (line 4), which this check does not read as running it",
   ],
   [
+    "its only assertion in a waitFor returned at module level",
+    PAGE +
+      "return waitFor(() => expectPresentationSafe(renderInPresentationMode(<DevOpsPage />)));",
+    "the `waitFor` running it (line 2) is returned at module level, in no test",
+  ],
+  [
     "its only assertion in an act nobody awaits",
     PAGE + inTest(`${RENDER}\nact(() => expectPresentationSafe(view));`),
     "the `act` running it (line 4) is neither awaited nor returned",
@@ -928,6 +934,12 @@ const REFUSALS: ReadonlyArray<readonly [string, string, string]> = [
     PAGE +
       `function definePageTests() {\n  it("is safe", ${CHECKED});\n}\nif (composed) definePageTests();`,
     "the call to `definePageTests` (line 8) is under an `if`",
+  ],
+  [
+    "its only assertion in a test registered by a callback stored but never called",
+    PAGE +
+      `const registrars = [\n  () => {\n    it("is safe", ${CHECKED});\n  },\n];`,
+    "registers tests but is not called anywhere this check can follow",
   ],
   [
     "its only assertion in a test a helper nobody calls registers",
