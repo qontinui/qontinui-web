@@ -57,6 +57,8 @@ import {
   parseFlowReadFailure,
   percentWords,
   readFlowBody,
+  unchangedIsObservable,
+  unchangedUnobservableSentence,
   type FlowReadFailure,
   type FlowView,
   type FlowWindowId,
@@ -411,6 +413,15 @@ export default function CoordOverlordFlowPage() {
               >
                 No triage pass recorded in {win.words} — no session could be
                 seen staying unchanged, so this is not an all-clear.
+              </p>
+            ) : shown && !unchangedIsObservable(shown) ? (
+              <p
+                className="text-sm text-muted-foreground italic m-0"
+                data-testid="overlord-flow-unchanged-too-few-full"
+              >
+                None listed, but{" "}
+                {unchangedUnobservableSentence(shown, win.words)}, so this is
+                not an all-clear.
               </p>
             ) : (
               <p

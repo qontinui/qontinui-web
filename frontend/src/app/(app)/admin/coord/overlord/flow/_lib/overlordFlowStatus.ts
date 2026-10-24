@@ -46,11 +46,44 @@ export function flowWindow(id: FlowWindowId) {
   return FLOW_WINDOWS.find((w) => w.id === id) ?? FLOW_WINDOWS[1];
 }
 
+/**
+ * How many consecutive FULL passes a session must hold the same verdict and
+ * reasons across to count as unchanged. Sent explicitly (it is coord's
+ * default too) so the page's "can unchanged be seen at all?" gate is about
+ * the threshold coord actually applied, not a default that could move.
+ */
+export const UNCHANGED_MIN_PASSES = 3;
+
 /** The query string asked of the proxy for a window. */
 export function flowQuery(id: FlowWindowId): string {
   const qs = new URLSearchParams();
   qs.set("window_hours", String(flowWindow(id).hours));
+  qs.set("unchanged_min_passes", String(UNCHANGED_MIN_PASSES));
   return qs.toString();
+}
+
+/**
+ * Could an unchanged session have been SEEN in this window? Unchanged is
+ * defined over consecutive FULL passes only (filtered passes never count), so
+ * with fewer than {@link UNCHANGED_MIN_PASSES} of them — or an unknown number
+ * — an empty unchanged list is not evidence that nothing is stuck. The strip
+ * and the list's empty slot both read this one predicate.
+ */
+export function unchangedIsObservable(view: FlowView): boolean {
+  return (
+    view.fullPassesConsidered !== undefined &&
+    view.fullPassesConsidered >= UNCHANGED_MIN_PASSES
+  );
+}
+
+/** Why an empty unchanged list says nothing, in words (the strip and the list). */
+export function unchangedUnobservableSentence(
+  view: FlowView,
+  windowWords: string
+): string {
+  return view.fullPassesConsidered === undefined
+    ? "coord did not say how many full passes ran, so unchanged sessions cannot be judged"
+    : `fewer than ${UNCHANGED_MIN_PASSES} full passes in ${windowWords} (${view.fullPassesConsidered}) — unchanged sessions cannot be seen`;
 }
 
 // ---------------------------------------------------------------------------
@@ -539,6 +572,16 @@ export function deriveFlowHealth(input: {
       level: "amber",
       headline: `${unchanged} ${unchanged === 1 ? "session has" : "sessions have"} not moved across consecutive full passes`,
       detail: `same verdict and reasons pass after pass, ${windowSentence}`,
+      badges: flowBadges(view),
+    };
+  }
+  if (!unchangedIsObservable(view)) {
+    // An empty list over too few FULL passes (only filtered ones, or one) is
+    // not an all-clear: nothing could have been seen staying put.
+    return {
+      level: "amber",
+      headline: "Unchanged sessions cannot be seen yet",
+      detail: unchangedUnobservableSentence(view, words),
       badges: flowBadges(view),
     };
   }

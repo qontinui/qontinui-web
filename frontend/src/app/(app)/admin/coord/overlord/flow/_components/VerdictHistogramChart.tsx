@@ -66,6 +66,9 @@ const SERIES: ReadonlyArray<{ key: string; name: string; color: string }> = [
   { key: UNKNOWN_SERIES, name: "unknown", color: colors.text.muted },
 ];
 
+/** The transparent gap between stacked segments, in px. */
+const SEGMENT_GAP_PX = 2;
+
 /** `MM-DD HH:MM UTC` — the pass's start, in UTC so a bar is not misplaced. */
 function passLabel(iso: string): string {
   const d = new Date(iso);
@@ -193,26 +196,27 @@ export function VerdictHistogramChart({
                     fill={s.color}
                     maxBarSize={28}
                     isAnimationActive={false}
-                    // Each segment carries a 2px surface-coloured stroke,
-                    // centred on its edge: 1px of it falls inside each of two
-                    // adjacent segments, so stacked fills are separated by a
-                    // 2px gap and never touch (dataviz mark spec). Only the
-                    // bar's topmost NON-ZERO segment gets the rounded top, so
-                    // a bar ending in any verdict is rounded, not only one
-                    // ending in UNKNOWN.
+                    // Stacked fills are separated by a 2px gap and never
+                    // touch (dataviz mark spec). The gap is TRANSPARENT, not a
+                    // painted stroke: every segment below the bar's top gives
+                    // up its own top 2px, so whatever the panel behind the
+                    // chart is (a translucent card over the canvas) shows
+                    // through, and no stroke colour can mismatch it. The
+                    // topmost NON-ZERO segment keeps its full height, so the
+                    // bar's total still reads true, and only it gets the
+                    // rounded top — whichever verdict it is.
                     shape={(props: BarShapeProps) => {
                       const top =
                         (props.payload as HistogramPoint | undefined)
                           ?.topSeries === s.key;
+                      const gap = top ? 0 : SEGMENT_GAP_PX;
                       return (
                         <Rectangle
                           x={props.x}
-                          y={props.y}
+                          y={props.y + gap}
                           width={props.width}
-                          height={props.height}
+                          height={Math.max(0, props.height - gap)}
                           fill={s.color}
-                          stroke={colors.surface.canvas}
-                          strokeWidth={2}
                           radius={top ? [2, 2, 0, 0] : 0}
                         />
                       );

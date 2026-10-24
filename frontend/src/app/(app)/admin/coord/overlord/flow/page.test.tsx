@@ -49,7 +49,9 @@ describe("/admin/coord/overlord/flow", () => {
       )
     );
     expect(fetchFlow).toHaveBeenCalledTimes(1);
-    expect(fetchFlow).toHaveBeenCalledWith("window_hours=168");
+    expect(fetchFlow).toHaveBeenCalledWith(
+      "window_hours=168&unchanged_min_passes=3"
+    );
 
     // Time to close: median, p90, count and the closed_by split.
     expect(screen.getByTestId("overlord-flow-ttc-p90")).toHaveTextContent(
@@ -222,7 +224,11 @@ describe("/admin/coord/overlord/flow", () => {
   });
 
   it("says an empty unchanged list is a measured empty, in words", async () => {
-    fetchFlow.mockResolvedValue({ ...FULL_FLOW, unchanged: [] });
+    fetchFlow.mockResolvedValue({
+      ...FULL_FLOW,
+      full_passes_considered: 3,
+      unchanged: [],
+    });
     render(<CoordOverlordFlowPage />);
     const empty = await screen.findByTestId("overlord-flow-unchanged-empty");
     expect(empty).toHaveTextContent("in the last 7 days");
@@ -244,6 +250,40 @@ describe("/admin/coord/overlord/flow", () => {
     expect(rows).toHaveTextContent("of rowsno data");
     expect(rows.textContent).not.toContain("–");
   });
+
+  it.each([
+    [
+      "only filtered passes",
+      0,
+      "fewer than 3 full passes in the last 7 days (0)",
+    ],
+    ["two full passes", 2, "fewer than 3 full passes in the last 7 days (2)"],
+    [
+      "an unknown full-pass count",
+      undefined,
+      "did not say how many full passes ran",
+    ],
+  ])(
+    "does not read an empty unchanged list over %s as an all-clear",
+    async (_label, full, words) => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        full_passes_considered: full,
+        unchanged: [],
+      });
+      render(<CoordOverlordFlowPage />);
+      const tooFew = await screen.findByTestId(
+        "overlord-flow-unchanged-too-few-full"
+      );
+      expect(tooFew).toHaveTextContent(words);
+      expect(tooFew).toHaveTextContent("not an all-clear");
+      expect(screen.queryByTestId("overlord-flow-unchanged-empty")).toBeNull();
+      const s = await strip();
+      expect(s).toHaveAttribute("data-health-level", "amber");
+      expect(s).toHaveTextContent("Unchanged sessions cannot be seen yet");
+      expect(s).not.toHaveTextContent("No session is stuck unchanged");
+    }
+  );
 
   it("does not read an empty unchanged list over NO pass as an all-clear", async () => {
     fetchFlow.mockResolvedValue({
@@ -297,7 +337,9 @@ describe("/admin/coord/overlord/flow", () => {
     fetchFlow.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await userEvent.click(screen.getByTestId("overlord-flow-window-24h"));
     await waitFor(() =>
-      expect(fetchFlow).toHaveBeenLastCalledWith("window_hours=24")
+      expect(fetchFlow).toHaveBeenLastCalledWith(
+        "window_hours=24&unchanged_min_passes=3"
+      )
     );
     // The 7d rows must not survive as the 24h answer: the new read failed
     // before any 24h answer, so it is UNKNOWN.
@@ -312,7 +354,9 @@ describe("/admin/coord/overlord/flow", () => {
     fetchFlow.mockResolvedValueOnce(NULL_FLOW);
     await userEvent.click(screen.getByTestId("overlord-flow-window-30d"));
     await waitFor(() =>
-      expect(fetchFlow).toHaveBeenLastCalledWith("window_hours=720")
+      expect(fetchFlow).toHaveBeenLastCalledWith(
+        "window_hours=720&unchanged_min_passes=3"
+      )
     );
     // What renders for 30d is the 30d answer, in 30d words.
     expect(screen.getByTestId("overlord-flow-window-30d")).toHaveAttribute(
@@ -325,13 +369,14 @@ describe("/admin/coord/overlord/flow", () => {
       )
     );
     expect(screen.queryByTestId("overlord-flow-unknown")).toBeNull();
+    // NULL_FLOW has 2 full passes: too few to see an unchanged session.
     expect(
-      screen.getByTestId("overlord-flow-unchanged-empty")
-    ).toHaveTextContent("in the last 30 days");
+      screen.getByTestId("overlord-flow-unchanged-too-few-full")
+    ).toHaveTextContent("fewer than 3 full passes in the last 30 days (2)");
     expect(screen.getByTestId("overlord-flow-histogram")).toHaveTextContent(
       "1 pass in the last 30 days"
     );
-    expect(await strip()).toHaveTextContent("over the last 30 days");
+    expect(await strip()).toHaveTextContent("in the last 30 days");
   });
 
   it("keeps the last good numbers on a failed refresh, and says they are stale", async () => {
