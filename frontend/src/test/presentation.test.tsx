@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode, Ref } from "react";
+import { cleanup } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { useUIComponent, useUIElement } from "@qontinui/ui-bridge/react";
 import {
@@ -69,7 +70,8 @@ function WriteAction({
     name: "Test action",
     actions: [{ id: "act", label: "Act", effect, handler: async () => true }],
   });
-  return null;
+  // Something on the screen: a render of nothing fails check (f) on its own.
+  return <span>{effect ?? "undeclared"} action</span>;
 }
 
 function ElementWithCustomAction() {
@@ -602,5 +604,85 @@ describe("(d) captions", () => {
         (v) => v.kind
       )
     ).toEqual(["missing-caption"]);
+  });
+});
+
+describe("(f) the view is on the screen when the check runs", () => {
+  it("fails on a view unmounted before the check", () => {
+    const view = renderInPresentationMode(
+      <button type="button">Drain this machine</button>
+    );
+    view.unmount();
+    // Over nothing, (a)–(e) would pass whatever the page rendered.
+    expect(kinds(view)).toEqual(["unmounted-view"]);
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "unmounted before the check ran"
+    );
+  });
+
+  it("fails on a view whose container was cleaned up", () => {
+    const view = renderInPresentationMode(<p>page</p>);
+    cleanup();
+    expect(kinds(view)).toEqual(["unmounted-view"]);
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "not inside the document the check reads"
+    );
+  });
+
+  it("fails on a view rendered into a detached element", () => {
+    // RTL reads a given container as the base element too, so (a)–(e) read
+    // the detached tree; what fails it is that none of it is on the screen.
+    const view = renderInPresentationMode(<p>page</p>, {
+      container: document.createElement("div"),
+    });
+    expect(kinds(view)).toEqual(["unmounted-view"]);
+  });
+
+  it("fails on a view whose container is outside the element the check reads", () => {
+    const reads = document.body.appendChild(document.createElement("section"));
+    const elsewhere = document.body.appendChild(document.createElement("div"));
+    try {
+      const view = renderInPresentationMode(<p>page</p>, {
+        container: elsewhere,
+        baseElement: reads,
+      });
+      expect(kinds(view)).toEqual(["unmounted-view"]);
+    } finally {
+      reads.remove();
+      elsewhere.remove();
+    }
+  });
+
+  it("fails on a view whose wrapper drops its children", () => {
+    const view = renderInPresentationMode(
+      <button type="button">Drain this machine</button>,
+      { wrapper: () => null }
+    );
+    expect(kinds(view)).toEqual(["empty-view"]);
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "renders nothing but the helper's own sentinel"
+    );
+  });
+
+  it("fails on a render wrapped whole in OperatorOnly", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <OperatorOnly>
+          <button type="button">Drain this machine</button>
+        </OperatorOnly>
+      ),
+      "empty-view"
+    );
+  });
+
+  it("fails on a view re-rendered to nothing before the check", () => {
+    const view = renderInPresentationMode(<p>page</p>);
+    view.rerender(<></>);
+    expect(kinds(view)).toEqual(["empty-view"]);
+  });
+
+  it("reads text, or any element, as rendered", () => {
+    expectPresentationSafe(renderInPresentationMode(<>a sentence</>));
+    expectPresentationSafe(renderInPresentationMode(<hr />));
   });
 });
