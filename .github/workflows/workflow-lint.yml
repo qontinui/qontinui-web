@@ -41,13 +41,30 @@
 # an unrelated upstream push can turn red holds the whole train (plan D2), so
 # a finding of an audit in DRIFT_AUDITS is reported as DRIFT(n) (annotated as
 # a warning, never failing the step) ONLY when a line identical to the flagged
-# source line already exists in the BASE version of that file (the PR's base
-# sha, or the default branch for a candidate/dispatch run) -- so the pin is not
-# new, and only the upstream moved. The same audit on a line this change
+# source line already exists in the BASE version of that file -- so the pin is
+# not new, and only the upstream moved. The same audit on a line this change
 # added or edited (a pin whose sha is not the release its comment claims), or
 # one whose base could not be read, counts as FINDINGS. The scheduled org scan
 # is where upstream drift is acted on. Every other audit, including the online
 # known-vulnerable-actions and impostor-commit, counts as FINDINGS.
+#
+# THE BASE IS THE BASE BRANCH'S CURRENT TIP, read by branch NAME
+# (`github.base_ref`; the default branch for a candidate/dispatch run), never
+# `github.event.pull_request.base.sha`. On a PR that is behind its base that
+# sha is the stale merge base, while the checkout is the merge ref -- the PR
+# head merged onto the CURRENT base -- so every pin main has gained since the
+# branch point is present in the checkout and absent from the stale base, and
+# read as introduced by the PR. Measured 2026-10-24 on qontinui-web#1689 (merge
+# base bc3f44d0, 2026-10-05): style-gate.yml's dtolnay/rust-toolchain pin,
+# added to main in 27f18555 on 2026-10-14, went FINDINGS the moment upstream
+# moved `v1`, and coord refused the PR as ci-failed. The tip is what coord's
+# rebase-ff land lands onto, so it is the base that decides whether a line is
+# new. It is read at fetch time, so if main changes the flagged line between
+# the merge ref and the fetch the finding is blocking -- an over-report that a
+# re-run heals, never a pass. Same defect class and remedy as
+# migration-reversal.yml (plan
+# 2026-10-24-migration-reversal-overlays-onto-stale-pr-base-not-base-tip);
+# this one is plan 2026-10-24-workflow-lint-drift-judged-against-stale-pr-base.
 #
 # VISIBILITY: each finding is a workflow-command
 # annotation (::error for a finding, ::warning for DRIFT) on the run and the
@@ -203,9 +220,11 @@ jobs:
           # Online audits (impostor-commit, known-vulnerable-actions) read
           # public action repos; the job token is read-only.
           GH_TOKEN: ${{ github.token }}
-          # Base for the DRIFT test (see header): the PR's base sha, else the
-          # default branch (merge-candidate pushes, workflow_dispatch).
-          DRIFT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          # Base for the DRIFT test (see header): the PR's base BRANCH, which
+          # the contents API resolves to its current tip, else the default
+          # branch (merge-candidate pushes, workflow_dispatch). Never the
+          # event's base sha: on a behind PR that is the stale merge base.
+          DRIFT_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
         # One `--format json` run drives both the verdict and the annotations:
         # each finding not in DRIFT_AUDITS becomes an ::error annotation and
         # counts as FINDINGS; each DRIFT_AUDITS finding becomes a ::warning
@@ -221,8 +240,9 @@ jobs:
         # DRIFT test: the finding's source line (cut from this checkout at
         # zizmor's byte offset, and required to contain the flagged version
         # text) must occur verbatim in DRIFT_BASE_REF's copy of the same file, fetched
-        # read-only from the contents API with the job token; a fetch failure
-        # makes the finding blocking (fail closed).
+        # read-only from the contents API ($GITHUB_API_URL, which the runner
+        # sets) with the job token; a fetch failure makes the finding blocking
+        # (fail closed).
         # `--cache-dir` under $RUNNER_TEMP (wiped per job): the public-pool
         # runners are PERSISTENT services, so zizmor's default HTTP cache
         # (~/.cache/zizmor of the runner user) is shared by every job on the
@@ -255,7 +275,8 @@ jobs:
           def base_lines(path):
               if path not in base_cache:
                   try:
-                      url = "https://api.github.com/repos/%s/contents/%s?ref=%s" % (
+                      url = "%s/repos/%s/contents/%s?ref=%s" % (
+                          os.environ.get("GITHUB_API_URL") or "https://api.github.com",
                           os.environ["GITHUB_REPOSITORY"], urllib.parse.quote(path),
                           urllib.parse.quote(os.environ["DRIFT_BASE_REF"], safe=""))
                       req = urllib.request.Request(url, headers={
