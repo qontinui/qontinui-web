@@ -61,6 +61,27 @@ describe("<SessionTimeoutWarning> in the presentation lens", () => {
     ).toEqual([]);
   });
 
+  it("is a decision: neither Escape nor an outside click dismisses it", async () => {
+    render(
+      <FixedPresentationMode presenting>
+        <SessionTimeoutWarning />
+      </FixedPresentationMode>
+    );
+    warn();
+    const dialog = await screen.findByRole("dialog");
+    // A reflex Escape mid-demo must not hide the prompt and let the session
+    // lapse unannounced; only its two buttons decide.
+    fireEvent.keyDown(dialog, { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    fireEvent.pointerDown(document.body);
+    await act(async () => {});
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Session Expiring Soon")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Continue Working" })
+    ).toBeTruthy();
+  });
+
   it("keeps the presenter signed in from Continue Working", async () => {
     render(<SessionTimeoutWarning />);
     warn();
