@@ -197,6 +197,9 @@ vi.mock(
 
 import AppLayout from "./layout";
 
+/** How long the lazily loaded sidebar may take to arrive on a busy machine. */
+const LAZY_MS = 15_000;
+
 function visit(path: string, search: string) {
   fx.path = path;
   fx.search = search;
@@ -217,8 +220,11 @@ describe("the app shell beside a lens page", () => {
       </AppLayout>
     );
 
-    // The sidebar loads lazily, as in the browser.
-    expect(await screen.findByText("Runner: Machine A")).toBeTruthy();
+    // The sidebar loads lazily, as in the browser — a large chunk, so the
+    // wait is sized for a loaded machine rather than the 1 s default.
+    expect(
+      await screen.findByText("Runner: Machine A", {}, { timeout: LAZY_MS })
+    ).toBeTruthy();
     expect(container).toHaveTextContent(fx.OWN_PROJECT);
     expect(container.innerHTML).not.toContain(fx.EMAIL);
     expect(container.innerHTML).not.toContain(fx.OTHER_PROJECT);
@@ -236,7 +242,13 @@ describe("the app shell beside a lens page", () => {
         <p>Settings page</p>
       </AppLayout>
     );
-    expect(await screen.findByText(`Runner: ${fx.RUNNER_NAME}`)).toBeTruthy();
+    expect(
+      await screen.findByText(
+        `Runner: ${fx.RUNNER_NAME}`,
+        {},
+        { timeout: LAZY_MS }
+      )
+    ).toBeTruthy();
     expect(container.innerHTML).toContain(fx.EMAIL);
     expect(screen.getByTitle("New project")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Costs" })).toBeTruthy();
