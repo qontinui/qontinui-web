@@ -2041,7 +2041,9 @@ that mounts a `UIBridgeProvider` of its own in its `wrapper` or in the page. Ren
 the page itself, with its fixture's data loaded; keep the view mounted until the
 check has run; leave the provider to the helper; and keep what the page portals
 (a dialog, a toast) inside the element the check reads — a page that renders any
-of its output outside it is not proven.
+of its output outside it is not proven. A `<title>` React hoists into the head is
+such output: a page that renders one is read with `baseElement:
+document.documentElement`.
 
 ---
 

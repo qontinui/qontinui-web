@@ -254,6 +254,26 @@ describe("presentationCheckRecord — a page whose output the check did not read
     expect(provesRoute(record, ROUTE)).toBe(false);
   });
 
+  it("is a page whose <title> React hoists into the head, until the check reads the whole document", () => {
+    function TitledPage() {
+      return (
+        <main>
+          <title>Fleet health</title>
+          Machines
+        </main>
+      );
+    }
+    const view = renderInPresentationMode(<TitledPage />);
+    const targets = [{ route: ROUTE, page: TitledPage }];
+    // The title shows in the browser's tab, outside document.body.
+    expect(
+      presentationCheckRecord(view, 0, targets, document.body)
+    ).toMatchObject(unread);
+    expect(
+      presentationCheckRecord(view, 0, targets, document.documentElement)
+    ).toMatchObject({ presented: [ROUTE], unread: [] });
+  });
+
   it("is a page that rendered nothing inside a caller's frame", () => {
     function NothingPage() {
       return null;
