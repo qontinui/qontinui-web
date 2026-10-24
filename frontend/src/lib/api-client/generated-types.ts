@@ -10539,6 +10539,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/dossiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Dossiers
+         * @description Return one page of dossier heads for the calling operator's tenant.
+         *
+         *     The body is coord's, verbatim: ``{"dossiers": [...], "facets":
+         *     {"readiness", "remediation_state"}, "facets_scope", "dedup",
+         *     "*_applied" echoes, ...}`` plus the bounded-read envelope (``available``,
+         *     ``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,
+         *     ``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant
+         *     is coord's to resolve from the forwarded bearer; nothing in the request
+         *     names it.
+         *
+         *     Degraded answers carry every envelope key as UNKNOWN (``null``), ``facets``
+         *     as ``null`` and ``dossiers`` empty, plus ``unavailable`` /
+         *     ``unavailable_kind`` — a page reading that body must say "could not read",
+         *     never "no dossiers".
+         */
+        get: operations["api_v1_operations_coord_dossiers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/findings": {
         parameters: {
             query?: never;
@@ -72934,6 +72967,72 @@ export interface operations {
                 };
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_dossiers_get: {
+        parameters: {
+            query?: {
+                /** @description Repeatable (or comma-separated). Exact readiness match; ``none`` selects heads whose readiness is NULL (UNKNOWN). */
+                readiness?: string[] | null;
+                /** @description Exact dossier slug. */
+                slug?: string | null;
+                /** @description Case-insensitive substring over slug and title. */
+                q?: string | null;
+                /** @description Inclusive lower bound on ``recurrence_count``. */
+                recurrence_min?: number | null;
+                /** @description Inclusive upper bound on ``recurrence_count``. */
+                recurrence_max?: number | null;
+                /** @description ISO date. */
+                last_seen_since?: string | null;
+                /** @description ISO date. */
+                last_seen_until?: string | null;
+                /** @description ISO date. */
+                first_seen_since?: string | null;
+                /** @description ISO date. */
+                first_seen_until?: string | null;
+                /** @description ISO date. */
+                updated_since?: string | null;
+                /** @description ISO date. */
+                updated_until?: string | null;
+                /** @description Ledger-derived (free text, lags the plan); ``remediation_state`` is the live one. */
+                has_open_remediation?: boolean | null;
+                /** @description Repeatable. The LIVE roll-up of the dossier's remediation plans against coord's work units: none | draft | vetted | in_progress | shipped | closed | unknown. */
+                remediation_state?: string[] | null;
+                /** @description last_seen (coord's default) | first_seen | updated | recurrence_count | slug. */
+                sort?: string | null;
+                /** @description desc (default) | asc. */
+                order?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description The previous answer's ``next_cursor``, verbatim, under the SAME filters and sort. A foreign or stale one is coord's typed 400. */
+                cursor?: string | null;
+                /** @description ``true`` adds each head's body (coord caps the page at 20). */
+                include_body?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
