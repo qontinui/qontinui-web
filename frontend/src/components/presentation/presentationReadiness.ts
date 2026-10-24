@@ -30,11 +30,16 @@
  * that proves it**: a presentation-mode render of the page that passes
  * `expectPresentationSafe` (`src/test/presentation.tsx`). `provenBy` names
  * that test file, and `presentationReadiness.test.ts` fails unless it proves
- * the route (`src/test/readinessProof.ts`): it asserts the helper, in a test
- * that runs — not skipped, todo, conditional or expected to fail, nor in a
- * function nobody calls — over a render of this route's own page module,
- * imported and not mocked. So a route cannot be declared ready on a promise,
- * nor on a proof that never ran. Over-withholding costs a placeholder instead
+ * the route (`src/test/readinessProof.ts`): it asserts the helper where a
+ * failure fails a test that runs, every time it runs — on the unconditional
+ * path of the test's body (no `if`, `?:`, `&&`, loop, early `return`,
+ * swallowing `catch`, or callback such as `expect(() => …)` or a timer
+ * between them), in a test that no modifier, option, context `skip`, empty
+ * `.each` table or registration condition can stop — over a render that
+ * always evaluates this route's own page module, imported and not mocked, with
+ * the page check itself not mocked. So a route cannot be declared ready on a
+ * promise, nor on a proof that never ran, nor on one that runs only in some
+ * builds. Over-withholding costs a placeholder instead
  * of a page, which D3 accepts; a page shown before it is safe costs a write
  * control, a hostname or a client's name in front of an evaluator.
  */
