@@ -131,6 +131,7 @@ def _assert_unknown_envelope(body: dict) -> None:
     assert body["bound_kind"] == "unknown"
     assert body["shown"] == 0
     for key in (
+        "count",
         "facets",
         "truncated",
         "next_cursor",

@@ -13707,7 +13707,8 @@ async def get_coord_dossiers(
         if exc.status_code in _COORD_ABSENT_STATUSES:
             return {
                 "available": False,
-                "count": 0,
+                # null, not 0: nothing was counted.
+                "count": None,
                 "dossiers": [],
                 # UNKNOWN, not zero: no facet was counted.
                 "facets": None,
