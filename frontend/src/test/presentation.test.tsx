@@ -696,6 +696,24 @@ describe("(f) the view is on the screen when the check runs", () => {
     }
   });
 
+  it("fails on a container React never rendered into — a root it cannot read is not a mounted one", () => {
+    // What check (f) sees if React stops marking its containers the way
+    // reactTree.ts reads them: the view fails, it does not pass.
+    const container = document.body.appendChild(document.createElement("div"));
+    try {
+      container.textContent = "static markup, no React root";
+      const view = { container, uiBridge: { unobservable: "no render" } };
+      expect(findPresentationViolations(view).map((v) => v.kind)).toEqual([
+        "unmounted-view",
+      ]);
+      expect(findPresentationViolations(view)[0]?.detail).toContain(
+        "holds no React root"
+      );
+    } finally {
+      container.remove();
+    }
+  });
+
   it("fails on a view whose wrapper drops its children", () => {
     const view = renderInPresentationMode(
       <button type="button">Drain this machine</button>,
