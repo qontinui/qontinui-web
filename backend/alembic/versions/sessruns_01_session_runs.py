@@ -122,10 +122,15 @@ Indexes
 Merge-train classifier disposition
 ==================================
 
-coord migration classifier is expected to classify this revision Reject (a
-non-concurrent ``CREATE INDEX``, ``COMMENT ON``, and ``DROP`` in
-``downgrade()``), the same as the landed ``fpl_02`` and
-``spawnledger_01_spawn_requests``. Every SQL string is a static literal.
+The verdict of the coord migration classifier
+(``crates/coord/src/pr_merge/migration_classifier.rs``) on this file is
+UNKNOWN: it was not run against it. It is expected to be either
+``AutoSafeIfNewTables`` (both tables are created in this file, its indexes are
+on those tables, and its ``COMMENT ON`` statements carry plain literals) or
+``Reject``, if ``create_table_is_plain`` or a sibling statement check refuses a
+shape used here, for example a function-call default (``gen_random_uuid()``,
+``now()``), a table CHECK, or the ``CREATE SCHEMA IF NOT EXISTS`` guard.
+Every SQL string is a static literal, so no call is rejected as dynamic.
 
 Safety
 ======
@@ -148,8 +153,7 @@ depends_on: str | Sequence[str] | None = None
 
 # Every SQL string below is a STATIC literal. The coord merge-train migration
 # classifier extracts string literals from each execute call and rejects a call
-# with none as dynamic. Keep these comments free of apostrophes and of the
-# op-dot-call spelling: the classifier lexer does not skip Python comments.
+# with none as dynamic.
 # Raw SQL with IF NOT EXISTS throughout, the sibling coord ledger convention,
 # which keeps a re-run harmless.
 

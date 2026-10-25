@@ -15,9 +15,9 @@ Phase 3) rely on:
 3. **Defaults are honest** — ``initiator`` / ``work_type`` ``unknown``,
    ``classifier_version`` 0, ``run_seq`` 1, ``history_complete`` true,
    timestamps ``now()``, every fact and timing column NULL until written.
-4. **An end is all-or-nothing and never precedes the start** — ``ended_at``
-   without ``end_reason`` (and vice versa) is refused, as is
-   ``ended_at < started_at``.
+4. **An end is all-or-nothing and never precedes the start** — ``ended_at``,
+   ``end_reason`` and ``end_source`` are set together or not at all (any one
+   without the others is refused), and ``ended_at < started_at`` is refused.
 5. **Counters never go negative** — ``run_seq`` below 1, ``active_seconds``
    below 0 and every hourly counter below 0 are refused.
 6. **One row per run** — a second ``(tenant_id, claude_code_session_id,
