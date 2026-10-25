@@ -10,7 +10,8 @@ Phase 3) rely on:
 2. **Only three vocabularies are enforced** — ``initiator``, ``end_reason`` and
    ``end_source`` refuse an unknown value and accept every listed one, while
    ``work_type``, ``skill``, ``dispatch_source``, ``first_command`` and
-   ``bind_origin`` accept any text (their vocabularies live in Rust).
+   ``bind_origin`` accept any text (their vocabularies are validated by coord
+   ingest, not by the database).
 3. **Defaults are honest** — ``initiator`` / ``work_type`` ``unknown``,
    ``classifier_version`` 0, ``run_seq`` 1, ``history_complete`` true,
    timestamps ``now()``, every fact and timing column NULL until written.
@@ -156,7 +157,7 @@ def _nullable_in_check(column: str, values: tuple[str, ...]) -> str:
 # Every constraint, by name: (contype, pg_get_constraintdef). Exact, so a
 # widened vocabulary, a renamed constraint, a dropped one or an extra one all
 # fail here before any insert runs — including any CHECK that would constrain
-# work_type or another Rust-owned vocabulary.
+# work_type or another coord-validated vocabulary.
 _EXPECTED_RUN_CONSTRAINTS: dict[str, tuple[str, str]] = {
     "session_runs_pkey": ("p", "PRIMARY KEY (id)"),
     "uq_session_runs_session_run": (
@@ -173,7 +174,8 @@ _EXPECTED_RUN_CONSTRAINTS: dict[str, tuple[str, str]] = {
     "ck_session_runs_end_source": ("c", _nullable_in_check("end_source", _END_SOURCES)),
     "ck_session_runs_end_consistent": (
         "c",
-        "CHECK (((ended_at IS NULL) = (end_reason IS NULL)))",
+        "CHECK ((((ended_at IS NULL) = (end_reason IS NULL)) "
+        "AND ((ended_at IS NULL) = (end_source IS NULL))))",
     ),
     "ck_session_runs_ended_after_start": (
         "c",
@@ -385,9 +387,22 @@ def _insert(engine: Engine, statement: TextClause, params: dict[str, object]) ->
         conn.execute(statement, params)
 
 
-def _refused(engine: Engine, statement: TextClause, params: dict[str, object]) -> None:
-    with pytest.raises(IntegrityError):
+def _refused(
+    engine: Engine,
+    statement: TextClause,
+    params: dict[str, object],
+    constraint: str,
+) -> None:
+    """The insert is refused, and by the named constraint, not by another one."""
+    with pytest.raises(IntegrityError) as refusal:
         _insert(engine, statement, params)
+    assert refusal.value.orig is not None
+    refused_by = getattr(
+        getattr(refusal.value.orig, "diag", None), "constraint_name", None
+    )
+    assert refused_by == constraint, (
+        f"refused by {refused_by!r}, expected {constraint!r}"
+    )
 
 
 def _ended(**overrides: object) -> dict[str, object]:
@@ -479,9 +494,21 @@ def test_sessruns_01_creates_the_run_record_and_enforces_its_contract() -> None:
 
         # 4. The three enforced vocabularies refuse an unknown value and accept
         #    every listed one (the exact sets were pinned by ``_assert_shape``).
-        _refused(engine, _INSERT_RUN, _run(initiator="human"))
-        _refused(engine, _INSERT_RUN, _ended(end_reason="crashed"))
-        _refused(engine, _INSERT_RUN, _ended(end_source="guessed"))
+        _refused(
+            engine, _INSERT_RUN, _run(initiator="human"), "ck_session_runs_initiator"
+        )
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _ended(end_reason="crashed"),
+            "ck_session_runs_end_reason",
+        )
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _ended(end_source="guessed"),
+            "ck_session_runs_end_source",
+        )
         for initiator in _INITIATORS:
             _insert(engine, _INSERT_RUN, _run(initiator=initiator))
         for reason in _END_REASONS:
@@ -489,7 +516,7 @@ def test_sessruns_01_creates_the_run_record_and_enforces_its_contract() -> None:
         for source in _END_SOURCES:
             _insert(engine, _INSERT_RUN, _ended(end_source=source))
 
-        # 5. The Rust-owned vocabularies are free text: a value no list knows
+        # 5. The coord-validated vocabularies are free text: a value no list knows
         #    is accepted, so a new work type needs no alembic round-trip.
         _insert(
             engine,
@@ -504,18 +531,53 @@ def test_sessruns_01_creates_the_run_record_and_enforces_its_contract() -> None:
         )
 
         # 6. An end is all-or-nothing and never precedes the start.
-        _refused(engine, _INSERT_RUN, _run(ended_at=_END))
-        _refused(engine, _INSERT_RUN, _run(end_reason="exited"))
-        _refused(engine, _INSERT_RUN, _ended(ended_at=_BEFORE_START))
+        _refused(
+            engine, _INSERT_RUN, _run(ended_at=_END), "ck_session_runs_end_consistent"
+        )
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _run(end_reason="exited"),
+            "ck_session_runs_end_consistent",
+        )
+        # end_source is tied too: a closed run with no source, an open run with one.
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _ended(end_source=None),
+            "ck_session_runs_end_consistent",
+        )
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _run(end_source="observed"),
+            "ck_session_runs_end_consistent",
+        )
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _ended(ended_at=_BEFORE_START),
+            "ck_session_runs_ended_after_start",
+        )
         _insert(engine, _INSERT_RUN, _ended(ended_at=_START))
 
         # 7. Counters never go negative; run_seq starts at 1.
-        _refused(engine, _INSERT_RUN, _run(run_seq=0))
-        _refused(engine, _INSERT_RUN, _run(active_seconds=-1))
+        _refused(
+            engine, _INSERT_RUN, _run(run_seq=0), "ck_session_runs_run_seq_positive"
+        )
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _run(active_seconds=-1),
+            "ck_session_runs_active_seconds_nonneg",
+        )
         _insert(engine, _INSERT_RUN, _run(active_seconds=0))
         for counter in _HOURLY_COUNTERS:
             _refused(
-                engine, _INSERT_HOURLY, _hourly(work_type=counter, **{counter: -1})
+                engine,
+                _INSERT_HOURLY,
+                _hourly(work_type=counter, **{counter: -1}),
+                f"ck_session_run_hourly_{counter}_nonneg",
             )
         _insert(
             engine,
@@ -529,12 +591,17 @@ def test_sessruns_01_creates_the_run_record_and_enforces_its_contract() -> None:
             ),
         )
         # One rollup row per (tenant, device, work_type, hour).
-        _refused(engine, _INSERT_HOURLY, _hourly(work_type="implement"))
+        _refused(
+            engine,
+            _INSERT_HOURLY,
+            _hourly(work_type="implement"),
+            "session_run_hourly_pkey",
+        )
 
         # 8. One row per run: the next run_seq and another tenant are distinct.
         session = uuid.uuid4()
         _insert(engine, _INSERT_RUN, _run(sid=session))
-        _refused(engine, _INSERT_RUN, _run(sid=session))
+        _refused(engine, _INSERT_RUN, _run(sid=session), "uq_session_runs_session_run")
         _insert(engine, _INSERT_RUN, _run(sid=session, run_seq=2))
         _insert(engine, _INSERT_RUN, _run(sid=session, tid=_OTHER_TENANT))
 

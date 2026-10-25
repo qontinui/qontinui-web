@@ -39,8 +39,8 @@ runner at open and at close, kept 400 days. A record re-opened after a close
 windows longer than the 31 days the read computes on demand from the raw
 intervals. Also kept 400 days. Retention is enforced by coord, not here.
 
-Column contract — shared with coord Rust code (Phase 3)
-=======================================================
+Column contract — shared with coord (Phase 3)
+=============================================
 
 ``coord.session_runs``
 
@@ -60,13 +60,16 @@ Column contract — shared with coord Rust code (Phase 3)
 Facts, all TEXT NULL and all UNCONSTRAINED: ``spawn_origin``, ``spawn_kind``,
 ``dispatch_source``, ``diagnosis_kind``, ``gate_registered_by``, ``skill``,
 ``first_command``, ``bind_origin``, ``close_reason``, ``account_label``,
-``provider``, ``model``, ``repo``, ``work_unit_slug``. Their vocabularies live
-in Rust (coord validates against the schemas contract), so growing one is not
+``provider``, ``model``, ``repo``, ``work_unit_slug``. Their vocabularies are
+to be declared in qontinui-schemas ``rust/src/session_work_type.json`` and
+validated by the coord ``session_runs`` ingest, both introduced by Phase 3 of
+the plan (neither exists yet when this revision lands), so growing one is not
 an alembic round-trip and the classifier can re-classify old rows.
 
 Verdict: ``initiator TEXT NOT NULL DEFAULT unknown`` — CHECK ``operator`` |
 ``coord`` | ``runner_local`` | ``unknown``; ``work_type TEXT NOT NULL DEFAULT
-unknown`` — NO CHECK (D2: re-classifiable, vocabulary in Rust);
+unknown`` — NO CHECK (D2: re-classifiable; vocabulary declared in
+qontinui-schemas ``session_work_type.json``, validated by coord ingest, Phase 3);
 ``classifier_version INTEGER NOT NULL DEFAULT 0`` (0 = never classified).
 
 Timing (runner clock): ``started_at`` NOT NULL, ``first_turn_at``,
@@ -78,9 +81,16 @@ Timing (runner clock): ``started_at`` NOT NULL, ``first_turn_at``,
 ``superseded`` | ``operator_closed`` | ``finished_close`` | ``runner_stopped`` |
 ``handoff_detached`` | ``inferred_lost`` | ``other``.
 ``end_source TEXT NULL`` — CHECK NULL or ``observed`` | ``inferred``.
-``ck_session_runs_end_consistent``: ``ended_at`` and ``end_reason`` are NULL
-together or set together. ``ck_session_runs_ended_after_start``: a run never
-ends before it starts.
+``ck_session_runs_end_consistent``: ``ended_at``, ``end_reason`` and
+``end_source`` are NULL together or set together, so an end is never half
+recorded. ``ck_session_runs_ended_after_start``: a run never ends before it
+starts.
+
+Every ``ended_at`` is a RUNNER-clock time, including the ``inferred_lost`` end
+the coord backstop writes: the backstop closes a silent run at its
+``last_seen_at`` (the last runner-clock time coord received), never at coord
+``now()``. Both ends of every interval are therefore on one clock, which is
+what lets ``ended_at >= started_at`` hold as a CHECK rather than a hope.
 
 ``history_complete BOOLEAN NOT NULL DEFAULT true`` — false for rows backfilled
 from before the record existed (Phase 6).
@@ -108,6 +118,22 @@ Indexes
 * ``ix_session_run_hourly_tenant_hour`` on ``(tenant_id, hour)`` — the
   fleet-wide long-window read and the retention sweep, which the primary key
   (device before hour) cannot serve.
+
+Merge-train classifier disposition
+==================================
+
+coord migration classifier is expected to classify this revision Reject (a
+non-concurrent ``CREATE INDEX``, ``COMMENT ON``, and ``DROP`` in
+``downgrade()``), the same as the landed ``fpl_02`` and
+``spawnledger_01_spawn_requests``. Every SQL string is a static literal.
+
+Safety
+======
+
+Two new empty tables: ``CREATE TABLE IF NOT EXISTS``, ``CREATE INDEX IF NOT
+EXISTS`` and re-runnable ``COMMENT ON``, so a partial apply re-runs cleanly.
+No existing table is altered, so no lock on a hot table is taken.
+``downgrade()`` drops the indexes and both tables, ``IF EXISTS``.
 """
 
 from collections.abc import Sequence
@@ -188,7 +214,10 @@ def upgrade() -> None:
             CONSTRAINT ck_session_runs_end_source
                 CHECK (end_source IS NULL OR end_source IN ('observed', 'inferred')),
             CONSTRAINT ck_session_runs_end_consistent
-                CHECK ((ended_at IS NULL) = (end_reason IS NULL)),
+                CHECK (
+                    (ended_at IS NULL) = (end_reason IS NULL)
+                    AND (ended_at IS NULL) = (end_source IS NULL)
+                ),
             CONSTRAINT ck_session_runs_ended_after_start
                 CHECK (ended_at IS NULL OR ended_at >= started_at)
         )
@@ -289,7 +318,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.session_runs.work_type IS
-            'What work the run does, as classified by coord. No CHECK: the vocabulary lives in Rust and a re-classification rewrites this column. unknown = not classifiable from the recorded facts.'
+            'What work the run does, as classified by coord. No CHECK: the vocabulary is to be declared in qontinui-schemas rust/src/session_work_type.json and validated by the coord session_runs ingest, both introduced by plan Phase 3, and a re-classification rewrites this column. unknown = not classifiable from the recorded facts.'
         """
     )
     op.execute(
@@ -313,7 +342,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.session_runs.ended_at IS
-            'Run close, on the runner clock. NULL = the run is open (or its end is not yet observed or inferred). Set together with end_reason.'
+            'Run close, on the runner clock, including an inferred_lost end, which the coord backstop sets to last_seen_at and never to coord now(). NULL = the run is open (or its end is not yet observed or inferred). Set together with end_reason and end_source.'
         """
     )
     op.execute(
