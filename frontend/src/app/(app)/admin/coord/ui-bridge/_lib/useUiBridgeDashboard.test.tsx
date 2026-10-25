@@ -5,9 +5,13 @@
  * - which runner the page reads, and every identifier it holds for it (the
  *   presentation lens aliases all of them, so none may go missing);
  * - the metadata reads ask nothing until a runner is targeted;
- * - page health and the occlusion sweep each drive a full `discover` of the
- *   runner's window, so they run ONLY when asked and ONLY for the runner they
- *   were asked for — switching runners never fires them for the new one.
+ * - page health (and the occlusion sweep, where a relay carries it) drives a
+ *   full `discover` of the runner's window, so it runs ONLY when asked and
+ *   ONLY for the runner it was asked for — switching runners never fires it
+ *   for the new one;
+ * - where no relay carries the sweep — every runner today — it is not asked at
+ *   all, and the occlusion row is decided without reading any answer to it
+ *   (`occlusionReadOf`; coord finding 99796499).
  */
 
 import React, { type ReactNode } from "react";
@@ -16,8 +20,19 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunnerTarget } from "@/lib/runner/target";
 import { FixedPresentationMode } from "@/components/presentation";
-import { DEVICE_ID, FLEET_APPS } from "../__fixtures__/runnerBodies";
+import {
+  DEVICE_ID,
+  FLEET_APPS,
+  VISIBILITY_CLEAR_OBSERVED,
+  VISIBILITY_CLEAR_UNOBSERVED,
+  VISIBILITY_HIDES_TEXT,
+} from "../__fixtures__/runnerBodies";
 import { relayFake, type RelayFake } from "../__fixtures__/relayResponder";
+import {
+  OCCLUSION_NOT_RELAYED,
+  type OcclusionReading,
+} from "./occlusionStatus";
+import type { QueryView, ReadState } from "./readState";
 
 const OTHER_DEVICE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
@@ -58,12 +73,18 @@ vi.mock("@/services/api-config", () => ({
 
 import {
   FLEET_APPS_PATH,
+  occlusionReadOf,
   useDashboardRunner,
   useFleetAppsRead,
   usePageHealthRun,
   useRunnerComponentsRead,
   useRunnerHealthRead,
 } from "./useUiBridgeDashboard";
+
+/** A relay that carries the sweep — no runner's does yet; the follow-up's case. */
+const RELAYED = true;
+/** What every runner's relay is today. */
+const NOT_RELAYED = false;
 
 function wrapper() {
   const client = new QueryClient({
@@ -217,9 +238,9 @@ describe("the metadata reads", () => {
   });
 });
 
-describe("usePageHealthRun — only when asked, only for the runner asked", () => {
+describe("usePageHealthRun — only when asked, only for the runner asked (a relay that carries the sweep)", () => {
   it("asks nothing until run() is called", async () => {
-    const { result } = renderHook(() => usePageHealthRun(DEVICE_ID), {
+    const { result } = renderHook(() => usePageHealthRun(DEVICE_ID, RELAYED), {
       wrapper: wrapper(),
     });
     await settle();
@@ -230,7 +251,7 @@ describe("usePageHealthRun — only when asked, only for the runner asked", () =
   });
 
   it("runs page health and the sweep together for the runner asked", async () => {
-    const { result } = renderHook(() => usePageHealthRun(DEVICE_ID), {
+    const { result } = renderHook(() => usePageHealthRun(DEVICE_ID, RELAYED), {
       wrapper: wrapper(),
     });
     act(() => {
@@ -245,7 +266,8 @@ describe("usePageHealthRun — only when asked, only for the runner asked", () =
 
   it("never fires for a runner switched to after a run — that runner was not asked", async () => {
     const { result, rerender } = renderHook(
-      ({ deviceId }: { deviceId: string | null }) => usePageHealthRun(deviceId),
+      ({ deviceId }: { deviceId: string | null }) =>
+        usePageHealthRun(deviceId, RELAYED),
       { wrapper: wrapper(), initialProps: { deviceId: DEVICE_ID } }
     );
     act(() => {
@@ -276,7 +298,7 @@ describe("usePageHealthRun — only when asked, only for the runner asked", () =
   });
 
   it("re-runs both reads when asked again, and settles when both have", async () => {
-    const { result } = renderHook(() => usePageHealthRun(DEVICE_ID), {
+    const { result } = renderHook(() => usePageHealthRun(DEVICE_ID, RELAYED), {
       wrapper: wrapper(),
     });
     act(() => {
@@ -300,7 +322,7 @@ describe("usePageHealthRun — only when asked, only for the runner asked", () =
   });
 
   it("does nothing with no runner to ask", async () => {
-    const { result } = renderHook(() => usePageHealthRun(null), {
+    const { result } = renderHook(() => usePageHealthRun(null, RELAYED), {
       wrapper: wrapper(),
     });
     const call: { ran?: Promise<unknown> | void } = { ran: Promise.resolve() };
@@ -311,5 +333,187 @@ describe("usePageHealthRun — only when asked, only for the runner asked", () =
     await settle();
     expect(asked()).toEqual([]);
     expect(result.current.requested).toBe(false);
+  });
+});
+
+describe("usePageHealthRun — where no relay carries the sweep (every runner today)", () => {
+  it("asks page health and never the sweep", async () => {
+    const { result } = renderHook(
+      () => usePageHealthRun(DEVICE_ID, NOT_RELAYED),
+      { wrapper: wrapper() }
+    );
+    act(() => {
+      void result.current.run();
+    });
+    await waitFor(() => expect(result.current.pageHealth.isSuccess).toBe(true));
+    await settle();
+    expect(result.current.requested).toBe(true);
+    expect(askedFor(PAGE_HEALTH, DEVICE_ID)).toBe(1);
+    expect(askedFor(SWEEP, DEVICE_ID)).toBe(0);
+    expect(result.current.visibility.fetchStatus).toBe("idle");
+    expect(result.current.visibility.data).toBeUndefined();
+  });
+
+  it("re-runs page health alone — `refetch` would ignore `enabled`, so the sweep is left out of it", async () => {
+    const { result } = renderHook(
+      () => usePageHealthRun(DEVICE_ID, NOT_RELAYED),
+      { wrapper: wrapper() }
+    );
+    act(() => {
+      void result.current.run();
+    });
+    await waitFor(() => expect(result.current.pageHealth.isSuccess).toBe(true));
+
+    const again: { ran?: Promise<unknown> | void } = {};
+    act(() => {
+      again.ran = result.current.run();
+    });
+    expect(again.ran).toBeInstanceOf(Promise);
+    await act(async () => {
+      await again.ran;
+    });
+    expect(askedFor(PAGE_HEALTH, DEVICE_ID)).toBe(2);
+    expect(askedFor(SWEEP, DEVICE_ID)).toBe(0);
+  });
+
+  it("never asks for the sweep of a runner switched to, either", async () => {
+    const { result, rerender } = renderHook(
+      ({ deviceId }: { deviceId: string | null }) =>
+        usePageHealthRun(deviceId, NOT_RELAYED),
+      { wrapper: wrapper(), initialProps: { deviceId: DEVICE_ID } }
+    );
+    act(() => {
+      void result.current.run();
+    });
+    await waitFor(() => expect(askedFor(PAGE_HEALTH, DEVICE_ID)).toBe(1));
+    rerender({ deviceId: OTHER_DEVICE_ID });
+    act(() => {
+      void result.current.run();
+    });
+    await waitFor(() => expect(askedFor(PAGE_HEALTH, OTHER_DEVICE_ID)).toBe(1));
+    await settle();
+    expect(asked().filter((r) => r.startsWith(SWEEP))).toEqual([]);
+  });
+});
+
+/** A sweep query as a view — what the page hands `occlusionReadOf`. */
+function sweepView(over: Partial<QueryView<unknown>> = {}): QueryView<unknown> {
+  return {
+    data: undefined,
+    error: undefined,
+    isError: false,
+    isFetching: false,
+    dataUpdatedAt: 0,
+    asked: false,
+    ...over,
+  };
+}
+
+const bodyData = (body: Record<string, unknown>) => body.data;
+
+describe("occlusionReadOf — the occlusion row's state, decided in one place", () => {
+  const standing: ReadState<OcclusionReading> = {
+    state: "ok",
+    value: OCCLUSION_NOT_RELAYED,
+    stale: false,
+    asOf: null,
+  };
+
+  describe("where no relay carries the sweep", () => {
+    it("has no row before page health is asked for", () => {
+      expect(
+        occlusionReadOf({
+          sweepRelayed: NOT_RELAYED,
+          requested: false,
+          sweep: sweepView(),
+        })
+      ).toEqual({ state: "idle" });
+    });
+
+    it("is the standing UNKNOWN once page health is asked for, with no time", () => {
+      const read = occlusionReadOf({
+        sweepRelayed: NOT_RELAYED,
+        requested: true,
+        sweep: sweepView(),
+      });
+      expect(read).toEqual(standing);
+      expect(read.state === "ok" && read.value.kind).toBe("unknown");
+    });
+
+    it("stays the standing UNKNOWN whatever the sweep's query holds — it is never read", () => {
+      const answers: Array<[string, Partial<QueryView<unknown>>]> = [
+        [
+          "a clear sweep that observed occlusion data",
+          {
+            data: bodyData(VISIBILITY_CLEAR_OBSERVED),
+            asked: true,
+            dataUpdatedAt: 5,
+          },
+        ],
+        [
+          "a clear sweep that observed none",
+          { data: bodyData(VISIBILITY_CLEAR_UNOBSERVED), asked: true },
+        ],
+        ["hidden text", { data: bodyData(VISIBILITY_HIDES_TEXT), asked: true }],
+        [
+          "a failed read",
+          { error: new Error("boom"), isError: true, asked: true },
+        ],
+        ["a read in flight", { isFetching: true, asked: true }],
+        [
+          "a kept answer and a failed refetch",
+          {
+            data: bodyData(VISIBILITY_CLEAR_OBSERVED),
+            error: new Error("boom"),
+            isError: true,
+            asked: true,
+            dataUpdatedAt: 5,
+          },
+        ],
+      ];
+      for (const [label, over] of answers) {
+        expect(
+          occlusionReadOf({
+            sweepRelayed: NOT_RELAYED,
+            requested: true,
+            sweep: sweepView(over),
+          }),
+          label
+        ).toEqual(standing);
+      }
+    });
+  });
+
+  describe("where a relay carries the sweep (the follow-up's case)", () => {
+    const read = (over: Partial<QueryView<unknown>>, requested = true) =>
+      occlusionReadOf({
+        sweepRelayed: RELAYED,
+        requested,
+        sweep: sweepView(over),
+      });
+
+    it("reads the sweep's own query, honestly", () => {
+      expect(read({})).toEqual({ state: "idle" });
+      expect(read({ isFetching: true, asked: true })).toEqual({
+        state: "loading",
+      });
+      const clear = read({
+        data: bodyData(VISIBILITY_CLEAR_OBSERVED),
+        asked: true,
+        dataUpdatedAt: 5,
+      });
+      expect(clear.state === "ok" && clear.value.kind).toBe("clear");
+      const unobserved = read({
+        data: bodyData(VISIBILITY_CLEAR_UNOBSERVED),
+        asked: true,
+        dataUpdatedAt: 5,
+      });
+      expect(unobserved.state === "ok" && unobserved.value.kind).toBe(
+        "unknown"
+      );
+      expect(
+        read({ error: new Error("boom"), isError: true, asked: true }).state
+      ).toBe("failed");
+    });
   });
 });

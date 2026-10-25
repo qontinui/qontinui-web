@@ -1,17 +1,25 @@
 "use client";
 
 /**
- * Panel 6 — page health and occlusion, run together and ON DEMAND (each
- * drives a full `discover` of the runner's window): page health from
- * `POST /ui-bridge/control/page-health` (`pageHealthStatus.ts`) and the occlusion
- * verdict from the sweep (`occlusionStatus.ts`), shown as two separate answers —
- * page health carries no occlusion verdict, so a healthy page never stands in
- * for "nothing is covered".
+ * Panel 6 — page health, with the occlusion row beside it, run ON DEMAND (page
+ * health drives a full `discover` of the runner's window): page health from
+ * `POST /ui-bridge/control/page-health` (`pageHealthStatus.ts`) and the
+ * occlusion row (`occlusionStatus.ts`), shown as two separate answers — page
+ * health carries no occlusion verdict, so a healthy page never stands in for
+ * "nothing is covered".
  *
- * The occlusion row is HONEST: a "clear" sweep that observed no occlusion
- * data is UNKNOWN, never clear (served policy `ux-priorities`
+ * The occlusion row is UNKNOWN on every runner today. Its only source is the
+ * visibility sweep, no relay carries the sweep yet, and so the page does not
+ * ask for it: the row says the sweep is not available over the relay, in plain
+ * words and with its provenance (coord finding
+ * `99796499-8e46-4d69-94ba-a2ac9fe3ea22`; plan
+ * `2026-10-23-console-presentation-spaces` Phase 6, amendment 2026-10-24).
+ * Page health's body is not consulted for it, so nothing page health returns
+ * can make the row clear. Once a relay carries the sweep the row stays honest:
+ * a "clear" that observed no occlusion data is UNKNOWN (served policy
+ * `ux-priorities`
  * `the-runner-serves-the-occlusion-sweep-and-it-is-currently-vacuous`), and a
- * runner whose relay does not carry the sweep says so with its build.
+ * runner whose relay refuses the sweep says so with its build.
  *
  * The run button is navigation-only: it reads, and changes nothing on the
  * runner. The text the text-signal check quoted from the window, and the
@@ -61,6 +69,13 @@ export interface PageHealthPanelProps {
   build: BuildReading;
   noRunner: string | null;
 }
+
+/**
+ * Where the occlusion row's reading comes from, for its provenance chip. It
+ * is named even while the row is UNKNOWN: the chip then says no time came
+ * with it (amber), which is the truth.
+ */
+const OCCLUSION_SOURCE = "the runner's visibility sweep";
 
 function HealthBadge({
   kind,
@@ -264,8 +279,8 @@ export function PageHealthPanel({
           className="m-0 text-sm text-muted-foreground"
           data-testid="coord-ui-bridge-health-idle"
         >
-          Not run yet — page health and the occlusion sweep read the
-          runner&apos;s live window, so they run only when asked.
+          Not run yet — page health reads the runner&apos;s live window, so it
+          runs only when asked.
         </p>
       ) : (
         <>
@@ -337,12 +352,15 @@ export function PageHealthPanel({
                 Sweeping for occlusion…
               </p>
             ) : occlusion.state === "failed" ? (
-              <RunnerReadUnknown
-                issue={occlusion.issue}
-                route={RUNNER_ROUTES.visibility}
-                build={build}
-                data-testid="coord-ui-bridge-occlusion-unknown"
-              />
+              <>
+                <RunnerReadUnknown
+                  issue={occlusion.issue}
+                  route={RUNNER_ROUTES.visibility}
+                  build={build}
+                  data-testid="coord-ui-bridge-occlusion-unknown"
+                />
+                <Provenance source={OCCLUSION_SOURCE} asOf={null} />
+              </>
             ) : occlusion.state === "ok" ? (
               <>
                 {occlusion.stale && (
@@ -352,10 +370,7 @@ export function PageHealthPanel({
                   />
                 )}
                 <OcclusionRow reading={occlusion.value} />
-                <Provenance
-                  source="the runner's occlusion sweep"
-                  asOf={occlusion.asOf}
-                />
+                <Provenance source={OCCLUSION_SOURCE} asOf={occlusion.asOf} />
               </>
             ) : null}
           </section>

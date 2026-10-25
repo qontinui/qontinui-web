@@ -16,8 +16,9 @@
  * Green therefore means something measured: the runner answered, it
  * registers at least one action and every one declares its effect, and
  * nothing that was checked came back red or UNKNOWN. A read that did not
- * answer never contributes a green — including an occlusion sweep that
- * observed nothing.
+ * answer never contributes a green — including an occlusion row that is
+ * UNKNOWN, which it is on every runner today (no relay carries the sweep), so
+ * a strip that has had page health run on it is never green.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -43,7 +44,10 @@ export interface DashboardHealthInput {
   readonly components: ReadState<EffectCounts>;
   /** The page-health summary, once run. */
   readonly pageHealth: ReadState<PageHealthKind>;
-  /** The occlusion verdict, once run. */
+  /**
+   * The occlusion row, once page health is run — the standing UNKNOWN while
+   * no relay carries the sweep (`occlusionReadOf`).
+   */
   readonly occlusion: ReadState<OcclusionKind>;
   /** Apps across both registries — exact, a floor, or unknown. */
   readonly apps: AppTotal;

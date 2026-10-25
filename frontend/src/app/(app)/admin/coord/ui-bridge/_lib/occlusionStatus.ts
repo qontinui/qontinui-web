@@ -1,7 +1,35 @@
 /**
- * Occlusion — whether anything on the runner's screen covers anything else,
- * read HONESTLY from the occlusion sweep (`POST /ui-bridge/control/visibility`,
- * `relayReads.ts` `fetchRunnerVisibility`).
+ * Occlusion — whether anything on the runner's screen covers anything else.
+ *
+ * ## Where a verdict can come from, and why today none can
+ *
+ * The ONLY producer of an occlusion verdict is the occlusion sweep
+ * (`POST /ui-bridge/control/visibility`, `relayReads.ts`
+ * `fetchRunnerVisibility`). Page health's report has no occlusion field: its
+ * keys are `summary`, `findings`, `heatmap`, `element_count` and
+ * `visible_count` (qontinui-runner `ui_bridge/screenshots.rs`
+ * `ui_bridge_page_health_handler`), and `occlusionDataObserved` is emitted by
+ * `build_visibility_report` alone. And no runner's relay carries the sweep:
+ * its report quotes webview text, so it needs a review of its handler and the
+ * snapshot's egress gate before it can be allow-listed (coord finding
+ * `99796499-8e46-4d69-94ba-a2ac9fe3ea22`; plan
+ * `2026-10-23-console-presentation-spaces` Phase 6, amendment 2026-10-24).
+ * So the dashboard's occlusion row is {@link OCCLUSION_NOT_RELAYED}: UNKNOWN on
+ * every runner, with its reason in plain words, and never clear.
+ *
+ * **That is a property of the page, not of what a runner happens to answer.**
+ * While the route's carriage is `never`, `occlusionReadOf`
+ * (`useUiBridgeDashboard.ts`) does not ask for the sweep and reads no answer
+ * to it. Page health's body is never consulted for occlusion at all, so a
+ * future runner that puts `occlusionDataObserved` in its page-health report
+ * does not turn the row into anything but UNKNOWN. The row may read a verdict
+ * only once the follow-up the finding lists lands: it reviews
+ * `ui_bridge_visibility_handler`, gives the route the snapshot's egress gate,
+ * adds it to the runner's `RELAY_ALLOWED` naming `fetchRunnerVisibility`, and
+ * flips `RUNNER_ROUTES.visibility` from `never` to `dashboard` — the flip that
+ * makes this page ask. Nothing else should.
+ *
+ * ## Reading the sweep, for the day it can be asked
  *
  * The sweep's report (qontinui-runner `ui_bridge/screenshots.rs`
  * `build_visibility_report`, unwrapped from its `{ success, data }` envelope):
@@ -94,6 +122,22 @@ export interface OcclusionReading {
    */
   readonly overlaysClassified: boolean | null;
 }
+
+/**
+ * The occlusion row while no relay carries the sweep: UNKNOWN, with the cause
+ * in plain words. It names the route as an operator would (the visibility
+ * sweep), says it is not served over the relay yet, and says what that does to
+ * the question — the answer is unknown, which is not "clear".
+ */
+export const OCCLUSION_NOT_RELAYED: OcclusionReading = {
+  kind: "unknown",
+  unknownReason:
+    "the visibility sweep is not available over the relay yet, so whether anything on the screen covers anything else is unknown — not clear",
+  occlusions: null,
+  hidingText: null,
+  elementCount: null,
+  overlaysClassified: null,
+};
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);

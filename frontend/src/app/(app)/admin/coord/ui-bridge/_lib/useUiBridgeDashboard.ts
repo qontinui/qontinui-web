@@ -11,9 +11,11 @@
  *
  * Nothing here polls: the dashboard's numbers change when a runner's UI or
  * build changes, so the page re-reads on the operator's refresh. The live
- * snapshot, page health and the occlusion sweep each drive a full `discover`
- * of the runner's window, so they run ONLY when asked — and only for the
- * runner they were asked for: switching runners never fires them implicitly.
+ * snapshot and page health each drive a full `discover` of the runner's
+ * window, so they run ONLY when asked — and only for the runner they were
+ * asked for: switching runners never fires them implicitly. The occlusion
+ * sweep would too, but no relay carries it, so it is not asked at all
+ * ({@link occlusionReadOf}).
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -26,6 +28,12 @@ import {
   type MachineIdentity,
 } from "@/components/presentation";
 import type { WebAppConfig } from "./appRegistryStatus";
+import {
+  OCCLUSION_NOT_RELAYED,
+  readOcclusion,
+  type OcclusionReading,
+} from "./occlusionStatus";
+import { readStateOf, type QueryView, type ReadState } from "./readState";
 import {
   fetchRunnerComponents,
   fetchRunnerHealth,
@@ -122,11 +130,21 @@ export function useFleetAppsRead() {
 }
 
 /**
- * Page health and the occlusion sweep, run together and only on request, for
- * the runner they were requested for. `run()` starts them, and re-runs them
- * once they have answered; its promise settles when both have.
+ * Page health — and the occlusion sweep, where a relay carries it
+ * (`sweepRelayed`) — run together and only on request, for the runner they
+ * were requested for. `run()` starts them, and re-runs them once they have
+ * answered; its promise settles when every read that was started has.
+ *
+ * `sweepRelayed` is `isRelayed(RUNNER_ROUTES.visibility)`: a fact about the
+ * relay's allow-list, not a switch. While it is false the sweep is not asked
+ * for — its query stays disabled, and `run()` leaves out its `refetch`, which
+ * would otherwise ignore `enabled` — and the page reads the occlusion row
+ * from {@link occlusionReadOf}, not from `visibility`.
  */
-export function usePageHealthRun(deviceId: string | null) {
+export function usePageHealthRun(
+  deviceId: string | null,
+  sweepRelayed: boolean
+) {
   const [requestedFor, setRequestedFor] = useState<string | null>(null);
   const enabled = deviceId !== null && requestedFor === deviceId;
   const pageHealth = useQuery({
@@ -139,7 +157,7 @@ export function usePageHealthRun(deviceId: string | null) {
   const visibility = useQuery({
     queryKey: [UI_BRIDGE_DASHBOARD_KEY, "visibility", deviceId],
     queryFn: () => fetchRunnerVisibility(deviceId as string),
-    enabled,
+    enabled: enabled && sweepRelayed,
     staleTime: 0,
     ...READ_DEFAULTS,
   });
@@ -148,11 +166,51 @@ export function usePageHealthRun(deviceId: string | null) {
   const run = useCallback((): Promise<unknown> | void => {
     if (deviceId === null) return;
     if (requestedFor !== deviceId) {
-      // Enabling the two queries starts them; nothing to await here.
+      // Enabling the queries starts them; nothing to await here.
       setRequestedFor(deviceId);
       return;
     }
-    return Promise.all([refetchHealth(), refetchVisibility()]);
-  }, [deviceId, requestedFor, refetchHealth, refetchVisibility]);
+    return Promise.all(
+      sweepRelayed ? [refetchHealth(), refetchVisibility()] : [refetchHealth()]
+    );
+  }, [deviceId, requestedFor, sweepRelayed, refetchHealth, refetchVisibility]);
   return { pageHealth, visibility, run, requested: enabled };
+}
+
+export interface OcclusionReadInput {
+  /** `isRelayed(RUNNER_ROUTES.visibility)` — whether any relay carries the sweep. */
+  readonly sweepRelayed: boolean;
+  /** Whether page health has been asked for (`usePageHealthRun().requested`). */
+  readonly requested: boolean;
+  /** The sweep's query. Read ONLY where the sweep was asked for. */
+  readonly sweep: QueryView<unknown>;
+}
+
+/**
+ * The occlusion row's state — decided here, and nowhere else.
+ *
+ * While no relay carries the sweep, the row is the standing UNKNOWN
+ * ({@link OCCLUSION_NOT_RELAYED}) from the moment page health is asked for, and
+ * absent before. `sweep` is not consulted on that arm: no answer a runner gives
+ * — to the sweep's route, to page health, to anything — can turn the row into
+ * a verdict. In particular a page-health body that carries
+ * `occlusionDataObserved` (page health's report has no such field today; a
+ * future runner might add one) changes nothing, because this function is never
+ * handed that body. Coord finding `99796499-8e46-4d69-94ba-a2ac9fe3ea22` and
+ * the plan's Phase 6 amendment (2026-10-24) are why: the only producer of the
+ * field is a route no relay carries, and the row must not read "clear" until
+ * the follow-up that relays it lands. That follow-up flips the route's
+ * carriage, and the sweep's honest reading (`readOcclusion`) takes over then.
+ */
+export function occlusionReadOf({
+  sweepRelayed,
+  requested,
+  sweep,
+}: OcclusionReadInput): ReadState<OcclusionReading> {
+  if (!sweepRelayed) {
+    return requested
+      ? { state: "ok", value: OCCLUSION_NOT_RELAYED, stale: false, asOf: null }
+      : { state: "idle" };
+  }
+  return readStateOf(sweep, readOcclusion);
 }

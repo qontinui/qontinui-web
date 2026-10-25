@@ -174,13 +174,17 @@ describe("sourceIssueText", () => {
   });
 
   it("says no build carries a route that none does — not 'rebuild this one'", () => {
-    const text = sourceIssueText(
-      { kind: "not-carried" },
-      RUNNER_ROUTES.visibility,
-      BUILD
+    // The runner's own app list is the route the dashboard still asks for
+    // that no relay carries; the sweep is not asked for (`isRelayed`).
+    expect(
+      sourceIssueText({ kind: "not-carried" }, RUNNER_ROUTES.apps, BUILD)
+    ).toBe(
+      "No runner's relay carries this runner's own app list yet, so this runner (build be39991d2fe9-1761210000000) answered HTTP 403."
     );
-    expect(text).toBe(
-      "No runner's relay carries the occlusion sweep yet, so this runner (build be39991d2fe9-1761210000000) answered HTTP 403."
+    expect(
+      sourceIssueText({ kind: "not-carried" }, RUNNER_ROUTES.visibility, BUILD)
+    ).toBe(
+      "No runner's relay carries the visibility sweep yet, so this runner (build be39991d2fe9-1761210000000) answered HTTP 403."
     );
   });
 

@@ -225,7 +225,28 @@ export const PAGE_HEALTH_BODY = {
   },
 };
 
-/** `POST /ui-bridge/control/visibility`, one per verdict shape. */
+/**
+ * `PAGE_HEALTH_BODY` with fields replaced or added — and removed, for a field
+ * given as `undefined`. The real report has NO occlusion field (its keys are
+ * summary, findings, heatmap, element_count and visible_count); a test adds
+ * one to prove the dashboard does not read it.
+ */
+export function pageHealthBodyWith(
+  over: Record<string, unknown>
+): Record<string, unknown> {
+  const data: Record<string, unknown> = { ...PAGE_HEALTH_BODY.data, ...over };
+  for (const [key, value] of Object.entries(over)) {
+    if (value === undefined) delete data[key];
+  }
+  return { success: true, data };
+}
+
+/**
+ * `POST /ui-bridge/control/visibility`, one per verdict shape — the answers a
+ * runner would give if its relay carried the sweep, which no runner's does.
+ * The dashboard does not ask for it, so its tests serve these to prove the
+ * occlusion row stays UNKNOWN whatever a runner would answer.
+ */
 export function visibilityBody(
   report: Record<string, unknown>
 ): Record<string, unknown> {

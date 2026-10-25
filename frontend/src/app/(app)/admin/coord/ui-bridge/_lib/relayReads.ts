@@ -14,7 +14,7 @@
  * | {@link fetchRunnerComponents} | `GET /ui-bridge/control/components` | from Phase 6's runner half |
  * | {@link fetchRunnerPageHealth} | `POST /ui-bridge/control/page-health` | from Phase 6's runner half |
  * | {@link fetchRunnerHealth} | `GET /health` | since the relay began |
- * | {@link fetchRunnerVisibility} | `POST /ui-bridge/control/visibility` | NOT carried |
+ * | {@link fetchRunnerVisibility} | `POST /ui-bridge/control/visibility` | NOT carried — and so not asked for |
  *
  * {@link RUNNER_ROUTES} catalogues these and the twin reads the page reuses.
  *
@@ -23,16 +23,20 @@
  * `RUNNER_NEEDS_LOCAL`; the dashboard renders it as a labelled UNKNOWN naming
  * the runner's build (`relaySource.ts`), never as an empty panel.
  *
- * The occlusion sweep is called although no runner carries it yet, on purpose:
- * it is the only route that serves `occlusionDataObserved`, the one field that
+ * **The occlusion sweep is NOT asked for while no relay carries it.** It is
+ * the only route that serves `occlusionDataObserved`, the one field that
  * separates "nothing is covered" from "nothing was observed" (served policy
- * `ux-priorities` `the-runner-serves-the-occlusion-sweep-and-it-is-currently-vacuous`).
- * Page health carries no occlusion verdict at all. So today every runner
- * answers 403 and the occlusion row reads UNKNOWN — "this runner's relay does
- * not carry the occlusion sweep", a measured answer rather than an assumed
- * one — and the day a runner adds the entry (naming this function) the row
- * becomes a real verdict with no web change. Its read is on demand only, like
- * page health's.
+ * `ux-priorities` `the-runner-serves-the-occlusion-sweep-and-it-is-currently-vacuous`),
+ * and page health's report carries no occlusion verdict at all. The route is
+ * on no runner's allow-list: its report quotes webview text, and it has had
+ * neither the end-to-end review of its handler nor the snapshot's egress gate
+ * (coord finding `99796499-8e46-4d69-94ba-a2ac9fe3ea22`; plan
+ * `2026-10-23-console-presentation-spaces` Phase 6, amendment 2026-10-24). Its
+ * carriage here is therefore `never`, {@link isRelayed} says so, and the
+ * dashboard's occlusion row is a standing UNKNOWN that no runner's answer can
+ * change (`occlusionStatus.ts`). The follow-up that relays the route is the
+ * change that flips the carriage to `dashboard`, and that flip is what makes
+ * the page ask; the allow-list entry it adds names {@link fetchRunnerVisibility}.
  *
  * Every function here is a READ. Two of the routes are registered as POST
  * because they take an options body; the handlers ignore it or read only a
@@ -64,6 +68,18 @@ export const VISIBILITY_TIMEOUT_MS = 15_000;
  */
 export type RelayCarriage = "always" | "dashboard" | "never";
 
+/**
+ * Whether any runner build's relay carries `route` — false exactly for a route
+ * the table records as `never`. A read of such a route can only be refused, so
+ * a page that would otherwise make it can say so instead of asking; the
+ * occlusion row does (`useUiBridgeDashboard.ts` `occlusionReadOf`), because
+ * the sweep's answer is the one thing that could turn it into a verdict and no
+ * relay is cleared to carry that answer.
+ */
+export function isRelayed(route: RunnerRoute): boolean {
+  return route.carriage !== "never";
+}
+
 export interface RunnerRoute {
   readonly method: "GET" | "POST";
   /** The runner path, no leading slash (the relay URL's tail). */
@@ -79,10 +95,12 @@ export interface RunnerRoute {
  * Every runner route the dashboard reads — this module's four, and the four
  * it reuses from the digital twin's `useUiBridge.ts` — with what a 403 from
  * each means. Measured against qontinui-runner `RELAY_ALLOWED` on
- * `be39991d2` plus Phase 6's runner half: the twin's spec and snapshot reads
- * are carried; the runner's own app list (`GET /apps`, which the twin's
- * `useRunnerApps` asks for) is NOT, so its column reads UNKNOWN on every
- * runner until an entry names that hook.
+ * `be39991d2` plus Phase 6's runner half (`afc970df9`): the twin's spec and
+ * snapshot reads are carried; the runner's own app list (`GET /apps`, which
+ * the twin's `useRunnerApps` asks for) is NOT, so its column reads UNKNOWN on
+ * every runner until an entry names that hook. The visibility sweep is not
+ * carried either, and unlike the app list the dashboard does not ask for it
+ * (the module doc says why).
  */
 export const RUNNER_ROUTES = {
   health: {
@@ -110,7 +128,7 @@ export const RUNNER_ROUTES = {
     method: "POST",
     path: "ui-bridge/control/visibility",
     carriage: "never",
-    subject: "the occlusion sweep",
+    subject: "the visibility sweep",
     callSite: "fetchRunnerVisibility",
   },
   apps: {
@@ -204,9 +222,11 @@ export function fetchRunnerPageHealth(deviceId: string): Promise<unknown> {
 
 /**
  * `POST /ui-bridge/control/visibility` with `{}` — the occlusion sweep, at the
- * runner's own defaults (`minRatio` 0.02, expected overlays filtered). Not on
- * any runner's relay allowlist yet; see the module doc for why it is called
- * anyway. Read by `occlusionStatus.ts`.
+ * runner's own defaults (`minRatio` 0.02, expected overlays filtered). On no
+ * runner's relay allowlist yet, so while {@link isRelayed} is false the
+ * dashboard never calls it; the module doc says why. It is the call site the
+ * allow-list entry will name once the follow-up lands. Read by
+ * `occlusionStatus.ts`.
  */
 export function fetchRunnerVisibility(deviceId: string): Promise<unknown> {
   return runnerProxyPost<unknown>(

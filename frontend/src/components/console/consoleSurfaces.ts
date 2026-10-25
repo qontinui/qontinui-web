@@ -740,7 +740,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   },
   {
     // `clear` only with occlusion data observed; a clear sweep that observed
-    // none is `unknown`, amber, never calm.
+    // none is `unknown`, amber, never calm. Today the row is `unknown` on
+    // every runner: no relay carries the sweep, so it is not asked for.
     surface: "occlusion (/admin/coord/ui-bridge)",
     module: "app/(app)/admin/coord/ui-bridge/_lib/occlusionStatus.ts",
     attentionByKind: OCCLUSION_ATTENTION_BY_KIND,

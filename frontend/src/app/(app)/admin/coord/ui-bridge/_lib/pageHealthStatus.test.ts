@@ -106,6 +106,22 @@ describe("readPageHealth", () => {
       readPageHealth({ summary: "OK", findings: [], heatmap: ["#x#"] })?.heatmap
     ).toBeNull();
   });
+
+  it("reads no occlusion field: a report that carries one reads exactly as one that does not", () => {
+    // Page health's real report has none (coord finding 99796499). Should a
+    // future runner add one, the occlusion row must still not hear of it.
+    const plain = readPageHealth(PAGE_HEALTH_BODY.data);
+    for (const extra of [
+      { occlusionDataObserved: true },
+      { occlusionDataObserved: false },
+      { occlusionDataObserved: true, verdict: "clear", occlusions: [] },
+    ]) {
+      expect(
+        readPageHealth({ ...PAGE_HEALTH_BODY.data, ...extra }),
+        JSON.stringify(extra)
+      ).toEqual(plain);
+    }
+  });
 });
 
 describe("the page-health palette (R3)", () => {

@@ -14,7 +14,7 @@
  * | Live element snapshot | the runner's `ui-bridge/control/snapshot`, on demand |
  * | Capabilities and trust | the runner's `/health` (`sdkFeatures`, `uiBridgeBinding`, build) |
  * | Controls and what they do | the runner's `ui-bridge/control/components` |
- * | Page health | the runner's `ui-bridge/control/page-health` + the occlusion sweep, on demand |
+ * | Page health | the runner's `ui-bridge/control/page-health`, on demand; its occlusion row is UNKNOWN until a relay carries the visibility sweep |
  *
  * Every runner read goes over the cloud relay by device id
  * (`_lib/relayReads.ts`, and the digital twin's `useUiBridge` hooks, reused).
@@ -27,8 +27,11 @@
  *   refused route and a withheld answer each name their own reason.
  * - **"Read" for an action nobody classified.** An action with no declared
  *   effect is UNDECLARED, counted and badged as such (`componentEffectStatus.ts`).
- * - **"Clear" for a sweep that observed nothing.** `clear` without
- *   `occlusionDataObserved: true` is UNKNOWN (`occlusionStatus.ts`).
+ * - **"Clear" for an occlusion check nobody made.** The visibility sweep is
+ *   the only source of an occlusion verdict and no relay carries it, so the
+ *   occlusion row is UNKNOWN on every runner, whatever any runner answers —
+ *   page health included (`occlusionStatus.ts`). Once a relay does carry it,
+ *   `clear` still needs `occlusionDataObserved: true`.
  * - **0 for a number it could not read.** A missing count is `–`.
  *
  * Presentation mode (plan D1–D3) changes only the rendering: captions before
@@ -58,13 +61,13 @@ import { useRunnerApps } from "@/app/(app)/digital-twin/_hooks/useUiBridge";
 import { appTotalOf, mergeAppRegistries } from "./_lib/appRegistryStatus";
 import { countEffects, readComponents } from "./_lib/componentEffectStatus";
 import { deriveDashboardHealth } from "./_lib/dashboardHealth";
-import { readOcclusion } from "./_lib/occlusionStatus";
 import { readPageHealth } from "./_lib/pageHealthStatus";
 import { queryView, readStateOf, type ReadState } from "./_lib/readState";
-import { RUNNER_ROUTES } from "./_lib/relayReads";
+import { RUNNER_ROUTES, isRelayed } from "./_lib/relayReads";
 import { buildLabel, type BuildReading } from "./_lib/relaySource";
 import { buildReadingOf, readRunnerPosture } from "./_lib/runnerHealth";
 import {
+  occlusionReadOf,
   useDashboardRunner,
   useFleetAppsRead,
   usePageHealthRun,
@@ -85,6 +88,13 @@ const mapRead = <T, U>(read: ReadState<T>, f: (v: T) => U): ReadState<U> =>
 const asOfOf = (read: ReadState<unknown>): number | null =>
   read.state === "ok" ? read.asOf : null;
 
+/**
+ * Whether any relay carries the occlusion sweep — read from the route table,
+ * not from anything a runner answers. False: the sweep is not asked for, and
+ * the occlusion row is the standing UNKNOWN (`occlusionReadOf`).
+ */
+const SWEEP_RELAYED = isRelayed(RUNNER_ROUTES.visibility);
+
 export default function UiBridgeDashboardPage() {
   const queryClient = useQueryClient();
   const { deviceId, identity, noRunner } = useDashboardRunner();
@@ -94,7 +104,7 @@ export default function UiBridgeDashboardPage() {
   const componentsQuery = useRunnerComponentsRead(deviceId);
   const fleetAppsQuery = useFleetAppsRead();
   const runnerAppsQuery = useRunnerApps(deviceId);
-  const healthRun = usePageHealthRun(deviceId);
+  const healthRun = usePageHealthRun(deviceId, SWEEP_RELAYED);
 
   const health = readStateOf(queryView(healthQuery), readRunnerPosture);
   const components = readStateOf(queryView(componentsQuery), readComponents);
@@ -108,7 +118,11 @@ export default function UiBridgeDashboardPage() {
     queryView(healthRun.pageHealth),
     readPageHealth
   );
-  const occlusion = readStateOf(queryView(healthRun.visibility), readOcclusion);
+  const occlusion = occlusionReadOf({
+    sweepRelayed: SWEEP_RELAYED,
+    requested: healthRun.requested,
+    sweep: queryView(healthRun.visibility),
+  });
 
   const build: BuildReading = buildReadingOf(
     health.state === "ok" ? health.value : null,

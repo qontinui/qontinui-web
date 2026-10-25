@@ -16,12 +16,36 @@ import {
 import {
   OCCLUSION_ATTENTION_BY_KIND,
   OCCLUSION_BADGE_CLASS,
+  OCCLUSION_NOT_RELAYED,
   OCCLUSION_PALETTE,
   occlusionSummary,
   readOcclusion,
 } from "./occlusionStatus";
 
 const data = (body: Record<string, unknown>) => body.data;
+
+describe("the standing reading while no relay carries the sweep", () => {
+  it("is UNKNOWN — never clear — with the cause in plain words", () => {
+    expect(OCCLUSION_NOT_RELAYED.kind).toBe("unknown");
+    expect(OCCLUSION_NOT_RELAYED.kind).not.toBe("clear");
+    expect(OCCLUSION_NOT_RELAYED.unknownReason).toMatch(
+      /the visibility sweep is not available over the relay yet/
+    );
+  });
+
+  it("claims no count: not zero occlusions, not zero elements", () => {
+    expect(OCCLUSION_NOT_RELAYED.occlusions).toBeNull();
+    expect(OCCLUSION_NOT_RELAYED.hidingText).toBeNull();
+    expect(OCCLUSION_NOT_RELAYED.elementCount).toBeNull();
+    expect(OCCLUSION_NOT_RELAYED.overlaysClassified).toBeNull();
+  });
+
+  it("is one sentence that says unknown is not clear", () => {
+    expect(occlusionSummary(OCCLUSION_NOT_RELAYED)).toBe(
+      "The visibility sweep is not available over the relay yet, so whether anything on the screen covers anything else is unknown — not clear."
+    );
+  });
+});
 
 describe("readOcclusion — clear only when occlusion data was observed", () => {
   it("reads a clear sweep that OBSERVED occlusion data as clear", () => {

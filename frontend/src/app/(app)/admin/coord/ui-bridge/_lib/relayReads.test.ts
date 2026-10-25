@@ -31,6 +31,7 @@ import {
   fetchRunnerHealth,
   fetchRunnerPageHealth,
   fetchRunnerVisibility,
+  isRelayed,
   RUNNER_ROUTES,
 } from "./relayReads";
 
@@ -143,5 +144,33 @@ describe("RUNNER_ROUTES", () => {
   it("names the two functions the runner's allowlist comments name", () => {
     expect(RUNNER_ROUTES.components.callSite).toBe("fetchRunnerComponents");
     expect(RUNNER_ROUTES.pageHealth.callSite).toBe("fetchRunnerPageHealth");
+  });
+
+  it("names the sweep the way the occlusion row does", () => {
+    expect(RUNNER_ROUTES.visibility.subject).toBe("the visibility sweep");
+  });
+});
+
+describe("isRelayed — whether any runner's relay carries a route", () => {
+  it("is false for exactly the routes recorded as carried by no runner", () => {
+    expect(
+      Object.entries(RUNNER_ROUTES)
+        .filter(([, route]) => !isRelayed(route))
+        .map(([key]) => key)
+    ).toEqual(["visibility", "apps"]);
+  });
+
+  it("is true for a route carried from the dashboard's runner build, and for one always carried", () => {
+    expect(isRelayed(RUNNER_ROUTES.components)).toBe(true);
+    expect(isRelayed(RUNNER_ROUTES.pageHealth)).toBe(true);
+    expect(isRelayed(RUNNER_ROUTES.health)).toBe(true);
+  });
+
+  it("keeps the occlusion sweep unrelayed — the lock the occlusion row keys on until the follow-up relays it", () => {
+    // Coord finding 99796499-8e46-4d69-94ba-a2ac9fe3ea22 and the plan's Phase
+    // 6 amendment (2026-10-24): flipping this is the follow-up's change, with
+    // the runner's handler review, egress gate and allow-list entry.
+    expect(RUNNER_ROUTES.visibility.carriage).toBe("never");
+    expect(isRelayed(RUNNER_ROUTES.visibility)).toBe(false);
   });
 });

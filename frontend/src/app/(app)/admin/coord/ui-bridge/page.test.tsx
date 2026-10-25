@@ -10,8 +10,13 @@
  * - an unreachable runner renders a labelled UNKNOWN with its reason;
  * - each action's declared effect is a badge, and the undeclared count counts
  *   the actions with none;
- * - a "clear" occlusion sweep that observed nothing renders UNKNOWN;
+ * - the occlusion row reads UNKNOWN on every runner, whatever any runner
+ *   answers and whatever page health returns — the sweep is not asked for,
+ *   because no relay carries it (coord finding 99796499);
  * - the live snapshot and page health run only when asked.
+ *
+ * The occlusion sweep's own honesty rule, for the day a relay carries it, is
+ * driven through the page in `page.sweepRelayed.test.tsx`.
  */
 
 import React from "react";
@@ -39,6 +44,7 @@ import {
   VISIBILITY_CLEAR_UNOBSERVED,
   VISIBILITY_HIDES_TEXT,
   componentsBodyWithDisclosure,
+  pageHealthBodyWith,
 } from "./__fixtures__/runnerBodies";
 import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
 
@@ -345,7 +351,7 @@ describe("a runner whose build predates the dashboard's relay entries", () => {
     expect(strip).toHaveTextContent("undeclared –");
   });
 
-  it("renders page health as UNKNOWN naming the build, and the sweep as carried by no runner", async () => {
+  it("renders page health as UNKNOWN naming the build, beside the occlusion row that names no build at all", async () => {
     renderPage();
     await screen.findByTestId("coord-ui-bridge-actions-unknown");
     fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
@@ -354,12 +360,15 @@ describe("a runner whose build predates the dashboard's relay entries", () => {
     expect(health).toHaveTextContent(
       "predates the relay entries this page reads"
     );
-    const sweep = await screen.findByTestId(
-      "coord-ui-bridge-occlusion-unknown"
+    // The occlusion row's cause is the relay's, not this runner's build: the
+    // sweep was never asked of it, so there is no HTTP 403 to name.
+    const row = await screen.findByTestId("coord-ui-bridge-occlusion");
+    expect(row).toHaveAttribute("data-occlusion", "unknown");
+    expect(row).toHaveTextContent(
+      "The visibility sweep is not available over the relay yet"
     );
-    expect(sweep).toHaveTextContent(
-      `No runner's relay carries the occlusion sweep yet, so this runner (build ${BUILD_ID}) answered HTTP 403.`
-    );
+    expect(row).not.toHaveTextContent("HTTP 403");
+    expect(row).not.toHaveTextContent(BUILD_ID);
   });
 });
 
@@ -450,7 +459,9 @@ describe("the web registry failing", () => {
   });
 });
 
-describe("occlusion honesty", () => {
+const SWEEP = "POST ui-bridge/control/visibility";
+
+describe("the occlusion row is UNKNOWN on every runner", () => {
   async function runPageHealth() {
     renderPage();
     await screen.findByTestId("coord-ui-bridge-actions-counts");
@@ -458,55 +469,112 @@ describe("occlusion honesty", () => {
     return screen.findByTestId("coord-ui-bridge-occlusion");
   }
 
-  it("renders a clear sweep that observed no occlusion data as UNKNOWN, never clear", async () => {
-    state.relay = relayFake({
-      // Every action declared, so nothing but the sweep can hold the strip
-      // off green.
-      components: () => json(200, COMPONENTS_ALL_DECLARED_BODY),
-      visibility: () => json(200, VISIBILITY_CLEAR_UNOBSERVED),
-    });
+  it("shows no occlusion row before page health is asked for", async () => {
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    expect(screen.getByTestId("coord-ui-bridge-health-idle")).toHaveTextContent(
+      "Not run yet — page health reads"
+    );
+    expect(
+      screen.queryByTestId("coord-ui-bridge-occlusion")
+    ).not.toBeInTheDocument();
+  });
+
+  it("says why in plain words — the visibility sweep is not available over the relay yet — and asks the runner nothing about occlusion", async () => {
     const row = await runPageHealth();
     expect(row).toHaveAttribute("data-occlusion", "unknown");
     expect(row).toHaveTextContent("UNKNOWN");
-    expect(row).not.toHaveTextContent("Nothing covered");
-    expect(row).toHaveTextContent("nothing was observed");
-    // …and the strip does not fold that UNKNOWN into its green.
-    await waitFor(() =>
-      expect(
-        screen.getByTestId("coord-ui-bridge-health-strip")
-      ).toHaveTextContent("occlusion is UNKNOWN")
-    );
-  });
-
-  it("renders a clear sweep that DID observe occlusion data as clear", async () => {
-    state.relay = relayFake({
-      visibility: () => json(200, VISIBILITY_CLEAR_OBSERVED),
-    });
-    const row = await runPageHealth();
-    expect(row).toHaveAttribute("data-occlusion", "clear");
-    expect(row).toHaveTextContent("Nothing covered across 47 elements");
-  });
-
-  it("calls hidden text out in red", async () => {
-    state.relay = relayFake({
-      visibility: () => json(200, VISIBILITY_HIDES_TEXT),
-    });
-    const row = await runPageHealth();
-    expect(row).toHaveAttribute("data-occlusion", "hides-text");
     expect(row).toHaveTextContent(
-      "2 occlusions across 47 elements, 1 hiding text."
+      "The visibility sweep is not available over the relay yet, so whether anything on the screen covers anything else is unknown — not clear."
     );
+    expect(row).not.toHaveTextContent("Nothing covered");
+    await screen.findByTestId("coord-ui-bridge-health-counts");
+    expect(state.relay?.requests).toContain(
+      "POST ui-bridge/control/page-health"
+    );
+    expect(state.relay?.requests).not.toContain(SWEEP);
+  });
+
+  it.each([
+    ["a clear sweep that observed occlusion data", VISIBILITY_CLEAR_OBSERVED],
+    ["a clear sweep that observed none", VISIBILITY_CLEAR_UNOBSERVED],
+    ["hidden text", VISIBILITY_HIDES_TEXT],
+  ])(
+    "stays UNKNOWN even if the runner would answer %s — the sweep is never asked",
+    async (_label, body) => {
+      state.relay = relayFake({
+        // Every action declared, so nothing but the occlusion row can hold
+        // the strip off green — or turn it red.
+        components: () => json(200, COMPONENTS_ALL_DECLARED_BODY),
+        visibility: () => json(200, body),
+      });
+      const row = await runPageHealth();
+      await screen.findByTestId("coord-ui-bridge-health-counts");
+      expect(row).toHaveAttribute("data-occlusion", "unknown");
+      expect(row).not.toHaveTextContent("Nothing covered");
+      expect(row).not.toHaveTextContent("hiding text");
+      expect(state.relay?.requests).not.toContain(SWEEP);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-ui-bridge-health-strip")
+        ).toHaveTextContent("occlusion is UNKNOWN")
+      );
+      expect(
+        screen.getByTestId("coord-ui-bridge-health-strip")
+      ).toHaveAttribute("data-health-level", "amber");
+    }
+  );
+
+  describe.each([
+    ["OK", "OK"],
+    ["WARNING", "WARNING"],
+    ["CRITICAL", "CRITICAL"],
+    ["absent", undefined],
+  ])("whatever page health says (%s)", (_name, summary) => {
+    it.each([
+      ["no occlusion field, as the real report is", {}],
+      ["occlusionDataObserved: true", { occlusionDataObserved: true }],
+      ["occlusionDataObserved: false", { occlusionDataObserved: false }],
+      [
+        "a clear verdict that observed occlusion data",
+        { verdict: "clear", occlusionDataObserved: true, occlusions: [] },
+      ],
+    ])("with %s the row is UNKNOWN, never clear", async (_label, extra) => {
+      state.relay = relayFake({
+        pageHealth: () => json(200, pageHealthBodyWith({ summary, ...extra })),
+      });
+      const row = await runPageHealth();
+      // Page health has been READ before the row is judged: the row must not
+      // be unknown merely because the report had not arrived yet.
+      await screen.findByTestId("coord-ui-bridge-health-counts");
+      expect(row).toHaveAttribute("data-occlusion", "unknown");
+      expect(
+        row
+          .querySelector("[data-status-kind]")
+          ?.getAttribute("data-status-kind")
+      ).toBe("unknown");
+      expect(row).not.toHaveTextContent("Nothing covered");
+      expect(row).toHaveTextContent(
+        "The visibility sweep is not available over the relay yet"
+      );
+    });
+  });
+
+  it("keeps the strip amber and names occlusion, never folding it into a green", async () => {
+    state.relay = relayFake({
+      components: () => json(200, COMPONENTS_ALL_DECLARED_BODY),
+    });
+    await runPageHealth();
     await waitFor(() =>
       expect(
         screen.getByTestId("coord-ui-bridge-health-strip")
-      ).toHaveAttribute("data-health-level", "red")
+      ).toHaveTextContent(
+        "every one of its 7 actions declares its effect, but its occlusion is UNKNOWN."
+      )
     );
   });
 
-  it("shows page health's findings in plain words beside the separate sweep", async () => {
-    state.relay = relayFake({
-      visibility: () => json(200, VISIBILITY_CLEAR_OBSERVED),
-    });
+  it("still shows page health's findings in plain words beside the standing UNKNOWN", async () => {
     await runPageHealth();
     const findings = await screen.findAllByTestId(
       "coord-ui-bridge-health-finding"
@@ -522,10 +590,17 @@ describe("occlusion honesty", () => {
     expect(
       screen.getByTestId("coord-ui-bridge-health-heatmap")
     ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-counts")
+    ).toHaveTextContent("elements 47");
     // Operator mode shows the text the check quoted from the window.
     expect(
       screen.getByTestId("coord-ui-bridge-health-quotes")
     ).toHaveTextContent("Loading sessions for Partner A");
+    expect(screen.getByTestId("coord-ui-bridge-occlusion")).toHaveAttribute(
+      "data-occlusion",
+      "unknown"
+    );
   });
 });
 
@@ -552,7 +627,9 @@ describe("on-demand reads", () => {
     fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
     await screen.findByTestId("coord-ui-bridge-health-counts");
     expect(asked()).toContain("POST ui-bridge/control/page-health");
-    expect(asked()).toContain("POST ui-bridge/control/visibility");
+    // No relay carries the occlusion sweep, so running page health does not
+    // ask for it: the occlusion row is decided without a runner's answer.
+    expect(asked()).not.toContain("POST ui-bridge/control/visibility");
   });
 
   it("renders page health the project's egress setting withheld as UNKNOWN with its sentence", async () => {

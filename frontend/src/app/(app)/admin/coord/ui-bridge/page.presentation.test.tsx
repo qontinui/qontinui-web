@@ -49,6 +49,7 @@ import {
   VISIBILITY_HIDES_TEXT,
   appNotFoundBody,
   componentsBodyWithDisclosure,
+  pageHealthBodyWith,
 } from "./__fixtures__/runnerBodies";
 import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
 
@@ -142,6 +143,9 @@ beforeEach(() => {
     locality: "unknown",
   };
   state.relay = relayFake({
+    // A runner that WOULD answer the occlusion sweep with hidden text — which
+    // quotes the window. The page never asks, so the row stays UNKNOWN and the
+    // text never arrives (coord finding 99796499).
     visibility: () => json(200, VISIBILITY_HIDES_TEXT),
   });
   state.fleetApps = async () => FLEET_APPS;
@@ -179,7 +183,7 @@ describe("the UI Bridge dashboard while presenting", () => {
     // data (a project's name), so no repository's owner clears them.
     expect(body).not.toHaveTextContent("Terminal tabs");
     expect(body).not.toHaveTextContent("Delete profile");
-    // The window's own text, quoted by page health and the sweep.
+    // The window's own text, quoted by page health.
     expect(body).not.toHaveTextContent("Partner A");
     // Local paths and URLs stay with the operator.
     expect(body).not.toHaveTextContent("/home/dev/src");
@@ -208,9 +212,10 @@ describe("the UI Bridge dashboard while presenting", () => {
             ?.getAttribute("data-status-kind")
         )
     ).toEqual(["undeclared", "undeclared", "read"]);
+    // The runner would have said hidden text; the row says what is true here.
     expect(screen.getByTestId("coord-ui-bridge-occlusion")).toHaveAttribute(
       "data-occlusion",
-      "hides-text"
+      "unknown"
     );
     expect(
       screen.getAllByTestId("coord-ui-bridge-health-finding")
@@ -233,6 +238,56 @@ describe("the UI Bridge dashboard while presenting", () => {
     expect(screen.queryByTestId("coord-ui-bridge-health-quotes")).toBeNull();
   });
 
+  it("shows the occlusion row as UNKNOWN with its cause and its provenance — never as a reading", async () => {
+    await renderPresenting();
+    const row = screen.getByTestId("coord-ui-bridge-occlusion");
+    expect(row).toHaveAttribute("data-occlusion", "unknown");
+    expect(row).toHaveTextContent("UNKNOWN");
+    expect(row).toHaveTextContent(
+      "The visibility sweep is not available over the relay yet"
+    );
+    expect(row).not.toHaveTextContent("Nothing covered");
+    expect(row).not.toHaveTextContent("hiding text");
+    // The runner's would-be answer quotes the window; none of it arrived.
+    expect(document.body).not.toHaveTextContent("Session for Partner A");
+    // Its provenance names the sweep, and its time is UNKNOWN: nothing was read.
+    const chip = screen
+      .getByTestId("coord-ui-bridge-occlusion-section")
+      .querySelector("[data-provenance]");
+    expect(chip).toHaveTextContent("source: the runner's visibility sweep");
+    expect(chip).toHaveTextContent("as of UNKNOWN");
+    expect(chip).toHaveAttribute("data-provenance-known", "false");
+  });
+
+  it.each([
+    ["OK", { occlusionDataObserved: true }],
+    [
+      "CRITICAL",
+      { occlusionDataObserved: true, verdict: "clear", occlusions: [] },
+    ],
+  ])(
+    "reads the occlusion row as UNKNOWN when page health says %s and carries an occlusion field",
+    async (summary, extra) => {
+      state.relay = relayFake({
+        pageHealth: () => json(200, pageHealthBodyWith({ summary, ...extra })),
+      });
+      const view = await renderPresenting();
+      const row = screen.getByTestId("coord-ui-bridge-occlusion");
+      expect(row).toHaveAttribute("data-occlusion", "unknown");
+      expect(row).not.toHaveTextContent("Nothing covered");
+      // Page health's own findings still render, with their own provenance.
+      expect(
+        screen.getAllByTestId("coord-ui-bridge-health-finding")
+      ).toHaveLength(6);
+      expect(
+        screen
+          .getByTestId("coord-ui-bridge-health-counts")
+          .parentElement?.querySelector("[data-provenance]")
+      ).toHaveTextContent("source: the runner's page health");
+      expectPresentationSafe(view, { captions: CAPTIONS });
+    }
+  );
+
   it("states that wrapper apps are not consulted over the relay, with its provenance", async () => {
     await renderPresenting();
     const line = screen.getByTestId("coord-ui-bridge-actions-wrappers");
@@ -246,7 +301,6 @@ describe("the UI Bridge dashboard while presenting", () => {
   it("renders a disclosure the runner did not make as UNKNOWN with an unknown time — never as an answer", async () => {
     state.relay = relayFake({
       components: () => json(200, componentsBodyWithDisclosure(undefined)),
-      visibility: () => json(200, VISIBILITY_HIDES_TEXT),
     });
     const view = await renderPresenting();
     const line = screen.getByTestId("coord-ui-bridge-actions-wrappers");

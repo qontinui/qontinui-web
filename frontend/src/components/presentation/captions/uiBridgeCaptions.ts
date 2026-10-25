@@ -54,7 +54,7 @@ export const UI_BRIDGE_CAPTIONS = {
   "ui-bridge.page-health": {
     title: "Page health",
     oneLiner:
-      "Whether the runner's current screen looks healthy, and whether anything on it covers anything else.",
-    whyItMatters: copy`A page can pass every selector test and still be broken or covered, so this check reads the layout and the text, and it reports ${term("unknown", "unknown")} when it could not see rather than calling the page clear.`,
+      "Whether the runner's current screen looks healthy, read from the layout and the text on it.",
+    whyItMatters: copy`A page can pass every selector test and still be broken, so this check reads what is actually on the screen, and it reports ${term("unknown", "unknown")} when it could not see rather than calling the page clear. Whether anything on the screen covers anything else is shown as unknown, because the cloud relay does not carry that check yet.`,
   },
 } as const satisfies SurfaceCaptions<"ui-bridge">;
