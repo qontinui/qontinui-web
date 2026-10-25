@@ -124,12 +124,11 @@ Merge-train classifier disposition
 
 The verdict of the coord migration classifier
 (``crates/coord/src/pr_merge/migration_classifier.rs``) on this file is
-UNKNOWN: it was not run against it. It is expected to be either
-``AutoSafeIfNewTables`` (both tables are created in this file, its indexes are
-on those tables, and its ``COMMENT ON`` statements carry plain literals) or
-``Reject``, if ``create_table_is_plain`` or a sibling statement check refuses a
-shape used here, for example a function-call default (``gen_random_uuid()``,
-``now()``), a table CHECK, or the ``CREATE SCHEMA IF NOT EXISTS`` guard.
+UNKNOWN: it was not run against it. Reading it at qontinui-coord
+``aa5d5f4c8`` predicts ``AutoSafeIfNewTables``: every statement in
+``upgrade()`` lands on an admitted branch (``CREATE SCHEMA IF NOT EXISTS``,
+plain ``CREATE TABLE``, indexes on tables this file creates, ``COMMENT ON``
+with plain literals), subject to coord's trunk proof that the tables are new.
 Every SQL string is a static literal, so no call is rejected as dynamic.
 
 Safety
