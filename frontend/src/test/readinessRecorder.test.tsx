@@ -13,7 +13,7 @@
 
 import { memo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { describe, expect, it, TestRunner } from "vitest";
+import { describe, expect, it, TestRunner, vi } from "vitest";
 import { UIBridgeProvider, useUIComponent } from "@qontinui/ui-bridge/react";
 import { FixedPresentationMode, OperatorOnly } from "@/components/presentation";
 import {
@@ -294,6 +294,46 @@ describe("presentationCheckRecord — a page whose output the check did not read
     }
   });
 
+  it.each<[string, (away: Element) => ReactNode]>([
+    [
+      "second",
+      (away) => (
+        <>
+          <DevOpsPage />
+          {createPortal(<DevOpsPage />, away)}
+        </>
+      ),
+    ],
+    [
+      "first",
+      (away) => (
+        <>
+          {createPortal(<DevOpsPage />, away)}
+          <DevOpsPage />
+        </>
+      ),
+    ],
+  ])(
+    "is a page mounted twice with the %s mount's output portaled out of what the check reads",
+    (_which, ui) => {
+      const view = renderInPresentationMode(ui(document.createElement("div")));
+      // One mount is read in full; a page counts only when every mount is.
+      expect(recordOf(view)).toMatchObject(unread);
+    }
+  );
+
+  it("is a page rendered inside a detached element that is the very one the check reads", () => {
+    const detached = document.createElement("div");
+    const view = renderInPresentationMode(<DevOpsPage />, {
+      container: detached,
+    });
+    // Every node of the page is inside `read`, and on no screen.
+    expect(recordOf(view, detached)).toMatchObject(unread);
+    expect(findPresentationViolations(view).map((v) => v.kind)).toEqual([
+      "unmounted-view",
+    ]);
+  });
+
   it("is a page whose <title> React hoists into the head, until the check reads the whole document", () => {
     function TitledPage() {
       return (
@@ -486,6 +526,28 @@ describe("presentationCheckRecord — which render it read", () => {
     );
   });
 
+  it("keeps one numbering across two copies of the recorder, as vi.resetModules() makes them", async () => {
+    const copy = async () => {
+      vi.resetModules();
+      return import("./readinessRecorder");
+    };
+    const p = await copy();
+    const q = await copy();
+    // Two evaluations of the module, not one.
+    expect(q.presentationCheckRecord).not.toBe(p.presentationCheckRecord);
+    const x = renderInPresentationMode(<DevOpsPage />);
+    const y = renderInPresentationMode(<DevOpsPage />);
+    const readByP = p.presentationCheckRecord(x, 0, TARGETS, document.body);
+    const readByQ = q.presentationCheckRecord(y, 0, TARGETS, document.body);
+    expect(readByP.render).toEqual(expect.any(Number));
+    // Two renders never share a number, whichever copy numbered them ...
+    expect(readByQ.render).not.toBe(readByP.render);
+    // ... and one render keeps its number whichever copy reads it.
+    expect(q.presentationCheckRecord(x, 0, TARGETS, document.body).render).toBe(
+      readByP.render
+    );
+  });
+
   it("numbers another render otherwise, and a view without a container not at all", () => {
     const one = renderInPresentationMode(<DevOpsPage />);
     const two = renderInPresentationMode(<DevOpsPage />);
@@ -517,6 +579,13 @@ describe("appendCheck — the records a test keeps", () => {
       record(1),
       record(1, 1),
     ]);
+  });
+
+  it("keeps a record that differs only in how the UI Bridge was seen", () => {
+    // The verdict reads a render's LAST check: a clean one through a registry
+    // the test supplied must not be dropped as a repeat of the provider's.
+    const viaCaller = { ...record(1), registry: "caller" as const };
+    expect(appendCheck([record(1)], viaCaller)).toEqual([record(1), viaCaller]);
   });
 });
 
