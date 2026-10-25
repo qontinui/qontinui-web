@@ -9,9 +9,11 @@
  * flag — which replaces the configured list — cannot drop it. At init the
  * reporter provides every ready route, with its proof and its page module, to
  * the test workers, where `readinessTargets.ts` loads the pages. When the run
- * ends it reads every test's state, arming flag and records; in a run a test
- * armed (the readiness test, wherever it lives) it prints the routes the run
- * proved, and fails the run (exit code 1) on any it did not, naming why.
+ * ends it reads every test's state, arming flag and records, and whether the
+ * run carries a test-name filter; in a run a test armed (the readiness test,
+ * wherever it lives, even when it was skipped — unless a name filter skipped
+ * it) it prints the routes the run proved, and fails the run (exit code 1) on
+ * any it did not, naming why.
  *
  * The vitest config bundles this module, so it imports only Node, types and
  * relative modules — no `@/` alias.
@@ -134,7 +136,10 @@ export class PresentationReadinessReporter implements Reporter {
     if (vitest === undefined || reason === "interrupted") return;
     const verdict = readinessVerdict(
       this.targets,
-      runModulesOf(this.srcDir, testModules)
+      runModulesOf(this.srcDir, testModules),
+      // `-t`, in the config or set while watching: the filter skips the tests
+      // it does not select, which the verdict cannot tell from a skip.
+      vitest.getGlobalTestNamePattern() !== undefined
     );
     const lines = verdictLines(verdict, vitest.config.watch);
     if (lines.length === 0) return;

@@ -318,7 +318,7 @@ const REFUSED: ReadonlyArray<readonly [string, readonly RunModule[], string]> =
 
 describe("readinessVerdict — what a run must show", () => {
   it.each(PROVEN)("proves the route for %s", (_what, modules) => {
-    const verdict = readinessVerdict([TARGET], modules);
+    const verdict = readinessVerdict([TARGET], modules, false);
     expect(verdict.problems).toEqual([]);
     expect(verdict.proven).toEqual([
       { route: ROUTE, test: expect.any(String) },
@@ -327,7 +327,7 @@ describe("readinessVerdict — what a run must show", () => {
   });
 
   it.each(REFUSED)("refuses %s", (_what, modules, reason) => {
-    const verdict = readinessVerdict([TARGET], modules);
+    const verdict = readinessVerdict([TARGET], modules, false);
     expect(verdict.proven).toEqual([]);
     expect(verdict.problems).toHaveLength(1);
     expect(verdict.problems[0]).toContain(`${ROUTE} (${PROOF}): `);
@@ -337,7 +337,8 @@ describe("readinessVerdict — what a run must show", () => {
   it("refuses a route no page serves", () => {
     const verdict = readinessVerdict(
       [{ ...TARGET, pageFile: null }],
-      run(proof(test()))
+      run(proof(test())),
+      false
     );
     expect(verdict.problems).toEqual([
       `${ROUTE} (${PROOF}): no page module serves this route, so no render of it can be checked`,
@@ -350,7 +351,11 @@ describe("readinessVerdict — what a run must show", () => {
       provenBy: "app/(app)/admin/coord/page.test.tsx",
       pageFile: "/repo/src/app/(app)/admin/coord/page.tsx",
     };
-    const verdict = readinessVerdict([other, TARGET], run(proof(test())));
+    const verdict = readinessVerdict(
+      [other, TARGET],
+      run(proof(test())),
+      false
+    );
     expect(verdict.proven).toEqual([
       { route: ROUTE, test: "dev ops > is safe to show" },
     ]);
@@ -371,7 +376,7 @@ describe("readinessVerdict — when a run must prove the routes", () => {
   const broken = proof(test({ state: "skipped" }));
 
   it("claims nothing in a run where no test armed the requirement", () => {
-    expect(readinessVerdict([TARGET], [broken])).toEqual({
+    expect(readinessVerdict([TARGET], [broken], false)).toEqual({
       enforced: false,
       proven: [],
       problems: [],
@@ -383,7 +388,9 @@ describe("readinessVerdict — when a run must prove the routes", () => {
       file: READINESS_RAN.file,
       tests: [{ ...ARMING, armed: false }],
     };
-    expect(readinessVerdict([TARGET], [unarmed, broken]).enforced).toBe(false);
+    expect(readinessVerdict([TARGET], [unarmed, broken], false).enforced).toBe(
+      false
+    );
   });
 
   it("is armed by the record wherever the arming test lives, whatever its file is named", () => {
@@ -391,17 +398,54 @@ describe("readinessVerdict — when a run must prove the routes", () => {
       file: "components/presentation/presentationReadiness.test.tsx",
       tests: [ARMING],
     };
-    const verdict = readinessVerdict([TARGET], [moved, broken]);
+    const verdict = readinessVerdict([TARGET], [moved, broken], false);
     expect(verdict.enforced).toBe(true);
     expect(verdict.problems).toHaveLength(1);
   });
 
-  it("claims nothing when the arming test finished skipped", () => {
-    const skipped: RunModule = {
-      file: READINESS_RAN.file,
-      tests: [{ ...ARMING, state: "skipped" }],
-    };
-    expect(readinessVerdict([TARGET], [skipped, broken]).enforced).toBe(false);
+  /** The readiness test's module with its arming test finished in `state`. */
+  const armedAs = (state: RunTest["state"]): RunModule => ({
+    file: READINESS_RAN.file,
+    tests: [{ ...ARMING, state }],
+  });
+
+  it("requires every route when the arming test was skipped and no name filter narrowed the run", () => {
+    // it.skip, a describe.skip around it, a skipIf: the declaration made at
+    // collection stands, so the skip turns nothing off.
+    const verdict = readinessVerdict(
+      [TARGET],
+      [armedAs("skipped"), broken],
+      false
+    );
+    expect(verdict.enforced).toBe(true);
+    expect(verdict.problems).toHaveLength(1);
+    expect(verdict.problems[0]).toContain(
+      "but that test finished skipped — a skip at run time"
+    );
+  });
+
+  it("claims nothing when the arming test was skipped and a name filter narrowed the run", () => {
+    // `-t` skips every test it does not select, the arming test among them.
+    expect(
+      readinessVerdict([TARGET], [armedAs("skipped"), broken], true)
+    ).toEqual({ enforced: false, proven: [], problems: [] });
+  });
+
+  it("requires every route when the arming test ran, filter or not", () => {
+    for (const state of ["passed", "failed"] as const) {
+      expect(
+        readinessVerdict([TARGET], [armedAs(state), broken], true).enforced
+      ).toBe(true);
+    }
+  });
+
+  it("claims nothing when the arming test never finished", () => {
+    for (const nameFiltered of [false, true]) {
+      expect(
+        readinessVerdict([TARGET], [armedAs("pending"), broken], nameFiltered)
+          .enforced
+      ).toBe(false);
+    }
   });
 
   it("requires every route once the arming test ran, failed or passed", () => {
@@ -409,13 +453,13 @@ describe("readinessVerdict — when a run must prove the routes", () => {
       file: READINESS_RAN.file,
       tests: [{ ...ARMING, state: "failed" }],
     };
-    const verdict = readinessVerdict([TARGET], [failed, broken]);
+    const verdict = readinessVerdict([TARGET], [failed, broken], false);
     expect(verdict.enforced).toBe(true);
     expect(verdict.problems).toHaveLength(1);
   });
 
   it("requires nothing when no route is registered", () => {
-    expect(readinessVerdict([], run())).toEqual({
+    expect(readinessVerdict([], run(), false)).toEqual({
       enforced: true,
       proven: [],
       problems: [],
