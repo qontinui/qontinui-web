@@ -9,7 +9,8 @@
  *
  * What is pinned, and how each would fail silently:
  *
- * 1. **One arm per worker status**, each with its own sentence.
+ * 1. **One arm per worker status**, each with its own sentence — `erroring`
+ *    included: a loop coord observed FAILING is not UNKNOWN.
  * 2. **"Last pass" is `last_work_tick_at`, never `last_tick_at`.** A follower's
  *    `follower_skip` keeps `last_tick_at` fresh on a coord where no pass ran.
  * 3. **Absent field, failed request, coord's `unknown` and an unrecognised
@@ -177,6 +178,78 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(await observed()).toHaveAttribute("data-observed-tone", "attention");
   });
 
+  it("alive whose last tick skipped: says the tick did no pass work, never that no pass ever ran", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          nominal: true,
+          reason: null,
+          unknown_reason: null,
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: null,
+          last_decision_code: "skip:switch_off",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: loop alive, last tick did no pass work — skip:switch_off"
+    );
+    expect(line).not.toHaveTextContent(/no pass body recorded/);
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("alive but coord says not nominal (a future reason): never the healthy tone, and coord's reason is shown", async () => {
+    // No reason coord serves today pairs with `alive` (the round-6 lease case
+    // has its own arm above); this guards whatever reason a later coord adds.
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          nominal: false,
+          reason: "a_reason_this_build_does_not_know",
+          unknown_reason: null,
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: minutesAgo(4),
+          last_decision_code: "ran:published",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent("Observed: last pass 4m ago — ran:published");
+    expect(line).toHaveTextContent("a_reason_this_build_does_not_know");
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("alive with an unreadable lease: never claims no pass ran, and is not nominal", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "alive",
+          nominal: false,
+          reason: "lease_holder_unknown",
+          unknown_reason: null,
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: null,
+          last_decision_code: null,
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: loop alive, but coord cannot tell which replica runs the pass"
+    );
+    expect(line).not.toHaveTextContent(/no pass body recorded/);
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
   it("stale: says stale since the last tick", async () => {
     const at = minutesAgo(45);
     statusGet.mockResolvedValue(
@@ -232,6 +305,81 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(await observed()).toHaveTextContent(
       "Observed: no live replica is running the auto-publisher"
     );
+  });
+
+  it("erroring on a failure code: names it as context beside coord's reason, never UNKNOWN or a healthy last pass", async () => {
+    const reason =
+      "`prompt_document_auto_publish.pass` is running but reported a failure (ran:publish_failed): its last pass could not decide or publish some documents; the coord log names them";
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "erroring",
+          unknown_reason: reason,
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: minutesAgo(3),
+          last_decision_code: "ran:publish_failed",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: running but failing (last decision: ran:publish_failed)"
+    );
+    expect(line).toHaveTextContent("the coord log names them");
+    expect(line).not.toHaveTextContent(UNKNOWN);
+    expect(line).not.toHaveTextContent(/last pass \d/);
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("erroring on an error streak (the ledger's tick_error): says the body errors, with coord's reason", async () => {
+    // The shape coord serves for a body that errors on every tick: the lease
+    // holder's row carries the ledger's `tick_error` code.
+    const reason =
+      "`prompt_document_auto_publish.pass` is running but its body is failing on every tick (error_streak); coord_query_workers name=prompt_document_auto_publish.pass has the streak";
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "erroring",
+          unknown_reason: reason,
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: minutesAgo(0),
+          last_decision_code: "tick_error",
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent(
+      "Observed: running but failing — the pass body errors on every tick"
+    );
+    expect(line).not.toHaveTextContent(/last decision/);
+    expect(line).toHaveTextContent("has the streak");
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("erroring with no lease-holder row (no code, no work tick): says failing and lets coord's reason name the code", async () => {
+    statusGet.mockResolvedValue(
+      status({
+        pass: {
+          status: "erroring",
+          unknown_reason:
+            "`prompt_document_auto_publish.pass` is running but reported a failure (ran:decide_failed): its last pass could not decide or publish some documents; the coord log names them",
+          last_tick_at: minutesAgo(1),
+          last_work_tick_at: null,
+          last_decision_code: null,
+        },
+      })
+    );
+    render(<Harness />);
+
+    const line = await observed();
+    expect(line).toHaveTextContent("Observed: running but failing");
+    expect(line).not.toHaveTextContent(/body errors|last decision/);
+    expect(line).toHaveTextContent("reported a failure (ran:decide_failed)");
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
   it("unknown: renders UNKNOWN and carries coord's reason", async () => {
