@@ -31,9 +31,10 @@
  * `expectPresentationSafe` (`src/test/presentation.tsx`). `provenBy` names
  * that test file. What makes it a proof is read from the RUN, not from the
  * test's source (`src/test/readinessEvidence.ts`). A run armed by the
- * readiness test — `presentationReadiness.test.ts` records the arming on
- * itself, so `npm run test`, and so CI, is armed wherever that file lives —
- * fails unless that same run also ran the proof, and in it:
+ * readiness test — `presentationReadiness.test.ts` declares the arming on
+ * itself when the file is collected, so `npm run test`, and so CI, is armed
+ * wherever that file lives, and skipping that test does not disarm it — fails
+ * unless that same run also ran the proof, and in it:
  *
  * - a test that FINISHED passed (so not skipped at run time, from wherever,
  *   nor failed, nor concurrent) ran the page check over a render in which
@@ -49,9 +50,11 @@
  * unmounted or portaled out of what the check read, a view assembled from two
  * renders, a registry the page does not register with — or on a clean check
  * the run's own record of a violation contradicts. A run no test armed (one
- * that filters the readiness test out) claims nothing either way. Out of
+ * that leaves the readiness test out by file, or a `-t` filter that skips it)
+ * claims nothing either way. Out of
  * reach: a proof that writes that evidence itself, or mocks or edits the
- * checker's own modules, the reporter, the readiness test, the setup file or
+ * checker's own modules, the reporter, the readiness test (deleting its arming
+ * test included), the setup file or
  * the vitest config; a proof that mocks a module the page renders (a child
  * component, a lens primitive), so the render is not production's — mock
  * data sources only; and the state the proof checks the page in, which is

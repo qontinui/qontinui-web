@@ -1894,18 +1894,22 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   mounted there under a presenting lens, rendering something and all of it inside
   the element the check read; whether check (b) read that render's own UI Bridge
   registry; and what it found. The registry's own test arms the requirement by a
-  record on itself, so it holds wherever that file lives, and a run it armed
-  (`npm run test`, so CI) fails unless that same run ran the proof, and in it a
+  declaration on itself, made when its file is collected, so it holds wherever
+  that file lives and a skip of that test (`it.skip`, a `describe.skip` around
+  it) turns nothing off, and a run it armed (`npm run test`, so CI) fails unless
+  that same run ran the proof, and in it a
   test that **finished passed** — not skipped at run time from wherever, not
   failed, not concurrent — holds a render whose last such check found no
   violation through that registry. A render whose last check found a violation,
   in any test of the proof however it ended, refuses the route: the run's own
   evidence outweighs a clean check elsewhere (a check polled with `waitFor`
   counts by its last attempt). A proof filtered out of that run is UNKNOWN,
-  which fails it; a run the test did not arm (one that filters it out) claims
-  nothing. The run's log names each route it proved and the test that proved it.
+  which fails it; a run the test did not arm (one that leaves it out by file, or
+  a `-t` filter that skips it) claims nothing. The run's log names each route it
+  proved and the test that proved it.
   Beyond its reach: a proof that writes the record itself, or mocks or edits the
-  checker, its reporter, the registry's test, `setup.ts` or the vitest config; a
+  checker, its reporter, the registry's test (deleting its arming test
+  included), `setup.ts` or the vitest config; a
   proof that mocks a module the page renders — a child component (a
   `DeviceDrainControl` stubbed to render nothing), a lens primitive — so the
   render is not production's, since only the page module itself is checked to

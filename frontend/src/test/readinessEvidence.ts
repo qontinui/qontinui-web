@@ -46,38 +46,47 @@
  *    run, with the reason.
  *
  * **When it applies.** Whenever a test of the run carrying
- * {@link ARMED_META_KEY} — the readiness test records it on itself
- * (`presentationReadiness.test.ts`, wherever that file lives or whatever it
- * is named) — finishes passed or failed: then every ready route's proof file
- * must run in that same run and carry the evidence. `npm run test`, in CI or
- * anywhere, runs it. A proof filtered out of the run is UNKNOWN, and UNKNOWN
- * fails the run rather than counting as proven. A run in which no test armed
- * the requirement (a filtered run, `-t` excluding the arming test) claims
- * nothing about readiness and checks nothing. The arming test fails when the
- * reporter is not in its run.
+ * {@link ARMED_META_KEY} — the readiness test declares it on itself when its
+ * file is collected (`presentationReadiness.test.ts`, wherever that file lives
+ * or whatever it is named), so it is there whether the test then runs or is
+ * skipped — finishes passed or failed, or finishes skipped in a run that no
+ * test-name filter narrowed: then every ready route's proof file must run in
+ * that same run and carry the evidence. `npm run test`, in CI or anywhere,
+ * runs it. So a skip of the arming test (`it.skip`, a `describe.skip` around
+ * it) turns nothing off. A proof filtered out of the run is UNKNOWN, and
+ * UNKNOWN fails the run rather than counting as proven. A run in which no test
+ * armed the requirement (a file filter that leaves the readiness test out) or
+ * the name filter left the arming test unrun (`-t` excluding it, which the run
+ * cannot tell from a skip) claims nothing about readiness and checks nothing.
+ * The arming test fails when the reporter is not in its run, or when it does
+ * not carry the declaration.
  *
  * **What stays out of reach.** A proof — or a module it loads — that writes
  * the records or the arming flag itself, mocks the checker's own modules (this
  * one, `readinessTargets.ts`, `readinessRecorder.ts`, `uiBridgeBinding.ts`,
  * `reactTree.ts`, `presentation.tsx`), or edits them, the reporter, the
- * readiness test, `setup.ts` or the vitest config: the evidence is only as
- * honest as the code that writes it. A proof that mocks a module the page
- * RENDERS — a child component (a `DeviceDrainControl` stubbed to render
- * nothing), a lens primitive — so the render the check reads is not
- * production's: identity is checked for the page module only, so the page's
- * own component still mounts and presents around the stub. Mock data sources
- * only — the API client, the hooks that fetch, the router. And the state the
- * page was checked in is the proof's choice: a fixture that never loads data
- * proves the empty page, not the loaded one.
+ * readiness test (deleting the arming test, or removing its declaration along
+ * with its own assertion of it, leaves a run no test armed), `setup.ts` or the
+ * vitest config: the evidence is only as honest as the code that writes it. A
+ * proof that mocks a module the page RENDERS — a child component (a
+ * `DeviceDrainControl` stubbed to render nothing), a lens primitive — so the
+ * render the check reads is not production's: identity is checked for the page
+ * module only, so the page's own component still mounts and presents around the
+ * stub. Mock data sources only — the API client, the hooks that fetch, the
+ * router. And the state the page was checked in is the proof's choice: a
+ * fixture that never loads data proves the empty page, not the loaded one.
  *
  * This module is pure and imports nothing, so the vitest config can bundle it
  * for the reporter.
  */
 
 /**
- * The test-meta key that arms the requirement: written by the readiness test
- * on itself, and only by it. A run in which a test carrying it finished
- * passed or failed must prove every ready route.
+ * The test-meta key that arms the requirement: declared by the readiness test
+ * on itself when its file is collected (`it(name, { meta: { … } }, fn)`), and
+ * only by it. Declared, not written while the test runs, so a test that is then
+ * skipped carries it too. A run in which a test carrying it finished passed or
+ * failed — or skipped, with no test-name filter on the run — must prove every
+ * ready route.
  */
 export const ARMED_META_KEY = "presentationReadinessArmed";
 
@@ -173,7 +182,7 @@ export interface RunTest {
   readonly name: string;
   readonly state: RunTestState;
   readonly concurrent: boolean;
-  /** Whether it carries {@link ARMED_META_KEY}. */
+  /** Whether it carries {@link ARMED_META_KEY} (declared at collection, so a skipped test does). */
   readonly armed: boolean;
   readonly checks: readonly PresentationCheckRecord[];
 }
@@ -194,8 +203,9 @@ export interface ProvenRoute {
 export interface ReadinessVerdict {
   /**
    * Whether a test of the run armed the requirement — carries
-   * {@link ARMED_META_KEY} and finished passed or failed — so the run must
-   * prove every ready route.
+   * {@link ARMED_META_KEY} and finished passed or failed, or finished skipped
+   * in a run no test-name filter narrowed — so the run must prove every ready
+   * route.
    */
   readonly enforced: boolean;
   readonly proven: readonly ProvenRoute[];
@@ -351,17 +361,33 @@ function routeVerdict(
 }
 
 /**
+ * Whether an armed test that finished in `state` arms the run: it ran (passed,
+ * failed), or it was skipped, which the declaration made at collection
+ * survives — unless the run carries a test-name filter, whose exclusion of the
+ * test cannot be told from a skip, and a filtered run claims nothing. A test
+ * that never finished (pending) arms nothing.
+ */
+function arms(state: RunTestState, nameFiltered: boolean): boolean {
+  return (
+    state === "passed" ||
+    state === "failed" ||
+    (state === "skipped" && !nameFiltered)
+  );
+}
+
+/**
  * Which ready routes the run proves, and why each other one is not proven
- * (see the module doc). `modules` are the run's test modules.
+ * (see the module doc). `modules` are the run's test modules; `nameFiltered`
+ * says whether the run carries a test-name filter (`-t`, in the config or set
+ * while watching), which skips every test it does not select.
  */
 export function readinessVerdict(
   targets: readonly ReadinessTarget[],
-  modules: readonly RunModule[]
+  modules: readonly RunModule[],
+  nameFiltered: boolean
 ): ReadinessVerdict {
   const enforced = modules.some((m) =>
-    m.tests.some(
-      (t) => t.armed && (t.state === "passed" || t.state === "failed")
-    )
+    m.tests.some((t) => t.armed && arms(t.state, nameFiltered))
   );
   if (!enforced) return { enforced: false, proven: [], problems: [] };
   const proven: ProvenRoute[] = [];

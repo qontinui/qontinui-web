@@ -14,27 +14,22 @@
  *
  * Whether that test PROVES the route is not read here, and not from its
  * source: it is the run's to show (`src/test/readinessEvidence.ts`). The
- * arming test below turns that requirement on for the run it runs in, by
- * recording `ARMED_META_KEY` on itself — so it holds wherever this file lives
- * and whatever it is named. In an armed run, every entry's proof must run too,
- * and in it a test that FINISHED passed must have run the page check over the
- * route's own page under a presenting lens, the last check over that render
- * finding nothing (and no render's last check finding anything); the
- * end-of-run step fails the run otherwise. The arming test fails when that
- * step's reporter is not in the run, and the suite's afterAll fails when the
- * arming test ran without recording the arming.
+ * arming test below turns that requirement on for the run it is in, by
+ * declaring `ARMED_META_KEY` on itself when this file is collected — so it
+ * holds wherever this file lives and whatever it is named, and skipping that
+ * test (`it.skip`, a `describe.skip` around it) does not turn it off; only a
+ * `-t` filter that leaves it out does, and that run claims nothing. In an
+ * armed run, every entry's proof must run too, and in it a test that FINISHED
+ * passed must have run the page check over the route's own page under a
+ * presenting lens, the last check over that render finding nothing (and no
+ * render's last check finding anything); the end-of-run step fails the run
+ * otherwise. The arming test fails when that step's reporter is not in the
+ * run, and when it does not carry the declaration.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  afterAll,
-  describe,
-  expect,
-  inject,
-  it,
-  type TestContext,
-} from "vitest";
+import { describe, expect, inject, it } from "vitest";
 import {
   appFilesNamed,
   appPageModules,
@@ -198,15 +193,6 @@ describe("LENS_TREES are exactly the layouts that mount the lens", () => {
 });
 
 describe("every presentation-ready route is proven", () => {
-  /** The arming test as it ran; undefined when it did not run (a filtered run). */
-  let arming: TestContext["task"] | undefined;
-
-  // Whenever the arming test ran, it must have armed the run: read after
-  // every test of this suite, so it holds in any order the run takes.
-  afterAll(() => {
-    if (arming !== undefined) expect(arming.meta[ARMED_META_KEY]).toBe(true);
-  });
-
   it("names, for a route inside a lens tree that a page serves, a test file that exists", () => {
     expect(
       PRESENTATION_READY_ROUTES.flatMap((entry) =>
@@ -260,12 +246,15 @@ describe("every presentation-ready route is proven", () => {
     );
   });
 
-  it(ARMING_TEST, ({ task }) => {
-    arming = task;
-    // This record, on this test, is what makes the end-of-run step require
-    // every ready route's evidence in this run (readinessEvidence.ts). It is
-    // read from the run, so it moves with this file wherever the file goes.
-    task.meta[ARMED_META_KEY] = true;
+  // The declaration in the options is what makes the end-of-run step require
+  // every ready route's evidence in this run (readinessEvidence.ts). It is
+  // made when this file is collected and read back from the run, so it moves
+  // with this file wherever the file goes, and a skip of this test (it.skip,
+  // a describe.skip around it) leaves it in place.
+  it(ARMING_TEST, { meta: { [ARMED_META_KEY]: true } }, ({ task }) => {
+    // The record the reporter reads is this one: a declaration removed from
+    // the options above fails this test instead of disarming the run.
+    expect(task.meta[ARMED_META_KEY]).toBe(true);
     // Provided by the reporter `presentationReadiness()` adds in
     // vitest.config.ts; absent when the plugin is not in the run's config.
     expect(inject(READINESS_PROVIDE_KEY)).toEqual({

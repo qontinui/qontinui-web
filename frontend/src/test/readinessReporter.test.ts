@@ -63,11 +63,13 @@ function fakeModule(file: string, tests: readonly FakeTest[]): TestModule {
   } as unknown as TestModule;
 }
 
-function fakeVitest(watch = false) {
+/** `namePattern` is the run's test-name filter (`-t`); none by default. */
+function fakeVitest(watch = false, namePattern?: RegExp) {
   const vitest = {
     config: { root: ROOT, watch, reporters: [] as unknown[] },
     provide: vi.fn(),
     logger: { log: vi.fn(), error: vi.fn() },
+    getGlobalTestNamePattern: () => namePattern,
   };
   return { vitest, asVitest: vitest as unknown as Vitest };
 }
@@ -267,6 +269,51 @@ describe("PresentationReadinessReporter", () => {
     expect(String(vitest.logger.error.mock.calls[0]?.[0])).toContain(
       "presentation readiness: FAILED"
     );
+  });
+
+  it("fails a run whose arming test was skipped, as one that ran it would", () => {
+    const { vitest, asVitest } = fakeVitest();
+    const fail = vi.fn();
+    const reporter = new PresentationReadinessReporter(fail);
+    reporter.onInit(asVitest);
+    reporter.onTestRunEnd(
+      [
+        fakeModule(READINESS_FILE, [
+          { name: "readiness > arms", state: "skipped", armed: true },
+        ]),
+        fakeModule(LANDING?.provenBy ?? "", [
+          { name: "is safe", state: "skipped", checks: [SAFE] },
+        ]),
+      ],
+      [],
+      "passed"
+    );
+    expect(fail).toHaveBeenCalledTimes(1);
+    const printed = String(vitest.logger.error.mock.calls[0]?.[0]);
+    expect(printed).toContain("presentation readiness: FAILED");
+    expect(printed).toContain("but that test finished skipped");
+  });
+
+  it("checks nothing in a run whose arming test a test-name filter skipped", () => {
+    const { vitest, asVitest } = fakeVitest(false, /some other test/);
+    const fail = vi.fn();
+    const reporter = new PresentationReadinessReporter(fail);
+    reporter.onInit(asVitest);
+    reporter.onTestRunEnd(
+      [
+        fakeModule(READINESS_FILE, [
+          { name: "readiness > arms", state: "skipped", armed: true },
+        ]),
+        fakeModule(LANDING?.provenBy ?? "", [
+          { name: "is safe", state: "skipped", checks: [SAFE] },
+        ]),
+      ],
+      [],
+      "passed"
+    );
+    expect(fail).not.toHaveBeenCalled();
+    expect(vitest.logger.error).not.toHaveBeenCalled();
+    expect(vitest.logger.log).not.toHaveBeenCalled();
   });
 
   it("checks nothing in a run whose readiness test ran without arming it", () => {
