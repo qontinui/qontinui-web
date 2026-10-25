@@ -254,6 +254,46 @@ describe("presentationCheckRecord — a page whose output the check did not read
     expect(provesRoute(record, ROUTE)).toBe(false);
   });
 
+  it("is a page that portals into another document (an iframe), whose nodes are no instance of this realm's Node", () => {
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const inFrame = frame.contentDocument?.body;
+    let view: ReturnType<typeof renderInPresentationMode> | undefined;
+    try {
+      if (inFrame === undefined) throw new Error("the iframe has no document");
+      // The hazard: a node of another document is not an `instanceof` the Node
+      // of this one, so a reader keyed on `instanceof Node` never sees it.
+      expect(inFrame instanceof Node).toBe(false);
+      function FramePage() {
+        return (
+          <>
+            <main>Fleet health</main>
+            {createPortal(
+              <button type="button">Drain this machine</button>,
+              inFrame as Element
+            )}
+          </>
+        );
+      }
+      view = renderInPresentationMode(<FramePage />);
+      // Checks (a)-(e) read this document, not the frame's: the control is unseen.
+      const violations = findPresentationViolations(view);
+      expect(violations).toEqual([]);
+      const record = presentationCheckRecord(
+        view,
+        violations.length,
+        [{ route: ROUTE, page: FramePage }],
+        document.body
+      );
+      expect(record).toMatchObject(unread);
+      expect(provesRoute(record, ROUTE)).toBe(false);
+    } finally {
+      // The portal's button leaves the frame before the frame leaves the page.
+      view?.unmount();
+      frame.remove();
+    }
+  });
+
   it("is a page whose <title> React hoists into the head, until the check reads the whole document", () => {
     function TitledPage() {
       return (

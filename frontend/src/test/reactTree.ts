@@ -170,14 +170,28 @@ export function contextValueAbove(
   return { found: false, value: undefined };
 }
 
+/**
+ * Whether a host fiber's `stateNode` is a DOM node of ANY document. Not
+ * `instanceof Node`: a node created in another document (a portal into an
+ * iframe's body) belongs to that document's realm and is no instance of this
+ * one's `Node`, so that test would drop the very nodes a page put out of the
+ * reader's sight. A non-node `stateNode` (a class component's instance, a
+ * root) with a numeric `nodeType` still fails closed: it has no `isConnected`,
+ * so `readinessRecorder.ts` reads the output it belongs to as not read.
+ */
 function isDomNode(value: unknown): value is Node {
-  return typeof Node !== "undefined" && value instanceof Node;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "nodeType") === "number"
+  );
 }
 
 /**
  * Every DOM node `fiber`'s subtree rendered — its elements and its text,
  * wherever they went: a portal's nodes are below the portal's fiber, so they
- * are here too, inside whatever container the portal rendered into.
+ * are here too, inside whatever container the portal rendered into, a
+ * container in another document included.
  */
 export function hostNodesUnder(fiber: Fiber): Node[] {
   return fibersUnder(fiber)

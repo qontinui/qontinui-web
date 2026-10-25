@@ -18,7 +18,8 @@
  *   re-rendered to something else, rendered through a wrapper that drops it or
  *   inside an `OperatorOnly`, or that holds a stand-in mocked into the page's
  *   place, holds no such fiber; a page that rendered nothing, or portaled any
- *   of its output out of what the check read, is `unread`;
+ *   of its output out of what the check read (into another document, an
+ *   iframe's, too), is `unread`;
  * - **whether it is presenting** — the value of the nearest presentation-mode
  *   provider above each of the page's fibers, which is what the page's own
  *   `usePresentationMode()` returns;

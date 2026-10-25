@@ -142,7 +142,8 @@ export interface PresentationCheckRecord {
   /**
    * The ready routes whose page was mounted there, but whose output the check
    * did not read: it rendered nothing, or rendered some of it outside the
-   * element the check read (a portal out of it, a detached element).
+   * element the check read (a portal out of it, into another document too, a
+   * detached element).
    */
   readonly unread: readonly string[];
   /** How many violations the check found. */
@@ -317,7 +318,7 @@ function whyNotProven(
   }
   const unread = withChecks(tests, (c) => c.unread.includes(route));
   if (unread !== undefined) {
-    return `the page's own component was mounted in "${unread.name}", but the check did not read what it rendered — it rendered nothing, or rendered some of it outside the element the check read (a portal out of it, a detached element, a narrowed baseElement, or an element React hoists into the document's head, such as a <title>: read the whole document with \`baseElement: document.documentElement\`)`;
+    return `the page's own component was mounted in "${unread.name}", but the check did not read what it rendered — it rendered nothing, or rendered some of it outside the element the check read (a portal out of it, into another document too, a detached element, a narrowed baseElement, or an element React hoists into the document's head, such as a <title>: read the whole document with \`baseElement: document.documentElement\`)`;
   }
   const operator = withChecks(tests, (c) => c.operator.includes(route));
   if (operator !== undefined) {
