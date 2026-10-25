@@ -8,23 +8,29 @@ a PR that is behind its base is the stale merge base, while the checkout is the
 merge ref onto the CURRENT base. So a pin main had gained since the branch point
 read as introduced by the PR, and the required check went red the moment
 upstream moved a tag (qontinui-web#1689, ``style-gate.yml:284``,
-dtolnay/rust-toolchain ``v1``).
+dtolnay/rust-toolchain ``v1``). The base is now ``HEAD^1`` of the checked-out
+merge commit -- the exact tree the PR was merged onto.
 
 What is pinned here:
 
-* **The base expression** resolves to the base branch NAME on a
-  ``pull_request`` run (the contents API resolves a name to the branch's
-  current tip) and to the default branch otherwise, and never names the
-  event's base sha.
-* **The shipped ``run:`` body, executed**, with a fake ``zizmor`` on ``PATH``
-  and a fake contents API on loopback (``GITHUB_API_URL``):
-  - the #1689 shape -- the line is at the base TIP but not at the stale merge
-    base -- is DRIFT and passes the step;
-  - the same inputs fed the pre-fix expression's value are FINDINGS, so the
-    test fails against the old workflow [policy: a-test-must-be-able-to-fail];
-  - a line absent from the tip (the PR introduced it) is FINDINGS;
-  - an unreadable base is FINDINGS (fail closed);
-  - an audit outside ``DRIFT_AUDITS`` is FINDINGS even on an unchanged line.
+* **The wiring**: the step never names the event's base sha, the checkout
+  fetches the merge commit's parents, and Backend CI runs this module on a PR
+  that edits only ``workflow-lint.yml``.
+* **The shipped ``run:`` body, executed** under ``bash -e`` against a real
+  throwaway git repository, a fake ``zizmor`` on ``PATH`` and a fake contents
+  API on loopback (``GITHUB_API_URL``):
+  - the #1689 shape -- main gained the pin after the PR branched -- is DRIFT,
+    read at ``HEAD^1`` and not at the stale merge base;
+  - a pin the PR itself brought is FINDINGS;
+  - a checkout that is not the PR's merge commit has no base (FINDINGS) even
+    when its own first parent carries the line -- the fail-open shape;
+  - an unreadable base, an audit outside ``DRIFT_AUDITS``, and a finding whose
+    offset is not on a line carrying its feature text are FINDINGS;
+  - off a PR the base is the default branch, by name, URL-quoted.
+
+Mutation check, run when this module was written: restoring the pre-fix
+``base.sha`` expression, dropping the merge-commit verification, or making an
+unreadable base pass each fail tests here [policy: a-test-must-be-able-to-fail].
 
 No network beyond a loopback server this module starts, no database.
 """
@@ -33,9 +39,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
+import shutil
 import stat
 import subprocess
+import sys
 import threading
 import urllib.parse
 from collections.abc import Iterator
@@ -47,20 +54,23 @@ import pytest
 import yaml  # type: ignore[import-untyped]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "workflow-lint.yml"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+WORKFLOW = WORKFLOWS / "workflow-lint.yml"
+BACKEND_CI = WORKFLOWS / "backend-ci.yml"
+WORKFLOW_REF = ".github/workflows/workflow-lint.yml"
 
 REPO = "qontinui/qontinui-web"
-BASE_BRANCH = "main"
-STALE_BASE_SHA = "bc3f44d0" + "0" * 32
 FLAGGED_PATH = ".github/workflows/style-gate.yml"
 PIN_LINE = (
     "      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1"
 )
-# What the expression read before the fix; evaluated below to prove the
-# behavioural tests fail against it.
-PRE_FIX_EXPR = (
-    "${{ github.event.pull_request.base.sha || "
-    "github.event.repository.default_branch }}"
+STEPS_HEAD = "name: Style gate\njobs:\n  x:\n    runs-on: x\n    steps:\n"
+STALE_FILE = (STEPS_HEAD + "      - run: true\n").encode()
+PINNED_FILE = (STEPS_HEAD + "      - run: true\n" + PIN_LINE + "\n").encode()
+
+_SHELL_OK = sys.platform != "win32" and shutil.which("bash") and shutil.which("git")
+needs_shell = pytest.mark.skipif(
+    not _SHELL_OK, reason="executes the step body: needs bash 4+ and git"
 )
 
 
@@ -69,89 +79,135 @@ PRE_FIX_EXPR = (
 # ---------------------------------------------------------------------------
 
 
-def _zizmor_step() -> dict[str, Any]:
+def _job() -> dict[str, Any]:
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    steps = doc["jobs"]["workflow-lint"]["steps"]
-    matches = [s for s in steps if s.get("id") == "zizmor"]
-    assert len(matches) == 1, f"workflow-lint has {len(matches)} steps with id zizmor"
+    job: dict[str, Any] = doc["jobs"]["workflow-lint"]
+    return job
+
+
+def _step(step_id: str) -> dict[str, Any]:
+    matches = [s for s in _job()["steps"] if s.get("id") == step_id]
+    assert len(matches) == 1, (
+        f"workflow-lint has {len(matches)} steps with id {step_id}"
+    )
     step: dict[str, Any] = matches[0]
     return step
 
 
-def _drift_audits() -> str:
-    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    value: str = doc["jobs"]["workflow-lint"]["env"]["DRIFT_AUDITS"]
-    return value
+def test_the_step_never_names_the_event_base_sha() -> None:
+    step = _step("zizmor")
+    assert not any("base.sha" in str(v) for v in step["env"].values()), step["env"]
+    assert "base.sha" not in step["run"]
 
 
-_DOTTED = re.compile(r"^[a-z_]+(?:\.[a-z_]+)*$")
+def test_the_step_reads_the_event_name_and_pr_head() -> None:
+    env = _step("zizmor")["env"]
+    assert env["EVENT_NAME"] == "${{ github.event_name }}"
+    assert env["PR_HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
+    assert env["DEFAULT_BRANCH"] == "${{ github.event.repository.default_branch }}"
 
 
-def _evaluate(expr: str, context: dict[str, str]) -> str:
-    """Evaluate a ``${{ a || b || ... }}`` expression of dotted context paths.
-
-    Only that grammar is accepted -- anything else fails the test rather than
-    being evaluated approximately. ``||`` returns the first truthy operand,
-    and an absent path is falsy, as in GitHub's expression language.
-    """
-    m = re.fullmatch(r"\$\{\{\s*(.*?)\s*\}\}", expr.strip())
-    assert m, f"not a single expression: {expr!r}"
-    operands = [o.strip() for o in m.group(1).split("||")]
-    for operand in operands:
-        assert _DOTTED.match(operand), f"unsupported operand {operand!r} in {expr!r}"
-    for operand in operands:
-        value = context.get(operand, "")
-        if value:
-            return value
-    return ""
+def test_the_checkout_fetches_the_merge_commits_parents() -> None:
+    assert int(_step("checkout")["with"]["fetch-depth"]) >= 2
 
 
-def _pull_request_context() -> dict[str, str]:
-    """A behind PR: the event's base sha is the stale merge base."""
-    return {
-        "github.event_name": "pull_request",
-        "github.base_ref": BASE_BRANCH,
-        "github.event.pull_request.base.sha": STALE_BASE_SHA,
-        "github.event.pull_request.base.ref": BASE_BRANCH,
-        "github.event.repository.default_branch": BASE_BRANCH,
-    }
-
-
-def _push_context() -> dict[str, str]:
-    """A merge-candidate push or workflow_dispatch: no base_ref."""
-    return {
-        "github.event_name": "push",
-        "github.base_ref": "",
-        "github.event.repository.default_branch": BASE_BRANCH,
-    }
-
-
-def _shipped_expr() -> str:
-    expr: str = _zizmor_step()["env"]["DRIFT_BASE_REF"]
-    return expr
-
-
-def test_drift_base_never_names_the_event_base_sha() -> None:
-    assert "base.sha" not in _shipped_expr()
-    # The run body reads the base only through DRIFT_BASE_REF.
-    assert "base.sha" not in _zizmor_step()["run"]
-
-
-def test_drift_base_is_the_base_branch_on_a_pull_request() -> None:
-    assert _evaluate(_shipped_expr(), _pull_request_context()) == BASE_BRANCH
-
-
-def test_drift_base_is_the_default_branch_off_a_pull_request() -> None:
-    assert _evaluate(_shipped_expr(), _push_context()) == BASE_BRANCH
-
-
-def test_pre_fix_expression_resolved_to_the_stale_base() -> None:
-    # Guards the harness: the old value is what the mutation case feeds.
-    assert _evaluate(PRE_FIX_EXPR, _pull_request_context()) == STALE_BASE_SHA
+def test_backend_ci_runs_this_module_on_a_workflow_lint_only_change() -> None:
+    """A PR touching only ``workflow-lint.yml`` must still run this guard."""
+    workflow = yaml.safe_load(BACKEND_CI.read_text(encoding="utf-8"))
+    triggers = workflow.get("on", workflow.get(True))
+    for trigger in ("pull_request", "push"):
+        assert WORKFLOW_REF in triggers[trigger]["paths"], (
+            f"{WORKFLOW_REF} is not in backend-ci.yml `on.{trigger}.paths`, so an "
+            "edit to it alone never runs the test that guards its DRIFT base"
+        )
 
 
 # ---------------------------------------------------------------------------
-# The shipped run body, executed
+# A throwaway repository shaped like a pull_request checkout
+# ---------------------------------------------------------------------------
+
+
+_GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@example.invalid",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.invalid",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+}
+
+
+def _git(work: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=work,
+        env={**_GIT_ENV, "PATH": os.environ.get("PATH", ""), "HOME": str(work)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return proc.stdout.strip()
+
+
+def _commit(work: Path, files: dict[str, bytes], message: str) -> str:
+    for rel, body in files.items():
+        (work / rel).parent.mkdir(parents=True, exist_ok=True)
+        (work / rel).write_bytes(body)
+    _git(work, "add", "-A")
+    _git(work, "commit", "-q", "-m", message)
+    return _git(work, "rev-parse", "HEAD")
+
+
+class Checkout(NamedTuple):
+    work: Path
+    stale_base: str  # the PR's merge base -- what base.sha reads when behind
+    tip: str  # main when the merge ref was made = HEAD^1 of the merge
+    pr_head: str  # = HEAD^2 of the merge
+    pr_parent: str  # the PR's first commit (pr_head's parent)
+
+
+def _make_checkout(tmp_path: Path, pin_on: str) -> Checkout:
+    """S (stale base) -> main T, and S -> PR P1 -> P2; HEAD = merge(T, P2).
+
+    ``pin_on="main"`` is #1689: main adds the pin in T after the PR branched.
+    ``pin_on="pr"`` puts the pin in P1, so the PR brought it.
+    """
+    work = tmp_path / "checkout"
+    work.mkdir()
+    _git(work, "init", "-q", "-b", "main")
+    stale = _commit(
+        work,
+        {
+            FLAGGED_PATH: STALE_FILE,
+            ".github/dependabot.yml": b"version: 2\n",
+            ".github/zizmor.yml": b"rules: {}\n",
+            "README.md": b"base\n",
+        },
+        "stale base",
+    )
+    tip = _commit(
+        work,
+        {FLAGGED_PATH: PINNED_FILE} if pin_on == "main" else {"MAIN.md": b"main\n"},
+        "main moves",
+    )
+    _git(work, "checkout", "-q", "-b", "pr", stale)
+    pr_parent = _commit(
+        work,
+        {FLAGGED_PATH: PINNED_FILE} if pin_on == "pr" else {"PR1.md": b"pr 1\n"},
+        "pr 1",
+    )
+    pr_head = _commit(work, {"PR2.md": b"pr 2\n"}, "pr 2")
+    _git(work, "checkout", "-q", "--detach", tip)
+    _git(work, "merge", "-q", "--no-ff", "-m", "merge", pr_head)
+    assert _git(work, "rev-parse", "HEAD^1") == tip
+    assert _git(work, "rev-parse", "HEAD^2") == pr_head
+    assert (work / FLAGGED_PATH).read_bytes() == PINNED_FILE
+    (work / ".github" / "actions").mkdir()
+    return Checkout(work, stale, tip, pr_head, pr_parent)
+
+
+# ---------------------------------------------------------------------------
+# The fake contents API and the step runner
 # ---------------------------------------------------------------------------
 
 
@@ -168,7 +224,12 @@ class FakeContents:
             def do_GET(self) -> None:  # noqa: N802 -- http.server's name
                 parsed = urllib.parse.urlsplit(self.path)
                 prefix = f"/repos/{REPO}/contents/"
-                ref = urllib.parse.parse_qs(parsed.query).get("ref", [""])[0]
+                # Decode the ref ourselves, so a ref the step forgot to quote
+                # (an `&` in a branch name) arrives split and is not found.
+                raw_ref = next(
+                    (q[4:] for q in parsed.query.split("&") if q.startswith("ref=")), ""
+                )
+                ref = urllib.parse.unquote(raw_ref)
                 path = urllib.parse.unquote(parsed.path[len(prefix) :])
                 outer.requests.append((path, ref))
                 body = outer.files.get((path, ref))
@@ -215,22 +276,11 @@ class Run(NamedTuple):
     verdict: str
 
 
-def _file_with_pin(before: list[str]) -> bytes:
-    return (
-        "\n".join([*before, PIN_LINE, "        with:", "          toolchain: stable"])
-        + "\n"
-    ).encode()
-
-
-HEAD_FILE = _file_with_pin(["name: Style gate", "jobs:", "  x:", "    steps:"])
-# The stale merge base predates the pin; the tip carries it unchanged.
-STALE_BASE_FILE = b"name: Style gate\njobs:\n  x:\n    steps:\n      - run: true\n"
-TIP_FILE = HEAD_FILE
-
-
-def _finding(ident: str, raw: bytes = HEAD_FILE) -> dict[str, Any]:
-    """A zizmor 1.30.1 ``--format json`` finding on PIN_LINE's version comment."""
-    offset = raw.index(b"# v1")
+def _finding(
+    ident: str, raw: bytes = PINNED_FILE, at: bytes = b"# v1"
+) -> dict[str, Any]:
+    """A zizmor 1.30.1 ``--format json`` finding whose span starts at ``at``."""
+    offset = raw.index(at)
     row = raw[:offset].count(b"\n")
     column = offset - (raw.rfind(b"\n", 0, offset) + 1)
     return {
@@ -247,7 +297,7 @@ def _finding(ident: str, raw: bytes = HEAD_FILE) -> dict[str, Any]:
                 "concrete": {
                     "location": {
                         "start_point": {"row": row, "column": column},
-                        "offset_span": {"start": offset, "end": offset + 4},
+                        "offset_span": {"start": offset, "end": offset + len(at)},
                     },
                     "feature": "# v1",
                 },
@@ -258,17 +308,14 @@ def _finding(ident: str, raw: bytes = HEAD_FILE) -> dict[str, Any]:
 
 def _run_step(
     tmp_path: Path,
+    work: Path,
     contents: FakeContents,
     findings: list[dict[str, Any]],
-    drift_base_ref: str,
+    *,
+    event: str = "pull_request",
+    pr_head: str = "",
+    default_branch: str = "main",
 ) -> Run:
-    work = tmp_path / "checkout"
-    (work / ".github" / "workflows").mkdir(parents=True)
-    (work / ".github" / "actions").mkdir()
-    (work / FLAGGED_PATH).write_bytes(HEAD_FILE)
-    (work / ".github" / "dependabot.yml").write_text("version: 2\n")
-    (work / ".github" / "zizmor.yml").write_text("rules: {}\n")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     payload = tmp_path / "zizmor.json"
@@ -278,13 +325,15 @@ def _run_step(
     fake.write_text(f"#!/bin/sh\ncat '{payload}'\nexit {13 if findings else 0}\n")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
 
+    step = _step("zizmor")
     script = tmp_path / "step.sh"
-    script.write_text(_zizmor_step()["run"])
+    script.write_text(step["run"])
     output = tmp_path / "github_output"
     output.write_text("")
     runner_temp = tmp_path / "runner_temp"
     runner_temp.mkdir()
     env = {
+        **_GIT_ENV,
         "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
         "HOME": str(tmp_path),
         "GITHUB_API_URL": contents.url,
@@ -292,8 +341,10 @@ def _run_step(
         "GITHUB_OUTPUT": str(output),
         "RUNNER_TEMP": str(runner_temp),
         "GH_TOKEN": "test-token",
-        "DRIFT_AUDITS": _drift_audits(),
-        "DRIFT_BASE_REF": drift_base_ref,
+        "DRIFT_AUDITS": _job()["env"]["DRIFT_AUDITS"],
+        "EVENT_NAME": event,
+        "PR_HEAD_SHA": pr_head,
+        "DEFAULT_BRANCH": default_branch,
     }
     # A step with no `shell:` key runs as `bash -e {0}`.
     proc = subprocess.run(
@@ -314,78 +365,180 @@ def _run_step(
     return Run(proc.returncode, proc.stdout, proc.stderr, verdicts[0])
 
 
-def _serve_behind_pr(contents: FakeContents) -> None:
-    contents.files[(FLAGGED_PATH, STALE_BASE_SHA)] = STALE_BASE_FILE
-    contents.files[(FLAGGED_PATH, BASE_BRANCH)] = TIP_FILE
+def _serve_history(contents: FakeContents, c: Checkout) -> None:
+    """Serve the flagged file at every commit of the throwaway repository."""
+    for sha in (c.stale_base, c.tip, c.pr_parent, c.pr_head):
+        contents.files[(FLAGGED_PATH, sha)] = subprocess.run(
+            ["git", "show", f"{sha}:{FLAGGED_PATH}"],
+            cwd=c.work,
+            capture_output=True,
+            check=True,
+        ).stdout
 
 
-def test_line_already_at_the_base_tip_is_drift(
+# ---------------------------------------------------------------------------
+# pull_request runs
+# ---------------------------------------------------------------------------
+
+
+@needs_shell
+def test_a_pin_main_gained_after_the_branch_point_is_drift(
     tmp_path: Path, contents: FakeContents
 ) -> None:
-    """The #1689 shape: present at the tip, absent at the stale merge base."""
-    _serve_behind_pr(contents)
-    base = _evaluate(_shipped_expr(), _pull_request_context())
-    run = _run_step(tmp_path, contents, [_finding("ref-version-mismatch")], base)
+    """The #1689 shape: at HEAD^1, absent at the stale merge base."""
+    c = _make_checkout(tmp_path, pin_on="main")
+    _serve_history(contents, c)
+    run = _run_step(
+        tmp_path,
+        c.work,
+        contents,
+        [_finding("ref-version-mismatch")],
+        pr_head=c.pr_head,
+    )
     assert run.verdict == "DRIFT(1)", run
     assert run.code == 0, run
-    assert contents.requests == [(FLAGGED_PATH, BASE_BRANCH)]
+    assert contents.requests == [(FLAGGED_PATH, c.tip)]
+    assert (FLAGGED_PATH, c.stale_base) not in contents.requests
     assert "::warning file=.github/workflows/style-gate.yml" in run.stdout
     assert "DRIFT (non-blocking, upstream moved)" in run.stdout
     assert "::error" not in run.stdout
 
 
-def test_pre_fix_expression_reads_the_same_line_as_findings(
+@needs_shell
+def test_a_pin_the_pr_brought_is_findings(
     tmp_path: Path, contents: FakeContents
 ) -> None:
-    """Mutation check: the old base expression fails the #1689 shape."""
-    _serve_behind_pr(contents)
-    base = _evaluate(PRE_FIX_EXPR, _pull_request_context())
-    run = _run_step(tmp_path, contents, [_finding("ref-version-mismatch")], base)
+    c = _make_checkout(tmp_path, pin_on="pr")
+    _serve_history(contents, c)
+    run = _run_step(
+        tmp_path,
+        c.work,
+        contents,
+        [_finding("ref-version-mismatch")],
+        pr_head=c.pr_head,
+    )
     assert run.verdict == "FINDINGS(1)", run
     assert run.code == 1, run
-    assert contents.requests == [(FLAGGED_PATH, STALE_BASE_SHA)]
-
-
-def test_line_absent_from_the_base_tip_is_findings(
-    tmp_path: Path, contents: FakeContents
-) -> None:
-    """A pin the PR itself added or edited is still blocking."""
-    contents.files[(FLAGGED_PATH, BASE_BRANCH)] = STALE_BASE_FILE
-    base = _evaluate(_shipped_expr(), _pull_request_context())
-    run = _run_step(tmp_path, contents, [_finding("ref-version-mismatch")], base)
-    assert run.verdict == "FINDINGS(1)", run
-    assert run.code == 1, run
+    assert contents.requests == [(FLAGGED_PATH, c.tip)]
     assert "::error file=.github/workflows/style-gate.yml" in run.stdout
 
 
+@needs_shell
+def test_a_checkout_that_is_not_the_prs_merge_commit_has_no_base(
+    tmp_path: Path, contents: FakeContents
+) -> None:
+    """Fail-open shape: the PR head checked out bare. Its HEAD^1 is the PR's
+    own earlier commit, which carries the pin the PR brought -- reading it as
+    the base would wave the PR's own pin through as DRIFT."""
+    c = _make_checkout(tmp_path, pin_on="pr")
+    _git(c.work, "checkout", "-q", "--detach", c.pr_head)
+    _serve_history(contents, c)
+    run = _run_step(
+        tmp_path,
+        c.work,
+        contents,
+        [_finding("ref-version-mismatch")],
+        pr_head=c.pr_head,
+    )
+    assert run.verdict == "FINDINGS(1)", run
+    assert run.code == 1, run
+    assert contents.requests == []
+    assert "is not the PR's merge commit" in run.stdout
+
+
+@needs_shell
+def test_a_merge_whose_second_parent_is_not_the_pr_head_has_no_base(
+    tmp_path: Path, contents: FakeContents
+) -> None:
+    c = _make_checkout(tmp_path, pin_on="main")
+    _serve_history(contents, c)
+    run = _run_step(
+        tmp_path, c.work, contents, [_finding("ref-version-mismatch")], pr_head="f" * 40
+    )
+    assert run.verdict == "FINDINGS(1)", run
+    assert run.code == 1, run
+    assert contents.requests == []
+
+
+@needs_shell
 @pytest.mark.parametrize("status", [404, 500])
-def test_unreadable_base_is_findings(
+def test_an_unreadable_base_is_findings(
     tmp_path: Path, contents: FakeContents, status: int
 ) -> None:
-    _serve_behind_pr(contents)
+    c = _make_checkout(tmp_path, pin_on="main")
+    _serve_history(contents, c)
     contents.fail_with = status
-    base = _evaluate(_shipped_expr(), _pull_request_context())
-    run = _run_step(tmp_path, contents, [_finding("ref-version-mismatch")], base)
+    run = _run_step(
+        tmp_path,
+        c.work,
+        contents,
+        [_finding("ref-version-mismatch")],
+        pr_head=c.pr_head,
+    )
     assert run.verdict == "FINDINGS(1)", run
     assert run.code == 1, run
 
 
+@needs_shell
 def test_an_audit_outside_drift_audits_is_findings_on_an_unchanged_line(
     tmp_path: Path, contents: FakeContents
 ) -> None:
-    _serve_behind_pr(contents)
-    assert "unpinned-uses" not in _drift_audits().split()
-    base = _evaluate(_shipped_expr(), _pull_request_context())
-    run = _run_step(tmp_path, contents, [_finding("unpinned-uses")], base)
+    c = _make_checkout(tmp_path, pin_on="main")
+    _serve_history(contents, c)
+    assert "unpinned-uses" not in _job()["env"]["DRIFT_AUDITS"].split()
+    run = _run_step(
+        tmp_path, c.work, contents, [_finding("unpinned-uses")], pr_head=c.pr_head
+    )
     assert run.verdict == "FINDINGS(1)", run
     assert run.code == 1, run
 
 
+@needs_shell
+def test_a_finding_whose_offset_misses_its_feature_text_is_findings(
+    tmp_path: Path, contents: FakeContents
+) -> None:
+    """The span starts on `- run: true`, a line present at the base, but that
+    line does not carry the finding's feature text (`# v1`)."""
+    c = _make_checkout(tmp_path, pin_on="main")
+    _serve_history(contents, c)
+    finding = _finding("ref-version-mismatch", at=b"- run: true")
+    run = _run_step(tmp_path, c.work, contents, [finding], pr_head=c.pr_head)
+    assert run.verdict == "FINDINGS(1)", run
+    assert run.code == 1, run
+
+
+@needs_shell
 def test_a_clean_run_passes_without_reading_the_base(
     tmp_path: Path, contents: FakeContents
 ) -> None:
-    base = _evaluate(_shipped_expr(), _pull_request_context())
-    run = _run_step(tmp_path, contents, [], base)
+    c = _make_checkout(tmp_path, pin_on="main")
+    run = _run_step(tmp_path, c.work, contents, [], pr_head=c.pr_head)
     assert run.verdict == "PASS", run
     assert run.code == 0, run
     assert contents.requests == []
+
+
+# ---------------------------------------------------------------------------
+# merge-candidate push / workflow_dispatch runs
+# ---------------------------------------------------------------------------
+
+
+@needs_shell
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
+def test_off_a_pr_the_base_is_the_default_branch_by_name(
+    tmp_path: Path, contents: FakeContents, event: str
+) -> None:
+    """A `&` in the branch name must reach the API URL-quoted, or it splits the query."""
+    c = _make_checkout(tmp_path, pin_on="main")
+    contents.files[(FLAGGED_PATH, "release/x&y")] = PINNED_FILE
+    run = _run_step(
+        tmp_path,
+        c.work,
+        contents,
+        [_finding("ref-version-mismatch")],
+        event=event,
+        default_branch="release/x&y",
+    )
+    assert run.verdict == "DRIFT(1)", run
+    assert run.code == 0, run
+    assert contents.requests == [(FLAGGED_PATH, "release/x&y")]
