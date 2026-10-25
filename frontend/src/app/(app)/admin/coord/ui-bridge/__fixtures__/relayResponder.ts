@@ -1,9 +1,11 @@
 /**
  * A fake of the web backend's runner relay for the dashboard's page tests:
  * one handler per runner route, defaulting to what a CURRENT runner answers
- * (qontinui-runner `be39991d2` plus Phase 6's runner half). In particular the
- * runner's own app list (`GET /apps`) and the occlusion sweep are refused as
- * not carried, because no runner's relay allowlist carries them yet.
+ * (qontinui-runner `be39991d2` plus Phase 6's runner half, `afc970df9`). In
+ * particular the runner's own app list (`GET /apps`) and the occlusion sweep
+ * are refused as not carried, because no runner's relay allowlist carries them
+ * yet, and the component read answers its relayed shape: the runner's own
+ * registry, `wrapperComponents: "withheld"`.
  *
  * Every request is recorded as `"<METHOD> <runner path>"`, so a test can
  * assert what was — and was not — asked for; `requestsFor` adds the device id

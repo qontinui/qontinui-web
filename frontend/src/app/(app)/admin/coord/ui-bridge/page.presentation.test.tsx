@@ -48,6 +48,7 @@ import {
   SPEC_LIST_BODY,
   VISIBILITY_HIDES_TEXT,
   appNotFoundBody,
+  componentsBodyWithDisclosure,
 } from "./__fixtures__/runnerBodies";
 import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
 
@@ -174,7 +175,8 @@ describe("the UI Bridge dashboard while presenting", () => {
     // Another app's name: its registry row proves no owner.
     expect(body).not.toHaveTextContent("Example Portal");
     expect(body).not.toHaveTextContent("example-portal");
-    // Component and action names: the merged registry says nobody's.
+    // Component and action names: the runner's own entries embed runtime
+    // data (a project's name), so no repository's owner clears them.
     expect(body).not.toHaveTextContent("Terminal tabs");
     expect(body).not.toHaveTextContent("Delete profile");
     // The window's own text, quoted by page health and the sweep.
@@ -229,6 +231,34 @@ describe("the UI Bridge dashboard while presenting", () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId("coord-ui-bridge-snapshot-raw")).toBeNull();
     expect(screen.queryByTestId("coord-ui-bridge-health-quotes")).toBeNull();
+  });
+
+  it("states that wrapper apps are not consulted over the relay, with its provenance", async () => {
+    await renderPresenting();
+    const line = screen.getByTestId("coord-ui-bridge-actions-wrappers");
+    expect(line).toHaveAttribute("data-wrappers", "withheld");
+    expect(line).toHaveTextContent("are not consulted over the relay");
+    const chip = line.querySelector("[data-provenance]");
+    expect(chip).toHaveTextContent("source: the runner's component registry");
+    expect(chip).toHaveAttribute("data-provenance-known", "true");
+  });
+
+  it("renders a disclosure the runner did not make as UNKNOWN with an unknown time — never as an answer", async () => {
+    state.relay = relayFake({
+      components: () => json(200, componentsBodyWithDisclosure(undefined)),
+      visibility: () => json(200, VISIBILITY_HIDES_TEXT),
+    });
+    const view = await renderPresenting();
+    const line = screen.getByTestId("coord-ui-bridge-actions-wrappers");
+    expect(line).toHaveAttribute("data-wrappers", "unknown");
+    expect(line).toHaveTextContent("UNKNOWN");
+    expect(line).toHaveTextContent("an older runner build does not");
+    expect(line).not.toHaveTextContent("are not consulted");
+    expect(line.querySelector("[data-provenance]")).toHaveAttribute(
+      "data-provenance-known",
+      "false"
+    );
+    expectPresentationSafe(view, { captions: CAPTIONS });
   });
 
   it("names both spec reads behind the screens and states", async () => {

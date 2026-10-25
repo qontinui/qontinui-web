@@ -3,10 +3,11 @@
  * runner (and the web backend) send them — so the tests drive the real hooks
  * and the real relay client, and only `httpClient` is faked.
  *
- * Shapes are taken from qontinui-runner `be39991d2` + Phase 6's runner half:
- * `mcp_api.rs` `health`, `ui_bridge/elements.rs`
+ * Shapes are taken from qontinui-runner `be39991d2` + Phase 6's runner half
+ * (`afc970df9`): `mcp_api.rs` `health`, `ui_bridge/elements.rs`
  * `ui_bridge_get_components_handler` (with `serializeComponent`'s
- * per-component shape), `ui_bridge/screenshots.rs`
+ * per-component shape, and `components_envelope`'s `data.wrapperComponents`),
+ * `ui_bridge/screenshots.rs`
  * `ui_bridge_page_health_handler` and `build_visibility_report`,
  * `backend_relay.rs` `http_relay_error` / `egress_off_http_response`, and
  * qontinui-web `fleet_targets.py` `list_apps`. Names are generic placeholders.
@@ -62,6 +63,11 @@ export const HEALTH_BODY = {
  * `GET /ui-bridge/control/components`: three components, seven actions — two
  * read, one write, one destructive, two with NO `effect` key (undeclared), and
  * one declaring a word that is not an effect class (also undeclared).
+ *
+ * `data.wrapperComponents` is `"withheld"` because every relayed read says so:
+ * the runner asked no wrapper app, so the list is its own registry only
+ * (`components_envelope`, qontinui-runner `afc970df9`). The dashboard makes no
+ * other kind of read. A local read would say `"included"`.
  */
 export const COMPONENTS_BODY = {
   success: true,
@@ -140,8 +146,26 @@ export const COMPONENTS_BODY = {
         scope: "global",
       },
     ],
+    wrapperComponents: "withheld",
   },
 };
+
+/**
+ * `COMPONENTS_BODY` with its disclosure replaced by `wrapperComponents` — or
+ * with the field absent, for `undefined`, which is what a runner build that
+ * predates the disclosure sends.
+ */
+export function componentsBodyWithDisclosure(
+  wrapperComponents: unknown
+): Record<string, unknown> {
+  const data: Record<string, unknown> = {
+    components: COMPONENTS_BODY.data.components,
+  };
+  if (wrapperComponents !== undefined) {
+    data.wrapperComponents = wrapperComponents;
+  }
+  return { success: true, data };
+}
 
 /** `POST /ui-bridge/control/page-health`: six findings, summary WARNING. */
 export const PAGE_HEALTH_BODY = {
@@ -381,5 +405,6 @@ export const COMPONENTS_ALL_DECLARED_BODY = {
             : "write",
       })),
     })),
+    wrapperComponents: COMPONENTS_BODY.data.wrapperComponents,
   },
 };

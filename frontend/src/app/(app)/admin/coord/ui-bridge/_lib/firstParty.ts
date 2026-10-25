@@ -14,10 +14,12 @@
  * presenting:
  * - other apps' names and screens — the registry records a local checkout
  *   path, never an `owner/name`, so nothing proves whose an app is;
- * - component and action text — the runner merges its own registry with
- *   every live wrapper app's, the merged list does not say which entry came
- *   from where, and even the runner's own entries embed runtime data (an
- *   app id, a session name);
+ * - component and action text — over the relay the runner answers with its
+ *   OWN registry only and asks no wrapper app (`wrapperComponents` is
+ *   `"withheld"`), so none of it is a third party's page. But the runner's
+ *   own entries embed runtime data — a saved project's name, or the
+ *   self-declared name of an app its integration page lists — and no
+ *   repository's owner is the owner of that;
  * - snapshot and page-health text quoted from the window.
  */
 

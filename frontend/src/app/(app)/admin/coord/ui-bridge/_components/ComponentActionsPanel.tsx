@@ -8,10 +8,16 @@
  * with no declared effect is UNDECLARED — counted, filtered and badged as
  * such — and never shown as a read.
  *
- * Presentation mode (D3.3): component and action names are withheld (the
- * merged registry cannot say whose each entry is — `firstParty.ts`), so the
- * audience sees the effect classes, their counts and each component's
- * descriptor; descriptions and raw ids are the operator's.
+ * Whose components these are is stated, never implied. Over the relay the list
+ * is the runner's own registry and no wrapper app is asked; the runner says so
+ * in `wrapperComponents`, and the panel says it beside the counts with its
+ * provenance. A reply that does not say (an older build) or says something
+ * else is UNKNOWN there, never worded as either answer.
+ *
+ * Presentation mode (D3.3): component and action names are withheld (even the
+ * runner's own entries embed runtime data that no repository clears —
+ * `firstParty.ts`), so the audience sees the effect classes, their counts and
+ * each component's descriptor; descriptions and raw ids are the operator's.
  */
 
 import { useMemo, useState } from "react";
@@ -41,10 +47,12 @@ import {
   EFFECT_MEANING,
   EFFECT_PALETTE,
   countEffects,
+  wrapperDisclosureText,
   type ComponentActionRecord,
   type ComponentRecord,
   type ComponentsReading,
   type EffectKind,
+  type WrapperDisclosure,
 } from "../_lib/componentEffectStatus";
 import type { ReadState } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
@@ -91,6 +99,38 @@ function EffectBadge({ kind }: { kind: EffectKind }) {
       }}
       palette={EFFECT_PALETTE}
     />
+  );
+}
+
+/**
+ * Whose components the list holds, stated beside the counts. The two answers
+ * the runner can give are calm facts about the list; a disclosure it did not
+ * make is UNKNOWN, and so is its time — no time came with a claim nobody made.
+ */
+function WrapperDisclosureLine({
+  disclosure,
+  asOf,
+}: {
+  disclosure: WrapperDisclosure;
+  asOf: number | null;
+}) {
+  const text = wrapperDisclosureText(disclosure);
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2"
+      data-testid="coord-ui-bridge-actions-wrappers"
+      data-wrappers={disclosure.kind}
+    >
+      {disclosure.kind === "unknown" ? (
+        <SourceUnknown text={text} className="text-xs" />
+      ) : (
+        <span className="text-xs text-muted-foreground">{text}</span>
+      )}
+      <Provenance
+        source="the runner's component registry"
+        asOf={disclosure.kind === "unknown" ? null : asOf}
+      />
+    </div>
   );
 }
 
@@ -238,6 +278,10 @@ export function ComponentActionsPanel({
               asOf={components.state === "ok" ? components.asOf : null}
             />
           </div>
+          <WrapperDisclosureLine
+            disclosure={reading.wrappers}
+            asOf={components.state === "ok" ? components.asOf : null}
+          />
           {reading.unreadable > 0 && (
             <p
               className="m-0 text-xs text-muted-foreground"

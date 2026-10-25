@@ -38,6 +38,7 @@ import {
   VISIBILITY_CLEAR_OBSERVED,
   VISIBILITY_CLEAR_UNOBSERVED,
   VISIBILITY_HIDES_TEXT,
+  componentsBodyWithDisclosure,
 } from "./__fixtures__/runnerBodies";
 import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
 
@@ -230,6 +231,88 @@ describe("every panel renders the runner's answers", () => {
       expect.stringContaining("terminal"),
       expect.stringContaining("settings"),
     ]);
+  });
+});
+
+describe("the wrapper-app disclosure beside the component counts", () => {
+  const disclosure = () =>
+    screen.findByTestId("coord-ui-bridge-actions-wrappers");
+
+  it("says wrapper apps are not consulted over the relay, as a relayed read reports", async () => {
+    renderPage();
+    const line = await disclosure();
+    expect(line).toHaveAttribute("data-wrappers", "withheld");
+    expect(line).toHaveTextContent(
+      "are not consulted over the relay, so this is the runner's own registry only"
+    );
+    expect(line).not.toHaveTextContent("UNKNOWN");
+    expect(line).not.toHaveTextContent("Wrapper apps were consulted");
+  });
+
+  it("says they were consulted — and that the list does not say whose each entry is — when the runner reports included", async () => {
+    state.relay = relayFake({
+      components: () => json(200, componentsBodyWithDisclosure("included")),
+    });
+    renderPage();
+    const line = await disclosure();
+    expect(line).toHaveAttribute("data-wrappers", "included");
+    expect(line).toHaveTextContent("Wrapper apps were consulted");
+    expect(line).toHaveTextContent("does not say which entry came from which");
+    expect(line).not.toHaveTextContent("are not consulted");
+  });
+
+  it.each([
+    [
+      "absent, as an older runner build sends it",
+      undefined,
+      "this runner's reply does not say (an older runner build does not)",
+    ],
+    [
+      "a word the runner does not use",
+      "maybe",
+      "this runner's reply gave an answer this page does not know",
+    ],
+    [
+      "null",
+      null,
+      "this runner's reply gave an answer this page does not know",
+    ],
+    [
+      "the wrong case",
+      "Withheld",
+      "this runner's reply gave an answer this page does not know",
+    ],
+  ])(
+    "renders UNKNOWN — claiming neither answer — when the disclosure is %s",
+    async (_label, said, reason) => {
+      state.relay = relayFake({
+        components: () => json(200, componentsBodyWithDisclosure(said)),
+      });
+      renderPage();
+      const line = await disclosure();
+      expect(line).toHaveAttribute("data-wrappers", "unknown");
+      expect(line).toHaveTextContent("UNKNOWN");
+      expect(line).toHaveTextContent(
+        `Whether wrapper apps were consulted is unknown: ${reason}.`
+      );
+      expect(line).not.toHaveTextContent("are not consulted");
+      expect(line).not.toHaveTextContent("Wrapper apps were consulted:");
+      // The word the runner sent is not repeated back.
+      expect(line).not.toHaveTextContent("maybe");
+      // It qualifies the list; it does not erase it.
+      expect(
+        screen.getByTestId("coord-ui-bridge-actions-count-undeclared")
+      ).toHaveTextContent("undeclared 3");
+    }
+  );
+
+  it("says nothing about wrapper apps for a panel that read no components", async () => {
+    state.relay = relayFake({ components: () => json(403, NOT_CARRIED_BODY) });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-unknown");
+    expect(
+      screen.queryByTestId("coord-ui-bridge-actions-wrappers")
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -3,10 +3,23 @@
  * "Controls and what they do" panel renders (style guide R8).
  *
  * The source is the runner's `GET /ui-bridge/control/components`
- * (`relayReads.ts` `fetchRunnerComponents`): `{ components: [...] }`, each
- * component `{ id, name, description?, actions: [{ id, label?, description?,
- * paramSchema?, effect?, path? }], elementIds?, registeredAt, mounted, scope }`
- * (qontinui-runner `src/hooks/ui-bridge-events/utils.ts` `serializeComponent`).
+ * (`relayReads.ts` `fetchRunnerComponents`): `{ components: [...],
+ * wrapperComponents }`, each component `{ id, name, description?, actions: [{
+ * id, label?, description?, paramSchema?, effect?, path? }], elementIds?,
+ * registeredAt, mounted, scope }` (qontinui-runner
+ * `src/hooks/ui-bridge-events/utils.ts` `serializeComponent`).
+ *
+ * **Whose components these are is the runner's to say, and it says it.** Read
+ * locally, the route merges the runner's own registry with the reply of every
+ * live WebSocket-wrapper app; read over the relay, the only way this page
+ * reads it, it returns the runner's OWN registry and asks no wrapper app
+ * (qontinui-runner `afc970df9`, `ui_bridge::elements::ComponentSources`).
+ * `data.wrapperComponents` carries the difference — `"withheld"` or
+ * `"included"` — so a list with no wrapper entries can be told from "none is
+ * registered" and from "none was asked". {@link readWrapperDisclosure} reads
+ * it, and the panel states it: this page never implies wrapper apps were
+ * consulted. A reply that sends no such field (a build that predates it) or
+ * any other value is UNKNOWN, never read as either.
  *
  * **An action's safety class is DECLARED, never re-derived** (served policy
  * `testing` `an-actions-safety-class-is-declared-not-re-derived`). The SDK's
@@ -16,12 +29,13 @@
  * UNDECLARED here and is counted and shown as such — never as `read`, which is
  * the default a consumer could apply and the one this page must not, because
  * it would let an unjudged destructive control read as harmless. A value
- * outside the three (a wrapper app speaking a newer or broken vocabulary) is
- * not a declaration this page can trust either, so it is UNDECLARED too. Nor
- * is the SDK's standard-verb map (`resolveActionEffect`, which falls back to a
- * class keyed on an action id such as `click`): a class that map supplies is
- * nobody's judgement — the same clause's correction says never to cite one as
- * evidence an action was classified — so only the `effect` field is read.
+ * outside the three (the runner's own registry speaking a newer or broken
+ * vocabulary) is not a declaration this page can trust either, so it is
+ * UNDECLARED too. Nor is the SDK's standard-verb map (`resolveActionEffect`,
+ * which falls back to a class keyed on an action id such as `click`): a class
+ * that map supplies is nobody's judgement — the same clause's correction says
+ * never to cite one as evidence an action was classified — so only the
+ * `effect` field is read.
  *
  * Colour follows R3 — who must act, not how alarming the word sounds. A
  * declared `write` or `destructive` is a FACT about the control, not a fault,
@@ -134,10 +148,62 @@ export interface ComponentRecord {
   readonly actions: readonly ComponentActionRecord[];
 }
 
+/**
+ * Whether wrapper apps — applications that connect to the runner's UI Bridge
+ * from outside it — were asked for their components, as the runner reports it
+ * in `data.wrapperComponents`:
+ *
+ * - `withheld` — not asked: the list is the runner's own registry only. What
+ *   every relayed read says, and so what this page expects;
+ * - `included` — asked: the list merges the runner's registry with every live
+ *   wrapper app's, and does not say which entry came from where;
+ * - `unknown` — the reply did not say, or said something else. Never read as
+ *   either of the two, and `reason` says which, in words that quote nothing the
+ *   reply sent.
+ */
+export type WrapperDisclosure =
+  | { readonly kind: "withheld" }
+  | { readonly kind: "included" }
+  | { readonly kind: "unknown"; readonly reason: string };
+
+/**
+ * The disclosure in a components payload. Exactly the runner's two words are
+ * answers: an absent field (a build that predates the disclosure) and any
+ * other value — a different case, a boolean, `null` — are UNKNOWN. A guess in
+ * either direction is a claim about whose entries these are that nothing
+ * observed.
+ */
+export function readWrapperDisclosure(payload: unknown): WrapperDisclosure {
+  const said = isRecord(payload) ? payload.wrapperComponents : undefined;
+  if (said === "withheld") return { kind: "withheld" };
+  if (said === "included") return { kind: "included" };
+  return {
+    kind: "unknown",
+    reason:
+      said === undefined
+        ? "this runner's reply does not say (an older runner build does not)"
+        : "this runner's reply gave an answer this page does not know",
+  };
+}
+
+/** The disclosure as one sentence — what the panel prints beside the counts. */
+export function wrapperDisclosureText(disclosure: WrapperDisclosure): string {
+  switch (disclosure.kind) {
+    case "withheld":
+      return "Wrapper apps — applications connected to the runner from outside it — are not consulted over the relay, so this is the runner's own registry only.";
+    case "included":
+      return "Wrapper apps were consulted: this list merges the runner's own registry with every connected wrapper app's, and it does not say which entry came from which.";
+    case "unknown":
+      return `Whether wrapper apps were consulted is unknown: ${disclosure.reason}.`;
+  }
+}
+
 export interface ComponentsReading {
   readonly components: readonly ComponentRecord[];
   /** Entries in the array that were not component objects — not listed. */
   readonly unreadable: number;
+  /** Whose components these are — see {@link WrapperDisclosure}. */
+  readonly wrappers: WrapperDisclosure;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -188,8 +254,8 @@ export function readComponents(payload: unknown): ComponentsReading | null {
           .filter((a): a is ComponentActionRecord => a !== null)
       : [];
     components.push({
-      // The id is the identity; two entries sharing one (a runner and a
-      // wrapper registering the same id) keep distinct keys by position.
+      // The id is the identity; two entries sharing one (the same component
+      // registered twice) keep distinct keys by position.
       key: id ? `${id}#${index}` : `component#${index}`,
       id,
       name: text(entry.name),
@@ -207,7 +273,7 @@ export function readComponents(payload: unknown): ComponentsReading | null {
       actions,
     });
   });
-  return { components, unreadable };
+  return { components, unreadable, wrappers: readWrapperDisclosure(payload) };
 }
 
 export interface EffectCounts {

@@ -158,10 +158,21 @@ export function fetchRunnerHealth(deviceId: string): Promise<unknown> {
 
 /**
  * `GET /ui-bridge/control/components` — the component action registry of the
- * runner's own webview, merged with every live WebSocket-wrapper app's
- * (qontinui-runner `ui_bridge/elements.rs`
- * `ui_bridge_get_components_handler`). The payload is `{ components: [...] }`
- * once `runnerProxyGet` unwraps the `{ success, data }` envelope; each action
+ * runner's own webview (qontinui-runner `ui_bridge/elements.rs`
+ * `ui_bridge_get_components_handler`).
+ *
+ * **Over the relay it is the runner's OWN registry and nothing else.** A local
+ * read merges that registry with the reply of every live WebSocket-wrapper
+ * app; the relay marks every request it forwards, and a marked read asks no
+ * wrapper app (`ComponentSources::RunnerOnly`, qontinui-runner `afc970df9`).
+ * The reply says which it was in `data.wrapperComponents` — `"withheld"` for a
+ * relayed read, which is the only kind this dashboard makes — and
+ * `componentEffectStatus.ts` reads it so the panel never implies wrapper apps
+ * were consulted. A build that predates the field sends none, which the panel
+ * reads as UNKNOWN, not as either word.
+ *
+ * The payload is `{ components: [...], wrapperComponents }` once
+ * `runnerProxyGet` unwraps the `{ success, data }` envelope; each action
  * carries its author-declared `effect`, or no `effect` key at all when nobody
  * declared one (the runner's `serializeComponent` never defaults it). Read by
  * `componentEffectStatus.ts`.

@@ -49,7 +49,7 @@ export const UI_BRIDGE_CAPTIONS = {
     title: "Controls and what they do",
     oneLiner:
       "Every control the runner's interface registers, and whether each one only reads, writes, or destroys.",
-    whyItMatters: copy`A control whose author declared no effect is counted as undeclared and never assumed to be safe, so an automated walk knows what it may press before it presses anything, and an ${term("operator", "operator")} can see exactly where a declaration is missing.`,
+    whyItMatters: copy`A control whose author declared no effect is counted as undeclared and never assumed to be safe, so an automated walk knows what it may press before it presses anything, and an ${term("operator", "operator")} can see exactly where a declaration is missing. Over the cloud relay the list holds the runner's own controls only, because applications connected to the runner are not asked, and the panel says so rather than implying they were.`,
   },
   "ui-bridge.page-health": {
     title: "Page health",

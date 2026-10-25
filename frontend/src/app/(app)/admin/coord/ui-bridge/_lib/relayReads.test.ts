@@ -54,16 +54,20 @@ beforeEach(() => {
 });
 
 describe("the dashboard's relay call sites", () => {
-  it("fetchRunnerComponents: GET /ui-bridge/control/components, unwrapped", async () => {
+  it("fetchRunnerComponents: GET /ui-bridge/control/components, unwrapped — the runner's own registry, wrapperComponents withheld", async () => {
     fetchMock.mockResolvedValue(json(200, COMPONENTS_BODY));
     const payload = (await fetchRunnerComponents(DEVICE_ID)) as {
       components: unknown[];
+      wrapperComponents: unknown;
     };
     const { url, init } = sent();
     expect(url).toBe(relayUrl("ui-bridge/control/components"));
     expect(init.method).toBe("GET");
     expect(init.body).toBeUndefined();
     expect(payload.components).toHaveLength(3);
+    // The disclosure rides beside `components` inside `data`, so unwrapping
+    // the envelope keeps it — and a relayed read is always `withheld`.
+    expect(payload.wrapperComponents).toBe("withheld");
   });
 
   it("fetchRunnerPageHealth: POST /ui-bridge/control/page-health with `{}`", async () => {
