@@ -16041,10 +16041,14 @@ export interface paths {
          *     recording_since, devices_recording, series: [Bucket], fleet, truncated,
          *     as_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and
          *     their totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;
-         *     ``fleet`` carries ``available_slot_hours_per_day`` (published non-zero
-         *     budgets × 24) and how many devices published a budget, a zero budget or
-         *     none. ``recording_since: null`` means nothing is recorded yet — an absent
-         *     bucket before it is UNKNOWN, not zero.
+         *     ``fleet`` carries ``available_state`` — ``published``,
+         *     ``no_budget_published`` (no device published a budget) or
+         *     ``zero_budget_published`` (every published budget is 0) — with
+         *     ``available_slot_hours_per_day`` / ``_per_bucket`` (published non-zero
+         *     budgets × 24) stated only for ``published`` and ``null`` otherwise, never
+         *     0; and how many devices published a budget, a zero budget or none.
+         *     ``recording_since: null`` means nothing is recorded yet — an absent bucket
+         *     before it is UNKNOWN, not zero.
          */
         get: operations["api_v1_operations_session_runs_growth_get"];
         put?: never;

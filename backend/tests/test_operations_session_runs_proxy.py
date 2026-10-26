@@ -208,8 +208,12 @@ GROWTH_PAYLOAD = {
     "devices_recording": [],
     "series": [],
     "fleet": {
-        "available_slot_hours_per_day": 0,
-        "available_slot_hours_per_bucket": 0,
+        # coord's real shape for a fleet with no published non-zero budget:
+        # the figure is null (never 0) and available_state says why.
+        "available_slot_hours_per_day": None,
+        "available_slot_hours_per_bucket": None,
+        "available_state": "no_budget_published",
+        "definition": "sum of published non-zero configured session budgets x 24",
         "devices_with_budget": 0,
         "devices_zero_budget": 0,
         "devices_without_budget": 1,
@@ -488,6 +492,19 @@ class TestSessionRunGrowthProxy:
             resp = auth_client.get(GROWTH_ROUTE)
         assert resp.json()["recording_since"] is None
         assert resp.json()["devices_recording"] == []
+
+    def test_a_no_budget_fleet_keeps_its_null_figure_and_state(
+        self, auth_client: TestClient
+    ):
+        """No published budget is coord's ``null`` + ``available_state`` — it
+        must not become an available capacity of 0 on the hop."""
+        with _patch_httpx() as MockClient:
+            _client_returning(MockClient, _mock_response(200, GROWTH_PAYLOAD))
+            resp = auth_client.get(GROWTH_ROUTE)
+        fleet = resp.json()["fleet"]
+        assert fleet["available_slot_hours_per_day"] is None
+        assert fleet["available_slot_hours_per_bucket"] is None
+        assert fleet["available_state"] == "no_budget_published"
 
     def test_window_and_bucket_reach_coord(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:

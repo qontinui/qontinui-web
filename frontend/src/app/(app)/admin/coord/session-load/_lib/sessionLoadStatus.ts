@@ -856,12 +856,20 @@ export type FleetAvailable =
       devicesZero: number | null;
       devicesNone: number | null;
     }
+  | {
+      /** Every published budget is 0 — deliberately: nothing to cross, not unknown. */
+      kind: "zero_published";
+      devicesZero: number | null;
+      devicesNone: number | null;
+    }
   | { kind: "unknown" };
 
 /** coord's `fleet.available_state` when the figure is stated. */
 export const AVAILABLE_STATE_PUBLISHED = "published";
 /** coord's `fleet.available_state` when no device published a non-zero budget. */
 export const AVAILABLE_STATE_NO_BUDGET = "no_budget_published";
+/** coord's `fleet.available_state` when every published budget is 0. */
+export const AVAILABLE_STATE_ZERO_BUDGET = "zero_budget_published";
 
 /**
  * What the fleet's budgets make available, read from coord's
@@ -870,6 +878,9 @@ export const AVAILABLE_STATE_NO_BUDGET = "no_budget_published";
  * - `no_budget_published` → "none published" (the figure is `null` by design,
  *   so this is decided BEFORE any null check — it must never read "coord
  *   sent no figures");
+ * - `zero_budget_published` → "every machine published a zero budget" (the
+ *   figure is `null` too, and decided before the null check for the same
+ *   reason);
  * - `published` → the figure, or unknown if coord nonetheless sent none;
  * - any other value → unknown (a state this build cannot read);
  * - absent (a coord predating the field) → `devices_with_budget === 0` is
@@ -889,6 +900,9 @@ export function fleetAvailable(growth: GrowthWire): FleetAvailable {
     (state === null && withBudget === 0)
   ) {
     return { kind: "none_published", devicesZero: zero, devicesNone: none };
+  }
+  if (state === AVAILABLE_STATE_ZERO_BUDGET) {
+    return { kind: "zero_published", devicesZero: zero, devicesNone: none };
   }
   if (state !== null && state !== AVAILABLE_STATE_PUBLISHED) {
     return { kind: "unknown" };
@@ -910,6 +924,8 @@ export function fleetAvailableText(a: FleetAvailable): string {
   switch (a.kind) {
     case "unknown":
       return "Fleet slot-hours available: unknown — coord sent no fleet budget figures.";
+    case "zero_published":
+      return `Fleet slot-hours available: none — every machine published a zero configured session budget (${countText(a.devicesZero)} published zero, ${countText(a.devicesNone)} published none).`;
     case "none_published":
       return `Fleet slot-hours available: unknown — no machine published a non-zero configured session budget (${countText(a.devicesZero)} published zero, ${countText(a.devicesNone)} published none).`;
     case "known":
@@ -996,7 +1012,9 @@ export function growthTrend(
       reason:
         available.kind === "none_published"
           ? "no machine published a non-zero configured session budget, so there is no available figure to cross"
-          : "coord sent no fleet budget figures",
+          : available.kind === "zero_published"
+            ? "every machine published a zero configured session budget, so there is no available figure to cross"
+            : "coord sent no fleet budget figures",
     };
   }
   if (growth.bucket_seconds !== 86_400) {
@@ -1753,10 +1771,13 @@ export function deriveSessionLoadHealth(
       sessionLoadIssueText(growthIssue, "the latest growth figures")
     );
   }
+  // One sentence once: a refusal (forbidden, tenant_not_resolved) reads the
+  // same for every read it blocked.
+  const uniqueParts = [...new Set(detailParts)];
   return {
     level,
     headline,
-    detail: detailParts.length > 0 ? detailParts.join(" ") : null,
+    detail: uniqueParts.length > 0 ? uniqueParts.join(" ") : null,
     badges,
   };
 }
