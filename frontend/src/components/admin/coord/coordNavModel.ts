@@ -21,7 +21,8 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review / Taste Inbox
- *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Trees° / Launch session° /
+ *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Session load† / Trees° /
+ *             Launch session° /
  *             Runner Drain° / Test Targets° / Migrations° / Deploys° /
  *             Releases° / Git Ops° / Federation° / Memory° / Onboarding° /
  *             Onboarding Status°
@@ -74,6 +75,7 @@ import {
   Hand,
   HardDrive,
   History as HistoryIcon,
+  Hourglass,
   Images,
   Inbox,
   KeyRound,
@@ -609,6 +611,21 @@ export const GROUPS: NavGroup[] = [
         label: "Spawns",
         icon: Timer,
         testId: "coord-nav-spawns",
+        coordAdminOnly: true,
+      },
+      {
+        // Plan `2026-10-23-session-duration-by-work-type-and-per-device-
+        // session-load` Phase 5: how long each work type holds a session
+        // slot, how many sessions each machine carries against its configured
+        // session budget, and how demand grows against the fleet's. Beside
+        // Spawns, which links to it, and `coordAdminOnly` for the same reason:
+        // its four proxies (`/operations/session-runs…`) are
+        // `require_coord_tenant_admin` (the rows name each run's device,
+        // account and session).
+        href: "/admin/coord/session-load",
+        label: "Session load",
+        icon: Hourglass,
+        testId: "coord-nav-session-load",
         coordAdminOnly: true,
       },
       {
