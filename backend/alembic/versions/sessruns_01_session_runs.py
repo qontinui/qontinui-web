@@ -30,10 +30,14 @@ several runs (shell + claude + placeholder), and it is pruned after 7 days. It
 cannot say how long a session of a given kind of work held a slot, nor how
 many sessions a machine carried a month ago. ``coord.session_runs`` is the RUN
 record: one row per open-to-close interval of one runner lifecycle-store
-record, keyed ``(tenant_id, claude_code_session_id, run_seq)``, emitted by the
-runner at open and at close, kept 400 days. A record re-opened after a close
-(boot resume, handoff adoption) keeps its ``claude_code_session_id`` and gets
-``run_seq + 1`` so wall time is never double-counted.
+record ON ONE DEVICE, keyed ``(tenant_id, device_id, claude_code_session_id,
+run_seq)``, emitted by the runner at open and at close, kept 400 days. A record
+re-opened on the same device after a close (boot resume, same-device handoff
+adoption) keeps its ``claude_code_session_id`` and gets ``run_seq + 1`` so wall
+time is never double-counted. ``run_seq`` counts per device: a session handed
+off or respawned onto another device starts that device at ``run_seq`` 1, so a
+handed-off session has runs on each device it ran on, non-overlapping in time,
+and the device is part of the key so those runs never collide.
 
 ``coord.session_run_hourly`` is the leader-gated hourly rollup (Phase 3) for
 windows longer than the 31 days the read computes on demand from the raw
@@ -50,8 +54,9 @@ Column contract — shared with coord (Phase 3)
     device deletion, and a ledger write must never fail on referential
     bookkeeping.
 ``claude_code_session_id UUID NOT NULL`` / ``run_seq INTEGER NOT NULL DEFAULT 1``
-    CHECK ``run_seq >= 1``. ``UNIQUE (tenant_id, claude_code_session_id,
-    run_seq)`` (``uq_session_runs_session_run``) is the ingest upsert key.
+    CHECK ``run_seq >= 1``. ``UNIQUE (tenant_id, device_id,
+    claude_code_session_id, run_seq)`` (``uq_session_runs_device_session_run``)
+    is the ingest upsert key; ``run_seq`` is an ordinal per device.
 ``coord_session_id`` / ``spawn_request_id`` / ``gate_id`` / ``agent_id`` UUID NULL
     Joins, none a FK. ``spawn_request_id`` names a ``coord.spawn_requests``
     row when the runner holds it; the session id join to that ledger is
@@ -106,7 +111,8 @@ from before the record existed (Phase 6).
 Indexes
 =======
 
-* ``uq_session_runs_session_run`` — the unique constraint index, the upsert key.
+* ``uq_session_runs_device_session_run`` — the unique constraint index, the
+  upsert key.
 * ``ix_session_runs_tenant_started`` on ``(tenant_id, started_at DESC)`` — the
   list read and the stats window.
 * ``ix_session_runs_device_started`` on ``(tenant_id, device_id, started_at)``
@@ -201,8 +207,8 @@ def upgrade() -> None:
             history_complete        BOOLEAN NOT NULL DEFAULT true,
             created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CONSTRAINT uq_session_runs_session_run
-                UNIQUE (tenant_id, claude_code_session_id, run_seq),
+            CONSTRAINT uq_session_runs_device_session_run
+                UNIQUE (tenant_id, device_id, claude_code_session_id, run_seq),
             CONSTRAINT ck_session_runs_run_seq_positive CHECK (run_seq >= 1),
             CONSTRAINT ck_session_runs_active_seconds_nonneg
                 CHECK (active_seconds >= 0),
@@ -291,7 +297,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.session_runs IS
-            'The durable session RUN record: one row per open-to-close interval of one runner lifecycle-store record (one Claude session run), keyed (tenant_id, claude_code_session_id, run_seq), emitted by the runner at open and close, kept 400 days by coord. Distinct from coord.sessions, which is presence (revived, reaped, pruned after 7 days) and cannot answer how long a run held a slot. Plan 2026-10-23-session-duration-by-work-type-and-per-device-session-load (D1).'
+            'The durable session RUN record: one row per open-to-close interval of one runner lifecycle-store record on one device (one Claude session run), keyed (tenant_id, device_id, claude_code_session_id, run_seq), emitted by the runner at open and close, kept 400 days by coord. Distinct from coord.sessions, which is presence (revived, reaped, pruned after 7 days) and cannot answer how long a run held a slot. Plan 2026-10-23-session-duration-by-work-type-and-per-device-session-load (D1).'
         """
     )
     op.execute(
@@ -303,7 +309,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.session_runs.run_seq IS
-            'Run ordinal within one claude_code_session_id, starting at 1. A record re-opened after a close (boot resume, handoff adoption) keeps the session id and takes the next run_seq, so wall time is never double-counted and a resume is visible.'
+            'Run ordinal within one claude_code_session_id ON ONE DEVICE, starting at 1. A record re-opened on the same device after a close (boot resume, same-device handoff adoption) keeps the session id and takes the next run_seq, so wall time is never double-counted and a resume is visible. A session handed off or respawned onto another device starts at 1 there: it has runs on each device it ran on, non-overlapping in time.'
         """
     )
     op.execute(

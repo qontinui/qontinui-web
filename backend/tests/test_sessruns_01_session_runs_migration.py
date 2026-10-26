@@ -20,8 +20,10 @@ Phase 3) rely on:
    without the others is refused), and ``ended_at < started_at`` is refused.
 5. **Counters never go negative** — ``run_seq`` below 1, ``active_seconds``
    below 0 and every hourly counter below 0 are refused.
-6. **One row per run** — a second ``(tenant_id, claude_code_session_id,
-   run_seq)`` is refused; the next ``run_seq`` and another tenant are not.
+6. **One row per run per device** — a second ``(tenant_id, device_id,
+   claude_code_session_id, run_seq)`` is refused; the next ``run_seq``,
+   another tenant, and the same session and ``run_seq`` on another device (a
+   cross-device handoff or respawn) are not.
 7. **The device id is not a foreign key** — a device no table knows is
    accepted, since the record must outlive device deletion.
 8. **Re-running is harmless** — with rows present, ``stamp <parent>`` then
@@ -160,9 +162,9 @@ def _nullable_in_check(column: str, values: tuple[str, ...]) -> str:
 # work_type or another coord-validated vocabulary.
 _EXPECTED_RUN_CONSTRAINTS: dict[str, tuple[str, str]] = {
     "session_runs_pkey": ("p", "PRIMARY KEY (id)"),
-    "uq_session_runs_session_run": (
+    "uq_session_runs_device_session_run": (
         "u",
-        "UNIQUE (tenant_id, claude_code_session_id, run_seq)",
+        "UNIQUE (tenant_id, device_id, claude_code_session_id, run_seq)",
     ),
     "ck_session_runs_run_seq_positive": ("c", "CHECK ((run_seq >= 1))"),
     "ck_session_runs_active_seconds_nonneg": ("c", "CHECK ((active_seconds >= 0))"),
@@ -199,9 +201,10 @@ _EXPECTED_RUN_INDEXES: dict[str, str] = {
     "session_runs_pkey": (
         "CREATE UNIQUE INDEX session_runs_pkey ON coord.session_runs USING btree (id)"
     ),
-    "uq_session_runs_session_run": (
-        "CREATE UNIQUE INDEX uq_session_runs_session_run ON coord.session_runs "
-        "USING btree (tenant_id, claude_code_session_id, run_seq)"
+    "uq_session_runs_device_session_run": (
+        "CREATE UNIQUE INDEX uq_session_runs_device_session_run "
+        "ON coord.session_runs "
+        "USING btree (tenant_id, device_id, claude_code_session_id, run_seq)"
     ),
     "ix_session_runs_tenant_started": (
         "CREATE INDEX ix_session_runs_tenant_started ON coord.session_runs "
@@ -598,12 +601,27 @@ def test_sessruns_01_creates_the_run_record_and_enforces_its_contract() -> None:
             "session_run_hourly_pkey",
         )
 
-        # 8. One row per run: the next run_seq and another tenant are distinct.
+        # 8. One row per run per device: the same device refuses a second
+        #    (session, run_seq); the next run_seq, another tenant and another
+        #    device (a cross-device handoff starting its own run 1) are distinct.
         session = uuid.uuid4()
         _insert(engine, _INSERT_RUN, _run(sid=session))
-        _refused(engine, _INSERT_RUN, _run(sid=session), "uq_session_runs_session_run")
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _run(sid=session),
+            "uq_session_runs_device_session_run",
+        )
         _insert(engine, _INSERT_RUN, _run(sid=session, run_seq=2))
         _insert(engine, _INSERT_RUN, _run(sid=session, tid=_OTHER_TENANT))
+        handoff_device = uuid.uuid4()
+        _insert(engine, _INSERT_RUN, _run(sid=session, device=handoff_device))
+        _refused(
+            engine,
+            _INSERT_RUN,
+            _run(sid=session, device=handoff_device),
+            "uq_session_runs_device_session_run",
+        )
 
         # 9. The device is not a foreign key: an id no table knows is accepted.
         _insert(engine, _INSERT_RUN, _run(device=uuid.uuid4()))
