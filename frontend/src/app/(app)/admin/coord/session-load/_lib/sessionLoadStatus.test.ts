@@ -421,14 +421,14 @@ describe("growth", () => {
           available_slot_hours_per_day: null,
           available_state: "no_budget_published",
           devices_with_budget: 0,
-          devices_zero_budget: 2,
-          devices_without_budget: 1,
+          devices_zero_budget: 0,
+          devices_without_budget: 3,
         },
       })
     );
     expect(none.kind).toBe("none_published");
     expect(fleetAvailableText(none)).toMatch(
-      /unknown — no machine published a non-zero/
+      /^Fleet slot-hours available: unknown — no machine published a configured session budget \(3 machines published none\)\.$/
     );
     expect(fleetAvailable(growth(1, () => 1, { fleet: undefined })).kind).toBe(
       "unknown"
@@ -523,7 +523,7 @@ describe("growth", () => {
           available_slot_hours_per_bucket: null,
           available_state: "no_budget_published",
           devices_with_budget: 0,
-          devices_zero_budget: 1,
+          devices_zero_budget: 0,
           devices_without_budget: 2,
         },
       })
@@ -604,6 +604,56 @@ describe("growth", () => {
     );
   });
 
+  it("a mixed fleet — some at 0, the rest unpublished — never claims every machine is at 0", () => {
+    // coord's rule: no non-zero budget and any device at 0 -> zero_budget_published,
+    // whatever the others published.
+    const g = growth(20, (i) => i, {
+      fleet: {
+        available_slot_hours_per_day: null,
+        available_slot_hours_per_bucket: null,
+        available_state: "zero_budget_published",
+        devices_with_budget: 0,
+        devices_zero_budget: 2,
+        devices_without_budget: 1,
+      },
+    });
+    const a = fleetAvailable(g);
+    expect(a).toEqual({
+      kind: "zero_published",
+      devicesZero: 2,
+      devicesNone: 1,
+    });
+    const text = fleetAvailableText(a);
+    expect(text).toBe(
+      "Fleet slot-hours available: unknown — no machine published a non-zero configured session budget; 2 published zero, 1 published none."
+    );
+    expect(text).not.toMatch(/every machine/);
+    expect(trendText(growthTrend(g, a))).toMatch(
+      /available slot-hours are unknown — no machine published a non-zero/
+    );
+    // An unknown none-count is not taken as "every machine at 0" either.
+    expect(
+      fleetAvailableText({
+        kind: "zero_published",
+        devicesZero: 2,
+        devicesNone: null,
+      })
+    ).toMatch(/2 published zero, an unknown number published none/);
+    // A coord predating available_state: its rule applied to the counts.
+    expect(
+      fleetAvailable(
+        growth(1, () => 1, {
+          fleet: {
+            available_slot_hours_per_day: 0,
+            devices_with_budget: 0,
+            devices_zero_budget: 2,
+            devices_without_budget: 1,
+          },
+        })
+      ).kind
+    ).toBe("zero_published");
+  });
+
   it("an unknown zero/none count is said, never folded into zero", () => {
     const a = fleetAvailable(
       growth(1, () => 1, {
@@ -621,8 +671,8 @@ describe("growth", () => {
         available_slot_hours_per_day: null,
         available_state: "no_budget_published",
         devices_with_budget: 0,
-        devices_zero_budget: 1,
-        devices_without_budget: 0,
+        devices_zero_budget: 0,
+        devices_without_budget: 2,
       },
     });
     const t = growthTrend(g, fleetAvailable(g));
