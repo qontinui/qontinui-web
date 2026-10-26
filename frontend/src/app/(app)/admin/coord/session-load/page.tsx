@@ -389,7 +389,7 @@ export default function CoordSessionLoadPage() {
           {spec.bucketLabel} buckets. A machine with no heartbeat for 15 min
           reads UNKNOWN: coord may not have heard its sessions end.
           {load.concurrency.data?.truncated
-            ? " Coord capped the read at its interval limit, so these counts are lower bounds."
+            ? " Coord capped the read at its interval limit, keeping the newest runs, so peaks over the oldest part of the window may be lower bounds."
             : ""}
         </p>
         {load.concurrency.issue && (
@@ -486,7 +486,7 @@ export default function CoordSessionLoadPage() {
                 ? `Runners have recorded session runs since ${absoluteTime(growth.recording_since)} (${growth.devices_recording?.length ?? "an unknown number of"} machine${growth.devices_recording?.length === 1 ? "" : "s"} recording).`
                 : "No runner has recorded a session run yet — demand before recording began is unknown, not zero."}
               {growth.truncated
-                ? " Coord capped the read at its interval limit, so days inside coord's 31-day raw horizon may be lower bounds."
+                ? " Coord capped the read at its interval limit, keeping the newest runs, so the oldest days inside coord's 31-day raw horizon may be lower bounds."
                 : ""}
             </p>
           </div>
