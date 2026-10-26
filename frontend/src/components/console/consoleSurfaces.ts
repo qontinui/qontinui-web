@@ -232,6 +232,17 @@ import {
   SPAWN_AUTHOR_GLYPH_KINDS,
   SPAWN_KIND_CLASS,
 } from "@/app/(app)/admin/coord/spawns/_lib/spawnStatus";
+// Session load — plan
+// `2026-10-23-session-duration-by-work-type-and-per-device-session-load`
+// Phase 5. Two tables: a machine's load against its budget, and one run.
+import {
+  MACHINE_ATTENTION_BY_KIND,
+  MACHINE_AUTHOR_GLYPH_KINDS,
+  MACHINE_KIND_CLASS,
+  RUN_ATTENTION_BY_KIND,
+  RUN_AUTHOR_GLYPH_KINDS,
+  RUN_KIND_CLASS,
+} from "@/app/(app)/admin/coord/session-load/_lib/sessionLoadStatus";
 // GitHub-hosted CI on the Dev Ops ▸ CI page — plan
 // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
 import {
@@ -346,7 +357,8 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   },
   {
     surface: "operator touches (/admin/coord/operator-touches)",
-    module: "app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus.ts",
+    module:
+      "app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus.ts",
     attentionByKind: TOUCH_ATTENTION_BY_KIND,
     palette: {
       badgeClass: TOUCH_KIND_CLASS,
@@ -722,6 +734,26 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: SPAWN_KIND_CLASS,
       authorGlyphKinds: SPAWN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- session load -----------------------------------------------------
+  {
+    // Nothing is red on this surface: it measures load, and admission acts.
+    surface: "session-load machines (/admin/coord/session-load)",
+    module: "app/(app)/admin/coord/session-load/_lib/sessionLoadStatus.ts",
+    attentionByKind: MACHINE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: MACHINE_KIND_CLASS,
+      authorGlyphKinds: MACHINE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "session runs (/admin/coord/session-load)",
+    module: "app/(app)/admin/coord/session-load/_lib/sessionLoadStatus.ts",
+    attentionByKind: RUN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: RUN_KIND_CLASS,
+      authorGlyphKinds: RUN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- GitHub-hosted CI (Dev Ops) ----------------------------------------

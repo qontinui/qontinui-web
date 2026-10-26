@@ -1559,6 +1559,22 @@ things rather than shipping them silently:
 | **A count chart on a console page, built like `ThroughputPanel`, that says what it does not cover** | `spawns/_components/SpawnRateChart.tsx` | Two series inside a `CollapsiblePanel`, colours from `@/config/theme`, mirrored in an `sr-only` table, bucketed and labelled by UTC hour. Drawn from the window's request list, so it counts requests MADE in its span and when those started — a request made earlier that started inside the span is not on it, and the caption says so rather than calling the line a start rate. It starts at the first FULL hour the read covers — after the window's start, or after the oldest row loaded when the list was truncated — because the hour either falls in was only partly read; earlier hours are not drawn, never drawn as zeros. | `plans/ThroughputPanel.tsx` is the first chart on a console page and is not recorded here; this records the shape both now follow, so a third chart has something written to compose against. |
 | **A fact the wire does not serve yet, stated once for the list** | `spawns/page.tsx` (`coord-spawns-reserve-note`) | Each device's dispatch role IS served (`/fleet/dispatch-roles`) and rides on its line's label. Its current reserve and ceilings are not served until the plan's Phase 6: the `ShareList` says so ONCE above its lines, and each line's `title` repeats it for a reader hovering one device. | Repeating "not served yet" on every line is chrome that cannot vary (served policy `ux-priorities` `repeated-chrome-must-earn-its-space-by-varying`), and rendering the slot as `0` would be R6's dash rule broken. |
 
+### 3.9 The session-load console — recorded under §6.4
+
+`/admin/coord/session-load` (plan
+`2026-10-23-session-duration-by-work-type-and-per-device-session-load`
+Phase 5) composes `HealthStrip`, `RecordList`/`RecordRow`/`RecordDetail`,
+`StatusBadge`, `RowTime`, `FilterTabs`, `CollapsiblePanel` and
+`RefreshButton`, and registers two palettes in `CONSOLE_PALETTES` (a
+machine's load against its budget, and one run). It adds no primitive and
+records three things rather than shipping them silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **A measuring surface paints nothing red** | `session-load/_lib/sessionLoadStatus.ts` (`MACHINE_ATTENTION_BY_KIND`, `RUN_ATTENTION_BY_KIND`) | The page measures load; admission and placement act on it. So no machine or run is the operator's move now: over budget is amber (it clears as runs end), and a silent machine, an unpublished budget and an inferred end are the ignorance floor (`UNKNOWN_AMBER`). The strip follows: amber at most. | R3 says what each hue promises; it does not say a whole surface may legitimately have no red. Writing it down stops the next measuring page reaching for red on "big". |
+| **A sparkline in a row's time slot** | `session-load/_components/charts.tsx` (`Sparkline`, `StackedBar`) | Inline SVG, not Recharts: a responsive container inside a one-line R2 row has nothing to measure. Each carries its numbers in an accessible name (and a `data-points` count), series colours come from `@/config/theme` and are never a red or an amber, and an empty series says "no history" in words — never a flat line at zero. | The two console charts recorded in §3.8 are full-width panels. A row-sized glyph needed its own statement of what it may and may not imply. |
+| **An extrapolation is labelled as one, and withheld on short history** | `sessionLoadStatus.ts` (`growthTrend`, `trendText`) | The crossing date is a least-squares line over the last 7 COMPLETE UTC days, and the sentence names the method and the dates. It is withheld, with the reason, when fewer than 7 complete days are recorded or any machine began recording inside the window (its arrival would read as growth). Days before recording began hold only backfilled runs and are not drawn — not drawn as zeros. | R6's dash rule covers a value nobody fetched; a projected value is a different claim, and its honesty is in saying how it was made. |
+
 ---
 
 ## 4. The attention palette
