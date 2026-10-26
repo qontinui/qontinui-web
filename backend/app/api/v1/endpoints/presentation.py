@@ -53,6 +53,7 @@ from app.api.v1.endpoints.operations import (
     capture_caller_bearer,
     require_coord_tenant_admin_target,
 )
+from app.core.refusal import NextActionKind, RefusalCode, refusal_error
 from app.crud import presentation_scope as crud
 from app.models.user import User
 from app.schemas.presentation import (
@@ -101,7 +102,20 @@ async def get_presentation_caller(
     active = request.headers.get(ACTIVE_TENANT_HEADER)
     tenant_id = _effective_tenant_id(identity, active)
     if tenant_id is None:
-        raise HTTPException(status_code=403, detail="tenant_not_resolved")
+        # A typed refusal, not a bare string: ``tests/test_refusal_ratchet.py``
+        # counts free-text error responses and may only fall. The legacy
+        # top-level ``error`` stays ``tenant_not_resolved`` (what operations
+        # and the other coord-identity routes serve), so a client matching on
+        # it is unchanged; the sentence is for the reader.
+        raise refusal_error(
+            status.HTTP_403_FORBIDDEN,
+            RefusalCode.permission_denied,
+            NextActionKind.fix_request,
+            "No project could be resolved for this request: select a project "
+            "you belong to, or ask a project admin to add you.",
+            discriminator="tenant_not_resolved",
+            error_code="tenant_not_resolved",
+        )
     return PresentationCaller(
         tenant_id=tenant_id,
         identity=identity,
