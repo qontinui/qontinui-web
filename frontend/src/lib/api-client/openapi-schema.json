@@ -106836,6 +106836,447 @@
         ]
       }
     },
+    "/api/v1/operations/session-runs": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs`` (tenant-scoped), verbatim.\n\nReturns ``{runs: [Run], shown, total, truncated, next_cursor, as_of}``,\nnewest first, or coord's ``503 schema_missing`` while the run record is\nnot migrated. A ``Run`` carries its device, session id and ``run_seq``,\n``initiator``, ``work_type`` (and the facts it was classified from \u2014\n``skill``, ``first_command``, ``spawn_origin``, ``dispatch_source``,\n``gate_id``, ``spawn_request_id`` \u2026), its timestamps, ``wall_seconds`` and\n``held_after_finish_seconds`` (``null`` while open), ``end_reason`` /\n``end_source`` and ``history_complete`` (``false`` on a backfilled row).",
+        "operationId": "api_v1_operations_session_runs_get",
+        "parameters": [
+          {
+            "description": "Only runs classified as this work type.",
+            "in": "query",
+            "name": "work_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs classified as this work type.",
+              "title": "Work Type"
+            }
+          },
+          {
+            "description": "Only runs on this coord device.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs on this coord device.",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "Only runs this initiator started.",
+            "in": "query",
+            "name": "initiator",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "operator",
+                    "coord",
+                    "runner_local",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs this initiator started.",
+              "title": "Initiator"
+            }
+          },
+          {
+            "description": "Only runs started at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs started at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Only runs started before this instant (offset required).",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs started before this instant (offset required).",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "coord's ``next_cursor`` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "coord's ``next_cursor`` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size; coord's default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size; coord's default is 50.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Runs",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/session-runs/concurrency": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs/concurrency`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, bucket_seconds, since, raw_from, grid, devices:\n[Device], truncated, as_of}``. A ``Device`` carries ``name``, ``budget``\n(``{state: \"published\" | \"zero\" | \"none\", value, label}`` \u2014 read from\n``max_concurrent_agents``, never from a role), ``last_heartbeat`` /\n``heartbeat_age_seconds``, ``known_device``, ``open_now``, ``peak``,\n``p95`` and its ``series`` of ``{bucket_start, source, total, by_work_type}``.",
+        "operationId": "api_v1_operations_session_runs_concurrency_get",
+        "parameters": [
+          {
+            "description": "Only this coord device (unset = every device that ran a session).",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this coord device (unset = every device that ran a session).",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[1-9][0-9]{0,4}[dh]$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+              "title": "Window"
+            }
+          },
+          {
+            "description": "Series bucket width; coord's default is ``1h``.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "1m",
+                    "5m",
+                    "15m",
+                    "1h",
+                    "hour",
+                    "6h",
+                    "1d",
+                    "day",
+                    "7d",
+                    "week"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Series bucket width; coord's default is ``1h``.",
+              "title": "Bucket"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Run Concurrency",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/session-runs/growth": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, bucket_seconds, since, raw_from,\nrecording_since, devices_recording, series: [Bucket], fleet, truncated,\nas_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and\ntheir totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;\n``fleet`` carries ``available_state`` \u2014 ``published``,\n``no_budget_published`` (no device published a budget) or\n``zero_budget_published`` (every published budget is 0) \u2014 with\n``available_slot_hours_per_day`` / ``_per_bucket`` (published non-zero\nbudgets \u00d7 24) stated only for ``published`` and ``null`` otherwise, never\n0; and how many devices published a budget, a zero budget or none.\n``recording_since: null`` means nothing is recorded yet \u2014 an absent bucket\nbefore it is UNKNOWN, not zero.",
+        "operationId": "api_v1_operations_session_runs_growth_get",
+        "parameters": [
+          {
+            "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[1-9][0-9]{0,4}[dh]$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+              "title": "Window"
+            }
+          },
+          {
+            "description": "Day (coord's default) or week buckets.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "1d",
+                    "day",
+                    "7d",
+                    "week"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Day (coord's default) or week buckets.",
+              "title": "Bucket"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Run Growth",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/session-runs/stats": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs/stats`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, since, group_by, population, groups: [Group],\nclassifier_version, as_of}``. Each group carries ``runs``, ``open_now``,\n``wall_seconds {p50, p90, p99, sum, samples}`` over OBSERVED ends only,\n``slot_hours``, ``active_seconds``, ``held_after_finish_seconds {sum,\nsamples}`` and the ``inferred`` / ``reconciled`` / ``unknown`` counts. A\npercentile over no observed end is ``null`` \u2014 coord's UNKNOWN.",
+        "operationId": "api_v1_operations_session_runs_stats_get",
+        "parameters": [
+          {
+            "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[1-9][0-9]{0,4}[dh]$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+              "title": "Window"
+            }
+          },
+          {
+            "description": "Group by ``work_type`` (coord's default), ``device``, or both.",
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "work_type",
+                    "device",
+                    "device,work_type",
+                    "work_type,device"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Group by ``work_type`` (coord's default), ``device``, or both.",
+              "title": "Group By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Run Stats",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/sessions": {
       "get": {
         "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains three fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
