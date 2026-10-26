@@ -264,13 +264,21 @@ export interface GrowthBucketWire {
 
 export interface GrowthFleetWire {
   /**
-   * `null` when coord cannot state it — including a fleet where no device
-   * published a budget, which coord marks with `state` and
-   * `devices_with_budget: 0`.
+   * The sum of published non-zero configured session budgets × 24. coord
+   * sends `null` — never 0 — when no device published a non-zero budget, and
+   * says so in {@link GrowthFleetWire.available_state}.
    */
   available_slot_hours_per_day?: number | null;
-  /** coord's verdict on the figure (e.g. `"published"`, `"none_published"`). */
-  state?: string | null;
+  /** The same figure per growth bucket; `null` exactly when the per-day one is. */
+  available_slot_hours_per_bucket?: number | null;
+  /**
+   * coord's verdict on the figure — {@link AVAILABLE_STATE_PUBLISHED} (the
+   * figure is stated) or {@link AVAILABLE_STATE_NO_BUDGET} (no device
+   * published a non-zero budget; the figure is `null`). Absent from a coord
+   * that predates the field. Typed `string` so a newer value renders as
+   * unknown rather than failing to parse.
+   */
+  available_state?: string | null;
   devices_with_budget?: number;
   devices_zero_budget?: number;
   devices_without_budget?: number;
@@ -850,19 +858,22 @@ export type FleetAvailable =
     }
   | { kind: "unknown" };
 
-/** Fleet `state` values that say no device published a non-zero budget. */
-const NO_BUDGET_STATES: ReadonlySet<string> = new Set([
-  "none",
-  "none_published",
-  "no_budget",
-  "no_budget_published",
-]);
+/** coord's `fleet.available_state` when the figure is stated. */
+export const AVAILABLE_STATE_PUBLISHED = "published";
+/** coord's `fleet.available_state` when no device published a non-zero budget. */
+export const AVAILABLE_STATE_NO_BUDGET = "no_budget_published";
 
 /**
- * What the fleet's budgets make available. "None published" is decided
- * BEFORE the figure's null check: coord sends `available_slot_hours_per_day:
- * null` for a fleet with no budget, and that fleet must read "no budget
- * published", not "coord sent no figures".
+ * What the fleet's budgets make available, read from coord's
+ * `fleet.available_state` first:
+ *
+ * - `no_budget_published` → "none published" (the figure is `null` by design,
+ *   so this is decided BEFORE any null check — it must never read "coord
+ *   sent no figures");
+ * - `published` → the figure, or unknown if coord nonetheless sent none;
+ * - any other value → unknown (a state this build cannot read);
+ * - absent (a coord predating the field) → `devices_with_budget === 0` is
+ *   "none published", else the figure, else unknown.
  */
 export function fleetAvailable(growth: GrowthWire): FleetAvailable {
   const f = growth.fleet;
@@ -871,11 +882,16 @@ export function fleetAvailable(growth: GrowthWire): FleetAvailable {
   const withBudget = finite(f.devices_with_budget);
   const zero = finite(f.devices_zero_budget);
   const none = finite(f.devices_without_budget);
+  const state =
+    typeof f.available_state === "string" ? f.available_state : null;
   if (
-    withBudget === 0 ||
-    (typeof f.state === "string" && NO_BUDGET_STATES.has(f.state))
+    state === AVAILABLE_STATE_NO_BUDGET ||
+    (state === null && withBudget === 0)
   ) {
     return { kind: "none_published", devicesZero: zero, devicesNone: none };
+  }
+  if (state !== null && state !== AVAILABLE_STATE_PUBLISHED) {
+    return { kind: "unknown" };
   }
   if (perDay === null || withBudget === null) return { kind: "unknown" };
   if (perDay <= 0) {
@@ -1723,7 +1739,19 @@ export function deriveSessionLoadHealth(
     );
   }
   if (statsIssue) {
-    detailParts.push(sessionLoadIssueText(statsIssue, "the latest figures"));
+    detailParts.push(
+      sessionLoadIssueText(statsIssue, "the latest work-type figures")
+    );
+  }
+  if (concurrencyIssue) {
+    detailParts.push(
+      sessionLoadIssueText(concurrencyIssue, "the latest per-machine figures")
+    );
+  }
+  if (growthIssue) {
+    detailParts.push(
+      sessionLoadIssueText(growthIssue, "the latest growth figures")
+    );
   }
   return {
     level,

@@ -191,6 +191,7 @@ export function growthFx(
     fleet: {
       available_slot_hours_per_day: 336,
       available_slot_hours_per_bucket: 336,
+      available_state: "published",
       definition: "sum of published non-zero configured session budgets x 24",
       devices_with_budget: 1,
       devices_zero_budget: 0,

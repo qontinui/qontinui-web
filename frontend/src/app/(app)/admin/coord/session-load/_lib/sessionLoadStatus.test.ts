@@ -418,7 +418,8 @@ describe("growth", () => {
     const none = fleetAvailable(
       growth(1, () => 1, {
         fleet: {
-          available_slot_hours_per_day: 0,
+          available_slot_hours_per_day: null,
+          available_state: "no_budget_published",
           devices_with_budget: 0,
           devices_zero_budget: 2,
           devices_without_budget: 1,
@@ -517,7 +518,14 @@ describe("growth", () => {
     expect(viaCount.kind).toBe("none_published");
     const viaState = fleetAvailable(
       growth(1, () => 1, {
-        fleet: { available_slot_hours_per_day: null, state: "none_published" },
+        fleet: {
+          available_slot_hours_per_day: null,
+          available_slot_hours_per_bucket: null,
+          available_state: "no_budget_published",
+          devices_with_budget: 0,
+          devices_zero_budget: 1,
+          devices_without_budget: 2,
+        },
       })
     );
     expect(viaState.kind).toBe("none_published");
@@ -525,10 +533,48 @@ describe("growth", () => {
     expect(
       fleetAvailable(
         growth(1, () => 1, {
-          fleet: { available_slot_hours_per_day: null, devices_with_budget: 2 },
+          fleet: {
+            available_slot_hours_per_day: null,
+            available_state: "published",
+            devices_with_budget: 2,
+          },
         })
       ).kind
     ).toBe("unknown");
+  });
+
+  it("reads coord's available_state before the figure; an unknown state is unknown", () => {
+    // The state decides even when a stale count disagrees.
+    expect(
+      fleetAvailable(
+        growth(1, () => 1, {
+          fleet: {
+            available_slot_hours_per_day: null,
+            available_state: "no_budget_published",
+            devices_with_budget: 3,
+          },
+        })
+      ).kind
+    ).toBe("none_published");
+    expect(
+      fleetAvailable(
+        growth(1, () => 1, {
+          fleet: {
+            available_slot_hours_per_day: 336,
+            available_state: "something_new",
+            devices_with_budget: 1,
+          },
+        })
+      ).kind
+    ).toBe("unknown");
+    // A coord predating the field: zero budgets still read "none published".
+    expect(
+      fleetAvailable(
+        growth(1, () => 1, {
+          fleet: { available_slot_hours_per_day: 0, devices_with_budget: 0 },
+        })
+      ).kind
+    ).toBe("none_published");
   });
 
   it("an unknown zero/none count is said, never folded into zero", () => {
@@ -545,7 +591,8 @@ describe("growth", () => {
   it("no published budget means nothing to cross — not a crossing at 0", () => {
     const g = growth(20, (i) => i, {
       fleet: {
-        available_slot_hours_per_day: 0,
+        available_slot_hours_per_day: null,
+        available_state: "no_budget_published",
         devices_with_budget: 0,
         devices_zero_budget: 1,
         devices_without_budget: 0,
