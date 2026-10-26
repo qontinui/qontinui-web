@@ -25,8 +25,7 @@ export const UI_BRIDGE_CAPTIONS = {
   },
   "ui-bridge.apps": {
     title: "Registered applications",
-    oneLiner:
-      "Every application the fleet knows how to drive, as the web and this runner each record it.",
+    oneLiner: copy`Every application the fleet knows how to drive, as the web and this ${term("runner", "runner")} each record it.`,
     whyItMatters: copy`One registry spans every machine, so an agent on any ${term("runner", "runner")} opens the same application by the same name and checks it against the same model.`,
   },
   "ui-bridge.spec-graph": {
@@ -34,31 +33,27 @@ export const UI_BRIDGE_CAPTIONS = {
     oneLiner:
       "The screens an application declares, and the states and transitions on each of them.",
     whyItMatters:
-      "The model is extracted from the application's own source rather than drawn by hand, so it changes when the code changes and an agent can plan a route through the interface before it touches anything.",
+      "The model is extracted from the application's own source rather than drawn by hand, so it changes when the code changes and an agent can work out a route through the interface before it touches anything.",
   },
   "ui-bridge.snapshot": {
     title: "Live element snapshot",
-    oneLiner:
-      "What is on the runner's screen right now, as structured elements rather than pixels.",
+    oneLiner: copy`What is on the ${term("runner", "runner")}'s screen right now, as structured elements rather than pixels.`,
     whyItMatters:
       "An agent reads exact element positions, roles and states instead of guessing from a screenshot, which is what makes its checks repeatable from one run to the next.",
   },
   "ui-bridge.sdk-posture": {
     title: "Capabilities and trust",
-    oneLiner:
-      "Which UI Bridge capabilities this runner ships, and how strictly it checks who may register an application with it.",
+    oneLiner: copy`Which UI Bridge capabilities this ${term("runner", "runner")} ships, and how strictly it checks who may register an application with it.`,
     whyItMatters: copy`Every registration that reaches a ${term("runner", "runner")} through the cloud relay is checked against fixed rules, and these counters show each rule at work rather than asserting that it is.`,
   },
   "ui-bridge.component-actions": {
     title: "Controls and what they do",
-    oneLiner:
-      "Every control the runner's interface registers, and whether each one only reads, writes, or destroys.",
-    whyItMatters: copy`A control whose author declared no effect is counted as undeclared and never assumed to be safe, so an automated walk knows what it may press before it presses anything, and an ${term("operator", "operator")} can see exactly where a declaration is missing. Over the cloud relay the list holds the runner's own controls only, because applications connected to the runner are not asked, and the panel says so rather than implying they were.`,
+    oneLiner: copy`Every control the ${term("runner", "runner")}'s interface registers, and whether each one only reads, writes, or destroys.`,
+    whyItMatters: copy`A control whose author declared no effect is counted as undeclared and never assumed to be safe, so an automated walk knows what it may press before it presses anything, and an ${term("operator", "operator")} can see exactly where a declaration is missing. Over the cloud relay the list holds the ${term("runner", "runner")}'s own controls only, because applications connected to the ${term("runner", "runner")} are not asked, and the panel says so rather than implying they were.`,
   },
   "ui-bridge.page-health": {
     title: "Page health",
-    oneLiner:
-      "Whether the runner's current screen looks healthy, read from the layout and the text on it.",
-    whyItMatters: copy`A page can pass every selector test and still be broken, so this check reads what is actually on the screen, and it reports ${term("unknown", "unknown")} when it could not see rather than calling the page clear. Whether anything on the screen covers anything else is shown as unknown, because the cloud relay does not carry that check yet.`,
+    oneLiner: copy`Whether the ${term("runner", "runner")}'s current screen looks healthy, read from the layout and the text on it.`,
+    whyItMatters: copy`A page can pass every selector test and still be broken, so this check reads what is actually on the screen, and it reports ${term("unknown", "unknown")} when it could not see rather than calling the page clear. Whether anything on the screen covers anything else is shown as ${term("unknown", "unknown")}, because the cloud relay does not carry that check yet.`,
   },
 } as const satisfies SurfaceCaptions<"ui-bridge">;
