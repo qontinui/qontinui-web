@@ -90,6 +90,12 @@ export const LENS_TREES: readonly string[] = ["/admin/coord", "/digital-twin"];
  */
 export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
   { route: "/admin/coord", provenBy: "app/(app)/admin/coord/page.test.tsx" },
+  // Dev Ops (plan Phase 7): the page's presentation-mode render, over a
+  // fixture feeding every free-text carrier it can show.
+  {
+    route: "/admin/coord/devops",
+    provenBy: "app/(app)/admin/coord/devops/page.presentation.test.tsx",
+  },
 ];
 
 /** `pathname` without its query, hash and trailing slash. */

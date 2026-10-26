@@ -33,9 +33,8 @@ export const DEV_OPS_CAPTIONS = {
   },
   "dev-ops.conditions": {
     title: "Problems nobody has picked up",
-    oneLiner: copy`Anything degraded that no agent has claimed yet, and any question that is waiting on the ${term("operator")}.`,
-    whyItMatters:
-      "Agents claim and fix most problems on their own, so this panel shows only what is left over, and a person looks only at what genuinely needs a person.",
+    oneLiner: copy`Anything degraded that no agent has ${term("claim", "claimed")} yet, and any question that is waiting on the ${term("operator")}.`,
+    whyItMatters: copy`Agents ${term("claim", "claim")} and fix most problems on their own, so this panel shows only what is left over, and a person looks only at what genuinely needs a person.`,
   },
   "dev-ops.machines": {
     title: "Machines",

@@ -1572,8 +1572,10 @@ aliased, free text redacted. It composes the lens's primitives
 (`components/presentation/`: `Caption`, `Provenance`, `OperatorOnly`,
 `RedactedText`, `MachineName` / `useMachineAliaser`) and the console's, and it
 added two primitives to the lens — `HeadlineFigures` and `SectionCaption` —
-which the lens's own section of this guide (owed by that plan's Phase 1)
-absorbs. **Operator mode is unchanged**: every pattern below renders nothing,
+recorded in the first two rows below; the lens itself is §6.5. The page renders
+in presentation mode because it is registered in `PRESENTATION_READY_ROUTES`
+(`presentationReadiness.ts`) on the strength of `page.presentation.test.tsx`,
+the run-proven page test §6.5 describes. **Operator mode is unchanged**: every pattern below renders nothing,
 or the original, outside presentation mode, so §5's budgets are still measured
 on the operator console. Seven things are recorded rather than shipped
 silently:

@@ -12,7 +12,13 @@ import { UNKNOWN_AMBER } from "@/components/console/statusRow";
 import { FixedPresentationMode } from "./PresentationModeProvider";
 import { HeadlineFigures, type HeadlineFigure } from "./HeadlineFigures";
 
-/** Built per test, so the 12-second age is measured from the render. */
+/**
+ * Built per test, so the 5-minute age is measured from the render. Five
+ * minutes, not seconds: the lens says "under a minute ago" for any age below a
+ * minute (`presentationAge`), which a figure stamped just now would also read,
+ * so only an age past a minute shows the chip is dated by the figure's own
+ * as-of.
+ */
 const figures = (): HeadlineFigure[] => [
   {
     key: "machines",
@@ -21,7 +27,7 @@ const figures = (): HeadlineFigure[] => [
       state: "known",
       value: "6 of 8",
       detail: "Healthy by coord's own check.",
-      asOf: Date.now() - 12_000,
+      asOf: Date.now() - 5 * 60_000,
     },
     source: "coord fleet health",
     "data-testid": "fig-machines",
@@ -65,7 +71,7 @@ describe("HeadlineFigures", () => {
     const chip = screen.getByTestId("fig-machines-provenance");
     expect(chip).toHaveAttribute("data-provenance-known", "true");
     expect(chip).toHaveTextContent("source: coord fleet health");
-    expect(chip).toHaveTextContent("as of 12s ago");
+    expect(chip).toHaveTextContent("as of 5m ago");
   });
 
   it("renders an unknown figure as UNKNOWN on amber with its reason — never 0, never blank", () => {
