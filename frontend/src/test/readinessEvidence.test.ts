@@ -65,9 +65,16 @@ const ARMING: RunTest = {
   armed: true,
   checks: [],
 };
+/**
+ * A test of the readiness module that is not the arming one. The real module
+ * holds about a dozen tests and ONE armed, so a verdict that reads "some test
+ * is armed" must not be mistaken for "every test is": fixtures that held the
+ * arming test alone could not tell the two apart.
+ */
+const BESIDE: RunTest = test({ name: "readiness > beside", checks: [] });
 const READINESS_RAN: RunModule = {
   file: "components/presentation/presentationReadiness.test.ts",
-  tests: [ARMING],
+  tests: [BESIDE, ARMING, BESIDE],
 };
 const run = (...modules: RunModule[]) => [READINESS_RAN, ...modules];
 
@@ -396,7 +403,7 @@ describe("readinessVerdict — when a run must prove the routes", () => {
   it("is armed by the record wherever the arming test lives, whatever its file is named", () => {
     const moved: RunModule = {
       file: "components/presentation/presentationReadiness.test.tsx",
-      tests: [ARMING],
+      tests: [BESIDE, ARMING, BESIDE],
     };
     const verdict = readinessVerdict([TARGET], [moved, broken], false);
     expect(verdict.enforced).toBe(true);
@@ -406,7 +413,7 @@ describe("readinessVerdict — when a run must prove the routes", () => {
   /** The readiness test's module with its arming test finished in `state`. */
   const armedAs = (state: RunTest["state"]): RunModule => ({
     file: READINESS_RAN.file,
-    tests: [{ ...ARMING, state }],
+    tests: [BESIDE, { ...ARMING, state }, BESIDE],
   });
 
   it("requires every route when the arming test was skipped and no name filter narrowed the run", () => {
