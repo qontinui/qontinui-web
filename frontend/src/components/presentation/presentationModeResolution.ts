@@ -16,7 +16,9 @@
  *      audience — a fail-OPEN at exactly the wrong moment.
  *   3. **The viewer's convenience** (localStorage) — the header toggle's
  *      remembered setting, for a new tab. Never authority: every read and write
- *      is guarded, and a URL always beats it.
+ *      is guarded, and a URL always beats it. A tab that opens presenting on it
+ *      makes that its own choice (arm 2), so another tab's later change to the
+ *      setting cannot turn this tab's presentation off.
  *   4. **Off.**
  *
  * There is no server state. The mode changes what a browser renders, not what

@@ -6,9 +6,28 @@
  */
 
 import type { ReactNode, Ref } from "react";
+import { cleanup } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { useUIComponent, useUIElement } from "@qontinui/ui-bridge/react";
-import { FilterTabs, RecordRow, RefreshButton } from "@/components/console";
+import {
+  UIBridgeProvider,
+  useUIComponent,
+  useUIElement,
+} from "@qontinui/ui-bridge/react";
+import {
+  FilterChips,
+  FilterTabs,
+  NAVIGATION_ONLY_PROPS,
+  RecordRow,
+  RefreshButton,
+  presenterSafetyProps,
+} from "@/components/console";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Caption,
   CostFigure,
@@ -18,6 +37,7 @@ import {
   PresentationModeToggle,
   Provenance,
   RedactedText,
+  usePresentationHref,
 } from "@/components/presentation";
 import {
   CURRENCY_FIGURE,
@@ -26,6 +46,10 @@ import {
   renderInPresentationMode,
   type PresentationViolationKind,
 } from "./presentation";
+import {
+  CURRENCY_CODES,
+  CURRENCY_FIGURE as SHARED_CURRENCY_FIGURE,
+} from "./currencyTokens";
 
 function kinds(view: ReturnType<typeof renderInPresentationMode>) {
   return findPresentationViolations(view).map((v) => v.kind);
@@ -50,7 +74,8 @@ function WriteAction({
     name: "Test action",
     actions: [{ id: "act", label: "Act", effect, handler: async () => true }],
   });
-  return null;
+  // Something on the screen: a render of nothing fails check (f) on its own.
+  return <span>{effect ?? "undeclared"} action</span>;
 }
 
 function ElementWithCustomAction() {
@@ -74,6 +99,11 @@ function ElementWithCustomAction() {
   );
 }
 
+/** A link to another lens page, built the way a lens page builds one. */
+function LensLink({ to, children }: { to: string; children: ReactNode }) {
+  return <a href={usePresentationHref(to)}>{children}</a>;
+}
+
 /** A lens page composed the way later phases build theirs. */
 function SafeSurface() {
   return (
@@ -95,6 +125,16 @@ function SafeSurface() {
         label="Refresh machines"
         title="Re-reads coord"
       />
+      <FilterChips
+        label="kind:"
+        options={[
+          { value: "red", label: "red", count: 2 },
+          { value: "stalled", label: "stalled", count: 0 },
+        ]}
+        selected={["red"]}
+        onToggle={() => {}}
+        onClear={() => {}}
+      />
       <RecordRow
         identity="A"
         label={<MachineName identity={{ hostname: "build-host-1" }} />}
@@ -108,7 +148,7 @@ function SafeSurface() {
         descriptor={{ kind: "Plan", status: "draft" }}
       />
       <CostFigure amount={12.5} source="reported" />
-      <a href="/admin/coord/runners">Runners</a>
+      <LensLink to="/admin/coord/runners">Runners</LensLink>
       <div role="tablist">
         <button type="button" role="tab" aria-selected="true">
           Machines
@@ -223,6 +263,37 @@ describe("(a) no enabled control except navigation-only ones", () => {
     );
   });
 
+  it("fails on the UI kit's Select — a combobox's list is a choice that can write", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <Select value="supervised" onValueChange={() => {}}>
+          <SelectTrigger aria-label="Autonomy level">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="supervised">supervised</SelectItem>
+          </SelectContent>
+        </Select>
+      ),
+      "enabled-control"
+    );
+  });
+
+  it("passes a view-only Select whose trigger claims navigation-only", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <Select value="24h" onValueChange={() => {}}>
+          <SelectTrigger aria-label="Window" {...NAVIGATION_ONLY_PROPS}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="24h">last 24 hours</SelectItem>
+          </SelectContent>
+        </Select>
+      )
+    );
+  });
+
   it("fails on a menu or dialog trigger — what it opens can write", () => {
     expectOnly(
       renderInPresentationMode(
@@ -258,6 +329,66 @@ describe("(a) no enabled control except navigation-only ones", () => {
       </div>
     );
     expect(findPresentationViolations(view)).toEqual([]);
+  });
+
+  it("keeps a listed presenter safety control, and only a listed one", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <button type="button" {...presenterSafetyProps("co-pilot-stop")}>
+          Stop
+        </button>
+      )
+    );
+    // The closed list is the exemption: a marker naming anything else is
+    // itself a violation, on a control or not.
+    const forged = renderInPresentationMode(
+      <div>
+        <button type="button" data-presentation-safety="drain-machine">
+          Drain
+        </button>
+        <span data-presentation-safety="">nothing</span>
+      </div>
+    );
+    const found = findPresentationViolations(forged);
+    expect(found.map((v) => v.kind)).toEqual([
+      "enabled-control",
+      "enabled-control",
+    ]);
+    expect(found[0].detail).toContain('"drain-machine"');
+    expect(found[0].detail).toContain("does not list");
+  });
+
+  it("fails on a link to a lens page that drops the presentation — a new tab would show the operator view", () => {
+    const view = renderInPresentationMode(
+      <div>
+        <a href="/admin/coord/runners">Runners</a>
+        <a href="/digital-twin?present=0">Twin</a>
+        <a href={`${window.location.origin}/admin/coord/devops#machines`}>
+          Dev Ops
+        </a>
+      </div>
+    );
+    const found = findPresentationViolations(view);
+    expect(found.map((v) => v.kind)).toEqual([
+      "presentation-dropping-link",
+      "presentation-dropping-link",
+      "presentation-dropping-link",
+    ]);
+    expect(found[0]?.detail).toContain("/admin/coord/runners");
+    expect(found[0]?.detail).toContain("usePresentationHref");
+  });
+
+  it("passes a lens link that carries the presentation, and a link out of the lens", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <div>
+          <LensLink to="/admin/coord/runners">Runners</LensLink>
+          <a href="/admin/coord/devops?present=1#machines">Dev Ops</a>
+          <a href="/settings">Settings</a>
+          <a href="https://docs.example.test/admin/coord">Docs</a>
+        </div>
+      )
+    );
   });
 
   it("scans portals too, not only the container", () => {
@@ -314,6 +445,45 @@ describe("(b) no visible write registration", () => {
       )
     );
   });
+
+  it("fails a view assembled from two renders — (b) would read the other render's registry", () => {
+    const page = renderInPresentationMode(<WriteAction effect="write" />);
+    const other = renderInPresentationMode(<p>another render</p>);
+    const view = { ...page, uiBridge: other.uiBridge };
+    expectOnly(view, "unread-registry");
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "registry of another render"
+    );
+  });
+
+  it("fails a render whose wrapper mounts a UIBridgeProvider of its own — the page registers there", () => {
+    const view = renderInPresentationMode(<WriteAction effect="write" />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <UIBridgeProvider>{children}</UIBridgeProvider>
+      ),
+    });
+    expectOnly(view, "unread-registry");
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "mounts a UIBridgeProvider of its own"
+    );
+  });
+
+  it("fails a page that mounts a UIBridgeProvider of its own", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <UIBridgeProvider>
+          <WriteAction effect="read" />
+        </UIBridgeProvider>
+      ),
+      "unread-registry"
+    );
+  });
+
+  it("reads a copy of the view, or one narrowed to its own container, as the same render", () => {
+    const view = renderInPresentationMode(<WriteAction effect="write" />);
+    expectOnly({ ...view }, "write-registration");
+    expectOnly({ ...view, baseElement: view.container }, "write-registration");
+  });
 });
 
 describe("(c) no cost", () => {
@@ -366,12 +536,105 @@ describe("(c) no cost", () => {
     );
   });
 
+  it.each(["$.50", "12,00 €", "12¢", "€-3", "$ 1,234.56", "5 GBP"])(
+    "reads %j as a currency figure",
+    (figure) => {
+      expect(CURRENCY_FIGURE.test(figure)).toBe(true);
+      expectOnly(
+        renderInPresentationMode(<p>It came to {figure} today</p>),
+        "currency-figure"
+      );
+    }
+  );
+
+  it("reads the one currency vocabulary the source scan reads", () => {
+    // Not a copy: a second list is how the classifier came to know four codes
+    // of nine (review round 4).
+    expect(CURRENCY_FIGURE).toBe(SHARED_CURRENCY_FIGURE);
+  });
+
+  it.each([...CURRENCY_CODES])(
+    "reads a figure in %s as a currency figure on the page",
+    (code) => {
+      expectOnly(
+        renderInPresentationMode(<p>It came to 12 {code} today</p>),
+        "currency-figure"
+      );
+    }
+  );
+
   it("does not mistake an ordinary number for a cost", () => {
     expect(CURRENCY_FIGURE.test("12 machines, 3 USB ports, v2.4.0")).toBe(
       false
     );
+    // A `$` after a digit is a pattern's anchor, not a price.
+    expect(CURRENCY_FIGURE.test("^0$")).toBe(false);
     expectPresentationSafe(
       renderInPresentationMode(<p>12 machines · 40% busy</p>)
+    );
+  });
+});
+
+describe("(e) no identity", () => {
+  it("fails on an email address — personal data", () => {
+    expectOnly(
+      renderInPresentationMode(<p>Signed in as presenter@example.test</p>),
+      "identifier"
+    );
+  });
+
+  it("fails on a UUID, in text or in a tooltip", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <p>device 0b9d6a54-0000-4000-8000-0000000000aa</p>
+      ),
+      "identifier"
+    );
+    expectOnly(
+      renderInPresentationMode(
+        <span title="Claimed by device:0b9d6a54-0000-4000-8000-0000000000aa">
+          claimed
+        </span>
+      ),
+      "identifier"
+    );
+  });
+
+  it("fails on a name the test forbids, ignoring case, in text or attributes", () => {
+    const forbidden = ["build-host-1", "Partner Portal"];
+    const first = renderInPresentationMode(<p>Runner: BUILD-HOST-1</p>);
+    expect(
+      findPresentationViolations(first, { forbidden }).map((v) => v.kind)
+    ).toEqual(["foreign-identity"]);
+    first.unmount();
+    expect(
+      findPresentationViolations(
+        renderInPresentationMode(<span aria-label="partner portal">x</span>),
+        { forbidden }
+      ).map((v) => v.kind)
+    ).toEqual(["foreign-identity"]);
+  });
+
+  it("fails on a forbidden name split across elements", () => {
+    const found = findPresentationViolations(
+      renderInPresentationMode(
+        <p>
+          <span>build-</span>
+          <span>host-1</span>
+        </p>
+      ),
+      { forbidden: ["build-host-1"] }
+    );
+    expect(found.map((v) => v.kind)).toEqual(["foreign-identity"]);
+    expect(found[0]?.detail).toContain("across adjacent elements");
+  });
+
+  it("passes the alias the lens renders in the name's place", () => {
+    expectPresentationSafe(
+      renderInPresentationMode(
+        <MachineName identity={{ hostname: "build-host-1" }} />
+      ),
+      { forbidden: ["build-host-1"] }
     );
   });
 });
@@ -384,5 +647,103 @@ describe("(d) captions", () => {
         (v) => v.kind
       )
     ).toEqual(["missing-caption"]);
+  });
+});
+
+describe("(f) the view is on the screen when the check runs", () => {
+  it("fails on a view unmounted before the check", () => {
+    const view = renderInPresentationMode(
+      <button type="button">Drain this machine</button>
+    );
+    view.unmount();
+    // Over nothing, (a)–(e) would pass whatever the page rendered.
+    expect(kinds(view)).toEqual(["unmounted-view"]);
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "unmounted before the check ran"
+    );
+  });
+
+  it("fails on a view whose container was cleaned up", () => {
+    const view = renderInPresentationMode(<p>page</p>);
+    cleanup();
+    expect(kinds(view)).toEqual(["unmounted-view"]);
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "not inside the document the check reads"
+    );
+  });
+
+  it("fails on a view rendered into a detached element", () => {
+    // RTL reads a given container as the base element too, so (a)–(e) read
+    // the detached tree; what fails it is that none of it is on the screen.
+    const view = renderInPresentationMode(<p>page</p>, {
+      container: document.createElement("div"),
+    });
+    expect(kinds(view)).toEqual(["unmounted-view"]);
+  });
+
+  it("fails on a view whose container is outside the element the check reads", () => {
+    const reads = document.body.appendChild(document.createElement("section"));
+    const elsewhere = document.body.appendChild(document.createElement("div"));
+    try {
+      const view = renderInPresentationMode(<p>page</p>, {
+        container: elsewhere,
+        baseElement: reads,
+      });
+      expect(kinds(view)).toEqual(["unmounted-view"]);
+    } finally {
+      reads.remove();
+      elsewhere.remove();
+    }
+  });
+
+  it("fails on a container React never rendered into — a root it cannot read is not a mounted one", () => {
+    // What check (f) sees if React stops marking its containers the way
+    // reactTree.ts reads them: the view fails, it does not pass.
+    const container = document.body.appendChild(document.createElement("div"));
+    try {
+      container.textContent = "static markup, no React root";
+      const view = { container, uiBridge: { unobservable: "no render" } };
+      expect(findPresentationViolations(view).map((v) => v.kind)).toEqual([
+        "unmounted-view",
+      ]);
+      expect(findPresentationViolations(view)[0]?.detail).toContain(
+        "holds no React root"
+      );
+    } finally {
+      container.remove();
+    }
+  });
+
+  it("fails on a view whose wrapper drops its children", () => {
+    const view = renderInPresentationMode(
+      <button type="button">Drain this machine</button>,
+      { wrapper: () => null }
+    );
+    expect(kinds(view)).toEqual(["empty-view"]);
+    expect(findPresentationViolations(view)[0]?.detail).toContain(
+      "renders nothing but the helper's own sentinel"
+    );
+  });
+
+  it("fails on a render wrapped whole in OperatorOnly", () => {
+    expectOnly(
+      renderInPresentationMode(
+        <OperatorOnly>
+          <button type="button">Drain this machine</button>
+        </OperatorOnly>
+      ),
+      "empty-view"
+    );
+  });
+
+  it("fails on a view re-rendered to nothing before the check", () => {
+    const view = renderInPresentationMode(<p>page</p>);
+    view.rerender(<></>);
+    expect(kinds(view)).toEqual(["empty-view"]);
+  });
+
+  it("reads text, or any element, as rendered", () => {
+    expectPresentationSafe(renderInPresentationMode(<>a sentence</>));
+    expectPresentationSafe(renderInPresentationMode(<hr />));
   });
 });

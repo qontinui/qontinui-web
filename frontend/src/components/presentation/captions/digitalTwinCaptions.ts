@@ -16,6 +16,9 @@ export const DIGITAL_TWIN_CAPTIONS = {
     title: "Digital Twin",
     oneLiner:
       "The environment your agents act in, the process they follow and the intent they serve: how much of each the twin observes, and how credibly.",
-    whyItMatters: copy`An ${term("agent_session", "agent")} reads this same model before it acts, so whatever the twin cannot observe is shown as ${term("unknown", "unknown")} rather than guessed.`,
+    // "The same model an agent can query" — the page reads the same
+    // coord_query_* observers agents call. Not "an agent reads it before it
+    // acts": nothing makes every agent do that.
+    whyItMatters: copy`It is the same model an ${term("agent_session", "agent")} can query, and whatever the twin cannot observe is shown as ${term("unknown", "unknown")} rather than guessed.`,
   },
 } as const satisfies SurfaceCaptions<"digital-twin">;

@@ -11,11 +11,14 @@
  *
  * | Export | What it is |
  * |---|---|
- * | `PresentationLens` | what a layout mounts; the lens trees are the console layout and the digital-twin layout |
+ * | `PresentationLens` | what a layout mounts; the lens trees (`LENS_TREES`) are the console layout and the digital-twin layout |
+ * | `PresentationShell` | the app shell's one mode provider, enabled on a lens-tree route, so the sidebar beside a lens page is in its mode |
+ * | `PresentationPage`, `PRESENTATION_READY_ROUTES` | the gate around a lens page's body: in presentation mode a page renders only when registered as ready with the test that proves it; any other page is withheld (D3 fails closed) |
  * | `PresentationModeProvider`, `usePresentationMode`, `FixedPresentationMode` | the mode, resolved by D2's order (`?present=` wins, then the tab's choice, then the viewer's setting, then off); unresolved fails closed |
  * | `PresentationModeToggle` | the header control; the "Presentation mode" chip while presenting |
  * | `Caption` + `./captions` | captions from ONE registry composed of one file per lens surface (D5) |
  * | `LENS_SURFACES`, `TOUR_SURFACE` | the five lens pages in tour order, and the tour |
+ * | `usePresentationHref`, `presentationHref` | a link to a lens page that carries `?present=1` while presenting, so a new tab opened from it still presents |
  * | `Provenance` | source + as-of beside a number; UNKNOWN when either is unknown |
  * | `OperatorOnly` | the boundary every write control sits inside (D3.2) |
  * | `RedactedText`, `useRedactor`, `PresentationScopeProvider` | free text only when provably first-party (D3.3); fails closed while the scope is unknown |
@@ -23,6 +26,7 @@
  * | `MachineName`, `useMachineName`, `useMachineAliaser` | "Machine A, B…" — one alias per machine across every panel and page (D3.3) |
  * | `CostFigure` | the only component that may render a per-task cost; never in presentation mode (D3.1) |
  * | `NAVIGATION_ONLY_PROPS` | marks a control whose press only changes what is displayed (D3.2) |
+ * | `presenterSafetyProps`, `PRESENTER_SAFETY_CONTROLS` | marks one of the presenter's own safety controls — the closed list of controls besides navigation that presentation mode keeps live (D3.2) |
  *
  * The test helper that asserts a presentation-mode render is safe —
  * `renderInPresentationMode` / `expectPresentationSafe` — lives in
@@ -30,6 +34,25 @@
  */
 
 export { PresentationLens } from "./PresentationLens";
+export { PresentationShell } from "./PresentationShell";
+export type { PresentationShellProps } from "./PresentationShell";
+
+export {
+  PresentationPage,
+  WITHHELD_PAGE_TEXT,
+  WITHHELD_PAGE_TITLE,
+} from "./PresentationPage";
+export type { PresentationPageProps } from "./PresentationPage";
+
+export {
+  LENS_TREES,
+  PRESENTATION_READY_ROUTES,
+  isLensTreePath,
+  isPresentationReady,
+  normalizePath,
+  routeMatches,
+} from "./presentationReadiness";
+export type { PresentationReadyRoute } from "./presentationReadiness";
 
 export {
   FixedPresentationMode,
@@ -42,7 +65,11 @@ export type {
   PresentationModeValue,
 } from "./PresentationModeProvider";
 
-export { PresentationModeToggle } from "./PresentationModeToggle";
+export {
+  PRESENTATION_TOGGLE_TITLE_OFF,
+  PRESENTATION_TOGGLE_TITLE_ON,
+  PresentationModeToggle,
+} from "./PresentationModeToggle";
 export type { PresentationModeToggleProps } from "./PresentationModeToggle";
 
 export {
@@ -104,6 +131,8 @@ export {
 } from "./lensSurfaces";
 export type { LensSurface, LensSurfaceId } from "./lensSurfaces";
 
+export { lensLinkHref, usePresentationHref } from "./presentationLinks";
+
 export {
   PROVENANCE_UNKNOWN,
   Provenance,
@@ -140,6 +169,7 @@ export {
   usePresentationScopeSnapshot,
 } from "./presentationScopeLoader";
 export type {
+  PresentationScopeReread,
   PresentationScopeSnapshot,
   PresentationScopeStore,
   PresentationScopeStoreOptions,
@@ -186,12 +216,14 @@ export {
 } from "./MachineName";
 export type { MachineNameProps } from "./MachineName";
 
+// `formatCostAmount` is deliberately NOT exported here: it formats a figure
+// WITHOUT the label, so only `CostFigure` may call it (`costRenderScan.ts`
+// fails an import of it, under any name, anywhere else).
 export {
   COST_EQUIVALENT_LABEL,
   COST_WITHHELD_TEXT,
   CostFigure,
   coverageText,
-  formatCostAmount,
 } from "./CostFigure";
 export type { CostCoverage, CostFigureProps, CostSource } from "./CostFigure";
 
@@ -199,3 +231,11 @@ export {
   NAVIGATION_ONLY_ATTRIBUTE,
   NAVIGATION_ONLY_PROPS,
 } from "@/components/console/navigationOnly";
+
+export {
+  PRESENTER_SAFETY_ATTRIBUTE,
+  PRESENTER_SAFETY_CONTROLS,
+  isPresenterSafetyControl,
+  presenterSafetyProps,
+} from "@/components/console/presenterSafety";
+export type { PresenterSafetyControl } from "@/components/console/presenterSafety";

@@ -12,7 +12,11 @@
 
 import { readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isGlossaryTerm } from "@qontinui/shared-types/glossary";
+import {
+  GLOSSARY,
+  GLOSSARY_TERMS,
+  isGlossaryTerm,
+} from "@qontinui/shared-types/glossary";
 import {
   CAPTIONS,
   CAPTION_SURFACES,
@@ -41,6 +45,61 @@ function fields(entry: CaptionEntry): Array<[string, CaptionText]> {
     ["oneLiner", entry.oneLiner],
     ["whyItMatters", entry.whyItMatters],
   ];
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A glossary term's name as a whole word in plain copy, singular or plural
+ * — captions name product terms in the plural as often as not ("gates",
+ * "work units", "policies"). The plural is the last word's.
+ */
+function termPattern(name: string): RegExp {
+  const words = name.toLowerCase().trim().split(/\s+/).map(escapeRegExp);
+  const last = words.pop() ?? "";
+  const lastForms = /[^aeiou]y$/.test(last)
+    ? `${last.slice(0, -1)}(?:y|ies)`
+    : `${last}(?:s|es)?`;
+  return new RegExp(`\\b${[...words, lastForms].join("\\s+")}\\b`, "i");
+}
+
+/**
+ * A word used in ANOTHER sense than the glossary's is allowed only by name
+ * here, keyed `<caption key>.<field>:<term id>`, with why — never by default.
+ */
+const ALLOWED_PLAIN: Readonly<Record<string, string>> = {};
+
+/**
+ * Every glossary term left as plain text in `entries`' copy, as
+ * `<key>.<field>:<term id> — "<segment>"`. A title is a name, not copy, so
+ * it may name a term plainly. A plain term renders with no definition to
+ * open (D5).
+ */
+function plainTermOffenders(
+  entries: ReadonlyArray<readonly [string, CaptionEntry]>
+): string[] {
+  const patterns = GLOSSARY_TERMS.map(
+    (id) => [id, termPattern(GLOSSARY[id].term)] as const
+  );
+  const offenders: string[] = [];
+  for (const [key, entry] of entries) {
+    for (const [name, text] of fields(entry)) {
+      if (name === "title") continue;
+      for (const segment of captionSegments(text)) {
+        if (typeof segment !== "string") continue;
+        for (const [id, pattern] of patterns) {
+          if (!pattern.test(segment)) continue;
+          const at = `${key}.${name}:${id}`;
+          if (!(at in ALLOWED_PLAIN)) {
+            offenders.push(`${at} — "${segment.trim()}"`);
+          }
+        }
+      }
+    }
+  }
+  return offenders;
 }
 
 describe("the caption registry is composed of one file per surface", () => {
@@ -125,6 +184,59 @@ describe("caption copy is written for an external evaluator", () => {
         }
       }
     }
+  });
+
+  it("writes every product term through the glossary, never as plain text", () => {
+    expect(plainTermOffenders(entries)).toEqual([]);
+  });
+
+  describe("the plain-term check itself can fail", () => {
+    const entry = (oneLiner: CaptionText, title = "A page"): CaptionEntry => ({
+      title,
+      oneLiner,
+      whyItMatters: "Nothing more.",
+    });
+
+    it.each<[string, CaptionEntry, string]>([
+      [
+        "a term's name left plain",
+        entry("Every stop is the operator's own working page."),
+        "x.page.oneLiner:operator",
+      ],
+      [
+        "a plural left plain",
+        entry("It keeps their claims, work units and gates consistent."),
+        "x.page.oneLiner:claim",
+      ],
+      [
+        "a multi-word plural left plain",
+        entry("It keeps their claims, work units and gates consistent."),
+        "x.page.oneLiner:work_unit",
+      ],
+      [
+        "a -y plural left plain",
+        entry("Every tenant writes its own policies."),
+        "x.page.oneLiner:policy",
+      ],
+    ])("catches %s", (_name, fixture, offender) => {
+      expect(
+        plainTermOffenders([["x.page", fixture]]).map((o) => o.split(" — ")[0])
+      ).toContain(offender);
+    });
+
+    it("passes the same words through the glossary, and a title that names one", () => {
+      const fixture = entry(
+        copy`It keeps their ${term("claim", "claims")}, ${term("work_unit", "work units")} and ${term("gate", "gates")} consistent.`,
+        "Gates and claims"
+      );
+      expect(plainTermOffenders([["x.page", fixture]])).toEqual([]);
+    });
+
+    it("does not read a longer word as a term's plural", () => {
+      expect(
+        plainTermOffenders([["x.page", entry("Gateways are not gates.")]])
+      ).toEqual(['x.page.oneLiner:gate — "Gateways are not gates."']);
+    });
   });
 
   it("names only terms the generated glossary defines", () => {

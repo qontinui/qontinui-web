@@ -34,7 +34,7 @@
  * of three states:
  *
  *   - **claimed** — `claimed: true`: an agent holds a LIVE lease, and the row
- *     names which one;
+ *     names which one (in presentation mode, which KIND — see below);
  *   - **unclaimed** — `claimed: false`: coord read the lease columns and found
  *     no live lease (an expired lease reads as unclaimed, coord's own rule);
  *   - **unknown** — anything else, for two different reasons the chip's
@@ -50,17 +50,42 @@
  * only, when one is active — an auto-rerun or a spawned fix session is a fact
  * about the episode an operator should not have to go looking for.
  *
- * ## In presentation mode the repository is redacted, not the red main
+ * ## In presentation mode the row is rebuilt, field by field
  *
  * The banner is layout chrome, so it renders on every console page — every
  * lens surface — in presentation mode too (plan
  * `2026-10-23-console-presentation-spaces`). A red main is a true fact an
  * evaluator may see; WHOSE repository it is may not be, when it is not the
- * tenant's own (D3.3, "no foreign identity"). So in presentation mode each
- * row's repository and its workflow names render only when
- * `redactionVerdict` clears them against the tenant's presentation scope;
- * otherwise the row says {@link WITHHELD_REPOSITORY} and lists no workflows.
- * The verdict fails closed while the scope is unknown.
+ * tenant's own, and neither may a machine's or an agent's internal id (D3.3,
+ * "no foreign identity").
+ *
+ * So a presentation-mode row is not the parsed row with a few fields blanked —
+ * a blocklist leaks every field it forgets — but a view rebuilt from an
+ * allowlist by {@link redMainRowView}, deciding each rendered field on its own:
+ *
+ * - the repository, the failing workflows and the stale-baseline workflows
+ *   render only when `redactionVerdict` clears ALL of them against the
+ *   tenant's presentation scope; otherwise the row says
+ *   {@link WITHHELD_REPOSITORY}, lists no workflow, and COUNTS its stale
+ *   baselines instead of naming them. The verdict fails closed while the
+ *   scope is unknown;
+ * - a claimant is named by its kind, and a machine by its session alias
+ *   ("Machine A") — never by a device, agent or session id, in the text or in
+ *   the tooltip;
+ * - coord's remediation is its state alone, in plain words, without the run
+ *   reference or the fix session's agent id.
+ *
+ * And it is written for an evaluator, not the operator. The operator's
+ * headline speaks the merge train's own vocabulary (`main-red`, candidates,
+ * rebased CI, push baselines); the presentation headline is its own plain
+ * sentence ({@link presentationHeadline}) — the main branch is failing its
+ * checks, how many open pull requests are affected, and that the merge train
+ * still lands one whose own checks pass — with each product term rendered
+ * through `GlossaryTerm`, and a `Provenance` chip saying where it came from
+ * and when coord last confirmed it.
+ *
+ * A field added to the parsed row later renders nothing in presentation mode
+ * until someone decides here how it may.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -68,17 +93,24 @@ import { AlertTriangle } from "lucide-react";
 import { fetchOpenAlertsOfKind } from "@/lib/api/operations/alerts";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
+  CaptionCopy,
+  Provenance,
   redactionVerdict,
+  term,
+  useMachineAliaser,
   usePresentationMode,
   usePresentationScopeState,
+  type CaptionSegment,
+  type CaptionText,
   type PresentationScopeState,
 } from "@/components/presentation";
 
 /**
  * An agent's lease on one alert, as coord serves it on `/coord/alerts` rows
  * (plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
- * Phase 2). `claimed_by` is the claimant's principal label (`agent:…`,
- * `session:…`, `device:…`).
+ * Phase 2). `claimed_by` is the claimant's principal label: `agent:<id>`,
+ * `device:<id>`, `device:<id>:session:<id>` or `operator:<id>`
+ * (qontinui-coord `alert_queue.rs`); older builds also sent `session:<id>`.
  */
 export interface CoordAlertClaim {
   claimed_by?: string | null;
@@ -151,6 +183,19 @@ const STALE_AFTER_MS = 2 * POLL_INTERVAL_MS;
 
 const RUNNING_LABEL = "fix session running";
 const SELF_HEAL_LABEL = "auto-rerun in flight";
+
+/** Coord's remediation, in an evaluator's words (presentation mode). */
+const PRESENTED_REMEDIATION: Readonly<
+  Record<Exclude<FixSessionState["kind"], "none">, string>
+> = {
+  self_heal: "re-running its failed checks",
+  running: "an agent is fixing it",
+  stalled: "an agent's fix has stalled",
+  failed: "an agent's fix failed",
+};
+
+/** Where the banner's facts come from, for the presentation chip. */
+export const RED_MAIN_PROVENANCE_SOURCE = "coord red-main alerts";
 
 /** A row's repository in presentation mode when the scope does not clear it. */
 export const WITHHELD_REPOSITORY = "A repository";
@@ -339,7 +384,9 @@ export function parseRedMainAlerts(
     // Deliberately NOT the `0` default above: absent or malformed means UNREAD.
     const rawQueued = detail.queued_proposal_count;
     const queuedProposalCount =
-      typeof rawQueued === "number" && Number.isInteger(rawQueued) && rawQueued >= 0
+      typeof rawQueued === "number" &&
+      Number.isInteger(rawQueued) &&
+      rawQueued >= 0
         ? rawQueued
         : null;
     out.push({
@@ -431,161 +478,427 @@ export function parseBaselineFreshness(raw: unknown): {
   return { baselineFreshness: "not_contradicted", staleWorkflows: [] };
 }
 
-/**
- * The banner headline (D2 wording). Pure — exported for the vitest
- * suite.
- */
-export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
-  const prs = a.blockedPrCount === 1 ? "PR" : "PRs";
-  const label = sinceLabel(a.since, nowMs);
-  const since = a.since && label !== a.since ? ` since ${label} ago` : "";
+/** Everything the operator's headline states. */
+interface HeadlineFacts {
+  readonly repo: string;
+  readonly since?: string;
+  readonly blockedPrCount: number;
+  readonly queuedProposalCount: number | null;
+  readonly baselineFreshness: BaselineFreshness;
+  /** The partial-baseline note, or `""` when there is none. */
+  readonly staleNote: string;
+}
+
+function headlineFrom(f: HeadlineFacts, nowMs: number): string {
+  const prs = f.blockedPrCount === 1 ? "PR" : "PRs";
+  const label = sinceLabel(f.since, nowMs);
+  const since = f.since && label !== f.since ? ` since ${label} ago` : "";
   const queue =
-    a.queuedProposalCount === null
+    f.queuedProposalCount === null
       ? "merge-queue depth unknown"
-      : `${a.queuedProposalCount} ${a.queuedProposalCount === 1 ? "proposal" : "proposals"} queued`;
+      : `${f.queuedProposalCount} ${f.queuedProposalCount === 1 ? "proposal" : "proposals"} queued`;
   const tail =
-    `${a.blockedPrCount} ${prs} read main-red, ${queue}; ` +
+    `${f.blockedPrCount} ${prs} read main-red, ${queue}; ` +
     `a candidate lands only if its own rebased CI is green`;
-  if (a.baselineFreshness === "all_contradicted") {
+  if (f.baselineFreshness === "all_contradicted") {
     // Plan 2026-10-03 D3: never "main is RED", and never "main is green" —
     // a newer run's job set may differ from the push run's.
     return (
-      `⚠️ ${a.repo} main status UNKNOWN — red push baseline contradicted by ` +
+      `⚠️ ${f.repo} main status UNKNOWN — red push baseline contradicted by ` +
       `newer passing runs, awaiting a push run — ${tail}` +
       (since ? ` (alert open${since})` : "")
     );
   }
-  const staleNote =
-    a.baselineFreshness === "partial"
-      ? ` (stale push baseline, contradicted by newer passing runs: ${a.staleWorkflows.join(", ")})`
-      : "";
-  return `🔴 ${a.repo} main is RED${since} — ${tail}${staleNote}`;
+  return `🔴 ${f.repo} main is RED${since} — ${tail}${f.staleNote}`;
+}
+
+/** The partial-baseline note, naming the stale workflows. */
+function namedStaleNote(a: RedMainAlert): string {
+  return a.baselineFreshness === "partial"
+    ? ` (stale push baseline, contradicted by newer passing runs: ${a.staleWorkflows.join(", ")})`
+    : "";
 }
 
 /**
- * The claim chip on one banner row: whether an agent holds the episode, and
- * which one. Pure render of {@link AlertClaimState}.
+ * The banner headline (D2 wording), as the operator reads it. Pure — exported
+ * for the vitest suite.
  */
-function ClaimBadge({ claim }: { claim: AlertClaimState }) {
+export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
+  return headlineFrom(
+    {
+      repo: a.repo,
+      since: a.since,
+      blockedPrCount: a.blockedPrCount,
+      queuedProposalCount: a.queuedProposalCount,
+      baselineFreshness: a.baselineFreshness,
+      staleNote: namedStaleNote(a),
+    },
+    nowMs
+  );
+}
+
+function plural(n: number, one: string): string {
+  return `${n} ${n === 1 ? one : `${one}s`}`;
+}
+
+/**
+ * How long a main has been failing, in an evaluator's words — `" for 3
+ * hours"` — or `""` when the episode's start is unknown or unreadable (the
+ * presentation headline then states no duration rather than a raw timestamp).
+ * Pure — exported for the vitest suite.
+ */
+export function plainDuration(iso: string | undefined, nowMs: number): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const mins = Math.max(0, Math.floor((nowMs - t) / 60_000));
+  if (mins < 1) return " for under a minute";
+  if (mins < 60) return ` for ${plural(mins, "minute")}`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return ` for ${plural(hours, "hour")}`;
+  return ` for ${plural(Math.floor(hours / 24), "day")}`;
+}
+
+/** What the presentation headline states, every name already decided. */
+interface PresentationFacts {
+  /** The repository's name, or {@link WITHHELD_REPOSITORY}. */
+  readonly repo: string;
+  readonly since?: string;
+  readonly blockedPrCount: number;
+  readonly baselineFreshness: BaselineFreshness;
+  /** The failing checks a newer run passed, NAMED only on a cleared row. */
+  readonly staleWorkflows: readonly string[];
+  readonly named: boolean;
+}
+
+/**
+ * The banner headline in presentation mode: one plain sentence, with the
+ * merge train's vocabulary translated and its product terms through
+ * `GlossaryTerm` (`term(...)`). Pure — exported for the vitest suite.
+ */
+export function presentationHeadline(
+  f: PresentationFacts,
+  nowMs: number
+): CaptionText {
+  const branch = `${f.repo}'s main branch`;
+  const affected =
+    f.blockedPrCount === 1
+      ? "1 open pull request is affected"
+      : `${f.blockedPrCount} open pull requests are affected`;
+  const lands: CaptionSegment[] = [
+    `${affected}; the `,
+    term("merge_train", "merge train"),
+    " still lands a pull request whose own checks pass.",
+  ];
+  if (f.baselineFreshness === "all_contradicted") {
+    return [
+      `${branch}: status `,
+      term("unknown", "UNKNOWN"),
+      " — the checks that failed have since passed on a newer run, and the next push will settle it. ",
+      ...lands,
+    ];
+  }
+  const n = f.staleWorkflows.length;
+  const recovered =
+    f.baselineFreshness === "partial" && n > 0
+      ? ` ${plural(n, "failing check")} ${n === 1 ? "has" : "have"} since passed on a newer run${
+          f.named ? ` (${f.staleWorkflows.join(", ")})` : ""
+        }.`
+      : "";
+  return [
+    `${branch} is failing its checks${plainDuration(f.since, nowMs)}. `,
+    ...lands,
+    recovered,
+  ].filter((segment) => segment !== "");
+}
+
+/** The claim chip as it renders. */
+export interface ClaimChip {
+  readonly state: AlertClaimState["kind"];
+  readonly text: string;
+  readonly title: string;
+  /** Set when `state` is `unknown`. */
+  readonly unknownCause?: "unreadable" | "not-reported";
+}
+
+/**
+ * How presentation mode names a claimant: by its KIND, never by its id (D3.3).
+ * A device is its session machine alias, so it reads the same here as on every
+ * other lens panel; agent, session and operator ids are internal identifiers
+ * and are dropped. A label of no kind this knows returns `null` — the caller
+ * then says the claimant is withheld rather than guessing what it is. Pure —
+ * exported for the vitest suite.
+ *
+ * Coord's labels (`alert_queue.rs`): `agent:<id>`, `device:<id>`,
+ * `device:<id>:session:<id>` and `operator:<id>`; older builds also sent
+ * `session:<id>`.
+ */
+export function presentableClaimant(
+  label: string,
+  aliasDevice: (deviceId: string) => string
+): string | null {
+  const parts = label.split(":").map((part) => part.trim());
+  const kind = (parts[0] ?? "").toLowerCase();
+  const id = parts[1] ?? "";
+  switch (kind) {
+    case "device": {
+      if (!id) return "a machine";
+      const machine = aliasDevice(id);
+      return (parts[2] ?? "").toLowerCase() === "session"
+        ? `an agent on ${machine}`
+        : machine;
+    }
+    case "agent":
+      return "an agent";
+    case "session":
+      return "an agent session";
+    case "operator":
+      return "the operator";
+    default:
+      return null;
+  }
+}
+
+/**
+ * The claim chip for one row. `presentation` is `null` in operator mode, which
+ * names the claimant in full; in presentation mode the claimant is
+ * {@link presentableClaimant}'s phrase, in the text and in the tooltip alike.
+ * Pure — exported for the vitest suite.
+ */
+export function claimChip(
+  claim: AlertClaimState,
+  presentation: { readonly aliasDevice: (deviceId: string) => string } | null
+): ClaimChip {
   if (claim.kind === "claimed") {
     const by = claim.claimedBy;
-    return (
-      <span
-        className="badge badge-info"
-        data-testid="red-main-claim"
-        data-claim-state="claimed"
-        title={[
+    const when = [
+      claim.claimedAt ? `since ${claim.claimedAt}` : null,
+      claim.expiresAt ? `lease expires ${claim.expiresAt}` : null,
+    ];
+    if (presentation === null) {
+      return {
+        state: "claimed",
+        text: by
+          ? `claimed by ${compactPrincipal(by)}`
+          : "claimed (claimant not named)",
+        title: [
           by ? `Claimed by ${by}` : "Claimed — coord did not name the claimant",
-          claim.claimedAt ? `since ${claim.claimedAt}` : null,
-          claim.expiresAt ? `lease expires ${claim.expiresAt}` : null,
+          ...when,
         ]
           .filter(Boolean)
-          .join(", ")}
-      >
-        {by
-          ? `claimed by ${compactPrincipal(by)}`
-          : "claimed (claimant not named)"}
-      </span>
-    );
+          .join(", "),
+      };
+    }
+    const phrase = by
+      ? presentableClaimant(by, presentation.aliasDevice)
+      : null;
+    return {
+      state: "claimed",
+      text: phrase
+        ? `claimed by ${phrase}`
+        : by
+          ? "claimed (claimant withheld)"
+          : "claimed (claimant not named)",
+      title: [
+        phrase
+          ? `Claimed by ${phrase}`
+          : by
+            ? "Claimed — who holds it is withheld in presentation mode"
+            : "Claimed — coord did not name the claimant",
+        ...when,
+      ]
+        .filter(Boolean)
+        .join(", "),
+    };
   }
   if (claim.kind === "unclaimed") {
-    return (
-      <span
-        className="badge badge-warning"
-        data-testid="red-main-claim"
-        data-claim-state="unclaimed"
-        title="No agent holds a claim on this red main yet."
-      >
-        no agent has claimed it
-      </span>
-    );
+    return {
+      state: "unclaimed",
+      text: "no agent has claimed it",
+      title: "No agent holds a claim on this red main yet.",
+    };
   }
+  return {
+    state: "unknown",
+    unknownCause: claim.cause,
+    text: "claim unknown",
+    title:
+      claim.cause === "unreadable"
+        ? "Coord could not read this alert's claim state (the lease could not be read or decoded), so whether an agent is working on it is unknown — not that nobody is."
+        : "This coord build does not report alert claims, so whether an agent is working on it is unknown — not that nobody is.",
+  };
+}
+
+/** Coord's own remediation as it renders, or `null` when none is active. */
+export interface RemediationText {
+  readonly text: string;
+  readonly title?: string;
+}
+
+/**
+ * Coord's own remediation for one row. In presentation mode it is the state
+ * alone: the self-heal run reference and the fix session's agent id are
+ * internal identifiers. Pure — exported for the vitest suite.
+ */
+export function remediationText(
+  fixSession: FixSessionState,
+  presenting: boolean
+): RemediationText | null {
+  if (fixSession.kind === "none") return null;
+  if (presenting) return { text: PRESENTED_REMEDIATION[fixSession.kind] };
+  const agent = fixSession.agentId
+    ? ` · ${truncateAgentId(fixSession.agentId)}`
+    : "";
+  switch (fixSession.kind) {
+    case "self_heal":
+      return { text: SELF_HEAL_LABEL, title: fixSession.raw };
+    case "running":
+      return { text: `${RUNNING_LABEL}${agent}` };
+    case "stalled":
+    case "failed":
+      return { text: `fix session ${fixSession.kind}${agent}` };
+  }
+}
+
+/** The workflows line, or `null` when there is no workflow to name. */
+function workflowsLine(
+  freshness: BaselineFreshness,
+  workflows: readonly string[],
+  presenting: boolean
+): string | null {
+  if (workflows.length === 0) return null;
+  // When newer passing runs contradict every red push baseline, coord's
+  // evidence says these workflows are NOT currently failing — label them as
+  // the stale baseline, never "failing".
+  const label =
+    freshness === "all_contradicted"
+      ? presenting
+        ? "checks that failed"
+        : "red push baseline"
+      : presenting
+        ? "failing checks"
+        : "failing";
+  return `${label}: ${workflows.join(", ")}`;
+}
+
+/** One banner row as it renders — every field already decided for the mode. */
+export interface RedMainRowView {
+  readonly alertKey: string;
+  /** Whether the presentation lens withheld the row; `null` in operator mode. */
+  readonly withheld: boolean | null;
+  readonly baselineFreshness: BaselineFreshness;
+  /** The operator's sentence, or the presentation lens's (with glossary terms). */
+  readonly headline: CaptionText;
+  /** `"failing: CI, release"`, or `null` when there is none to name. */
+  readonly workflows: string | null;
+  readonly remediation: RemediationText | null;
+  readonly claim: ClaimChip;
+}
+
+/** Which rendering a row is for: the operator's, or the presentation lens's. */
+export type RedMainLens =
+  | { readonly presenting: false }
+  | {
+      readonly presenting: true;
+      readonly scope: PresentationScopeState;
+      /** The session machine alias of a coord device id. */
+      readonly aliasDevice: (deviceId: string) => string;
+    };
+
+/**
+ * One row as the banner renders it (see the module doc). The operator view is
+ * the parsed row verbatim; the presentation view is built field by field, so
+ * nothing reaches it that was not decided here. Pure — exported for the vitest
+ * suite.
+ */
+export function redMainRowView(
+  a: RedMainAlert,
+  nowMs: number,
+  lens: RedMainLens
+): RedMainRowView {
+  if (!lens.presenting) {
+    return {
+      alertKey: a.alertKey,
+      withheld: null,
+      baselineFreshness: a.baselineFreshness,
+      headline: redMainHeadline(a, nowMs),
+      workflows: workflowsLine(a.baselineFreshness, a.workflows, false),
+      remediation: remediationText(a.fixSession, false),
+      claim: claimChip(a.claim, null),
+    };
+  }
+  // Every name the row could print is in the verdict's text — the stale
+  // workflows too, though coord sends them as a subset of `workflows`: the
+  // parser does not enforce that, and the verdict must not rest on it.
+  const named = redactionVerdict(
+    {
+      text: [a.repo, ...a.workflows, ...a.staleWorkflows].join(" "),
+      repo: a.repo,
+    },
+    lens.scope
+  ).show;
+  return {
+    alertKey: a.alertKey,
+    withheld: !named,
+    baselineFreshness: a.baselineFreshness,
+    headline: presentationHeadline(
+      {
+        repo: named ? a.repo : WITHHELD_REPOSITORY,
+        since: a.since,
+        blockedPrCount: a.blockedPrCount,
+        baselineFreshness: a.baselineFreshness,
+        staleWorkflows: a.staleWorkflows,
+        named,
+      },
+      nowMs
+    ),
+    workflows: named
+      ? workflowsLine(a.baselineFreshness, a.workflows, true)
+      : null,
+    remediation: remediationText(a.fixSession, true),
+    claim: claimChip(a.claim, { aliasDevice: lens.aliasDevice }),
+  };
+}
+
+/** The claim chip on one banner row. Pure render of {@link ClaimChip}. */
+function ClaimBadge({ chip }: { chip: ClaimChip }) {
+  const variant =
+    chip.state === "claimed"
+      ? "badge-info"
+      : chip.state === "unclaimed"
+        ? "badge-warning"
+        : "badge-secondary";
   return (
     <span
-      className="badge badge-secondary"
+      className={`badge ${variant}`}
       data-testid="red-main-claim"
-      data-claim-state="unknown"
-      data-claim-unknown-cause={claim.cause}
-      title={
-        claim.cause === "unreadable"
-          ? "Coord could not read this alert's claim state (the lease could not be read or decoded), so whether an agent is working on it is unknown — not that nobody is."
-          : "This coord build does not report alert claims, so whether an agent is working on it is unknown — not that nobody is."
-      }
+      data-claim-state={chip.state}
+      data-claim-unknown-cause={chip.unknownCause}
+      title={chip.title}
     >
-      claim unknown
+      {chip.text}
     </span>
   );
 }
 
 /** Coord's own remediation, when one is active. Read only. */
-function RemediationNote({ fixSession }: { fixSession: FixSessionState }) {
-  switch (fixSession.kind) {
-    case "none":
-      return null;
-    case "self_heal":
-      return (
-        <span
-          className="text-xs text-red-100"
-          data-testid="red-main-remediation"
-          title={fixSession.raw}
-        >
-          {SELF_HEAL_LABEL}
-        </span>
-      );
-    case "running":
-      return (
-        <span
-          className="text-xs text-red-100"
-          data-testid="red-main-remediation"
-        >
-          {RUNNING_LABEL}
-          {fixSession.agentId
-            ? ` · ${truncateAgentId(fixSession.agentId)}`
-            : ""}
-        </span>
-      );
-    case "stalled":
-    case "failed":
-      return (
-        <span
-          className="text-xs text-red-100"
-          data-testid="red-main-remediation"
-        >
-          fix session {fixSession.kind}
-          {fixSession.agentId
-            ? ` · ${truncateAgentId(fixSession.agentId)}`
-            : ""}
-        </span>
-      );
-  }
-}
-
-/**
- * The row as presentation mode may show it: unchanged in operator mode, and in
- * presentation mode with the repository and its workflow names withheld unless
- * the scope clears them (see the module doc).
- */
-function presentableRow(
-  a: RedMainAlert,
-  presenting: boolean,
-  scope: PresentationScopeState
-): { row: RedMainAlert; withheld: boolean } {
-  if (!presenting) return { row: a, withheld: false };
-  const verdict = redactionVerdict(
-    { text: [a.repo, ...a.workflows].join(" "), repo: a.repo },
-    scope
+function RemediationNote({ note }: { note: RemediationText | null }) {
+  if (note === null) return null;
+  return (
+    <span
+      className="text-xs text-red-100"
+      data-testid="red-main-remediation"
+      title={note.title}
+    >
+      {note.text}
+    </span>
   );
-  return verdict.show
-    ? { row: a, withheld: false }
-    : {
-        row: { ...a, repo: WITHHELD_REPOSITORY, workflows: [] },
-        withheld: true,
-      };
 }
 
 export function RedMainBanner() {
   const { presenting } = usePresentationMode();
   const presentationScope = usePresentationScopeState();
+  const aliasMachine = useMachineAliaser();
   const [reds, setReds] = useState<RedMainAlert[]>([]);
   /**
    * Consecutive polls that came back with no `red_main` row. See
@@ -705,22 +1018,25 @@ export function RedMainBanner() {
   const staleMs =
     lastSuccessAt === null ? 0 : Math.max(0, nowMs - lastSuccessAt);
   const stale = staleMs > STALE_AFTER_MS;
+  const lens: RedMainLens = presenting
+    ? {
+        presenting: true,
+        scope: presentationScope,
+        aliasDevice: (deviceId) => aliasMachine({ deviceId }),
+      }
+    : { presenting: false };
 
   return (
     <div data-testid="red-main-banner" className="shrink-0">
       {reds.map((episode) => {
-        const { row: a, withheld } = presentableRow(
-          episode,
-          presenting,
-          presentationScope
-        );
+        const a = redMainRowView(episode, nowMs, lens);
         return (
           <div
             key={a.alertKey}
             role="alert"
             data-testid="red-main-banner-row"
             data-baseline-freshness={a.baselineFreshness}
-            data-redacted={presenting ? String(withheld) : undefined}
+            data-redacted={a.withheld === null ? undefined : String(a.withheld)}
             // Deep-red bar + white text (~10:1, passes WCAG AAA), NOT
             // `bg-destructive text-destructive-foreground`: this app's theme
             // has no `--destructive-foreground` token (see globals.css — the
@@ -738,23 +1054,29 @@ export function RedMainBanner() {
               aria-hidden
             />
             <span className="text-sm font-semibold">
-              {redMainHeadline(a, nowMs)}
+              <CaptionCopy text={a.headline} />
             </span>
-            {a.workflows.length > 0 && (
+            {a.workflows !== null && (
               <span
                 className="text-xs font-mono text-red-100"
                 data-testid="red-main-workflows"
               >
-                {/* When newer passing runs contradict every red push baseline,
-                  coord's evidence says these workflows are NOT currently
-                  failing — label them as the stale baseline, never "failing". */}
-                {a.baselineFreshness === "all_contradicted"
-                  ? "red push baseline"
-                  : "failing"}
-                : {a.workflows.join(", ")}
+                {a.workflows}
               </span>
             )}
-            {stale && lastSuccessAt !== null && (
+            {/* Presentation mode: where this came from, and when coord last
+                confirmed it — the age says how old the claim is, so the
+                operator's staleness note below is not needed beside it. */}
+            <Provenance
+              source={RED_MAIN_PROVENANCE_SOURCE}
+              asOf={lastSuccessAt}
+              // The row's own light-on-red text: the chip's muted grey is
+              // unreadable on this bar. Always the KNOWN style here — a row
+              // renders only after a read coord answered.
+              className="border-red-300/40 text-red-100"
+              data-testid="red-main-provenance"
+            />
+            {!presenting && stale && lastSuccessAt !== null && (
               // The banner stays up on a read outage BY DESIGN, but it must not
               // pass an unconfirmed claim off as a live one.
               <span
@@ -766,9 +1088,9 @@ export function RedMainBanner() {
                 {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)} ago)
               </span>
             )}
-            <RemediationNote fixSession={a.fixSession} />
+            <RemediationNote note={a.remediation} />
             <span className="ml-auto">
-              <ClaimBadge claim={a.claim} />
+              <ClaimBadge chip={a.claim} />
             </span>
           </div>
         );

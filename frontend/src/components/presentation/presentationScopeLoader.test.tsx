@@ -223,15 +223,103 @@ describe("the store", () => {
     const r = rig();
     r.store.ensureFresh();
     const saved = record({ confidential_terms: ["Initech"] });
-    r.store.accept(saved);
+    expect(r.store.accept(saved, r.store.currentSelection())).toBe(true);
     expect(r.calls[0].signal.aborted).toBe(true);
     expect(r.store.getSnapshot().record).toBe(saved);
+    expect(r.store.getSnapshot().selection).toBe("project-a");
     // The stale read resolving late changes nothing.
     r.calls[0].resolve(record({ confidential_terms: ["stale"] }));
     await flush();
     expect(r.store.getSnapshot().record).toBe(saved);
     r.store.ensureFresh();
     expect(r.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hold a save's answer that lands after another tab switched project", async () => {
+    // A save sent under project A; another tab switches to B while it is in
+    // flight (the storage event invalidates), and this tab starts reading B.
+    const r = rig();
+    const sentUnder = r.store.currentSelection();
+    r.store.invalidate();
+    r.selection.value = "project-b";
+    r.store.ensureFresh();
+    expect(r.load).toHaveBeenCalledTimes(1);
+
+    const savedForA = record({ confidential_terms: ["Initech"] });
+    expect(r.store.accept(savedForA, sentUnder)).toBe(false);
+    // Nothing of A's is held — not as B's, not at all — and B's read stands.
+    expect(r.store.getSnapshot().record).toBeNull();
+    expect(r.store.getSnapshot().state).toEqual({ status: "loading" });
+    expect(r.calls[0].signal.aborted).toBe(false);
+    r.calls[0].resolve(record({ confidential_terms: ["Globex"] }));
+    await flush();
+    const state = r.store.getSnapshot().state;
+    expect(state.status === "ready" && state.scope.confidentialTerms).toEqual([
+      "Globex",
+    ]);
+  });
+
+  it("does not hold a save's answer when the selection changed with no storage event", async () => {
+    // A selection this tab changes without reloading fires no storage event
+    // here, so nothing invalidates: the selection itself must be compared.
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].resolve(record());
+    await flush();
+    const sentUnder = r.store.currentSelection();
+    r.selection.value = "project-b";
+    expect(
+      r.store.accept(record({ confidential_terms: ["Initech"] }), sentUnder)
+    ).toBe(false);
+    expect(r.store.getSnapshot().selection).toBe("project-a");
+    expect(r.store.msUntilRecheck()).toBe(0);
+  });
+
+  it("re-reads NOW with a fresh read, abandoning one sent before, and says how it went", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].resolve(record());
+    await flush();
+    // A refresh is in flight: it was sent before whatever prompts the re-read.
+    r.clock.t += 60_000;
+    r.store.ensureFresh();
+    expect(r.load).toHaveBeenCalledTimes(2);
+    const reread = r.store.rereadNow();
+    expect(r.calls[1].signal.aborted).toBe(true);
+    expect(r.load).toHaveBeenCalledTimes(3);
+    const after = record({ confidential_terms: ["Globex"] });
+    r.calls[2].resolve(after);
+    await expect(reread).resolves.toEqual({ status: "read", record: after });
+    // The abandoned read answering late changes nothing.
+    r.calls[1].resolve(record({ confidential_terms: ["stale"] }));
+    await flush();
+    expect(r.store.getSnapshot().record).toBe(after);
+  });
+
+  it("says a re-read failed, keeping the earlier record held and the scope withheld", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    const before = record();
+    r.calls[0].resolve(before);
+    await flush();
+    const reread = r.store.rereadNow();
+    r.calls[1].reject(new Error("HTTP 503"));
+    await expect(reread).resolves.toEqual({
+      status: "failed",
+      failure: "HTTP 503",
+    });
+    expect(r.store.getSnapshot().record).toBe(before);
+    expect(r.store.getSnapshot().failure).toBe("HTTP 503");
+    expect(r.store.getSnapshot().state.status).toBe("error");
+  });
+
+  it("says a re-read was superseded when another tab switched project under it", async () => {
+    const r = rig();
+    const reread = r.store.rereadNow();
+    r.store.invalidate();
+    r.calls[0].resolve(record());
+    await expect(reread).resolves.toEqual({ status: "superseded" });
+    expect(r.store.getSnapshot().record).toBeNull();
   });
 
   it("invalidate forgets everything, and a read in flight cannot bring it back", async () => {

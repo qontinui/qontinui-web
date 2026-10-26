@@ -11,9 +11,11 @@
  *
  * Pass EVERY identifier the surface holds (device id, hostname, display name):
  * that is what links a panel that knows a device id to one that knows the
- * hostname. The alias hook reads the registry through `useSyncExternalStore`
- * with a generic server snapshot, so a server render never touches module
- * state and the hydration render never disagrees with the HTML.
+ * hostname. Both hooks consult the registry only once the client renders: on
+ * a server render and during hydration they return {@link SERVER_MACHINE_ALIAS}
+ * (through `useSyncExternalStore`'s server snapshot), so a server render never
+ * assigns a letter in module state that every request and tenant of the
+ * process would share, and the hydration render never disagrees with the HTML.
  */
 
 import { useCallback, useSyncExternalStore } from "react";
@@ -26,8 +28,17 @@ export const SERVER_MACHINE_ALIAS = "Machine";
 /** Shown in operator mode when the identity carries no name at all. */
 export const UNKNOWN_MACHINE_NAME = "unknown machine";
 
-/** Assigned aliases never change, so there is nothing to subscribe to. */
+/** For `useOnTheClient`, which has nothing to wait for. */
 const subscribeNever = () => () => {};
+
+/** `false` on a server render and during hydration; `true` once on the client. */
+function useOnTheClient(): boolean {
+  return useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false
+  );
+}
 
 function operatorName(
   identity: MachineIdentity,
@@ -54,8 +65,10 @@ export function useMachineName(
   label?: string | null
 ): string {
   const { presenting } = usePresentationMode();
+  // Subscribed: a merge of two letters (`machineAliases.ts`) re-renders a
+  // name that showed the retired one.
   const alias = useSyncExternalStore(
-    subscribeNever,
+    sessionMachineAliases.subscribe,
     () => sessionMachineAliases.aliasFor(identity),
     () => SERVER_MACHINE_ALIAS
   );
@@ -71,12 +84,26 @@ export function useMachineAliaser(): (
   label?: string | null
 ) => string {
   const { presenting } = usePresentationMode();
+  const onTheClient = useOnTheClient();
+  // A merge of two letters re-renders the caller, so every name it built
+  // with this function is rebuilt with the kept letter.
+  const merges = useSyncExternalStore(
+    sessionMachineAliases.subscribe,
+    sessionMachineAliases.mergeCount,
+    () => 0
+  );
   return useCallback(
     (identity: MachineIdentity, label?: string | null) =>
-      presenting
-        ? sessionMachineAliases.aliasFor(identity)
-        : operatorName(identity, label),
-    [presenting]
+      !presenting
+        ? operatorName(identity, label)
+        : onTheClient
+          ? sessionMachineAliases.aliasFor(identity)
+          : SERVER_MACHINE_ALIAS,
+    // `merges` is not read inside: it is in the deps so a merge hands the
+    // caller a NEW function, and a caller memoizing names by this function's
+    // identity recomputes them with the kept letter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+    [presenting, onTheClient, merges]
   );
 }
 

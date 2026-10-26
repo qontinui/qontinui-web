@@ -29,10 +29,21 @@ const BASE =
 const ON = "bg-primary text-primary-foreground";
 const OFF = "text-muted-foreground hover:text-foreground hover:bg-muted";
 
-const TITLE_ON =
-  "Presentation mode is on: captions and sources are shown; controls, costs and names that are not yours are hidden. Press to return to the operator view.";
-const TITLE_OFF =
-  "Show this page as a presentation: captions and sources on; controls, costs and names that are not yours hidden. Nothing about the data changes.";
+/**
+ * What the toggle promises — only what holds on EVERY page AND in the shell
+ * around it: a page registered as presentation-ready has passed
+ * `expectPresentationSafe`, every other lens page is withheld by
+ * `PresentationPage`, and the shell keeps its own write controls inside
+ * `OperatorOnly` (`app/(app)/layout.presentation.population.test.tsx` checks
+ * the shell whole). The one exception is named rather than hidden: the
+ * presenter's own safety controls (`components/console/presenterSafety.ts`, a
+ * closed list) stay live, so the claim is true wherever the toggle is
+ * (`ux-priorities` `a-status-signal-must-observe-the-state-it-names`).
+ */
+export const PRESENTATION_TOGGLE_TITLE_ON =
+  "Presentation mode is on: controls that change anything, costs, other parties' names and internal identifiers are kept off screen — all but your own safety controls (stopping the AI co-pilot or a recording, and the session-expiry prompt) — and a page not yet prepared for presentation is withheld. Press to return to the operator view.";
+export const PRESENTATION_TOGGLE_TITLE_OFF =
+  "Show the console as a presentation: controls that change anything, costs, other parties' names and internal identifiers off screen — all but your own safety controls (stopping the AI co-pilot or a recording, and the session-expiry prompt) — and any page not yet prepared for presentation withheld. Nothing about the data changes.";
 
 export interface PresentationModeToggleProps {
   className?: string;
@@ -64,7 +75,11 @@ export function PresentationModeToggle({
       type="button"
       aria-pressed={presenting}
       onClick={() => setPresenting(!presenting)}
-      title={presenting ? TITLE_ON : TITLE_OFF}
+      title={
+        presenting
+          ? PRESENTATION_TOGGLE_TITLE_ON
+          : PRESENTATION_TOGGLE_TITLE_OFF
+      }
       className={cn(BASE, presenting ? ON : OFF, className)}
       data-testid="presentation-mode-toggle"
       data-presentation-mode={presenting ? "on" : "off"}

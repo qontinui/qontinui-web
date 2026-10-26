@@ -17,7 +17,11 @@ export const UI_BRIDGE_CAPTIONS = {
     title: "UI Bridge",
     oneLiner:
       "How agents see and operate a running application: the screens it declares, the controls on them, and what each control does.",
-    whyItMatters: copy`Agents check their own changes by operating the real interface through the ${term("runner", "runner")}, and every control declares whether it only reads or also writes, so an automated walk never presses something it should not.`,
+    // A declaration is optional in the UI Bridge SDK, and an undeclared
+    // control is "unclassified", not safe: the copy says what a control CAN
+    // declare and that the page counts the ones that have not, never that
+    // every control has.
+    whyItMatters: copy`Agents can operate the real interface through the ${term("runner", "runner")}, and each control can declare whether it only reads, also writes, or cannot be undone; this page counts the controls nobody has classified yet.`,
   },
   "ui-bridge.apps": {
     title: "Registered applications",
