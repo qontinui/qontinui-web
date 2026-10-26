@@ -3,8 +3,18 @@
  * `2026-10-23-console-presentation-spaces` D3, Phase 5), through Phase 1's
  * helper and the REAL UI Bridge provider: every tab, the Twin map's
  * drill-down and the sub-space drawer must hold no enabled control that is
- * not navigation-only, no write registration, no cost, and the captions they
- * promise.
+ * not navigation-only, no link to a console page that drops the presentation,
+ * no write registration, no cost, and the captions they promise.
+ *
+ * This file is the proof `presentationReadiness.ts` names for `/digital-twin`:
+ * without the registration `PresentationPage` withholds the whole page in
+ * presentation mode. What makes it a proof is read from the RUN
+ * (`src/test/readinessEvidence.ts`) — the page's own component mounted under
+ * a presenting lens, its last check over each render clean, the real
+ * provider's registry read — so only data sources are mocked here (the data
+ * hooks, the runner context, the chat socket). Mocking a component the page
+ * renders, or a lens primitive, would put a render in front of the check that
+ * is not production's.
  *
  * The data hooks answer with the page's own Spec CI stubs. A runner is
  * connected (dispatch target, chat socket, relay target), so every control
@@ -162,6 +172,17 @@ const SCOPE: PresentationScopeState = {
   scope: { firstPartyOwners: ["qontinui"], confidentialTerms: [] },
 };
 
+/**
+ * What the fixture's work units are called, read from the stub itself so it
+ * cannot drift: the lens cannot prove their repositories first-party, so the
+ * Twin map must show none of these titles or slugs (D3.3).
+ */
+const PLAN_NAMES: string[] = (
+  stubBody("**/api/v1/operations/plans**") as { work_units: CoordPlanRow[] }
+).work_units.flatMap((unit) =>
+  unit.title ? [unit.title, unit.slug] : [unit.slug]
+);
+
 const TWIN_MAP_CAPTIONS: CaptionKey[] = [
   "digital-twin.page",
   "digital-twin.twin-map",
@@ -186,7 +207,10 @@ describe("/digital-twin in presentation mode", () => {
       "aria-selected",
       "true"
     );
-    expectPresentationSafe(view, { captions: TWIN_MAP_CAPTIONS });
+    expectPresentationSafe(view, {
+      captions: TWIN_MAP_CAPTIONS,
+      forbidden: PLAN_NAMES,
+    });
     // Every fidelity figure and plan count carries its source and age.
     const map = screen.getByTestId("digital-twin-twin-map");
     expect(
@@ -206,6 +230,7 @@ describe("/digital-twin in presentation mode", () => {
     const detail = screen.getByTestId("digital-twin-aspect-detail-process");
     expectPresentationSafe(view, {
       captions: [...TWIN_MAP_CAPTIONS, "digital-twin.aspect-detail"],
+      forbidden: PLAN_NAMES,
     });
 
     // coord names a plan's repositories without an owner, so no title can be
@@ -226,7 +251,7 @@ describe("/digital-twin in presentation mode", () => {
 
     // Filtering by a part is navigation, and stays safe.
     await user.click(within(detail).getByTestId("digital-twin-part-gates"));
-    expectPresentationSafe(view);
+    expectPresentationSafe(view, { forbidden: PLAN_NAMES });
   });
 
   it("keeps every other tab — and the sub-space drawer — safe to show", async () => {
@@ -260,6 +285,17 @@ describe("/digital-twin in presentation mode", () => {
 
     await user.click(screen.getByRole("tab", { name: "Lifecycle" }));
     await screen.findByTestId("digital-twin-stage-verify");
+    // The stages link to console pages, and every such link keeps the
+    // presentation (the page check fails one that does not; this names it).
+    const consoleLinks = [
+      ...document.querySelectorAll<HTMLAnchorElement>(
+        'a[href^="/admin/coord"]'
+      ),
+    ];
+    expect(consoleLinks.length).toBeGreaterThan(0);
+    for (const link of consoleLinks) {
+      expect(link.getAttribute("href")).toMatch(/[?&]present=1$/);
+    }
     expectPresentationSafe(view);
 
     await user.click(screen.getByRole("tab", { name: "Delivery" }));
@@ -276,6 +312,23 @@ describe("/digital-twin in presentation mode", () => {
     expect(
       await screen.findByTestId("ui-bridge-presented")
     ).toBeInTheDocument();
+    expectPresentationSafe(view);
+  });
+
+  it("keeps the presentation on the drawer's link to the plan building a sub-space", async () => {
+    const view = renderPresenting();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "Completeness" }));
+    await user.click(
+      await screen.findByTestId("digital-twin-cell-process_log")
+    );
+    await screen.findByRole("dialog");
+    // The slug is the manifest's own — the product's, not a tenant's — so it
+    // shows, and the link to its work unit opens presenting.
+    expect(screen.getByTestId("digital-twin-drawer-plan-link")).toHaveAttribute(
+      "href",
+      "/admin/coord/work-units/2026-10-11-process-twin-event-log-and-flow-metrics?present=1"
+    );
     expectPresentationSafe(view);
   });
 });

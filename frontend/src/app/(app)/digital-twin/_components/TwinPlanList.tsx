@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
   CollapsiblePanel,
@@ -31,6 +30,7 @@ import {
   workUnitRepos,
   type GroupPlan,
 } from "../_lib/twin-plans";
+import { LensLink } from "./LensLink";
 
 /** In presentation mode, how many unfinished plans a list shows before "and N more". */
 export const PRESENTATION_PLAN_LIMIT = 8;
@@ -105,13 +105,13 @@ function PlanItem({ plan, complete }: { plan: GroupPlan; complete: boolean }) {
         <MissingUnitBadge complete={complete} />
       )}
       {linkable ? (
-        <Link
+        <LensLink
           href={workUnitHref(plan.slug)}
           data-testid="digital-twin-plan-link"
           className="min-w-0 truncate font-medium text-primary underline-offset-4 hover:underline"
         >
           {title}
-        </Link>
+        </LensLink>
       ) : (
         <span className="min-w-0 truncate">{title}</span>
       )}
@@ -219,12 +219,12 @@ export function TwinPlanList({
               <p className="mt-2 text-xs text-muted-foreground">
                 Showing the {FINISHED_PLAN_LIMIT} most recent of{" "}
                 {finished.length}; the rest are on{" "}
-                <Link
+                <LensLink
                   href="/admin/coord/work-units"
                   className="font-medium text-primary underline-offset-4 hover:underline"
                 >
                   Work units
-                </Link>
+                </LensLink>
                 .
               </p>
             )}

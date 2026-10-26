@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import {
   Dialog,
@@ -30,6 +29,7 @@ import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
 import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
 import { workUnitHref } from "../_lib/twin-plans";
 import type { DriftVerdict, ResolvedSubspace } from "../_lib/types";
+import { LensLink } from "./LensLink";
 
 interface SubspaceDetailProps {
   row: ResolvedSubspace | null;
@@ -293,13 +293,13 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
             <Field
               label="Planned in"
               value={
-                <Link
+                <LensLink
                   href={workUnitHref(row.plan)}
                   data-testid="digital-twin-drawer-plan-link"
                   className="font-mono text-xs text-primary underline-offset-4 hover:underline"
                 >
                   {row.plan}
-                </Link>
+                </LensLink>
               }
             />
           )}

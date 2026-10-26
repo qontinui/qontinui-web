@@ -135,9 +135,11 @@ describe("TwinPlanList — presentation mode, as the tenant's scope decides", ()
     expect(item.querySelector('[data-redacted="false"]')).toHaveTextContent(
       "Title of 2026-10-01-own-plan"
     );
+    // A link to a console page carries the presentation while presenting, so a
+    // tab opened from it presents too (the page check fails one that does not).
     expect(within(item).getByTestId("digital-twin-plan-link")).toHaveAttribute(
       "href",
-      "/admin/coord/work-units/2026-10-01-own-plan"
+      "/admin/coord/work-units/2026-10-01-own-plan?present=1"
     );
     expectPresentationSafe(view);
   });

@@ -25,36 +25,42 @@ export const DIGITAL_TWIN_CAPTIONS = {
   "digital-twin.twin-map": {
     title: "Twin map",
     oneLiner: copy`Each part of the twin, how well it currently sees its share of the factory, and the ${term("plan", "plans")} moving it forward.`,
-    whyItMatters: copy`Every figure is a live reading shown with its source and age, and every ${term("plan")} opens the ${term("work_unit", "work unit")} that tracks it, so the map is the factory's own record rather than a slide.`,
+    // Each figure carries its source and age or is shown as unknown with the
+    // reason; a plan's status is read from the work unit that tracks it. Not
+    // "every plan opens its work unit": while presenting, a plan whose title
+    // the lens withholds is not linked.
+    whyItMatters: copy`Each figure is read from a named source and shown with its age, or shown as ${term("unknown", "unknown")} with the reason, and a ${term("plan")}'s status is read from the ${term("work_unit", "work unit")} that tracks it, so the map is read from the factory's own records rather than drawn for the occasion.`,
   },
   "digital-twin.aspect-environment": {
     title: "Environment twin",
     oneLiner:
       "The system being built and run: its code, dependencies, database schema, infrastructure, releases and runtime health.",
-    whyItMatters: copy`An ${term("agent_session", "agent")} checks this twin before it changes anything, so it acts on what is actually deployed rather than on what it assumes.`,
+    // "Can query", as the page caption says: nothing makes every agent check
+    // the twin before it acts.
+    whyItMatters: copy`An ${term("agent_session", "agent")} can query this twin before it changes anything, so it can act on what is actually deployed rather than on what it assumes.`,
   },
   "digital-twin.aspect-process": {
     title: "Process twin",
-    oneLiner: copy`The work in flight: ${term("work_unit", "work units")}, ${term("gate", "gates")}, agent sessions, CI runs and the ${term("merge_train", "merge train")}.`,
+    oneLiner: copy`The work in flight: ${term("work_unit", "work units")}, ${term("gate", "gates")}, ${term("agent_session", "agent sessions")}, CI runs and the ${term("merge_train", "merge train")}.`,
     whyItMatters:
-      "It shows where work is moving and where it is stuck, so the factory can route around a blockage instead of waiting for a person to notice it.",
+      "It shows where work is moving and where it is stuck, from the same records the agents work from.",
   },
   "digital-twin.aspect-intent": {
     title: "Intent twin",
     oneLiner: copy`What the people running the factory want: ${term("policy", "policies")}, ${term("intent_document", "intent documents")} and the moments a person had to step in.`,
     whyItMatters:
-      "It is what the other two twins are judged against: work counts only when it serves the intent written down here.",
+      "It is where the factory's direction is written down: what is being built, for whom and what counts as better, so the work in flight can be ranked against it.",
   },
   "digital-twin.aspect-ui-bridge": {
     title: "UI Bridge app twin",
     oneLiner:
       "A model of each application's interface, its pages, states and the moves between them, read through the UI Bridge.",
     whyItMatters:
-      "Agents test and operate an interface through this model, so a change that breaks a page is caught by the factory rather than by a customer.",
+      "Agents verify an interface by operating it through the UI Bridge, so this model is what they can check a change against before a customer meets it.",
   },
   "digital-twin.aspect-detail": {
     title: "What it observes, and the plans moving it",
     oneLiner: copy`The parts of the factory this twin observes, and every ${term("plan")} tied to them with its live status.`,
-    whyItMatters: copy`Each ${term("plan")} opens its ${term("work_unit", "work unit")}, where its pull requests and status history are recorded.`,
+    whyItMatters: copy`Each ${term("plan")}'s status is read from its ${term("work_unit", "work unit")}, which records its pull requests and status history.`,
   },
 } as const satisfies SurfaceCaptions<"digital-twin">;

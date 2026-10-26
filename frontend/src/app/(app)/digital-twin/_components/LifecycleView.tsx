@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Provenance } from "@/components/presentation";
 import { cn } from "@/lib/utils";
@@ -20,6 +19,7 @@ import { allProbesRestricted, resolveSubspaces } from "../_lib/resolve";
 import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
 import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
 import type { ResolvedSubspace } from "../_lib/types";
+import { LensLink } from "./LensLink";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
 import {
@@ -301,13 +301,13 @@ function StageSection({
             <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <span className="text-muted-foreground">Console:</span>
               {stage.consoleLinks.map((link) => (
-                <Link
+                <LensLink
                   key={link.href}
                   href={link.href}
                   className="font-medium text-primary underline-offset-4 hover:underline"
                 >
                   {link.label}
-                </Link>
+                </LensLink>
               ))}
             </p>
           )}

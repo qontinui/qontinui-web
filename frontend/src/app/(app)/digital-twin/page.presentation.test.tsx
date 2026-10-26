@@ -29,6 +29,12 @@ vi.mock("./_hooks/useSubspaceRaw", () => ({ useSubspaceRaw: () => idle }));
 vi.mock("./_hooks/useDeliveryVerdict", () => ({
   useDeliveryVerdict: () => idle,
 }));
+// The Twin map is the default tab (Phase 5): its two data hooks, idle, so the
+// title is rendered over a page that has read nothing.
+vi.mock("./_hooks/useTwinWorkUnits", () => ({ useTwinWorkUnits: () => idle }));
+vi.mock("./_hooks/useAppTwin", () => ({
+  useAppTwin: () => ({ deviceId: null, apps: idle, graph: idle }),
+}));
 vi.mock("@qontinui/ui-bridge/react", () => ({
   useUIElement: () => ({ ref: () => undefined }),
 }));
