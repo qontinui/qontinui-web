@@ -104707,7 +104707,7 @@
     },
     "/api/v1/operations/session-runs/growth": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, bucket_seconds, since, raw_from,\nrecording_since, devices_recording, series: [Bucket], fleet, truncated,\nas_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and\ntheir totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;\n``fleet`` carries ``available_slot_hours_per_day`` (published non-zero\nbudgets \u00d7 24) and how many devices published a budget, a zero budget or\nnone. ``recording_since: null`` means nothing is recorded yet \u2014 an absent\nbucket before it is UNKNOWN, not zero.",
+        "description": "Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, bucket_seconds, since, raw_from,\nrecording_since, devices_recording, series: [Bucket], fleet, truncated,\nas_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and\ntheir totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;\n``fleet`` carries ``available_state`` \u2014 ``published``,\n``no_budget_published`` (no device published a budget) or\n``zero_budget_published`` (every published budget is 0) \u2014 with\n``available_slot_hours_per_day`` / ``_per_bucket`` (published non-zero\nbudgets \u00d7 24) stated only for ``published`` and ``null`` otherwise, never\n0; and how many devices published a budget, a zero budget or none.\n``recording_since: null`` means nothing is recorded yet \u2014 an absent bucket\nbefore it is UNKNOWN, not zero.",
         "operationId": "api_v1_operations_session_runs_growth_get",
         "parameters": [
           {

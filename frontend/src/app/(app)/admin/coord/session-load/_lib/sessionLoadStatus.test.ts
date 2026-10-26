@@ -577,6 +577,33 @@ describe("growth", () => {
     ).toBe("none_published");
   });
 
+  it("every budget published as zero is its own reading, decided before the null check", () => {
+    const g = growth(20, (i) => i, {
+      fleet: {
+        available_slot_hours_per_day: null,
+        available_slot_hours_per_bucket: null,
+        available_state: "zero_budget_published",
+        devices_with_budget: 0,
+        devices_zero_budget: 2,
+        devices_without_budget: 0,
+      },
+    });
+    const a = fleetAvailable(g);
+    expect(a).toEqual({
+      kind: "zero_published",
+      devicesZero: 2,
+      devicesNone: 0,
+    });
+    expect(fleetAvailableText(a)).toMatch(
+      /^Fleet slot-hours available: none — every machine published a zero configured session budget/
+    );
+    const t = growthTrend(g, a);
+    expect(t.kind).toBe("no_available");
+    expect(trendText(t)).toMatch(
+      /every machine published a zero configured session budget/
+    );
+  });
+
   it("an unknown zero/none count is said, never folded into zero", () => {
     const a = fleetAvailable(
       growth(1, () => 1, {
@@ -773,11 +800,11 @@ describe("the health strip", () => {
     const fresh = deriveSessionLoadHealth({ ...base, stats: s, machines });
     expect(fresh.level).toBe("green");
     const err = { kind: "error", message: "502" } as const;
-    for (const over of [
-      { statsIssue: err },
-      { concurrencyIssue: err },
-      { growthIssue: err },
-    ]) {
+    for (const [over, named] of [
+      [{ statsIssue: err }, /the latest work-type figures/],
+      [{ concurrencyIssue: err }, /the latest per-machine figures/],
+      [{ growthIssue: err }, /the latest growth figures/],
+    ] as const) {
       const h = deriveSessionLoadHealth({
         ...base,
         stats: s,
@@ -785,10 +812,27 @@ describe("the health strip", () => {
         ...over,
       });
       expect(h.level).toBe("amber");
+      expect(h.detail).toMatch(named);
       expect(h.detail).toMatch(
         /Last refresh failed — the .* are from the last good read/
       );
     }
+  });
+
+  it("a refusal blocking every read is said once, not once per read", () => {
+    const s = statsFx([groupFx({ inferred_count: 0 })]) as unknown as StatsWire;
+    const forbidden = { kind: "forbidden" } as const;
+    const h = deriveSessionLoadHealth({
+      ...base,
+      stats: s,
+      machines: [],
+      statsIssue: forbidden,
+      concurrencyIssue: forbidden,
+      growthIssue: forbidden,
+    });
+    const sentence =
+      "Only a coord tenant admin of the active project may read session load.";
+    expect(h.detail?.split(sentence).length).toBe(2);
   });
 
   it("a read that never answered is UNKNOWN on the strip", () => {
