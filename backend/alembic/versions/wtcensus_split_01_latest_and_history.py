@@ -97,15 +97,14 @@ to DROP a ``coord.*`` table. The runner's generated schema dump
 
 ## Head choice
 
-``down_revision`` is ``leader_worker_runs_01``, the single head of
-``origin/main`` (``7bfa4034f``) when this revision was re-pointed on 2026-10-14
-(``scripts/ci/count_alembic_heads.py`` reported one head). It was first authored
-against ``coord_wu_authored_at_02``, then ``overview_02_authoring_core`` (PR
-#1507), then ``coord_agent_questions_effect``, then
-``spawnadm_01_spawn_admission_ledger``, then ``cihost_01``, then ``gate_arming_01``. If main moves again before this lands, re-point ``down_revision``, the
-``Revises:`` header and ``_PARENT_REVISION_ID`` in
-``tests/test_wtcensus_split_01_migration.py`` at the new single head. Do not add
-an ``alembic merge``.
+``down_revision`` is ``sessresume_01``: coord's merge train re-pointed it there
+mechanically when it landed this revision on ``main`` as ``47849398b``
+(2026-10-15, PR #1733). Before that it was authored against
+``coord_wu_authored_at_02``, then ``overview_02_authoring_core`` (PR #1507), then
+``coord_agent_questions_effect``, then ``spawnadm_01_spawn_admission_ledger``, then
+``cihost_01``, then ``gate_arming_01``, then ``leader_worker_runs_01``. The
+revision is on ``main`` and ``credprobe_01`` revises it, so its parent is fixed;
+nothing re-points it again, and it never takes an ``alembic merge``.
 
 ## Safety
 

@@ -316,3 +316,24 @@ describe("DigitalTwinPage drawer navigation", () => {
     }
   });
 });
+
+describe("DigitalTwinPage title — the presentation lens (plan 2026-10-23-console-presentation-spaces)", () => {
+  it("is its caption: the heading Spec CI asserts, and the one-liner, for the operator", () => {
+    render(<DigitalTwinPage />);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Digital Twin" })
+    ).toBeInTheDocument();
+    const caption = document.querySelector(
+      '[data-presentation-caption="digital-twin.page"]'
+    );
+    expect(caption).not.toBeNull();
+    expect(
+      caption?.querySelector('[data-caption-part="one-liner"]')
+    ).not.toBeNull();
+    expect(
+      caption?.querySelector('[data-caption-part="why-it-matters"]')
+    ).toBeNull();
+    // No lens is mounted above a bare page render, so there is no toggle.
+    expect(screen.queryByText("Presentation mode")).not.toBeInTheDocument();
+  });
+});

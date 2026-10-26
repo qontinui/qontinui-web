@@ -93,6 +93,7 @@ from app.api.v1.endpoints import (
     plan_library,
     plan_library_followups,
     plan_library_scan_roots,
+    presentation,
     project_files,
     project_images,
     project_screenshots,
@@ -123,6 +124,7 @@ from app.api.v1.endpoints import (
     semantic_search,
     served_routes,
     session_repository,
+    session_runs,
     settings,
     skills,
     snapshots,
@@ -261,6 +263,15 @@ api_router.include_router(
 # `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration` Phase 5.
 api_router.include_router(
     spawn_ledger.router, prefix="/operations", tags=["operations"]
+)
+# Session load reads — how long each work type holds a session slot, how many
+# sessions each machine carries against its configured session budget, and how
+# demanded slot-hours grow against the fleet's. Under `/operations` beside the
+# spawn ledger the Session load page links back to; a sibling module for the
+# same reason. Plan
+# `2026-10-23-session-duration-by-work-type-and-per-device-session-load` Phase 5.
+api_router.include_router(
+    session_runs.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
@@ -504,6 +515,13 @@ api_router.include_router(
 # labelled by coord-tenant admins (plan
 # 2026-10-13-image-generation-and-visual-judgment, Phase 23).
 api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
+# The presentation scope — web.presentation_scopes: the first-party owners and
+# confidential terms the console's presentation lens redacts by, read by any
+# member of the active project and written by its admins (plan
+# 2026-10-23-console-presentation-spaces, Phase 1, D3.3).
+api_router.include_router(
+    presentation.router, prefix="/presentation", tags=["presentation"]
+)
 # Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries

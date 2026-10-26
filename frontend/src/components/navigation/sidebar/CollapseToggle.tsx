@@ -6,6 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { NAVIGATION_ONLY_PROPS } from "@/components/console/navigationOnly";
 
 export interface CollapseToggleProps {
   isCollapsed: boolean;
@@ -25,6 +26,9 @@ export interface CollapseToggleProps {
 }
 
 /**
+ * Collapsing the sidebar changes only what is displayed, so every branch is
+ * navigation-only (plan `2026-10-23-console-presentation-spaces` D3.2).
+ *
  * All three branches carry the same two anchors, for two different readers:
  * `data-sidebar-collapse-toggle` is what `UnifiedSidebar` resolves focus back
  * to when the drawer closes, and `data-ui-bridge-id` is the shell's UI-Bridge
@@ -54,6 +58,7 @@ export function CollapseToggle({
       <Tooltip>
         <TooltipTrigger asChild>
           <button
+            {...NAVIGATION_ONLY_PROPS}
             type="button"
             onClick={onToggle}
             aria-label={collapsedLabel}
@@ -76,6 +81,7 @@ export function CollapseToggle({
   if (controlsDrawer) {
     return (
       <button
+        {...NAVIGATION_ONLY_PROPS}
         type="button"
         onClick={onToggle}
         data-sidebar-collapse-toggle=""
@@ -96,6 +102,7 @@ export function CollapseToggle({
     <Tooltip>
       <TooltipTrigger asChild>
         <button
+          {...NAVIGATION_ONLY_PROPS}
           type="button"
           onClick={onToggle}
           aria-label={expandedLabel}
