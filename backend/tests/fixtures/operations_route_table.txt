@@ -99,6 +99,7 @@ GET /api/v1/operations/git-ops/by-session/{session_id} get_git_ops_by_session An
 GET /api/v1/operations/git-ops/list get_git_ops_list Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/github/oauth-status get_github_oauth_status GithubOauthStatusResponse None True tags=operations [get_tenant_id]
 GET /api/v1/operations/github/repos get_github_installation_repos Any None True tags=operations [get_tenant_id]
+GET /api/v1/operations/kpis get_kpis Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/lands get_lands Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/lands/precision get_lands_precision Any None True tags=operations [get_tenant_id]
 GET /api/v1/operations/lands/preview get_lands_preview Any None True tags=operations [get_tenant_id]

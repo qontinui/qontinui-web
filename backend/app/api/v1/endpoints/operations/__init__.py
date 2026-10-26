@@ -3949,6 +3949,8 @@ async def get_dev_action_detail(
 # - GET    /operations/fleet/health                      — fleet rollup
 # - GET    /operations/domain-cost                       — autonomy-domain
 #                                                          cost ledger
+# - GET    /operations/kpis                              — per-work-unit KPIs
+#                                                          (schema ``kpis/v1``)
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
@@ -5185,6 +5187,67 @@ async def get_domain_cost(
         params["as_of"] = as_of
     return await _proxy_coord_get(
         "/coord/domain-cost", params=params or None, tenant_id=tenant_id
+    )
+
+
+# ---- Work-unit KPIs (kpis/v1) ------------------------------------------------
+
+
+@router.get("/kpis")
+async def get_kpis(
+    window: str | None = Query(default=None),
+    repos: str | None = Query(default=None),
+    slug: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's per-work-unit KPIs (schema ``kpis/v1``).
+
+    Proxies coord ``GET /coord/kpis`` (plan
+    ``2026-10-09-kpi-telemetry-and-dashboards`` Phase 4), the one read behind
+    the KPI cells on ``/admin/coord/work-units`` and the KPI block on
+    ``/admin/coord/work-units/[slug]``. Per shipped work unit in the window
+    coord reports lead time (and its two segments), sessions, tokens, cost,
+    CI attempts, red-to-green iterations, interventions and rework; beside
+    them sit ``aggregates`` over the same shipped population.
+
+    Unknown is first-class on this wire and the proxy preserves it: every
+    figure is ``{value, coverage_n, population_n, basis, reason}``, a figure
+    coord cannot compute arrives as ``value: null`` with a ``reason`` from its
+    closed vocabulary (``not_yet_measured``, ``no_usage_rows`` …), and
+    ``cost_microusd`` is a list-price EQUIVALENT whose ``basis`` says so. A
+    database failure is coord's typed error, raised here, never zeros.
+
+    ``window`` (coord's ``28d`` grammar), ``repos`` (comma-separated
+    ``owner/name``), ``slug`` and ``limit`` are forwarded verbatim when set
+    and ABSENT from the wire when not — coord owns the defaults and the
+    validation, and a value it cannot accept (an unparseable ``window``, a
+    ``limit`` over its ceiling) comes back as its own 4xx rather than being
+    re-validated (and eventually mis-validated) here. ``limit`` is therefore
+    a string at this boundary: typing it ``int`` would make this module the
+    one that answers 422 for ``limit=abc``, a second grammar for coord's
+    own. With ``slug``, coord's ``units`` holds that one unit (any status)
+    while ``aggregates`` stay computed over the window's shipped units; an
+    empty ``units`` then means coord has no row for that slug. The body is
+    passed through untouched — no ``response_model`` — so a field coord adds
+    reaches the console without a change in this module.
+    """
+    params: dict[str, Any] = {}
+    if window is not None:
+        params["window"] = window
+    if repos is not None:
+        params["repos"] = repos
+    if slug is not None:
+        params["slug"] = slug
+    if limit is not None:
+        params["limit"] = limit
+    # Default ``_COORD_TIMEOUT`` on purpose: the composer's latency has not been
+    # measured (the coord route is not deployed when this proxy lands), and the
+    # longer timeouts above are each chosen from a measurement, never a guess.
+    # A 504 here renders as "KPIs unavailable", which is the safe failure; tune
+    # this once the route answers and its tail is known.
+    return await _proxy_coord_get(
+        "/coord/kpis", params=params or None, tenant_id=tenant_id
     )
 
 

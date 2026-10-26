@@ -60,6 +60,14 @@
  * points cannot disagree about which rows deserve the interruption. A row the
  * backend did not annotate gets no confirm at all: "not told" is silence about
  * a document, not evidence of one.
+ *
+ * ## KPIs (plan `2026-10-09-kpi-telemetry-and-dashboards` Phase 4)
+ *
+ * `kpi` is the unit's cell out of the page's ONE KPI read (`kpiCell`, never a
+ * fetch of the row's own). Omitted by surfaces that do not read KPIs, which
+ * then render nothing — a surface that never asked is not "KPIs unavailable".
+ * The row carries the headline chips (`KpiRowChips`) and the detail carries the
+ * whole block (`KpiBlock`); see `WorkUnitKpiCells.tsx` for why four and not seven.
  */
 
 import { useEffect, useState } from "react";
@@ -90,6 +98,11 @@ import {
   type BodyMarker,
 } from "@/components/admin/coord/planBodySignal";
 import { PlanDifficultyBadge } from "@/components/admin/coord/PlanDifficultyBadge";
+import {
+  KpiBlock,
+  KpiRowChips,
+} from "@/components/admin/coord/WorkUnitKpiCells";
+import type { KpiCell } from "@/components/admin/coord/workUnitKpis";
 import {
   describeDifficultyCell,
   describeSignals,
@@ -132,6 +145,7 @@ export function PlanRow({
   expanded,
   onToggle,
   difficulty,
+  kpi,
 }: {
   plan: CoordPlanRow;
   expanded: boolean;
@@ -143,6 +157,11 @@ export function PlanRow({
    * all, rather than an "unknown" one for a question they never asked.
    */
   difficulty?: DifficultyCell;
+  /**
+   * This unit's KPI cell (see `workUnitKpis.ts`). Omitted by surfaces that do
+   * not read KPIs, which then render no KPI markup at all.
+   */
+  kpi?: KpiCell;
 }) {
   const router = useRouter();
   const status = derivePlanStatus(plan);
@@ -227,6 +246,7 @@ export function PlanRow({
               ))}
             </span>
           )}
+          {kpi && <KpiRowChips cell={kpi} />}
         </>
       }
       reason={plan.current_phase ? `phase ${plan.current_phase}` : undefined}
@@ -269,6 +289,12 @@ export function PlanRow({
                       .
                     </span>
                   )}
+              </div>
+            )}
+            {kpi && (
+              <div data-testid="coord-plan-kpis-detail" className="space-y-1">
+                <div className="text-muted-foreground">KPIs:</div>
+                <KpiBlock cell={kpi} />
               </div>
             )}
           </div>

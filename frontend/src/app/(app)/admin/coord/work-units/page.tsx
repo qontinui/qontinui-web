@@ -125,6 +125,26 @@
  * rendered list, so it is counted in `shownUnderFilter` beside the two body
  * strips (see there), while the fetch-window panel's own counts and the health
  * strip stay on the UNFILTERED `plans`.
+ *
+ * ## KPIs (plan `2026-10-09-kpi-telemetry-and-dashboards` Phase 4)
+ *
+ * Each row carries the delivery KPIs coord measures for work units shipped in
+ * the chosen window — lead time, tokens, a list-price-equivalent cost, CI
+ * attempts, red→green iterations, interventions and rework — read ONCE per
+ * page load (and per window change, and per Refresh press) from
+ * `GET /api/v1/operations/kpis` by `useWorkUnitKpis`, and joined by slug
+ * (`kpiCell`) exactly as the difficulty ratings are. It is a read of its own,
+ * not part of the walk or its poll: it needs nothing from the corpus walk, and
+ * a failure of it touches nothing else on the page.
+ *
+ * **A KPI read that fails is "KPIs unavailable", with no figure anywhere.** The
+ * coord route ships separately from this page, so the read can 404, time out or
+ * come back in a shape this build cannot read; the status line under the
+ * controls says so and the rows render no KPI chips. A unit coord returned no
+ * row for says so too (`no KPIs in window`) — it is not a row of zeros. UNKNOWN
+ * figures and partial coverage render per `describeKpi`; the row carries four
+ * headline chips and the expanded detail carries the whole set (see
+ * `components/admin/coord/WorkUnitKpiCells.tsx`).
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -157,6 +177,12 @@ import {
 import { operationsErrorReading } from "@/lib/api/operations/base";
 import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
+import { KpiWindowSelect } from "@/components/admin/coord/WorkUnitKpiCells";
+import {
+  DEFAULT_KPI_WINDOW,
+  describeKpiIndex,
+  kpiCell,
+} from "@/components/admin/coord/workUnitKpis";
 import { planAuthoredAt } from "@/components/admin/coord/planStatus";
 import {
   HAS_BODY_FILTERS,
@@ -192,6 +218,7 @@ import {
   type WalkOutcome,
 } from "./planWalk";
 import { usePlanDifficulty } from "./usePlanDifficulty";
+import { useWorkUnitKpis } from "./useWorkUnitKpis";
 import {
   useGuardedPoll,
   type ReadGuard,
@@ -388,6 +415,12 @@ export default function CoordWorkUnitsListPage() {
   const { index: difficultyIndex, refresh: refreshDifficulty } =
     usePlanDifficulty();
   const difficultyLoaded = difficultyIndex.state === "loaded";
+  // The KPI window is the QUESTION of the KPI read only: it re-asks coord's
+  // `/kpis`, and changes nothing about which work units are listed.
+  const [kpiWindow, setKpiWindow] = useState<string>(DEFAULT_KPI_WINDOW);
+  const { index: kpiIndex, refresh: refreshKpis } = useWorkUnitKpis({
+    window: kpiWindow,
+  });
   const [data, setData] = useState<PlansWindow | null>(null);
   // The server order is part of the QUESTION (it decides what is fetched);
   // the client sort within an order is not, so switching between two walked
@@ -477,8 +510,11 @@ export default function CoordWorkUnitsListPage() {
    */
   const refresh = useCallback(() => {
     void refreshDifficulty();
+    // Same reasoning as the ratings: the KPIs re-read on the operator's press
+    // and never on the poll, and are not folded into the button's busy state.
+    void refreshKpis();
     return guardedRefresh();
-  }, [guardedRefresh, refreshDifficulty]);
+  }, [guardedRefresh, refreshDifficulty, refreshKpis]);
 
   const outcome = data?.outcome ?? null;
   const plans = useMemo(() => outcome?.rows ?? [], [outcome]);
@@ -758,6 +794,11 @@ export default function CoordWorkUnitsListPage() {
             ))}
           </SelectContent>
         </Select>
+        <KpiWindowSelect
+          value={kpiWindow}
+          onChange={setKpiWindow}
+          data-testid="coord-work-units-kpi-window-select"
+        />
         {/* Keyed on the question: a press whose read was superseded by a filter
             change must not leave the NEW question's control busy for up to the
             60s request timeout, over a read whose answer will be discarded. */}
@@ -1051,6 +1092,17 @@ export default function CoordWorkUnitsListPage() {
         </p>
       )}
 
+      {/* What the KPI cells on the rows are over — or that there are none.
+          Unconditional: "KPIs unavailable" has to be stated somewhere that is
+          not a row, because on a failed read the rows render nothing. */}
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="coord-work-units-kpis-status"
+        data-kpi-state={kpiIndex.state}
+      >
+        {describeKpiIndex(kpiIndex)}
+      </p>
+
       {error && (
         <p
           className="text-sm text-destructive"
@@ -1182,6 +1234,7 @@ export default function CoordWorkUnitsListPage() {
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
             difficulty={difficultyCell(difficultyIndex, p.slug)}
+            kpi={kpiCell(kpiIndex, p.slug)}
           />
         )}
       />
