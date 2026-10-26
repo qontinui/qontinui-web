@@ -48,11 +48,19 @@
  * A rejected read ends the busy state too: the failure is the page's to
  * render (R6), and a button stuck busy over a failed read would be a second,
  * false report of it.
+ *
+ * ## Navigation-only by construction
+ *
+ * A re-read changes what is displayed and nothing else, so the button carries
+ * `NAVIGATION_ONLY_PROPS` (`./navigationOnly`): it stays live in presentation
+ * mode, where every write control is withheld (plan
+ * `2026-10-23-console-presentation-spaces` D3.2).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NAVIGATION_ONLY_PROPS } from "./navigationOnly";
 
 export interface RefreshButtonProps {
   /**
@@ -106,6 +114,7 @@ export function RefreshButton({
 
   return (
     <Button
+      {...NAVIGATION_ONLY_PROPS}
       variant="outline"
       size="sm"
       onClick={handleClick}

@@ -20,6 +20,9 @@ import { BetaBannerSlot } from "@/components/cloud-slots/BetaBannerSlot";
 import { useAuth } from "@/contexts/auth-context";
 import { HelperRedirectGate } from "@/components/helper-portal/HelperRedirectGate";
 import { MobileTopBar } from "@/components/navigation/MobileTopBar";
+// The modules, not the barrel: the shell is on every authenticated page.
+import { OperatorOnly } from "@/components/presentation/OperatorOnly";
+import { PresentationShell } from "@/components/presentation/PresentationShell";
 import { cn } from "@/lib/utils";
 
 // Dynamic imports with ssr:false to avoid hydration mismatches
@@ -196,12 +199,26 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         )}
       >
         <MobileTopBar />
-        <BetaBannerSlot />
+        {/* The composed build's beta banner offers "Give Feedback" (a form
+            that POSTs) and "Dismiss": controls, not part of a presentation. */}
+        <OperatorOnly>
+          <BetaBannerSlot />
+        </OperatorOnly>
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
       </div>
-      <Suspense fallback={null}>
-        <SyncQueueViewer />
-      </Suspense>
+      {/* The offline sync queue's controls write (sync now, retry, clear), so
+          a presentation does not show them. The co-pilot banner, the session
+          timeout warning and the recording indicator stay: each tells the
+          presenter something is happening to THIS screen, and the one control
+          each keeps live is a presenter safety control
+          (`components/console/presenterSafety.ts`, a closed list) — the
+          co-pilot banner's account-wide opt-out is inside its own
+          `OperatorOnly`. */}
+      <OperatorOnly>
+        <Suspense fallback={null}>
+          <SyncQueueViewer />
+        </Suspense>
+      </OperatorOnly>
       <Suspense fallback={null}>
         <SessionTimeoutWarning />
       </Suspense>
@@ -245,7 +262,14 @@ export default function AppLayout({
                           /operations via CiRepoStrip/FleetOverview) crashes
                           into the ErrorBoundary and shows no content. */}
                             <TooltipProvider>
-                              <AppLayoutContent>{children}</AppLayoutContent>
+                              {/* The presentation lens's mode for the whole
+                                  shell, enabled on a lens-tree route, so the
+                                  sidebar beside a lens page is in the page's
+                                  mode (plan
+                                  2026-10-23-console-presentation-spaces). */}
+                              <PresentationShell>
+                                <AppLayoutContent>{children}</AppLayoutContent>
+                              </PresentationShell>
                             </TooltipProvider>
                           </AppInitializer>
                         </TabStateProvider>

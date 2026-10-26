@@ -1789,6 +1789,7 @@ export interface AutoPublishStatusResponse {
  */
 export type AutoPublishWorkerStatus =
   | "alive"
+  | "erroring"
   | "stale"
   | "dead"
   | "not_leader_here"
@@ -1797,8 +1798,11 @@ export type AutoPublishWorkerStatus =
 /** One worker's observation, from the auto-publish status read. */
 export interface AutoPublishWorkerObservation {
   status: AutoPublishWorkerStatus | (string & {});
-  /** Why coord could not classify the worker — present only for `unknown`. */
-  unknown_reason?: string;
+  /**
+   * Why the status is `unknown` or `erroring` — coord's own sentence. `null`
+   * (or absent, from an older coord) for every other status.
+   */
+  unknown_reason?: string | null;
   /**
    * The ledger's last tick of ANY kind. A follower's `follower_skip` refreshes
    * it, so it is NEVER evidence that a pass ran — only the stale/dead "since".
@@ -1808,6 +1812,16 @@ export interface AutoPublishWorkerObservation {
   last_work_tick_at?: string | null;
   /** Coord's decision code for that tick (`ran:published`, `skip:switch_off`, …), verbatim. */
   last_decision_code?: string | null;
+  /**
+   * Coord's own verdict on whether the loop is healthy. `false` whenever
+   * anything is wrong, an `alive` loop included (absent from an older coord).
+   */
+  nominal?: boolean;
+  /**
+   * Why `nominal` is false — the ledger rollup's reason (`stale`,
+   * `error_streak`, …), `last_pass_failed`, or `lease_holder_unknown`.
+   */
+  reason?: string | null;
 }
 
 // ------------------- the kill switch (`policy_auto_publish`) -------------------

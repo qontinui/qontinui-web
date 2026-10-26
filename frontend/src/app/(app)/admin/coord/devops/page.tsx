@@ -126,6 +126,7 @@ import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
+import { Caption } from "@/components/presentation";
 import {
   FleetConditionsPanel,
   FleetOverview,
@@ -375,6 +376,12 @@ export default function CoordDevOpsPage() {
       className="p-3 sm:p-6 space-y-4 overflow-x-auto"
       data-testid="coord-devops-page"
     >
+      {/* Presentation mode only (plan
+          `2026-10-23-console-presentation-spaces` D1, "captions before
+          data"): what this page shows and why it matters, ahead of the
+          strip. Operator mode renders nothing here, so R1's "the page opens
+          with its health strip" is unchanged for the operator. */}
+      <Caption id="dev-ops.page" />
       <HealthStrip
         data-testid="coord-devops-health-strip"
         level={liveness.level}

@@ -118,6 +118,7 @@ from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
 from app.models.plan_model_route import PlanDifficultyModelRoute
 from app.models.plan_scan_root import PlanScanRootObservation, PlanScanRootRefusal
+from app.models.presentation_scope import PresentationScope
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.project_assets import ProjectImage, ProjectScreenshot
@@ -334,6 +335,9 @@ __all__ = [
     "TasteLabelClock",
     "TastePair",
     "TasteSettings",
+    # Presentation scope (web.presentation_scopes) — plan
+    # 2026-10-23-console-presentation-spaces D3.3
+    "PresentationScope",
     # Design/UX Policies
     "DesignPolicy",
     # Discoveries

@@ -15,9 +15,10 @@ const log = createLogger("HttpClient");
  * Read here directly (not via React context — `HttpClient` is a plain class)
  * to attach the `X-Qontinui-Active-Tenant` header to coord-proxy calls so the
  * operator's coord context re-scopes to the chosen tenant. The key MUST match
- * `tenant-context.tsx`'s `STORAGE_KEY`.
+ * `tenant-context.tsx`'s `STORAGE_KEY`. Exported for readers that must key a
+ * cache on the selection a request carries (the presentation scope loader).
  */
-const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
+export const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
 
 /**
  * URL prefixes whose backend handlers proxy to coord with the operator's
@@ -152,9 +153,21 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // 2026-10-01-overlord-session-supervisor-classifies-stops-and-absorbs-
   // avoidable-escalations, Phase 2b.
   "/api/v1/admin/coord/overlord/",
+  // The presentation scope — `web.presentation_scopes` rows are keyed on the
+  // tenant `_effective_tenant_id` resolves from this header (membership-
+  // validated), and the write is `require_coord_tenant_admin_target`. Without
+  // it a multi-tenant operator presenting another project would redact by the
+  // HOME project's first-party owners and confidential terms. Plan
+  // 2026-10-23-console-presentation-spaces, Phase 1.
+  "/api/v1/presentation/",
 ];
 
-function readActiveTenantId(): string | null {
+/**
+ * The active-tenant selection exactly as a request built now would carry it in
+ * `X-Qontinui-Active-Tenant` (or `null`: none, no `window`, or unreadable
+ * storage — the backend then resolves the caller's home tenant).
+ */
+export function readActiveTenantId(): string | null {
   if (typeof window === "undefined") return null;
   try {
     return localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);

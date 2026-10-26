@@ -5,6 +5,7 @@ import { useUIElement } from "@qontinui/ui-bridge/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Boxes } from "lucide-react";
+import { Caption } from "@/components/presentation";
 import { CoverageMatrix } from "./_components/CoverageMatrix";
 import { LifecycleView } from "./_components/LifecycleView";
 import { TwinCatalog } from "./_components/TwinCatalog";
@@ -45,6 +46,11 @@ import {
  * Renders no cloud-only extension slot, so it degrades cleanly in base deploys
  * (cells show "error" when coord / the runner is unreachable) — matching the
  * sibling coord-backed Operations / Commits pages.
+ *
+ * The page title is its presentation caption (`digital-twin.page`, plan
+ * `2026-10-23-console-presentation-spaces` D5): the title and one-liner in
+ * operator mode, plus why it matters in presentation mode. The toggle that
+ * switches the lens is the layout's, in the bar above this page (`layout.tsx`).
  */
 export default function DigitalTwinPage() {
   // UI Bridge: stable ids so automation can switch tabs by id.
@@ -85,19 +91,10 @@ export default function DigitalTwinPage() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-44px)] flex-col overflow-hidden bg-background">
-      <header className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
-        <div className="flex items-center gap-2">
-          <Boxes className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <h1 className="text-lg font-semibold">Digital Twin</h1>
-            <p className="text-xs text-muted-foreground">
-              The environment your agents act in, the process they follow and
-              the intent they serve — how much of each the twin observes, and
-              how credibly. The same view an AI agent gets.
-            </p>
-          </div>
-        </div>
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <header className="flex shrink-0 items-center gap-2 border-b border-border px-6 py-3">
+        <Boxes className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <Caption id="digital-twin.page" level={1} persistent />
       </header>
 
       <TwinNavigationContext.Provider value={navigation}>

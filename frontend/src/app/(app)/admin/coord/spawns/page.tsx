@@ -34,7 +34,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Rocket, Server } from "lucide-react";
+import { ExternalLink, Hourglass, Rocket, Server } from "lucide-react";
 import {
   FilterTabs,
   HealthStrip,
@@ -77,6 +77,9 @@ import { SPAWNS_POLL_MS, useSpawnLedger } from "./_lib/useSpawnLedger";
 
 /** The launcher this page reports on — relabelled "Launch session" in the nav. */
 const LAUNCH_SESSION_HREF = "/admin/coord/spawn";
+
+/** What a started spawn then costs: how long each work type holds a slot. */
+const SESSION_LOAD_HREF = "/admin/coord/session-load";
 
 function clockTime(iso: string): string {
   const d = new Date(iso);
@@ -216,8 +219,16 @@ export default function CoordSpawnsPage() {
           request to the moment its session started.
         </p>
         <Link
-          href={LAUNCH_SESSION_HREF}
+          href={SESSION_LOAD_HREF}
           className="ml-auto inline-flex items-center gap-1 text-xs font-medium underline underline-offset-2 hover:no-underline"
+          data-testid="coord-spawns-session-load-link"
+          title="How long each work type holds a session slot once started, and how many sessions each machine carries"
+        >
+          <Hourglass className="h-3 w-3" aria-hidden /> Session load
+        </Link>
+        <Link
+          href={LAUNCH_SESSION_HREF}
+          className="inline-flex items-center gap-1 text-xs font-medium underline underline-offset-2 hover:no-underline"
           data-testid="coord-spawns-launch-link"
         >
           <Rocket className="h-3 w-3" aria-hidden /> Launch session

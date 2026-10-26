@@ -1,7 +1,8 @@
 /**
  * Level vocabularies for the tenant-policy page's fleet-policy dials: the
- * egress switches, the command-safety rewrite, permission-prompt capture, the
- * account-selection mode and image generation. All are coord fleet-policy
+ * egress switches, the command-safety rewrite, permission-prompt capture,
+ * permission auto-accept, the account-selection mode and image generation.
+ * All are coord fleet-policy
  * domains; the wire shape — the fleet-policy view — lives with its client in
  * `@/lib/api/operations/tenantPolicy`.
  */
@@ -123,6 +124,52 @@ export const PERMISSION_PROMPT_CAPTURE_DOMAIN = "permission_prompt_capture";
 export const PERMISSION_PROMPT_CAPTURE_LEVELS = ["on", "off"] as const;
 export type PermissionPromptCaptureLevel =
   (typeof PERMISSION_PROMPT_CAPTURE_LEVELS)[number];
+
+// ──────────────────────── permission auto-accept dial ────────────────────────
+
+/**
+ * The fleet-policy domain the permission auto-accept switch writes. Levels:
+ * `on` | `off`; coord's no-row default is `on`
+ * (`PERMISSION_AUTO_ACCEPT_DEFAULT`, Phase 1 of plan
+ * `2026-10-23-runner-sessions-stop-at-permission-dialogs-so-accept-them-by-default-with-a-tenant-switch`).
+ * A coord that does not know the domain answers a no-row `off` instead.
+ *
+ * Unlike {@link PERMISSION_PROMPT_CAPTURE_DOMAIN}, this one is decided LIVE,
+ * per prompt (plan D2): every runner session's `PermissionRequest` hook asks
+ * the runner, and the runner allows the prompt only when it has READ an `on`
+ * from coord (an answered gate, D1). So a change reaches sessions that are
+ * already running within one poll (the runner polls about every 45 s).
+ * `AskUserQuestion`, plan approval (`ExitPlanMode`) and any prompt in `plan`
+ * or `dontAsk` mode are never accepted (D3). The permission requests of
+ * headless stream-json sessions are allowed unless the runner reads an
+ * answered `off` from an explicit row (`resolved_scope` ≠ `none`), which
+ * denies them; the session keeps running (D5).
+ */
+export const PERMISSION_AUTO_ACCEPT_DOMAIN = "permission_auto_accept";
+
+export const PERMISSION_AUTO_ACCEPT_LEVELS = ["on", "off"] as const;
+export type PermissionAutoAcceptLevel =
+  (typeof PERMISSION_AUTO_ACCEPT_LEVELS)[number];
+
+/**
+ * Classify a served level the way the runner does
+ * (`normalize_permission_auto_accept_level`: trimmed, ASCII-lowercased), so
+ * the console and the runner agree that `"ON"` or `" off "` is a recognised
+ * level. Anything else is `null`: UNKNOWN, which the runner treats as
+ * neither on nor off. (JS `trim()` also strips U+FEFF, which Rust's
+ * `str::trim` does not, and Rust's also strips U+0085 (NEL), which JS's does
+ * not.)
+ */
+export function parsePermissionAutoAcceptLevel(
+  raw: string | null | undefined
+): PermissionAutoAcceptLevel | null {
+  if (typeof raw !== "string") return null;
+  // ASCII-only folding, as Rust's `to_ascii_lowercase`.
+  const level = raw.trim().replace(/[A-Z]/g, (c) => c.toLowerCase());
+  return (PERMISSION_AUTO_ACCEPT_LEVELS as readonly string[]).includes(level)
+    ? (level as PermissionAutoAcceptLevel)
+    : null;
+}
 
 // ───────────────────────── account-selection mode dial ─────────────────────────
 
