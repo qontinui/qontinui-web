@@ -272,10 +272,12 @@ export interface GrowthFleetWire {
   /** The same figure per growth bucket; `null` exactly when the per-day one is. */
   available_slot_hours_per_bucket?: number | null;
   /**
-   * coord's verdict on the figure — {@link AVAILABLE_STATE_PUBLISHED} (the
-   * figure is stated) or {@link AVAILABLE_STATE_NO_BUDGET} (no device
-   * published a non-zero budget; the figure is `null`). Absent from a coord
-   * that predates the field. Typed `string` so a newer value renders as
+   * coord's verdict on the figure — {@link AVAILABLE_STATE_PUBLISHED} (some
+   * device published a non-zero budget; the figure is stated),
+   * {@link AVAILABLE_STATE_ZERO_BUDGET} (no non-zero budget, and at least one
+   * device published 0; figure `null`) or {@link AVAILABLE_STATE_NO_BUDGET}
+   * (no device published any budget, zero or otherwise; figure `null`).
+   * Absent from a coord that predates the field. Typed `string` so a newer value renders as
    * unknown rather than failing to parse.
    */
   available_state?: string | null;
@@ -857,34 +859,43 @@ export type FleetAvailable =
       devicesNone: number | null;
     }
   | {
-      /** Every published budget is 0 — deliberately: nothing to cross, not unknown. */
+      /**
+       * No non-zero budget, and at least one machine published 0 (coord's
+       * `zero_budget_published`). Other machines may have published nothing,
+       * so the wording is driven by the zero/none counts.
+       */
       kind: "zero_published";
       devicesZero: number | null;
       devicesNone: number | null;
     }
   | { kind: "unknown" };
 
-/** coord's `fleet.available_state` when the figure is stated. */
+/**
+ * coord's `fleet.available_state` values, by its own rule (qontinui-coord
+ * `session_runs::routes::growth`): any device with a non-zero budget →
+ * `published`; else any device with a budget of 0 → `zero_budget_published`;
+ * else (no device published a budget at all) → `no_budget_published`.
+ */
 export const AVAILABLE_STATE_PUBLISHED = "published";
-/** coord's `fleet.available_state` when no device published a non-zero budget. */
+/** No device published any configured session budget — neither 0 nor more. */
 export const AVAILABLE_STATE_NO_BUDGET = "no_budget_published";
-/** coord's `fleet.available_state` when every published budget is 0. */
+/** No non-zero budget, and at least one device published 0 (the rest, if any, none). */
 export const AVAILABLE_STATE_ZERO_BUDGET = "zero_budget_published";
 
 /**
  * What the fleet's budgets make available, read from coord's
  * `fleet.available_state` first:
  *
- * - `no_budget_published` → "none published" (the figure is `null` by design,
- *   so this is decided BEFORE any null check — it must never read "coord
- *   sent no figures");
- * - `zero_budget_published` → "every machine published a zero budget" (the
- *   figure is `null` too, and decided before the null check for the same
- *   reason);
+ * - `no_budget_published` → "none published": no machine published any
+ *   budget (the figure is `null` by design, so this is decided BEFORE any
+ *   null check — it must never read "coord sent no figures");
+ * - `zero_budget_published` → "zero published": no non-zero budget, at least
+ *   one machine at 0 (also `null`, also decided before the null check);
  * - `published` → the figure, or unknown if coord nonetheless sent none;
  * - any other value → unknown (a state this build cannot read);
- * - absent (a coord predating the field) → `devices_with_budget === 0` is
- *   "none published", else the figure, else unknown.
+ * - absent (a coord predating the field) → coord's own rule applied to the
+ *   counts: `devices_with_budget === 0` is "zero published" when any machine
+ *   is at 0, else "none published"; otherwise the figure, else unknown.
  */
 export function fleetAvailable(growth: GrowthWire): FleetAvailable {
   const f = growth.fleet;
@@ -895,11 +906,13 @@ export function fleetAvailable(growth: GrowthWire): FleetAvailable {
   const none = finite(f.devices_without_budget);
   const state =
     typeof f.available_state === "string" ? f.available_state : null;
-  if (
-    state === AVAILABLE_STATE_NO_BUDGET ||
-    (state === null && withBudget === 0)
-  ) {
+  if (state === AVAILABLE_STATE_NO_BUDGET) {
     return { kind: "none_published", devicesZero: zero, devicesNone: none };
+  }
+  if (state === null && withBudget === 0) {
+    return zero !== null && zero > 0
+      ? { kind: "zero_published", devicesZero: zero, devicesNone: none }
+      : { kind: "none_published", devicesZero: zero, devicesNone: none };
   }
   if (state === AVAILABLE_STATE_ZERO_BUDGET) {
     return { kind: "zero_published", devicesZero: zero, devicesNone: none };
@@ -920,14 +933,39 @@ export function fleetAvailable(growth: GrowthWire): FleetAvailable {
   };
 }
 
+/**
+ * The no-available-figure sentence, worded from the zero/none COUNTS so it is
+ * always true of them:
+ *
+ * - every machine at 0 (none unpublished) → "none — every machine published
+ *   a zero …": the fleet deliberately has no slots;
+ * - some at 0, others unpublished (or that count unknown) → "unknown — no
+ *   machine published a non-zero …; N published zero, M published none":
+ *   what the unpublished ones could carry is not known;
+ * - no budget at all (coord's `no_budget_published`) → "unknown — no machine
+ *   published a configured session budget".
+ */
+export function noBudgetSentence(
+  a: Extract<FleetAvailable, { kind: "zero_published" | "none_published" }>
+): string {
+  const zero = a.devicesZero;
+  const none = a.devicesNone;
+  if (a.kind === "none_published") {
+    return `unknown — no machine published a configured session budget (${none === null ? "an unknown number of machines" : plural(none, "machine")} published none${zero !== null && zero > 0 ? `, ${zero} published zero` : ""})`;
+  }
+  if (none === 0) {
+    return `none — every machine published a zero configured session budget (${zero === null ? "an unknown number of" : zero} published zero)`;
+  }
+  return `unknown — no machine published a non-zero configured session budget; ${zero === null ? "an unknown number" : zero} published zero, ${none === null ? "an unknown number" : none} published none`;
+}
+
 export function fleetAvailableText(a: FleetAvailable): string {
   switch (a.kind) {
     case "unknown":
       return "Fleet slot-hours available: unknown — coord sent no fleet budget figures.";
     case "zero_published":
-      return `Fleet slot-hours available: none — every machine published a zero configured session budget (${countText(a.devicesZero)} published zero, ${countText(a.devicesNone)} published none).`;
     case "none_published":
-      return `Fleet slot-hours available: unknown — no machine published a non-zero configured session budget (${countText(a.devicesZero)} published zero, ${countText(a.devicesNone)} published none).`;
+      return `Fleet slot-hours available: ${noBudgetSentence(a)}.`;
     case "known":
       return `Fleet slot-hours available: ${formatSlotHoursPerDay(a.perDay)} — the configured session budgets of ${plural(a.devicesWithBudget, "machine")} × 24 h${
         // An unknown count is shown as "unknown", never folded into zero.
@@ -1010,11 +1048,10 @@ export function growthTrend(
     return {
       kind: "no_available",
       reason:
-        available.kind === "none_published"
-          ? "no machine published a non-zero configured session budget, so there is no available figure to cross"
-          : available.kind === "zero_published"
-            ? "every machine published a zero configured session budget, so there is no available figure to cross"
-            : "coord sent no fleet budget figures",
+        available.kind === "none_published" ||
+        available.kind === "zero_published"
+          ? `available slot-hours are ${noBudgetSentence(available)}, so there is no available figure to cross`
+          : "coord sent no fleet budget figures",
     };
   }
   if (growth.bucket_seconds !== 86_400) {
