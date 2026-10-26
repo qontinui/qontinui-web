@@ -6,7 +6,7 @@ Phase 3):
 
 1. **The key is swapped, not added** — after upgrade ``coord.session_runs``
    carries exactly ``uq_session_runs_device_session_run`` on ``(tenant_id,
-   device_id, claude_code_session_id, run_seq)`` and no longer
+   claude_code_session_id, device_id, run_seq)`` and no longer
    ``uq_session_runs_session_run``; every other constraint and index of
    ``sessruns_01`` is untouched.
 2. **A run is per device** — the same ``(claude_code_session_id, run_seq)`` on
@@ -61,7 +61,7 @@ _OLD_KEY = "uq_session_runs_session_run"
 _NEW_KEY = "uq_session_runs_device_session_run"
 
 _OLD_KEY_DEF = "UNIQUE (tenant_id, claude_code_session_id, run_seq)"
-_NEW_KEY_DEF = "UNIQUE (tenant_id, device_id, claude_code_session_id, run_seq)"
+_NEW_KEY_DEF = "UNIQUE (tenant_id, claude_code_session_id, device_id, run_seq)"
 
 _OLD_KEY_INDEX = (
     "CREATE UNIQUE INDEX uq_session_runs_session_run ON coord.session_runs "
@@ -69,7 +69,7 @@ _OLD_KEY_INDEX = (
 )
 _NEW_KEY_INDEX = (
     "CREATE UNIQUE INDEX uq_session_runs_device_session_run ON coord.session_runs "
-    "USING btree (tenant_id, device_id, claude_code_session_id, run_seq)"
+    "USING btree (tenant_id, claude_code_session_id, device_id, run_seq)"
 )
 
 _TENANT = uuid.UUID("3b8e2f61-7c04-4d9a-a1e5-9f62c7d0b418")
@@ -207,7 +207,7 @@ def test_sessruns_02_makes_the_run_key_per_device() -> None:
             assert _without(indexes, _NEW_KEY) == _without(parent_indexes, _OLD_KEY)
             table_comment, run_seq_comment = _comments(engine)
             assert table_comment is not None
-            assert "(tenant_id, device_id, claude_code_session_id, run_seq)" in (
+            assert "(tenant_id, claude_code_session_id, device_id, run_seq)" in (
                 table_comment
             )
             assert "on each device it ran on" in table_comment
@@ -232,7 +232,12 @@ def test_sessruns_02_makes_the_run_key_per_device() -> None:
 
         # 5. Downgrade is refused while two devices share a
         #    (session, run_seq), which the old key cannot represent ...
-        with pytest.raises(AssertionError, match=_OLD_KEY):
+        #    The match is the duplicate-key failure itself, not the constraint
+        #    name, which the echoed SQL would carry either way.
+        with pytest.raises(
+            AssertionError,
+            match=r'could not create unique index "uq_session_runs_session_run"',
+        ):
             run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert_upgraded()
 

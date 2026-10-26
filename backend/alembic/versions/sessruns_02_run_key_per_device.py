@@ -11,8 +11,12 @@ Follow-up to ``sessruns_01_session_runs`` for plan
 The defect
 ==========
 
-``sessruns_01`` keyed a run ``UNIQUE (tenant_id, claude_code_session_id,
-run_seq)`` (``uq_session_runs_session_run``). ``run_seq`` is counted by the
+``sessruns_01`` (qontinui-web#1987) keyed a run ``UNIQUE (tenant_id,
+claude_code_session_id, run_seq)`` (``uq_session_runs_session_run``). It is
+applied in production, measured: ``coord_query_schema_object`` (constraint
+``uq_session_runs_session_run``, table ``session_runs``) returned
+``existence=present`` on ``qontinui_db`` (``live_rds_catalog``) at
+2026-10-26 ~03:00Z, so it is fixed forward here rather than edited. ``run_seq`` is counted by the
 runner lifecycle store of ONE device: a session handed off or respawned onto
 another device starts ``run_seq`` 1 on that device for the same
 ``claude_code_session_id``, which collides with the source device run 1 and
@@ -21,8 +25,10 @@ would be refused (or, as an upsert, would overwrite the source run).
 The fix
 =======
 
-The run key becomes ``UNIQUE (tenant_id, device_id, claude_code_session_id,
-run_seq)`` (``uq_session_runs_device_session_run``). A run is per device:
+The run key becomes ``UNIQUE (tenant_id, claude_code_session_id, device_id,
+run_seq)`` (``uq_session_runs_device_session_run``). ``claude_code_session_id``
+stays second so the key index still serves the by-session lookups (the
+``coord.spawn_requests`` join, ``finished_at`` stamping). A run is per device:
 ``run_seq`` is an ordinal per device, a same-device resume takes the next one,
 and a handed-off session has runs on each device it ran on, non-overlapping in
 time. The table comment and the ``run_seq`` column comment are rewritten to
@@ -40,16 +46,15 @@ revision and do NOT order it with coord dependency labels.
 Safety
 ======
 
-``coord.session_runs`` is EMPTY in production when this lands: no writer is
-deployed (the coord ingest of that plan Phase 3 and the runner emitter of
-Phase 4 are unmerged), so building the new unique index scans no rows and the
-constraint swap is instant. It is still one ``ALTER TABLE`` statement, so the
+``coord.session_runs`` is INFERRED empty in production when this lands (not
+measured): no writer is on any main branch (the coord ingest of that plan
+Phase 3 and the runner emitter of Phase 4 are unmerged), so building the new
+unique index should scan no rows and the constraint swap should be instant. It is still one ``ALTER TABLE`` statement, so the
 two keys are swapped atomically, under ``lock_timeout`` 3s so a lock wait fails
 fast instead of queueing behind a long transaction.
 
 Re-running is harmless: the statement drops BOTH constraint names ``IF
-EXISTS`` before adding the new one, so a re-applied upgrade (or a partially
-applied one) converges on the same single key. ``downgrade()`` is the mirror
+EXISTS`` before adding the new one, so a re-applied upgrade converges on the same single key. ``downgrade()`` is the mirror
 image. On a non-empty table the downgrade can fail, by design: two devices may
 legitimately hold the same ``(claude_code_session_id, run_seq)``, which the old
 key cannot represent.
@@ -89,13 +94,13 @@ def upgrade() -> None:
             DROP CONSTRAINT IF EXISTS uq_session_runs_session_run,
             DROP CONSTRAINT IF EXISTS uq_session_runs_device_session_run,
             ADD CONSTRAINT uq_session_runs_device_session_run
-                UNIQUE (tenant_id, device_id, claude_code_session_id, run_seq)
+                UNIQUE (tenant_id, claude_code_session_id, device_id, run_seq)
         """
     )
     op.execute(
         """
         COMMENT ON TABLE coord.session_runs IS
-            'The durable session RUN record: one row per open-to-close interval of one runner lifecycle-store record on one device (one Claude session run), keyed (tenant_id, device_id, claude_code_session_id, run_seq), emitted by the runner at open and close, kept 400 days by coord. A session handed off or respawned onto another device has a run on each device it ran on, non-overlapping in time. Distinct from coord.sessions, which is presence (revived, reaped, pruned after 7 days) and cannot answer how long a run held a slot. Plan 2026-10-23-session-duration-by-work-type-and-per-device-session-load (D1).'
+            'The durable session RUN record: one row per open-to-close interval of one runner lifecycle-store record on one device (one Claude session run), keyed (tenant_id, claude_code_session_id, device_id, run_seq), emitted by the runner at open and close, kept 400 days by coord. A session handed off or respawned onto another device has a run on each device it ran on, non-overlapping in time. Distinct from coord.sessions, which is presence (revived, reaped, pruned after 7 days) and cannot answer how long a run held a slot. Plan 2026-10-23-session-duration-by-work-type-and-per-device-session-load (D1).'
         """
     )
     op.execute(
