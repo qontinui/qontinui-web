@@ -17,13 +17,13 @@ import { colors } from "@/config/theme";
 
 /**
  * Series colours, by rank: the work types holding the most slot-hours get
- * named colours and the rest share {@link OTHER_COLOR}. None is a red or an
- * amber, so no series reads as an attention signal.
+ * named colours and the rest share {@link OTHER_COLOR}. None is a red, an
+ * amber or a green, so no series reads as an attention or "done" signal.
  */
 export const SERIES_COLORS: readonly string[] = [
   colors.brand.primary,
   colors.brand.secondary,
-  colors.brand.success,
+  colors.text.secondary,
   colors.text.tertiary,
 ];
 export const OTHER_COLOR = colors.border.strong;

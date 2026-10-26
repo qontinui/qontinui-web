@@ -279,6 +279,51 @@ describe("/admin/coord/session-load", () => {
     ).toContain("–");
   });
 
+  it("a resumed run is named by coord's run_seq; a first run is not", async () => {
+    routes.runs = () => ({
+      body: runListFx([runFx(), runFx({ id: "second", run_seq: 2 })]),
+    });
+    await renderPage();
+    const rows = screen.getAllByTestId("coord-session-load-run-row");
+    expect(
+      within(rows[0]!).queryByTestId("coord-session-load-run-resumed")
+    ).toBeNull();
+    expect(
+      within(rows[1]!).getByTestId("coord-session-load-run-resumed").textContent
+    ).toContain("resumed (run 2)");
+  });
+
+  it("an empty window kept behind a failed refresh says it may be stale, with its date", async () => {
+    routes.statsByType = () => ({ body: statsFx([]) });
+    routes.concurrency = () => ({ body: concurrencyFx([]) });
+    await renderPage();
+    expect(
+      screen.getByTestId("coord-session-load-types-empty").textContent
+    ).not.toMatch(/last good read/);
+    routes.statsByType = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    routes.concurrency = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-session-load-refresh"));
+    });
+    await settle();
+    expect(
+      screen.getByTestId("coord-session-load-types-empty").textContent
+    ).toMatch(
+      /at the last good read \(as of .+\) — the latest refresh failed, so this may be stale/
+    );
+    expect(
+      screen.getByTestId("coord-session-load-machines-empty").textContent
+    ).toMatch(/at the last good read \(as of .+\)/);
+    const strip = screen.getByTestId("coord-session-load-health");
+    expect(strip.textContent).toMatch(/Last refresh failed/);
+  });
+
   it("an open run is listed as open, with its time so far", async () => {
     routes.runs = () => ({
       body: runListFx([

@@ -15970,6 +15970,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/session-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Runs
+         * @description Proxy coord's ``GET /coord/session-runs`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{runs: [Run], shown, total, truncated, next_cursor, as_of}``,
+         *     newest first, or coord's ``503 schema_missing`` while the run record is
+         *     not migrated. A ``Run`` carries its device, session id and ``run_seq``,
+         *     ``initiator``, ``work_type`` (and the facts it was classified from —
+         *     ``skill``, ``first_command``, ``spawn_origin``, ``dispatch_source``,
+         *     ``gate_id``, ``spawn_request_id`` …), its timestamps, ``wall_seconds`` and
+         *     ``held_after_finish_seconds`` (``null`` while open), ``end_reason`` /
+         *     ``end_source`` and ``history_complete`` (``false`` on a backfilled row).
+         */
+        get: operations["api_v1_operations_session_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/concurrency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Concurrency
+         * @description Proxy coord's ``GET /coord/session-runs/concurrency`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from, grid, devices:
+         *     [Device], truncated, as_of}``. A ``Device`` carries ``name``, ``budget``
+         *     (``{state: "published" | "zero" | "none", value, label}`` — read from
+         *     ``max_concurrent_agents``, never from a role), ``last_heartbeat`` /
+         *     ``heartbeat_age_seconds``, ``known_device``, ``open_now``, ``peak``,
+         *     ``p95`` and its ``series`` of ``{bucket_start, source, total, by_work_type}``.
+         */
+        get: operations["api_v1_operations_session_runs_concurrency_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Growth
+         * @description Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from,
+         *     recording_since, devices_recording, series: [Bucket], fleet, truncated,
+         *     as_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and
+         *     their totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;
+         *     ``fleet`` carries ``available_slot_hours_per_day`` (published non-zero
+         *     budgets × 24) and how many devices published a budget, a zero budget or
+         *     none. ``recording_since: null`` means nothing is recorded yet — an absent
+         *     bucket before it is UNKNOWN, not zero.
+         */
+        get: operations["api_v1_operations_session_runs_growth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Stats
+         * @description Proxy coord's ``GET /coord/session-runs/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, since, group_by, population, groups: [Group],
+         *     classifier_version, as_of}``. Each group carries ``runs``, ``open_now``,
+         *     ``wall_seconds {p50, p90, p99, sum, samples}`` over OBSERVED ends only,
+         *     ``slot_hours``, ``active_seconds``, ``held_after_finish_seconds {sum,
+         *     samples}`` and the ``inferred`` / ``reconciled`` / ``unknown`` counts. A
+         *     percentile over no observed end is ``null`` — coord's UNKNOWN.
+         */
+        get: operations["api_v1_operations_session_runs_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/sessions": {
         parameters: {
             query?: never;
@@ -78701,6 +78813,154 @@ export interface operations {
             query: {
                 /** @description Repository slug (owner/name) */
                 repo: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_get: {
+        parameters: {
+            query?: {
+                /** @description Only runs classified as this work type. */
+                work_type?: string | null;
+                /** @description Only runs on this coord device. */
+                device?: string | null;
+                /** @description Only runs this initiator started. */
+                initiator?: ("operator" | "coord" | "runner_local" | "unknown") | null;
+                /** @description Only runs started at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only runs started before this instant (offset required). */
+                until?: string | null;
+                /** @description coord's ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_concurrency_get: {
+        parameters: {
+            query?: {
+                /** @description Only this coord device (unset = every device that ran a session). */
+                device?: string | null;
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Series bucket width; coord's default is ``1h``. */
+                bucket?: ("1m" | "5m" | "15m" | "1h" | "hour" | "6h" | "1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_growth_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Day (coord's default) or week buckets. */
+                bucket?: ("1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_stats_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Group by ``work_type`` (coord's default), ``device``, or both. */
+                group_by?: ("work_type" | "device" | "device,work_type" | "work_type,device") | null;
             };
             header?: never;
             path?: never;
