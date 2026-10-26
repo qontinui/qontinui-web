@@ -17,6 +17,16 @@ export const DEVICE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 export const BUILD_ID = "be39991d2fe9-1761210000000";
 export const GIT_SHA = "be39991d2fe9";
 
+/**
+ * The request ids the backend's relay puts on its refusals. They are UUIDs —
+ * `RequestIDMiddleware` and `_relay_request_id` both mint `str(uuid4())` — so
+ * a fixture that is not UUID-shaped proves nothing about the id a failed
+ * read's UNKNOWN prints: the presentation helper's identity check (an internal
+ * identifier in front of an audience) matches this shape and no other.
+ */
+export const REQUEST_ID_NOT_CONNECTED = "6f3c2a91-8d47-4b1e-a5c0-3e9d7b2f4a10";
+export const REQUEST_ID_NOT_OWNED = "c2b8e1d4-5a93-4f60-8e7b-1d0a9c4f6e32";
+
 /** `GET /health`, whole: `sdkFeatures` and `buildId` sit beside `data`. */
 export const HEALTH_BODY = {
   success: true,
@@ -319,7 +329,7 @@ export const NOT_CONNECTED_BODY = {
   device_id: DEVICE_ID,
   ws_connected_at: "2026-10-23T08:00:00+00:00",
   last_seen_at: "2026-10-23T08:05:00+00:00",
-  request_id: "req-503",
+  request_id: REQUEST_ID_NOT_CONNECTED,
 };
 
 /**
@@ -329,7 +339,7 @@ export const NOT_CONNECTED_BODY = {
 export const DEVICE_NOT_OWNED_BODY = {
   detail: "device not found or not owned by caller",
   device_id: DEVICE_ID,
-  request_id: "req-404",
+  request_id: REQUEST_ID_NOT_OWNED,
 };
 
 /** The runner's Spec API refusing an app id it has not registered. */

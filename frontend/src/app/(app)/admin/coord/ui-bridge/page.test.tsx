@@ -40,6 +40,8 @@ import {
   FLEET_APPS,
   NOT_CARRIED_BODY,
   NOT_CONNECTED_BODY,
+  REQUEST_ID_NOT_CONNECTED,
+  REQUEST_ID_NOT_OWNED,
   VISIBILITY_CLEAR_OBSERVED,
   VISIBILITY_CLEAR_UNOBSERVED,
   VISIBILITY_HIDES_TEXT,
@@ -392,7 +394,8 @@ describe("an unreachable runner", () => {
     expect(sdk).toHaveTextContent(
       /held a relay session until .*then dropped it/
     );
-    expect(sdk).toHaveTextContent("request req-503");
+    // Operator mode: the request id is the operator's, to grep the backend log.
+    expect(sdk).toHaveTextContent(`request ${REQUEST_ID_NOT_CONNECTED}`);
     expect(
       await screen.findByTestId("coord-ui-bridge-actions-unknown")
     ).toHaveTextContent("could not be read");
@@ -434,7 +437,7 @@ describe("a stale pairing", () => {
         `The backend has no device (${DEVICE_ID}) registered to your account`
       )
     );
-    expect(sdk).toHaveTextContent("request req-404");
+    expect(sdk).toHaveTextContent(`request ${REQUEST_ID_NOT_OWNED}`);
     // Operator mode: the reason is the operator's, verbatim.
     expect(sdk.querySelector("[data-redacted]")).toBeNull();
   });

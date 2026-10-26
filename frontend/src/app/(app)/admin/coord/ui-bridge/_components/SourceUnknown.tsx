@@ -8,7 +8,11 @@
  * same failure the same way, the runner's build included.
  *
  * A request id, when the failure carried one, rides on the last line in the
- * raw-id style (R5) — it is what the backend log is grepped for.
+ * raw-id style (R5) — it is what the backend log is grepped for. It is the
+ * operator's line: the relay mints it as a UUID, an internal identifier that
+ * means nothing to an audience, so it sits inside `OperatorOnly` and is not
+ * rendered while presenting (the presentation helper's identity check fails a
+ * UUID in a presentation-mode render).
  *
  * Most reasons are the page's own fixed sentences. A reason that QUOTES
  * words from outside the page — a failed read's cause (`relaySource.ts` says
@@ -24,7 +28,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { UNKNOWN_AMBER, relativeTime } from "@/components/console";
-import { RedactedText } from "@/components/presentation";
+import { OperatorOnly, RedactedText } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import type { RunnerRoute } from "../_lib/relayReads";
 import {
@@ -85,9 +89,11 @@ export function SourceUnknown({
           )}
         </p>
         {requestId && (
-          <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
-            request {requestId}
-          </p>
+          <OperatorOnly>
+            <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
+              request {requestId}
+            </p>
+          </OperatorOnly>
         )}
       </div>
     </div>

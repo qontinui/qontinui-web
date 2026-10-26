@@ -17,6 +17,9 @@
  * `app-not-found` answer, or in the page's own "not a valid app id"), a stale
  * pairing's device id, a dispatch refusal naming the runner the operator
  * picked — is withheld while presenting, and the operator still reads it.
+ * And the relay's request id, which the backend mints as a UUID (an internal
+ * identifier the helper's identity check refuses), is the operator's line on
+ * either kind of reason and is not rendered while presenting.
  */
 
 import React, { type ReactNode } from "react";
@@ -44,6 +47,9 @@ import {
   DEVICE_ID,
   DEVICE_NOT_OWNED_BODY,
   FLEET_APPS,
+  NOT_CONNECTED_BODY,
+  REQUEST_ID_NOT_CONNECTED,
+  REQUEST_ID_NOT_OWNED,
   SPEC_GRAPH_BODY,
   SPEC_LIST_BODY,
   VISIBILITY_HIDES_TEXT,
@@ -445,6 +451,36 @@ describe("a reason that quotes the outside world is withheld while presenting", 
       screen.getByTestId("coord-ui-bridge-actions-unknown")
     ).toHaveTextContent("read failed");
     expect(document.body.innerHTML).not.toContain(DEVICE_ID);
+    // The relay's request id is a UUID, the operator's line for the backend log.
+    expect(document.body.innerHTML).not.toContain(REQUEST_ID_NOT_OWNED);
+    expectPresentationSafe(view, { captions: CAPTIONS });
+  });
+
+  it("never prints the relay's request id, on the kind of reason that is shown in full", async () => {
+    // A runner with no live relay session: the 503's reason is the page's own
+    // fixed sentence and quotes nothing, so it is shown while presenting —
+    // and the request id beside it, which the relay minted as a UUID, is not.
+    const notConnected = () => json(503, NOT_CONNECTED_BODY);
+    state.relay = relayFake({
+      health: notConnected,
+      components: notConnected,
+      apps: notConnected,
+      specList: notConnected,
+      specGraph: notConnected,
+    });
+    const view = renderInPresentationMode(<UiBridgeDashboardPage />, {
+      scope: SCOPE,
+      wrapper: Queries,
+    });
+    const sdk = await screen.findByTestId("coord-ui-bridge-sdk-unknown");
+    await waitFor(() => expect(sdk).toHaveTextContent("could not be read"));
+    expect(sdk).toHaveTextContent("UNKNOWN");
+    expect(sdk).toHaveTextContent(
+      /held a relay session until .*then dropped it/
+    );
+    expect(sdk.querySelector('[data-redacted="true"]')).toBeNull();
+    expect(document.body.innerHTML).not.toContain(REQUEST_ID_NOT_CONNECTED);
+    await screen.findByTestId("coord-ui-bridge-actions-unknown");
     expectPresentationSafe(view, { captions: CAPTIONS });
   });
 
