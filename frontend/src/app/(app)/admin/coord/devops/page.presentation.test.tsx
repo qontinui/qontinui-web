@@ -25,7 +25,9 @@
  *     failed read UNKNOWN, never zero, said in fixed words rather than its own
  *     text, with an operator control proving that text does reach the page;
  *  6. the operator console unchanged: levers, real names, no lens chrome, and
- *     no edit carried over into presentation mode.
+ *     no edit carried over into presentation mode;
+ *  7. the route is registered presentation-ready (`presentationReadiness.ts`),
+ *     so the console's page gate renders the page rather than withholding it.
  *
  * The headline's derivations are pinned in
  * `components/operations/devOpsHeadline.test.ts`.
@@ -95,6 +97,8 @@ vi.mock("@/components/operations/useSymbolClaimsStream", () => ({
 const routerPush = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: (...args: unknown[]) => routerPush(...args) }),
+  // The console layout's page gate (`PresentationPage`) reads the pathname.
+  usePathname: () => "/admin/coord/devops",
 }));
 
 // An ADMIN, so every admin-gated write control would render for the
@@ -124,6 +128,8 @@ import CoordDevOpsPage from "./page";
 import {
   FixedPresentationMode,
   NAVIGATION_ONLY_ATTRIBUTE,
+  PresentationPage,
+  isPresentationReady,
   sessionMachineAliases,
 } from "@/components/presentation";
 
@@ -670,6 +676,31 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
         .getByTestId("coord-devops-credential-unknown-badge")
         .getAttribute("title")
     ).toContain(ERROR_HOST);
+  });
+});
+
+describe("/admin/coord/devops?present=1 — the console's page gate renders it", () => {
+  beforeEach(resetEnvironment);
+
+  it("is registered presentation-ready, so PresentationPage shows the page instead of withholding it", async () => {
+    // The registration (`presentationReadiness.ts`) is what this whole file
+    // is the proof of. Rendered bare, every test above would pass for a page
+    // the console never shows an evaluator: without the entry the layout's
+    // gate swaps the page for "Shown in the operator view only".
+    expect(isPresentationReady("/admin/coord/devops")).toBe(true);
+
+    mockRoutes();
+    seedDeviceStatus();
+    renderInPresentationMode(
+      <PresentationPage>
+        <CoordDevOpsPage />
+      </PresentationPage>,
+      { scope: SCOPE }
+    );
+    await settle();
+
+    expect(screen.queryByTestId("presentation-withheld-page")).toBeNull();
+    expect(screen.getByTestId("devops-headline-strip")).toBeTruthy();
   });
 });
 
