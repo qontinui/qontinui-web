@@ -5,10 +5,12 @@
  * panel — and no hostname anywhere in a presentation-mode DOM.
  */
 
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { useMemo } from "react";
+import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
-import { beforeEach, describe, expect, it } from "vitest";
-import { sessionMachineAliases } from "./machineAliases";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { sessionMachineAliases, type MachineIdentity } from "./machineAliases";
 import {
   MachineName,
   SERVER_MACHINE_ALIAS,
@@ -135,6 +137,64 @@ describe("MachineName", () => {
   });
 });
 
+describe("a machine first met under two identifiers", () => {
+  const DEVICE = { deviceId: "0b9d6a54-0000-4000-8000-0000000000aa" };
+  const HOST = { hostname: "build-host-1" };
+  const BOTH = { ...DEVICE, ...HOST };
+
+  it("re-renders a panel that showed the retired letter once a panel links them", async () => {
+    render(
+      <FixedPresentationMode presenting>
+        <MachineName identity={DEVICE} data-testid="spawn-row" />
+        <MachineName identity={HOST} data-testid="bridge-panel" />
+      </FixedPresentationMode>
+    );
+    expect(screen.getByTestId("spawn-row")).toHaveTextContent("Machine A");
+    expect(screen.getByTestId("bridge-panel")).toHaveTextContent("Machine B");
+
+    // The machine list knows both identifiers of the one computer.
+    render(
+      <FixedPresentationMode presenting>
+        <MachineName identity={BOTH} data-testid="machine-list" />
+      </FixedPresentationMode>
+    );
+    expect(screen.getByTestId("machine-list")).toHaveTextContent("Machine A");
+    await waitFor(() =>
+      expect(screen.getByTestId("bridge-panel")).toHaveTextContent("Machine A")
+    );
+  });
+
+  it("hands a memoizing caller a new function, so names it built are rebuilt", async () => {
+    function Memoized({ machines }: { machines: MachineIdentity[] }) {
+      const nameOf = useMachineAliaser();
+      const names = useMemo(
+        () => machines.map((m) => nameOf(m)),
+        [machines, nameOf]
+      );
+      return <p data-testid="memoized">{names.join(", ")}</p>;
+    }
+    const machines = [DEVICE, HOST];
+    render(
+      <FixedPresentationMode presenting>
+        <Memoized machines={machines} />
+      </FixedPresentationMode>
+    );
+    expect(screen.getByTestId("memoized")).toHaveTextContent(
+      "Machine A, Machine B"
+    );
+    render(
+      <FixedPresentationMode presenting>
+        <MachineName identity={BOTH} />
+      </FixedPresentationMode>
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("memoized")).toHaveTextContent(
+        "Machine A, Machine A"
+      )
+    );
+  });
+});
+
 describe("useMachineAliaser", () => {
   function Options({ machines }: { machines: Array<{ hostname: string }> }) {
     const nameOf = useMachineAliaser();
@@ -167,5 +227,48 @@ describe("useMachineAliaser", () => {
       "Machine A",
       "Machine B",
     ]);
+  });
+
+  const MACHINES = [{ hostname: "build-host-1" }, { hostname: "laptop-7" }];
+  const presentingOptions = (
+    <FixedPresentationMode presenting>
+      <Options machines={MACHINES} />
+    </FixedPresentationMode>
+  );
+
+  it("names every machine generically on the server, assigning no letter", () => {
+    const html = renderToString(presentingOptions);
+    expect(
+      html.match(new RegExp(`>${SERVER_MACHINE_ALIAS}<`, "g"))
+    ).toHaveLength(2);
+    expect(html).not.toContain("Machine A");
+    expect(html).not.toContain("build-host-1");
+    // The process-wide registry was untouched: the first client sight is A.
+    render(
+      <FixedPresentationMode presenting>
+        <MachineName identity={LAPTOP} data-testid="first" />
+      </FixedPresentationMode>
+    );
+    expect(screen.getByTestId("first")).toHaveTextContent("Machine A");
+  });
+
+  it("hydrates the server HTML without a mismatch, then aliases on the client", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = renderToString(presentingOptions);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, presentingOptions);
+    });
+
+    expect(errors).not.toHaveBeenCalled();
+    expect(
+      [...container.querySelectorAll("option")].map((o) => o.textContent)
+    ).toEqual(["Machine A", "Machine B"]);
+    errors.mockRestore();
+    act(() => root?.unmount());
+    container.remove();
   });
 });

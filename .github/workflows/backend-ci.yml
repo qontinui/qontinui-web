@@ -57,6 +57,13 @@ on:
       # edits ONLY web-guards.yml -- e.g. drops a gate step -- would not run
       # the roster tests that exist to catch exactly that.
       - '.github/workflows/web-guards.yml'
+      # tests/test_workflow_lint_drift.py executes workflow-lint.yml's zizmor
+      # `run:` body (the DRIFT base, plan
+      # 2026-10-24-workflow-lint-drift-judged-against-stale-pr-base). The
+      # regression it guards is an edit to that file ALONE, so without this
+      # entry the guard never runs on it. The module asserts this entry
+      # appears in BOTH filters.
+      - '.github/workflows/workflow-lint.yml'
       # The OTHER workflows `backend/tests/test_ci_timeout_marker.py` reads.
       # That module asserts, against the workflow FILES, that every marker
       # carries a job budget matching its job and an EXTERNAL_CANCEL_NOTE
@@ -108,6 +115,8 @@ on:
       - 'scripts/ci/**'
       # See the pull_request filter above (gate lane rosters).
       - '.github/workflows/web-guards.yml'
+      # See the pull_request filter above (workflow-lint DRIFT base).
+      - '.github/workflows/workflow-lint.yml'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
       # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,

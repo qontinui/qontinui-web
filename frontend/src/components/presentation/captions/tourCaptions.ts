@@ -9,14 +9,13 @@
  * `tour.<part>`.
  */
 
-import type { SurfaceCaptions } from "./captionTypes";
+import { copy, term, type SurfaceCaptions } from "./captionTypes";
 
 export const TOUR_CAPTIONS = {
   "tour.page": {
     title: "Tour",
     oneLiner:
       "A guided walk through five live pages of the real console, shown in presentation mode.",
-    whyItMatters:
-      "Every stop is the operator's own working page with its live data, not a separate demo, so what you are shown is what actually runs.",
+    whyItMatters: copy`Every stop is the ${term("operator", "operator")}'s own working page with its live data, not a separate demo, so what you are shown is what actually runs.`,
   },
 } as const satisfies SurfaceCaptions<"tour">;

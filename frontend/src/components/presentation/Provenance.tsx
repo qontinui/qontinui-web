@@ -13,7 +13,11 @@
  *   (`UNKNOWN_AMBER`, imported — never re-spelled). A visible "unknown" is the
  *   evidence that the instrument is real.
  * - The age keeps advancing (`presentationClock`): one shared tick re-renders
- *   every chip, so "as of 12s ago" never freezes on a ten-minute-old figure.
+ *   every chip, so an age never freezes on a ten-minute-old figure, and below
+ *   a minute it says "under a minute ago" rather than a seconds count the
+ *   15-second tick would leave behind. A server or hydration render, which has
+ *   no client clock, states the instant itself (UTC, to the minute), so the
+ *   HTML and the browser's first render agree.
  * - Operator mode renders nothing unless `persistent` — the console's own
  *   rows already carry their times (R2), and R9 keeps chrome off the operator
  *   surface.
@@ -21,9 +25,13 @@
 
 import { Badge } from "@/components/ui/badge";
 import { UNKNOWN_AMBER } from "@/components/console/statusRow";
-import { absoluteTime, relativeTime } from "@/components/console/time";
+import { absoluteTime } from "@/components/console/time";
 import { cn } from "@/lib/utils";
-import { usePresentationClock } from "./presentationClock";
+import {
+  presentationAge,
+  stableInstantText,
+  usePresentationNow,
+} from "./presentationClock";
 import { usePresentationMode } from "./PresentationModeProvider";
 
 /** The word an unknown source or time renders as. */
@@ -63,14 +71,16 @@ function ProvenanceChip({
   className,
   "data-testid": testId,
 }: Omit<ProvenanceProps, "persistent">) {
-  usePresentationClock();
+  const now = usePresentationNow();
   const sourceText = source?.trim() || null;
   const instant = provenanceInstant(asOf);
   const known = sourceText !== null && instant !== null;
   const title = [
     `Source: ${sourceText ?? "unknown — the page could not say where this came from"}.`,
     instant
-      ? `As of ${absoluteTime(instant)}.`
+      ? // `absoluteTime` is in the browser's locale and zone: only once the
+        // client renders, never in HTML a server produced.
+        `As of ${now === null ? stableInstantText(instant) : absoluteTime(instant)}.`
       : "As of: unknown — no time came with this figure.",
   ].join(" ");
   return (
@@ -90,7 +100,7 @@ function ProvenanceChip({
     >
       <span>source: {sourceText ?? PROVENANCE_UNKNOWN}</span>
       <span aria-hidden>{" · "}</span>
-      <span>as of {instant ? relativeTime(instant) : PROVENANCE_UNKNOWN}</span>
+      <span>as of {presentationAge(instant, now, PROVENANCE_UNKNOWN)}</span>
     </Badge>
   );
 }

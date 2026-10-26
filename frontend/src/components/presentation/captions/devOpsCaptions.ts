@@ -18,7 +18,13 @@ export const DEV_OPS_CAPTIONS = {
     title: "Dev Ops",
     oneLiner:
       "The machines the agents run on, whether each one is healthy, and how much more work it can take.",
-    whyItMatters: copy`Each ${term("device", "machine")} reports its own health and spare capacity, and the ${term("coord", "coordination service")} places new work only where there is room, so the fleet grows across machines without anyone scheduling it by hand.`,
+    // Only what this page itself shows. Not "work is placed only where there
+    // is room": coord refuses automated fix sessions over a machine's ceiling,
+    // but other work is counted, never refused (qontinui-coord
+    // spawn_admission.rs), so that sentence would not be true. And no "here":
+    // a withheld page's placeholder shows its title and one-liner only, so a
+    // why-it-matters never sits above "kept off screen" pointing at the page.
+    whyItMatters: copy`Each ${term("device", "machine")} reports its own health and load, so a machine that is struggling or offline shows in its own report rather than being discovered when work stops moving.`,
   },
   "dev-ops.health-strip": {
     title: "Fleet health at a glance",

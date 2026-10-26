@@ -19,6 +19,7 @@
  */
 
 import { useCallback } from "react";
+import { usePresentationNow } from "./presentationClock";
 import { usePresentationMode } from "./PresentationModeProvider";
 import { usePresentationScopeState } from "./presentationScope";
 import {
@@ -46,6 +47,9 @@ export function RedactedText({
 }: RedactedTextProps) {
   const { presenting } = usePresentationMode();
   const scope = usePresentationScopeState();
+  // The descriptor's age: re-rendered on the shared tick, and stated as an
+  // instant on a server or hydration render (`presentationClock`).
+  const now = usePresentationNow();
   if (!presenting) {
     return (
       <span className={className} data-testid={testId}>
@@ -68,7 +72,7 @@ export function RedactedText({
       data-redacted="true"
       title={WITHHELD_TITLE}
     >
-      {describeRedacted(descriptor, scope)}
+      {describeRedacted(descriptor, scope, { now })}
     </span>
   );
 }
@@ -86,13 +90,14 @@ export interface RedactorItem extends RedactionInput {
 export function useRedactor(): (item: RedactorItem) => string {
   const { presenting } = usePresentationMode();
   const scope = usePresentationScopeState();
+  const now = usePresentationNow();
   return useCallback(
     (item: RedactorItem) => {
       if (!presenting) return item.text;
       return redactionVerdict(item, scope).show
         ? item.text
-        : describeRedacted(item.descriptor, scope);
+        : describeRedacted(item.descriptor, scope, { now });
     },
-    [presenting, scope]
+    [presenting, scope, now]
   );
 }

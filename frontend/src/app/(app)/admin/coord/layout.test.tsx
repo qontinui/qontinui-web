@@ -3,13 +3,24 @@
  * `2026-10-23-console-presentation-spaces` Phase 1 Arming: "a console page
  * loaded with `?present=1` renders captions and no write control").
  *
- * The page body here is the lens primitives a real page composes; the
- * layout's own chrome (the header and its toggle) is under test with it. The
- * header's live-badge row and the red-main banner fetch, and are covered by
- * their own suites, so they are stubbed to what they render that matters here
- * — a navigation link, and nothing. The lens's one read, the tenant's
- * presentation scope, is stubbed at its client, so the REAL loader inside the
- * layout carries the scope to the page's titles.
+ * Two kinds of console page, because presentation mode treats them
+ * differently (`PresentationPage`, D3 "fails closed by construction"):
+ *
+ * - a page NOT registered as presentation-ready is withheld — its body never
+ *   renders, its caption and a plain "operator view only" statement stand in;
+ * - a page registered as ready renders, and the lens primitives inside it do
+ *   their work: `OperatorOnly` unmounts the write control, `RedactedText`
+ *   withholds what the tenant's scope does not clear.
+ *
+ * The page body here is the lens primitives a real page composes; which
+ * routes are "ready" is the test's to say (`readiness.routes`), through the
+ * real `isPresentationReady`. The header's live-badge row and the red-main
+ * banner fetch, and are covered by their own suites (the banner under the
+ * real layout in `layout.present-url.population.test.tsx`), so they are
+ * stubbed to what they render that matters here — a navigation link, and
+ * nothing. The lens's one read, the tenant's presentation scope, is stubbed
+ * at its client, so the REAL loader inside the layout carries the scope to the
+ * page's titles.
  */
 
 import {
@@ -21,6 +32,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PresentationScopeRecord } from "@/lib/api/presentationScope";
+import type { PresentationReadyRoute } from "@/components/presentation/presentationReadiness";
 import {
   UIBridgeProvider,
   useUIBridgeOptional,
@@ -29,17 +41,51 @@ import {
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
+  usePathname: () => window.location.pathname,
 }));
-vi.mock("@/components/admin/coord/CoordNav", () => ({
-  default: () => (
-    <nav data-testid="coord-nav">
-      <a href="/admin/coord/notifications">Notifications</a>
-    </nav>
-  ),
-}));
+// A navigation link built the way the real CoordNav builds its header links:
+// carrying the presentation while presenting (`usePresentationHref`).
+vi.mock("@/components/admin/coord/CoordNav", async () => {
+  const { usePresentationHref } = await import("@/components/presentation");
+  return {
+    default: function CoordNavStandIn() {
+      return (
+        <nav data-testid="coord-nav">
+          <a href={usePresentationHref("/admin/coord/notifications")}>
+            Notifications
+          </a>
+        </nav>
+      );
+    },
+  };
+});
 vi.mock("@/components/admin/coord/RedMainBanner", () => ({
   default: () => null,
 }));
+
+/** Which routes the test declares presentation-ready. */
+const readiness = vi.hoisted(() => ({
+  routes: [] as PresentationReadyRoute[],
+}));
+vi.mock(
+  "@/components/presentation/presentationReadiness",
+  async (importOriginal) => {
+    const real =
+      await importOriginal<
+        typeof import("@/components/presentation/presentationReadiness")
+      >();
+    return {
+      ...real,
+      isPresentationReady: (pathname: string) =>
+        real.isPresentationReady(pathname, readiness.routes),
+    };
+  }
+);
+
+const DEVOPS_READY: PresentationReadyRoute = {
+  route: "/admin/coord/devops",
+  provenBy: "app/(app)/admin/coord/layout.test.tsx",
+};
 
 const SCOPE: PresentationScopeRecord = {
   tenant_id: "00000000-0000-0000-0000-00000000000a",
@@ -73,6 +119,7 @@ import {
   Caption,
   OperatorOnly,
   RedactedText,
+  WITHHELD_PAGE_TITLE,
   defaultPresentationModeStore,
   defaultPresentationScopeStore,
 } from "@/components/presentation";
@@ -143,8 +190,8 @@ function renderConsole() {
   return { view, holder };
 }
 
-function setUrl(search: string) {
-  window.history.replaceState(null, "", `/admin/coord/devops${search}`);
+function setUrl(search: string, path = "/admin/coord/devops") {
+  window.history.replaceState(null, "", `${path}${search}`);
 }
 
 beforeEach(() => {
@@ -157,6 +204,7 @@ beforeEach(() => {
   scopeClient.fetchPresentationScope.mockResolvedValue(SCOPE);
   window.sessionStorage.clear();
   window.localStorage.clear();
+  readiness.routes = [];
   setUrl("");
 });
 
@@ -166,19 +214,25 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
-describe("CoordLayout — the presentation lens", () => {
-  it("renders captions and no write control on a console page loaded with ?present=1", () => {
+describe("CoordLayout — a console page not prepared for presentation", () => {
+  it("withholds the page behind its caption on a console page loaded with ?present=1, with no write control", () => {
     setUrl("?present=1");
     const { holder } = renderConsole();
 
     expect(
       screen.getByRole("button", { name: "Presentation mode" })
     ).toHaveAttribute("aria-pressed", "true");
+    // The surface's caption, and an honest statement — not the page.
     expect(
       document.querySelector('[data-presentation-caption="dev-ops.page"]')
     ).not.toBeNull();
+    expect(screen.getByText(WITHHELD_PAGE_TITLE)).toBeInTheDocument();
+    expect(screen.queryByText("12 machines")).not.toBeInTheDocument();
     expect(screen.queryByText("Drain this machine")).not.toBeInTheDocument();
-    expect(holder.registry).not.toBeNull();
+    // Withheld means NOT RENDERED: the page's write action never registered.
+    expect(holder.registry!.getAllComponents().map((c) => c.id)).not.toContain(
+      "layout-test-drain"
+    );
     expect(
       findPresentationViolations(
         { uiBridge: { registry: holder.registry! } },
@@ -187,16 +241,62 @@ describe("CoordLayout — the presentation lens", () => {
     ).toEqual([]);
   });
 
-  it("is the operator console when not presenting, and the header toggle switches the lens", () => {
+  it("withholds a console page that is not a lens surface too, without a caption to stand in", () => {
+    setUrl("?present=1", "/admin/coord/pipeline");
+    renderConsole();
+    expect(screen.getByText(WITHHELD_PAGE_TITLE)).toBeInTheDocument();
+    expect(screen.queryByText("12 machines")).not.toBeInTheDocument();
+    // The page's own Caption is part of the withheld body; the placeholder has
+    // no surface caption for a route outside the five lens surfaces.
+    expect(document.querySelector("[data-presentation-caption]")).toBeNull();
+  });
+
+  it("is the operator console when not presenting, and the header toggle withholds the page", () => {
     renderConsole();
     const toggle = screen.getByRole("button", { name: "Presentation mode" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("Drain this machine")).toBeInTheDocument();
+    expect(screen.getByText("12 machines")).toBeInTheDocument();
     expect(document.querySelector("[data-presentation-caption]")).toBeNull();
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText("Drain this machine")).not.toBeInTheDocument();
+    expect(screen.getByText(WITHHELD_PAGE_TITLE)).toBeInTheDocument();
+  });
+});
+
+describe("CoordLayout — a console page registered as presentation-ready", () => {
+  beforeEach(() => {
+    readiness.routes = [DEVOPS_READY];
+  });
+
+  it("renders the page's captions and no write control on a console page loaded with ?present=1", () => {
+    setUrl("?present=1");
+    const { holder } = renderConsole();
+
+    expect(screen.queryByText(WITHHELD_PAGE_TITLE)).not.toBeInTheDocument();
+    expect(screen.getByText("12 machines")).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-presentation-caption="dev-ops.page"]')
+    ).not.toBeNull();
+    expect(screen.queryByText("Drain this machine")).not.toBeInTheDocument();
+    expect(
+      findPresentationViolations(
+        { uiBridge: { registry: holder.registry! } },
+        { captions: ["dev-ops.page"] }
+      )
+    ).toEqual([]);
+  });
+
+  it("switches from the operator console with the header toggle", () => {
+    renderConsole();
+    const toggle = screen.getByRole("button", { name: "Presentation mode" });
+    expect(screen.getByText("Drain this machine")).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByText("Drain this machine")).not.toBeInTheDocument();
+    expect(screen.getByText("12 machines")).toBeInTheDocument();
     expect(
       document.querySelector('[data-presentation-caption="dev-ops.page"]')
     ).not.toBeNull();
@@ -229,7 +329,9 @@ describe("CoordLayout — the presentation lens", () => {
     expect(screen.queryByText(/Acme Corp/)).not.toBeInTheDocument();
     expect(scopeClient.fetchPresentationScope).toHaveBeenCalledTimes(1);
   });
+});
 
+describe("CoordLayout — operator mode and chrome", () => {
   it("does not read the scope in operator mode, where nothing is redacted", async () => {
     renderConsole();
     expect(screen.getByText("Rebuild the storefront")).toBeInTheDocument();

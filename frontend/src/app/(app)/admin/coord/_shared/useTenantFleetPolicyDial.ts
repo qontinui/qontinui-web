@@ -23,7 +23,8 @@ function capitalise(s: string): string {
  * (`plan_capture` and `citation_scope_backfill_write` on the plan library;
  * `policy_write` and `policy_upstream` on prompt documents;
  * `command_safety_rewrite`, `permission_prompt_capture`,
- * `account_selection_mode` and `image_generation` on tenant policy;
+ * `permission_auto_accept`, `account_selection_mode` and `image_generation`
+ * on tenant policy;
  * `github_hosted_ci` on Dev Ops ▸ CI). Each domain's hook binds `domain` +
  * `label` and layers its own level vocabulary on top (a no-row default, a
  * fail-closed parse), so the honesty properties below are
@@ -53,9 +54,10 @@ function capitalise(s: string): string {
  *    caller's whole tenant, and `policy_write` / `policy_upstream` govern the
  *    tenant's prompt documents, which belong to no repo, and the runner picks
  *    a session's `command_safety_rewrite` and `permission_prompt_capture`
- *    carrier at spawn, before the session is scoped to any repo, and
- *    `account_selection_mode` is a machine-global mode on a machine that is
- *    not repo-scoped. A `repo` band would
+ *    carrier at spawn, before the session is scoped to any repo, the runner
+ *    answers a session's `permission_auto_accept` prompts for that same
+ *    unscoped session, and `account_selection_mode` is a machine-global mode
+ *    on a machine that is not repo-scoped. A `repo` band would
  *    have no resolvable `scope_key` at the moment any of those decisions is
  *    made, so the hook offers no per-repo write. It still SHOWS the resolved band, because the band that won tells
  *    the operator whether this tenant's row is the one in force. The two

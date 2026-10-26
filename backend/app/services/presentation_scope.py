@@ -7,10 +7,13 @@ a FIRST-PARTY owner and the text holds none of the CONFIDENTIAL terms
 This module decides what the two lists ARE for one read:
 
 * **first-party owners** — the tenant's configured list when it has one;
-  otherwise the owners of the tenant's registered repositories, read from
-  coord. When that read fails the answer is UNKNOWN (``None`` plus a typed
-  reason), never ``[]``: an empty list would be a decision the tenant did not
-  make, and an UNKNOWN makes the lens withhold everything anyway.
+  otherwise the owners of the repositories the tenant OWNS among its
+  registered ones (coord's ``role`` = ``owner``; an ``observer`` row is another
+  tenant's repository this one only audits), read from coord. When that read
+  fails the answer is UNKNOWN (``None`` plus a typed reason), never ``[]``: an
+  empty list would be a decision the tenant did not make, and an UNKNOWN makes
+  the lens withhold everything anyway. Every UNKNOWN is logged with its reason,
+  so the operator can read afterwards why a presentation withheld its titles.
 * **confidential terms** — the tenant's configured terms PLUS the viewer's
   other projects' names, always. A union, never "the defaults until someone
   saves": a saved list must not stop withholding the names a later viewer
@@ -31,11 +34,14 @@ from typing import Any, Literal
 from uuid import UUID
 
 import httpx
+import structlog
 from fastapi import HTTPException
 
 from app.api.coord_proxy import _proxy_coord_get
 from app.api.v1.endpoints.operations import CoordTransportUnavailable
 from app.services.coord_identity import CoordIdentity
+
+logger = structlog.get_logger(__name__)
 
 #: Why the registered-repository owners are UNKNOWN on a read:
 #:
@@ -58,10 +64,20 @@ UnknownReason = Literal[
 OwnersSource = Literal["configured", "registered_repos"]
 
 #: coord's tenant-scoped repository list (``coord.tenant_repos``): ``{"repos":
-#: [{"repo": "owner/name", ...}], "total": n}``. Deliberately NOT
-#: ``/coord/canonical-repos``, which is a fleet-wide view whose rows mostly
+#: [{"repo": "owner/name", "role": "owner" | "observer", ...}], "total": n}``
+#: (qontinui-coord ``pr_merge/settings_wire.rs`` ``TenantRepoRow``). Deliberately
+#: NOT ``/coord/canonical-repos``, which is a fleet-wide view whose rows mostly
 #: carry no tenant at all.
 REGISTERED_REPOS_PATH = "/pr-merge/repos"
+
+#: The ``coord.tenant_repos.role`` of a repository the tenant itself owns. The
+#: column's CHECK allows ``owner`` and ``observer``; ``observer`` is reserved
+#: for one tenant auditing ANOTHER's repository read-only, so only ``owner``
+#: makes a repository's GitHub owner first-party.
+OWNER_ROLE = "owner"
+
+#: How much of coord's error detail a log line keeps.
+_LOGGED_DETAIL_CHARS = 200
 
 #: A GitHub owner (user or organisation) login, lower-cased: 1-39 characters,
 #: letters, digits and single hyphens, neither leading nor trailing.
@@ -133,12 +149,16 @@ def dedupe_terms(terms: Iterable[str]) -> list[str]:
 
 
 def registered_repo_owners(payload: Any) -> list[str]:
-    """The distinct owners of coord's tenant repository list, sorted.
+    """The distinct GitHub owners of the repositories the tenant OWNS, sorted.
 
-    Raises :class:`ValueError` when ``payload`` is not that list's shape — a
-    shape this build cannot read is UNKNOWN, not "no repositories". A row whose
-    ``repo`` names no parseable owner is skipped: it cannot make an owner
-    first-party, and the rest of the list is still a real answer.
+    Raises :class:`ValueError` when ``payload`` is not coord's list shape — a
+    shape this build cannot read is UNKNOWN, not "no repositories". A row is
+    counted only when its ``role`` is exactly :data:`OWNER_ROLE`: an
+    ``observer`` row is another tenant's repository, and a missing or unknown
+    role cannot prove the repository is this tenant's, so either fails closed
+    (its owner is not made first-party). A row whose ``repo`` names no
+    parseable owner is skipped the same way; the rest of the list is still a
+    real answer.
     """
     if not isinstance(payload, dict) or not isinstance(payload.get("repos"), list):
         raise ValueError("not a repository list")
@@ -146,6 +166,8 @@ def registered_repo_owners(payload: Any) -> list[str]:
     for row in payload["repos"]:
         if not isinstance(row, dict):
             raise ValueError("a repository row is not an object")
+        if row.get("role") != OWNER_ROLE:
+            continue
         owner = owner_of_repo(row.get("repo"))
         if owner is not None:
             owners.add(owner)
@@ -198,24 +220,52 @@ async def read_registered_repo_owners(
     project's and is not used.
     """
     if identity.home_tenant_id != tenant_id:
-        return OwnersRead(owners=None, unknown_reason="tenant_scope_mismatch")
+        return _unknown(
+            "tenant_scope_mismatch",
+            tenant_id,
+            coord_tenant_id=(
+                None
+                if identity.home_tenant_id is None
+                else str(identity.home_tenant_id)
+            ),
+        )
     try:
         payload = await _proxy_coord_get(REGISTERED_REPOS_PATH, tenant_id=tenant_id)
-    except CoordTransportUnavailable:
-        return OwnersRead(owners=None, unknown_reason="coord_unreachable")
-    except HTTPException:
-        return OwnersRead(owners=None, unknown_reason="coord_refused")
-    except httpx.HTTPError:
+    except CoordTransportUnavailable as exc:
+        # Checked before ``HTTPException``, which it subclasses: its status is
+        # this backend's own 502/504, never coord's answer.
+        return _unknown("coord_unreachable", tenant_id, status_code=exc.status_code)
+    except HTTPException as exc:
+        return _unknown(
+            "coord_refused",
+            tenant_id,
+            status_code=exc.status_code,
+            detail=str(exc.detail)[:_LOGGED_DETAIL_CHARS],
+        )
+    except httpx.HTTPError as exc:
         # A transport error the proxy does not classify escapes it raw.
-        return OwnersRead(owners=None, unknown_reason="coord_unreachable")
-    except ValueError:
+        return _unknown("coord_unreachable", tenant_id, error=type(exc).__name__)
+    except ValueError as exc:
         # A 2xx whose body is not JSON (``json.JSONDecodeError``).
-        return OwnersRead(owners=None, unknown_reason="coord_unreadable")
+        return _unknown("coord_unreadable", tenant_id, error=type(exc).__name__)
     try:
         owners = registered_repo_owners(payload)
-    except ValueError:
-        return OwnersRead(owners=None, unknown_reason="coord_unreadable")
+    except ValueError as exc:
+        return _unknown("coord_unreadable", tenant_id, error=str(exc))
     return OwnersRead(owners=tuple(owners), unknown_reason=None)
+
+
+def _unknown(reason: UnknownReason, tenant_id: UUID, **context: object) -> OwnersRead:
+    """An UNKNOWN read, logged: with nothing configured, it withholds every
+    title in front of an audience, and the log line is what tells the operator
+    why afterwards."""
+    logger.warning(
+        "presentation_scope.registered_repo_owners_unknown",
+        reason=reason,
+        tenant_id=str(tenant_id),
+        **context,
+    )
+    return OwnersRead(owners=None, unknown_reason=reason)
 
 
 @dataclass(frozen=True)
