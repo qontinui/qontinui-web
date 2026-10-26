@@ -260,6 +260,13 @@ _VALIDATED_LOCALLY: dict[str, str] = {
         "to home); every row is scoped by the tenant get_memory_tenant / "
         "require_coord_tenant_admin_target resolve, never by the raw value"
     ),
+    "app.api.v1.endpoints.presentation": (
+        "reads it only through _effective_tenant_id / _effective_tenant_roles, "
+        "which match it against identity.tenants (a non-member selection "
+        "degrades to home); every row is keyed on that resolved tenant, and "
+        "operations' _tenant_headers forwards the header to coord's "
+        "/pr-merge/repos read"
+    ),
 }
 
 # Routes in modules that name a resolver or the header but which, read by a

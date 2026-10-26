@@ -13548,6 +13548,214 @@ async def get_coord_findings(
 
 
 # ---------------------------------------------------------------------------
+# Dossiers — `GET /operations/coord/dossiers` → coord `GET /coord/dossiers`
+#
+# Backs `/admin/coord/dossiers`, the list of every dossier head: filter by
+# readiness, live remediation-plan state, recurrence, dates and slug; sort;
+# page with a keyset cursor. Plan
+# `2026-10-03-dossier-query-door-filters-sort-cursor`, Phase 5. coord's door is
+# `findings::dossiers::get_dossiers` (qontinui-coord#3421), the operator twin of
+# the agent door `GET /coord/agent-dossiers` and the MCP tool
+# `coord_list_dossiers`; all three run one `dossiers_answer`.
+#
+# **Verbatim forward, and the refusal is coord's** — the same contract as the
+# findings proxy above. Every one of coord's eighteen accepted keys
+# (`DOSSIER_QUERY_KEYS`) is declared here and forwarded ONLY when the caller set
+# it. The string and date values are not re-validated at this hop: coord answers
+# a malformed value with a typed `400 invalid_query_parameter` and a foreign or
+# stale cursor with `400 cursor_malformed`, and a second validator here would
+# drift from coord's. The typed params (`limit`, `recurrence_min/max`,
+# `has_open_remediation`, `include_body`) are parsed by FastAPI, so a
+# non-integer `limit` is a 422 here. `readiness` and `remediation_state` are
+# LISTS, so a repeated key stays repeated on the wire, which coord accepts as
+# well as a comma-joined value.
+#
+# Degrade rather than 502, exactly as the findings proxy: a coord that predates
+# the door answers 404, and that must read as "not answering", never as an
+# empty dossier list. coord's own `200 {"available": false}` (store not
+# provisioned) gets the same degrade pair.
+# ---------------------------------------------------------------------------
+
+_COORD_DOSSIERS_PATH = "/coord/dossiers"
+
+
+@router.get("/coord/dossiers")
+async def get_coord_dossiers(
+    readiness: list[str] | None = Query(
+        default=None,
+        description=(
+            "Repeatable (or comma-separated). Exact readiness match; ``none`` "
+            "selects heads whose readiness is NULL (UNKNOWN)."
+        ),
+    ),
+    slug: str | None = Query(default=None, description="Exact dossier slug."),
+    q: str | None = Query(
+        default=None,
+        description="Case-insensitive substring over slug and title.",
+    ),
+    recurrence_min: int | None = Query(
+        default=None,
+        description="Inclusive lower bound on ``recurrence_count``.",
+    ),
+    recurrence_max: int | None = Query(
+        default=None,
+        description="Inclusive upper bound on ``recurrence_count``.",
+    ),
+    last_seen_since: str | None = Query(default=None, description="ISO date."),
+    last_seen_until: str | None = Query(default=None, description="ISO date."),
+    first_seen_since: str | None = Query(default=None, description="ISO date."),
+    first_seen_until: str | None = Query(default=None, description="ISO date."),
+    updated_since: str | None = Query(default=None, description="ISO date."),
+    updated_until: str | None = Query(default=None, description="ISO date."),
+    has_open_remediation: bool | None = Query(
+        default=None,
+        description=(
+            "Ledger-derived (free text, lags the plan); ``remediation_state`` "
+            "is the live one."
+        ),
+    ),
+    remediation_state: list[str] | None = Query(
+        default=None,
+        description=(
+            "Repeatable. The LIVE roll-up of the dossier's remediation plans "
+            "against coord's work units: none | draft | vetted | in_progress | "
+            "shipped | closed | unknown."
+        ),
+    ),
+    sort: str | None = Query(
+        default=None,
+        description=(
+            "last_seen (coord's default) | first_seen | updated | "
+            "recurrence_count | slug."
+        ),
+    ),
+    order: str | None = Query(default=None, description="desc (default) | asc."),
+    limit: int | None = Query(
+        default=None,
+        description=(
+            "Page size. Forwarded verbatim — coord owns the default and the clamp."
+        ),
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "The previous answer's ``next_cursor``, verbatim, under the SAME "
+            "filters and sort. A foreign or stale one is coord's typed 400."
+        ),
+    ),
+    include_body: bool | None = Query(
+        default=None,
+        description="``true`` adds each head's body (coord caps the page at 20).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return one page of dossier heads for the calling operator's tenant.
+
+    The body is coord's, verbatim: ``{"dossiers": [...], "facets":
+    {"readiness", "remediation_state"}, "facets_scope", "dedup",
+    "*_applied" echoes, ...}`` plus the bounded-read envelope (``available``,
+    ``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,
+    ``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant
+    is coord's to resolve from the forwarded bearer; nothing in the request
+    names it.
+
+    Degraded answers carry every envelope key as UNKNOWN (``null``), ``facets``
+    as ``null`` and ``dossiers`` empty, plus ``unavailable`` /
+    ``unavailable_kind`` — a page reading that body must say "could not read",
+    never "no dossiers".
+    """
+    params: dict[str, Any] = {}
+    if readiness:
+        params["readiness"] = readiness
+    if slug is not None:
+        params["slug"] = slug
+    if q is not None:
+        params["q"] = q
+    if recurrence_min is not None:
+        params["recurrence_min"] = recurrence_min
+    if recurrence_max is not None:
+        params["recurrence_max"] = recurrence_max
+    for key, value in (
+        ("last_seen_since", last_seen_since),
+        ("last_seen_until", last_seen_until),
+        ("first_seen_since", first_seen_since),
+        ("first_seen_until", first_seen_until),
+        ("updated_since", updated_since),
+        ("updated_until", updated_until),
+    ):
+        if value is not None:
+            params[key] = value
+    if has_open_remediation is not None:
+        params["has_open_remediation"] = has_open_remediation
+    if remediation_state:
+        params["remediation_state"] = remediation_state
+    if sort is not None:
+        params["sort"] = sort
+    if order is not None:
+        params["order"] = order
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    if include_body is not None:
+        params["include_body"] = include_body
+    try:
+        body = await _proxy_coord_get(
+            _COORD_DOSSIERS_PATH, params=params or None, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "available": False,
+                # null, not 0: nothing was counted.
+                "count": None,
+                "dossiers": [],
+                # UNKNOWN, not zero: no facet was counted.
+                "facets": None,
+                "truncated": None,
+                "bound_kind": "unknown",
+                "next_cursor": None,
+                "total": None,
+                "shown": 0,
+                # null, not the caller's request: no page was read, so no cap
+                # was applied (the findings proxy's reasoning).
+                "limit": None,
+                "filter_narrowed": None,
+                "enumerate_via": None,
+                "unavailable": (
+                    "coord's dossier door is not answering — its "
+                    "`/coord/dossiers` route returned 404, so the deployed "
+                    "coord predates it or the route is misrouted. Dossiers "
+                    "cannot be listed, which is not the same as there being none."
+                    if exc.status_code == 404
+                    else (
+                        "coord did not answer the dossier door "
+                        f"(HTTP {exc.status_code})."
+                    )
+                ),
+                "unavailable_kind": (
+                    "not_deployed" if exc.status_code == 404 else "unreachable"
+                ),
+            }
+        raise
+    if (
+        isinstance(body, dict)
+        and body.get("available") is False
+        and not body.get("unavailable")
+    ):
+        return {
+            **body,
+            "unavailable": (
+                "coord reports its findings store is not provisioned "
+                "(`available: false`). Dossiers cannot be listed, which is not "
+                "the same as there being none."
+            ),
+            "unavailable_kind": "unprovisioned",
+        }
+    return body
+
+
+# ---------------------------------------------------------------------------
 # Verification metrics — `GET /operations/coord/verification/metrics`
 #                      → coord `GET /coord/verification/metrics`
 #

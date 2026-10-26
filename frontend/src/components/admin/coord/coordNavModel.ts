@@ -21,7 +21,8 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review / Taste Inbox
- *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Trees° / Launch session° /
+ *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Session load† / Trees° /
+ *             Launch session° /
  *             Runner Drain° / Test Targets° / Migrations° / Deploys° /
  *             Releases° / Git Ops° / Federation° / Memory° / Onboarding° /
  *             Onboarding Status°
@@ -63,6 +64,7 @@ import {
   Cpu,
   FileText,
   Files,
+  FolderOpen,
   Gauge,
   Gavel,
   GitBranch,
@@ -73,6 +75,7 @@ import {
   Hand,
   HardDrive,
   History as HistoryIcon,
+  Hourglass,
   Images,
   Inbox,
   KeyRound,
@@ -320,6 +323,17 @@ export const GROUPS: NavGroup[] = [
         label: "Findings",
         icon: Lightbulb,
         testId: "coord-nav-findings",
+      },
+      {
+        // Beside Findings, because every dossier IS a finding: the durable
+        // head of a recurring defect. This page lists them all — filtered by
+        // readiness and by the LIVE state of their remediation plan, sorted by
+        // recurrences — which the findings feed's newest-first window cannot.
+        // Plan `2026-10-03-dossier-query-door-filters-sort-cursor`, Phase 5.
+        href: "/admin/coord/dossiers",
+        label: "Dossiers",
+        icon: FolderOpen,
+        testId: "coord-nav-dossiers",
       },
       {
         // Sits after Questions and Findings deliberately: Questions is where a
@@ -600,6 +614,21 @@ export const GROUPS: NavGroup[] = [
         coordAdminOnly: true,
       },
       {
+        // Plan `2026-10-23-session-duration-by-work-type-and-per-device-
+        // session-load` Phase 5: how long each work type holds a session
+        // slot, how many sessions each machine carries against its configured
+        // session budget, and how demand grows against the fleet's. Beside
+        // Spawns, which links to it, and `coordAdminOnly` for the same reason:
+        // its four proxies (`/operations/session-runs…`) are
+        // `require_coord_tenant_admin` (the rows name each run's device,
+        // account and session).
+        href: "/admin/coord/session-load",
+        label: "Session load",
+        icon: Hourglass,
+        testId: "coord-nav-session-load",
+        coordAdminOnly: true,
+      },
+      {
         href: "/admin/coord/trees",
         label: "Trees",
         icon: Boxes,
@@ -743,6 +772,9 @@ export const GROUPS: NavGroup[] = [
         // the `permission_prompt_capture` dial deciding whether those sessions
         // record their permission prompts as coord findings (plan
         // `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`),
+        // the `permission_auto_accept` dial deciding whether runners accept
+        // the tool permission prompts those sessions raise (plan
+        // `2026-10-23-runner-sessions-stop-at-permission-dialogs-so-accept-them-by-default-with-a-tenant-switch`),
         // the `account_selection_mode` dial runners force-apply unless the
         // machine is pinned (plan
         // `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`),

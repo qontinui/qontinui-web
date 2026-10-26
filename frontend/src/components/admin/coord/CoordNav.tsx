@@ -23,9 +23,16 @@
  * Phase 8: the raw alert list is agents' work, and the operator's rollup of
  * it — which open conditions no agent is handling — is the Conditions panel
  * on the Dev Ops page this row's alarm links to.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces`) the
+ * crumb and the two links stay — they only navigate — and the counts go: the
+ * unread count and the fleet alarm are the operator's triage hints, figures
+ * with no source or as-of an evaluator could read them by, so they sit inside
+ * `OperatorOnly`. Each link carries `?present=1` while presenting
+ * (`usePresentationHref`), so one opened in a new tab still presents.
  */
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, type ComponentProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, Server } from "lucide-react";
@@ -36,6 +43,7 @@ import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notifica
 import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { useRetainedValue } from "@/components/console";
+import { OperatorOnly, usePresentationHref } from "@/components/presentation";
 import type { FleetAlarm } from "@/components/admin/coord/useFleetAlarmBadge";
 import { findActiveLeaf, isLeafActive, type NavLeaf } from "./coordNavModel";
 
@@ -355,6 +363,19 @@ const TAB_BASE =
 const TAB_IDLE = "text-muted-foreground hover:text-foreground hover:bg-muted";
 const TAB_ACTIVE = "bg-primary text-primary-foreground";
 
+/** A header link: navigation-only, carrying `?present=1` while presenting. */
+function HeaderLink({
+  href,
+  children,
+  ...props
+}: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
+  return (
+    <Link href={usePresentationHref(href)} {...props}>
+      {children}
+    </Link>
+  );
+}
+
 export default function CoordNav() {
   const pathname = usePathname() ?? "";
   const notificationsBadge = useNotificationsBadge();
@@ -385,7 +406,7 @@ export default function CoordNav() {
           }
         : null;
     return (
-      <Link
+      <HeaderLink
         key={leaf.href}
         href={leaf.href}
         data-testid={leaf.testId}
@@ -400,28 +421,29 @@ export default function CoordNav() {
             there is. A zero never read still renders nothing, having no
             retained fact to qualify. */}
         {badge && (badge.count > 0 || (badge.hasRead && badge.stale)) && (
-          <span
-            data-testid={badge.testId}
-            className={cn(
-              "rounded-full px-1.5 text-[10px] font-bold leading-4",
-              active ? "bg-primary-foreground/20" : "bg-muted text-foreground"
-            )}
-            title={[badge.title, badge.stale ? STALE_TITLE_SUFFIX : null]
-              .filter(Boolean)
-              .join(" ")}
-            // Emitted in both states: `"false"` is a real answer ("the last
-            // read replaced this number"), distinct from a badge that never
-            // asked.
-            data-read-stale={badge.stale}
-          >
-            {badge.count}
-            {/* Visible, and not a colour or an opacity. Dimming the number was
+          <OperatorOnly>
+            <span
+              data-testid={badge.testId}
+              className={cn(
+                "rounded-full px-1.5 text-[10px] font-bold leading-4",
+                active ? "bg-primary-foreground/20" : "bg-muted text-foreground"
+              )}
+              title={[badge.title, badge.stale ? STALE_TITLE_SUFFIX : null]
+                .filter(Boolean)
+                .join(" ")}
+              // Emitted in both states: `"false"` is a real answer ("the last
+              // read replaced this number"), distinct from a badge that never
+              // asked.
+              data-read-stale={badge.stale}
+            >
+              {badge.count}
+              {/* Visible, and not a colour or an opacity. Dimming the number was
                 the first cut, and it makes the STALE state the hardest one to
                 READ — 10px bold text at 60% — which inverts the point. `*` is
                 the ordinary "see the note" marker and it survives at any
                 contrast. */}
-            {badge.stale ? "*" : ""}
-            {/* The note itself, for anyone not holding a mouse. `title` is not
+              {badge.stale ? "*" : ""}
+              {/* The note itself, for anyone not holding a mouse. `title` is not
                 an accessible name here: the accessible name of the enclosing
                 link is computed from its descendants' CONTENT, and this span
                 has content, so a screen reader announces "Notifications 7"
@@ -430,12 +452,13 @@ export default function CoordNav() {
                 Without this line the qualification is a sighted-mouse-user
                 feature, which leaves everyone else with exactly the unqualified
                 claim being fixed. */}
-            {badge.stale && (
-              <span className="sr-only"> {STALE_TITLE_SUFFIX}</span>
-            )}
-          </span>
+              {badge.stale && (
+                <span className="sr-only"> {STALE_TITLE_SUFFIX}</span>
+              )}
+            </span>
+          </OperatorOnly>
         )}
-      </Link>
+      </HeaderLink>
     );
   };
 
@@ -453,7 +476,9 @@ export default function CoordNav() {
         >
           {active.group && (
             <>
-              <span className="text-muted-foreground">{active.group.label}</span>
+              <span className="text-muted-foreground">
+                {active.group.label}
+              </span>
               <span className="opacity-60">·</span>
             </>
           )}
@@ -465,7 +490,7 @@ export default function CoordNav() {
       )}
       <div className="mx-1 h-5 w-px bg-border" aria-hidden />
       {STATUS_LINKS.map(renderDirect)}
-      <Link
+      <HeaderLink
         href={DEVOPS_OVERVIEW.href}
         data-testid="coord-nav-devops-alarm"
         className={cn(
@@ -475,8 +500,10 @@ export default function CoordNav() {
       >
         <Server className="h-3.5 w-3.5" />
         Dev Ops
-        <FleetAlarmBadges alarm={fleetAlarm} />
-      </Link>
+        <OperatorOnly>
+          <FleetAlarmBadges alarm={fleetAlarm} />
+        </OperatorOnly>
+      </HeaderLink>
     </nav>
   );
 }

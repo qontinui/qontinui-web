@@ -40146,6 +40146,254 @@
         "title": "PostMergeFollowupScopeWriteResult",
         "type": "object"
       },
+      "PresentationScopeConfigured": {
+        "description": "What the project has stored \u2014 the form's editable half.",
+        "properties": {
+          "confidential_terms": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Terms",
+            "type": "array"
+          },
+          "first_party_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stored owners, or null when none are configured.",
+            "title": "First Party Owners"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The email of whoever saved it last, when that is known.",
+            "title": "Updated By"
+          },
+          "version": {
+            "description": "0 when the project has never saved a scope.",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "first_party_owners",
+          "confidential_terms",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "PresentationScopeConfigured",
+        "type": "object"
+      },
+      "PresentationScopeDefaults": {
+        "description": "What applies when nothing is configured, read fresh for this viewer.",
+        "properties": {
+          "registered_repo_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owners of this project's registered repositories, or null when they could not be read.",
+            "title": "Registered Repo Owners"
+          },
+          "registered_repo_owners_unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tenant_scope_mismatch",
+                  "coord_unreachable",
+                  "coord_refused",
+                  "coord_unreadable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registered Repo Owners Unknown Reason"
+          },
+          "viewer_other_tenant_names": {
+            "description": "The names of the viewer's other projects. Always withheld for this viewer, whatever is configured.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Viewer Other Tenant Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "registered_repo_owners",
+          "registered_repo_owners_unknown_reason",
+          "viewer_other_tenant_names"
+        ],
+        "title": "PresentationScopeDefaults",
+        "type": "object"
+      },
+      "PresentationScopeOut": {
+        "description": "The scope a presentation-mode render applies, and how it was reached.",
+        "properties": {
+          "can_edit": {
+            "description": "Whether this caller may PUT the scope: an admin of this project, or qontinui staff \u2014 the same rule the PUT enforces.",
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "confidential_terms": {
+            "description": "The configured terms plus the viewer's other projects' names.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Terms",
+            "type": "array"
+          },
+          "configured": {
+            "$ref": "#/components/schemas/PresentationScopeConfigured"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/PresentationScopeDefaults"
+          },
+          "first_party_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owners whose items may show their titles. Null means UNKNOWN (see first_party_owners_unknown_reason): withhold everything.",
+            "title": "First Party Owners"
+          },
+          "first_party_owners_source": {
+            "enum": [
+              "configured",
+              "registered_repos"
+            ],
+            "title": "First Party Owners Source",
+            "type": "string"
+          },
+          "first_party_owners_unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tenant_scope_mismatch",
+                  "coord_unreachable",
+                  "coord_refused",
+                  "coord_unreadable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Party Owners Unknown Reason"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "first_party_owners",
+          "first_party_owners_source",
+          "first_party_owners_unknown_reason",
+          "confidential_terms",
+          "configured",
+          "defaults",
+          "can_edit"
+        ],
+        "title": "PresentationScopeOut",
+        "type": "object"
+      },
+      "PresentationScopeWrite": {
+        "additionalProperties": false,
+        "description": "``PUT /presentation/scope`` \u2014 replaces the tenant's stored scope.\n\nA refusal names a confidential term by its position, never by its text:\nthe terms are the names presentation mode exists to keep off screen.",
+        "properties": {
+          "confidential_terms": {
+            "description": "Terms that withhold a title wherever they appear, matched ignoring case, accents, spacing and punctuation. Stored trimmed with whitespace collapsed; a term matching an earlier one is dropped. The viewer's other projects' names are always added on read and are never stored.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Terms",
+            "type": "array"
+          },
+          "expected_tenant_id": {
+            "description": "The `tenant_id` of the scope this edit was made against. It never chooses the row -- the write lands in the project this request resolves to -- it only refuses a write made for another project: when the two differ the answer is 409 `presentation_scope_tenant_mismatch` and nothing is written.",
+            "format": "uuid",
+            "title": "Expected Tenant Id",
+            "type": "string"
+          },
+          "expected_version": {
+            "description": "The `configured.version` this edit was made against (0 when the project has never saved a scope). A write against a version that moved answers 409 `presentation_scope_conflict`.",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "first_party_owners": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GitHub owners whose repositories are this project's own, or null to use the owners of the project's registered repositories. An empty list withholds every title in presentation mode. Stored trimmed, without a leading @, lower-cased and de-duplicated.",
+            "title": "First Party Owners"
+          }
+        },
+        "required": [
+          "first_party_owners",
+          "confidential_terms",
+          "expected_version",
+          "expected_tenant_id"
+        ],
+        "title": "PresentationScopeWrite",
+        "type": "object"
+      },
       "PresignedUrlResponse": {
         "description": "Response for presigned URL generation",
         "properties": {
@@ -96796,6 +97044,370 @@
         ]
       }
     },
+    "/api/v1/operations/coord/dossiers": {
+      "get": {
+        "description": "Return one page of dossier heads for the calling operator's tenant.\n\nThe body is coord's, verbatim: ``{\"dossiers\": [...], \"facets\":\n{\"readiness\", \"remediation_state\"}, \"facets_scope\", \"dedup\",\n\"*_applied\" echoes, ...}`` plus the bounded-read envelope (``available``,\n``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,\n``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant\nis coord's to resolve from the forwarded bearer; nothing in the request\nnames it.\n\nDegraded answers carry every envelope key as UNKNOWN (``null``), ``facets``\nas ``null`` and ``dossiers`` empty, plus ``unavailable`` /\n``unavailable_kind`` \u2014 a page reading that body must say \"could not read\",\nnever \"no dossiers\".",
+        "operationId": "api_v1_operations_coord_dossiers_get",
+        "parameters": [
+          {
+            "description": "Repeatable (or comma-separated). Exact readiness match; ``none`` selects heads whose readiness is NULL (UNKNOWN).",
+            "in": "query",
+            "name": "readiness",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable (or comma-separated). Exact readiness match; ``none`` selects heads whose readiness is NULL (UNKNOWN).",
+              "title": "Readiness"
+            }
+          },
+          {
+            "description": "Exact dossier slug.",
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact dossier slug.",
+              "title": "Slug"
+            }
+          },
+          {
+            "description": "Case-insensitive substring over slug and title.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring over slug and title.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Inclusive lower bound on ``recurrence_count``.",
+            "in": "query",
+            "name": "recurrence_min",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive lower bound on ``recurrence_count``.",
+              "title": "Recurrence Min"
+            }
+          },
+          {
+            "description": "Inclusive upper bound on ``recurrence_count``.",
+            "in": "query",
+            "name": "recurrence_max",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive upper bound on ``recurrence_count``.",
+              "title": "Recurrence Max"
+            }
+          },
+          {
+            "description": "ISO date.",
+            "in": "query",
+            "name": "last_seen_since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date.",
+              "title": "Last Seen Since"
+            }
+          },
+          {
+            "description": "ISO date.",
+            "in": "query",
+            "name": "last_seen_until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date.",
+              "title": "Last Seen Until"
+            }
+          },
+          {
+            "description": "ISO date.",
+            "in": "query",
+            "name": "first_seen_since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date.",
+              "title": "First Seen Since"
+            }
+          },
+          {
+            "description": "ISO date.",
+            "in": "query",
+            "name": "first_seen_until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date.",
+              "title": "First Seen Until"
+            }
+          },
+          {
+            "description": "ISO date.",
+            "in": "query",
+            "name": "updated_since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date.",
+              "title": "Updated Since"
+            }
+          },
+          {
+            "description": "ISO date.",
+            "in": "query",
+            "name": "updated_until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date.",
+              "title": "Updated Until"
+            }
+          },
+          {
+            "description": "Ledger-derived (free text, lags the plan); ``remediation_state`` is the live one.",
+            "in": "query",
+            "name": "has_open_remediation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Ledger-derived (free text, lags the plan); ``remediation_state`` is the live one.",
+              "title": "Has Open Remediation"
+            }
+          },
+          {
+            "description": "Repeatable. The LIVE roll-up of the dossier's remediation plans against coord's work units: none | draft | vetted | in_progress | shipped | closed | unknown.",
+            "in": "query",
+            "name": "remediation_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable. The LIVE roll-up of the dossier's remediation plans against coord's work units: none | draft | vetted | in_progress | shipped | closed | unknown.",
+              "title": "Remediation State"
+            }
+          },
+          {
+            "description": "last_seen (coord's default) | first_seen | updated | recurrence_count | slug.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "last_seen (coord's default) | first_seen | updated | recurrence_count | slug.",
+              "title": "Sort"
+            }
+          },
+          {
+            "description": "desc (default) | asc.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "desc (default) | asc.",
+              "title": "Order"
+            }
+          },
+          {
+            "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "The previous answer's ``next_cursor``, verbatim, under the SAME filters and sort. A foreign or stale one is coord's typed 400.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The previous answer's ``next_cursor``, verbatim, under the SAME filters and sort. A foreign or stale one is coord's typed 400.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "``true`` adds each head's body (coord caps the page at 20).",
+            "in": "query",
+            "name": "include_body",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "``true`` adds each head's body (coord caps the page at 20).",
+              "title": "Include Body"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Dossiers Api V1 Operations Coord Dossiers Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Dossiers",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/findings": {
       "get": {
         "description": "Return ``coord.findings`` rows for the calling operator's tenant.\n\nEvery answer is a PAGE of the corpus, never the corpus: coord's envelope\ncarries ``truncated`` / ``bound_kind`` / ``next_cursor``, and the response's\n``next_cursor`` feeds this route's ``cursor`` parameter to fetch the next\npage (a malformed one is coord's 400, re-raised verbatim). Without that\npass-through a client following ``next_cursor`` would be served page 1\nforever.\n\nResponse envelope mirrors coord's:\n``{\"available\", \"count\", \"findings\": [...], \"finding_id_applied\",\n\"kind_applied\", \"limit\", \"resource_keys_applied\" (a COUNT),\n\"resource_keys_truncated\", \"triaged_applied\" (\"any\" | \"false\" | \"true\")}``,\nplus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.\nThe ``*_applied`` echoes are what let the page say which filter coord\nactually honoured rather than which one it was asked for \u2014 a filter coord\ndropped is otherwise invisible.\n\n**There is no ``expired`` boolean.** Expiry is derived client-side from\n``expires_at``, and it has to be: a ``kind=dossier`` row is a durable\ndossier head carrying a 100-year TTL, so a server-side \"expiring\" flag\nwould be true of every row that never expires in practice.\n\nDegrade rather than 502. coord's ``/coord/findings`` route is on coord's\n``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates\nit or a routing fault, and must read as \"not answering\", never as an empty\nfindings store. Same ``unavailable`` / ``unavailable_kind`` pair the\nlanded-write feed uses.\n\ncoord ALSO answers ``200 {\"available\": false}`` when ``coord.findings`` is\nnot provisioned, and says that must read as UNKNOWN. The page branches on\n``unavailable`` alone, so that answer is given the same degrade pair here\n(``unavailable_kind: \"unprovisioned\"``) \u2014 otherwise a store coord just said\nit cannot read would render as \"0 findings\".",
@@ -106224,6 +106836,447 @@
         ]
       }
     },
+    "/api/v1/operations/session-runs": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs`` (tenant-scoped), verbatim.\n\nReturns ``{runs: [Run], shown, total, truncated, next_cursor, as_of}``,\nnewest first, or coord's ``503 schema_missing`` while the run record is\nnot migrated. A ``Run`` carries its device, session id and ``run_seq``,\n``initiator``, ``work_type`` (and the facts it was classified from \u2014\n``skill``, ``first_command``, ``spawn_origin``, ``dispatch_source``,\n``gate_id``, ``spawn_request_id`` \u2026), its timestamps, ``wall_seconds`` and\n``held_after_finish_seconds`` (``null`` while open), ``end_reason`` /\n``end_source`` and ``history_complete`` (``false`` on a backfilled row).",
+        "operationId": "api_v1_operations_session_runs_get",
+        "parameters": [
+          {
+            "description": "Only runs classified as this work type.",
+            "in": "query",
+            "name": "work_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs classified as this work type.",
+              "title": "Work Type"
+            }
+          },
+          {
+            "description": "Only runs on this coord device.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs on this coord device.",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "Only runs this initiator started.",
+            "in": "query",
+            "name": "initiator",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "operator",
+                    "coord",
+                    "runner_local",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs this initiator started.",
+              "title": "Initiator"
+            }
+          },
+          {
+            "description": "Only runs started at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs started at or after this instant. Must carry a UTC offset \u2014 a naive timestamp names no instant.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Only runs started before this instant (offset required).",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only runs started before this instant (offset required).",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "coord's ``next_cursor`` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "coord's ``next_cursor`` from the previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size; coord's default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size; coord's default is 50.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Runs",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/session-runs/concurrency": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs/concurrency`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, bucket_seconds, since, raw_from, grid, devices:\n[Device], truncated, as_of}``. A ``Device`` carries ``name``, ``budget``\n(``{state: \"published\" | \"zero\" | \"none\", value, label}`` \u2014 read from\n``max_concurrent_agents``, never from a role), ``last_heartbeat`` /\n``heartbeat_age_seconds``, ``known_device``, ``open_now``, ``peak``,\n``p95`` and its ``series`` of ``{bucket_start, source, total, by_work_type}``.",
+        "operationId": "api_v1_operations_session_runs_concurrency_get",
+        "parameters": [
+          {
+            "description": "Only this coord device (unset = every device that ran a session).",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this coord device (unset = every device that ran a session).",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[1-9][0-9]{0,4}[dh]$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+              "title": "Window"
+            }
+          },
+          {
+            "description": "Series bucket width; coord's default is ``1h``.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "1m",
+                    "5m",
+                    "15m",
+                    "1h",
+                    "hour",
+                    "6h",
+                    "1d",
+                    "day",
+                    "7d",
+                    "week"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Series bucket width; coord's default is ``1h``.",
+              "title": "Bucket"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Run Concurrency",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/session-runs/growth": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, bucket_seconds, since, raw_from,\nrecording_since, devices_recording, series: [Bucket], fleet, truncated,\nas_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and\ntheir totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;\n``fleet`` carries ``available_state`` \u2014 ``published``,\n``no_budget_published`` (no device published a budget) or\n``zero_budget_published`` (every published budget is 0) \u2014 with\n``available_slot_hours_per_day`` / ``_per_bucket`` (published non-zero\nbudgets \u00d7 24) stated only for ``published`` and ``null`` otherwise, never\n0; and how many devices published a budget, a zero budget or none.\n``recording_since: null`` means nothing is recorded yet \u2014 an absent bucket\nbefore it is UNKNOWN, not zero.",
+        "operationId": "api_v1_operations_session_runs_growth_get",
+        "parameters": [
+          {
+            "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[1-9][0-9]{0,4}[dh]$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+              "title": "Window"
+            }
+          },
+          {
+            "description": "Day (coord's default) or week buckets.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "1d",
+                    "day",
+                    "7d",
+                    "week"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Day (coord's default) or week buckets.",
+              "title": "Bucket"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Run Growth",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/session-runs/stats": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/session-runs/stats`` (tenant-scoped), verbatim.\n\nReturns ``{window_seconds, since, group_by, population, groups: [Group],\nclassifier_version, as_of}``. Each group carries ``runs``, ``open_now``,\n``wall_seconds {p50, p90, p99, sum, samples}`` over OBSERVED ends only,\n``slot_hours``, ``active_seconds``, ``held_after_finish_seconds {sum,\nsamples}`` and the ``inferred`` / ``reconciled`` / ``unknown`` counts. A\npercentile over no observed end is ``null`` \u2014 coord's UNKNOWN.",
+        "operationId": "api_v1_operations_session_runs_stats_get",
+        "parameters": [
+          {
+            "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[1-9][0-9]{0,4}[dh]$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default.",
+              "title": "Window"
+            }
+          },
+          {
+            "description": "Group by ``work_type`` (coord's default), ``device``, or both.",
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "work_type",
+                    "device",
+                    "device,work_type",
+                    "work_type,device"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Group by ``work_type`` (coord's default), ``device``, or both.",
+              "title": "Group By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Run Stats",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/sessions": {
       "get": {
         "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains three fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
@@ -112542,6 +113595,82 @@
         "summary": "Correct an artifact's kind and LOCK it against future re-scans",
         "tags": [
           "plan-library"
+        ]
+      }
+    },
+    "/api/v1/presentation/scope": {
+      "get": {
+        "operationId": "api_v1_presentation_scope_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresentationScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read the active project's presentation scope",
+        "tags": [
+          "presentation"
+        ]
+      },
+      "put": {
+        "operationId": "api_v1_presentation_scope_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresentationScopeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresentationScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not an admin of the active project."
+          },
+          "409": {
+            "description": "The stored scope moved since expected_version, or the active project is not expected_tenant_id."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Replace the active project's stored presentation scope",
+        "tags": [
+          "presentation"
         ]
       }
     },
