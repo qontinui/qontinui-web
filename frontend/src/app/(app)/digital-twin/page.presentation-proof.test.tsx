@@ -31,9 +31,10 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import type { WalkOutcome } from "@/app/(app)/admin/coord/work-units/planWalk";
-import type {
-  CaptionKey,
-  PresentationScopeState,
+import {
+  isPresentationReady,
+  type CaptionKey,
+  type PresentationScopeState,
 } from "@/components/presentation";
 import {
   expectPresentationSafe,
@@ -375,5 +376,16 @@ describe("/digital-twin restricted, in presentation mode", () => {
       );
       expectPresentationSafe(view);
     }
+  });
+});
+
+describe("/digital-twin registration", () => {
+  // Everything above proves the page is safe to show; this is what lets it be
+  // shown. Without the entry in PRESENTATION_READY_ROUTES the layout's gate
+  // (`PresentationPage`) withholds the whole page in presentation mode, and
+  // none of the proof above would reach an evaluator.
+  it("is registered as presentation-ready, so the layout's gate lets the page through", () => {
+    expect(isPresentationReady("/digital-twin")).toBe(true);
+    expect(isPresentationReady("/digital-twin?present=1")).toBe(true);
   });
 });
