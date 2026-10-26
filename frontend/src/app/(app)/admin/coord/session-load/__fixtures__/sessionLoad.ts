@@ -207,7 +207,7 @@ export function runFx(over: Record<string, unknown> = {}) {
     id: "0b6f7f0e-2a59-4d3c-9b8e-5d1f2c3a4b5c",
     device_id: DEVICE_A,
     claude_code_session_id: "1d2c3b4a-0000-4000-8000-000000000001",
-    run_seq: 0,
+    run_seq: 1,
     initiator: "coord",
     work_type: "post_merge",
     classifier_version: 1,

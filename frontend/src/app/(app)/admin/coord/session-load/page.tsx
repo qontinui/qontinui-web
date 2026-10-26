@@ -186,6 +186,8 @@ export default function CoordSessionLoadPage() {
         statsIssue: load.byType.issue,
         machines,
         concurrencyIssue: load.concurrency.issue,
+        growthLoaded: growth !== null,
+        growthIssue: load.growth.issue,
         trend,
         windowLabel: spec.label,
       }),
@@ -194,6 +196,8 @@ export default function CoordSessionLoadPage() {
       load.byType.issue,
       machines,
       load.concurrency.issue,
+      growth,
+      load.growth.issue,
       trend,
       spec.label,
     ]
@@ -340,7 +344,11 @@ export default function CoordSessionLoadPage() {
                 className="text-sm text-muted-foreground italic"
                 data-testid="coord-session-load-types-empty"
               >
-                Coord recorded no session run started in {spec.label}.
+                Coord recorded no session run started in {spec.label}
+                {load.byType.issue && stats
+                  ? ` at the last good read (as of ${absoluteTime(stats.as_of)}) — the latest refresh failed, so this may be stale`
+                  : ""}
+                .
               </p>
             )
           }
@@ -411,7 +419,11 @@ export default function CoordSessionLoadPage() {
                 className="text-sm text-muted-foreground italic"
                 data-testid="coord-session-load-machines-empty"
               >
-                No machine recorded a session run in {spec.label}.
+                No machine recorded a session run in {spec.label}
+                {load.concurrency.issue && load.concurrency.data
+                  ? ` at the last good read (as of ${absoluteTime(load.concurrency.data.as_of)}) — the latest refresh failed, so this may be stale`
+                  : ""}
+                .
               </p>
             )
           }
@@ -474,7 +486,7 @@ export default function CoordSessionLoadPage() {
                 ? `Runners have recorded session runs since ${absoluteTime(growth.recording_since)} (${growth.devices_recording?.length ?? "an unknown number of"} machine${growth.devices_recording?.length === 1 ? "" : "s"} recording).`
                 : "No runner has recorded a session run yet — demand before recording began is unknown, not zero."}
               {growth.truncated
-                ? " Coord capped the read at its interval limit, so recent days are lower bounds."
+                ? " Coord capped the read at its interval limit, so days inside coord's 31-day raw horizon may be lower bounds."
                 : ""}
             </p>
           </div>

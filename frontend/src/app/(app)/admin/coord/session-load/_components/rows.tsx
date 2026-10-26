@@ -28,6 +28,7 @@ import {
   initiatorLabel,
   openVsBudgetText,
   runLinks,
+  runResumeText,
   runWallText,
   runsText,
   wallTimeText,
@@ -342,13 +343,14 @@ export function RunRow({
         <span title={`${workTypeLabel(run.work_type)} on ${deviceName}`}>
           <span className="font-medium">{workTypeLabel(run.work_type)}</span>
           <span className="text-muted-foreground"> · {deviceName}</span>
-          {run.run_seq > 0 && (
+          {runResumeText(run) !== null && (
             <span
               className="text-muted-foreground"
-              title="a resumed run of the same session"
+              title="a resumed run of the same session (coord numbers runs from 1)"
+              data-testid="coord-session-load-run-resumed"
             >
               {" "}
-              · resumed (run {run.run_seq + 1})
+              · {runResumeText(run)}
             </span>
           )}
         </span>

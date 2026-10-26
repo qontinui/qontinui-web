@@ -71,6 +71,7 @@ import {
   readStats,
   runFilterCounts,
   runLinks,
+  runResumeText,
   runWallText,
   runsText,
   sessionLoadIssueText,
@@ -502,6 +503,45 @@ describe("growth", () => {
     );
   });
 
+  it("a no-budget fleet whose figure coord sends as null reads 'none published', not 'no figures'", () => {
+    const viaCount = fleetAvailable(
+      growth(1, () => 1, {
+        fleet: {
+          available_slot_hours_per_day: null,
+          devices_with_budget: 0,
+          devices_zero_budget: 0,
+          devices_without_budget: 3,
+        },
+      })
+    );
+    expect(viaCount.kind).toBe("none_published");
+    const viaState = fleetAvailable(
+      growth(1, () => 1, {
+        fleet: { available_slot_hours_per_day: null, state: "none_published" },
+      })
+    );
+    expect(viaState.kind).toBe("none_published");
+    // A null figure with budgets published is a genuine unknown.
+    expect(
+      fleetAvailable(
+        growth(1, () => 1, {
+          fleet: { available_slot_hours_per_day: null, devices_with_budget: 2 },
+        })
+      ).kind
+    ).toBe("unknown");
+  });
+
+  it("an unknown zero/none count is said, never folded into zero", () => {
+    const a = fleetAvailable(
+      growth(1, () => 1, {
+        fleet: { available_slot_hours_per_day: 336, devices_with_budget: 1 },
+      })
+    );
+    expect(fleetAvailableText(a)).toMatch(
+      /not counted: unknown with a zero budget, unknown with none published/
+    );
+  });
+
   it("no published budget means nothing to cross — not a crossing at 0", () => {
     const g = growth(20, (i) => i, {
       fleet: {
@@ -544,6 +584,12 @@ describe("runs", () => {
     expect(runWallText(run({ wall_seconds: null }), nowMs)).toBe(
       "wall time unknown"
     );
+  });
+
+  it("names a resumed run by coord's own run_seq, which starts at 1", () => {
+    expect(runResumeText(run({ run_seq: 1 }))).toBeNull();
+    expect(runResumeText(run({ run_seq: 2 }))).toBe("resumed (run 2)");
+    expect(runResumeText(run({ run_seq: 5 }))).toBe("resumed (run 5)");
   });
 
   it("links the gate, spawn request, session and work unit it names", () => {
@@ -594,6 +640,8 @@ describe("the health strip", () => {
   const base = {
     statsIssue: null,
     concurrencyIssue: null,
+    growthLoaded: true,
+    growthIssue: null,
     trend: null,
     windowLabel: "the last 7 days",
   };
@@ -666,7 +714,71 @@ describe("the health strip", () => {
     expect(h.detail).toMatch(/1 machine silent — open runs unknown/);
     expect(
       deriveSessionLoadHealth({ ...base, stats: s, machines: null }).detail
-    ).toMatch(/per-machine load unknown/);
+    ).toMatch(/per-machine load not read yet/);
+  });
+
+  it("a failed refresh behind kept figures is STALE — amber, never green", () => {
+    const s = statsFx([groupFx({ inferred_count: 0 })]) as unknown as StatsWire;
+    const machines = machineLines(
+      concurrencyFx([deviceFx()]) as unknown as ConcurrencyWire,
+      null
+    );
+    const fresh = deriveSessionLoadHealth({ ...base, stats: s, machines });
+    expect(fresh.level).toBe("green");
+    const err = { kind: "error", message: "502" } as const;
+    for (const over of [
+      { statsIssue: err },
+      { concurrencyIssue: err },
+      { growthIssue: err },
+    ]) {
+      const h = deriveSessionLoadHealth({
+        ...base,
+        stats: s,
+        machines,
+        ...over,
+      });
+      expect(h.level).toBe("amber");
+      expect(h.detail).toMatch(
+        /Last refresh failed — the .* are from the last good read/
+      );
+    }
+  });
+
+  it("a read that never answered is UNKNOWN on the strip", () => {
+    const s = statsFx([groupFx({ inferred_count: 0 })]) as unknown as StatsWire;
+    const err = { kind: "error", message: "502" } as const;
+    const noMachines = deriveSessionLoadHealth({
+      ...base,
+      stats: s,
+      machines: null,
+      concurrencyIssue: err,
+    });
+    expect(noMachines.level).toBe("amber");
+    expect(noMachines.detail).toMatch(
+      /per-machine load unknown — coord did not answer/
+    );
+    const noGrowth = deriveSessionLoadHealth({
+      ...base,
+      stats: s,
+      machines: [],
+      growthLoaded: false,
+      growthIssue: err,
+    });
+    expect(noGrowth.level).toBe("amber");
+    expect(noGrowth.detail).toMatch(/growth unknown — coord did not answer/);
+  });
+
+  it("an unreadable budget gets its own clause, apart from 'no budget published'", () => {
+    const s = statsFx([groupFx({ inferred_count: 0 })]) as unknown as StatsWire;
+    const machines = machineLines(
+      concurrencyFx([
+        deviceFx({ budget: { state: "mystery" } }),
+      ]) as unknown as ConcurrencyWire,
+      null
+    );
+    const h = deriveSessionLoadHealth({ ...base, stats: s, machines });
+    expect(h.detail).toMatch(/1 machine whose budget this page cannot read/);
+    expect(h.detail).not.toMatch(/no budget published/);
   });
 
   it("a missing group count makes the total unknown, not a smaller sum", () => {

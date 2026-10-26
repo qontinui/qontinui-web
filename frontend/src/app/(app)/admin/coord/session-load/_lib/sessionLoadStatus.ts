@@ -45,6 +45,7 @@
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
+import { readIsUnknown } from "@/components/console/readFailure";
 import type { Attention } from "@/components/console/attention";
 import {
   CI_YELLOW,
@@ -262,7 +263,14 @@ export interface GrowthBucketWire {
 }
 
 export interface GrowthFleetWire {
-  available_slot_hours_per_day?: number;
+  /**
+   * `null` when coord cannot state it — including a fleet where no device
+   * published a budget, which coord marks with `state` and
+   * `devices_with_budget: 0`.
+   */
+  available_slot_hours_per_day?: number | null;
+  /** coord's verdict on the figure (e.g. `"published"`, `"none_published"`). */
+  state?: string | null;
   devices_with_budget?: number;
   devices_zero_budget?: number;
   devices_without_budget?: number;
@@ -842,6 +850,20 @@ export type FleetAvailable =
     }
   | { kind: "unknown" };
 
+/** Fleet `state` values that say no device published a non-zero budget. */
+const NO_BUDGET_STATES: ReadonlySet<string> = new Set([
+  "none",
+  "none_published",
+  "no_budget",
+  "no_budget_published",
+]);
+
+/**
+ * What the fleet's budgets make available. "None published" is decided
+ * BEFORE the figure's null check: coord sends `available_slot_hours_per_day:
+ * null` for a fleet with no budget, and that fleet must read "no budget
+ * published", not "coord sent no figures".
+ */
 export function fleetAvailable(growth: GrowthWire): FleetAvailable {
   const f = growth.fleet;
   if (!f) return { kind: "unknown" };
@@ -849,8 +871,14 @@ export function fleetAvailable(growth: GrowthWire): FleetAvailable {
   const withBudget = finite(f.devices_with_budget);
   const zero = finite(f.devices_zero_budget);
   const none = finite(f.devices_without_budget);
+  if (
+    withBudget === 0 ||
+    (typeof f.state === "string" && NO_BUDGET_STATES.has(f.state))
+  ) {
+    return { kind: "none_published", devicesZero: zero, devicesNone: none };
+  }
   if (perDay === null || withBudget === null) return { kind: "unknown" };
-  if (withBudget === 0 || perDay <= 0) {
+  if (perDay <= 0) {
     return { kind: "none_published", devicesZero: zero, devicesNone: none };
   }
   return {
@@ -870,7 +898,10 @@ export function fleetAvailableText(a: FleetAvailable): string {
       return `Fleet slot-hours available: unknown — no machine published a non-zero configured session budget (${countText(a.devicesZero)} published zero, ${countText(a.devicesNone)} published none).`;
     case "known":
       return `Fleet slot-hours available: ${formatSlotHoursPerDay(a.perDay)} — the configured session budgets of ${plural(a.devicesWithBudget, "machine")} × 24 h${
-        (a.devicesZero ?? 0) + (a.devicesNone ?? 0) > 0
+        // An unknown count is shown as "unknown", never folded into zero.
+        a.devicesZero === null ||
+        a.devicesNone === null ||
+        a.devicesZero + a.devicesNone > 0
           ? `; not counted: ${countText(a.devicesZero)} with a zero budget, ${countText(a.devicesNone)} with none published`
           : ""
       }.`;
@@ -1405,6 +1436,19 @@ export function deriveRunStatus(run: SessionRunWire): RowStatus<RunKind> {
   );
 }
 
+/**
+ * `resumed (run 2)` for a run after a session's first, else `null`. coord
+ * numbers a session's runs from 1 (the ingest refuses `run_seq < 1`): a boot
+ * resume or a handoff adoption continues the same session as `run_seq + 1`.
+ */
+export function runResumeText(
+  run: Pick<SessionRunWire, "run_seq">
+): string | null {
+  return typeof run.run_seq === "number" && run.run_seq > 1
+    ? `resumed (run ${run.run_seq})`
+    : null;
+}
+
 /** The run's wall time so far or in full, with its unit. */
 export function runWallText(run: SessionRunWire, nowMs: number): string {
   const wall = finite(run.wall_seconds);
@@ -1514,6 +1558,9 @@ export interface SessionLoadHealthInput {
   statsIssue: SessionLoadIssue | null;
   machines: MachineLine[] | null;
   concurrencyIssue: SessionLoadIssue | null;
+  /** Whether a growth body is held (fresh or kept from the last good read). */
+  growthLoaded: boolean;
+  growthIssue: SessionLoadIssue | null;
   trend: TrendReading | null;
   windowLabel: string;
 }
@@ -1533,13 +1580,25 @@ export const UNKNOWN_SHARE_AMBER = 0.05;
  * that did not answer, a silent or budget-less machine, more than
  * {@link UNKNOWN_SHARE_AMBER} of runs unclassified or ended by inference — or
  * when a machine is over its budget or the fleet already demands more than
- * {@link TREND_THRESHOLD} of what it has. Never red: this page measures.
+ * {@link TREND_THRESHOLD} of what it has. **A failed refresh of ANY of the
+ * three aggregate reads disqualifies green**, even when the last good body is
+ * still shown: stale figures are not a green verdict (style guide R6, the
+ * STALE arm), and a read that has never answered is UNKNOWN
+ * (`readIsUnknown`). Never red: this page measures.
  */
 export function deriveSessionLoadHealth(
   input: SessionLoadHealthInput
 ): SessionLoadHealth {
-  const { stats, statsIssue, machines, concurrencyIssue, trend, windowLabel } =
-    input;
+  const {
+    stats,
+    statsIssue,
+    machines,
+    concurrencyIssue,
+    growthLoaded,
+    growthIssue,
+    trend,
+    windowLabel,
+  } = input;
   if (stats === null) {
     const issue = statsIssue;
     return {
@@ -1610,15 +1669,16 @@ export function deriveSessionLoadHealth(
       title: "Runs coord closed because their device stopped reporting them",
     });
   }
-  if (machines === null) {
-    clauses.push("per-machine load unknown");
+  if (readIsUnknown(machines !== null, concurrencyIssue !== null)) {
+    clauses.push("per-machine load unknown — coord did not answer");
+  } else if (machines === null) {
+    clauses.push("per-machine load not read yet");
   } else {
     const silent = machines.filter(
       (m) => m.status.kind === "silent" || m.status.kind === "unregistered"
     );
-    const noBudget = machines.filter(
-      (m) => m.status.kind === "no_budget" || m.status.kind === "unknown"
-    );
+    const noBudget = machines.filter((m) => m.status.kind === "no_budget");
+    const unreadable = machines.filter((m) => m.status.kind === "unknown");
     const over = machines.filter((m) => m.status.kind === "over_budget");
     if (over.length > 0)
       clauses.push(
@@ -1632,24 +1692,38 @@ export function deriveSessionLoadHealth(
       clauses.push(
         `${plural(noBudget.length, "machine")} with no budget published`
       );
+    if (unreadable.length > 0)
+      clauses.push(
+        `${plural(unreadable.length, "machine")} whose budget this page cannot read`
+      );
   }
+  if (readIsUnknown(growthLoaded, growthIssue !== null)) {
+    clauses.push("growth unknown — coord did not answer");
+  }
+  // A kept body behind a failed refresh is STALE: still shown, never green.
+  const stale: string[] = [];
+  if (statsIssue) stale.push("work-type figures");
+  if (concurrencyIssue && machines !== null) stale.push("per-machine figures");
+  if (growthIssue && growthLoaded) stale.push("growth figures");
   if (trend?.kind === "already_above") {
     clauses.push(
       `demand already at ${Math.round(TREND_THRESHOLD * 100)} % of available slot-hours`
     );
   }
-  const level: HealthStripLevel = clauses.length > 0 ? "amber" : "green";
+  const level: HealthStripLevel =
+    clauses.length > 0 || stale.length > 0 ? "amber" : "green";
   const headline = `${runs === null ? "An unknown number of" : runs} run${runs === 1 ? "" : "s"} in ${windowLabel}, holding ${formatSlotHours(totals.slotHours)}${
     totals.openNow === null ? "" : ` · ${totals.openNow} open now`
   }`;
   const detailParts: string[] = [];
   if (clauses.length > 0) detailParts.push(`${clauses.join("; ")}.`);
-  if (statsIssue)
+  if (stale.length > 0) {
     detailParts.push(
-      `Last refresh failed — figures are from the last good read. ${sessionLoadIssueText(statsIssue, "the latest figures")}`
+      `Last refresh failed — the ${stale.join(", ")} are from the last good read.`
     );
-  if (concurrencyIssue && machines !== null) {
-    detailParts.push("Per-machine figures are from the last good read.");
+  }
+  if (statsIssue) {
+    detailParts.push(sessionLoadIssueText(statsIssue, "the latest figures"));
   }
   return {
     level,
