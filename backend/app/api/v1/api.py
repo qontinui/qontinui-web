@@ -123,9 +123,11 @@ from app.api.v1.endpoints import (
     semantic_search,
     served_routes,
     session_repository,
+    session_runs,
     settings,
     skills,
     snapshots,
+    spawn_ledger,
     state_discovery,
     state_discovery_results,
     state_machine_configs,
@@ -252,6 +254,23 @@ api_router.include_router(internal.router, prefix="/internal", tags=["internal"]
 # Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` 4b.
 api_router.include_router(
     repo_followup_dials.router, prefix="/operations", tags=["operations"]
+)
+# Spawn ledger reads — every spawn coord was asked to place, where it went,
+# how long it waited and how it ended. Under `/operations` beside the reads the
+# Spawns page uses with it; a sibling module so the operations package's hub
+# file is untouched. Plan
+# `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration` Phase 5.
+api_router.include_router(
+    spawn_ledger.router, prefix="/operations", tags=["operations"]
+)
+# Session load reads — how long each work type holds a session slot, how many
+# sessions each machine carries against its configured session budget, and how
+# demanded slot-hours grow against the fleet's. Under `/operations` beside the
+# spawn ledger the Session load page links back to; a sibling module for the
+# same reason. Plan
+# `2026-10-23-session-duration-by-work-type-and-per-device-session-load` Phase 5.
+api_router.include_router(
+    session_runs.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of

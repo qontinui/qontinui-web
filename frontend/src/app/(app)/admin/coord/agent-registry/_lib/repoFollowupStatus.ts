@@ -27,10 +27,10 @@
  *   `production-and-cost` `agent-spawn-authorization`).
  * - **`resolved_scope: "default"` is said in words** — "every merge (default)"
  *   is a different fact from "every merge, because an operator chose it".
- * - **The delivery mode's provenance is never claimed.** Coord's read of it is
- *   fail-open (a missing row, a missing column and a failed read all resolve
- *   the default), so the panel shows what coord's resolver returns and says
- *   that it cannot tell "set" from "default".
+ * - **The delivery mode's provenance is read, never guessed.** Coord says
+ *   whether a row declares the mode (`repo`), none does (`default`) or the
+ *   stored value is not understood (`unrecognized`); a missing field is
+ *   UNKNOWN and renders "not confirmed".
  * - **A configured scope is a setting in effect, not an alarm** (style guide
  *   §3.4). `none` is calm; only UNKNOWN is amber.
  */
@@ -46,6 +46,7 @@ import {
 import type {
   ContinuationDeliveryModeView,
   DeliveryMode,
+  DeliveryResolvedScope,
   FollowupScope,
   PostMergeFollowupScopeView,
   RolloutMode,
@@ -128,23 +129,46 @@ export const DELIVERY_HELP: Record<DeliveryMode, string> = {
   notify_only: "nothing is spawned or delivered; the author is only notified",
 };
 
-/** What the delivery read can and cannot say, in operator words. */
 /**
- * The delivery mode as displayed. Unconfirmed provenance (coord's fail-open
- * read) is qualified in words, never rendered as a confirmed setting.
+ * The delivery mode as displayed, qualified by where coord says it came from.
+ * An absent `resolvedScope` (UNKNOWN) is "not confirmed", never a plain setting.
  */
 export function deliveryCurrentLabel(
   mode: DeliveryMode | null,
-  confirmed: boolean
+  resolvedScope: DeliveryResolvedScope | null
 ): string {
   if (mode === null) return UNKNOWN_DASH;
-  return confirmed
-    ? DELIVERY_LABEL[mode]
-    : `${DELIVERY_LABEL[mode]} (resolved, not confirmed)`;
+  switch (resolvedScope) {
+    case "repo":
+      return `${DELIVERY_LABEL[mode]} (set for this repo)`;
+    case "default":
+      return `${DELIVERY_LABEL[mode]} (default)`;
+    case "unrecognized":
+      return `${DELIVERY_LABEL[mode]} (stored value not understood)`;
+    default:
+      return `${DELIVERY_LABEL[mode]} (not confirmed)`;
+  }
 }
 
-export const DELIVERY_PROVENANCE_NOTE =
-  "Coord reads this setting fail-open: a repo nobody configured and a read that failed both show the default, so this is what coord currently resolves, not proof that it was set.";
+/**
+ * The note under the delivery editor. Its claim depends on what coord said:
+ * "an unreadable setting is an error, not a default" holds only for an answer
+ * that carries a provenance, so the UNKNOWN arm says less.
+ */
+export function deliveryProvenanceNote(
+  resolvedScope: DeliveryResolvedScope | null,
+  storedValue: string | null
+): string {
+  switch (resolvedScope) {
+    case "repo":
+    case "default":
+      return "Coord reports whether a row sets this repo's delivery mode or none does (default). An unreadable setting is an error, not a default.";
+    case "unrecognized":
+      return `This repo stores ${storedValue === null ? "a value" : `"${storedValue}"`}, which coord does not understand, so dispatch uses the default shown. Choose a mode to replace it.`;
+    default:
+      return "Coord did not say where this value came from, so it may be the default rather than a setting for this repo.";
+  }
+}
 
 /** One repo's two dials as the hook holds them. */
 export interface RepoDialReading {

@@ -10,6 +10,7 @@
  * sync with the coord emitter — they are the on-the-wire shape.
  */
 
+import type { PrHold } from "@/components/operations/prHold";
 import { httpClient } from "./service-factory";
 
 const API = "/api/v1/admin-dev";
@@ -368,6 +369,11 @@ export interface PrRow {
   deploy_state?: PrDeployState | null; // "has it deployed yet?"
   deploy_lag_secs?: number | null; // deploy lag in seconds (in-flight context)
   deployed_surface?: string | null; // e.g. "ecs" | "vercel"
+  // ---- coord hold (plan 2026-10-04-coord-pr-hold-without-github-drafts) ----
+  // `null` = read and not held; an ABSENT key = UNKNOWN (an older coord);
+  // `hold_unknown: true` = coord's hold read failed. See `prHold.ts`.
+  hold?: PrHold | null;
+  hold_unknown?: boolean;
 }
 
 export interface PrListResponse {

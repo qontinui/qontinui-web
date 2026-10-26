@@ -1,6 +1,8 @@
 /**
- * Tenant-band policy routes: coord's fleet-policy dials (`/fleet-policy`) and
- * the transcript-sync consent flag (`/tenant-policy/transcript-sync`).
+ * Tenant-band policy routes: coord's fleet-policy dials (`/fleet-policy`). The
+ * transcript-sync consent flag (`/tenant-policy/transcript-sync`) is gone:
+ * transcript sync is the `egress_transcript_sync` fleet-policy domain (plan
+ * `2026-10-10-spec-front-end-phase-9-generic-boundary` Phase 8).
  *
  * Part of the typed `/operations` client (plan
  * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`,
@@ -76,6 +78,14 @@ export interface FleetPolicyView {
    * backend could not read whole — never "no overrides".
    */
   repo_overrides?: FleetPolicyRepoOverride[] | null;
+  /**
+   * Where a NO-ROW answer's level came from: `"deployment_profile"` (a
+   * self-hosted coord's egress default) or `"product"` (the product's own
+   * default). `null` when a row decided, or when coord predates the field —
+   * absent is UNKNOWN, never a guessed source. Optional because a backend that
+   * predates the field omits it.
+   */
+  default_source?: string | null;
 }
 
 /** Mirrors `FleetPolicyWriteResult` (`put_fleet_policy`). */
@@ -134,60 +144,4 @@ export async function putFleetPolicy(
     idempotent: false,
   });
   return readJson<FleetPolicyWriteResult>(res, `PUT ${url}`);
-}
-
-// ─────────────────────────────── transcript sync ───────────────────────────────
-
-/**
- * Mirrors `TenantTranscriptSyncView` (`get_tenant_transcript_sync`, proxying
- * coord's `GET /tenant-policy`, qontinui-coord#2480). Plan
- * `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls` §3.6.
- */
-export interface TranscriptSyncView {
-  /**
-   * `null` — coord's answer carried no such field (a coord predating the
-   * gate). UNKNOWN, never "on": a coord that cannot report it does not enforce
-   * it either.
-   */
-  transcript_sync_enabled: boolean | null;
-  /**
-   * `true` — coord read `false` only because the column is not provisioned
-   * yet (fail closed during the deploy window), not because an admin chose it.
-   */
-  column_missing: boolean;
-  /** Effective-tenant admin (or superuser). UI gating only; coord re-checks. */
-  can_edit: boolean;
-}
-
-/** Mirrors `TenantTranscriptSyncWriteResult` (`patch_tenant_transcript_sync`). */
-export interface TranscriptSyncWriteResult {
-  written: boolean;
-  /** Coord's own post-write re-read. `null` + `readback_error` = UNKNOWN. */
-  effective: TranscriptSyncView | null;
-  readback_error: string | null;
-}
-
-/** `GET /tenant-policy/transcript-sync` (`get_tenant_transcript_sync`). */
-export async function fetchTranscriptSyncPolicy(): Promise<TranscriptSyncView> {
-  const url = `${OPERATIONS_BASE}/tenant-policy/transcript-sync`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
-  return readJson<TranscriptSyncView>(res, `GET ${url}`);
-}
-
-/**
- * `PATCH /tenant-policy/transcript-sync` (`patch_tenant_transcript_sync`).
- * Never re-sent on a 5xx (`idempotent: false`): a 504 means coord's answer was
- * lost and the caller reports that as UNKNOWN, which a silent retry would
- * paper over.
- */
-export async function patchTranscriptSyncPolicy(
-  enabled: boolean
-): Promise<TranscriptSyncWriteResult> {
-  const url = `${OPERATIONS_BASE}/tenant-policy/transcript-sync`;
-  const res = await httpClient.fetch(url, {
-    method: "PATCH",
-    body: JSON.stringify({ transcript_sync_enabled: enabled }),
-    idempotent: false,
-  });
-  return readJson<TranscriptSyncWriteResult>(res, `PATCH ${url}`);
 }

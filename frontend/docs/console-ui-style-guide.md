@@ -1306,7 +1306,7 @@ same table. Every module doc cites its rule number and links this file.
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
 | `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
-| `ShareBar` / `ShareList` / `share.ts` | §6.4 (see [§3.7](#37-the-share-primitives--recorded-under-64)) | `ShareBar { numerator, denominator, title?, className?, "data-testid"? }`; `ShareList { items, total, empty?, className?, "data-testid"? }` where `items: { key, label, count, title?, detail?, "data-testid"? }[]`; `share(n, d)`, `shareOfFraction(f)`, `SHARE_UNKNOWN` | A part of a whole, as a glyph, and a ranked distribution of parts. `share()` is the console's ONE part-of-a-whole formatter — exact `100%`/`0%` only at the exact ends, `>`/`<` hedges between, and `–` for a share over nothing. |
+| `ShareBar` / `ShareList` / `share.ts` | §6.4 (see [§3.7](#37-the-share-primitives--recorded-under-64)) | `ShareBar { numerator, denominator, title?, className?, "data-testid"? }`; `ShareList { items, total, empty?, unit?, className?, "data-testid"? }` where `items: { key, label, count, title?, detail?, detailTitle?, "data-testid"? }[]` and `count: number \| null`; `share(n, d)`, `shareOfFraction(f)`, `SHARE_UNKNOWN` | A part of a whole, as a glyph, and a ranked distribution of parts. `share()` is the console's ONE part-of-a-whole formatter — exact `100%`/`0%` only at the exact ends, `>`/`<` hedges between, and `–` for a share over nothing. |
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
 and `alertStatus.test.ts`'s three (deleted with the alerts page, §3.4) each
@@ -1522,7 +1522,7 @@ extension, in the same PR as the page that needed it.
 |---|---|
 | `share(n, d)` / `shareOfFraction(f)` (`console/share.ts`) | The ONE part-of-a-whole formatter. **Promoted, not rewritten**: it is `PlanCoveragePanel`'s `share()`, which now imports it. `100%` and `0%` only at the exact ends; `>99.9%` / `<0.1%` rather than a rounding that asserts full or no coverage; and `SHARE_UNKNOWN` (`–`) for a share over nothing — a zero/negative/unknown whole, or a part outside it. `0 of 0` used to compute to `100%`. |
 | `ShareBar` | The glyph: a fixed-width track, a fill, and the `share()` text in mono. A known zero is an empty SOLID track; an unknown share is an empty DASHED track and `–` — the two must never look alike (R6's dash rule, applied to a bar). |
-| `ShareList` | A ranked distribution: one line per class — label (truncating, `title` for the full text), optional `detail` from `sm` up, the count, the `ShareBar`. **It ranks itself** (count descending, stable on ties), so ranking is a property of the primitive rather than a hope about its input. |
+| `ShareList` | A ranked distribution: one line per class — label (truncating, `title` for the full text), optional `detail` from `sm` up, the count, the `ShareBar`. **It ranks itself** (count descending, stable on ties, an unknown count last), so ranking is a property of the primitive rather than a hope about its input. `unit` names the count (`30 placed`) where the heading does not; a `null` count reads `unknown` over the dashed track — never `0`. The detail truncates at 28ch, so it carries a hover of its own: `detailTitle`, defaulting to the detail's own text when that is a string — never the line's `title`, which may be a wire token naming the LABEL (R8; the operator-touch page's `title` is a `reason_code`). All three added by the spawns console (§3.8). |
 
 Three rules, each held by the primitive rather than left to a caller:
 
@@ -1540,6 +1540,40 @@ Three rules, each held by the primitive rather than left to a caller:
 
 Density: a `ShareList` line is `px-3 py-1.5` + `text-sm` — inside §5's 40px
 row budget with room to spare, because a ranked aggregate is read as one block.
+
+### 3.8 The spawns console — recorded under §6.4
+
+`/admin/coord/spawns` (plan
+`2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+Phase 5) composes `HealthStrip`, `ShareList`, `FilterTabs`,
+`RecordList`/`RecordRow`/`RecordDetail`, `StatusBadge`, `RowTime`,
+`CollapsiblePanel` and `RefreshButton`, and registers one palette (a spawn
+request's status) in `CONSOLE_PALETTES`. It extends one primitive — `ShareList`
+gained `unit`, a `null` count and `detailTitle` (§3.7) — and records four
+things rather than shipping them silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **A second surface's outcome vocabulary, reused by reference** | `spawns/_lib/spawnStatus.ts` (`SPAWN_ATTENTION_BY_KIND`, `SPAWN_KIND_CLASS`) | A spawn request ends the way a gate continuation does, so every shared kind's attention and class IS `gates/continuationStatus.ts`'s entry (`spawned` is not success, `work_completed` is the only success, an unreported outcome is the ignorance floor). The ledger-only words get their own rows: `queued`, `waiting_late`, `waiting_stuck` and `superseded`. | §4.2 audits each table on its own; nothing said two surfaces describing the same lifecycle must agree. `spawnStatus.test.ts` asserts the shared entries are identical, so the two pages cannot drift into painting one word two ways. |
+| **A threshold is not portable when its counter's cadence differs** | `spawns/_lib/spawnStatus.ts` (`SPAWN_TARGET_MS`, `SPAWN_STUCK_MS`) | The gates page's `deferral_stuck` (24 deferrals) is a day of the runner's HOURLY stamps; the ledger's `deferrals` counts events that can arrive every 5 minutes, so the same 24 would be two hours. A waiting request is therefore judged by its AGE since the first attempt: calm under the plan's 10-minute target, amber past it, red past a day. The strip reads the same rows, so it is never calmer than a row beneath it: any red row turns it red, and the headline names what is red in the rows' own words ("1 spawn stuck for 3 d", "1 dispatch stalled"), taking coord's full-window figure wherever coord counts one, so a truncated list never makes the headline disagree with a badge. | R3 says what each hue promises, not how to borrow a threshold. Reusing the vocabulary (row above) does not license reusing a number whose unit is another producer's cadence. |
+| **A count chart on a console page, built like `ThroughputPanel`, that says what it does not cover** | `spawns/_components/SpawnRateChart.tsx` | Two series inside a `CollapsiblePanel`, colours from `@/config/theme`, mirrored in an `sr-only` table, bucketed and labelled by UTC hour. Drawn from the window's request list, so it counts requests MADE in its span and when those started — a request made earlier that started inside the span is not on it, and the caption says so rather than calling the line a start rate. It starts at the first FULL hour the read covers — after the window's start, or after the oldest row loaded when the list was truncated — because the hour either falls in was only partly read; earlier hours are not drawn, never drawn as zeros. | `plans/ThroughputPanel.tsx` is the first chart on a console page and is not recorded here; this records the shape both now follow, so a third chart has something written to compose against. |
+| **A fact the wire does not serve yet, stated once for the list** | `spawns/page.tsx` (`coord-spawns-reserve-note`) | Each device's dispatch role IS served (`/fleet/dispatch-roles`) and rides on its line's label. Its current reserve and ceilings are not served until the plan's Phase 6: the `ShareList` says so ONCE above its lines, and each line's `title` repeats it for a reader hovering one device. | Repeating "not served yet" on every line is chrome that cannot vary (served policy `ux-priorities` `repeated-chrome-must-earn-its-space-by-varying`), and rendering the slot as `0` would be R6's dash rule broken. |
+
+### 3.9 The session-load console — recorded under §6.4
+
+`/admin/coord/session-load` (plan
+`2026-10-23-session-duration-by-work-type-and-per-device-session-load`
+Phase 5) composes `HealthStrip`, `RecordList`/`RecordRow`/`RecordDetail`,
+`StatusBadge`, `RowTime`, `FilterTabs`, `CollapsiblePanel` and
+`RefreshButton`, and registers two palettes in `CONSOLE_PALETTES` (a
+machine's load against its budget, and one run). It adds no primitive and
+records three things rather than shipping them silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **A measuring surface paints nothing red** | `session-load/_lib/sessionLoadStatus.ts` (`MACHINE_ATTENTION_BY_KIND`, `RUN_ATTENTION_BY_KIND`) | The page measures load; admission and placement act on it. So no machine or run is the operator's move now: over budget is amber (it clears as runs end), and a silent machine, an unpublished budget and an inferred end are the ignorance floor (`UNKNOWN_AMBER`). The strip follows: amber at most. | R3 says what each hue promises; it does not say a whole surface may legitimately have no red. Writing it down stops the next measuring page reaching for red on "big". |
+| **A sparkline in a row's time slot** | `session-load/_components/charts.tsx` (`Sparkline`, `StackedBar`) | Inline SVG, not Recharts: a responsive container inside a one-line R2 row has nothing to measure. Each carries its numbers in an accessible name (and a `data-points` count), series colours come from `@/config/theme` and are never a red or an amber, and an empty series says "no history" in words — never a flat line at zero. | The two console charts recorded in §3.8 are full-width panels. A row-sized glyph needed its own statement of what it may and may not imply. |
+| **An extrapolation is labelled as one, and withheld on short history** | `sessionLoadStatus.ts` (`growthTrend`, `trendText`) | The crossing date is a least-squares line over the last 7 COMPLETE UTC days, and the sentence names the method and the dates. It is withheld, with the reason, when fewer than 7 complete days are recorded or any machine began recording inside the window (its arrival would read as growth). Days before recording began hold only backfilled runs and are not drawn — not drawn as zeros. | R6's dash rule covers a value nobody fetched; a projected value is a different claim, and its honesty is in saying how it was made. |
 
 ---
 

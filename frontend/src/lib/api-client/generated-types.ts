@@ -10251,8 +10251,8 @@ export interface paths {
          * Get Continuation Delivery Mode
          * @description Read what coord resolves for one repo's continuation-delivery mode.
          *
-         *     See :class:`ContinuationDeliveryModeView` ``provenance_known`` for why
-         *     this is a resolver answer and not a stored value.
+         *     See :class:`ContinuationDeliveryModeView` ``resolved_scope`` for what
+         *     coord says about where ``mode`` came from.
          */
         get: operations["api_v1_operations_continuation_delivery_mode_get"];
         /**
@@ -10533,6 +10533,39 @@ export interface paths {
          *     the completing user's membership at pair-complete.
          */
         post: operations["api_v1_operations_coord_devices_pair_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/dossiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Dossiers
+         * @description Return one page of dossier heads for the calling operator's tenant.
+         *
+         *     The body is coord's, verbatim: ``{"dossiers": [...], "facets":
+         *     {"readiness", "remediation_state"}, "facets_scope", "dedup",
+         *     "*_applied" echoes, ...}`` plus the bounded-read envelope (``available``,
+         *     ``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,
+         *     ``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant
+         *     is coord's to resolve from the forwarded bearer; nothing in the request
+         *     names it.
+         *
+         *     Degraded answers carry every envelope key as UNKNOWN (``null``), ``facets``
+         *     as ``null`` and ``dossiers`` empty, plus ``unavailable`` /
+         *     ``unavailable_kind`` — a page reading that body must say "could not read",
+         *     never "no dossiers".
+         */
+        get: operations["api_v1_operations_coord_dossiers_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -15811,7 +15844,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
+    "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
         parameters: {
             query?: never;
             header?: never;
@@ -15821,28 +15854,34 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Set Pr Draft State
-         * @description Set a PR's GitHub draft state (operator release valve).
+         * Set Pr Hold
+         * @description Place or release a coord hold on a PR (the operator's hold control).
          *
-         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-         *     (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-         *     ``false`` marks the PR ready-for-review (releasing it to the merge train),
-         *     ``true`` converts it back to draft (the documented hold mechanism).
+         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+         *     (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+         *     the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+         *     so it works on private repos on GitHub Free, which have no draft PRs.
          *
-         *     Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-         *     bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-         *     fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-         *     server-side. Releasing a draft-required (security-surface) PR is an operator
-         *     judgment, so this is operator-authed — never an agent JWT.
+         *     Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+         *     ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+         *     ``held: false`` releases. Release authority is coord's: the holder, or an
+         *     admin-role operator for any hold; a ``security_tier`` hold is the
+         *     operator's alone.
          *
-         *     Only the ``draft`` boolean is forwarded; any other keys the client sends are
-         *     dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-         *     coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-         *     via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-         *     / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-         *     502 github_draft_state_failed, 500 internal).
+         *     Auth mirrors the gate-action stack: the operator's Cognito bearer is
+         *     forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+         *     derives the tenant, role and repo authority server-side. Only the four
+         *     contract keys are forwarded.
+         *
+         *     ``structured_errors=True``: coord's typed refusal object (``{"error",
+         *     "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+         *     ``http_exception_handler`` splices into the top level of its envelope, so
+         *     the browser receives ``error`` as coord's code (400 invalid_input,
+         *     403 not_holder / security_tier_operator_only, 404 not_found,
+         *     500 internal) rather than a JSON string inside ``message``. A coord error
+         *     body that is not a JSON object still falls back to its text.
          */
-        post: operations["api_v1_operations_prs_owner_repo_number_draft_state_post"];
+        post: operations["api_v1_operations_prs_owner_repo_number_hold_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15926,6 +15965,122 @@ export interface paths {
          * @description Deregister a canonical repository.
          */
         delete: operations["api_v1_operations_repos_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Runs
+         * @description Proxy coord's ``GET /coord/session-runs`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{runs: [Run], shown, total, truncated, next_cursor, as_of}``,
+         *     newest first, or coord's ``503 schema_missing`` while the run record is
+         *     not migrated. A ``Run`` carries its device, session id and ``run_seq``,
+         *     ``initiator``, ``work_type`` (and the facts it was classified from —
+         *     ``skill``, ``first_command``, ``spawn_origin``, ``dispatch_source``,
+         *     ``gate_id``, ``spawn_request_id`` …), its timestamps, ``wall_seconds`` and
+         *     ``held_after_finish_seconds`` (``null`` while open), ``end_reason`` /
+         *     ``end_source`` and ``history_complete`` (``false`` on a backfilled row).
+         */
+        get: operations["api_v1_operations_session_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/concurrency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Concurrency
+         * @description Proxy coord's ``GET /coord/session-runs/concurrency`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from, grid, devices:
+         *     [Device], truncated, as_of}``. A ``Device`` carries ``name``, ``budget``
+         *     (``{state: "published" | "zero" | "none", value, label}`` — read from
+         *     ``max_concurrent_agents``, never from a role), ``last_heartbeat`` /
+         *     ``heartbeat_age_seconds``, ``known_device``, ``open_now``, ``peak``,
+         *     ``p95`` and its ``series`` of ``{bucket_start, source, total, by_work_type}``.
+         */
+        get: operations["api_v1_operations_session_runs_concurrency_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Growth
+         * @description Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from,
+         *     recording_since, devices_recording, series: [Bucket], fleet, truncated,
+         *     as_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and
+         *     their totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;
+         *     ``fleet`` carries ``available_state`` — ``published``,
+         *     ``no_budget_published`` (no device published a budget) or
+         *     ``zero_budget_published`` (every published budget is 0) — with
+         *     ``available_slot_hours_per_day`` / ``_per_bucket`` (published non-zero
+         *     budgets × 24) stated only for ``published`` and ``null`` otherwise, never
+         *     0; and how many devices published a budget, a zero budget or none.
+         *     ``recording_since: null`` means nothing is recorded yet — an absent bucket
+         *     before it is UNKNOWN, not zero.
+         */
+        get: operations["api_v1_operations_session_runs_growth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Stats
+         * @description Proxy coord's ``GET /coord/session-runs/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, since, group_by, population, groups: [Group],
+         *     classifier_version, as_of}``. Each group carries ``runs``, ``open_now``,
+         *     ``wall_seconds {p50, p90, p99, sum, samples}`` over OBSERVED ends only,
+         *     ``slot_hours``, ``active_seconds``, ``held_after_finish_seconds {sum,
+         *     samples}`` and the ``inferred`` / ``reconciled`` / ``unknown`` counts. A
+         *     percentile over no observed end is ``null`` — coord's UNKNOWN.
+         */
+        get: operations["api_v1_operations_session_runs_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -16371,6 +16526,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/spawns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawns
+         * @description Proxy coord's ``GET /coord/spawns`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, items: [SpawnRow], shown, total, truncated,
+         *     next_cursor, as_of}``, or ``{available: false, reason}`` while coord's
+         *     ledger tables are absent. A ``SpawnRow`` carries the request's class and
+         *     origin, its timestamps (``requested_at`` is the first moment coord tried to
+         *     place it), its state, attempts and deferrals, its pinned / preferred /
+         *     current / spawned device, its placement basis, the started session's id,
+         *     account and outcome, ``history_complete`` (``false`` on a backfilled row)
+         *     and ``wait_seconds`` (``null`` until it started).
+         */
+        get: operations["api_v1_operations_spawns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn Stats
+         * @description Proxy coord's ``GET /coord/spawns/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, window, window_start, as_of, overall,
+         *     per_device, local_report_counts}``, or ``{available: false, reason}``.
+         *     Every share and percentile in ``overall`` is ``null`` when its
+         *     denominator is empty — coord's UNKNOWN, which this proxy never turns into
+         *     a ``0``.
+         */
+        get: operations["api_v1_operations_spawns_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/{spawn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn
+         * @description Proxy coord's ``GET /coord/spawns/{id}`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, request: SpawnRow, events: [{at, kind,
+         *     device_id, reason, detail}]}`` — the request and its device history
+         *     (placed, dispatched, deferred, refused, rerouted, …), oldest first — or
+         *     ``{available: false, reason}``. ``spawn_id`` is validated as a UUID here so
+         *     a malformed id is a 422 at the web edge and never reaches coord as an
+         *     arbitrary path segment.
+         */
+        get: operations["api_v1_operations_spawns_spawn_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/symbol-claims": {
         parameters: {
             query?: never;
@@ -16423,8 +16660,9 @@ export interface paths {
         };
         /**
          * Get Tenant Resume Unfinished
-         * @description Read the tenant's automatic-resume flag (effective tenant, as for
-         *     ``transcript-sync`` -- see wire fact 1 above).
+         * @description Read the tenant's automatic-resume flag, for the EFFECTIVE tenant (the
+         *     switched-to tenant when the caller holds a role there, else the home
+         *     tenant) -- the tenant coord's ``GET /tenant-policy`` is asked about.
          */
         get: operations["api_v1_operations_tenant_policy_resume_unfinished_get"];
         put?: never;
@@ -16437,43 +16675,6 @@ export interface paths {
          * @description Turn automatic resume on or off for the caller's effective tenant.
          */
         patch: operations["api_v1_operations_tenant_policy_resume_unfinished_patch"];
-        trace?: never;
-    };
-    "/api/v1/operations/tenant-policy/transcript-sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Tenant Transcript Sync
-         * @description Read whether coord accepts session output for the caller's tenant.
-         *
-         *     ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
-         *     ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
-         *     that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
-         *     authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
-         *     is not an admin of this tenant is refused ``admin_required`` — an enabled
-         *     button would promise a write coord will not take.
-         */
-        get: operations["api_v1_operations_tenant_policy_transcript_sync_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Patch Tenant Transcript Sync
-         * @description Turn transcript sync on or off for the caller's effective tenant.
-         *
-         *     Tenant-admin gated web-side; coord re-checks and answers 403
-         *     ``admin_required`` otherwise, and 503 ``column_not_present`` while the
-         *     column's migration has not reached its database — both pass through
-         *     verbatim. Coord re-reads the policy after its upsert and returns it, so no
-         *     second round trip is needed for the read-back.
-         */
-        patch: operations["api_v1_operations_tenant_policy_transcript_sync_patch"];
         trace?: never;
     };
     "/api/v1/operations/tenants": {
@@ -31002,7 +31203,7 @@ export interface components {
         };
         /**
          * ContinuationDeliveryModeView
-         * @description What coord's resolver returns for one repo's continuation delivery.
+         * @description One repo's continuation-delivery mode and where coord says it came from.
          */
         ContinuationDeliveryModeView: {
             /** Can Edit */
@@ -31019,6 +31220,10 @@ export interface components {
             provenance_known: boolean;
             /** Repo */
             repo: string;
+            /** Resolved Scope */
+            resolved_scope?: ("repo" | "default" | "unrecognized") | null;
+            /** Stored Value */
+            stored_value?: string | null;
         };
         /**
          * ContinuationDeliveryModeWriteResult
@@ -37550,6 +37755,8 @@ export interface components {
         FleetPolicyView: {
             /** Can Edit */
             can_edit: boolean;
+            /** Default Source */
+            default_source?: string | null;
             /** Domain */
             domain: string;
             /** Effective Level */
@@ -51885,44 +52092,6 @@ export interface components {
         /** TenantResumeUnfinishedWriteResult */
         TenantResumeUnfinishedWriteResult: {
             effective?: components["schemas"]["TenantResumeUnfinishedView"] | null;
-            /** Readback Error */
-            readback_error?: string | null;
-            /** Written */
-            written: boolean;
-        };
-        /**
-         * TenantTranscriptSyncPatch
-         * @description Closed body for the transcript-sync write — see wire fact 2 above.
-         */
-        TenantTranscriptSyncPatch: {
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean;
-        };
-        /**
-         * TenantTranscriptSyncView
-         * @description The tenant's transcript-sync consent, as coord resolves it.
-         */
-        TenantTranscriptSyncView: {
-            /** Can Edit */
-            can_edit: boolean;
-            /**
-             * Column Missing
-             * @default false
-             */
-            column_missing: boolean;
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean | null;
-        };
-        /**
-         * TenantTranscriptSyncWriteResult
-         * @description What was written, and — separately — what coord now reads back.
-         *
-         *     ``effective`` is ``None`` with ``readback_error`` set when coord accepted
-         *     the write but did not return the policy it re-read (its own post-upsert
-         *     SELECT failed). That is UNKNOWN, not "applied".
-         */
-        TenantTranscriptSyncWriteResult: {
-            effective?: components["schemas"]["TenantTranscriptSyncView"] | null;
             /** Readback Error */
             readback_error?: string | null;
             /** Written */
@@ -72932,6 +73101,72 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_dossiers_get: {
+        parameters: {
+            query?: {
+                /** @description Repeatable (or comma-separated). Exact readiness match; ``none`` selects heads whose readiness is NULL (UNKNOWN). */
+                readiness?: string[] | null;
+                /** @description Exact dossier slug. */
+                slug?: string | null;
+                /** @description Case-insensitive substring over slug and title. */
+                q?: string | null;
+                /** @description Inclusive lower bound on ``recurrence_count``. */
+                recurrence_min?: number | null;
+                /** @description Inclusive upper bound on ``recurrence_count``. */
+                recurrence_max?: number | null;
+                /** @description ISO date. */
+                last_seen_since?: string | null;
+                /** @description ISO date. */
+                last_seen_until?: string | null;
+                /** @description ISO date. */
+                first_seen_since?: string | null;
+                /** @description ISO date. */
+                first_seen_until?: string | null;
+                /** @description ISO date. */
+                updated_since?: string | null;
+                /** @description ISO date. */
+                updated_until?: string | null;
+                /** @description Ledger-derived (free text, lags the plan); ``remediation_state`` is the live one. */
+                has_open_remediation?: boolean | null;
+                /** @description Repeatable. The LIVE roll-up of the dossier's remediation plans against coord's work units: none | draft | vetted | in_progress | shipped | closed | unknown. */
+                remediation_state?: string[] | null;
+                /** @description last_seen (coord's default) | first_seen | updated | recurrence_count | slug. */
+                sort?: string | null;
+                /** @description desc (default) | asc. */
+                order?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description The previous answer's ``next_cursor``, verbatim, under the SAME filters and sort. A foreign or stale one is coord's typed 400. */
+                cursor?: string | null;
+                /** @description ``true`` adds each head's body (coord caps the page at 20). */
+                include_body?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_coord_findings_get: {
         parameters: {
             query?: {
@@ -78415,7 +78650,7 @@ export interface operations {
             };
         };
     };
-    api_v1_operations_prs_owner_repo_number_draft_state_post: {
+    api_v1_operations_prs_owner_repo_number_hold_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -78579,6 +78814,154 @@ export interface operations {
             query: {
                 /** @description Repository slug (owner/name) */
                 repo: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_get: {
+        parameters: {
+            query?: {
+                /** @description Only runs classified as this work type. */
+                work_type?: string | null;
+                /** @description Only runs on this coord device. */
+                device?: string | null;
+                /** @description Only runs this initiator started. */
+                initiator?: ("operator" | "coord" | "runner_local" | "unknown") | null;
+                /** @description Only runs started at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only runs started before this instant (offset required). */
+                until?: string | null;
+                /** @description coord's ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_concurrency_get: {
+        parameters: {
+            query?: {
+                /** @description Only this coord device (unset = every device that ran a session). */
+                device?: string | null;
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Series bucket width; coord's default is ``1h``. */
+                bucket?: ("1m" | "5m" | "15m" | "1h" | "hour" | "6h" | "1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_growth_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Day (coord's default) or week buckets. */
+                bucket?: ("1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_stats_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Group by ``work_type`` (coord's default), ``device``, or both. */
+                group_by?: ("work_type" | "device" | "device,work_type" | "work_type,device") | null;
             };
             header?: never;
             path?: never;
@@ -79054,6 +79437,115 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_spawns_get: {
+        parameters: {
+            query?: {
+                /** @description Only requests of this admission class. */
+                class?: ("autofix" | "continuation" | "local" | "attended") | null;
+                /** @description Only requests currently in one of these states — a comma list, e.g. ``queued,dispatched,deferred``. */
+                state?: string | null;
+                /** @description Only requests placed on, or started on, this coord device. */
+                device?: string | null;
+                /** @description Only requests first requested at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only requests first requested before this instant (offset required). */
+                until?: string | null;
+                /** @description Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first). */
+                order?: ("asc" | "desc") | null;
+                /** @description coord's opaque ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_stats_get: {
+        parameters: {
+            query?: {
+                /** @description Aggregation window; coord's default is ``7d``. */
+                window?: ("24h" | "7d" | "30d") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_spawn_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_symbol_claims_get: {
         parameters: {
             query?: {
@@ -79127,59 +79619,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantResumeUnfinishedWriteResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncView"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TenantTranscriptSyncPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncWriteResult"];
                 };
             };
             /** @description Validation Error */

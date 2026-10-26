@@ -146,6 +146,16 @@ describe("/admin/coord/operator-touches", () => {
     ]);
     expect(lines[0]).toHaveTextContent("Asked what policy already answers");
     expect(lines[0]).toHaveTextContent("70.0%");
+    // R8 on hover: the wire token is the LABEL's title only. The detail's
+    // title is its own words (ShareList's default), never the reason code.
+    expect(
+      within(lines[0]!).getByText("Asked what policy already answers")
+    ).toHaveAttribute("title", "question_policy_already_answers");
+    const detail = within(lines[0]!).getByText(
+      "1 reached you · 5 agent · 1 unknown"
+    );
+    expect(detail).toHaveAttribute("title", "1 reached you · 5 agent · 1 unknown");
+    expect(detail.getAttribute("title")).not.toContain("question_policy");
 
     const rows = screen.getAllByTestId("operator-touch-row");
     expect(rows).toHaveLength(2);

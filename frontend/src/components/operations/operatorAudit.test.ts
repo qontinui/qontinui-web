@@ -255,6 +255,17 @@ describe("describeAuditAction — R8", () => {
     expect(describeAuditAction("fleet.drain.clear").mapped).toBe(true);
   });
 
+  it("labels the coord PR hold actions", () => {
+    expect(describeAuditAction("pr_hold.place")).toEqual({
+      label: "Held a PR",
+      mapped: true,
+    });
+    expect(describeAuditAction("pr_hold.release")).toEqual({
+      label: "Released a PR hold",
+      mapped: true,
+    });
+  });
+
   it("labels a fleet-policy write, and offers a filter that reaches it", () => {
     // `fleet_policy.upsert` is NOT under `fleet.*` (the prefix is
     // `fleet_policy.`), so without its own filter the default feed would

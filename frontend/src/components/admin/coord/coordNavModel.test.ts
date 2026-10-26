@@ -80,6 +80,7 @@ describe("coordNavModel", () => {
       "Plan Follow-ups",
       "Questions",
       "Findings",
+      "Dossiers",
       "Operator Touches",
       "Verification",
       "Agents",
@@ -118,8 +119,10 @@ describe("coordNavModel", () => {
       "Overview",
       "CI",
       "Computers",
+      "Spawns",
+      "Session load",
       "Trees",
-      "Spawn",
+      "Launch session",
       "Runner Drain",
       "Test Targets",
       "Migrations",
@@ -142,14 +145,45 @@ describe("coordNavModel", () => {
     // Plain member: exactly Overview and CI (resolved Q3, extended by the
     // CI dashboard plan's D1 — both are member reads).
     expect(visibleLabels("devops", MEMBER)).toEqual(["Overview", "CI"]);
-    // A coord admin who is NOT staff sees Computers and nothing operator-only.
+    // A coord admin who is NOT staff sees Computers, Spawns and Session load
+    // and nothing operator-only.
     expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
       "Overview",
       "CI",
       "Computers",
+      "Spawns",
+      "Session load",
     ]);
     // A superuser sees every Dev Ops member.
     expect(visibleLabels("devops", SUPERUSER)).toEqual(labels("devops"));
+  });
+
+  it("gates Spawns on coord tenant admin, and never lets two leaves share the word", () => {
+    const items = group("devops").items;
+    const spawns = items.find((i) => i.href === "/admin/coord/spawns");
+    expect(spawns?.label).toBe("Spawns");
+    expect(spawns?.coordAdminOnly).toBe(true);
+    expect(spawns?.operatorOnly).toBeUndefined();
+    // The launcher keeps its route and its frozen testId under a label that
+    // names what it does, so "Spawn" no longer names two pages.
+    const launcher = items.find((i) => i.href === "/admin/coord/spawn");
+    expect(launcher?.label).toBe("Launch session");
+    expect(launcher?.testId).toBe("coord-nav-spawn");
+    const spawnWords = items.filter((i) => /\bspawn/i.test(i.label));
+    expect(spawnWords.map((i) => i.label)).toEqual(["Spawns"]);
+  });
+
+  it("puts Session load beside Spawns, gated on coord tenant admin like its proxies", () => {
+    const items = group("devops").items;
+    const hrefs = items.map((i) => i.href);
+    const load = items.find((i) => i.href === "/admin/coord/session-load");
+    expect(load?.label).toBe("Session load");
+    expect(load?.testId).toBe("coord-nav-session-load");
+    expect(load?.coordAdminOnly).toBe(true);
+    expect(load?.operatorOnly).toBeUndefined();
+    expect(hrefs.indexOf("/admin/coord/session-load")).toBe(
+      hrefs.indexOf("/admin/coord/spawns") + 1
+    );
   });
 
   it("asks admin IN THE ACTIVE TENANT, as require_coord_tenant_admin does", () => {

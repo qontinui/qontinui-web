@@ -28,6 +28,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,11 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "migration-reversal.yml"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "mrt_qualify"
 
 QUALIFY_STEP = "Qualify the PR's migration and switch to the base tree"
+BASE_REVS_STEP = "Base revision set (pure base tree, before the overlay)"
+OVERLAY_STEP = "Overlay the PR's migration onto the base tree"
+REVERSIBILITY_STEP = (
+    "Reversibility test (upgrade → downgrade -1 → upgrade, schema compared)"
+)
 VERDICT_STEP = "Non-executable edits only (no migration to exercise)"
 ERROR_B = "::error title=Migration Reversal Tested - condition (b) failed::"
 ERROR_A = "::error title=Migration Reversal Tested - condition (a) failed::"
@@ -1342,10 +1348,12 @@ def _bash() -> str:
 def _run_step(
     body: str, env: dict[str, str], cwd: Path
 ) -> subprocess.CompletedProcess[str]:
-    """Run a `run:` body the way GitHub does: `bash --noprofile --norc -eo
-    pipefail`."""
+    """Run a `run:` body the way GitHub does for a step with no `shell:`
+    (this workflow sets none): `bash -e`, WITHOUT pipefail -- so a body is
+    tested no stricter than it runs. `--noprofile --norc` keep the run
+    hermetic."""
     return subprocess.run(
-        [_bash(), "--noprofile", "--norc", "-eo", "pipefail", "-s"],
+        [_bash(), "--noprofile", "--norc", "-e", "-s"],
         input=body,
         env=env,
         cwd=cwd,
@@ -1389,6 +1397,21 @@ def _install_script(repo: Repo) -> None:
     shutil.copyfile(SCRIPT, target)
 
 
+def _publish_tip(repo: Repo, sha: str, ref: str = "main") -> None:
+    """Stand in for the `fetch-depth: 0` checkout's
+    `+refs/heads/*:refs/remotes/origin/*` fetch: the base branch's CURRENT
+    tip, which is where the job reads the base from."""
+    repo.git("update-ref", f"refs/remotes/origin/{ref}", sha)
+
+
+def _step_env_for(step_env: dict[str, str], base: str, head: str) -> dict[str, str]:
+    """The qualifying step's `env:`, plus BASE_SHA standing in for the
+    event's `pull_request.base.sha`. The step must not read it; only the
+    stale-base callers pass a value that differs from the tip, and they are
+    the ones that tell the two apart."""
+    return {**step_env, "BASE_SHA": base, "BASE_REF": "main", "HEAD_SHA": head}
+
+
 def test_qualifying_step_skips_its_remainder_on_a_doc_only_change_set(
     repo: Repo, step_env: dict[str, str]
 ) -> None:
@@ -1399,7 +1422,8 @@ def test_qualifying_step_skips_its_remainder_on_a_doc_only_change_set(
     repo.write(REV_PATH, DOC_EDIT.head)
     head = repo.commit("docstring only")
     _install_script(repo)
-    env = {**step_env, "BASE_SHA": base, "HEAD_SHA": head}
+    _publish_tip(repo, base)
+    env = _step_env_for(step_env, base, head)
     proc = _run_step(_step(QUALIFY_STEP)["run"], env, repo.root)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     github_env = Path(step_env["GITHUB_ENV"]).read_text(encoding="utf-8")
@@ -1417,14 +1441,203 @@ def test_qualifying_step_switches_to_the_base_for_an_added_migration(
     repo.write(NEW_MIGRATION, _b(REVISION))
     head = repo.commit("doc edit plus a new migration")
     _install_script(repo)
-    env = {**step_env, "BASE_SHA": base, "HEAD_SHA": head}
+    _publish_tip(repo, base)
+    env = _step_env_for(step_env, base, head)
     proc = _run_step(_step(QUALIFY_STEP)["run"], env, repo.root)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     github_env = Path(step_env["GITHUB_ENV"]).read_text(encoding="utf-8")
     assert f"MRT_MIGRATION={NEW_MIGRATION}\n" in github_env
     assert "MRT_DOC_ONLY=0\n" in github_env
+    assert f"MRT_BASE_TIP={base}\n" in github_env
     assert repo.git("rev-parse", "HEAD") == base
     assert f"Tree is the pure base {base}." in proc.stdout
+
+
+PARENT_MIGRATION = VERSIONS + "example_parent_revision.py"
+
+
+def _stale_base_pr(repo: Repo) -> tuple[str, str, str]:
+    """The shape that reddened every coord-re-pointed migration PR
+    (qontinui-web#1537, #1525): the PR branched at ``stale``; main then landed
+    the migration the PR's file is re-pointed onto, at ``tip``; the branch was
+    never merged with main. ``pull_request.base.sha`` is ``stale``."""
+    stale = _base_and_branch(repo, {REV_PATH: DOC_EDIT.base})
+    repo.write(NEW_MIGRATION, _b(REVISION))
+    head = repo.commit("a new migration, re-pointed onto main's current head")
+    repo.git("checkout", "--quiet", "main")
+    repo.write(
+        PARENT_MIGRATION, _b("# the parent revision, landed after the PR branched\n")
+    )
+    tip = repo.commit("main lands the parent revision")
+    repo.git("checkout", "--quiet", head)
+    assert repo.git("merge-base", tip, head) == stale
+    return stale, tip, head
+
+
+def test_qualifying_step_switches_to_the_base_tip_not_the_stale_event_base(
+    repo: Repo, step_env: dict[str, str]
+) -> None:
+    """The regression: the tree must be the base branch's CURRENT tip, which
+    carries the parent revision -- not the stale merge base the event names,
+    which does not. The changed set must still be the PR's own (three-dot
+    from the tip), so main's parent file is not read as the PR's."""
+    stale, tip, head = _stale_base_pr(repo)
+    _install_script(repo)
+    _publish_tip(repo, tip)
+    proc = _run_step(
+        _step(QUALIFY_STEP)["run"], _step_env_for(step_env, stale, head), repo.root
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    github_env = Path(step_env["GITHUB_ENV"]).read_text(encoding="utf-8")
+    assert f"MRT_MIGRATION={NEW_MIGRATION}\n" in github_env
+    assert f"MRT_BASE_TIP={tip}\n" in github_env
+    assert stale not in github_env
+    assert repo.git("rev-parse", "HEAD") == tip
+    assert (repo.root / PARENT_MIGRATION).is_file()
+    assert f"Tree is the pure base {tip}." in proc.stdout
+
+    # ...and the overlay lands the PR's one file on THAT tree.
+    env = {
+        **step_env,
+        "HEAD_SHA": head,
+        "MRT_MIGRATION": NEW_MIGRATION,
+        "MRT_BASE_TIP": tip,
+    }
+    proc = _run_step(_step(OVERLAY_STEP)["run"], env, repo.root)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert f"Tree is base tip {tip} plus {NEW_MIGRATION}" in proc.stdout
+    assert (repo.root / PARENT_MIGRATION).is_file()
+    assert (repo.root / NEW_MIGRATION).read_bytes() == _b(REVISION)
+
+
+def test_qualifying_step_refuses_an_added_path_that_main_has_since_added(
+    repo: Repo, step_env: dict[str, str]
+) -> None:
+    """Condition (b) at the tip: a stale PR whose "added" migration path has
+    meanwhile landed on main would REPLACE main's copy if overlaid. Against
+    the stale merge base this could not fire; against the tip it must."""
+    stale = _base_and_branch(repo, {REV_PATH: DOC_EDIT.base})
+    repo.write(NEW_MIGRATION, _b(REVISION))
+    head = repo.commit("a new migration")
+    repo.git("checkout", "--quiet", "main")
+    repo.write(NEW_MIGRATION, _b("# main's own file at the same path\n"))
+    tip = repo.commit("main lands a file at the same path")
+    repo.git("checkout", "--quiet", head)
+    _install_script(repo)
+    _publish_tip(repo, tip)
+    proc = _run_step(
+        _step(QUALIFY_STEP)["run"], _step_env_for(step_env, stale, head), repo.root
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert ERROR_B in proc.stdout
+    assert f"already exists at the base tip {tip}" in proc.stdout
+    assert repo.git("rev-parse", "HEAD") == head  # never detached onto the tip
+
+
+def test_qualifying_step_refuses_an_unresolvable_base_tip(
+    repo: Repo, step_env: dict[str, str]
+) -> None:
+    """No `refs/remotes/origin/<base_ref>`: the base is UNKNOWN. The step must
+    not fall back to the event's base sha."""
+    base = _base_and_branch(repo, {REV_PATH: DOC_EDIT.base})
+    repo.write(NEW_MIGRATION, _b(REVISION))
+    head = repo.commit("a new migration")
+    _install_script(repo)
+    proc = _run_step(
+        _step(QUALIFY_STEP)["run"], _step_env_for(step_env, base, head), repo.root
+    )
+    assert proc.returncode != 0
+    assert proc.stdout.startswith(ERROR_B)
+    assert "refs/remotes/origin/main does not resolve" in proc.stdout
+    assert Path(step_env["GITHUB_ENV"]).read_text(encoding="utf-8") == ""
+    assert repo.git("rev-parse", "HEAD") == head
+
+
+@pytest.mark.parametrize(
+    "tip", ["", "main", "b" * 39], ids=["absent", "a ref name", "short"]
+)
+@pytest.mark.parametrize("name", [BASE_REVS_STEP, OVERLAY_STEP, REVERSIBILITY_STEP])
+def test_later_steps_refuse_an_absent_base_tip(
+    tmp_path: Path, step_env: dict[str, str], name: str, tip: str
+) -> None:
+    """Every later step that compares against the base reads MRT_BASE_TIP and
+    refuses one that is not a sha -- never "diff against nothing"."""
+    (tmp_path / "backend").mkdir()
+    env = {
+        **step_env,
+        "HEAD_SHA": "c" * 40,
+        "MRT_MIGRATION": NEW_MIGRATION,
+        "MRT_HEAD": "x",
+        "MRT_DOWN": "y",
+        "MRT_BASE_TIP": tip,
+    }
+    proc = _run_step(_step(name)["run"], env, tmp_path)
+    assert proc.returncode == 1
+    assert proc.stdout.startswith("::error title=Migration Reversal Tested - ")
+    assert "MRT_BASE_TIP" in proc.stdout and "UNKNOWN" in proc.stdout
+
+
+def test_no_step_reads_the_events_stale_base_sha() -> None:
+    """`pull_request.base.sha` is the stale merge base on a PR that is behind
+    its base; `detect` and `tested` read the base tip instead. Only an
+    EXPRESSION is refused: GitHub evaluates `${{ }}` anywhere in a step, a
+    shell comment included, while prose naming the field is harmless."""
+    expression = re.compile(r"\$\{\{[^}]*pull_request\.base\.sha")
+    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    for job in ("detect", "tested"):
+        steps = doc["jobs"][job]["steps"]
+        assert steps, job
+        for step in steps:
+            assert not expression.search(repr(step)), (job, step.get("name"))
+    # The scan can fail: the pre-fix spelling is caught.
+    assert expression.search("BASE_SHA: ${{ github.event.pull_request.base.sha }}")
+
+
+def _run_detect(
+    repo: Repo, step_env: dict[str, str], head: str
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Run `detect`'s shipped `run:` body; return the process and what it
+    wrote to GITHUB_OUTPUT."""
+    out = Path(step_env["GITHUB_ENV"]).parent / "github-output"
+    out.write_text("", encoding="utf-8")
+    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    (body,) = [s["run"] for s in doc["jobs"]["detect"]["steps"] if "run" in s]
+    env = {
+        **step_env,
+        "GITHUB_OUTPUT": _posix(out),
+        "BASE_REF": "main",
+        "HEAD_SHA": head,
+    }
+    proc = _run_step(body, env, repo.root)
+    return proc, out.read_text(encoding="utf-8")
+
+
+def test_detect_reads_the_prs_own_changes_from_the_tip(
+    repo: Repo, step_env: dict[str, str]
+) -> None:
+    stale, tip, head = _stale_base_pr(repo)
+    _publish_tip(repo, tip)
+    proc, output = _run_detect(repo, step_env, head)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert output == "relevant=true\n"
+    # A PR that adds no migration, behind a main that landed one: relevant
+    # is false -- main's migration is not this PR's change.
+    repo.git("checkout", "--quiet", "-b", "pr2", stale)
+    repo.write("README.md", b"docs\n")
+    head2 = repo.commit("docs only")
+    proc, output = _run_detect(repo, step_env, head2)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert output == "relevant=false\n"
+
+
+def test_detect_refuses_an_unresolvable_base_tip(
+    repo: Repo, step_env: dict[str, str]
+) -> None:
+    _, _, head = _stale_base_pr(repo)
+    proc, output = _run_detect(repo, step_env, head)
+    assert proc.returncode == 1
+    assert "refs/remotes/origin/main does not resolve" in proc.stdout
+    assert output == ""
 
 
 def test_qualifying_step_fails_an_upgrade_change(
@@ -1434,7 +1647,8 @@ def test_qualifying_step_fails_an_upgrade_change(
     repo.write(REV_PATH, CODE_EDIT.head)
     head = repo.commit("code change")
     _install_script(repo)
-    env = {**step_env, "BASE_SHA": base, "HEAD_SHA": head}
+    _publish_tip(repo, base)
+    env = _step_env_for(step_env, base, head)
     proc = _run_step(_step(QUALIFY_STEP)["run"], env, repo.root)
     assert proc.returncode != 0
     assert ERROR_B in proc.stdout
