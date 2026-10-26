@@ -587,6 +587,20 @@ describe("appendCheck — the records a test keeps", () => {
     const viaCaller = { ...record(1), registry: "caller" as const };
     expect(appendCheck([record(1)], viaCaller)).toEqual([record(1), viaCaller]);
   });
+
+  it.each([
+    ["presented", { presented: [ROUTE] }],
+    ["operator", { operator: [ROUTE] }],
+    ["unread", { unread: [ROUTE] }],
+  ])("keeps a record that differs only in its %s list", (_which, change) => {
+    // The verdict reads a render's LAST check. One that saw the page gone must
+    // not be dropped as a repeat of one that saw it, nor the reverse: with the
+    // `unread` list ignored, presented-clean, page absent, page unread would
+    // collapse to two records and prove a route the last check refused.
+    const gone = { ...record(1), presented: [] as string[] };
+    const back = { ...gone, ...change };
+    expect(appendCheck([gone], back)).toEqual([gone, back]);
+  });
 });
 
 describe("recordPresentationCheck", () => {

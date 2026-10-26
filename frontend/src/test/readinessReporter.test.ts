@@ -86,9 +86,17 @@ const SAFE: PresentationCheckRecord = {
   registry: "provider",
 };
 const READINESS_FILE = "components/presentation/presentationReadiness.test.ts";
+/**
+ * A test of the readiness module that is not the arming one: the real module
+ * holds about a dozen tests and ONE armed, so a verdict that reads "some test
+ * is armed" must not be mistaken for "every test is".
+ */
+const BESIDE = { name: "readiness > beside", state: "passed" as const };
 /** The readiness test's module, its arming test having run. */
 const READINESS = fakeModule(READINESS_FILE, [
+  BESIDE,
   { name: "readiness > arms", state: "passed", armed: true },
+  BESIDE,
 ]);
 
 describe("readyRouteTargets", () => {
@@ -256,7 +264,9 @@ describe("PresentationReadinessReporter", () => {
     reporter.onTestRunEnd(
       [
         fakeModule("components/presentation/presentationReadiness.test.tsx", [
+          BESIDE,
           { name: "readiness > arms", state: "passed", armed: true },
+          BESIDE,
         ]),
         fakeModule(LANDING?.provenBy ?? "", [
           { name: "is safe", state: "skipped", checks: [SAFE] },
@@ -279,7 +289,9 @@ describe("PresentationReadinessReporter", () => {
     reporter.onTestRunEnd(
       [
         fakeModule(READINESS_FILE, [
+          BESIDE,
           { name: "readiness > arms", state: "skipped", armed: true },
+          BESIDE,
         ]),
         fakeModule(LANDING?.provenBy ?? "", [
           { name: "is safe", state: "skipped", checks: [SAFE] },
@@ -302,7 +314,9 @@ describe("PresentationReadinessReporter", () => {
     reporter.onTestRunEnd(
       [
         fakeModule(READINESS_FILE, [
+          BESIDE,
           { name: "readiness > arms", state: "skipped", armed: true },
+          BESIDE,
         ]),
         fakeModule(LANDING?.provenBy ?? "", [
           { name: "is safe", state: "skipped", checks: [SAFE] },
