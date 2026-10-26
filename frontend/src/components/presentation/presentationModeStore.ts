@@ -142,8 +142,16 @@ export function createPresentationModeStore(
     for (const listener of [...listeners]) listener();
   };
   // Another tab changing the viewer convenience can change this tab's answer
-  // when this tab has made no choice of its own.
-  const onStorage = () => emit();
+  // when this tab has made no choice of its own — and only in the direction
+  // that FAILS CLOSED: a tab that opened presenting on the remembered setting
+  // made it its own choice (`PresentationModeProvider` latches it), so another
+  // tab turning the lens off never reveals this one. A `null` key is another
+  // tab's `clear()`; any other key is not this store's.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === PRESENTATION_MODE_STORAGE_KEY) {
+      emit();
+    }
+  };
 
   return {
     subscribe(listener) {

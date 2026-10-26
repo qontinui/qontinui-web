@@ -28,7 +28,7 @@
  * still checked against the terms when the scope is known.
  */
 
-import { relativeTime } from "@/components/console/time";
+import { presentationAge } from "./presentationClock";
 import type { PresentationScopeState } from "./presentationScope";
 
 /** The structured description shown in place of withheld free text. */
@@ -171,12 +171,13 @@ function presentField(value: string | null | undefined): string | null {
 /**
  * The descriptor line, `kind · area · status · age`. A missing field says it
  * is unknown; a field that may name someone the scope cannot clear says
- * `withheld`.
+ * `withheld`. The age is `presentationAge`'s: `now` defaults to the clock,
+ * and `null` — a server or hydration render — states the instant instead.
  */
 export function describeRedacted(
   descriptor: RedactionDescriptor,
   scope: PresentationScopeState,
-  options: { now?: number } = {}
+  options: { now?: number | null } = {}
 ): string {
   const terms = scope.status === "ready" ? scope.scope.confidentialTerms : null;
   const checked = (value: string) =>
@@ -195,7 +196,11 @@ export function describeRedacted(
           ? `area ${WITHHELD}`
           : area,
     status === null ? "status unknown" : checked(status),
-    relativeTime(descriptor.at, { absent: "age unknown", now: options.now }),
+    presentationAge(
+      descriptor.at,
+      options.now === undefined ? Date.now() : options.now,
+      "age unknown"
+    ),
   ];
   return parts.join(DESCRIPTOR_SEPARATOR);
 }

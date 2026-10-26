@@ -26,11 +26,26 @@ export type ObservedTone = "nominal" | "attention" | "unknown";
 export interface ObservedReading {
   text: string;
   tone: ObservedTone;
-  /** Extra detail for a tooltip — the other rendering of the time, or why UNKNOWN. */
+  /**
+   * Extra detail for a tooltip — the other rendering of the time, or coord's
+   * sentence for why the status is UNKNOWN or erroring.
+   */
   title?: string;
   /** Coord's own `unknown_reason`, verbatim — shown muted beside the sentence. */
   reason?: string;
 }
+
+/**
+ * The decision code coord's worker ledger records for a tick whose body
+ * errored (`worker_ledger::TICK_ERROR_DECISION`).
+ */
+export const ERROR_TICK_CODE = "tick_error";
+
+/**
+ * Coord's `reason` for a live loop whose lease holder it could not read
+ * (`observe_worker`): never nominal, and no pass is attributable.
+ */
+export const LEASE_HOLDER_UNKNOWN = "lease_holder_unknown";
 
 export const OBSERVED_UNKNOWN_TEXT =
   "Observed: UNKNOWN — no auto-publisher pass recorded on the serving coord";
@@ -41,12 +56,28 @@ export function describeObservedPass(
 ): ObservedReading {
   switch (pass?.status) {
     case "alive": {
-      // A leader that has never run a body is not nominal: the loop ticks,
-      // but nothing it was built to do has happened yet.
+      // Coord could not read the lease, so no replica's pass can be called
+      // THE last pass: the pass fields are null, and "no pass body recorded
+      // yet" would claim passes never ran when only the holder is unknown.
+      if (pass.reason === LEASE_HOLDER_UNKNOWN) {
+        return {
+          text: "Observed: loop alive, but coord cannot tell which replica runs the pass",
+          tone: "attention",
+          title: "Coord could not read the auto-publisher's lease holder",
+        };
+      }
+      // No body execution on the holder's latest tick. With a code, the tick
+      // DID run and deliberately did no pass work — every skip (`skip:switch_off`
+      // when the operator turned it off) is an idle tick — so "no pass ever
+      // ran" would be false. Without one, nothing it was built to do has
+      // happened yet. Neither is nominal.
       if (!pass.last_work_tick_at) {
         return {
-          text: "Observed: loop alive, no pass body recorded yet",
+          text: pass.last_decision_code
+            ? `Observed: loop alive, last tick did no pass work — ${pass.last_decision_code}`
+            : "Observed: loop alive, no pass body recorded yet",
           tone: "attention",
+          reason: pass.nominal === false ? pass.reason || undefined : undefined,
         };
       }
       // Present but unparseable is not a pass we can place in time — say so
@@ -59,10 +90,38 @@ export function describeObservedPass(
         absent: "at an unknown time",
       });
       const code = pass.last_decision_code ?? "no decision code recorded";
+      // Coord's own `nominal: false` outranks a parseable time: an `alive`
+      // loop coord calls unhealthy never renders in the healthy tone, and its
+      // reason is shown. (Absent from an older coord, which reads as before.)
+      const unhealthy = pass.nominal === false;
       return {
         text: `Observed: last pass ${when} — ${code}`,
-        tone: parseable ? "nominal" : "attention",
+        tone: parseable && !unhealthy ? "nominal" : "attention",
         title: absoluteTime(pass.last_work_tick_at),
+        reason: unhealthy ? pass.reason || undefined : undefined,
+      };
+    }
+    case "erroring": {
+      // The loop runs and is FAILING: its body errors on every tick (the
+      // ledger records such a tick as `tick_error`), or its last pass
+      // returned a failure code (`ran:publish_failed`, …). Not UNKNOWN —
+      // coord observed it — and never a healthy "last pass". The code is
+      // CONTEXT, not the verdict: coord decides `erroring` across replicas,
+      // so the lease holder's latest code can briefly read healthy after a
+      // handover. Coord's own sentence, beside it, says where to look.
+      // No code at all means coord could not read the lease holder's row; its
+      // reason, beside the line, then says what is failing.
+      const code = pass.last_decision_code;
+      return {
+        text:
+          code === ERROR_TICK_CODE
+            ? "Observed: running but failing — the pass body errors on every tick"
+            : code == null
+              ? "Observed: running but failing"
+              : `Observed: running but failing (last decision: ${code})`,
+        tone: "attention",
+        reason: pass.unknown_reason || undefined,
+        title: pass.unknown_reason ? `Coord: ${pass.unknown_reason}` : undefined,
       };
     }
     case "stale":

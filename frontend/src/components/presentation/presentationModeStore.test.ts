@@ -174,9 +174,18 @@ describe("presentationModeStore", () => {
     expect(listener).toHaveBeenCalledTimes(1);
     window.dispatchEvent(new StorageEvent("storage"));
     expect(listener).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: PRESENTATION_MODE_STORAGE_KEY })
+    );
+    expect(listener).toHaveBeenCalledTimes(3);
+    // Another store's key is not this store's change.
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "qontinui.active-tenant" })
+    );
+    expect(listener).toHaveBeenCalledTimes(3);
     unsubscribe();
     store.recordChoice(false, { remember: false });
     window.dispatchEvent(new StorageEvent("storage"));
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(3);
   });
 });

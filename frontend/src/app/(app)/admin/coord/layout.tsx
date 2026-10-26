@@ -25,12 +25,16 @@
  * Navigation between console pages is the app sidebar's Coord, Sessions and
  * Fleet sections (built from `components/admin/coord/coordNavModel.ts`).
  *
- * Every console page is a lens surface: `PresentationLens` (plan
- * `2026-10-23-console-presentation-spaces` D1, D2) mounts the presentation
- * mode once for the whole console, and the header's `PresentationModeToggle`
- * flips it — or `?present=1` on any console URL. The mode changes only what
- * the pages RENDER (captions on, controls off, redaction on); it is not an
- * access decision, and the paragraph above about who may view still holds.
+ * Every console page is under the presentation lens: `PresentationLens` (plan
+ * `2026-10-23-console-presentation-spaces` D1, D2) gives the whole console
+ * the tab's presentation mode and the tenant's redaction scope, and the
+ * header's `PresentationModeToggle` flips it — or `?present=1` on any console
+ * URL. The mode changes only what the pages RENDER (captions on, controls off,
+ * redaction on); it is not an access decision, and the paragraph above about
+ * who may view still holds. In presentation mode a page's body renders only
+ * when the page is registered as presentation-ready (`PresentationPage`);
+ * every other console page is withheld behind its caption, so a page nobody
+ * converted cannot show its controls to an audience.
  */
 
 import { Activity } from "lucide-react";
@@ -39,6 +43,7 @@ import RedMainBanner from "@/components/admin/coord/RedMainBanner";
 import {
   PresentationLens,
   PresentationModeToggle,
+  PresentationPage,
 } from "@/components/presentation";
 
 export default function CoordLayout({
@@ -82,7 +87,9 @@ export default function CoordLayout({
             Mounted in the layout so it shows on EVERY coord console page. */}
         <RedMainBanner />
 
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto">
+          <PresentationPage>{children}</PresentationPage>
+        </main>
       </div>
     </PresentationLens>
   );

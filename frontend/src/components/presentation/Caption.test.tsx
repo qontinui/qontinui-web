@@ -59,14 +59,23 @@ describe("Caption", () => {
   it("renders each product term through GlossaryTerm", () => {
     render(
       <FixedPresentationMode presenting>
-        <Caption id="dev-ops.page" />
+        <Caption id="coordination-overview.page" />
       </FixedPresentationMode>
     );
     const terms = [...document.querySelectorAll("[data-glossary-term]")].map(
       (el) => el.getAttribute("data-glossary-term")
     );
-    // The dev-ops copy names a device and the coordination service.
-    expect(terms).toEqual(expect.arrayContaining(["device", "coord"]));
+    // The coordination-overview copy names the operator, the coordination
+    // service and what it keeps consistent.
+    expect(terms).toEqual(
+      expect.arrayContaining([
+        "operator",
+        "coord",
+        "claim",
+        "work_unit",
+        "gate",
+      ])
+    );
     expect(screen.getByText("coordination service")).toHaveAttribute(
       "data-glossary-term",
       "coord"
@@ -104,5 +113,22 @@ describe("Caption", () => {
     expect(
       document.querySelector('[data-caption-part="why-it-matters"]')
     ).not.toBeNull();
+  });
+
+  it("renders a brief caption's title and one-liner only, even in presentation mode", () => {
+    render(
+      <FixedPresentationMode presenting>
+        <Caption id="dev-ops.page" level={1} brief />
+      </FixedPresentationMode>
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Dev Ops" })
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-caption-part="one-liner"]')
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-caption-part="why-it-matters"]')
+    ).toBeNull();
   });
 });

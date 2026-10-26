@@ -3,13 +3,19 @@
  * assert it is safe to show an outsider (plan
  * `2026-10-23-console-presentation-spaces` D3).
  *
- * Every lens page carries a presentation-mode render test built on this:
+ * A lens page is shown in presentation mode only once it is registered as
+ * presentation-ready, and the registration names the page test that proves
+ * it — a presentation-mode render built on this helper
+ * (`components/presentation/presentationReadiness.ts`):
  *
  *     const view = renderInPresentationMode(<DevOpsPage />, {
  *       scope: { status: "ready", scope: { firstPartyOwners: ["acme"], confidentialTerms: [] } },
  *     });
  *     await screen.findByTestId("coord-devops-health-strip");
- *     expectPresentationSafe(view, { captions: ["dev-ops.page"] });
+ *     expectPresentationSafe(view, {
+ *       captions: ["dev-ops.page"],
+ *       forbidden: ["build-host-1", "0b9d6a54"], // the fixture's real names
+ *     });
  *
  * `expectPresentationSafe` fails, listing every offender, on:
  *
@@ -17,18 +23,50 @@
  *   `[contenteditable]` or ARIA widget that is not disabled and is not
  *   navigation-only. Navigation-only means: carries `NAVIGATION_ONLY_PROPS`
  *   (`data-presentation-nav`), or is a link (`a[href]`, `role="link"`), a tab
- *   (`role="tab"`), or a pure disclosure (`aria-expanded` with no
- *   `aria-haspopup` — opening a menu or a dialog is NOT a pure disclosure,
- *   because what it opens can write). Hidden content is scanned too: a control
- *   one click away is still in front of the audience.
+ *   (`role="tab"`), or a pure disclosure — a BUTTON with `aria-expanded` and
+ *   no `aria-haspopup`. Opening a menu or a dialog is not a pure disclosure,
+ *   because what it opens can write; neither is a `combobox` (the UI kit's
+ *   Select trigger), whose list is a choice that can write. Hidden content is
+ *   scanned too: a control one click away is still in front of the audience.
+ *   The one other allowance is a presenter safety control
+ *   (`presenterSafetyProps`, `components/console/presenterSafety.ts`) naming
+ *   one of the CLOSED list `PRESENTER_SAFETY_CONTROLS` — stopping the AI
+ *   co-pilot or a recording, and the session-expiry prompt. A marker naming
+ *   anything else is itself a violation, so an exemption cannot be minted at
+ *   a call site. And a link is navigation only while it keeps the
+ *   presentation: an `a[href]` to a lens page (this origin, `LENS_TREES`)
+ *   whose URL does not carry `?present=1` is a `presentation-dropping-link` —
+ *   opened in a new tab it would show the operator view. Build its href with
+ *   `usePresentationHref`.
  * - **(b) a write registration** — a mounted UI Bridge component action, or a
  *   connected element's custom action, whose declared `effect` is `write` or
  *   `destructive`, or that declares NO effect: unclassified is not safe (D3.2:
- *   "UI Bridge registrations on lens pages declare `effect`").
+ *   "UI Bridge registrations on lens pages declare `effect`"). And an
+ *   `unread-registry`: the registry (b) reads must be the one the checked
+ *   render registers with — not another render's (a view assembled from two
+ *   renders), and not one a provider of the render's own (in a `wrapper`, or
+ *   in the page) took the page's registrations away from
+ *   (`uiBridgeBinding.ts`).
  * - **(c) a cost** — `CostFigure`'s operator-mode figure, the "list-price
  *   equivalent" label, or any currency figure (`$12`, `€0.40`, `3 USD`) in
  *   text or in a `title` / `aria-label` / `alt` / `placeholder` / input value.
  * - **(d) a missing caption** — each key in `options.captions` must render.
+ * - **(e) an identity** — an email address (personal data) or a UUID (an
+ *   internal identifier) in text or in a `title` / `aria-label` / `alt` /
+ *   `placeholder` / input value, always; and any of `options.forbidden` — the
+ *   fixture's hostnames, device ids, other parties' names — anywhere, matched
+ *   ignoring case. A page test passes the real names its fixture holds, so the
+ *   check sees exactly what the lens was meant to hide (D3.3).
+ * - **(f) a view that is not on the screen** — checks (a)–(e) look for what
+ *   is shown, so over nothing they pass whatever the page would render. A
+ *   render's view (one carrying its `container`, as `renderInPresentationMode`
+ *   returns it) fails when, as the check runs, its React root has been
+ *   unmounted (`unmount()`), its container is not inside the document the
+ *   check reads (cleaned up, or rendered somewhere detached), or the container
+ *   holds nothing but the helper's own sentinel — a `wrapper` that drops its
+ *   children, an `OperatorOnly` around the whole render, a page that rendered
+ *   nothing. A view without a `container` is a statement about the document,
+ *   and is read as the document.
  *
  * ## How (b) observes the registry
  *
@@ -38,12 +76,32 @@
  * that, so it must say how instead: pass `uiBridge: { registry }` (a view over
  * whatever its mock recorded) or `uiBridge: { unobservable: "<reason>" }`.
  * Neither is defaulted, so a mocked bridge can never make (b) pass by seeing
- * nothing.
+ * nothing. A PARTIAL mock — the real provider kept, the registration hooks
+ * stubbed (`{ ...importOriginal(), useUIComponent: … }`) — would leave the
+ * provider's registry real but empty, so the render also mounts a sentinel
+ * that registers one component and one element through the SDK's own hooks,
+ * and throws unless the registry recorded both. The sentinels are left out of
+ * the checks. The registry read back is tied to its render: check (b) fails a
+ * view that is another render, or whose tree holds a second `UIBridgeProvider`
+ * (a `wrapper` that mounts one, a page that does) — so do not add a provider
+ * to the wrapper; the helper mounts the real one.
  *
  * The render is a `FixedPresentationMode` lens with the given presentation
  * scope (default UNKNOWN, as production has until a scope provider says
  * otherwise: every `RedactedText` withholds). Supply the caller's own
  * providers through `wrapper`, as with RTL's `render`.
+ *
+ * ## What a check records for readiness
+ *
+ * In a test file that proves a presentation-ready route, every run of
+ * `findPresentationViolations` (and so of `expectPresentationSafe`) also
+ * records on the running test what it saw — whether the route's own page
+ * component was mounted in the view, rendering something and all of it
+ * inside the element the checks read, under a presenting lens; how many
+ * violations it found; whether (b) read the registry of the checked render's
+ * own real provider (`readinessRecorder.ts`). The run, not this file, then
+ * decides whether the route is proven (`readinessEvidence.ts`). Elsewhere a
+ * check records nothing.
  */
 
 import type { ComponentType, ReactElement, ReactNode } from "react";
@@ -59,10 +117,18 @@ import {
   FixedPresentationMode,
   NAVIGATION_ONLY_ATTRIBUTE,
   PRESENTATION_SCOPE_UNKNOWN,
+  PRESENTER_SAFETY_ATTRIBUTE,
+  PRESENT_PARAM,
   PresentationScopeProvider,
+  isLensTreePath,
+  isPresenterSafetyControl,
   type CaptionKey,
   type PresentationScopeState,
 } from "@/components/presentation";
+import { CURRENCY_FIGURE } from "./currencyTokens";
+import { reactRootOf } from "./reactTree";
+import { recordPresentationCheck } from "./readinessRecorder";
+import { markProviderReadBack, registryBinding } from "./uiBridgeBinding";
 
 /** The part of a UI Bridge registry check (b) reads. */
 export interface UiBridgeRegistryView {
@@ -112,18 +178,32 @@ export type PresentationRenderResult = RenderResult & {
 
 /** What the checks read: where to look, and the registry observation. */
 export interface PresentationView {
+  /** Where checks (a)–(e) look; default `document.body`, so portals are read too. */
   readonly baseElement?: Element;
+  /**
+   * The render's own container — RTL's `container`, which
+   * `renderInPresentationMode`'s result carries. With it, check (f) reads
+   * whether the render is still on the screen. Without it, the view is a
+   * statement about the document, and is read as the document.
+   */
+  readonly container?: Element;
   readonly uiBridge: UiBridgeObserved;
 }
 
 export type PresentationViolationKind =
+  | "unmounted-view"
+  | "empty-view"
   | "enabled-control"
+  | "presentation-dropping-link"
   | "write-registration"
   | "undeclared-registration"
+  | "unread-registry"
   | "cost-figure"
   | "cost-label"
   | "currency-figure"
-  | "missing-caption";
+  | "missing-caption"
+  | "identifier"
+  | "foreign-identity";
 
 export interface PresentationViolation {
   readonly kind: PresentationViolationKind;
@@ -133,12 +213,28 @@ export interface PresentationViolation {
 export interface PresentationSafetyOptions {
   /** Caption keys that must render (`data-presentation-caption`). */
   readonly captions?: readonly CaptionKey[];
+  /**
+   * Strings the render must not show anywhere — the fixture's hostnames,
+   * device ids, other parties' names. Matched ignoring case, in text and in
+   * the text attributes.
+   */
+  readonly forbidden?: readonly string[];
 }
 
 interface BridgeModule {
   readonly Provider: ComponentType<{ children: ReactNode }>;
   readonly useBridge: () => { readonly registry?: unknown } | null;
 }
+
+/** The ids the helper's own sentinel registrations carry. */
+const SENTINEL_COMPONENT_ID = "presentation-helper.sentinel-component";
+const SENTINEL_ELEMENT_ID = "presentation-helper.sentinel-element";
+const SENTINEL_IDS: ReadonlySet<string> = new Set([
+  SENTINEL_COMPONENT_ID,
+  SENTINEL_ELEMENT_ID,
+]);
+/** The attribute on the sentinel's element: not the page, so check (f) skips it. */
+const SENTINEL_ATTRIBUTE = "data-presentation-sentinel";
 
 /** The real SDK, or `null` when the test file mocked it away. */
 function realBridge(): BridgeModule | null {
@@ -156,6 +252,45 @@ function realBridge(): BridgeModule | null {
     // A vitest module mock throws on an export its factory did not define.
     return null;
   }
+}
+
+/**
+ * Registers one component and one element through the SDK's hooks, as any
+ * page would. If either never reaches the registry, the hooks are not the
+ * SDK's — a partial mock — and nothing the page registers would reach it
+ * either.
+ */
+function BridgeSentinel() {
+  uiBridgeReact.useUIComponent({
+    id: SENTINEL_COMPONENT_ID,
+    name: "Presentation helper sentinel",
+    actions: [
+      {
+        id: "observe",
+        label: "Observe",
+        effect: "read",
+        handler: async () => true,
+      },
+    ],
+  });
+  const { ref } = uiBridgeReact.useUIElement({
+    id: SENTINEL_ELEMENT_ID,
+    label: "Presentation helper sentinel",
+    type: "button",
+  });
+  return <span ref={ref} hidden {...{ [SENTINEL_ATTRIBUTE]: "" }} />;
+}
+
+/** `registry` without the helper's own sentinel registrations. */
+function withoutSentinels(
+  registry: UiBridgeRegistryView
+): UiBridgeRegistryView {
+  return {
+    getAllComponents: () =>
+      registry.getAllComponents().filter((c) => !SENTINEL_IDS.has(c.id)),
+    getAllElements: () =>
+      registry.getAllElements().filter((e) => !SENTINEL_IDS.has(e.id)),
+  };
 }
 
 function isRegistryView(value: unknown): value is UiBridgeRegistryView {
@@ -218,6 +353,7 @@ export function renderInPresentationMode(
     return (
       <Provider>
         <RegistryProbe useBridge={bridge.useBridge} />
+        <BridgeSentinel />
         {lens}
       </Provider>
     );
@@ -227,17 +363,98 @@ export function renderInPresentationMode(
 
   let observed: UiBridgeObserved;
   if (uiBridge === "provider") {
-    if (probe.registry === null) {
+    const registry = probe.registry;
+    if (registry === null) {
       throw new Error(
         "renderInPresentationMode: the UIBridgeProvider exposed no registry, so check (b) " +
           "would see nothing. Pass `uiBridge: { registry }` or `uiBridge: { unobservable }`."
       );
     }
-    observed = { registry: probe.registry };
+    const sawComponent = registry
+      .getAllComponents()
+      .some((c) => c.id === SENTINEL_COMPONENT_ID);
+    const sawElement = registry
+      .getAllElements()
+      .some((e) => e.id === SENTINEL_ELEMENT_ID);
+    if (!sawComponent || !sawElement) {
+      throw new Error(
+        "renderInPresentationMode: the UI Bridge registry did not record the helper's own " +
+          "sentinel registrations, so the SDK's registration hooks are stubbed in this test " +
+          "file (a partial mock of @qontinui/ui-bridge/react) and check (b) would see " +
+          "nothing. Pass `uiBridge: { registry }` or `uiBridge: { unobservable }`."
+      );
+    }
+    observed = { registry: withoutSentinels(registry) };
+    // Check (b) reads `observed` only as THIS render's registry: the view it
+    // checks must be this render, holding no provider of its own.
+    markProviderReadBack(observed, {
+      container: result.container,
+      registry,
+      provider: bridge?.Provider,
+    });
   } else {
     observed = uiBridge;
   }
   return Object.assign(result, { uiBridge: observed });
+}
+
+// ---------------------------------------------------------------------------
+// (f) the view is on the screen
+// ---------------------------------------------------------------------------
+
+/** Whether `container` holds nothing but the helper's sentinel and blank text. */
+function rendersNothing(container: Element): boolean {
+  for (const node of container.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if ((node.textContent ?? "").trim() !== "") return false;
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (!(node as Element).hasAttribute(SENTINEL_ATTRIBUTE)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Why the render `view` is not on the screen as the check runs; empty when it
+ * is, or when the view carries no container (a statement about the document).
+ */
+function mountViolations(
+  view: PresentationView,
+  root: Element
+): PresentationViolation[] {
+  const container = view.container;
+  if (container === undefined) return [];
+  if (!container.isConnected || !root.contains(container)) {
+    return [
+      {
+        kind: "unmounted-view",
+        detail:
+          "the view's container is not inside the document the check reads, so none of it is on the screen — it was cleaned up, or rendered into a detached element",
+      },
+    ];
+  }
+  const reactRoot = reactRootOf(container);
+  if (reactRoot.state !== "mounted") {
+    return [
+      {
+        kind: "unmounted-view",
+        detail:
+          reactRoot.state === "unmounted"
+            ? "the view was unmounted before the check ran (`unmount()`), so nothing it rendered is on the screen"
+            : "the view's container holds no React root this check can read, so what it shows cannot be told apart from nothing",
+      },
+    ];
+  }
+  if (rendersNothing(container)) {
+    return [
+      {
+        kind: "empty-view",
+        detail:
+          "the view renders nothing but the helper's own sentinel — a wrapper that drops its children, an OperatorOnly around the whole render, or a page that rendered nothing — so the checks would pass whatever the page shows",
+      },
+    ];
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +510,8 @@ const READ_ONLY_INPUT_TYPES = new Set([
 /** Why `el` may stay live in presentation mode, or `null` when it may not. */
 function controlAllowance(el: Element): string | null {
   if (el.hasAttribute(NAVIGATION_ONLY_ATTRIBUTE)) return "navigation-only";
+  const safety = el.getAttribute(PRESENTER_SAFETY_ATTRIBUTE);
+  if (isPresenterSafetyControl(safety)) return `presenter safety: ${safety}`;
   const tag = el.tagName.toLowerCase();
   if (tag === "input" && (el as HTMLInputElement).type === "hidden")
     return "hidden input";
@@ -315,7 +534,10 @@ function controlAllowance(el: Element): string | null {
   const popup = el.getAttribute("aria-haspopup");
   if (
     el.hasAttribute("aria-expanded") &&
-    (popup === null || popup === "false")
+    (popup === null || popup === "false") &&
+    // A combobox (a Radix Select trigger: `aria-expanded`, no
+    // `aria-haspopup`) opens a list whose choice can write.
+    (role === null || role === "button")
   ) {
     return "disclosure";
   }
@@ -338,13 +560,57 @@ function describeElement(el: Element): string {
     .join(" ");
 }
 
+/**
+ * The lens page `link` opens WITHOUT the presentation — this origin, a lens
+ * tree, and a URL not carrying `?present=1` — or `null` when it keeps it (or
+ * leaves the lens, where there is no presentation to keep).
+ */
+function presentationDroppedBy(link: Element): string | null {
+  const href = link.getAttribute("href");
+  if (href === null) return null;
+  const base = link.ownerDocument.baseURI;
+  let url: URL;
+  try {
+    url = new URL(href, base);
+  } catch {
+    return null;
+  }
+  if (url.origin !== new URL(base).origin) return null;
+  if (!isLensTreePath(url.pathname)) return null;
+  return url.searchParams.get(PRESENT_PARAM) === "1" ? null : url.pathname;
+}
+
 function controlViolations(root: Element): PresentationViolation[] {
-  return [...root.querySelectorAll(CONTROL_SELECTOR)]
-    .filter((el) => controlAllowance(el) === null)
-    .map((el) => ({
-      kind: "enabled-control" as const,
-      detail: `${describeElement(el)} is an enabled control that is not navigation-only`,
-    }));
+  const out: PresentationViolation[] = [];
+  for (const link of root.querySelectorAll("a[href]")) {
+    const dropped = presentationDroppedBy(link);
+    if (dropped !== null) {
+      out.push({
+        kind: "presentation-dropping-link",
+        detail: `${describeElement(link)} links to the lens page ${dropped} without ?${PRESENT_PARAM}=1, so opened in a new tab it shows the operator view — build its href with usePresentationHref`,
+      });
+    }
+  }
+  const marked = `[${PRESENTER_SAFETY_ATTRIBUTE}]`;
+  for (const el of root.querySelectorAll(`${CONTROL_SELECTOR},${marked}`)) {
+    // A safety marker naming a control the closed list does not hold claims
+    // an exemption nobody granted — on any element, control or not.
+    const safety = el.getAttribute(PRESENTER_SAFETY_ATTRIBUTE);
+    if (safety !== null && !isPresenterSafetyControl(safety)) {
+      out.push({
+        kind: "enabled-control",
+        detail: `${describeElement(el)} claims presenter-safety control "${safety}", which PRESENTER_SAFETY_CONTROLS does not list`,
+      });
+      continue;
+    }
+    if (el.matches(CONTROL_SELECTOR) && controlAllowance(el) === null) {
+      out.push({
+        kind: "enabled-control",
+        detail: `${describeElement(el)} is an enabled control that is not navigation-only`,
+      });
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -372,10 +638,16 @@ function effectViolation(
 }
 
 function registrationViolations(
-  observed: UiBridgeObserved
+  view: PresentationView
 ): PresentationViolation[] {
-  if (!("registry" in observed)) return [];
   const out: PresentationViolation[] = [];
+  // The registry read must be the one this render registers with: a view
+  // assembled from two renders, or a render mounting a provider of its own,
+  // would leave (b) reading a registry that holds none of the page's actions.
+  const { unread } = registryBinding(view);
+  if (unread !== null) out.push({ kind: "unread-registry", detail: unread });
+  const observed = view.uiBridge;
+  if (!("registry" in observed)) return out;
   for (const component of observed.registry.getAllComponents()) {
     if (component.mounted === false) continue;
     for (const action of component.actions ?? []) {
@@ -405,11 +677,14 @@ function registrationViolations(
 // (c) cost
 // ---------------------------------------------------------------------------
 
-const CURRENCY_CODES = "USD|EUR|GBP|JPY|CHF|CAD|AUD|INR|CNY";
-/** A currency symbol or ISO code next to a number, either order. */
-export const CURRENCY_FIGURE = new RegExp(
-  `[$€£¥₹]\\s?-?\\d|\\b(?:${CURRENCY_CODES})\\s?-?\\d|\\d\\s?(?:${CURRENCY_CODES})\\b`
-);
+/**
+ * A currency symbol or ISO code next to a number, either order: `$12`,
+ * `$.50`, `€-3`, `12 USD`, `12,00 €` and `12¢`. Built in `currencyTokens.ts`
+ * from the one currency vocabulary the source scan (`costRenderScan.ts`)
+ * reads too, and re-exported here for the callers that import it from this
+ * helper.
+ */
+export { CURRENCY_FIGURE };
 const COST_LABEL_FRAGMENT = "list-price equivalent";
 
 const TEXT_ATTRIBUTES = [
@@ -502,6 +777,63 @@ function captionViolations(
 }
 
 // ---------------------------------------------------------------------------
+// (e) identities
+// ---------------------------------------------------------------------------
+
+/** An email address — personal data an evaluator is never shown. */
+const EMAIL =
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
+/** A UUID — an internal identifier (device, session, tenant, agent ids). */
+const UUID =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+
+function identityViolations(
+  root: Element,
+  forbidden: readonly string[]
+): PresentationViolation[] {
+  const out: PresentationViolation[] = [];
+  const needles = forbidden
+    .map((f) => f.trim())
+    .filter(Boolean)
+    .map((f) => ({ f, lower: f.toLowerCase() }));
+  const found = new Set<string>();
+  for (const { text, owner } of textNodes(root)) {
+    const where = describeElement(owner);
+    if (EMAIL.test(text)) {
+      out.push({
+        kind: "identifier",
+        detail: `${where} shows an email address — personal data`,
+      });
+    }
+    if (UUID.test(text)) {
+      out.push({
+        kind: "identifier",
+        detail: `${where} shows an internal identifier (a UUID)`,
+      });
+    }
+    const lower = text.toLowerCase();
+    for (const { f, lower: needle } of needles) {
+      if (lower.includes(needle)) {
+        found.add(needle);
+        out.push({ kind: "foreign-identity", detail: `${where} shows "${f}"` });
+      }
+    }
+  }
+  // A name split across elements is in no single text node, but it is on the
+  // screen.
+  const whole = (root.textContent ?? "").toLowerCase();
+  for (const { f, lower: needle } of needles) {
+    if (!found.has(needle) && whole.includes(needle)) {
+      out.push({
+        kind: "foreign-identity",
+        detail: `"${f}" is rendered across adjacent elements`,
+      });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 
 /** Every way the render is not safe to show; empty when it is. */
 export function findPresentationViolations(
@@ -509,12 +841,18 @@ export function findPresentationViolations(
   options: PresentationSafetyOptions = {}
 ): PresentationViolation[] {
   const root = view.baseElement ?? document.body;
-  return [
+  const violations = [
+    ...mountViolations(view, root),
     ...controlViolations(root),
-    ...registrationViolations(view.uiBridge),
+    ...registrationViolations(view),
     ...costViolations(root),
     ...captionViolations(root, options.captions ?? []),
+    ...identityViolations(root, options.forbidden ?? []),
   ];
+  // The readiness evidence: in a ready route's proof, what this check saw —
+  // of the page's output, only what it read inside `root`.
+  recordPresentationCheck(view, violations.length, root);
+  return violations;
 }
 
 /** One line per violation, for an assertion message. */

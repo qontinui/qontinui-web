@@ -23,16 +23,31 @@
  *   selection the request carried (`readActiveTenantId`, the same value
  *   `HttpClient` sends as `X-Qontinui-Active-Tenant`). A held record read
  *   under another selection is never served: it reads as `loading` and is read
- *   again. Another tab switching project fires a `storage` event, which drops
- *   the held record at once (the switching tab itself reloads).
+ *   again. That check, made on every render, is what covers a selection this
+ *   tab changes without reloading (the sessions page's tenant switcher, the
+ *   tenant list replacing a stale selection), which fires no `storage` event
+ *   here. Another tab switching project does fire one, which drops the held
+ *   record at once.
+ * - **A save's answer is held only for the project it was saved under.** The
+ *   form reads the selection before it sends a save and hands it to `accept`
+ *   with the answer, which is held only when the selection is still that
+ *   one: an answer that lands after the project changed is another project's
+ *   scope, and holding it under the new selection would redact the new
+ *   project's pages by the old project's lists — failing OPEN on the new
+ *   project's own names.
  * - **Unknown fails closed.** A failed read is `error`; a record whose
  *   first-party owners are unknown (coord could not list the registered
  *   repositories) is `error` too — an empty list would be a decision nobody
  *   made. Both withhold every title. A failed read is retried after
  *   {@link PRESENTATION_SCOPE_RETRY_MS}.
  *
- * The tenant-policy page's form reads the same store (`record`) and hands it
- * the saved answer (`accept`), so a save is in force in this tab immediately.
+ * The tenant-policy page's form (`PresentationScopePanel`, operator mode only)
+ * reads the same store (`record`) — asking for the read itself, since nothing
+ * there is presenting — and hands it the saved answer (`accept`, with the
+ * selection the save was sent under), so a save is in force in this tab
+ * immediately. After a save that did not answer it re-reads with
+ * `rereadNow`, which starts a read AFTER the save (never joining one sent
+ * before it) and says how that read went, so the form says what it observed.
  *
  * This is the presentation folder's only network module, and
  * `noNetwork.test.tsx` names it as such.
@@ -108,6 +123,18 @@ export function presentationScopeStateOf(
   };
 }
 
+/** How a re-read the caller started went (`rereadNow`). */
+export type PresentationScopeReread =
+  | { readonly status: "read"; readonly record: PresentationScopeRecord }
+  | { readonly status: "failed"; readonly failure: string }
+  /**
+   * Its answer was discarded unread: `accept` or `invalidate` (another tab
+   * changed the active project) replaced the world it was read for.
+   */
+  | { readonly status: "superseded" };
+
+const SUPERSEDED: PresentationScopeReread = { status: "superseded" };
+
 export interface PresentationScopeStoreOptions {
   /** The read. Default: `fetchPresentationScope`. */
   load?: (signal: AbortSignal) => Promise<PresentationScopeRecord>;
@@ -133,8 +160,20 @@ export interface PresentationScopeStore {
   ensureFresh(): void;
   /** Read now, whatever is held (joins a read already in flight). */
   reload(): Promise<void>;
-  /** Hold `record` — a save's answer — as the active project's scope. */
-  accept(record: PresentationScopeRecord): void;
+  /**
+   * Read again NOW, abandoning any read already in flight — one sent before
+   * the caller's reason to re-read (a save that did not answer) may carry
+   * what was stored before it — and say how THIS read went.
+   */
+  rereadNow(): Promise<PresentationScopeReread>;
+  /**
+   * Hold `record` — a save's answer — as the active project's scope, but only
+   * while the selection is still `sentUnder`, the one the save's request
+   * carried (read with {@link currentSelection} just before sending). Returns
+   * whether it was held; an answer that is not is left for a read of the
+   * project selected now to replace.
+   */
+  accept(record: PresentationScopeRecord, sentUnder: string | null): boolean;
   /** Forget everything read: the active project changed outside this tab. */
   invalidate(): void;
   /** Ms until `ensureFresh` would read again; `null` while a read is in flight. */
@@ -162,7 +201,7 @@ export function createPresentationScopeStore(
   const watchStorage = options.watchStorage ?? typeof window !== "undefined";
 
   let snapshot = NOTHING_READ;
-  let inflight: Promise<void> | null = null;
+  let inflight: Promise<PresentationScopeReread> | null = null;
   let controller: AbortController | null = null;
   // Bumped by `accept` and `invalidate`: a read started before either answers
   // for a world that no longer exists, and is discarded.
@@ -182,7 +221,7 @@ export function createPresentationScopeStore(
     inflight = null;
   };
 
-  const read = (): Promise<void> => {
+  const read = (): Promise<PresentationScopeReread> => {
     if (inflight) return inflight;
     const selection = readSelection();
     const mine = generation;
@@ -198,10 +237,10 @@ export function createPresentationScopeStore(
         selection,
       });
     }
-    inflight = (async () => {
+    inflight = (async (): Promise<PresentationScopeReread> => {
       try {
         const record = await load(ac.signal);
-        if (mine !== generation) return;
+        if (mine !== generation) return SUPERSEDED;
         set({
           state: presentationScopeStateOf(record),
           record,
@@ -210,8 +249,9 @@ export function createPresentationScopeStore(
           failedAt: null,
           failure: null,
         });
+        return { status: "read", record };
       } catch (err) {
-        if (mine !== generation) return;
+        if (mine !== generation) return SUPERSEDED;
         const failure = failureText(err);
         set({
           ...snapshot,
@@ -220,6 +260,7 @@ export function createPresentationScopeStore(
           failedAt: now(),
           failure,
         });
+        return { status: "failed", failure };
       } finally {
         if (mine === generation) {
           inflight = null;
@@ -268,17 +309,25 @@ export function createPresentationScopeStore(
     ensureFresh() {
       if (store.msUntilRecheck() === 0) void read();
     },
-    reload: () => read(),
-    accept(record) {
+    reload: async () => {
+      await read();
+    },
+    rereadNow() {
+      abandonRead();
+      return read();
+    },
+    accept(record, sentUnder) {
+      if (sentUnder !== readSelection()) return false;
       abandonRead();
       set({
         state: presentationScopeStateOf(record),
         record,
-        selection: readSelection(),
+        selection: sentUnder,
         loadedAt: now(),
         failedAt: null,
         failure: null,
       });
+      return true;
     },
     invalidate() {
       abandonRead();

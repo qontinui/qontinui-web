@@ -11,18 +11,24 @@ half of them.
   makes in presentation mode (D3.4): the effective lists, the stored row the
   operator edits, the defaults, and whether this caller may edit.
 * ``PUT "/scope"`` — an admin of the active project, or qontinui staff.
-  Replaces the stored row, as a compare-and-set on its version.
+  Replaces the stored row, as a compare-and-set on (tenant, version): the
+  write names the version AND the project of the scope it was made against,
+  and is refused with a 409 when either has moved.
 
 Authorization (security-surface content trigger 5). The write is gated by
-:func:`require_coord_tenant_admin_target`, the dependency every tenant-scoped
-admin write here uses: admin is checked in the EFFECTIVE tenant from that
-tenant's own membership roles, never from ``is_admin`` / the frontend's
-``isCoordAdmin``, which are unions across every tenant the operator belongs
-to. The tenant the row lands in is that same effective tenant, so an admin of
-project A viewing project B is checked in B and writes B. The read's
-``can_edit`` is computed by the same rule, so the form never offers a save the
-write would refuse. A device or service credential reaches neither route: both
-require an operator's signed-in session.
+:func:`require_coord_tenant_admin_target`, the per-tenant admin gate that also
+resolves the tenant the row lands in (as ``build_records`` and ``taste`` use
+it): admin is checked in the EFFECTIVE tenant from that tenant's own
+membership roles, never from ``is_admin`` / the frontend's ``isCoordAdmin``,
+which are unions across every tenant the operator belongs to. The tenant the
+row lands in is that same effective tenant, so an admin of project A viewing
+project B is checked in B and writes B. The body's ``expected_tenant_id``
+never chooses the row; it only refuses an edit made for another project, so a
+form left open while the selection changed in another tab cannot save one
+project's confidential terms into another's row. The read's ``can_edit`` is
+computed by the same rule as the gate, so the form never offers a save the
+write would refuse. A device or service credential reaches neither route:
+both require an operator's signed-in session.
 
 Isolation (D3.4). Every row is keyed on the tenant resolved here; a caller can
 name no tenant, and a project-selector value for a project the caller is not a
@@ -166,7 +172,12 @@ async def read_presentation_scope(
     response_model=PresentationScopeOut,
     responses={
         403: {"description": "Not an admin of the active project."},
-        409: {"description": "The stored scope moved since expected_version."},
+        409: {
+            "description": (
+                "The stored scope moved since expected_version, or the active "
+                "project is not expected_tenant_id."
+            )
+        },
     },
     summary="Replace the active project's stored presentation scope",
 )
@@ -177,6 +188,22 @@ async def write_presentation_scope(
     user: User = Depends(get_current_active_user_async),
     db: AsyncSession = Depends(get_async_db),
 ) -> PresentationScopeOut:
+    if payload.expected_tenant_id != tenant_id:
+        # The edit was made against another project's scope (the selection
+        # changed under an open form). Writing it here would put that
+        # project's confidential terms into this project's row, which every
+        # member of this project can read.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "presentation_scope_tenant_mismatch",
+                "message": (
+                    "This edit was made for another project than the one now "
+                    "active, so nothing was written. Re-read the active "
+                    "project's scope and make the edit there."
+                ),
+            },
+        )
     try:
         stored = await crud.write_scope(
             db,
