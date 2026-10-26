@@ -26,7 +26,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "sessruns_02_run_key_per_device"
+_PARENT_REVISION_ID = "presentation_scope_01"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 
