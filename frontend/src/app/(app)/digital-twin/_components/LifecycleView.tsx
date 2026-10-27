@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
-import { Provenance } from "@/components/presentation";
+import { LensLink, Provenance } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import { useProbeRead } from "../_hooks/useProbeRead";
 import {
@@ -23,7 +23,6 @@ import {
 import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
 import type { ResolvedSubspace } from "../_lib/types";
 import { UnknownBadge } from "./FidelityFigures";
-import { LensLink } from "./LensLink";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
 import {

@@ -14,6 +14,7 @@ import {
   planRowTime,
 } from "@/components/admin/coord/planStatus";
 import {
+  LensLink,
   RedactedText,
   redactionVerdict,
   usePresentationMode,
@@ -30,7 +31,6 @@ import {
   workUnitRepos,
   type GroupPlan,
 } from "../_lib/twin-plans";
-import { LensLink } from "./LensLink";
 
 /** In presentation mode, how many unfinished plans a list shows before "and N more". */
 export const PRESENTATION_PLAN_LIMIT = 8;

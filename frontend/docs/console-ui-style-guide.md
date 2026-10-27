@@ -1892,7 +1892,13 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   (`usePresentationHref`: `?present=1` on its URL), so one opened in a new tab —
   which starts with no tab choice of its own — still presents. The page check
   below fails a lens link that does not (`presentation-dropping-link`), so a page
-  added later cannot forget it.
+  added later cannot forget it. A link whose destination may not be
+  presentable goes through `LensLink` (its decision is `lensLinkTarget`, both in
+  the presentation barrel): while presenting, a destination outside the lens
+  trees, or a lens page not yet in `PRESENTATION_READY_ROUTES`, renders as plain
+  text (`data-lens-link="unlinked"`) — never a click that leaves the lens or
+  lands on "Shown in the operator view only" — and the link returns by itself
+  the day its destination is registered.
 - It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
   to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
   while presenting, the sidebar names only the active project, aliases the runner,

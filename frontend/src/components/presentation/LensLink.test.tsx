@@ -1,6 +1,6 @@
 /**
- * LensLink — a link from the twin explorer to a console page (plan
- * `2026-10-23-console-presentation-spaces` D2, D3).
+ * LensLink — a link from a lens page to a page that may not be presentable
+ * (plan `2026-10-23-console-presentation-spaces` D2, D3; style guide §6.5).
  *
  * While presenting, a link leads only to a page that can be presented — in a
  * lens tree and registered presentation-ready — and carries `?present=1`, so
@@ -12,11 +12,10 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import {
-  FixedPresentationMode,
-  PRESENTATION_READY_ROUTES,
-} from "@/components/presentation";
-import { LensLink, lensLinkTarget } from "./LensLink";
+import { LensLink } from "./LensLink";
+import { FixedPresentationMode } from "./PresentationModeProvider";
+import { lensLinkTarget } from "./presentationLinks";
+import { PRESENTATION_READY_ROUTES } from "./presentationReadiness";
 
 function renderLink(
   href: string,

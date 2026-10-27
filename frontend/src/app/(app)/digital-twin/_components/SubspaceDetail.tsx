@@ -22,6 +22,7 @@ import {
   XIcon,
 } from "lucide-react";
 import {
+  LensLink,
   NAVIGATION_ONLY_PROPS,
   OperatorOnly,
   usePresentationMode,
@@ -34,7 +35,6 @@ import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
 import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
 import { workUnitHref } from "../_lib/twin-plans";
 import type { DriftVerdict, ResolvedSubspace } from "../_lib/types";
-import { LensLink } from "./LensLink";
 
 interface SubspaceDetailProps {
   row: ResolvedSubspace | null;
