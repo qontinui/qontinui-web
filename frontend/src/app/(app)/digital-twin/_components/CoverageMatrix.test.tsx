@@ -325,6 +325,49 @@ describe("CoverageMatrix joined to coord's catalog", () => {
     ).toHaveTextContent(/^Freshness when readUNKNOWN$/);
   });
 
+  it("titles a partial and an error cell with the answer the probe gave for that row", () => {
+    state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+    setProbe(
+      probesFor(
+        // `health` has no cell in the answer: an error no read was made for.
+        MANIFEST_SNAPSHOT_IDS.filter((id) => id !== "health"),
+        {
+          // The backend's partial for an answer that carried no coverage.
+          infra: {
+            id: "infra",
+            status: "partial",
+            door_shape: "verdict_wrapper",
+            metrics: {
+              coverage: null,
+              credibility: 0.9,
+              posterior: 0.9,
+              staleness_seconds: null,
+              provenance: "aws_sdk_describe",
+              drift_class: "none",
+            },
+          },
+          // A read the probe made, which timed out.
+          config: { id: "config", status: "error", error: "coord_timeout" },
+        }
+      )
+    );
+    render(<CoverageMatrix />);
+    const title = (id: string) =>
+      screen.getByTestId(`digital-twin-cell-${id}`).getAttribute("title");
+    expect(title("infra")).toBe(
+      "Coord's live probe found this observer answering, with no coverage in its answer to grade."
+    );
+    expect(title("config")).toBe(
+      "Coord's live probe could not read this observer (the read timed out) — an honest error, never a fabricated ok."
+    );
+    expect(title("health")).toBe(
+      "Coord's live probe returned no reading of this observer: coord's door for it did not answer, or the probe's answer had no result for it — an honest error, never a fabricated ok."
+    );
+    for (const id of ["infra", "config", "health"]) {
+      expect(title(id), id).not.toMatch(/coverage < 1|was probed/);
+    }
+  });
+
   it("names a probe coord declares that the manifest has no row for", () => {
     const catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
     catalog.entries.push({

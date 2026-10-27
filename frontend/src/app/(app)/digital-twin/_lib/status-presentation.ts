@@ -45,8 +45,9 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     label: "Partial",
     dot: "bg-amber-500",
     border: "border-l-amber-500",
+    // Two answers (`partialFinding`); a row's own says which.
     meaning:
-      "Observer answering, but some dimensions are unconfigured (coverage < 1).",
+      "Observer answering below full coverage, or with no coverage in its answer to grade.",
   },
   blind: {
     label: "Blind",
@@ -108,8 +109,9 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     label: "Error",
     dot: "bg-red-500",
     border: "border-l-red-500",
+    // Two answers (`errorFinding`); a row's own says which.
     meaning:
-      "The observer was probed but the live read failed — honest error, never a fabricated ok.",
+      "Coord's live probe could not read this observer, or returned no reading of it — an honest error, never a fabricated ok.",
   },
   probing: {
     label: "Probing…",
@@ -154,18 +156,74 @@ const INTERACTIVE_ELSEWHERE: Record<
 };
 
 /**
+ * `partial` is two answers to the backend (`digital_twin.py` `_classify`): a
+ * coverage between none and full, or an answer carrying no coverage at all,
+ * which it cannot grade. "Below 100%" is true only of the first. A predicate
+ * of coord's live probe, in the past tense, so it reads the same after
+ * "Coord's live probe" and after "it" (a last answer kept after a failed
+ * refresh).
+ */
+export function partialFinding(
+  row: Partial<Pick<ResolvedSubspace, "metrics">>
+): string {
+  return typeof row.metrics?.coverage === "number"
+    ? "found this observer answering, but with some dimensions unconfigured (coverage below 100%)"
+    : "found this observer answering, with no coverage in its answer to grade";
+}
+
+/**
+ * What each token the backend gives a failed probe read means, in words
+ * (`digital_twin.py` `_probe_subspace`). The token itself is engineering
+ * detail; the sentence an evaluator reads names the cause.
+ */
+const PROBE_ERROR_CAUSE: Readonly<Record<string, string>> = {
+  coord_timeout: "the read timed out",
+  coord_unreachable: "coord could not be reached",
+  coord_tool_failed: "coord's observer failed to answer",
+  malformed_verdict: "coord's answer was malformed",
+};
+
+/**
+ * What an `error` row's probe got, as a predicate of the probe (see
+ * {@link partialFinding}). With a token, the probe made a read of the
+ * observer and it failed. Without one, either coord's door for it answered
+ * 404 (`no_snapshot_tool`) or the probe's answer carried no cell for it — the
+ * row cannot tell which, so the sentence names both and claims neither.
+ */
+export function errorFinding(token: string | undefined): string {
+  if (token === undefined) {
+    return "returned no reading of this observer: coord's door for it did not answer, or the probe's answer had no result for it — an honest error, never a fabricated ok";
+  }
+  const cause = PROBE_ERROR_CAUSE[token];
+  return `could not read this observer${cause ? ` (${cause})` : ""} — an honest error, never a fabricated ok`;
+}
+
+/**
  * The presentation of one row's status (its cell status, refined by its door,
- * or — for an `unknown` row — by why there is no reading, so the tooltip and
- * the drawer name the outage rather than a generic one).
+ * by which of its two answers a `partial` or an `error` is, or — for an
+ * `unknown` row — by why there is no reading, so the tooltip and the drawer
+ * name the outage rather than a generic one).
  */
 export function presentStatus(
-  row: Pick<ResolvedSubspace, "cellStatus" | "ask_via" | "unknownReason">
+  row: Pick<ResolvedSubspace, "cellStatus" | "ask_via" | "unknownReason"> &
+    Partial<Pick<ResolvedSubspace, "error" | "metrics">>
 ): StatusStyle {
   const style = STATUS_STYLES[row.cellStatus];
   if (row.cellStatus === "unknown" && row.unknownReason) {
     return {
       ...style,
       meaning: `${upperFirst(row.unknownReason)}, so there is no current reading of this observer — its status is unknown, not a failure of the observer.`,
+    };
+  }
+  // Each is two answers, and only the row's own is true of it: the same
+  // findings the drawer's Status says (`drawer-status.ts`).
+  if (row.cellStatus === "partial") {
+    return { ...style, meaning: `Coord's live probe ${partialFinding(row)}.` };
+  }
+  if (row.cellStatus === "error") {
+    return {
+      ...style,
+      meaning: `Coord's live probe ${errorFinding(row.error)}.`,
     };
   }
   if (

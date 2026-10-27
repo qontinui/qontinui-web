@@ -41,6 +41,8 @@ import { probeUnread, type ProbeAttempt } from "./probe-read";
 import { probeAnswered } from "./resolve";
 import {
   STATUS_STYLES,
+  errorFinding,
+  partialFinding,
   presentStatus,
   upperFirst,
   type StatusStyle,
@@ -75,43 +77,6 @@ const PROBE_FINDINGS: Readonly<
   restricted:
     "was refused this sub-space, which is Qontinui-internal (readable only by Qontinui's own operators) or, for the outbound budget, admin-only; your other sub-spaces are unaffected",
 };
-
-/**
- * `partial` is two answers to the backend (`digital_twin.py` `_classify`): a
- * coverage between none and full, or an answer carrying no coverage at all,
- * which it cannot grade. "Below 100%" is true only of the first.
- */
-function partialFinding(row: DrawerStatusRow): string {
-  return typeof row.metrics?.coverage === "number"
-    ? "found this observer answering, but with some dimensions unconfigured (coverage below 100%)"
-    : "found this observer answering, with no coverage in its answer to grade";
-}
-
-/**
- * What each token the backend gives a failed probe read means, in words
- * (`digital_twin.py` `_probe_subspace`). The token itself is engineering
- * detail; the sentence an evaluator reads names the cause.
- */
-const PROBE_ERROR_CAUSE: Readonly<Record<string, string>> = {
-  coord_timeout: "the read timed out",
-  coord_unreachable: "coord could not be reached",
-  coord_tool_failed: "coord's observer failed to answer",
-  malformed_verdict: "coord's answer was malformed",
-};
-
-/**
- * What an `error` row's probe got. With a token, the probe made a read of the
- * observer and it failed. Without one, either coord's door for it answered
- * 404 (`no_snapshot_tool`) or the probe's answer carried no cell for it — the
- * row cannot tell which, so the sentence names both and claims neither.
- */
-function errorFinding(token: string | undefined): string {
-  if (token === undefined) {
-    return "returned no reading of this observer: coord's door for it did not answer, or the probe's answer had no result for it — an honest error, never a fabricated ok";
-  }
-  const cause = PROBE_ERROR_CAUSE[token];
-  return `could not read this observer${cause ? ` (${cause})` : ""} — an honest error, never a fabricated ok`;
-}
 
 /**
  * The probe's finding for a row it answered ({@link probeAnswered}), as a

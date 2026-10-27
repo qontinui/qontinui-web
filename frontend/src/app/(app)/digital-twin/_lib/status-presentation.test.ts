@@ -56,6 +56,67 @@ describe("presentStatus", () => {
   });
 });
 
+describe("presentStatus — a partial or an error says which of its two answers the row's is", () => {
+  const metrics = (coverage: number | null) => ({
+    coverage,
+    credibility: 0.9,
+    posterior: 0.9,
+    staleness_seconds: null,
+    provenance: "live_aws",
+    drift_class: "none",
+  });
+
+  it("says coverage below 100% only of a partial whose answer carried one", () => {
+    const graded = presentStatus({
+      cellStatus: "partial",
+      metrics: metrics(0.6),
+    });
+    expect(graded.meaning).toBe(
+      "Coord's live probe found this observer answering, but with some dimensions unconfigured (coverage below 100%)."
+    );
+    expect(graded.label).toBe("Partial");
+    expect(graded.dot).toBe(STATUS_STYLES.partial.dot);
+  });
+
+  it("says a partial with no coverage in its answer had none to grade, never that it was below 100%", () => {
+    for (const row of [
+      { cellStatus: "partial" as const, metrics: metrics(null) },
+      { cellStatus: "partial" as const },
+    ]) {
+      const style = presentStatus(row);
+      expect(style.meaning).toBe(
+        "Coord's live probe found this observer answering, with no coverage in its answer to grade."
+      );
+      expect(style.meaning).not.toMatch(/coverage below|coverage < 1/);
+    }
+  });
+
+  it("says an error with a token was a read the probe made, in words", () => {
+    const style = presentStatus({
+      cellStatus: "error",
+      error: "coord_timeout",
+    });
+    expect(style.meaning).toBe(
+      "Coord's live probe could not read this observer (the read timed out) — an honest error, never a fabricated ok."
+    );
+    expect(style.meaning).not.toContain("coord_timeout");
+  });
+
+  it("never says an error with no token was probed: no read of it may have been made", () => {
+    const style = presentStatus({ cellStatus: "error" });
+    expect(style.meaning).toBe(
+      "Coord's live probe returned no reading of this observer: coord's door for it did not answer, or the probe's answer had no result for it — an honest error, never a fabricated ok."
+    );
+    expect(style.meaning).not.toMatch(/was probed|could not read/);
+    expect(style.label).toBe("Error");
+  });
+
+  it("keeps the generic meanings true of both answers", () => {
+    expect(STATUS_STYLES.partial.meaning).not.toMatch(/coverage < 1/);
+    expect(STATUS_STYLES.error.meaning).not.toMatch(/was probed/);
+  });
+});
+
 describe("pageAccessLabel", () => {
   it("says how this page can read each kind of row", () => {
     expect(pageAccessLabel({ query_kind: "snapshot" })).toBe("Live-probed");
