@@ -1983,9 +1983,11 @@ Where a kept reading's dot goes depends on what carries it:
   floor, because the dot says what is true now. The sub-space drawer's Status reads
   "Last answer: Live" on the amber ring.
 - **A list of rows under a page notice** keeps R6's row arm instead. The Completeness
-  matrix's and the Lifecycle view's cells keep their last answer's hue and label, and
-  `CoordUnreachableBanner` says above them that they are not a current reading. The
-  drawer covers that notice, so it says so itself.
+  matrix's and the Lifecycle view's cells keep their last answer's hue and label.
+  `CoordUnreachableBanner` above them says they show the probe's last answer, not a
+  current reading. In operator mode it says the cells "fall back to their last
+  status". While presenting it says "the live statuses below are not a current
+  reading". The drawer covers that notice, so it says so itself.
 
 Where one panel shows two reads of one thing, every line about a read says which read
 it is about. It does so by name ("Coord's live probe's latest read failed", "This
