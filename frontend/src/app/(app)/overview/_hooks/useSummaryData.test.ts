@@ -4,7 +4,8 @@
  * The project-state door can take up to coord's whole 25 s budget (the proxy's
  * `_COORD_PROJECT_STATE_TIMEOUT`), and `httpClient`'s default retries turned
  * one slow coord into up to five reads per page load. The read must carry the
- * one-shot options: a `504` (coord used its whole budget) is never retried.
+ * one-shot options: a `504` (the proxy's timeout on coord ran out) is never
+ * retried.
  *
  * `httpClient.fetch` — the client's one transport (`lib/api/operations/base.ts`,
  * D6) — is stubbed BELOW `projectState.ts`, and the options are spelled as a

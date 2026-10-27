@@ -17,11 +17,12 @@
  *
  * ## The door is slow by design, so neither caller may multiply it
  *
- * The proxy waits up to coord's whole door budget (25 s,
- * `_COORD_PROJECT_STATE_TIMEOUT` in the backend's operations module), because
- * coord degrades a slow sub-read inside a 200 rather than failing the door. A
- * `504` therefore means coord used ALL of that budget, and `httpClient`'s
- * default retries would ask it again up to four times. The 60 s poll on
+ * The proxy waits up to coord's whole door budget (25 s to read, 5 s to
+ * connect: `_COORD_PROJECT_STATE_TIMEOUT` in the backend's operations module),
+ * because coord degrades a slow sub-read inside a 200 rather than failing the
+ * door. Its `504` is that wait running out — coord took its whole 25 s, or did
+ * not accept the connection within 5 s — and `httpClient`'s default retries
+ * would wait it out again up to four times. The 60 s poll on
  * `/admin/coord/home` sends `COORD_DASHBOARD_POLL_OPTIONS` (no retries: the
  * next tick is the retry). The `/overview` progress panel reads once, with no
  * next tick, so it sends {@link PROJECT_STATE_ONE_SHOT_OPTIONS}.
@@ -36,9 +37,9 @@ export const PROJECT_STATE_URL = `${OPERATIONS_BASE}/project-state`;
 
 /**
  * Options for a ONE-SHOT read of the door (a page that reads it once, with no
- * poll behind it). A `504` is never retried: it is the proxy giving up after
- * coord's full budget, so an immediate retry costs coord another full budget
- * while it is already slow. A fast failure (a `502` while coord restarts, a
+ * poll behind it). A `504` is never retried: it is the proxy's timeout on
+ * coord running out, so an immediate retry waits it out again — up to coord's
+ * full budget, while it is already slow. A fast failure (a `502` while coord restarts, a
  * `503` from the web backend) keeps `httpClient`'s retries, because a page
  * with no next tick would otherwise show it until a manual reload.
  */

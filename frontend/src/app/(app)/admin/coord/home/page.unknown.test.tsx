@@ -504,10 +504,11 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       ],
       [
         // What this page actually meets when coord is slow: the web proxy's
-        // OWN refusal, after waiting coord's whole door budget
-        // (`_COORD_PROJECT_STATE_TIMEOUT`). The body is the one the backend's
-        // refusal handler serves for `_coord_timeout(write=False)`.
-        "the proxy gave up after coord's door budget (504 coord_timeout)",
+        // OWN refusal, once its timeout on coord runs out
+        // (`_COORD_PROJECT_STATE_TIMEOUT`: 25 s to read, 5 s to connect). The
+        // body is the one the backend's refusal handler serves for
+        // `_coord_timeout(write=False)`.
+        "the proxy gave up waiting for coord (504 coord_timeout)",
         answeredWith(
           504,
           '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.example.test/api/v1/operations/project-state"}'
