@@ -182,3 +182,49 @@ describe("summarizeVerdict — delivery instance", () => {
     expect(prose).toContain("Plan status");
   });
 });
+
+describe("summarizeVerdict — the status word (plan 2026-10-23-console-presentation-spaces D3.3)", () => {
+  const cited = {
+    all_merged: true,
+    prs: [{ repo: "qontinui-runner", pr: 583, merged: true }],
+    unmerged_prs: [],
+  };
+
+  it("quotes coord's status verbatim by default — the operator's view", () => {
+    const v = deliveryVerdict("none", {
+      ...cited,
+      status: "waiting-on-partner-a",
+    });
+    expect(summarizeVerdict("delivery", v).prose).toContain(
+      "Plan status “waiting-on-partner-a”; 1 cited PR, all merged."
+    );
+  });
+
+  it("quotes the given word instead, in both status clauses", () => {
+    const statusWord = (status: string) => `<${status.length}>`;
+    const withPrs = deliveryVerdict("none", {
+      ...cited,
+      status: "waiting-on-partner-a",
+    });
+    const prose = summarizeVerdict("delivery", withPrs, { statusWord }).prose;
+    expect(prose).toContain("Plan status “<20>”; 1 cited PR, all merged.");
+    expect(prose).not.toContain("waiting-on");
+
+    const noPrs = deliveryVerdict("none", {
+      status: "waiting-on-partner-a",
+      prs: [],
+    });
+    expect(
+      summarizeVerdict("delivery", noPrs, { statusWord }).prose
+    ).toContain("Plan status “<20>”; no cited PRs found.");
+  });
+
+  it("never maps a status coord did not send", () => {
+    const statusWord = () => "mapped";
+    const v = deliveryVerdict("none", { ...cited });
+    const prose = summarizeVerdict("delivery", v, { statusWord }).prose;
+    expect(prose).toContain("1 cited PR, all merged.");
+    expect(prose).not.toContain("mapped");
+  });
+});
+

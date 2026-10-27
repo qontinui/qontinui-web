@@ -52,8 +52,24 @@ function trustPhrase(verdict: DriftVerdict): string {
   return `Coverage ${covPct}, credibility ${credPct}`;
 }
 
+/** How a summary words what coord holds. */
+export interface SummaryOptions {
+  /**
+   * The word a work unit's status is shown as. By default coord's own text,
+   * verbatim — the operator must see what coord holds. Presentation mode
+   * passes a fixed vocabulary (`presentedPlanStatus`): coord's status is
+   * opaque text a tenant can write anything into (`waiting-on-<client>`), so
+   * an evaluator is never shown it (plan
+   * `2026-10-23-console-presentation-spaces` D3.3).
+   */
+  readonly statusWord?: (status: string) => string;
+}
+
 /** One short instance-specific clause when the components shape is known. */
-function instanceClause(verdict: DriftVerdict): string | null {
+function instanceClause(
+  verdict: DriftVerdict,
+  { statusWord = (status) => status }: SummaryOptions
+): string | null {
   const c = verdict.components;
   if (!c || typeof c !== "object") return null;
   const comp = c as Record<string, unknown>;
@@ -85,7 +101,10 @@ function instanceClause(verdict: DriftVerdict): string | null {
       const noun = anchorKind === "work_unit" ? "work unit" : "plan";
       const statusLabel =
         anchorKind === "work_unit" ? "Unit status" : "Plan status";
-      const status = comp.status;
+      const status =
+        comp.status === undefined || comp.status === null
+          ? null
+          : statusWord(String(comp.status));
       // Every citation bucket is resolved by ONE reader shared with the card
       // (`delivery-citations.ts`) — count first, list second — so the prose and
       // the per-PR badges can never disagree about which citations blocked.
@@ -100,8 +119,8 @@ function instanceClause(verdict: DriftVerdict): string | null {
       // unmerged" clause.
       const delivered = comp.all_merged;
       if (counts.total === 0) {
-        return status !== undefined && status !== null
-          ? `${statusLabel} “${String(status)}”; no cited PRs found.`
+        return status !== null
+          ? `${statusLabel} “${status}”; no cited PRs found.`
           : `No cited PRs found for this ${noun}.`;
       }
       const retiredClause =
@@ -123,10 +142,7 @@ function instanceClause(verdict: DriftVerdict): string | null {
               : counts.retired > 0
                 ? `none landed${retiredClause}`
                 : "merge state mixed";
-      const statusPart =
-        status !== undefined && status !== null
-          ? `${statusLabel} “${String(status)}”; `
-          : "";
+      const statusPart = status !== null ? `${statusLabel} “${status}”; ` : "";
       return `${statusPart}${counts.total} cited PR${counts.total === 1 ? "" : "s"}, ${mergeClause}.`;
     }
     default:
@@ -144,6 +160,7 @@ export interface VerdictSummary {
 export function summarizeVerdict(
   subspaceId: string,
   verdict: DriftVerdict,
+  options: SummaryOptions = {},
 ): VerdictSummary {
   const name = subspaceId.replace(/_/g, " ");
   const drift = driftClassPhrase(verdict.drift_class);
@@ -154,7 +171,7 @@ export function summarizeVerdict(
     `${capitalize(name)} is ${drift}.`,
     `${trustPhrase(verdict)}; data is ${fresh}, read from ${provenance}.`,
   ];
-  const extra = instanceClause(verdict);
+  const extra = instanceClause(verdict, options);
   if (extra) sentences.push(extra);
 
   const facts: VerdictSummary["facts"] = [

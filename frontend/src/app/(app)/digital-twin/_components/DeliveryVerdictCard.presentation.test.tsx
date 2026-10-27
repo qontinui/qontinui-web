@@ -241,3 +241,63 @@ describe("DeliveryVerdictCard — a failed lookup", () => {
     expectPresentationSafe(view, { forbidden: [HOST, "acme"] });
   });
 });
+
+describe("DeliveryVerdictCard — coord's unit status and internal id", () => {
+  /** A status a tenant wrote, naming a client. */
+  const OPAQUE = "waiting-on-acme-corp-legal";
+  const PLAN_ID = "0b9d6a54-1c2e-4f3a-8b7d-5e6f7a8b9c0d";
+
+  function components(): Record<string, unknown> {
+    return (state.verdict as DeliveryVerdictResponse).verdict
+      .components as Record<string, unknown>;
+  }
+
+  it("shows the operator coord's own status and, with no slug, its internal id", async () => {
+    components().status = OPAQUE;
+    components().slug = null;
+    components().plan_id = PLAN_ID;
+    render(<DeliveryVerdictCard />, { wrapper: WithBridge });
+    await lookUp();
+    expect(screen.getAllByText(new RegExp(OPAQUE)).length).toBe(2);
+    expect(screen.getByText(PLAN_ID)).toBeInTheDocument();
+  });
+
+  it("says an unrecognised status in the console's fixed words, in the fact and the sentence", async () => {
+    components().status = OPAQUE;
+    const view = renderInPresentationMode(<DeliveryVerdictCard />, {
+      scope: SCOPE,
+    });
+    await lookUp();
+    const fact = screen.getByText("Plan status").closest("div")!;
+    expect(fact).toHaveTextContent(/^Plan status\s*Status unknown$/);
+    expect(
+      screen.getByText(
+        /Plan status “Status unknown”; 3 cited PRs, all merged\./
+      )
+    ).toBeInTheDocument();
+    expectPresentationSafe(view, { forbidden: [OPAQUE, "acme"] });
+  });
+
+  it("keeps a recognised status's own word", async () => {
+    // The stub's own status, `shipped`.
+    const view = renderInPresentationMode(<DeliveryVerdictCard />, {
+      scope: SCOPE,
+    });
+    await lookUp();
+    const fact = screen.getByText("Plan status").closest("div")!;
+    expect(fact).toHaveTextContent(/^Plan status\s*Shipped$/);
+    expectPresentationSafe(view);
+  });
+
+  it("shows a dash, not coord's internal id, when the verdict names no slug", async () => {
+    components().slug = null;
+    components().plan_id = PLAN_ID;
+    const view = renderInPresentationMode(<DeliveryVerdictCard />, {
+      scope: SCOPE,
+    });
+    await lookUp();
+    const fact = screen.getByText("Plan").closest("div")!;
+    expect(fact).toHaveTextContent(/^Plan\s*—$/);
+    expectPresentationSafe(view, { forbidden: [PLAN_ID] });
+  });
+});
