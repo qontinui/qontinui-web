@@ -159,7 +159,10 @@ import {
   OperatorAuditPanel,
 } from "@/components/operations";
 import { DevOpsHeadlineStrip } from "@/components/operations/DevOpsHeadlineStrip";
-import { DEVOPS_SOURCES } from "@/components/operations/devOpsHeadline";
+import {
+  DEVOPS_SOURCES,
+  latestInstant,
+} from "@/components/operations/devOpsHeadline";
 import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
 import { useFleetWorktreeSlots } from "@/components/operations/useFleetWorktreeSlots";
 import { presentedFailureReason } from "@/components/operations/presentedFailure";
@@ -335,6 +338,17 @@ export default function CoordDevOpsPage() {
     ]
   );
 
+  // The device-status stream's as-of, for the strip's provenance: its body
+  // dates its ROWS, so it is the newest report's own time (style guide
+  // §3.10). The credential badges above count from these reports.
+  const deviceStatusAsOf = useMemo(
+    () =>
+      latestInstant(
+        [...deviceStatus.byHostname.values()].map((row) => row.updated_at)
+      ),
+    [deviceStatus.byHostname]
+  );
+
   const credentialBadges = useMemo<HealthBadge[]>(() => {
     const badges: HealthBadge[] = [];
     if (credentials.needsAction > 0) {
@@ -450,14 +464,18 @@ export default function CoordDevOpsPage() {
         worktreeSlots={worktreeSlots}
         ciRunnerMirror={ciRunnerMirror}
       />
+      {/* Every read the strip's badges count from: machine liveness and
+          coord's dark scan (fleet health), the fault-to-visibility readout,
+          and the runners' own credential reports (device status). */}
       <SectionCaption
         id="dev-ops.health-strip"
         sources={[
-          { source: DEVOPS_SOURCES.fleetHealth, asOf: fleet.fetchedAtMs },
+          { source: DEVOPS_SOURCES.fleetHealth, asOf: fleet.asOfMs },
           {
             source: DEVOPS_SOURCES.faultToVisibility,
             asOf: faultToVisibility.data?.computed_at ?? null,
           },
+          { source: DEVOPS_SOURCES.deviceStatus, asOf: deviceStatusAsOf },
         ]}
       />
       <HealthStrip

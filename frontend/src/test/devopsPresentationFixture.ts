@@ -324,6 +324,8 @@ export function mockDevOpsRoutes(
           },
         ],
         roster_truncated: false,
+        // Coord dates the read itself (`dispatch_role_routes.rs`).
+        as_of: NOW_ISO(),
       });
     }
     if (u.includes("coord/audit")) {
@@ -479,6 +481,8 @@ export function mockDevOpsRoutes(
           settings_in_effect_count: 1,
           scrape_up: true,
         },
+        // Coord dates the read itself (`fleet_health.rs`).
+        as_of: NOW_ISO(),
       });
     }
     return Promise.reject(new Error(`unexpected GET ${u}`));
@@ -495,6 +499,8 @@ export function mockDevOpsRoutes(
       });
     if (u.includes("/fleet/drain")) {
       return ok({
+        // Coord dates the read itself (`fleet_drain.rs`).
+        as_of: NOW_ISO(),
         drained: {
           [DEV_A]: {
             until: IN_A_DAY(),
@@ -666,12 +672,12 @@ export function toggleOf(container: Element): HTMLElement {
   return toggle as HTMLElement;
 }
 
-/** The machine section's provenance chips, by the source each one names. */
-export function machineSectionChips(): Map<string, Element> {
+/** A captioned section's provenance chips, by the source each one names. */
+export function sectionChips(id: CaptionKey): Map<string, Element> {
   const section = document.querySelector(
-    '[data-presentation-section="dev-ops.machines"]'
+    `[data-presentation-section="${id}"]`
   );
-  if (!section) throw new Error("the machines section caption did not render");
+  if (!section) throw new Error(`the ${id} section caption did not render`);
   const chips = new Map<string, Element>();
   for (const chip of section.querySelectorAll("[data-provenance]")) {
     const source = /source: (.+?) · /.exec(chip.textContent ?? "")?.[1];
@@ -679,6 +685,18 @@ export function machineSectionChips(): Map<string, Element> {
   }
   return chips;
 }
+
+/** The machine section's provenance chips, by the source each one names. */
+export function machineSectionChips(): Map<string, Element> {
+  return sectionChips("dev-ops.machines");
+}
+
+/** Every read whose numbers the health strip counts from. */
+export const HEALTH_STRIP_SOURCES = [
+  DEVOPS_SOURCES.fleetHealth,
+  DEVOPS_SOURCES.faultToVisibility,
+  DEVOPS_SOURCES.deviceStatus,
+];
 
 /** Every read whose numbers the machine list shows. */
 export const MACHINE_SECTION_SOURCES = [

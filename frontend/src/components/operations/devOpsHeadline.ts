@@ -21,8 +21,9 @@
  *   `a-status-signal-must-observe-the-state-it-names`); the detail line says
  *   what the rest are.
  * - **The as-of is the read's.** Coord's own timestamp where the body carries
- *   one (the CI mirror's `as_of`); otherwise the moment the browser received
- *   the answer, which the page's hooks stamp on success only.
+ *   one (fleet health's and the CI mirror's `as_of`, `servedAsOf.ts`);
+ *   otherwise the moment the browser received the answer. The page's hooks
+ *   stamp either on success only.
  * - **No machine is named.** A figure is a count; nothing here reads a
  *   hostname into a sentence, so the strip needs no aliasing at all.
  */
@@ -103,8 +104,8 @@ export interface FleetHealthReadInput {
   answered: boolean;
   /** The LATEST poll's failure, if it failed. */
   error: string | null;
-  /** When the current `devices` arrived. */
-  fetchedAtMs: number | null;
+  /** When the current `devices` were true (coord's `as_of`, else receipt). */
+  asOfMs: number | null;
 }
 
 export function machinesHealthyFigure(
@@ -130,7 +131,7 @@ export function machinesHealthyFigure(
       value: "0",
       detail:
         "The coordination service lists no machines for this account yet.",
-      asOf: input.fetchedAtMs,
+      asOf: input.asOfMs,
     };
   }
   let healthy = 0;
@@ -157,7 +158,7 @@ export function machinesHealthyFigure(
       rest.length === 0
         ? `Every machine the coordination service knows about reports healthy.`
         : `Healthy by the coordination service's own check; ${joinParts(rest)}.`,
-    asOf: input.fetchedAtMs,
+    asOf: input.asOfMs,
   };
 }
 

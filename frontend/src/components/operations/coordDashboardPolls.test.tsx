@@ -175,11 +175,11 @@ function FleetOverviewHost(): ReactElement {
         data: null,
         loading: true,
         error: null,
-        fetchedAtMs: null,
+        asOfMs: null,
         refresh: noop,
       }}
       ciMachines={{ state: "loading" }}
-      drain={{ read: { state: "loading" }, fetchedAtMs: null, refresh: noop }}
+      drain={{ read: { state: "loading" }, asOfMs: null, refresh: noop }}
       deviceStatus={{
         byHostname: new Map(),
         connected: false,

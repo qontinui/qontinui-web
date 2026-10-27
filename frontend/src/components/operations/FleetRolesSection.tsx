@@ -319,7 +319,7 @@ function RoleButtons({
 }
 
 export function FleetRolesSection() {
-  const { read, fetchedAtMs, refresh } = useFleetDispatchRoles();
+  const { read, asOfMs, refresh } = useFleetDispatchRoles();
   const { presenting } = usePresentationMode();
   const machineName = useMachineAliaser();
   const [pending, setPending] = useState<PendingChange | null>(null);
@@ -478,7 +478,7 @@ export function FleetRolesSection() {
             source: DEVOPS_SOURCES.dispatchRoles,
             // Only a KNOWN read is dated: an unknown one is UNKNOWN as of
             // nothing, whatever the last good read was.
-            asOf: read.state === "known" ? fetchedAtMs : null,
+            asOf: read.state === "known" ? asOfMs : null,
           },
         ]}
       />

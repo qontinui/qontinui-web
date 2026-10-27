@@ -42,11 +42,11 @@ const device = (id: string, state?: string): FleetHealthDevice =>
   ({ device_id: id, hostname: `host-${id}`, state }) as FleetHealthDevice;
 
 describe("machinesHealthyFigure", () => {
-  const base = { devices: [], answered: true, error: null, fetchedAtMs: T };
+  const base = { devices: [], answered: true, error: null, asOfMs: T };
 
   it("is UNKNOWN before the first answer — never 0", () => {
     const v = unknown(
-      machinesHealthyFigure({ ...base, answered: false, fetchedAtMs: null })
+      machinesHealthyFigure({ ...base, answered: false, asOfMs: null })
     );
     expect(v.reason).toBe("Machine health has not been read yet.");
   });

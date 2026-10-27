@@ -24,6 +24,7 @@ import {
   type FleetWriteAck,
 } from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { servedAsOfMs } from "./servedAsOf";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
   parseDispatchRoles,
@@ -40,26 +41,29 @@ const LOADING: DispatchRolesRead = { state: "loading" };
 export interface UseFleetDispatchRolesResult {
   read: DispatchRolesRead;
   /**
-   * `Date.now()` when the read last came back `known`, or `null` before it
-   * ever has. The route serves no timestamp, so this is what the presentation
-   * lens's provenance chip dates the roles by (plan
-   * `2026-10-23-console-presentation-spaces` Phase 7). An `unknown` read
-   * never moves it.
+   * When the last `known` read was true, or `null` before there has been one:
+   * coord's own `as_of` on the body (`dispatch_role_routes.rs`
+   * `DispatchRolesResponse`), else the moment the answer arrived
+   * (`servedAsOfMs`). The presentation lens's provenance chip dates the roles
+   * by it (plan `2026-10-23-console-presentation-spaces` Phase 7). An
+   * `unknown` read never moves it.
    */
-  fetchedAtMs: number | null;
+  asOfMs: number | null;
   refresh: () => Promise<void>;
 }
 
 export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   const [read, setRead] = useState<DispatchRolesRead>(LOADING);
-  const [fetchedAtMs, setFetchedAtMs] = useState<number | null>(null);
+  const [asOfMs, setAsOfMs] = useState<number | null>(null);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: DispatchRolesRead;
+    // When this answer was true; read only if it parses `known`.
+    let answeredAsOf: number | null = null;
     try {
-      next = parseDispatchRoles(
-        await fetchFleetDispatchRoles(COORD_DASHBOARD_POLL_OPTIONS)
-      );
+      const body = await fetchFleetDispatchRoles(COORD_DASHBOARD_POLL_OPTIONS);
+      answeredAsOf = servedAsOfMs(body, Date.now());
+      next = parseDispatchRoles(body);
     } catch (err) {
       const status = httpStatusOf(err);
       if (status === 404) {
@@ -93,11 +97,13 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
     }
     if (!isCurrent()) return;
     setRead(next);
-    if (next.state === "known") setFetchedAtMs(Date.now());
+    if (next.state === "known" && answeredAsOf !== null) {
+      setAsOfMs(answeredAsOf);
+    }
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DISPATCH_ROLES_POLL_MS);
-  return { read, fetchedAtMs, refresh };
+  return { read, asOfMs, refresh };
 }
 
 export type RoleWriteResult =

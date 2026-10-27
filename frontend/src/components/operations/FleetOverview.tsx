@@ -708,7 +708,7 @@ export function FleetOverview({
       id="dev-ops.machines"
       sources={[
         { source: DEVOPS_SOURCES.runnerInventory, asOf: inventoryAsOf },
-        { source: DEVOPS_SOURCES.fleetHealth, asOf: health.fetchedAtMs },
+        { source: DEVOPS_SOURCES.fleetHealth, asOf: health.asOfMs },
         {
           source: DEVOPS_SOURCES.ciRunnerMirror,
           asOf: ciRunnerMirror.state === "ok" ? ciRunnerMirror.asOf : null,
@@ -718,7 +718,7 @@ export function FleetOverview({
           source: DEVOPS_SOURCES.drainState,
           // Only an answered read is dated: an unknown one is UNKNOWN as of
           // nothing, whatever the last good read was.
-          asOf: drain.read.state === "ok" ? drain.fetchedAtMs : null,
+          asOf: drain.read.state === "ok" ? drain.asOfMs : null,
         },
         { source: DEVOPS_SOURCES.deviceStatus, asOf: deviceStatusAsOf },
       ]}

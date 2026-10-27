@@ -143,6 +143,7 @@ import {
   ERROR_DEVICE,
   ERROR_HOST,
   FIRST_PARTY_REPO,
+  HEALTH_STRIP_SOURCES,
   HOST_A,
   HOST_B,
   MACHINE_SECTION_SOURCES,
@@ -151,6 +152,7 @@ import {
   MUST_NOT_APPEAR,
   readFailure,
   SCOPE,
+  sectionChips,
   seedDeviceStatus as seedDeviceStatusInto,
   settle,
   toggleOf,
@@ -460,6 +462,19 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       const chips = machineSectionChips();
       expect([...chips.keys()].sort()).toEqual(
         [...MACHINE_SECTION_SOURCES].sort()
+      );
+      for (const [source, chip] of chips) {
+        expect(chip.getAttribute("data-provenance-known"), source).toBe("true");
+      }
+    });
+
+    // So does the health strip — its credential badges count from the
+    // runners' own device-status reports, so that read is named and dated
+    // beside fleet health and the fault-to-visibility readout.
+    await waitFor(() => {
+      const chips = sectionChips("dev-ops.health-strip");
+      expect([...chips.keys()].sort()).toEqual(
+        [...HEALTH_STRIP_SOURCES].sort()
       );
       for (const [source, chip] of chips) {
         expect(chip.getAttribute("data-provenance-known"), source).toBe("true");

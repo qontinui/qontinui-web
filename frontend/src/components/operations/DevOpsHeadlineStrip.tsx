@@ -35,7 +35,7 @@ import type { UseFleetHealthResult } from "./useFleetHealth";
 import type { UseFleetWorktreeSlotsResult } from "./useFleetWorktreeSlots";
 
 export interface DevOpsHeadlineStripProps {
-  health: Pick<UseFleetHealthResult, "data" | "error" | "fetchedAtMs">;
+  health: Pick<UseFleetHealthResult, "data" | "error" | "asOfMs">;
   /** The page's device spine, shared with the sections below. */
   devices: FleetDeviceRef[];
   worktreeSlots: Pick<
@@ -60,7 +60,7 @@ export function DevOpsHeadlineStrip({
           devices: health.data?.devices ?? [],
           answered: health.data !== null,
           error: health.error,
-          fetchedAtMs: health.fetchedAtMs,
+          asOfMs: health.asOfMs,
         }),
         source: DEVOPS_SOURCES.fleetHealth,
         "data-testid": "devops-headline-machines",
@@ -88,7 +88,7 @@ export function DevOpsHeadlineStrip({
     [
       health.data,
       health.error,
-      health.fetchedAtMs,
+      health.asOfMs,
       devices,
       worktreeSlots.data,
       worktreeSlots.error,

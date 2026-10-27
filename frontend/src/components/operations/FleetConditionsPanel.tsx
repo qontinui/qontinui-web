@@ -40,7 +40,7 @@ export interface FleetConditionsPanelProps {
   /** The page's own fleet-health read — never a second fetch. */
   health: Pick<
     UseFleetHealthResult,
-    "data" | "loading" | "error" | "fetchedAtMs"
+    "data" | "loading" | "error" | "asOfMs"
   >;
   /** The page's clock, so a setting's age advances without a new read. */
   nowMs?: number;
@@ -225,7 +225,7 @@ export function FleetConditionsPanel({
       <SectionCaption
         id="dev-ops.conditions"
         sources={[
-          { source: DEVOPS_SOURCES.fleetHealth, asOf: health.fetchedAtMs },
+          { source: DEVOPS_SOURCES.fleetHealth, asOf: health.asOfMs },
         ]}
       />
       <HealthStrip
