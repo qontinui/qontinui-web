@@ -8,7 +8,10 @@ Layers:
 * **Layer 1 — the read**: any member of the active project reads it; with
   nothing stored the defaults apply (registered-repository owners, the
   viewer's other projects' names); an unreadable repository list is UNKNOWN,
-  never empty; ``can_edit`` follows the write's own rule.
+  never empty; ``can_edit`` follows the write's own rule. No project
+  resolving is ONE typed refusal on both of its arms (coord refusing the
+  operator, an identity naming no project); every other identity failure
+  keeps its own answer.
 * **Layer 2 — the write**: an admin of the active project (or qontinui staff)
   replaces the stored row as a compare-and-set on its version; a member is
   refused; a stale version is refused and changes nothing; the viewer's other
@@ -25,13 +28,17 @@ Coord is faked at its two seams — ``get_coord_identity`` (the operator's
 memberships, re-scoped by the Project selector the way coord's
 ``apply_active_tenant_override`` does) and the registered-repository read —
 so the REAL tenant resolution and the REAL admin gate
-(``require_coord_tenant_admin_target``) run.
+(``require_coord_tenant_admin_target``) run. The tests of coord failing the
+identity read go one seam lower (:func:`_real_identity_read`): the REAL
+``get_coord_identity`` runs against a fake coord transport, so what the
+route converts is checked against what production raises, not against what
+the fake assumes it raises.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
@@ -49,12 +56,14 @@ from app.api.deps import get_async_db
 from app.api.v1.endpoints import operations
 from app.api.v1.endpoints import presentation as endpoints
 from app.auth.config import current_active_user
+from app.core.error_codes import get_default_error_code
 from app.middleware.error_handler import (
     http_exception_handler,
     validation_exception_handler,
 )
 from app.models.presentation_scope import PresentationScope
 from app.models.user import User
+from app.services import coord_identity
 from app.services import presentation_scope as rules
 from app.services.coord_identity import CoordIdentity, CoordTenant
 from tests._ops_patch import setattr_ops
@@ -83,7 +92,8 @@ class FakeCoord:
 
     home: UUID | None = None
     memberships: list[Member] = field(default_factory=list)
-    linked: bool = True
+    #: What the identity read raises instead of answering, when set.
+    identity_error: HTTPException | None = None
     repos: dict[UUID, list[str]] = field(default_factory=dict)
     repo_error: BaseException | None = None
     repo_calls: list[UUID | None] = field(default_factory=list)
@@ -104,8 +114,8 @@ class FakeCoord:
     def identity(self, request: Request) -> CoordIdentity:
         """``/admin/coord/me`` as coord answers it: re-scoped to the selected
         project when the operator belongs to it, home otherwise."""
-        if not self.linked:
-            raise HTTPException(status_code=403, detail="tenant_not_resolved")
+        if self.identity_error is not None:
+            raise self.identity_error
         effective = self.effective(request.headers.get(HEADER))
         return CoordIdentity(
             operator_id=None,
@@ -298,6 +308,80 @@ async def harness(
         yield h
 
 
+#: The sentence the read's tenant-not-resolved refusal carries.
+TENANT_NOT_RESOLVED_SENTENCE = (
+    "No project could be resolved for this request: select a project you "
+    "belong to, or ask a project admin to add you."
+)
+
+#: The ONE body the read serves when no project resolves, on either arm, less
+#: what varies per request (see :func:`_refusal_body`). The token is in
+#: ``error`` and ``refusal.discriminator``; ``message`` is the sentence.
+TENANT_NOT_RESOLVED_BODY: dict[str, Any] = {
+    "error": "tenant_not_resolved",
+    "message": TENANT_NOT_RESOLVED_SENTENCE,
+    "refusal": {
+        "code": "permission_denied",
+        "discriminator": "tenant_not_resolved",
+        "next_action": {"kind": "fix_request"},
+        "glossary_terms": [],
+        "detail": TENANT_NOT_RESOLVED_SENTENCE,
+        "source": "web_backend",
+    },
+}
+
+
+def _refusal_body(resp: httpx.Response) -> dict[str, Any]:
+    """A 403's body less ``timestamp``, ``path`` and ``refusal.observed_at``,
+    which vary per request and must each be present."""
+    assert resp.status_code == 403, resp.text
+    body = dict(resp.json())
+    for key in ("timestamp", "path"):
+        assert key in body, key
+        del body[key]
+    refusal = dict(body["refusal"])
+    assert refusal.pop("observed_at")
+    body["refusal"] = refusal
+    return body
+
+
+#: Where the identity read's fake coord lives: a reserved name that never
+#: resolves, whatever ``COORD_URL`` the environment running the tests sets.
+FAKE_COORD_URL = "http://coord.test"
+
+
+def _real_identity_read(
+    monkeypatch: pytest.MonkeyPatch,
+    coord: Callable[[httpx.Request], httpx.Response],
+) -> list[httpx.Request]:
+    """Put the REAL ``get_coord_identity`` back on the route, with coord's
+    ``/admin/coord/me`` answered by ``coord``. Returns what coord received."""
+    seen: list[httpx.Request] = []
+    client_class = httpx.AsyncClient
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return coord(request)
+
+    def client(**kwargs: Any) -> httpx.AsyncClient:
+        return client_class(transport=httpx.MockTransport(answer), **kwargs)
+
+    monkeypatch.setattr(coord_identity.settings, "COORD_URL", FAKE_COORD_URL)
+    monkeypatch.setattr(coord_identity.httpx, "AsyncClient", client)
+    monkeypatch.setattr(
+        endpoints, "get_coord_identity", coord_identity.get_coord_identity
+    )
+    return seen
+
+
+def _coord_unreachable(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("coord is down", request=request)
+
+
+def _coord_slow(request: httpx.Request) -> httpx.Response:
+    raise httpx.ReadTimeout("coord is slow", request=request)
+
+
 # ===========================================================================
 # Layer 1 — the read
 # ===========================================================================
@@ -394,12 +478,21 @@ async def test_an_unreadable_repository_list_is_unknown_not_empty_presentation(
 
 @pytest.mark.asyncio
 async def test_an_operator_coord_does_not_know_is_refused_presentation(
-    harness: Harness,
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    harness.coord.linked = False
-    resp = await harness.read()
-    assert resp.status_code == 403
-    assert resp.json()["message"] == "tenant_not_resolved"
+    """Coord's ``/admin/coord/me`` answers 403, as it does for an operator it
+    links to no project, read through the REAL identity read. The answer is
+    the same typed refusal as the arm below: not the bare shape the shared
+    gates serve for this condition (``error: FORBIDDEN`` with the token in
+    ``message``), which this arm served before. One condition, one shape."""
+    seen = _real_identity_read(
+        monkeypatch, lambda request: httpx.Response(403, text="forbidden")
+    )
+    resp = await harness.read(bearer="operator-bearer")
+    assert _refusal_body(resp) == TENANT_NOT_RESOLVED_BODY
+    # Refused on coord's answer, before any tenant-keyed read.
+    assert [str(r.url) for r in seen] == [f"{FAKE_COORD_URL}/admin/coord/me"]
+    assert harness.coord.repo_calls == []
 
 
 @pytest.mark.asyncio
@@ -408,17 +501,72 @@ async def test_an_identity_naming_no_project_is_refused_presentation(
 ) -> None:
     """Coord answers, but the operator has no home project and the selection
     names none they belong to: the read is refused before any tenant-keyed
-    read, rather than reading the scope of no tenant."""
+    read, rather than reading the scope of no tenant, with the SAME body as
+    the arm above. A typed refusal: the D4 ratchet counts bare-string error
+    responses."""
     harness.coord.home = None
     harness.coord.memberships = []
     resp = await harness.read(uuid4())
+    assert _refusal_body(resp) == TENANT_NOT_RESOLVED_BODY
+    assert harness.coord.repo_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("coord", "bearer", "status_code", "message"),
+    [
+        # No coord runs in the hermetic Spec CI stack, and the crawl waiver
+        # for this route (frontend/tests/spec-ci/crawl-baseline.ts) covers
+        # exactly these two statuses: a coord outage is not a missing project.
+        pytest.param(
+            _coord_unreachable, "b", 502, "coord is not reachable", id="unreachable"
+        ),
+        pytest.param(_coord_slow, "b", 504, "timeout waiting for coord", id="timeout"),
+        # The status is half of the match: coord's 401 (an expired session)
+        # stays a 401, whatever its text says.
+        pytest.param(
+            lambda request: httpx.Response(401, text="tenant_not_resolved"),
+            "b",
+            401,
+            "tenant_not_resolved",
+            id="coord-401",
+        ),
+        # No bearer at all: refused before coord is asked.
+        pytest.param(
+            _coord_unreachable, None, 401, "not_authenticated", id="no-bearer"
+        ),
+    ],
+)
+async def test_an_identity_failure_that_is_not_the_condition_keeps_its_answer_presentation(
+    harness: Harness,
+    monkeypatch: pytest.MonkeyPatch,
+    coord: Callable[[httpx.Request], httpx.Response],
+    bearer: str | None,
+    status_code: int,
+    message: str,
+) -> None:
+    _real_identity_read(monkeypatch, coord)
+    resp = await harness.read(bearer=bearer)
+    assert resp.status_code == status_code, resp.text
+    body = resp.json()
+    assert "refusal" not in body
+    assert body["error"] == get_default_error_code(status_code).value
+    assert body["message"] == message
+    assert harness.coord.repo_calls == []
+
+
+@pytest.mark.asyncio
+async def test_another_403_from_the_identity_read_keeps_its_answer_presentation(
+    harness: Harness,
+) -> None:
+    """The detail is the other half of the match: a 403 the identity read
+    raises for any other reason is not relabelled a missing project."""
+    harness.coord.identity_error = HTTPException(status_code=403, detail="another_403")
+    resp = await harness.read()
     assert resp.status_code == 403, resp.text
     body = resp.json()
-    # A typed refusal (the D4 ratchet counts bare-string error responses), with
-    # the legacy top-level `error` token kept for clients that match on it.
-    assert body["error"] == "tenant_not_resolved"
-    assert body["refusal"]["discriminator"] == "tenant_not_resolved"
-    assert body["refusal"]["next_action"]["kind"] == "fix_request"
+    assert "refusal" not in body
+    assert (body["error"], body["message"]) == ("FORBIDDEN", "another_403")
     assert harness.coord.repo_calls == []
 
 
