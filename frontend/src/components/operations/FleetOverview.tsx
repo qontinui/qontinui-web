@@ -999,16 +999,27 @@ export function FleetOverview({
               }
             />
 
-            {/* Refresh indicator */}
+            {/* Refresh indicator. `lastUpdated` is the refresh loop's own
+                clock: it is stamped when the inventory read FAILED too, so
+                it dates nothing an outsider reads (style guide §3.10, "A read
+                is dated only by its answers"). Presentation mode drops it;
+                the section caption's runner-inventory chip states that read's
+                as-of instead. */}
             <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-              <RefreshCw
-                className="h-3 w-3 animate-spin"
-                style={{ animationDuration: "3s" }}
-              />
-              <span>
-                Updated{" "}
-                {lastUpdated ? relativeTime(lastUpdated.toISOString()) : "--"}
-              </span>
+              {!presenting && (
+                <>
+                  <RefreshCw
+                    className="h-3 w-3 animate-spin"
+                    style={{ animationDuration: "3s" }}
+                  />
+                  <span>
+                    Updated{" "}
+                    {lastUpdated
+                      ? relativeTime(lastUpdated.toISOString())
+                      : "--"}
+                  </span>
+                </>
+              )}
               {error && (
                 <Badge variant="destructive" className="text-[10px]">
                   partial error

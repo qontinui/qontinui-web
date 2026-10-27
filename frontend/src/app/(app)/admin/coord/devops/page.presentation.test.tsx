@@ -653,6 +653,15 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
         source
       ).toBe("false");
     }
+    // ...and the machine list's refresh-loop clock — "Updated 0s ago", stamped
+    // although the inventory read just failed — is not on the page to
+    // contradict that chip. (The operator control below shows it IS rendered
+    // for the operator in this same state.)
+    // (`textContent` glues adjacent cells together — "not readUpdated" — so
+    // the pattern keys on the word and the space after it, not a boundary.)
+    expect(
+      screen.getByTestId("coord-devops-machines").textContent
+    ).not.toMatch(/Updated\s/);
     expectPresentationSafe(view, { captions: DEVOPS_CAPTIONS });
   });
 
@@ -682,6 +691,13 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
         .getByTestId("coord-devops-credential-unknown-badge")
         .getAttribute("title")
     ).toContain(ERROR_HOST);
+    // The machine list's refresh-loop clock is the operator's: shown here,
+    // over the same failed inventory read the presentation arm hides it over.
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-machines").textContent).toMatch(
+        /Updated\s/
+      )
+    );
   });
 });
 
