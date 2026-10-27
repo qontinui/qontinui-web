@@ -93,6 +93,11 @@ function expectFilledWith(fill: HTMLElement, classes: string) {
   for (const c of classes.split(" ")) expect(fill).toHaveClass(c);
 }
 
+/** The sub-space drawer's Status field (its label and value). */
+function statusOf(drawer: HTMLElement): HTMLElement {
+  return within(drawer).getByText("Status").parentElement!;
+}
+
 beforeEach(() => {
   // Every snapshot probe answers except deps, which is blind.
   const subspaces: SubspaceProbe[] = SNAPSHOT_IDS.map((id) => ({
@@ -365,11 +370,6 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
         "Coord's live probe could not be made: coord could not be reached.",
     },
   ];
-
-  /** The drawer's Status field (its label and value). */
-  function statusOf(drawer: HTMLElement): HTMLElement {
-    return within(drawer).getByText("Status").parentElement!;
-  }
 
   for (const arm of ARMS) {
     it(`shows the live gauge as UNKNOWN with why after ${arm.name}, with no count and no bar`, () => {
@@ -732,5 +732,101 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       "UNKNOWN"
     );
     expectPresentationSafe(view);
+  });
+});
+
+/**
+ * The drawer shows the probe's current row for the sub-space it was opened
+ * on, not the row as it was clicked: the probe refetches every minute, and a
+ * drawer left open across an answer must say what that answer says.
+ */
+describe("CoverageMatrix's open drawer follows the probe", () => {
+  /** The outbound envelope door answering partial, with its envelope. */
+  const OUTBOUND_PARTIAL: SubspaceProbe = {
+    id: "outbound",
+    status: "partial",
+    door_shape: "envelope",
+    metrics: {
+      coverage: 0.6,
+      credibility: 0.9,
+      posterior: null,
+      staleness_seconds: null,
+      provenance: "outbound_budget_observations",
+      drift_class: "none",
+    },
+  };
+
+  it("moves from Probing… to the answer when the probe answers while it is open", () => {
+    state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+    state.probe = {
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      dataUpdatedAt: 0,
+      errorUpdatedAt: 0,
+    };
+    const view = render(<CoverageMatrix />);
+    fireEvent.click(screen.getByTestId("digital-twin-cell-outbound"));
+    const before = screen.getByRole("dialog");
+    expect(statusOf(before)).toHaveTextContent("Probing…");
+    expect(
+      within(before).queryByTestId("digital-twin-drawer-summary")
+    ).toBeNull();
+
+    setProbe(probesFor(MANIFEST_SNAPSHOT_IDS, { outbound: OUTBOUND_PARTIAL }));
+    view.rerender(<CoverageMatrix />);
+
+    // Still open, and saying what the cell beneath it now says.
+    expect(screen.getByTestId("digital-twin-cell-outbound")).toHaveTextContent(
+      "Partial"
+    );
+    const after = screen.getByRole("dialog");
+    expect(statusOf(after)).toHaveTextContent("Partial");
+    expect(statusOf(after)).not.toHaveTextContent("Probing…");
+    expect(
+      within(after).getByTestId("digital-twin-drawer-summary")
+    ).toHaveTextContent("Coverage 60%, credibility 90%");
+    expect(
+      within(after).getByText("Live credibility envelope")
+    ).toBeInTheDocument();
+  });
+
+  it("moves from UNKNOWN to the answer when coord recovers while it is open", () => {
+    state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+    state.probe = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error(
+        "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
+      ),
+      dataUpdatedAt: 0,
+      errorUpdatedAt: Date.parse("2026-10-23T12:00:00Z"),
+    };
+    const view = render(<CoverageMatrix />);
+    fireEvent.click(screen.getByTestId("digital-twin-cell-schema"));
+    expect(statusOf(screen.getByRole("dialog"))).toHaveTextContent("UNKNOWN");
+
+    setProbe(probesFor(MANIFEST_SNAPSHOT_IDS));
+    view.rerender(<CoverageMatrix />);
+
+    const drawer = screen.getByRole("dialog");
+    expect(statusOf(drawer)).toHaveTextContent("Live");
+    expect(drawer.textContent).not.toMatch(/UNKNOWN|no current reading/);
+  });
+
+  it("closes, and opens on whichever cell is pressed next", () => {
+    render(<CoverageMatrix />);
+    fireEvent.click(screen.getByTestId("digital-twin-cell-schema"));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("heading")
+    ).toHaveTextContent("schema");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByTestId("digital-twin-cell-memory"));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("heading")
+    ).toHaveTextContent("memory");
   });
 });

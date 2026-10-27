@@ -596,3 +596,43 @@ describe("LifecycleView while the probe holds no reading — UNKNOWN, never a co
     expect(screen.queryByTestId("digital-twin-coord-unreachable")).toBeNull();
   });
 });
+
+/**
+ * The drawer shows the probe's current row for the sub-space it was opened
+ * on, not the row as it was clicked, as in the Completeness matrix: a drawer
+ * left open across the probe's answer must say what that answer says.
+ */
+describe("LifecycleView's open drawer follows the probe", () => {
+  function statusOf(drawer: HTMLElement): HTMLElement {
+    return within(drawer).getByText("Status").parentElement!;
+  }
+
+  it("moves from Probing… to the answer when the probe answers while it is open", () => {
+    state.probe = {
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+    };
+    const view = render(<LifecycleView />);
+    fireEvent.click(
+      screen.getByTestId("digital-twin-stage-release-cell-schema")
+    );
+    expect(statusOf(screen.getByRole("dialog"))).toHaveTextContent("Probing…");
+
+    state.probe = {
+      data: probeAll(),
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    view.rerender(<LifecycleView />);
+
+    expect(
+      screen.getByTestId("digital-twin-stage-release-cell-schema")
+    ).toHaveTextContent("Live");
+    const drawer = screen.getByRole("dialog");
+    expect(statusOf(drawer)).toHaveTextContent("Live");
+    expect(statusOf(drawer)).not.toHaveTextContent("Probing…");
+  });
+});

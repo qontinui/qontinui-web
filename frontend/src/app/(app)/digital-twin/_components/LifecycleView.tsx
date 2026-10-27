@@ -448,7 +448,16 @@ export function LifecycleView() {
   // Completeness matrix apply too.
   const probe = useProbeRead();
   const { rows } = probe;
-  const [selected, setSelected] = useState<ResolvedSubspace | null>(null);
+  // The open drawer's sub-space, kept by id so the drawer is handed the
+  // probe's CURRENT row for it and moves when the probe does (as in the
+  // Completeness matrix): the row object as it was clicked would keep the
+  // status it had then.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    selectedId === null
+      ? null
+      : (rows.find((r) => r.id === selectedId) ?? null);
+  const select = (row: ResolvedSubspace) => setSelectedId(row.id);
 
   const byStage = useMemo(() => stageSummary(rows), [rows]);
   const byTwin = useMemo(() => twinSummary(rows), [rows]);
@@ -533,7 +542,7 @@ export function LifecycleView() {
             rows={rowsForStage(rows, stage.id)}
             counts={byStage[stage.id]}
             silence={silence}
-            onSelect={setSelected}
+            onSelect={select}
           />
         ))}
       </ol>
@@ -541,7 +550,7 @@ export function LifecycleView() {
       <SubspaceDetail
         row={selected}
         onOpenChange={(open) => {
-          if (!open) setSelected(null);
+          if (!open) setSelectedId(null);
         }}
       />
     </div>

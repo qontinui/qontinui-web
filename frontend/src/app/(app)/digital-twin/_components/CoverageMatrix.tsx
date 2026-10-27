@@ -99,7 +99,16 @@ export function CoverageMatrix() {
   const probe = useProbeRead();
   const { rows } = probe;
   const { data: catalog } = useTwinCatalog();
-  const [selected, setSelected] = useState<ResolvedSubspace | null>(null);
+  // The open drawer's sub-space, kept by id so the drawer is handed the
+  // probe's CURRENT row for it and moves when the probe does. The row object
+  // as it was clicked would keep the status it had then: "Probing…" after the
+  // probe has answered, UNKNOWN after coord has recovered.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    selectedId === null
+      ? null
+      : (rows.find((r) => r.id === selectedId) ?? null);
+  const select = (row: ResolvedSubspace) => setSelectedId(row.id);
 
   const summary = useMemo(() => summarize(rows), [rows]);
   const unlisted = useMemo(() => unlistedDeclaredProbes(catalog), [catalog]);
@@ -184,7 +193,7 @@ export function CoverageMatrix() {
             </h2>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {tierRows.map((row) => (
-                <SubspaceCell key={row.id} row={row} onSelect={setSelected} />
+                <SubspaceCell key={row.id} row={row} onSelect={select} />
               ))}
             </div>
           </section>
@@ -194,7 +203,7 @@ export function CoverageMatrix() {
       <SubspaceDetail
         row={selected}
         onOpenChange={(open) => {
-          if (!open) setSelected(null);
+          if (!open) setSelectedId(null);
         }}
       />
     </div>
