@@ -447,6 +447,93 @@ describe("/admin/coord/home", () => {
     ).toHaveTextContent("–");
   });
 
+  // coord's own shape for a stale block that carries an open row: the
+  // headline is `degraded`, and its reason explains the HEADLINE. Printing
+  // that reason after "Incomplete view —" gave the operator a false cause.
+  it("words a stale block's gap from its stale watchers, never from the degraded headline's reason", async () => {
+    const base = doorBody();
+    await renderWith(
+      doorBody({
+        degradations: {
+          ...(base.degradations as Record<string, unknown>),
+          state: "stale",
+          headline: "degraded",
+          headline_reason: "at least one operator-plane degradation is open",
+          planes: {
+            runner: {
+              fresh: true,
+              watchers: [{ name: "health_ledger", state: "fresh" }],
+            },
+            merge_train: {
+              fresh: false,
+              watchers: [
+                {
+                  name: "stuck_pr_watcher",
+                  state: "stale",
+                  reason: "no_successful_tick",
+                },
+              ],
+            },
+          },
+        },
+      })
+    );
+    const line = screen.getByTestId("coord-home.degrading.incomplete");
+    expect(line).toHaveTextContent(
+      /^Incomplete view — not every watcher is fresh \(merge train\)\. The rows below are real; there may be others\.$/
+    );
+    expect(line).not.toHaveTextContent(/at least one/);
+    // The open row is still shown: positive facts survive a stale block.
+    expect(screen.getByText("A runner stopped answering")).toBeInTheDocument();
+  });
+
+  it("quotes coord's reason for the gap only on its unknown headline, where it lists the cause", async () => {
+    await renderWith(
+      doorBody({
+        degradations: {
+          state: "stale",
+          headline: "unknown",
+          headline_reason: "source `fleet_drain` was not fully read",
+          open: [],
+          recently_cleared: [],
+          planes: {},
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.degrading.incomplete")
+    ).toHaveTextContent(
+      "Incomplete view — source `fleet_drain` was not fully read. The rows below are real; there may be others."
+    );
+  });
+
+  it.each([
+    [
+      1,
+      "Coord counted 1 decision for you but did not serve it; open Questions.",
+    ],
+    [
+      3,
+      "Coord counted 3 decisions for you but served none of them; open Questions.",
+    ],
+    [
+      null,
+      "Coord counted an unknown number of decisions for you but served none of them; open Questions.",
+    ],
+  ])(
+    "words %p decisions counted but not served in proper English",
+    async (total, sentence) => {
+      await renderWith(
+        doorBody({
+          needs_me: { state: "read", total, omitted: total, items: [] },
+        })
+      );
+      expect(
+        screen.getByTestId("coord-home.needs-you.unserved")
+      ).toHaveTextContent(sentence);
+    }
+  );
+
   it("shows merge-train watcher freshness under Degrading", async () => {
     await renderWith(
       doorBody({
@@ -568,8 +655,12 @@ describe("/admin/coord/home", () => {
           },
         })
       );
+      // A reason other than coord's "no source" one is an unread reading,
+      // not a missing source, so the row says it was not read.
       fireEvent.click(
-        screen.getByText("Not measured — no trust-calibration source")
+        screen.getByText(
+          "Not known — coord gave no reading of trust calibration."
+        )
       );
       expect(screen.getByTestId("coord-home.correct")).toHaveTextContent(
         "verification source without recorded change"

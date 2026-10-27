@@ -621,6 +621,18 @@ export function needsDisplayCount(needs: NeedsMeView): number | null {
   return needs.total !== null && needs.total >= listed ? needs.total : null;
 }
 
+/**
+ * The sentence for a read needs_me block that counted decisions but served
+ * none of them. `count` is {@link needsDisplayCount}; `null` is an unknown
+ * number, never a zero. One decision is singular ("1 decision … did not
+ * serve it"), never "1 decisions".
+ */
+export function unservedDecisionsSentence(count: number | null): string {
+  return count === 1
+    ? "Coord counted 1 decision for you but did not serve it"
+    : `Coord counted ${count ?? "an unknown number of"} decisions for you but served none of them`;
+}
+
 /** A link target coord served, kept only when it is an in-app path. */
 export function internalHref(v: string | null): string | null {
   // `//host` and `/\host` both leave the site in a browser.
@@ -899,6 +911,34 @@ export function remediationPhrase(d: DegradationView): string {
   return "no automatic response is bound";
 }
 
+/**
+ * Why a `stale` degradations block is incomplete: the clause the page prints
+ * after "Incomplete view —".
+ *
+ * Coord's `headline_reason` explains its HEADLINE, not the staleness. Any open
+ * row makes the headline `degraded`, whatever the state, and the reason is then
+ * "at least one operator-plane degradation is open" — a false cause for the
+ * gap on a stale block. Only the `unknown` headline's reason lists why the
+ * block is partial (a watcher not fresh, a source not fully read, a row
+ * ceiling), so that is the one arm that quotes it. Otherwise the gap is worded
+ * from the planes coord served as not fresh. Failing that, it is worded from
+ * what `stale` itself guarantees: a source was not fully read, or a watcher
+ * feeding it is not fresh.
+ */
+export function degradationsGapPhrase(deg: DegradationsView): string {
+  if (deg.headline === "unknown") {
+    const reason = nonBlank(deg.headlineReason);
+    if (reason !== null) return withoutVerdictWords(reason);
+  }
+  const notFresh = (deg.planes ?? [])
+    .filter((p) => p.fresh === false)
+    .map((p) => planeLabel(p.plane));
+  if (notFresh.length > 0) {
+    return `not every watcher is fresh (${notFresh.join(", ")})`;
+  }
+  return "a source feeding it was not fully read, or a watcher feeding it is not fresh";
+}
+
 // ---------------------------------------------------------------------------
 // correctness + does_not_know
 // ---------------------------------------------------------------------------
@@ -906,6 +946,18 @@ export function remediationPhrase(d: DegradationView): string {
 export interface CorrectnessView {
   state: BlockState;
   reason: string | null;
+}
+
+/**
+ * Does coord say NO source measures correctness yet? That is the one case in
+ * which "Not measured — no trust-calibration source" is true: coord serves
+ * `reason: "verification_metrics_door_absent"` because the verification door
+ * does not exist in its build. A block that could not be read, a stale one, or
+ * one absent from the body (which the parser folds into `unknown`) says
+ * nothing about whether a source exists, so it is worded as not read instead.
+ */
+export function correctnessHasNoSource(c: CorrectnessView): boolean {
+  return c.state !== "read" && c.reason === "verification_metrics_door_absent";
 }
 
 export interface SourceCoverageView {

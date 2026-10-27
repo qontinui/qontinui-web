@@ -40,6 +40,8 @@ import {
   HOME_ATTENTION_BY_KIND,
   HOME_STATUS_PALETTE,
   UNIT_CLASSES,
+  correctnessHasNoSource,
+  degradationsGapPhrase,
   durationText,
   needsYouReason,
   needsDisplayCount,
@@ -56,6 +58,7 @@ import {
   remediationPhrase,
   stallWindowDays,
   unitClassLabel,
+  unservedDecisionsSentence,
   internalHref,
   windowLabel,
   type BlockState,
@@ -382,9 +385,11 @@ export function NeedsYouSection({
               : "Nothing needs you"}
           </p>
         ) : served === 0 ? (
-          <p className="m-0 text-sm text-muted-foreground">
-            Coord counted {count ?? "an unknown number of"} decisions for you
-            but served none of them; open{" "}
+          <p
+            className="m-0 text-sm text-muted-foreground"
+            data-testid="coord-home.needs-you.unserved"
+          >
+            {unservedDecisionsSentence(count)}; open{" "}
             <Link href="/admin/coord/questions" className="underline">
               Questions
             </Link>
@@ -572,11 +577,8 @@ export function DegradingSection({
               className="m-0 text-sm text-muted-foreground"
               data-testid="coord-home.degrading.incomplete"
             >
-              Incomplete view —{" "}
-              {deg.headlineReason
-                ? withoutVerdictWords(deg.headlineReason)
-                : "a source feeding it was not fully read"}
-              . The rows below are real; there may be others.
+              Incomplete view — {degradationsGapPhrase(deg)}. The rows below are
+              real; there may be others.
             </p>
           )}
           {open === null && (
@@ -1031,6 +1033,19 @@ export function CorrectSection({
   onToggle: () => void;
 }) {
   const measured = correctness.state === "read";
+  // "No source" only when coord SAYS no source exists. Any other unread state
+  // (could not read, stale, absent from the body) says nothing about a source.
+  const noSource = correctnessHasNoSource(correctness);
+  const label = measured
+    ? "Coord reports a correctness reading; this page does not render it yet"
+    : noSource
+      ? "Not measured — no trust-calibration source"
+      : notReadSentence("trust calibration", correctness.state);
+  const why = measured
+    ? "The reading exists in coord's answer; it is not shown here."
+    : noSource
+      ? "No source measures it yet, so this is not measured rather than zero."
+      : "Until coord gives a full reading, it is unknown rather than zero.";
   return (
     <section
       className="space-y-2"
@@ -1041,11 +1056,7 @@ export function CorrectSection({
       <h2 className={HEADING}>Correct?</h2>
       <RecordRow
         identity="verified work"
-        label={
-          measured
-            ? "Coord reports a correctness reading; this page does not render it yet"
-            : "Not measured — no trust-calibration source"
-        }
+        label={label}
         status={
           <HomeBadge
             kind={measured ? "source_read" : "source_not_read"}
@@ -1063,10 +1074,7 @@ export function CorrectSection({
           why={
             <p className="m-0">
               How much of what the fleet says it verified survives independent
-              checking.{" "}
-              {measured
-                ? "The reading exists in coord's answer; it is not shown here."
-                : "No source measures it yet, so this is not measured rather than zero."}
+              checking. {why}
             </p>
           }
           raw={

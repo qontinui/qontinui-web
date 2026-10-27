@@ -328,19 +328,68 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       expectNoDegradingCalm();
     });
 
-    it("renders an absent correctness block as not measured, in amber", async () => {
+    it("renders an absent correctness block as not read, in amber, never as 'no source'", async () => {
+      // An absent block says nothing about whether a source exists: only
+      // coord's own `verification_metrics_door_absent` reason does.
       await renderView(without("correctness"));
       const correct = screen.getByTestId("coord-home.correct");
       expect(correct).toHaveAttribute("data-block-state", "unknown");
       const row = screen.getByTestId("coord-home.correct.row");
       expect(row).toHaveTextContent(
-        "Not measured — no trust-calibration source"
+        "Not known — coord gave no reading of trust calibration."
       );
+      expect(correct).not.toHaveTextContent(/no trust-calibration source/);
       expect(
         row.querySelector('[data-status-kind="source_not_read"]')
       ).toHaveTextContent(/^unknown$/);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
       expect(strip()).toHaveTextContent("Not read: correct? unknown.");
+    });
+
+    it.each([
+      [
+        "could_not_read",
+        "Not known — coord could not read trust calibration this time; nothing here is a zero.",
+        /^could not be read$/,
+      ],
+      [
+        "stale",
+        "Incomplete — coord could only partly read trust calibration.",
+        /^incomplete or stale$/,
+      ],
+    ])(
+      "renders a %s correctness block as not read, never as 'no source'",
+      async (state, sentence, badge) => {
+        await renderView(
+          replaced("correctness", {
+            state,
+            reason: "timeout",
+            inputs: null,
+          })
+        );
+        const correct = screen.getByTestId("coord-home.correct");
+        const row = screen.getByTestId("coord-home.correct.row");
+        expect(row).toHaveTextContent(sentence);
+        expect(
+          row.querySelector('[data-status-kind="source_not_read"]')
+        ).toHaveTextContent(badge);
+        expect(correct).not.toHaveTextContent(/no trust-calibration source/);
+        expect(correct).not.toHaveTextContent(/No source measures it yet/);
+        expect(strip()).toHaveAttribute("data-health-level", "amber");
+      }
+    );
+
+    it("keeps 'no trust-calibration source' for coord's own no-source reason", async () => {
+      await renderView(
+        replaced("correctness", {
+          state: "unknown",
+          reason: "verification_metrics_door_absent",
+          inputs: null,
+        })
+      );
+      expect(screen.getByTestId("coord-home.correct.row")).toHaveTextContent(
+        "Not measured — no trust-calibration source"
+      );
     });
 
     it("renders an absent does_not_know as unknown, not as nothing unknown", async () => {

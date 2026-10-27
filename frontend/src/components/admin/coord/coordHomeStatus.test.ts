@@ -22,8 +22,11 @@ import {
   HOME_STATUS_PALETTE,
   NOTHING_READ,
   UNIT_CLASSES,
+  correctnessHasNoSource,
+  degradationsGapPhrase,
   deriveHomeStrip,
   nothingNeedsYou,
+  unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
   withoutVerdictWords,
@@ -702,5 +705,151 @@ describe("round-7 review — blank recommendations, link targets, windows", () =
     [0, null],
   ])("windowLabel(%p) is %p", (secs, want) => {
     expect(windowLabel(secs)).toBe(want);
+  });
+});
+
+describe("round-8 review — the partial and unread captions say what is true", () => {
+  /** coord's degradations block, through the real parser. */
+  function deg(block: Record<string, unknown>) {
+    return parseProjectState({ degradations: block })!.degradations;
+  }
+
+  const STALE_MERGE_TRAIN = {
+    merge_train: {
+      fresh: false,
+      watchers: [
+        {
+          name: "stuck_pr_watcher",
+          state: "stale",
+          reason: "no_successful_tick",
+        },
+      ],
+    },
+    runner: {
+      fresh: true,
+      watchers: [{ name: "health_ledger", state: "fresh" }],
+    },
+  };
+
+  it("never gives the degraded headline's reason as the cause of a stale block's gap", () => {
+    // coord: any open row makes the headline `degraded`, and its reason
+    // explains that headline, not the staleness.
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        headline: "degraded",
+        headline_reason: "at least one operator-plane degradation is open",
+        open: [{ id: "alert:1", plane: "runner" }],
+        planes: STALE_MERGE_TRAIN,
+      })
+    );
+    expect(phrase).toBe("not every watcher is fresh (merge train)");
+  });
+
+  it("names every plane served as not fresh, and none served fresh or unstated", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        headline: "degraded",
+        headline_reason: "at least one operator-plane degradation is open",
+        planes: {
+          ...STALE_MERGE_TRAIN,
+          build_capacity: { fresh: false, watchers: [] },
+          disk: { watchers: [] },
+        },
+      })
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (merge train, build capacity)"
+    );
+  });
+
+  it.each([
+    ["no planes served", undefined],
+    ["every plane fresh", { runner: { fresh: true, watchers: [] } }],
+  ])(
+    "falls back to what `stale` guarantees when the planes show no cause (%s)",
+    (_case, planes) => {
+      expect(
+        degradationsGapPhrase(
+          deg({
+            state: "stale",
+            headline: "degraded",
+            headline_reason: "at least one operator-plane degradation is open",
+            planes,
+          })
+        )
+      ).toBe(
+        "a source feeding it was not fully read, or a watcher feeding it is not fresh"
+      );
+    }
+  );
+
+  it("quotes coord's reason on the unknown headline, where it lists why the block is partial", () => {
+    expect(
+      degradationsGapPhrase(
+        deg({
+          state: "stale",
+          headline: "unknown",
+          headline_reason:
+            "a watcher feeding this view is stale or has no heartbeat; source `train_health` was not fully read",
+          planes: STALE_MERGE_TRAIN,
+        })
+      )
+    ).toBe(
+      "a watcher feeding this view is stale or has no heartbeat; source `train_health` was not fully read"
+    );
+  });
+
+  it("rewords the stalled class in coord's reason, and ignores a blank one", () => {
+    expect(
+      degradationsGapPhrase(
+        deg({
+          state: "stale",
+          headline: "unknown",
+          headline_reason: "the train watcher stalled",
+        })
+      )
+    ).toBe("the train watcher without recorded change");
+    expect(
+      degradationsGapPhrase(
+        deg({
+          state: "stale",
+          headline: "unknown",
+          headline_reason: "   ",
+          planes: STALE_MERGE_TRAIN,
+        })
+      )
+    ).toBe("not every watcher is fresh (merge train)");
+  });
+
+  it.each([
+    ["unknown", "verification_metrics_door_absent", true],
+    ["not_implemented", "verification_metrics_door_absent", true],
+    ["unknown", null, false],
+    ["could_not_read", "timeout", false],
+    ["stale", null, false],
+    ["could_not_read", null, false],
+    // A read block is measured: there is a source.
+    ["read", "verification_metrics_door_absent", false],
+  ] as const)("correctnessHasNoSource(%s, %p) is %p", (state, reason, want) => {
+    expect(correctnessHasNoSource({ state, reason })).toBe(want);
+  });
+
+  it("reads an absent correctness block as not saying 'no source'", () => {
+    expect(correctnessHasNoSource(parseProjectState({})!.correctness)).toBe(
+      false
+    );
+  });
+
+  it.each([
+    [1, "Coord counted 1 decision for you but did not serve it"],
+    [2, "Coord counted 2 decisions for you but served none of them"],
+    [
+      null,
+      "Coord counted an unknown number of decisions for you but served none of them",
+    ],
+  ])("unservedDecisionsSentence(%p)", (count, want) => {
+    expect(unservedDecisionsSentence(count)).toBe(want);
   });
 });

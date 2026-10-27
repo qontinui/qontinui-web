@@ -63,7 +63,7 @@
         "correctness.reason",
         "correctness.inputs"
       ],
-      "answer": "The trust-calibration reading with its numerator and denominator; until a source exists, 'Not measured — no trust-calibration source'.",
+      "answer": "The trust-calibration reading with its numerator and denominator; until a source exists (coord's reason 'verification_metrics_door_absent'), 'Not measured — no trust-calibration source'; any other unread state names how it was not read, never a missing source and never a zero.",
       "unknown_is_an_answer_only_when": "correctness.state != \"read\""
     },
     {
