@@ -6,10 +6,14 @@
  * one row per app id (`appRegistryStatus.ts` merges them; presence needs BOTH
  * answers, so an unread side makes it UNKNOWN rather than "web only").
  *
- * Presentation mode (D3.3): an app's name is shown only for the runner's own
- * app, whose repository the tenant's first-party list can clear; every other
- * name renders as its descriptor, and the local checkout path and URL in the
- * detail are operator-only.
+ * Presentation mode (D3.4): neither registry is read while presenting —
+ * neither is kept per project, so either can list other projects'
+ * applications — and each half is a labelled UNKNOWN saying so
+ * (`useUiBridgeDashboard.ts` `appRegistryReadsOf`). Should a caller hand
+ * this panel rows while presenting anyway, it still holds D3.3: an app's name
+ * is shown only for the runner's own app, whose repository the tenant's
+ * first-party list can clear; every other name renders as its descriptor,
+ * and the local checkout path and URL in the detail are operator-only.
  */
 
 import { useMemo, useState } from "react";
@@ -42,10 +46,10 @@ import {
   presenceCounts,
   updateStrategyLabel,
   type AppRow,
+  type RegistryRead,
   type WebAppConfig,
 } from "../_lib/appRegistryStatus";
 import { appRepoOf } from "../_lib/firstParty";
-import type { ReadState } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import type { BuildReading } from "../_lib/relaySource";
 import { DashboardPanel } from "./DashboardPanel";
@@ -56,15 +60,19 @@ import {
 } from "./SourceUnknown";
 
 export interface AppRegistryPanelProps {
-  web: ReadState<readonly WebAppConfig[]>;
+  web: RegistryRead<readonly WebAppConfig[]>;
   /** The web read's error, for its structured refusal. */
   webError: unknown;
-  runner: ReadState<readonly RegisteredApp[]>;
+  runner: RegistryRead<readonly RegisteredApp[]>;
   build: BuildReading;
 }
 
-const value = <T,>(read: ReadState<T>): T | null =>
+const value = <T,>(read: RegistryRead<T>): T | null =>
   read.state === "ok" ? read.value : null;
+
+/** A registry that will not answer on this render: it failed, or was not read. */
+const settledUnread = (read: RegistryRead<unknown>): boolean =>
+  read.state === "failed" || read.state === "not-read";
 
 const isoOf = (ms: number | null): string | null =>
   ms === null ? null : new Date(ms).toISOString();
@@ -155,6 +163,12 @@ export function AppRegistryPanel({
         <Provenance source="this runner's app list" asOf={runnerAsOf} />
       </div>
 
+      {web.state === "not-read" && (
+        <SourceUnknown
+          text={web.reason}
+          data-testid="coord-ui-bridge-apps-web-not-read"
+        />
+      )}
       {web.state === "failed" && (
         <div
           className="space-y-1"
@@ -178,6 +192,12 @@ export function AppRegistryPanel({
           data-testid="coord-ui-bridge-apps-web-stale"
         />
       )}
+      {runner.state === "not-read" && (
+        <SourceUnknown
+          text={runner.reason}
+          data-testid="coord-ui-bridge-apps-runner-not-read"
+        />
+      )}
       {runner.state === "failed" && (
         <RunnerReadUnknown
           issue={runner.issue}
@@ -191,8 +211,7 @@ export function AppRegistryPanel({
         items={rows ?? []}
         itemKey={(row) => row.appId}
         loaded={
-          rows !== null ||
-          (web.state === "failed" && runner.state !== "loading")
+          rows !== null || (settledUnread(web) && runner.state !== "loading")
         }
         expandedKey={expandedKey}
         onExpandedKeyChange={setExpandedKey}
@@ -202,7 +221,7 @@ export function AppRegistryPanel({
               className="m-0 text-sm text-muted-foreground italic"
               data-testid="coord-ui-bridge-apps-none-read"
             >
-              Neither registry answered, so which apps exist is unknown — not
+              Neither registry was read, so which apps exist is unknown — not
               none.
             </p>
           ) : (

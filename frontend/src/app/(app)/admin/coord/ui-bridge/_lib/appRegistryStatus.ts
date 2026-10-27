@@ -21,6 +21,15 @@
  * fault). With either unread, whether the other side has the app is UNKNOWN,
  * and the row says so rather than reading "web only" off a runner that never
  * answered (R3's ignorance floor, amber).
+ *
+ * **Neither registry is kept per project, so neither is read while
+ * presenting** (plan `2026-10-23-console-presentation-spaces` D3.4: a lens page
+ * fetches only the acting organisation's data). The web's `list_apps` returns
+ * every row of `project.apps` to any signed-in user, and the runner's own
+ * `GET /apps` lists every row of its database's apps table (qontinui-runner
+ * `spec_api/apps.rs` `handle_list_apps`), which on a runner bound to the
+ * shared database is that same table. Each half is then a {@link RegistryRead}
+ * of `not-read`, and the panel renders its reason as a labelled UNKNOWN.
  */
 
 import {
@@ -30,6 +39,23 @@ import {
   type StatusPalette,
 } from "@/components/console";
 import type { RegisteredApp } from "@/app/(app)/digital-twin/_lib/ui-bridge-types";
+import type { ReadState } from "./readState";
+
+/**
+ * One registry's read as the panel holds it: the read, or `not-read` with the
+ * reason this render does not make it — never an empty list.
+ */
+export type RegistryRead<T> =
+  | ReadState<T>
+  | { readonly state: "not-read"; readonly reason: string };
+
+/** Why the presentation lens does not read the web registry (D3.4). */
+export const WEB_REGISTRY_NOT_IN_LENS =
+  "The web app registry is not read while presenting: it is not kept per project, so it can list other projects' applications.";
+
+/** Why the presentation lens does not read the runner's own app list (D3.4). */
+export const RUNNER_APP_LIST_NOT_IN_LENS =
+  "This runner's own app list is not read while presenting: a runner on the shared database lists every application registered there, not only this project's.";
 
 /** One `GET /api/v1/fleet/apps` row (backend `schemas/fleet_targets.py` `AppConfig`). */
 export interface WebAppConfig {
@@ -200,7 +226,8 @@ const SIDE_NAME: Record<AppRegistrySide, string> = {
  *   never made.
  *
  * Today every runner's app list is unread (no relay carries `GET /apps` —
- * `relayReads.ts`), so this is a floor on every runner until one does.
+ * `relayReads.ts`), so this is a floor on every runner until one does; and
+ * while presenting neither registry is read, so it is `unknown`.
  */
 export type AppTotal =
   | { readonly kind: "exact"; readonly count: number }
@@ -249,7 +276,7 @@ export function appTotalMeaning(total: AppTotal): string {
       return `At least ${total.count}: ${SIDE_NAME[total.unread]} was not read, so an app only it records is not counted`;
     case "unknown": {
       if (total.unread === "both") {
-        return "Neither registry answered, so how many apps exist is unknown";
+        return "Neither registry was read, so how many apps exist is unknown";
       }
       const read = SIDE_NAME[total.unread === "web" ? "runner" : "web"];
       return `${read.charAt(0).toUpperCase()}${read.slice(1)} records none and ${SIDE_NAME[total.unread]} was not read, so how many apps exist is unknown — not none`;

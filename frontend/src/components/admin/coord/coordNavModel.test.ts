@@ -113,8 +113,8 @@ describe("coordNavModel", () => {
     ]);
   });
 
-  it("gives a member exactly Overview, CI and UI Bridge under Dev Ops", () => {
-    expect(memberLabels("devops")).toEqual(["Overview", "CI", "UI Bridge"]);
+  it("gives a member exactly Overview and CI under Dev Ops", () => {
+    expect(memberLabels("devops")).toEqual(["Overview", "CI"]);
     expect(labels("devops")).toEqual([
       "Overview",
       "CI",
@@ -143,16 +143,11 @@ describe("coordNavModel", () => {
     );
     expect(computers?.coordAdminOnly).toBe(true);
     expect(computers?.operatorOnly).toBeUndefined();
-    // Plain member: exactly Overview, CI and UI Bridge (resolved Q3,
-    // extended by the CI dashboard plan's D1 and the presentation-spaces
-    // plan's Phase 6 — all three are member reads).
-    expect(visibleLabels("devops", MEMBER)).toEqual([
-      "Overview",
-      "CI",
-      "UI Bridge",
-    ]);
-    // A coord admin who is NOT staff sees Computers, Spawns and Session load
-    // and nothing operator-only.
+    // Plain member: exactly Overview and CI (resolved Q3, extended by the
+    // CI dashboard plan's D1 — both are member reads).
+    expect(visibleLabels("devops", MEMBER)).toEqual(["Overview", "CI"]);
+    // A coord admin who is NOT staff sees UI Bridge, Computers, Spawns and
+    // Session load and nothing operator-only.
     expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
       "Overview",
       "CI",
@@ -268,14 +263,16 @@ describe("coordNavModel", () => {
     ]);
   });
 
-  it("puts the UI Bridge dashboard under Dev Ops, member-visible", () => {
+  it("puts the UI Bridge dashboard under Dev Ops for a coord admin only — its app registry read is not partitioned by project", () => {
     const leaf = group("devops").items.find(
       (i) => i.href === "/admin/coord/ui-bridge"
     );
     expect(leaf?.label).toBe("UI Bridge");
     expect(leaf?.testId).toBe("coord-nav-ui-bridge");
+    expect(leaf?.coordAdminOnly).toBe(true);
     expect(leaf?.operatorOnly).toBeUndefined();
-    expect(leaf?.coordAdminOnly).toBeUndefined();
+    expect(visibleLabels("devops", MEMBER)).not.toContain("UI Bridge");
+    expect(visibleLabels("devops", COORD_ADMIN)).toContain("UI Bridge");
     expect(findActiveLeaf("/admin/coord/ui-bridge")?.group?.id).toBe("devops");
   });
 

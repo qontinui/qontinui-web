@@ -10,7 +10,8 @@
  * figure, or a missing caption. Beyond it, this file pins D3.3 on this page:
  * the runner is aliased, text the scope cannot clear is withheld (another
  * app's name, component and action names, the window's own text), and the
- * runner's own app — whose repository the scope does clear — is named.
+ * runner's own app — whose repository the scope does clear — is named. And
+ * D3.4: neither app registry, which no project partitions, is read.
  *
  * And the reasons an UNKNOWN gives: a reason that quotes words from outside
  * the page — an app id typed before presenting began (in the runner's
@@ -24,6 +25,7 @@
 
 import React, { type ReactNode } from "react";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -63,6 +65,8 @@ const state = vi.hoisted(() => ({
   target: { kind: "pending" } as RunnerTarget,
   relay: null as RelayFake | null,
   fleetApps: (async () => []) as () => Promise<unknown>,
+  /** Every `GET /api/v1/fleet/apps` the page made. */
+  fleetAppsReads: 0,
 }));
 
 vi.mock("@/contexts/active-runner-context", () => ({
@@ -87,6 +91,7 @@ vi.mock("@/services/service-factory", () => ({
     get: async (url: string) => {
       if (url !== "/api/v1/fleet/apps")
         throw new Error(`unexpected GET ${url}`);
+      state.fleetAppsReads += 1;
       return state.fleetApps();
     },
   },
@@ -155,6 +160,7 @@ beforeEach(() => {
     visibility: () => json(200, VISIBILITY_HIDES_TEXT),
   });
   state.fleetApps = async () => FLEET_APPS;
+  state.fleetAppsReads = 0;
   sessionMachineAliases.reset();
   window.sessionStorage.clear();
 });
@@ -194,11 +200,11 @@ describe("the UI Bridge dashboard while presenting", () => {
     // Local paths and URLs stay with the operator.
     expect(body).not.toHaveTextContent("/home/dev/src");
     expect(body).not.toHaveTextContent("127.0.0.1");
-    // The runner's own app is first-party under this scope, so it is named.
-    const rows = screen.getAllByTestId("coord-ui-bridge-app-row");
+    // The runner's own app is first-party under this scope, so the snapshot
+    // names the app and the screen it captured.
     expect(
-      rows.some((r) => within(r).queryByText("Qontinui Runner") !== null)
-    ).toBe(true);
+      screen.getByTestId("coord-ui-bridge-snapshot-subject")
+    ).toHaveTextContent("Captured qontinui-runner — Qontinui Runner");
     expect(
       body.querySelectorAll('[data-redacted="true"]').length
     ).toBeGreaterThan(0);
@@ -345,17 +351,17 @@ describe("the UI Bridge dashboard while presenting", () => {
       "source: web app registry",
       "source: this runner's app list",
     ]);
-    // The registry and the health answered, so they carry a time; the
-    // runner's app list is carried by no relay, so its time is UNKNOWN.
+    // The registry and the health answered, so they carry a time; neither
+    // app registry is read while presenting, so their times are UNKNOWN.
     const known = [
       ...screen
         .getByTestId("coord-ui-bridge-strip-provenance")
         .querySelectorAll("[data-provenance]"),
     ].map((c) => c.getAttribute("data-provenance-known"));
-    expect(known).toEqual(["true", "true", "true", "false"]);
-    // The app total is a floor while that list is unread — never a bare count.
+    expect(known).toEqual(["true", "true", "false", "false"]);
+    // …and the app total is a dash — never a count nobody read.
     expect(screen.getByTestId("coord-ui-bridge-health-apps")).toHaveTextContent(
-      "apps ≥2"
+      "apps –"
     );
   });
 });
@@ -484,7 +490,7 @@ describe("a reason that quotes the outside world is withheld while presenting", 
     expectPresentationSafe(view, { captions: CAPTIONS });
   });
 
-  it("leaves the web backend's own refusal out, keeping the registry's UNKNOWN", async () => {
+  it("asks the web backend nothing about the registry, so no refusal of it can show", async () => {
     state.fleetApps = async () => {
       throw new Error("GET /api/v1/fleet/apps failed: 500 - boom");
     };
@@ -492,15 +498,15 @@ describe("a reason that quotes the outside world is withheld while presenting", 
       scope: SCOPE,
       wrapper: Queries,
     });
-    const unknown = await screen.findByTestId(
-      "coord-ui-bridge-apps-web-unknown"
-    );
-    expect(unknown).toHaveTextContent(
-      "UNKNOWNThe web's app registry could not be read."
-    );
-    expect(unknown).not.toHaveTextContent("boom");
     await screen.findByTestId("coord-ui-bridge-actions-counts");
-    expectPresentationSafe(view, { captions: CAPTIONS });
+    expect(state.fleetAppsReads).toBe(0);
+    expect(
+      screen.queryByTestId("coord-ui-bridge-apps-web-unknown")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-ui-bridge-apps-web-not-read")
+    ).toHaveTextContent("UNKNOWN");
+    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: ["boom"] });
   });
 
   it("gives the no-runner reason in fixed words, never the refusal that names the runner", async () => {
@@ -514,9 +520,8 @@ describe("a reason that quotes the outside world is withheld while presenting", 
       scope: SCOPE,
       wrapper: Queries,
     });
-    await waitFor(() =>
-      expect(screen.getAllByTestId("coord-ui-bridge-app-row")).toHaveLength(2)
-    );
+    await screen.findByTestId("coord-ui-bridge-apps-web-not-read");
+    await screen.findByTestId("coord-ui-bridge-actions-unknown");
     expect(document.body).not.toHaveTextContent("Build box");
     expect(
       screen.getByTestId("coord-ui-bridge-health-strip")
@@ -526,5 +531,85 @@ describe("a reason that quotes the outside world is withheld while presenting", 
     expect(
       screen.getByTestId("coord-ui-bridge-actions-unknown")
     ).toHaveTextContent("coord's device resolver did not answer");
+  });
+});
+
+/**
+ * Neither app registry is partitioned by project: the web's `list_apps`
+ * returns every row of `project.apps`, and a runner on the shared database
+ * lists the same table. So the lens makes neither read (plan D3.4) — not on
+ * mount, not on Refresh — and shows nothing an operator-mode read left in
+ * the cache.
+ */
+describe("the app registries while presenting", () => {
+  /** Let any request a render or a press would start actually start. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+
+  it("reads neither registry — on mount or on Refresh — and says why in each half", async () => {
+    const view = renderInPresentationMode(<UiBridgeDashboardPage />, {
+      scope: SCOPE,
+      wrapper: Queries,
+    });
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
+    });
+    await settle();
+    // The refresh did run: the runner reads it covers were asked again.
+    expect(
+      state.relay?.requests.filter((r) => r === "GET health").length
+    ).toBeGreaterThanOrEqual(2);
+    expect(state.fleetAppsReads).toBe(0);
+    expect(state.relay?.requests).not.toContain("GET apps");
+
+    expect(
+      screen.getByTestId("coord-ui-bridge-apps-web-not-read")
+    ).toHaveTextContent(
+      "UNKNOWNThe web app registry is not read while presenting: it is not kept per project, so it can list other projects' applications."
+    );
+    expect(
+      screen.getByTestId("coord-ui-bridge-apps-runner-not-read")
+    ).toHaveTextContent(
+      "UNKNOWNThis runner's own app list is not read while presenting: a runner on the shared database lists every application registered there, not only this project's."
+    );
+    expect(screen.queryAllByTestId("coord-ui-bridge-app-row")).toEqual([]);
+    expect(
+      screen.getByTestId("coord-ui-bridge-apps-none-read")
+    ).toHaveTextContent("unknown — not none");
+    expect(screen.getByTestId("coord-ui-bridge-apps-total")).toHaveTextContent(
+      "apps –"
+    );
+    expectPresentationSafe(view, { captions: CAPTIONS });
+  });
+
+  it("shows nothing an operator-mode read of the registries left in the cache once presenting begins", async () => {
+    const view = renderSwitchable();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-ui-bridge-app-row")).toHaveLength(2)
+    );
+    expect(state.fleetAppsReads).toBe(1);
+
+    view.present();
+    expect(screen.queryAllByTestId("coord-ui-bridge-app-row")).toEqual([]);
+    expect(
+      screen.getByTestId("coord-ui-bridge-apps-web-not-read")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("coord-ui-bridge-apps-counts")).toHaveTextContent(
+      "in the web registry –"
+    );
+    expect(screen.getByTestId("coord-ui-bridge-health-apps")).toHaveTextContent(
+      "apps –"
+    );
+    const webChip = within(
+      screen.getByTestId("coord-ui-bridge-strip-provenance")
+    )
+      .getByText("source: web app registry")
+      .closest("[data-provenance]");
+    expect(webChip).toHaveAttribute("data-provenance-known", "false");
+    await settle();
+    expect(state.fleetAppsReads).toBe(1);
   });
 });

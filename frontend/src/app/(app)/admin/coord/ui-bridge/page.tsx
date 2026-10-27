@@ -9,7 +9,7 @@
  *
  * | panel | source |
  * |---|---|
- * | Registered applications | web `GET /api/v1/fleet/apps` + the runner's `GET /apps` |
+ * | Registered applications | web `GET /api/v1/fleet/apps` + the runner's `GET /apps`; neither read while presenting |
  * | Screens and states | the runner's `apps/{id}/spec/list` and `/spec/graph` |
  * | Live element snapshot | the runner's `ui-bridge/control/snapshot`, on demand |
  * | Capabilities and trust | the runner's `/health` (`sdkFeatures`, `uiBridgeBinding`, build) |
@@ -33,6 +33,9 @@
  *   page health included (`occlusionStatus.ts`). Once a relay does carry it,
  *   `clear` still needs `occlusionDataObserved: true`.
  * - **0 for a number it could not read.** A missing count is `–`.
+ * - **Another project's applications.** Neither app registry is partitioned
+ *   by project, so while presenting neither is read, and each half reads
+ *   UNKNOWN and says why (`appRegistryReadsOf`).
  *
  * Presentation mode (plan D1–D3) changes only the rendering: captions before
  * each panel, provenance beside every figure, every panel held open, the app
@@ -55,9 +58,13 @@ import {
   MachineName,
   Provenance,
   useMachineName,
+  usePresentationMode,
 } from "@/components/presentation";
-import { useRunnerApps } from "@/app/(app)/digital-twin/_hooks/useUiBridge";
-import { appTotalOf, mergeAppRegistries } from "./_lib/appRegistryStatus";
+import {
+  appTotalOf,
+  mergeAppRegistries,
+  type RegistryRead,
+} from "./_lib/appRegistryStatus";
 import { countEffects, readComponents } from "./_lib/componentEffectStatus";
 import { deriveDashboardHealth } from "./_lib/dashboardHealth";
 import { readPageHealth } from "./_lib/pageHealthStatus";
@@ -66,11 +73,13 @@ import { RUNNER_ROUTES, isRelayed } from "./_lib/relayReads";
 import { buildLabel, type BuildReading } from "./_lib/relaySource";
 import { buildReadingOf, readRunnerPosture } from "./_lib/runnerHealth";
 import {
+  appRegistryReadsOf,
   occlusionReadOf,
   useDashboardRefresh,
   useDashboardRunner,
   useFleetAppsRead,
   usePageHealthRun,
+  useRunnerAppListRead,
   useRunnerComponentsRead,
   useRunnerHealthRead,
 } from "./_lib/useUiBridgeDashboard";
@@ -85,7 +94,7 @@ const mapRead = <T, U>(read: ReadState<T>, f: (v: T) => U): ReadState<U> =>
   read.state === "ok" ? { ...read, value: f(read.value) } : read;
 
 /** When a read's figures were read — null unless it answered. */
-const asOfOf = (read: ReadState<unknown>): number | null =>
+const asOfOf = (read: RegistryRead<unknown>): number | null =>
   read.state === "ok" ? read.asOf : null;
 
 /**
@@ -96,23 +105,23 @@ const asOfOf = (read: ReadState<unknown>): number | null =>
 const SWEEP_RELAYED = isRelayed(RUNNER_ROUTES.visibility);
 
 export default function UiBridgeDashboardPage() {
+  const { presenting } = usePresentationMode();
   const { deviceId, identity, noRunner } = useDashboardRunner();
   const machine = useMachineName(identity);
 
   const healthQuery = useRunnerHealthRead(deviceId);
   const componentsQuery = useRunnerComponentsRead(deviceId);
   const fleetAppsQuery = useFleetAppsRead();
-  const runnerAppsQuery = useRunnerApps(deviceId);
+  const runnerAppsQuery = useRunnerAppListRead(deviceId);
   const healthRun = usePageHealthRun(deviceId, SWEEP_RELAYED);
 
   const health = readStateOf(queryView(healthQuery), readRunnerPosture);
   const components = readStateOf(queryView(componentsQuery), readComponents);
-  const web = readStateOf(queryView(fleetAppsQuery), (d) =>
-    Array.isArray(d) ? d : null
-  );
-  const runnerApps = readStateOf(queryView(runnerAppsQuery), (d) =>
-    Array.isArray(d.apps) ? d.apps : null
-  );
+  const { web, runner: runnerApps } = appRegistryReadsOf({
+    presenting,
+    web: queryView(fleetAppsQuery),
+    runner: queryView(runnerAppsQuery),
+  });
   const pageHealth = readStateOf(
     queryView(healthRun.pageHealth),
     readPageHealth

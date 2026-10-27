@@ -27,7 +27,17 @@ import {
   usePresentationMode,
   type MachineIdentity,
 } from "@/components/presentation";
-import type { WebAppConfig } from "./appRegistryStatus";
+import { useRunnerApps } from "@/app/(app)/digital-twin/_hooks/useUiBridge";
+import type {
+  AppListResponse,
+  RegisteredApp,
+} from "@/app/(app)/digital-twin/_lib/ui-bridge-types";
+import {
+  RUNNER_APP_LIST_NOT_IN_LENS,
+  WEB_REGISTRY_NOT_IN_LENS,
+  type RegistryRead,
+  type WebAppConfig,
+} from "./appRegistryStatus";
 import {
   OCCLUSION_NOT_RELAYED,
   readOcclusion,
@@ -134,14 +144,32 @@ export function useRunnerComponentsRead(deviceId: string | null) {
   });
 }
 
-/** `GET /api/v1/fleet/apps` — the web's app registry. */
+/**
+ * `GET /api/v1/fleet/apps` — the web's app registry. Not read while
+ * presenting: the route is not partitioned by project
+ * ({@link appRegistryReadsOf}), so the query has no function then.
+ */
 export function useFleetAppsRead() {
+  const { presenting } = usePresentationMode();
   return useQuery({
     queryKey: fleetAppsKey(),
-    queryFn: () => httpClient.get<WebAppConfig[]>(FLEET_APPS_PATH),
+    queryFn: presenting
+      ? skipToken
+      : () => httpClient.get<WebAppConfig[]>(FLEET_APPS_PATH),
     staleTime: 60_000,
     ...READ_DEFAULTS,
   });
+}
+
+/**
+ * The runner's own app list (`GET /apps`) — the digital twin's
+ * `useRunnerApps`, reused. Not read while presenting, for the web registry's
+ * reason ({@link appRegistryReadsOf}): the hook is handed no device then, so
+ * its query is disabled.
+ */
+export function useRunnerAppListRead(deviceId: string | null) {
+  const { presenting } = usePresentationMode();
+  return useRunnerApps(presenting ? null : deviceId);
 }
 
 /**
@@ -153,8 +181,9 @@ export function useFleetAppsRead() {
  *
  * Only ACTIVE queries are re-read (`refetchQueries({ type: "active" })`). A
  * read the page holds disabled stays unasked: every runner read while no
- * runner is targeted. A query's own `refetch()` ignores `enabled` and would
- * run it anyway, sending the relay a request with no device id.
+ * runner is targeted, and both app registries while presenting. A query's
+ * own `refetch()` ignores `enabled` and would run it anyway — sending the
+ * relay a request with no device id, or making a read the lens does not make.
  */
 export function useDashboardRefresh(
   deviceId: string | null
@@ -263,4 +292,50 @@ export function occlusionReadOf({
       : { state: "idle" };
   }
   return readStateOf(sweep, readOcclusion);
+}
+
+export interface AppRegistryReadsInput {
+  /** Whether the page is presenting (`usePresentationMode`). */
+  readonly presenting: boolean;
+  /** The web registry's query ({@link useFleetAppsRead}). */
+  readonly web: QueryView<WebAppConfig[]>;
+  /** The runner's own app list ({@link useRunnerAppListRead}). */
+  readonly runner: QueryView<AppListResponse>;
+}
+
+/**
+ * The two app registries' reads as the page shows them — decided here, and
+ * nowhere else.
+ *
+ * Neither registry is partitioned by project. The web's `GET
+ * /api/v1/fleet/apps` returns every row of `project.apps` to any signed-in
+ * user (backend `fleet_targets.py` `list_apps`), and the runner's `GET /apps`
+ * lists every row of its own database's apps table, which on a runner bound
+ * to the shared database is that same table. A lens page fetches only the
+ * acting organisation's data (plan `2026-10-23-console-presentation-spaces`
+ * D3.4), so while presenting neither is READ — their hooks hold the queries
+ * disabled — and neither is SHOWN: a value an operator-mode read left in the
+ * cache is not handed on either. Each half is `not-read`, with the reason the
+ * panel renders as a labelled UNKNOWN.
+ */
+export function appRegistryReadsOf({
+  presenting,
+  web,
+  runner,
+}: AppRegistryReadsInput): {
+  readonly web: RegistryRead<readonly WebAppConfig[]>;
+  readonly runner: RegistryRead<readonly RegisteredApp[]>;
+} {
+  if (presenting) {
+    return {
+      web: { state: "not-read", reason: WEB_REGISTRY_NOT_IN_LENS },
+      runner: { state: "not-read", reason: RUNNER_APP_LIST_NOT_IN_LENS },
+    };
+  }
+  return {
+    web: readStateOf(web, (d) => (Array.isArray(d) ? d : null)),
+    runner: readStateOf(runner, (d) =>
+      Array.isArray(d.apps) ? d.apps : null
+    ),
+  };
 }

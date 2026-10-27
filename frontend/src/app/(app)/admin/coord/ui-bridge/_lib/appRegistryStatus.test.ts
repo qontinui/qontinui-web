@@ -149,12 +149,12 @@ describe("appTotalOf — the apps across both registries", () => {
     );
   });
 
-  it("is UNKNOWN when neither registry answered", () => {
+  it("is UNKNOWN when neither registry was read — failed, or not asked while presenting", () => {
     const total = appTotalOf(null, { web: false, runner: false });
     expect(total).toEqual({ kind: "unknown", unread: "both" });
     expect(appTotalValue(total)).toBeNull();
     expect(appTotalMeaning(total)).toBe(
-      "Neither registry answered, so how many apps exist is unknown"
+      "Neither registry was read, so how many apps exist is unknown"
     );
   });
 });
