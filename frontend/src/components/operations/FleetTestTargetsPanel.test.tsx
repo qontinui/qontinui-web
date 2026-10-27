@@ -1,6 +1,8 @@
 /**
  * FleetTestTargetsPanel — a refused designation write is toasted with the
- * backend's own message, not the URL and raw JSON.
+ * backend's own message, not the URL and raw JSON; and a viewer who is not a
+ * platform admin sees the app config refusal as a labelled state with no
+ * editor (the "app config admin gate" block below).
  *
  * Plan `2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to`
  * Phase 2: the PUT/DELETE now carry the selected project, and the backend
@@ -25,13 +27,14 @@ import {
 const get = vi.fn();
 const put = vi.fn();
 const del = vi.fn();
+const patch = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
     put: (...args: unknown[]) => put(...args),
     delete: (...args: unknown[]) => del(...args),
-    patch: vi.fn(),
+    patch: (...args: unknown[]) => patch(...args),
     post: vi.fn(),
   },
 }));
@@ -115,6 +118,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  // `clearAllMocks` keeps implementations; a refused PATCH must not leak.
+  patch.mockReset();
 });
 
 describe("FleetTestTargetsPanel designation refusals", () => {
@@ -163,6 +168,132 @@ describe("FleetTestTargetsPanel designation refusals", () => {
         `Designation failed: ${err.message}`
       )
     );
+  });
+});
+
+/**
+ * The app config read and write are for platform admins only (coord finding
+ * `b27adf71`): anyone else gets the backend's `require_admin` 403. The panel
+ * must say so in words — never an empty registry, never a generic load error —
+ * and must offer no editor. Only THAT refusal is explained as an access rule.
+ */
+describe("FleetTestTargetsPanel app config admin gate", () => {
+  const ADMIN_ONLY = "App configuration is limited to platform administrators.";
+  const APPS_URL = "/api/v1/fleet/apps";
+
+  /** The production envelope `require_admin`'s refusal arrives in. */
+  function adminRefusal(verb: string, url: string): Error {
+    const body = JSON.stringify({
+      error: "FORBIDDEN",
+      message: "Not authorized. Admin access required.",
+      timestamp: 1790000000,
+      path: `https://api.test${url}`,
+    });
+    return new Error(`${verb} ${url} failed: 403 - ${body}`);
+  }
+
+  const EDITORS = [
+    "fleet-target-strategy-select",
+    "fleet-target-save-config",
+    "fleet-target-build-command",
+    "fleet-target-start-command",
+  ];
+
+  function serveRegistry(registry: () => unknown) {
+    const otherReads = get.getMockImplementation();
+    get.mockImplementation(async (url: string) =>
+      url.endsWith("/fleet/apps") ? registry() : otherReads?.(url)
+    );
+  }
+
+  const PULL_BUILD_APP = {
+    app_id: APP,
+    display_name: "Qontinui Web",
+    repo_root: "/code/qontinui-web",
+    update_strategy: "pull_build",
+    build_command: "npm run build",
+    start_command: "npm start",
+  };
+
+  it("renders a non-admin's 403 as the labelled state with no editor", async () => {
+    serveRegistry(() => {
+      throw adminRefusal("GET", APPS_URL);
+    });
+    render(<FleetTestTargetsPanel />);
+
+    const state = await screen.findByTestId("fleet-apps-admin-only");
+    expect(state).toHaveTextContent(ADMIN_ONLY);
+    expect(screen.queryByTestId("fleet-target-app-card")).toBeNull();
+    for (const testId of EDITORS) {
+      expect(screen.queryByTestId(testId)).toBeNull();
+    }
+    // Neither an empty registry nor a generic failure.
+    expect(screen.queryByText(/No registered apps/)).toBeNull();
+    expect(screen.queryByText(/Failed to load fleet targets/)).toBeNull();
+    // An unread count is a dash, never 0.
+    expect(screen.getByTestId("fleet-test-targets-count")).toHaveTextContent(
+      "–"
+    );
+  });
+
+  it("renders an admin's registry with its editors (the control for the test above)", async () => {
+    serveRegistry(() => [PULL_BUILD_APP]);
+    render(<FleetTestTargetsPanel />);
+
+    await screen.findByTestId("fleet-target-app-card");
+    for (const testId of EDITORS) {
+      expect(screen.getByTestId(testId)).toBeInTheDocument();
+    }
+    expect(screen.queryByTestId("fleet-apps-admin-only")).toBeNull();
+    expect(screen.getByTestId("fleet-test-targets-count")).toHaveTextContent(
+      "1"
+    );
+  });
+
+  it.each([
+    ["a proxy's HTML page", "<html>Forbidden</html>"],
+    ["another JSON refusal", JSON.stringify({ message: "Forbidden" })],
+  ])(
+    "keeps a 403 that is not the admin refusal (%s) a load error",
+    async (_shape, body) => {
+      serveRegistry(() => {
+        throw new Error(`GET ${APPS_URL} failed: 403 - ${body}`);
+      });
+      render(<FleetTestTargetsPanel />);
+
+      expect(
+        await screen.findByText(/Failed to load fleet targets/)
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId("fleet-apps-admin-only")).toBeNull();
+      // A read that failed does not claim the registry is empty either.
+      expect(screen.queryByText(/No registered apps/)).toBeNull();
+    }
+  );
+
+  it("labels a refused save and replaces the editor with the labelled state", async () => {
+    let refused = false;
+    serveRegistry(() => {
+      if (refused) throw adminRefusal("GET", APPS_URL);
+      return [PULL_BUILD_APP];
+    });
+    patch.mockImplementation(async () => {
+      refused = true;
+      throw adminRefusal("PATCH", `${APPS_URL}/${APP}`);
+    });
+    render(<FleetTestTargetsPanel />);
+
+    fireEvent.change(await screen.findByTestId("fleet-target-build-command"), {
+      target: { value: "make" },
+    });
+    fireEvent.click(screen.getByTestId("fleet-target-save-config"));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(`Save failed: ${ADMIN_ONLY}`)
+    );
+    expect(await screen.findByTestId("fleet-apps-admin-only")).toBeVisible();
+    for (const testId of EDITORS) {
+      expect(screen.queryByTestId(testId)).toBeNull();
+    }
   });
 });
 

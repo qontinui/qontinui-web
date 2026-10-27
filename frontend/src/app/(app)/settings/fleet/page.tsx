@@ -24,8 +24,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { relativeTime } from "@/components/operations/utils";
+import { AppConfigAdminOnly } from "@/components/operations/AppConfigAdminOnly";
+import { isAppConfigAdminRefusal } from "@/components/operations/fleetTestTargets";
 import { listRunners } from "@/lib/api/runners";
 import {
+  APP_CONFIG_ADMIN_ONLY,
   designateTestTarget,
   listFleetApps,
   listFreshness,
@@ -41,6 +44,18 @@ import {
 /** Freshness poll cadence — the auto-fresh engine flips states at
  *  pull/build cadence, so 10s is fresh enough without hot-looping. */
 const FRESHNESS_POLL_MS = 10_000;
+
+/**
+ * What the app-registry read (`GET /api/v1/fleet/apps`) answered.
+ *
+ * - `pending` — not back yet (the page shows its loader).
+ * - `read` — `apps` is the registry; an empty list is a real "none".
+ * - `admin-only` — REFUSED: the viewer is not a platform admin. The registry
+ *   and its editors are replaced by `AppConfigAdminOnly`, never by an empty
+ *   list or a generic error.
+ * - `failed` — the read failed before it ever succeeded; nothing is known.
+ */
+type AppRegistryRead = "pending" | "read" | "admin-only" | "failed";
 
 /** Editable slice of an app's config, mirrored as local draft state. */
 interface AppDraft {
@@ -94,6 +109,7 @@ export default function FleetSettingsPage() {
   const [apps, setApps] = useState<FleetApp[]>([]);
   const [drafts, setDrafts] = useState<Record<string, AppDraft>>({});
   const [savingAppId, setSavingAppId] = useState<string | null>(null);
+  const [registry, setRegistry] = useState<AppRegistryRead>("pending");
 
   // ---- Test-target section state ------------------------------------------
   const [targets, setTargets] = useState<TestTargetRow[]>([]);
@@ -108,13 +124,32 @@ export default function FleetSettingsPage() {
 
   const [loading, setLoading] = useState(true);
 
-  const fetchApps = useCallback(async () => {
-    const rows = await listFleetApps();
-    setApps(rows);
-    setDrafts(
-      Object.fromEntries(rows.map((app) => [app.app_id, draftFromApp(app)]))
-    );
+  /** The viewer may not see the registry: drop it and every draft of it. */
+  const refuseRegistry = useCallback(() => {
+    setApps([]);
+    setDrafts({});
+    setRegistry("admin-only");
   }, []);
+
+  const fetchApps = useCallback(async () => {
+    try {
+      const rows = await listFleetApps();
+      setApps(rows);
+      setDrafts(
+        Object.fromEntries(rows.map((app) => [app.app_id, draftFromApp(app)]))
+      );
+      setRegistry("read");
+    } catch (err) {
+      // A refusal is an answer, not a load failure: no "Failed to load" toast.
+      if (isAppConfigAdminRefusal(err)) {
+        refuseRegistry();
+        return;
+      }
+      // A registry read earlier stays on screen; one never read is unknown.
+      setRegistry((prev) => (prev === "read" ? prev : "failed"));
+      throw err;
+    }
+  }, [refuseRegistry]);
 
   const fetchTargets = useCallback(async () => {
     setTargets(await listTestTargets());
@@ -183,9 +218,16 @@ export default function FleetSettingsPage() {
       }));
       toast.success(`Saved ${updated.display_name}`);
     } catch (err) {
-      toast.error(
-        `Failed to save: ${err instanceof Error ? err.message : String(err)}`
-      );
+      if (isAppConfigAdminRefusal(err)) {
+        // The viewer is no longer a platform admin: say so, and take the
+        // editors away with the registry they were rendered from.
+        toast.error(`Failed to save: ${APP_CONFIG_ADMIN_ONLY}`);
+        refuseRegistry();
+      } else {
+        toast.error(
+          `Failed to save: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     } finally {
       setSavingAppId(null);
     }
@@ -297,7 +339,16 @@ export default function FleetSettingsPage() {
           </p>
         </div>
         <div className="p-4">
-          {apps.length === 0 ? (
+          {registry === "admin-only" ? (
+            <AppConfigAdminOnly />
+          ) : registry === "failed" ? (
+            <p
+              className="text-sm text-destructive"
+              data-testid="fleet-apps-read-failed"
+            >
+              The app registry could not be read. Refresh to try again.
+            </p>
+          ) : apps.length === 0 ? (
             <div className="text-center py-12">
               <AppWindow className="size-10 mx-auto mb-3 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
@@ -333,6 +384,7 @@ export default function FleetSettingsPage() {
                         disabled={!dirty || savingAppId === app.app_id}
                         onClick={() => handleSaveApp(app)}
                         className="shrink-0"
+                        data-testid="fleet-app-save"
                       >
                         {savingAppId === app.app_id ? (
                           <Loader2 className="size-4 animate-spin" />
@@ -349,7 +401,11 @@ export default function FleetSettingsPage() {
                           })
                         }
                       >
-                        <SelectTrigger className="w-36" size="sm">
+                        <SelectTrigger
+                          className="w-36"
+                          size="sm"
+                          data-testid="fleet-app-strategy"
+                        >
                           <SelectValue placeholder="Strategy" />
                         </SelectTrigger>
                         <SelectContent>
@@ -368,6 +424,7 @@ export default function FleetSettingsPage() {
                           })
                         }
                         className="flex-1 min-w-48 font-mono text-sm"
+                        data-testid="fleet-app-build-command"
                       />
                       <Input
                         type="text"
@@ -380,6 +437,7 @@ export default function FleetSettingsPage() {
                           })
                         }
                         className="flex-1 min-w-48 font-mono text-sm"
+                        data-testid="fleet-app-start-command"
                       />
                     </div>
                   </div>
@@ -410,59 +468,72 @@ export default function FleetSettingsPage() {
           </div>
         </div>
         <div className="p-4 space-y-4">
-          {/* Add designation */}
-          <form
-            className="flex flex-wrap items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleAddTarget();
-            }}
-          >
-            <Select value={addDeviceId} onValueChange={setAddDeviceId}>
-              <SelectTrigger className="w-48" size="sm">
-                <SelectValue placeholder="Device" />
-              </SelectTrigger>
-              <SelectContent>
-                {devices.map((device) => (
-                  <SelectItem key={device.id} value={device.id}>
-                    {device.name} ({device.derivedStatus})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={addAppId} onValueChange={setAddAppId}>
-              <SelectTrigger className="w-48" size="sm">
-                <SelectValue placeholder="App" />
-              </SelectTrigger>
-              <SelectContent>
-                {apps.map((app) => (
-                  <SelectItem key={app.app_id} value={app.app_id}>
-                    {app.display_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Switch
-                checked={addAutoFresh}
-                onCheckedChange={setAddAutoFresh}
-              />
-              Auto-fresh
-            </label>
-            <Button
-              type="submit"
-              variant="brand-primary"
-              size="sm"
-              disabled={adding || !addDeviceId || !addAppId}
+          {/* Add designation — its App choice IS the registry, so it is
+              offered only when the registry was read. Otherwise the choice
+              would be an empty list that reads as "no apps". */}
+          {registry !== "read" ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="fleet-designate-needs-registry"
             >
-              {adding ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Plus className="size-4" />
-              )}
-              Add
-            </Button>
-          </form>
+              {registry === "admin-only"
+                ? "Adding a designation needs the app registry, which only a platform administrator can read. The designations below can still be changed."
+                : "Adding a designation needs the app registry, which could not be read. Refresh to try again."}
+            </p>
+          ) : (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAddTarget();
+              }}
+            >
+              <Select value={addDeviceId} onValueChange={setAddDeviceId}>
+                <SelectTrigger className="w-48" size="sm">
+                  <SelectValue placeholder="Device" />
+                </SelectTrigger>
+                <SelectContent>
+                  {devices.map((device) => (
+                    <SelectItem key={device.id} value={device.id}>
+                      {device.name} ({device.derivedStatus})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={addAppId} onValueChange={setAddAppId}>
+                <SelectTrigger className="w-48" size="sm">
+                  <SelectValue placeholder="App" />
+                </SelectTrigger>
+                <SelectContent>
+                  {apps.map((app) => (
+                    <SelectItem key={app.app_id} value={app.app_id}>
+                      {app.display_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Switch
+                  checked={addAutoFresh}
+                  onCheckedChange={setAddAutoFresh}
+                />
+                Auto-fresh
+              </label>
+              <Button
+                type="submit"
+                variant="brand-primary"
+                size="sm"
+                disabled={adding || !addDeviceId || !addAppId}
+              >
+                {adding ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plus className="size-4" />
+                )}
+                Add
+              </Button>
+            </form>
+          )}
 
           {targets.length === 0 ? (
             <div className="text-center py-8">

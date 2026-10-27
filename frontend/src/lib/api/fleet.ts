@@ -13,12 +13,70 @@
  * `app/schemas/fleet_targets.py` Pydantic models (the generated api-client
  * snapshot is regenerated separately; local interfaces keep this page
  * decoupled from that regen, matching the `runners.ts` precedent).
+ *
+ * The app config read and write (`GET /apps`, `PATCH /apps/{app_id}`) are for
+ * platform admins only: an app's build and start commands run on every fleet
+ * machine that auto-freshes it, and `project.apps` is not kept per project
+ * (coord finding `b27adf71-4de5-49bc-ad89-7a8acd372035`). Anyone else gets the
+ * refusal {@link isPlatformAdminRefusal} recognises, which the UI renders as
+ * {@link APP_CONFIG_ADMIN_ONLY} — never as an empty registry or a generic error.
  */
 
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
 
 const FLEET_API = `${ApiConfig.API_BASE_URL}/api/v1/fleet`;
+
+/**
+ * The sentence the backend's `require_admin` refuses an active user who is not
+ * a platform admin with (`backend/app/api/admin_deps.py`
+ * `ADMIN_REQUIRED_DETAIL`; the backend pins it in
+ * `tests/test_fleet_apps_platform_admin_gate.py`). It is what tells THIS 403
+ * apart from any other — a proxy's or a WAF's — which must not be explained
+ * as an access rule.
+ */
+export const PLATFORM_ADMIN_REFUSAL = "Not authorized. Admin access required.";
+
+/** What the fleet UI says in place of the app registry and its editors. */
+export const APP_CONFIG_ADMIN_ONLY =
+  "App configuration is limited to platform administrators.";
+
+/**
+ * Whether a response is the platform-admin refusal of an app-config route.
+ *
+ * The production backend serves the sentence as the error envelope's
+ * top-level `message` (`app/middleware/error_handler.py`); a bare FastAPI app
+ * nests it as `detail`. Both are read. Any other 403 is NOT this refusal, so
+ * its body is never promoted to "you are not a platform admin".
+ */
+export function isPlatformAdminRefusal(
+  status: number | null,
+  body: unknown
+): boolean {
+  if (status !== 403 || typeof body !== "object" || body === null) return false;
+  const record = body as Record<string, unknown>;
+  return (
+    record.message === PLATFORM_ADMIN_REFUSAL ||
+    record.detail === PLATFORM_ADMIN_REFUSAL
+  );
+}
+
+/**
+ * A failed `/api/v1/fleet` call: the readable sentence, plus the status and
+ * parsed body it was read from, so a caller can tell a refusal apart from a
+ * failure (see {@link isPlatformAdminRefusal}).
+ */
+export class FleetApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "FleetApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
 
 /** How the runner keeps a designated host's build of an app current. */
 export type UpdateStrategy = "pull_only" | "pull_build";
@@ -140,7 +198,7 @@ async function handleResponse<T>(
         message = (detail as { message: string }).message;
       }
     }
-    throw new Error(message);
+    throw new FleetApiError(message, response.status, body);
   }
   if (response.status === 204) {
     return undefined as T;
