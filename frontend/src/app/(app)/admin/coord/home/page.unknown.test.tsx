@@ -485,7 +485,23 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         "Failed to fetch",
       ],
       [
-        "coord's read deadline passed",
+        // What this page actually meets when coord is slow: the web proxy's
+        // OWN refusal, after waiting coord's whole door budget
+        // (`_COORD_PROJECT_STATE_TIMEOUT`). The body is the one the backend's
+        // refusal handler serves for `_coord_timeout(write=False)`.
+        "the proxy gave up after coord's door budget (504 coord_timeout)",
+        new Error(
+          'GET /api/v1/operations/project-state failed: 504 - {"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.example.test/api/v1/operations/project-state"}'
+        ),
+        'failed: 504 - {"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord"',
+      ],
+      [
+        // NOT a shape this route sends: coord answers /coord/project-state
+        // with 200 (per-block timeouts), 400 or 500 (project_state.rs
+        // `respond`), and the `deadline` body comes from its worktree census
+        // reads. Kept as the shared classifier's generic arm, so a deadline
+        // refusal still renders labelled if this read ever meets one.
+        "describeCoordPollError's generic deadline arm",
         new Error(
           'GET /api/v1/operations/project-state failed: 503 - {"error":"deadline","budget_ms":8000}'
         ),

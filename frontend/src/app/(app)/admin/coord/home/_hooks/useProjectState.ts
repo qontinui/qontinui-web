@@ -13,6 +13,18 @@
  *
  * `refresh()` returns its promise so `<RefreshButton>` can acknowledge the
  * press for exactly as long as the read is out.
+ *
+ * ## One read at a time, for the poll AND the button
+ *
+ * The poll's own single-flight guard lives inside `useVisiblePoll`, which a
+ * press never passes through. So `read` carries its own: while a read is out,
+ * calling it again returns THAT read's promise instead of issuing a second
+ * one. A press during a poll therefore joins the poll's read (its answer is
+ * the press's answer, and the button stays busy until it lands), and a slow
+ * coord is never asked twice at once. With reads serialised, `lastError` is
+ * always set by the newest read to finish, so it cannot disagree with
+ * `stale`: an older success landing after a newer failure, or an older
+ * failure landing after a newer success, can no longer happen.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,8 +58,10 @@ export function useProjectState(): ProjectStateRead {
   const { issue, settle } = retained;
   const [lastError, setLastError] = useState<string | null>(null);
   const cancelled = useRef(false);
+  // The read that is out, if any (see "One read at a time").
+  const inFlight = useRef<Promise<void> | null>(null);
 
-  const read = useCallback(async () => {
+  const readOnce = useCallback(async () => {
     const seq = issue();
     try {
       const body = await fetchProjectState(COORD_DASHBOARD_POLL_OPTIONS);
@@ -71,6 +85,17 @@ export function useProjectState(): ProjectStateRead {
       );
     }
   }, [issue, settle]);
+
+  // `readOnce` records its own failures (its catch), and `finally` frees the
+  // slot however the read settles, so a failed read never wedges the guard.
+  const read = useCallback((): Promise<void> => {
+    if (inFlight.current) return inFlight.current;
+    const pending = readOnce().finally(() => {
+      inFlight.current = null;
+    });
+    inFlight.current = pending;
+    return pending;
+  }, [readOnce]);
 
   // Declared before the poll so the mount read sees `cancelled === false`.
   useEffect(() => {

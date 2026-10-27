@@ -1043,6 +1043,39 @@ describe("/admin/coord/home", () => {
     ).toHaveTextContent("watcher:stuck_pr_watcher · no_successful_tick");
   });
 
+  // `useVisiblePoll`'s single-flight guard covers the poll only; a press
+  // never passes through it. The hook's own guard makes a press during a read
+  // JOIN that read: one request, and the button busy until it lands.
+  it("joins the outstanding read when refresh is pressed, instead of issuing a second", async () => {
+    let answer!: (body: unknown) => void;
+    httpGet.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    render(<CoordHomePage />);
+    await waitFor(() => expect(httpGet).toHaveBeenCalledTimes(1));
+    const button = screen.getByTestId("coord-home.refresh");
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(httpGet).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    await act(async () => {
+      answer(doorBody());
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("coord-home.unread")).not.toBeInTheDocument()
+    );
+    await waitFor(() => expect(button).not.toHaveAttribute("aria-busy"));
+    // Nothing is out any more, so the next press reads again.
+    httpGet.mockResolvedValueOnce(doorBody());
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    await waitFor(() => expect(httpGet).toHaveBeenCalledTimes(2));
+  });
+
   it("keeps the last good render on a failed poll and says it is stale", async () => {
     await renderWith(doorBody());
     httpGet.mockRejectedValueOnce(new Error("coord unreachable"));
