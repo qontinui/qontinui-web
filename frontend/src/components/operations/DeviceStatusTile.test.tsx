@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DeviceStatusTile } from "./DeviceStatusTile";
+import { UNKNOWN_AMBER } from "@/components/console";
 import { FixedPresentationMode } from "@/components/presentation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DEVICE_STATUS_POLL_FALLBACK_MS } from "./utils";
@@ -145,12 +146,19 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
   }
 
   const count = () => screen.getByTestId("device-status-count").textContent;
+  /**
+   * Style guide R3: what we do not know wears the ignorance-floor amber —
+   * every class of `UNKNOWN_AMBER` — never the calm of a known value.
+   */
+  function expectUnknownAmber(testId: string) {
+    expect(screen.getByTestId(testId)).toHaveClass(...UNKNOWN_AMBER.split(" "));
+  }
   const connection = () =>
     document.querySelector(
       "[data-ui-bridge-id='operations.device-status-connection']"
     )?.textContent;
 
-  it("presenting, no read ever answered: UNKNOWN in fixed words — no 0, no 'no machine reported', no failure text, no transport", () => {
+  it("presenting, no read ever answered: UNKNOWN in fixed words, on amber — no 0, no 'no machine reported', no failure text, no transport", () => {
     renderTileIn(true, [], NEVER_ANSWERED);
     expect(screen.getByTestId("device-status-unknown")).toHaveTextContent(
       "UNKNOWN — the machines' status reports could not be read, so whether any machine has reported what it is working on is not known."
@@ -158,6 +166,9 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(screen.queryByTestId("device-status-empty")).toBeNull();
     expect(screen.queryByTestId("device-status-stale-empty")).toBeNull();
     expect(count()).toBe("unknown");
+    // Both the statement and the count are ignorance, and look it.
+    expectUnknownAmber("device-status-unknown");
+    expectUnknownAmber("device-status-count");
     // The read's own text names a machine: it never reaches an outsider.
     expect(document.body.innerHTML).not.toContain("device-host-4471");
     // The socket is down, so the stream re-reads the list on its fallback
@@ -167,17 +178,19 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(document.body.textContent).not.toMatch(/\bWS\b|polling|paused/);
   });
 
-  it("operator, no read ever answered: UNKNOWN with the read's own text, and the transport named", () => {
+  it("operator, no read ever answered: UNKNOWN with the read's own text, on amber, and the transport named", () => {
     renderTileIn(false, [], NEVER_ANSWERED);
     const unknown = screen.getByTestId("device-status-unknown");
     expect(unknown).toHaveTextContent(FAILURE);
     expect(unknown).toHaveTextContent(/this is not an empty list/);
     expect(screen.queryByTestId("device-status-empty")).toBeNull();
     expect(count()).toBe("unknown");
+    expectUnknownAmber("device-status-unknown");
+    expectUnknownAmber("device-status-count");
     expect(connection()).toBe("polling (WS offline)");
   });
 
-  it("rows pushed before any read answered stay listed, and the count stays unknown", () => {
+  it("rows pushed before any read answered stay listed, and the count stays unknown, on amber", () => {
     renderTileIn(true, [baseRow()], NEVER_ANSWERED);
     expect(
       document.querySelectorAll(
@@ -185,6 +198,7 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
       )
     ).toHaveLength(1);
     expect(count()).toBe("unknown");
+    expectUnknownAmber("device-status-count");
     expect(screen.queryByTestId("device-status-unknown")).toBeNull();
   });
 
@@ -211,7 +225,7 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(count()).toBe("0");
   });
 
-  it("(control) a read that answered empty is a known zero, said in the present tense", () => {
+  it("(control) a read that answered empty is a known zero, said in the present tense, not on amber", () => {
     renderTileIn(true, [], ANSWERED);
     expect(screen.getByTestId("device-status-empty")).toHaveTextContent(
       "No machine has reported what it is working on in the last hour."
@@ -219,6 +233,10 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(screen.queryByTestId("device-status-unknown")).toBeNull();
     expect(screen.queryByTestId("device-status-stale-empty")).toBeNull();
     expect(count()).toBe("0");
+    // A known count does not wear the ignorance floor.
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(screen.getByTestId("device-status-count")).not.toHaveClass(cls);
+    }
   });
 
   it("while the first read is in flight the count is a dash, never 0, and the body says it is loading", () => {

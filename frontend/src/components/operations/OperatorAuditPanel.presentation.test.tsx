@@ -28,6 +28,7 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true, loading: false, user: { id: "u-1" } }),
 }));
 
+import { UNKNOWN_AMBER } from "@/components/console";
 import {
   FixedPresentationMode,
   NAVIGATION_ONLY_ATTRIBUTE,
@@ -203,12 +204,15 @@ describe("OperatorAuditPanel?present=1 — a row whose author was not recorded",
     return screen.getByTestId("audit-nil-operator");
   }
 
-  it("says so in plain words, with a plain title — never the operator's account of coord's fallback", async () => {
+  it("says so in plain words, with a plain title, on amber — never the operator's account of coord's fallback", async () => {
     const marker = await openNilRow(true);
     expect(marker).toHaveTextContent("operator not recorded");
     expect(marker.getAttribute("title")).toBe(
       "This change was recorded without who made it."
     );
+    // Who made the change is unknown, so the cell wears the ignorance-floor
+    // amber (style guide R3) — never the calm of a recorded value.
+    expect(marker).toHaveClass(...UNKNOWN_AMBER.split(" "));
     // Not in its text, its title, or anywhere else on the panel.
     expect(document.body.innerHTML).not.toMatch(
       /resolve_operator_id|nil UUID|qontinui-web never sends/

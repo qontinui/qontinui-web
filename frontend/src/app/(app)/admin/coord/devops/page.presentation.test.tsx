@@ -51,6 +51,7 @@ import {
   FAILURE_SENTENCE_WITHHELD,
 } from "@/components/operations/presentedFailure";
 import { DEVOPS_SOURCES } from "@/components/operations/devOpsHeadline";
+import { UNKNOWN_AMBER } from "@/components/console";
 
 const httpGet = vi.fn();
 const httpFetch = vi.fn();
@@ -467,6 +468,10 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     expect(
       within(detail).getByTestId("audit-nil-operator").getAttribute("title")
     ).toBe("This change was recorded without who made it.");
+    // Who made it is unknown, so it reads on the ignorance-floor amber (R3).
+    expect(within(detail).getByTestId("audit-nil-operator")).toHaveClass(
+      ...UNKNOWN_AMBER.split(" ")
+    );
     // How far it reached was not recorded either, and the row says that too.
     expect(screen.getByTestId("audit-row-audit-6")).toHaveTextContent(
       "reach not stated"
@@ -764,6 +769,12 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
     expect(screen.getByTestId("device-status-count").textContent).toBe(
       "unknown"
     );
+    // Both are ignorance, on the ignorance-floor amber — never calm (R3).
+    for (const testId of ["device-status-unknown", "device-status-count"]) {
+      expect(screen.getByTestId(testId), testId).toHaveClass(
+        ...UNKNOWN_AMBER.split(" ")
+      );
+    }
     // ...and the sections that count from those reports date them UNKNOWN
     // too, so the page does not contradict itself.
     for (const id of ["dev-ops.health-strip", "dev-ops.machines"] as const) {
