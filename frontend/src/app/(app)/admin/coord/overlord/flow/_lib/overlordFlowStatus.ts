@@ -250,31 +250,36 @@ function closedBy(
   };
 }
 
+/**
+ * One unreadable entry makes the whole list unknown (`null`), as
+ * `runnerPassesOf` does: dropping it would shrink the count and could turn
+ * the strip green ("no session is stuck") over a session that was stuck.
+ */
 function unchangedOf(raw: unknown): FlowUnchangedSession[] | null {
   if (!Array.isArray(raw)) return null;
-  return raw.flatMap((r): FlowUnchangedSession[] => {
-    if (!isObj(r)) return [];
+  const sessions: FlowUnchangedSession[] = [];
+  for (const r of raw) {
+    if (!isObj(r)) return null;
     const key = str(r.key);
     const terminalId = str(r.terminal_id);
     const verdict = str(r.verdict);
     const passes = count(r.consecutive_full_passes);
-    if (!key || !terminalId || !verdict || passes === undefined) return [];
-    return [
-      {
-        key,
-        claude_session_id: str(r.claude_session_id),
-        terminal_id: terminalId,
-        session_name: str(r.session_name),
-        verdict,
-        reason_codes: Array.isArray(r.reason_codes)
-          ? r.reason_codes.filter((c): c is string => typeof c === "string")
-          : [],
-        consecutive_full_passes: passes,
-        first_seen_at: str(r.first_seen_at) ?? "",
-        last_seen_at: str(r.last_seen_at) ?? "",
-      },
-    ];
-  });
+    if (!key || !terminalId || !verdict || passes === undefined) return null;
+    sessions.push({
+      key,
+      claude_session_id: str(r.claude_session_id),
+      terminal_id: terminalId,
+      session_name: str(r.session_name),
+      verdict,
+      reason_codes: Array.isArray(r.reason_codes)
+        ? r.reason_codes.filter((c): c is string => typeof c === "string")
+        : [],
+      consecutive_full_passes: passes,
+      first_seen_at: str(r.first_seen_at) ?? "",
+      last_seen_at: str(r.last_seen_at) ?? "",
+    });
+  }
+  return sessions;
 }
 
 /** `full` / `filtered` as sent; anything else is unknown, never a default. */
@@ -293,7 +298,16 @@ function seriesOf(raw: unknown): VerdictPass[] | null {
     if (!isObj(p)) return [];
     const passId = str(p.pass_id);
     const startedAt = str(p.started_at);
-    if (!passId || !startedAt || !isObj(p.histogram)) return [];
+    // A start time that does not parse cannot be placed in the series, and
+    // a NaN in the sort comparator would scramble the order of every pass.
+    if (
+      !passId ||
+      !startedAt ||
+      Number.isNaN(Date.parse(startedAt)) ||
+      !isObj(p.histogram)
+    ) {
+      return [];
+    }
     const histogram: Record<string, number> = {};
     for (const [verdict, n] of Object.entries(p.histogram)) {
       if (typeof n === "number" && Number.isFinite(n)) histogram[verdict] = n;

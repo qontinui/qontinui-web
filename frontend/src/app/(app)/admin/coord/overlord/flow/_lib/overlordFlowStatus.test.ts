@@ -91,12 +91,28 @@ describe("readFlowBody", () => {
     ]);
   });
 
-  it("drops malformed unchanged rows rather than rendering half a row", () => {
+  it("reads the unchanged list as unknown when any row is malformed", () => {
+    // Dropping the bad row would undercount and could read as "none stuck".
     const v = readFlowBody({
       ok: true,
       unchanged: [{ key: "k" }, FULL_FLOW.unchanged[0]],
     })!;
-    expect(v.unchanged).toHaveLength(1);
+    expect(v.unchanged).toBeNull();
+  });
+
+  it("leaves a pass whose start time does not parse out of the series", () => {
+    const v = readFlowBody({
+      ok: true,
+      verdict_series: [
+        { pass_id: "bad", started_at: "not-a-date", histogram: {} },
+        ...FULL_FLOW.verdict_series,
+      ],
+    })!;
+    expect(v.series!.map((p) => p.passId)).toEqual([
+      "p-old",
+      "p-filtered",
+      "p-new",
+    ]);
   });
 });
 

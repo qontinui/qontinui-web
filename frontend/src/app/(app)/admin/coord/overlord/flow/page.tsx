@@ -395,7 +395,8 @@ export default function CoordOverlordFlowPage() {
                 className="text-sm text-muted-foreground italic m-0"
                 data-testid="overlord-flow-unchanged-absent"
               >
-                Unknown — coord&apos;s answer did not carry the unchanged list.
+                Unknown — coord&apos;s answer did not carry a readable unchanged
+                list.
               </p>
             ) : failed ? (
               <p
