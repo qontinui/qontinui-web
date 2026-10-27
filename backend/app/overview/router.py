@@ -43,6 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db
 from app.overview import change_log
 from app.overview import http as contract_http
+from app.overview.costs import router as costs_routes
 from app.overview.estimates import router as estimates_routes
 from app.overview.files import router as files_routes
 from app.overview.pages import router as pages_routes
@@ -527,6 +528,7 @@ for _spec in REGISTRY.values():
 # rollup and forecast; page versions, revert and backlinks; file upload and
 # download.
 router.include_router(estimates_routes)
+router.include_router(costs_routes)
 router.include_router(timeline_routes)
 router.include_router(pages_routes)
 router.include_router(files_routes)
