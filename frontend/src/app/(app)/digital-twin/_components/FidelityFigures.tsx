@@ -10,6 +10,23 @@ import { FIDELITY_LABEL, type FidelityFigure } from "../_lib/twin-aspects";
 /** The word an unknown figure renders as — never a blank, never a zero. */
 export const FIGURE_UNKNOWN = "UNKNOWN";
 
+/**
+ * The word UNKNOWN on R3's ignorance floor (`UNKNOWN_AMBER`), where a figure
+ * or a count has no reading. `title` says why, where the reason is not
+ * already in words beside it.
+ */
+export function UnknownBadge({ title }: { title?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      title={title}
+      className={cn("text-[11px] font-semibold", UNKNOWN_AMBER)}
+    >
+      {FIGURE_UNKNOWN}
+    </Badge>
+  );
+}
+
 function FigureValue({
   figure,
   presenting,
@@ -28,12 +45,7 @@ function FigureValue({
   if (figure.state === "unknown") {
     return (
       <>
-        <Badge
-          variant="outline"
-          className={cn("text-[11px] font-semibold", UNKNOWN_AMBER)}
-        >
-          {FIGURE_UNKNOWN}
-        </Badge>
+        <UnknownBadge />
         <p className="text-xs text-muted-foreground">{figure.reason}</p>
       </>
     );

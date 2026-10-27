@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { UNKNOWN_AMBER } from "@/components/console";
 import {
@@ -10,19 +10,15 @@ import {
 } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import { useAppTwin } from "../_hooks/useAppTwin";
-import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
+import { useProbeRead } from "../_hooks/useProbeRead";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
-import { useTwinCatalog } from "../_hooks/useTwinCatalog";
 import { useTwinWorkUnits } from "../_hooks/useTwinWorkUnits";
-import { allProbesRestricted, resolveSubspaces } from "../_lib/resolve";
 import {
   TWIN_ASPECTS,
   appTwinFidelity,
   aspectRows,
   plantFidelity,
-  probeDegradedReason,
   twinAspect,
-  type ProbeRead,
   type TwinAspectId,
 } from "../_lib/twin-aspects";
 import { FIDELITY_SUBSPACE } from "../_lib/twin-fidelity";
@@ -34,8 +30,6 @@ import {
 import { AspectCard, PLAN_SOURCE } from "./AspectCard";
 import { AspectDetail } from "./AspectDetail";
 import { FIGURE_UNKNOWN } from "./FidelityFigures";
-
-const at = (ms: number): number | null => (ms > 0 ? ms : null);
 
 /** What the plans on this tab were read from, and whether that read is whole. */
 function PlanReadLine({ read }: { read: TwinPlanRead }) {
@@ -107,33 +101,17 @@ function PlanReadLine({ read }: { read: TwinPlanRead }) {
  * The engineering detail behind each number stays one tab away.
  */
 export function TwinMap() {
-  const probeQuery = useDigitalTwinSubspaces();
-  const { data: catalog } = useTwinCatalog();
+  // The probe as every view of it reads it: a failed or degraded answer
+  // (HTTP 200, no probe made) is UNKNOWN on every figure, never "0 of N
+  // observed", and its parts are UNKNOWN in the drill-down, never "Error".
+  const probe = useProbeRead();
+  const { rows } = probe;
   const reportQuery = useSubspaceRaw(FIDELITY_SUBSPACE, true);
   const plansQuery = useTwinWorkUnits();
   const appTwin = useAppTwin();
   const { presenting } = usePresentationMode();
   const [open, setOpen] = useState<TwinAspectId | null>(null);
 
-  const rows = useMemo(
-    () =>
-      resolveSubspaces(
-        probeQuery.data?.subspaces,
-        probeQuery.isLoading,
-        catalog
-      ),
-    [probeQuery.data?.subspaces, probeQuery.isLoading, catalog]
-  );
-  const probe: ProbeRead = {
-    rows,
-    failed: probeQuery.isError && !probeQuery.data,
-    error: probeQuery.error,
-    // An HTTP 200 that made no probe: UNKNOWN, never "0 of N observed".
-    degraded: probeDegradedReason(probeQuery.data),
-    restricted: allProbesRestricted(probeQuery.data),
-    asOf: at(probeQuery.dataUpdatedAt),
-    failedAt: at(probeQuery.errorUpdatedAt),
-  };
   // Worded for the mode: while presenting, a failure is a fixed phrase and
   // its HTTP status, never the response body (D3.3).
   const read = planReadOf(plansQuery, { presenting });

@@ -279,6 +279,55 @@ function expectOnlyPresentableLinks(where: string): void {
   }
 }
 
+/**
+ * While the probe holds no reading, no view of it shows a count: the
+ * Completeness live gauge and the Lifecycle intro (its twin counts) are a
+ * labelled UNKNOWN naming `reason`, with no "N/M" anywhere in them; and the
+ * notice that qualifies "the live statuses below" sits above both.
+ */
+async function expectProbeViewsUnknown(
+  user: ReturnType<typeof userEvent.setup>,
+  reason: string
+): Promise<void> {
+  await user.click(screen.getByRole("tab", { name: "Completeness" }));
+  const gauge = await screen.findByTestId("digital-twin-gauge-live");
+  expect(gauge).toHaveTextContent("UNKNOWN");
+  expect(gauge).toHaveTextContent(reason);
+  expect(gauge.textContent).not.toMatch(/\d+\/\d+/);
+  expect(
+    screen
+      .getByTestId("digital-twin-coord-unreachable")
+      .compareDocumentPosition(screen.getByTestId("digital-twin-gauges")) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+
+  await user.click(screen.getByRole("tab", { name: "Lifecycle" }));
+  await screen.findByTestId("digital-twin-stage-verify");
+  const intro = document.querySelector<HTMLElement>(
+    '[aria-labelledby="digital-twin-lifecycle-intro"]'
+  )!;
+  expect(intro).toHaveTextContent("UNKNOWN");
+  expect(intro).toHaveTextContent(reason);
+  expect(intro.textContent).not.toMatch(/\d+\/\d+/);
+  expect(
+    screen
+      .getByTestId("digital-twin-coord-unreachable")
+      .compareDocumentPosition(intro) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+}
+
+/** The open drill-down's live parts: UNKNOWN with `reason`, none reading "Error". */
+function expectDrillDownPartsUnknown(detail: HTMLElement, reason: string) {
+  const parts = within(detail).getAllByTestId(/^digital-twin-part-/);
+  const unknown = parts.filter((p) => p.textContent?.includes("UNKNOWN"));
+  // The process twin's eight live parts, by the page's own stub catalog.
+  expect(unknown).toHaveLength(8);
+  for (const part of unknown) {
+    expect(part.getAttribute("title")).toContain(reason);
+  }
+  expect(within(detail).queryByText(/(^|\s)Error(\s|$)/)).toBeNull();
+}
+
 describe("/digital-twin in presentation mode", () => {
   it("opens on the Twin map, captioned, with nothing to press but navigation and no cost", () => {
     const view = renderPresenting();
@@ -520,6 +569,17 @@ describe("/digital-twin in presentation mode, when its sources fail", () => {
     expect(
       screen.getByTestId("digital-twin-aspect-detail-plans-unknown")
     ).toHaveTextContent("coord's work-unit list answered HTTP 503");
+    expectDrillDownPartsUnknown(
+      screen.getByTestId("digital-twin-aspect-detail-process"),
+      "Coord's live probe could not be read (HTTP 502)"
+    );
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    // Neither the live gauge nor a twin's count is a "0/N" during it.
+    await expectProbeViewsUnknown(
+      user,
+      "Coord's live probe could not be read (HTTP 502)."
+    );
     expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
 
     await user.click(screen.getByRole("tab", { name: "Completeness" }));
@@ -618,6 +678,28 @@ describe("/digital-twin in presentation mode, when its sources fail", () => {
     expectPresentationSafe(view, {
       forbidden: [...FAILURE_FORBIDDEN, ...PLAN_NAMES],
     });
+
+    // The drill-down: no probe was made, so no live part is an "Error".
+    await user.click(
+      within(screen.getByTestId("digital-twin-aspect-card-process")).getByRole(
+        "button",
+        { name: /show its parts and plans/i }
+      )
+    );
+    expectDrillDownPartsUnknown(
+      screen.getByTestId("digital-twin-aspect-detail-process"),
+      "Coord's live probe could not be made: coord could not be reached"
+    );
+    expectPresentationSafe(view, {
+      forbidden: [...FAILURE_FORBIDDEN, ...PLAN_NAMES],
+    });
+
+    // Neither the live gauge nor a twin's count is a "0/N" during it.
+    await expectProbeViewsUnknown(
+      user,
+      "Coord's live probe could not be made: coord could not be reached."
+    );
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
 
     // Every view of the probe names the outage the same way.
     for (const tab of ["Completeness", "Lifecycle"]) {

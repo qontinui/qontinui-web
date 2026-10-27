@@ -20,7 +20,7 @@ import {
   expectPresentationSafe,
   renderInPresentationMode,
 } from "@/test/presentation";
-import { manifest } from "../_lib/resolve";
+import { isDeclaredProbe, manifest } from "../_lib/resolve";
 import type {
   SubspacesProbeResponse,
   TwinCatalogResponse,
@@ -342,6 +342,68 @@ describe("TwinMap — a failed source is a labelled UNKNOWN, never zero", () => 
         expect(f, `${aspect}.${key}`).not.toHaveTextContent(/\b\d+ of \d+\b/);
       }
     }
+  });
+
+  /** Every live part of the open drill-down: UNKNOWN with why, never "Error". */
+  function expectLivePartsUnknown(detail: HTMLElement, reason: string) {
+    const liveParts = manifest.subspaces.filter(
+      (s) =>
+        s.twin === "process" &&
+        (state.catalog as TwinCatalogResponse).entries.some(
+          (e) => e.subspace === s.id && isDeclaredProbe(e)
+        )
+    );
+    expect(liveParts.length).toBeGreaterThan(0);
+    for (const part of liveParts) {
+      const row = within(detail).getByTestId(`digital-twin-part-${part.id}`);
+      expect(row, part.id).toHaveTextContent("UNKNOWN");
+      expect(row, part.id).not.toHaveTextContent("Error");
+      expect(row.getAttribute("title"), part.id).toContain(reason);
+      expect(row.getAttribute("title"), part.id).not.toContain("was probed");
+    }
+    expect(within(detail).queryAllByText(/^Error$/)).toHaveLength(0);
+  }
+
+  it("opens an aspect over a degraded probe answer: its live parts are UNKNOWN with why, never Error", async () => {
+    const body = stubBody(
+      "**/api/v1/digital-twin/subspaces"
+    ) as SubspacesProbeResponse;
+    state.probe = {
+      ...idle,
+      data: {
+        ...body,
+        degraded: true,
+        subspaces: body.subspaces.map((s) => ({
+          id: s.id,
+          status: "error",
+          error: "coord_unavailable",
+        })),
+      } satisfies SubspacesProbeResponse,
+      dataUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    const { detail } = await openAspect("process");
+    expectLivePartsUnknown(
+      detail,
+      "Coord's live probe could not be made: coord could not be reached"
+    );
+  });
+
+  it("opens an aspect over a failed probe read: its live parts are UNKNOWN with the HTTP status, never Error", async () => {
+    state.probe = {
+      ...idle,
+      isError: true,
+      error: new Error(
+        "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
+      ),
+      errorUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    const { detail } = await openAspect("process");
+    expectLivePartsUnknown(
+      detail,
+      "Coord's live probe could not be read (HTTP 502)"
+    );
   });
 
   it("renders a failed work-unit read as UNKNOWN with the reason, not as no plans", () => {

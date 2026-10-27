@@ -9,6 +9,10 @@
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  expectPresentationSafe,
+  renderInPresentationMode,
+} from "@/test/presentation";
 import type {
   SubspaceProbe,
   SubspacesProbeResponse,
@@ -258,32 +262,6 @@ describe("LifecycleView", () => {
     expect(drawer.queryByText("Query kind")).toBeNull();
   });
 
-  it("warns when coord is unreachable and still renders every stage from the manifest", () => {
-    state.probe = {
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      error: new Error("connect ECONNREFUSED"),
-    };
-    const { container } = render(<LifecycleView />);
-    expect(
-      screen.getByText(
-        /Could not reach the coordination layer: connect ECONNREFUSED/
-      )
-    ).toBeInTheDocument();
-    expect(
-      container.querySelectorAll('section[data-testid^="digital-twin-stage-"]')
-    ).toHaveLength(LIFECYCLE_STAGES.length);
-    // The probe failed rather than being in flight: nothing reads "probing…",
-    // and a probed stage says no live probe is answering.
-    expect(screen.queryByText("probing…")).toBeNull();
-    expect(
-      within(stageSection("release")).getByText(
-        "No live probe answering at this stage."
-      )
-    ).toBeInTheDocument();
-  });
-
   it("renders one refused sub-space as its own Restricted cell, keeping the stages", () => {
     state.probe = {
       data: probeAll({ release: "restricted" }),
@@ -447,5 +425,174 @@ describe("LifecycleView restriction (the split per qontinui-coord#3128)", () => 
     // than reading "0/0"; the process twin's probes answer.
     expect(screen.getByText(/^all restricted for you · /)).toBeInTheDocument();
     expect(screen.getByText(/^\d+\/\d+ live-probed · /)).toBeInTheDocument();
+  });
+});
+
+describe("LifecycleView while the probe holds no reading — UNKNOWN, never a count", () => {
+  const SNAPSHOT_IDS = manifest.subspaces
+    .filter((s) => s.query_kind === "snapshot")
+    .map((s) => s.id);
+
+  const ARMS = [
+    {
+      name: "a failed read",
+      arrange: () => {
+        state.probe = {
+          data: undefined,
+          isLoading: false,
+          isError: true,
+          error: new Error(
+            "GET /api/v1/digital-twin/subspaces failed: 502 - connect ECONNREFUSED"
+          ),
+        };
+      },
+      reason: "Coord's live probe could not be read (HTTP 502).",
+      operator:
+        /Could not reach the coordination layer: .*connect ECONNREFUSED\. No probe has answered/,
+    },
+    {
+      name: "a degraded answer",
+      arrange: () => {
+        state.probe = {
+          data: {
+            subspaces: SNAPSHOT_IDS.map((id) => ({
+              id,
+              status: "error" as const,
+              error: "coord_unavailable",
+            })),
+            probed: 0,
+            restricted: false,
+            degraded: true,
+          },
+          isLoading: false,
+          isError: false,
+          error: null,
+        };
+      },
+      reason:
+        "Coord's live probe could not be made: coord could not be reached.",
+      operator:
+        /coord made no probe, so every live count and cell below is UNKNOWN/,
+    },
+  ];
+
+  function intro(container: HTMLElement): HTMLElement {
+    const el = container.querySelector<HTMLElement>(
+      '[aria-labelledby="digital-twin-lifecycle-intro"]'
+    );
+    if (!el) throw new Error("no Lifecycle intro");
+    return el;
+  }
+
+  for (const arm of ARMS) {
+    it(`renders every stage from the manifest after ${arm.name}, its live count UNKNOWN with why`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      expect(
+        container.querySelectorAll(
+          'section[data-testid^="digital-twin-stage-"]'
+        )
+      ).toHaveLength(LIFECYCLE_STAGES.length);
+      expect(screen.queryByText("probing…")).toBeNull();
+      expect(PROBED_STAGES.length).toBeGreaterThan(0);
+      for (const stage of PROBED_STAGES) {
+        const count = within(stageSection(stage)).getByText(
+          "live-probed"
+        ).parentElement!;
+        expect(count, stage).toHaveTextContent("UNKNOWN");
+        expect(count.textContent, stage).not.toMatch(/\d/);
+        // Why — never that a probe was asked and did not answer.
+        expect(
+          screen.getByTestId(`digital-twin-stage-${stage}-note`),
+          stage
+        ).toHaveTextContent(arm.reason);
+      }
+      expect(screen.queryByText(/No live probe answering/)).toBeNull();
+      // A stage nothing probes still says so: that is the manifest's fact.
+      expect(
+        within(stageSection("intent")).getByText(/No live probe at this stage/)
+      ).toBeInTheDocument();
+      // Every probed cell is UNKNOWN, never the red Error of a probe that ran.
+      expect(screen.queryAllByText("Error")).toHaveLength(0);
+      expect(
+        screen.getByTestId("digital-twin-stage-release-cell-schema")
+      ).toHaveTextContent("UNKNOWN");
+      expect(
+        screen.getByTestId("digital-twin-coord-unreachable")
+      ).toHaveTextContent(arm.operator);
+    });
+
+    it(`shows each twin's live count as UNKNOWN with why after ${arm.name}, and no N/M anywhere in the intro`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      expect(intro(container).textContent).not.toMatch(/\d+\/\d+/);
+      const probedTwins = ["environment", "process", "intent"].filter((t) =>
+        manifest.subspaces.some(
+          (s) => s.query_kind === "snapshot" && s.twin === t
+        )
+      );
+      expect(probedTwins.length).toBeGreaterThan(0);
+      for (const twin of probedTwins) {
+        const counts = screen.getByTestId(
+          `digital-twin-lifecycle-twin-${twin}-counts`
+        );
+        expect(counts, twin).toHaveAttribute("data-reading", "unknown");
+        expect(counts, twin).toHaveTextContent("UNKNOWN");
+        expect(counts, twin).toHaveTextContent(arm.reason);
+      }
+    });
+
+    it(`draws the unread probes as their own segment after ${arm.name} — never "not answering"`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      expect(
+        container.querySelectorAll('[title*="not answering"]')
+      ).toHaveLength(0);
+      expect(
+        container.querySelectorAll('[title$="no reading (UNKNOWN)"]').length
+      ).toBeGreaterThan(0);
+      expect(
+        screen.getByText("live-probed, no reading (UNKNOWN)")
+      ).toBeInTheDocument();
+    });
+
+    it(`puts the notice above the twin counts and the stages after ${arm.name}`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      const banner = screen.getByTestId("digital-twin-coord-unreachable");
+      expect(
+        banner.compareDocumentPosition(intro(container)) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    });
+  }
+
+  it("dates the UNKNOWN counts' chip by the failed attempt while presenting", () => {
+    state.probe = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error(
+        "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
+      ),
+      // No answer was ever read: only the failed attempt can date it.
+      dataUpdatedAt: 0,
+      errorUpdatedAt: Date.parse("2026-10-23T12:00:00Z"),
+    } as typeof state.probe;
+    const view = renderInPresentationMode(<LifecycleView />, {
+      uiBridge: {
+        unobservable: "LifecycleView.test.tsx mocks @qontinui/ui-bridge/react",
+      },
+    });
+    const chip = intro(view.container).querySelector("[data-provenance]");
+    expect(chip).toHaveAttribute("data-provenance-known", "true");
+    expect(chip).toHaveTextContent("source: coord's live twin probe");
+    expectPresentationSafe(view);
+  });
+
+  it("names no unread segment, and no notice, while the probe answers", () => {
+    render(<LifecycleView />);
+    expect(screen.queryByText("live-probed, no reading (UNKNOWN)")).toBeNull();
+    expect(screen.queryByTestId("digital-twin-coord-unreachable")).toBeNull();
   });
 });

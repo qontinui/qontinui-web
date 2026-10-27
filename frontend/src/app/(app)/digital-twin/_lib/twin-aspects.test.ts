@@ -18,15 +18,14 @@ import {
   aspectRows,
   partName,
   plantFidelity,
-  probeDegradedReason,
   twinAspect,
   type AppTwinRead,
   type FidelityFigure,
   type FidelityKey,
-  type ProbeRead,
   type RelayRead,
   type ReportRead,
 } from "./twin-aspects";
+import { probeDegradedReason, type ProbeRead } from "./probe-read";
 import type {
   RawVerdictResponse,
   ResolvedSubspace,
@@ -102,6 +101,7 @@ function probeRead(over: Partial<ProbeRead> = {}): ProbeRead {
   return {
     rows: rowsFor(ENV_PROBES),
     failed: false,
+    refreshFailed: false,
     error: null,
     degraded: null,
     restricted: false,
@@ -480,51 +480,5 @@ describe("appTwinFidelity — the UI Bridge app twin", () => {
     });
     expect(f.observed.state).toBe("loading");
     expect(f.coverage.state).toBe("loading");
-  });
-});
-
-describe("probeDegradedReason — a probe answer that made no probe", () => {
-  const cell = (error?: string): SubspaceProbe => ({
-    id: "schema",
-    status: "error",
-    error,
-  });
-
-  it("is null for an answer that is not degraded", () => {
-    expect(probeDegradedReason(undefined)).toBeNull();
-    expect(
-      probeDegradedReason({ subspaces: [cell("coord_timeout")] })
-    ).toBeNull();
-    expect(
-      probeDegradedReason({
-        degraded: false,
-        subspaces: [cell("coord_unavailable")],
-      })
-    ).toBeNull();
-  });
-
-  it("names the cause the backend's token gives", () => {
-    expect(
-      probeDegradedReason({
-        degraded: true,
-        subspaces: [cell("coord_unavailable")],
-      })
-    ).toBe("coord's live probe could not be made: coord could not be reached");
-    expect(
-      probeDegradedReason({
-        degraded: true,
-        subspaces: [cell("catalog_unavailable")],
-      })
-    ).toBe(
-      "coord's live probe could not be made: coord's catalog of live probes could not be read"
-    );
-  });
-
-  it("names no cause it does not know — an empty answer, or a token it has no words for", () => {
-    for (const subspaces of [[], [cell()], [cell("something_new")]]) {
-      expect(probeDegradedReason({ degraded: true, subspaces })).toBe(
-        "coord's live probe could not be made"
-      );
-    }
   });
 });

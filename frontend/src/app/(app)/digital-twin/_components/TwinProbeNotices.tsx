@@ -1,17 +1,17 @@
 "use client";
 
 import { AlertTriangle, Lock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { UNKNOWN_AMBER } from "@/components/console";
 import { usePresentationMode } from "@/components/presentation";
-import { cn } from "@/lib/utils";
 import { statusSuffix } from "../_lib/failure-text";
+import { probeUnread, type ProbeRead } from "../_lib/probe-read";
+import { upperFirst } from "../_lib/status-presentation";
 import { RESTRICTED_REASON } from "../_lib/twin-aspects";
+import { UnknownBadge } from "./FidelityFigures";
 
 /**
  * The two notices every view of the sub-space probe shares (the Completeness
- * matrix and the Lifecycle view read the same `useDigitalTwinSubspaces` data,
- * so they must degrade the same way).
+ * matrix and the Lifecycle view read the same probe, `useProbeRead`, so they
+ * must degrade the same way).
  *
  * In presentation mode (plan `2026-10-23-console-presentation-spaces`) each is
  * a labelled UNKNOWN naming why there is no reading: an outsider must not read
@@ -41,14 +41,9 @@ export function UnknownReading({
       data-reading="unknown"
       className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm"
     >
-      <Badge
-        variant="outline"
-        className={cn("text-[11px] font-semibold", UNKNOWN_AMBER)}
-      >
-        UNKNOWN
-      </Badge>
+      <UnknownBadge />
       <span className="text-muted-foreground">
-        {reason.charAt(0).toUpperCase() + reason.slice(1)}, so {consequence}.
+        {upperFirst(reason)}, so {consequence}.
       </span>
     </div>
   );
@@ -90,28 +85,48 @@ export function TwinAccessRestricted() {
   );
 }
 
+/** What the operator is told the live cells show, for each way the probe can fail. */
+function operatorText(
+  probe: Pick<ProbeRead, "failed" | "error" | "degraded">
+): string {
+  if (probe.degraded !== null) {
+    return `${upperFirst(probe.degraded)}. coord made no probe, so every live count and cell below is UNKNOWN; the taxonomy below is still accurate.`;
+  }
+  const cause = `Could not reach the coordination layer${probe.error instanceof Error ? `: ${probe.error.message}` : ""}.`;
+  return probe.failed
+    ? `${cause} No probe has answered, so every live count and cell below is UNKNOWN; the taxonomy below is still accurate.`
+    : `${cause} Live cells fall back to their last status; the taxonomy below is still accurate.`;
+}
+
 /**
- * The probe has no current reading: the request failed, or it answered
- * degraded — HTTP 200 with no probe made (`probeDegradedReason`), its cells
- * stand-ins. The view still renders below it (the manifest, and cells with
- * their last or stand-in status), so the notice says those are not a current
- * reading rather than that nothing live is shown.
+ * The probe has no current reading — the request failed, or it answered
+ * degraded: HTTP 200 with no probe made (`probeUnread`, the rule every view
+ * of the probe applies) — or its last refresh failed over an earlier answer.
+ * Renders nothing otherwise, so a view mounts it unconditionally.
+ *
+ * It sits ABOVE everything it qualifies — the live counts as well as the
+ * cells — so "below" covers them all: the view still renders under it (the
+ * manifest, UNKNOWN counts and cells, or the last answer's statuses), and the
+ * notice says those are not a current reading rather than that nothing live
+ * is shown.
  */
 export function CoordUnreachableBanner({
-  error,
-  degraded = null,
+  probe,
 }: {
-  error: unknown;
-  /** Why a degraded answer holds no reading, or `null` (`probeDegradedReason`). */
-  degraded?: string | null;
+  probe: Pick<
+    ProbeRead,
+    "failed" | "refreshFailed" | "error" | "degraded" | "asOf" | "failedAt"
+  >;
 }) {
   const { presenting } = usePresentationMode();
+  const silence = probeUnread(probe);
+  if (silence === null && !probe.refreshFailed) return null;
   if (presenting) {
     return (
       <UnknownReading
         reason={
-          degraded ??
-          `coord's live probe could not be read${statusSuffix(error)}`
+          silence?.reason ??
+          `coord's live probe could not be read${statusSuffix(probe.error)}`
         }
         consequence="the live statuses below are not a current reading"
         data-testid="digital-twin-coord-unreachable"
@@ -124,19 +139,7 @@ export function CoordUnreachableBanner({
       className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
     >
       <AlertTriangle className="size-4 shrink-0" />
-      {degraded !== null ? (
-        <span>
-          {degraded.charAt(0).toUpperCase() + degraded.slice(1)}. The live cells
-          below stand in for the probes coord last declared — they are not
-          readings; the taxonomy below is still accurate.
-        </span>
-      ) : (
-        <span>
-          Could not reach the coordination layer
-          {error instanceof Error ? `: ${error.message}` : ""}. Live cells fall
-          back to their last status; the taxonomy below is still accurate.
-        </span>
-      )}
+      <span>{operatorText(probe)}</span>
     </div>
   );
 }

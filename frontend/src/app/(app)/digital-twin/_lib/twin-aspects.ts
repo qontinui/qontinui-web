@@ -14,7 +14,8 @@
  * | honesty | violations among the parts coord's twin self-check measures | UNKNOWN: the self-check does not cover interface models |
  *
  * Nothing here is ever a zero standing in for an unknown: a failed read, a
- * degraded probe answer (no probe made), a refused one, a twin nothing probes
+ * degraded probe answer (no probe made — the rule `probe-read.ts`
+ * `probeUnread` gives every view of the probe), a refused one, a twin nothing probes
  * live, and a report with no per-part rows are each a labelled UNKNOWN naming
  * why (`verification-and-evidence` `unknown-must-not-render-as-a-default`). A measured zero — "no violations"
  * over parts the self-check judged — is a real zero and says what it covers.
@@ -25,6 +26,7 @@
 import type { CaptionKey } from "@/components/presentation";
 import { statusSuffix } from "./failure-text";
 import { coverageOf, gradedOf } from "./lifecycle";
+import { probeUnread, type ProbeRead, type ProbeSilence } from "./probe-read";
 import { formatRatio } from "./status-presentation";
 import {
   formatAge,
@@ -33,11 +35,7 @@ import {
   reportSubspaces,
   type FidelityQueryState,
 } from "./twin-fidelity";
-import type {
-  ResolvedSubspace,
-  SubspaceManifestEntry,
-  SubspacesProbeResponse,
-} from "./types";
+import type { ResolvedSubspace, SubspaceManifestEntry } from "./types";
 import {
   summarizeSpecGraph,
   type AppListResponse,
@@ -180,57 +178,6 @@ export const RESTRICTED_REASON =
 export const SELF_CHECK_INTERNAL_REASON =
   "coord shares its twin self-check only with Qontinui's own workspace";
 
-/** What each token of the backend's degraded probe answer means, in words. */
-const DEGRADED_CAUSE: Readonly<Record<string, string>> = {
-  coord_unavailable: "coord could not be reached",
-  catalog_unavailable: "coord's catalog of live probes could not be read",
-};
-
-/**
- * Why a probe answer flagged `degraded` holds no reading, or `null` when the
- * answer is not degraded.
- *
- * The backend answers HTTP 200 with `degraded: true` when coord, the tenant or
- * coord's catalog could not be read (`digital_twin.py` `_degraded_matrix`):
- * no probe was made, and its cells are stand-ins — one `error` per id coord
- * last declared, carrying the token that names why. Read as an answer, every
- * stand-in counts as a probe that did not answer, and a fidelity figure drawn
- * from them is a measured-looking zero ("0 of 9 observed") during an outage.
- * The cause comes from the cells' token; an empty degraded answer (no
- * declaration ever read), or a token this page does not know, names no cause.
- */
-export function probeDegradedReason(
-  data: Pick<SubspacesProbeResponse, "degraded" | "subspaces"> | undefined
-): string | null {
-  if (data?.degraded !== true) return null;
-  const cause = data.subspaces
-    .map((cell) => (cell.error ? DEGRADED_CAUSE[cell.error] : undefined))
-    .find((words) => words !== undefined);
-  return cause
-    ? `coord's live probe could not be made: ${cause}`
-    : "coord's live probe could not be made";
-}
-
-/** The probe as the Twin map reads it. */
-export interface ProbeRead {
-  /** Every manifest row joined with coord's catalog and the probe (`resolveSubspaces`). */
-  readonly rows: readonly ResolvedSubspace[];
-  /** The probe failed and no earlier answer is held. */
-  readonly failed: boolean;
-  readonly error: unknown;
-  /**
-   * The probe answered degraded — no probe was made — and this is why
-   * ({@link probeDegradedReason}); `null` for a real answer.
-   */
-  readonly degraded: string | null;
-  /** Every probe was refused (`allProbesRestricted`). */
-  readonly restricted: boolean;
-  /** When the answer shown was read (epoch ms), or `null`. */
-  readonly asOf: number | null;
-  /** When the last failed attempt was made (epoch ms), or `null`. */
-  readonly failedAt: number | null;
-}
-
 /** The twin-fidelity report query, with its timestamps. */
 export interface ReportRead extends FidelityQueryState {
   readonly dataUpdatedAt: number;
@@ -254,22 +201,16 @@ function finite(value: number | null | undefined): value is number {
 
 /**
  * The reason the probe says nothing about `rows`, or `null` when it does.
- * Shared by the three probe-sourced figures, so they cannot disagree.
+ * Shared by the three probe-sourced figures, so they cannot disagree; and it
+ * starts from `probeUnread`, the rule the Completeness and Lifecycle views
+ * apply too, so no view of the probe counts what another calls UNKNOWN.
  */
 function probeSilence(
   rows: readonly ResolvedSubspace[],
   probe: ProbeRead
-): { reason: string; asOf: number | null } | "probing" | null {
-  if (probe.failed) {
-    return {
-      reason: `coord's live probe could not be read${statusSuffix(probe.error)}`,
-      asOf: probe.failedAt,
-    };
-  }
-  // Its stand-in cells are no reading; the as-of is when it was asked.
-  if (probe.degraded !== null) {
-    return { reason: probe.degraded, asOf: probe.asOf };
-  }
+): ProbeSilence | "probing" | null {
+  const unread = probeUnread(probe);
+  if (unread) return unread;
   if (probe.restricted) return { reason: RESTRICTED_REASON, asOf: probe.asOf };
   const counts = coverageOf(rows);
   if (counts.probed === 0) {

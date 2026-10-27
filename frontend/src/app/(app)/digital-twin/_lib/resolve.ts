@@ -9,6 +9,10 @@
  *   coord declares). Its status comes from the live probe (implemented /
  *   partial / blind / served / error / restricted); while the probe is
  *   loading it shows `probing`. These are the only live verdicts on the page.
+ *   While the probe holds NO reading — it failed with nothing held, or
+ *   answered degraded with stand-in cells (`probe-read.ts` `probeUnread`) —
+ *   every live-probed row is `unknown`, carrying the reason: a stand-in cell
+ *   is not the observer's status, and never the `error` of a probe that ran.
  * - A manifest `snapshot` row coord's catalog does NOT declare shows
  *   `not-served`: the manifest and coord have drifted, and the cell says so
  *   instead of reading as an observer error.
@@ -104,7 +108,8 @@ function resolveOne(
   entry: SubspaceManifestEntry,
   probesById: Map<string, SubspaceProbe>,
   declared: Map<string, TwinCatalogEntry> | null,
-  isProbing: boolean
+  isProbing: boolean,
+  noReading: string | null
 ): ResolvedSubspace {
   const declaredEntry = declared?.get(entry.id);
   const liveProbed = declared
@@ -114,6 +119,17 @@ function resolveOne(
   if (liveProbed) {
     const probe = probesById.get(entry.id);
     const doorShape = probe?.door_shape ?? declaredEntry?.door_shape ?? null;
+    if (noReading !== null) {
+      // The probe holds no reading: this row's cell, if any, is a stand-in
+      // with no status, metrics or error of the observer's own.
+      return {
+        ...entry,
+        liveProbed,
+        doorShape,
+        cellStatus: "unknown",
+        unknownReason: noReading,
+      };
+    }
     if (!probe) {
       return {
         ...entry,
@@ -165,17 +181,20 @@ function resolveOne(
 /**
  * Resolve every manifest row. `catalog` is coord's served catalog; without it
  * (or before it loads) the manifest's own `snapshot` rows stand in for coord's
- * declaration.
+ * declaration. `noReading` is why the probe holds no reading at all
+ * (`probeUnread`), or `null` when `probes` is an answer: given, every
+ * live-probed row resolves `unknown` with it, whatever `probes` holds.
  */
 export function resolveSubspaces(
   probes: SubspaceProbe[] | undefined,
   isProbing: boolean,
-  catalog?: TwinCatalogResponse
+  catalog?: TwinCatalogResponse,
+  noReading: string | null = null
 ): ResolvedSubspace[] {
   const probesById = new Map((probes ?? []).map((p) => [p.id, p]));
   const declared = declaredProbes(catalog);
   return manifest.subspaces.map((e) =>
-    resolveOne(e, probesById, declared, isProbing)
+    resolveOne(e, probesById, declared, isProbing, noReading)
   );
 }
 
@@ -201,8 +220,10 @@ export interface CompletenessSummary {
    * "responding" rather than only full-coverage, because several observers are
    * narrow-by-design (e.g. infra reports coverage < 1 even when perfectly
    * healthy) — counting only `implemented` would systematically undercount a
-   * working twin. Blind / served / error / restricted / probing are NOT
-   * counted: a `served` report is an answer, but not a verdict to grade.
+   * working twin. Blind / served / error / restricted / probing / unknown
+   * are NOT counted: a `served` report is an answer, but not a verdict to
+   * grade. While the probe holds no reading (every live row `unknown`) this
+   * is no count at all — the gauge shows UNKNOWN instead (`probeUnread`).
    */
   responding: number;
   /**
@@ -233,7 +254,9 @@ export interface CompletenessSummary {
   total: number;
 }
 
-export function summarize(rows: ResolvedSubspace[]): CompletenessSummary {
+export function summarize(
+  rows: readonly ResolvedSubspace[]
+): CompletenessSummary {
   let responding = 0;
   let pending = 0;
   let served = 0;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { UNKNOWN_AMBER } from "@/components/console/statusRow";
 import { manifest } from "./resolve";
 import {
   RESTRICTED_COUNT_MEANING,
@@ -117,6 +118,40 @@ describe("the per-cell statuses Phase 9 adds", () => {
 
   it("names manifest/coord drift as not served by coord", () => {
     expect(STATUS_STYLES["not-served"].label).toBe("Not served by coord");
+  });
+});
+
+describe("STATUS_STYLES.unknown — a live row the probe holds no reading of", () => {
+  it("says UNKNOWN on the ignorance floor, never the failed read's red or a live hue", () => {
+    expect(STATUS_STYLES.unknown.label).toBe("UNKNOWN");
+    const dot = STATUS_STYLES.unknown.dot.split(" ");
+    for (const c of UNKNOWN_AMBER.split(" ")) expect(dot).toContain(c);
+    for (const other of ["error", "partial", "implemented"] as const) {
+      const fills = STATUS_STYLES[other].dot.split(" ");
+      expect(
+        dot.filter((c) => fills.includes(c)),
+        other
+      ).toEqual([]);
+    }
+    expect(STATUS_STYLES.unknown.meaning).not.toContain("was probed");
+  });
+
+  it("names why there is no reading in the row's meaning, not the observer failing", () => {
+    const reason =
+      "coord's live probe could not be made: coord could not be reached";
+    const style = presentStatus({
+      cellStatus: "unknown",
+      unknownReason: reason,
+    });
+    expect(style.label).toBe("UNKNOWN");
+    expect(style.meaning).toMatch(
+      /^Coord's live probe could not be made: coord could not be reached, so there is no current reading of this observer/
+    );
+    expect(style.meaning).not.toBe(STATUS_STYLES.error.meaning);
+    // Without a reason it still says what it is.
+    expect(presentStatus({ cellStatus: "unknown" })).toEqual(
+      STATUS_STYLES.unknown
+    );
   });
 });
 

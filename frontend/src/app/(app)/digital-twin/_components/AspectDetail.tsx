@@ -38,7 +38,12 @@ function partPlanCount(
   return count === 0 ? "plans unknown" : `at least ${plans}`;
 }
 
-/** One part on its own line: status, and how many plans move it; a press filters the plans. */
+/**
+ * One part on its own line: status, and how many plans move it; a press
+ * filters the plans. The status is the row's own (`presentStatus`): while the
+ * probe holds no reading a live part is UNKNOWN on the ignorance floor, and
+ * its title says why — never the red "Error" of a probe that was made.
+ */
 function PartRow({
   row,
   plans,

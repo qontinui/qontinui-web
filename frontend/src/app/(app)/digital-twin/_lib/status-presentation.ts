@@ -1,6 +1,12 @@
 /** Shared visual vocabulary for cell statuses — colors + human labels. */
 
+import { UNKNOWN_AMBER } from "@/components/console/statusRow";
 import type { AskVia, CellStatus, ResolvedSubspace } from "./types";
+
+/** A reason as the start of a sentence: its first letter capitalised. */
+export function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 export interface StatusStyle {
   label: string;
@@ -23,7 +29,10 @@ export interface StatusStyle {
  * verdict (`served`: coord answered with its own report), so it is neither the
  * healthy green nor the amber/red of a degraded or failed read. A hollow red
  * ring is drift between the manifest and coord (`not-served`): no probe ran,
- * so it never reuses the solid live vocabulary.
+ * so it never reuses the solid live vocabulary. `unknown` — the probe holds
+ * no reading at all — sits on R3's ignorance floor (`UNKNOWN_AMBER`, the
+ * console's own token): amber because nobody knows, never the red of a read
+ * that failed nor a calm hue that would paint the ignorance as fine.
  */
 export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   implemented: {
@@ -106,6 +115,14 @@ export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
     border: "border-l-zinc-300 dark:border-l-zinc-600",
     meaning: "Live probe in flight.",
   },
+  unknown: {
+    label: "UNKNOWN",
+    dot: `border ${UNKNOWN_AMBER}`,
+    // UNKNOWN_AMBER's own border tint, on the left edge only (R4).
+    border: "border-l-amber-500/30",
+    meaning:
+      "No current reading: coord's live probe could not be made or read, so this observer's status is unknown — not a failure of the observer.",
+  },
 };
 
 /** Tooltip for the matrix gauge's "· N restricted" count — the plural of
@@ -134,11 +151,21 @@ const INTERACTIVE_ELSEWHERE: Record<
   },
 };
 
-/** The presentation of one row's status (its cell status, refined by its door). */
+/**
+ * The presentation of one row's status (its cell status, refined by its door,
+ * or — for an `unknown` row — by why there is no reading, so the tooltip and
+ * the drawer name the outage rather than a generic one).
+ */
 export function presentStatus(
-  row: Pick<ResolvedSubspace, "cellStatus" | "ask_via">
+  row: Pick<ResolvedSubspace, "cellStatus" | "ask_via" | "unknownReason">
 ): StatusStyle {
   const style = STATUS_STYLES[row.cellStatus];
+  if (row.cellStatus === "unknown" && row.unknownReason) {
+    return {
+      ...style,
+      meaning: `${upperFirst(row.unknownReason)}, so there is no current reading of this observer — its status is unknown, not a failure of the observer.`,
+    };
+  }
   if (
     row.cellStatus !== "interactive" ||
     row.ask_via === undefined ||

@@ -8,6 +8,10 @@
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  expectPresentationSafe,
+  renderInPresentationMode,
+} from "@/test/presentation";
 import type {
   SubspaceProbe,
   SubspacesProbeResponse,
@@ -20,6 +24,8 @@ const state = vi.hoisted(() => ({
     isLoading: false,
     isError: false,
     error: null as unknown,
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
   },
   /** coord's served catalog; `undefined` = not read (the manifest stands in). */
   catalog: undefined as TwinCatalogResponse | undefined,
@@ -85,6 +91,8 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
     error: null,
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
   };
   state.catalog = undefined;
 });
@@ -116,6 +124,8 @@ describe("CoverageMatrix gauges", () => {
       isLoading: true,
       isError: false,
       error: null,
+      dataUpdatedAt: 0,
+      errorUpdatedAt: 0,
     };
     render(<CoverageMatrix />);
     const live = screen.getByTestId("digital-twin-gauge-live");
@@ -142,7 +152,14 @@ function probesFor(
 }
 
 function setProbe(data: SubspacesProbeResponse) {
-  state.probe = { data, isLoading: false, isError: false, error: null };
+  state.probe = {
+    data,
+    isLoading: false,
+    isError: false,
+    error: null,
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
+  };
 }
 
 describe("CoverageMatrix per-cell access", () => {
@@ -272,5 +289,145 @@ describe("CoverageMatrix joined to coord's catalog", () => {
     expect(screen.getByTestId("digital-twin-gauge-live")).toHaveTextContent(
       `${declared.length}/${declared.length}`
     );
+  });
+});
+
+describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N", () => {
+  const AT = Date.parse("2026-10-23T12:00:00Z");
+  const HTTP_502 = new Error(
+    "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
+  );
+  /** The reason, as a cell's title starts its sentence. */
+  const DEGRADED_WORDS =
+    "Coord's live probe could not be made: coord could not be reached";
+
+  /** The request failed and no earlier answer is held. */
+  function failedRead() {
+    state.probe = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: HTTP_502,
+      dataUpdatedAt: 0,
+      errorUpdatedAt: AT,
+    };
+  }
+
+  /** HTTP 200 with no probe made: a stand-in error per declared id. */
+  function degradedAnswer() {
+    state.probe = {
+      data: {
+        subspaces: SNAPSHOT_IDS.map((id) => ({
+          id,
+          status: "error",
+          error: "coord_unavailable",
+        })),
+        probed: 0,
+        restricted: false,
+        degraded: true,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      dataUpdatedAt: AT,
+      errorUpdatedAt: 0,
+    };
+  }
+
+  const ARMS = [
+    {
+      name: "a failed read",
+      arrange: failedRead,
+      reason: "Coord's live probe could not be read (HTTP 502).",
+    },
+    {
+      name: "a degraded answer",
+      arrange: degradedAnswer,
+      reason:
+        "Coord's live probe could not be made: coord could not be reached.",
+    },
+  ];
+
+  for (const arm of ARMS) {
+    it(`shows the live gauge as UNKNOWN with why after ${arm.name}, with no count and no bar`, () => {
+      arm.arrange();
+      render(<CoverageMatrix />);
+      const live = screen.getByTestId("digital-twin-gauge-live");
+      expect(live).toHaveAttribute("data-reading", "unknown");
+      expect(live).toHaveTextContent("UNKNOWN");
+      expect(live).toHaveTextContent(arm.reason);
+      expect(live.textContent).not.toMatch(/\d+\/\d+/);
+      // An empty bar would read as a measured zero.
+      expect(live.querySelector('[data-slot="gauge-fill"]')).toBeNull();
+      // The built gauge is the manifest's claim: no probe stands behind it.
+      expect(screen.getByTestId("digital-twin-gauge-built")).toHaveTextContent(
+        `${CLAIMED_BUILT}/${manifest.subspaces.length}`
+      );
+    });
+
+    it(`puts the notice above the gauges after ${arm.name}, so its "below" covers the counts`, () => {
+      arm.arrange();
+      render(<CoverageMatrix />);
+      const banner = screen.getByTestId("digital-twin-coord-unreachable");
+      const gauges = screen.getByTestId("digital-twin-gauges");
+      expect(
+        banner.compareDocumentPosition(gauges) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    });
+  }
+
+  it("renders every probed cell UNKNOWN with why — never the red Error of a probe that ran", () => {
+    degradedAnswer();
+    render(<CoverageMatrix />);
+    expect(screen.queryAllByText("Error")).toHaveLength(0);
+    for (const id of SNAPSHOT_IDS) {
+      const cell = screen.getByTestId(`digital-twin-cell-${id}`);
+      expect(cell, id).toHaveTextContent("UNKNOWN");
+      expect(cell.getAttribute("title"), id).toContain(DEGRADED_WORDS);
+      expect(cell.getAttribute("title"), id).not.toContain("was probed");
+    }
+    // The drawer says the same, and shows no stand-in error token.
+    fireEvent.click(screen.getByTestId("digital-twin-cell-schema"));
+    const drawer = within(screen.getByRole("dialog"));
+    expect(drawer.getByText("UNKNOWN")).toBeInTheDocument();
+    expect(drawer.queryByText("coord_unavailable")).toBeNull();
+  });
+
+  it("keeps the last answer's count after a failed refresh — a reading, dated — under the notice", () => {
+    setProbe(probesFor(SNAPSHOT_IDS));
+    state.probe = {
+      ...state.probe,
+      isError: true,
+      error: HTTP_502,
+      dataUpdatedAt: AT - 120_000,
+      errorUpdatedAt: AT,
+    };
+    render(<CoverageMatrix />);
+    expect(screen.getByTestId("digital-twin-gauge-live")).toHaveTextContent(
+      `${SNAPSHOT_IDS.length}/${SNAPSHOT_IDS.length}`
+    );
+    expect(
+      screen.getByTestId("digital-twin-coord-unreachable")
+    ).toHaveTextContent("Live cells fall back to their last status");
+  });
+
+  it("dates the UNKNOWN gauge's chip by the failed attempt while presenting", () => {
+    failedRead();
+    const view = renderInPresentationMode(<CoverageMatrix />, {
+      uiBridge: {
+        unobservable: "CoverageMatrix.test.tsx mocks @qontinui/ui-bridge/react",
+      },
+    });
+    const chip = screen
+      .getByTestId("digital-twin-gauges")
+      .querySelector("[data-provenance]");
+    // No answer was ever read: only the failed attempt can date it.
+    expect(chip).toHaveAttribute("data-provenance-known", "true");
+    expect(chip).toHaveTextContent("source: coord's live twin probe");
+    expect(screen.getByTestId("digital-twin-gauge-live")).toHaveTextContent(
+      "UNKNOWN"
+    );
+    expectPresentationSafe(view);
   });
 });

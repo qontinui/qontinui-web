@@ -211,6 +211,13 @@ export interface CoverageCounts {
    */
   restricted: number;
   /**
+   * Of `probed`: rows with no reading at all (cell status `unknown` — the
+   * probe failed with nothing held, or answered degraded). Neither answering
+   * nor silent: nothing was read, so a view shows UNKNOWN, never a count of
+   * them as observers that did not answer.
+   */
+  unknown: number;
+  /**
    * Rows not live-probed that the manifest claims are built (implemented or
    * partial).
    * A claim, not a live verdict.
@@ -245,6 +252,7 @@ export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
     pending: 0,
     served: 0,
     restricted: 0,
+    unknown: 0,
     manifestBuilt: 0,
     interactive: 0,
     planned: 0,
@@ -262,6 +270,8 @@ export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
         counts.served += 1;
       } else if (r.cellStatus === "restricted") {
         counts.restricted += 1;
+      } else if (r.cellStatus === "unknown") {
+        counts.unknown += 1;
       }
     } else if (claimsBuilt(r.research_status)) {
       counts.manifestBuilt += 1;

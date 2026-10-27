@@ -442,6 +442,37 @@ describe("resolveSubspaces joined to coord's catalog", () => {
     expect(summary.graded).toBe(3);
   });
 
+  it("resolves every declared row UNKNOWN, with why, while the probe holds no reading", () => {
+    // The backend's degraded matrix: a stand-in error per declared id.
+    const standIns: SubspaceProbe[] = probes.map((p) => ({
+      id: p.id,
+      status: "error",
+      error: "coord_unavailable",
+    }));
+    const reason =
+      "coord's live probe could not be made: coord could not be reached";
+    // Read as an answer, each stand-in is an observer error — the lie.
+    expect(
+      rowById(resolveSubspaces(standIns, false, stubCatalog()), "workers")
+        .cellStatus
+    ).toBe("error");
+    const rows = resolveSubspaces(standIns, false, stubCatalog(), reason);
+    for (const id of ["outbound", "release", "workers", "worktree"]) {
+      const row = rowById(rows, id);
+      expect(row.cellStatus, id).toBe("unknown");
+      expect(row.unknownReason, id).toBe(reason);
+      expect(row.error, id).toBeUndefined();
+    }
+    // Whatever the cells say: a real-looking answer is no reading either.
+    expect(
+      rowById(resolveSubspaces(probes, false, stubCatalog(), reason), "release")
+        .cellStatus
+    ).toBe("unknown");
+    // What is not probed live is the manifest's, reading or not.
+    expect(rowById(rows, "schema").cellStatus).toBe("not-served");
+    expect(rowById(rows, "schema").unknownReason).toBeUndefined();
+  });
+
   it("falls back to the manifest's snapshot rows, and any probed row, without a catalog", () => {
     const rows = resolveSubspaces(
       [{ id: "metrics", status: "implemented" }],
