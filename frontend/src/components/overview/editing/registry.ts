@@ -35,7 +35,7 @@ interface BaseField<Row> {
  * - `code` — a short identifier (trimmed); `text` — free text.
  * - `decimal` — an exact decimal STRING, never a float (the wire convention).
  * - `money` — integer micros in `field`, its ISO currency in `currencyField`;
- *   the two travel together.
+ *   the two travel together. Never negative unless `signed` (a refund).
  * - `flag` — a yes/no, with the words a reader uses for each.
  * - `date` — a calendar day, `YYYY-MM-DD` on the wire (no time, no zone).
  * - `select` — one of a fixed set of `options`, shown by its label. A
@@ -58,6 +58,8 @@ export type FieldDeclaration<Row> =
       currencyField: keyof Row & string;
       /** Shown when there is no amount, e.g. "not priced". */
       emptyLabel: string;
+      /** A negative amount is allowed (a refund). */
+      signed?: boolean;
     })
   | (BaseField<Row> & { kind: "flag"; yes: string; no: string });
 

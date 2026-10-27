@@ -17409,6 +17409,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/overview/cost-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cost Categories */
+        get: operations["api_v1_overview_cost_categories_get"];
+        put?: never;
+        /** Create Cost Categories */
+        post: operations["api_v1_overview_cost_categories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/cost-categories/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cost Categories */
+        get: operations["api_v1_overview_cost_categories_record_id_get"];
+        put?: never;
+        post?: never;
+        /** Delete Cost Categories */
+        delete: operations["api_v1_overview_cost_categories_record_id_delete"];
+        options?: never;
+        head?: never;
+        /** Update Cost Categories */
+        patch: operations["api_v1_overview_cost_categories_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/cost-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cost Entries */
+        get: operations["api_v1_overview_cost_entries_get"];
+        put?: never;
+        /** Create Cost Entries */
+        post: operations["api_v1_overview_cost_entries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/cost-entries/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cost Entries */
+        get: operations["api_v1_overview_cost_entries_record_id_get"];
+        put?: never;
+        post?: never;
+        /** Delete Cost Entries */
+        delete: operations["api_v1_overview_cost_entries_record_id_delete"];
+        options?: never;
+        head?: never;
+        /** Update Cost Entries */
+        patch: operations["api_v1_overview_cost_entries_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/costs/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Cost Summary
+         * @description What the project has spent, per currency; the month-by-category table;
+         *     and every recurring period that has fallen due, recorded or not. Computed
+         *     on read against today (UTC); readable by any member.
+         */
+        get: operations["api_v1_overview_costs_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/overview/estimates": {
         parameters: {
             query?: never;
@@ -17782,6 +17878,43 @@ export interface paths {
         head?: never;
         /** Update Phase Progress */
         patch: operations["api_v1_overview_phase_progress_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/recurring-costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recurring Costs */
+        get: operations["api_v1_overview_recurring_costs_get"];
+        put?: never;
+        /** Create Recurring Costs */
+        post: operations["api_v1_overview_recurring_costs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/recurring-costs/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Recurring Costs */
+        get: operations["api_v1_overview_recurring_costs_record_id_get"];
+        put?: never;
+        post?: never;
+        /** Delete Recurring Costs */
+        delete: operations["api_v1_overview_recurring_costs_record_id_delete"];
+        options?: never;
+        head?: never;
+        /** Update Recurring Costs */
+        patch: operations["api_v1_overview_recurring_costs_record_id_patch"];
         trace?: never;
     };
     "/api/v1/overview/resources": {
@@ -31678,6 +31811,218 @@ export interface components {
             plan_count: number;
             scan_roots: components["schemas"]["ScanRootListResponse"];
         };
+        /** CostCategoriesItem */
+        CostCategoriesItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["CostCategoryRead"];
+        };
+        /** CostCategoriesList */
+        CostCategoriesList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["CostCategoryRead"][];
+            /** Total */
+            total: number;
+        };
+        /** CostCategoryCreate */
+        CostCategoryCreate: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** CostCategoryRead */
+        CostCategoryRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sort Order */
+            sort_order: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            /** Version */
+            version: number;
+        };
+        /** CostCategoryUpdate */
+        CostCategoryUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
+        };
+        /** CostEntriesItem */
+        CostEntriesItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["CostEntryRead"];
+        };
+        /** CostEntriesList */
+        CostEntriesList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["CostEntryRead"][];
+            /** Total */
+            total: number;
+        };
+        /** CostEntryCreate */
+        CostEntryCreate: {
+            /** Amount Micros */
+            amount_micros: number;
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency: string;
+            /** Description */
+            description: string;
+            /**
+             * Expects Delivery
+             * @default false
+             */
+            expects_delivery: boolean;
+            /**
+             * Incurred On
+             * Format: date
+             */
+            incurred_on: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Order Ref
+             * @default
+             */
+            order_ref: string;
+            /** Period Start */
+            period_start?: string | null;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+            /** Received On */
+            received_on?: string | null;
+            /** Recurring Cost Id */
+            recurring_cost_id?: string | null;
+            /**
+             * Vendor
+             * @default
+             */
+            vendor: string;
+        };
+        /** CostEntryRead */
+        CostEntryRead: {
+            /** Amount Micros */
+            amount_micros: number;
+            /** Category Id */
+            category_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Currency */
+            currency: string;
+            /** Description */
+            description: string;
+            /** Expects Delivery */
+            expects_delivery: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Incurred On
+             * Format: date
+             */
+            incurred_on: string;
+            /** Notes */
+            notes: string;
+            /** Order Ref */
+            order_ref: string;
+            /** Period Start */
+            period_start: string | null;
+            /** Quantity */
+            quantity: number;
+            /** Received On */
+            received_on: string | null;
+            /** Recurring Cost Id */
+            recurring_cost_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            /** Vendor */
+            vendor: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * CostEntryUpdate
+         * @description Every field optional; ``null`` clears ``category_id`` or
+         *     ``received_on``. Which recurring period an entry records is fixed when it
+         *     is created.
+         */
+        CostEntryUpdate: {
+            /** Amount Micros */
+            amount_micros?: number | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Expects Delivery */
+            expects_delivery?: boolean | null;
+            /** Incurred On */
+            incurred_on?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Order Ref */
+            order_ref?: string | null;
+            /** Quantity */
+            quantity?: number | null;
+            /** Received On */
+            received_on?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+        };
         /** CostLineRead */
         CostLineRead: {
             /** Basis */
@@ -31733,6 +32078,26 @@ export interface components {
             phase_code?: string | null;
             /** Run Model */
             run_model?: string | null;
+        };
+        /** CostSummary */
+        CostSummary: {
+            /** Awaiting Amount Count */
+            awaiting_amount_count: number;
+            /** Awaiting Delivery Count */
+            awaiting_delivery_count: number;
+            /** Base Currency */
+            base_currency: string;
+            /** Currencies */
+            currencies: components["schemas"]["CurrencyTotals"][];
+            /** Months */
+            months: components["schemas"]["MonthCategoryTotal"][];
+            /** Periods */
+            periods: components["schemas"]["RecurringPeriod"][];
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
         };
         /**
          * CostTrendDataPoint
@@ -32045,6 +32410,23 @@ export interface components {
              * @default Mobile Chat
              */
             task_name: string;
+        };
+        /**
+         * CurrencyTotals
+         * @description Every figure in one currency. Currencies are never added together:
+         *     there is no exchange rate the page could honestly apply.
+         */
+        CurrencyTotals: {
+            /** Awaiting Delivery Micros */
+            awaiting_delivery_micros: number;
+            /** Currency */
+            currency: string;
+            /** Scheduled Micros */
+            scheduled_micros: number;
+            /** Spent To Date Micros */
+            spent_to_date_micros: number;
+            /** This Month Micros */
+            this_month_micros: number;
         };
         /**
          * CustomFunctionListResponse
@@ -42236,6 +42618,22 @@ export interface components {
             /** Search All Monitors */
             search_all_monitors?: boolean | null;
         };
+        /** MonthCategoryTotal */
+        MonthCategoryTotal: {
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Recorded Micros */
+            recorded_micros: number;
+            /** Scheduled Micros */
+            scheduled_micros: number;
+        };
         /**
          * MouseSettingsSchema
          * @description Mouse action configuration schema.
@@ -46710,6 +47108,169 @@ export interface components {
          * @enum {string}
          */
         RecordingStatusEnum: "uploaded" | "validating" | "processing" | "completed" | "failed" | "cancelled";
+        /** RecurringCostCreate */
+        RecurringCostCreate: {
+            /**
+             * Amount Kind
+             * @default fixed
+             * @enum {string}
+             */
+            amount_kind: "fixed" | "variable";
+            /** Amount Micros */
+            amount_micros?: number | null;
+            /**
+             * Cadence
+             * @default monthly
+             * @enum {string}
+             */
+            cadence: "monthly" | "quarterly" | "annual";
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * Vendor
+             * @default
+             */
+            vendor: string;
+        };
+        /** RecurringCostRead */
+        RecurringCostRead: {
+            /**
+             * Amount Kind
+             * @enum {string}
+             */
+            amount_kind: "fixed" | "variable";
+            /** Amount Micros */
+            amount_micros: number | null;
+            /**
+             * Cadence
+             * @enum {string}
+             */
+            cadence: "monthly" | "quarterly" | "annual";
+            /** Category Id */
+            category_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Currency */
+            currency: string;
+            /** End Date */
+            end_date: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Notes */
+            notes: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            /** Vendor */
+            vendor: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * RecurringCostUpdate
+         * @description Every field optional; ``null`` clears ``category_id``, ``amount_micros``
+         *     or ``end_date``. The cross-field rules are checked by the store on the
+         *     record as it will stand.
+         */
+        RecurringCostUpdate: {
+            /** Amount Kind */
+            amount_kind?: ("fixed" | "variable") | null;
+            /** Amount Micros */
+            amount_micros?: number | null;
+            /** Cadence */
+            cadence?: ("monthly" | "quarterly" | "annual") | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Start Date */
+            start_date?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+        };
+        /** RecurringCostsItem */
+        RecurringCostsItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["RecurringCostRead"];
+        };
+        /** RecurringCostsList */
+        RecurringCostsList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["RecurringCostRead"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * RecurringPeriod
+         * @description One period of a recurring cost that has fallen due (``period_start``
+         *     on or before ``today``).
+         */
+        RecurringPeriod: {
+            /** Amount Micros */
+            amount_micros: number | null;
+            /** Currency */
+            currency: string;
+            /** Entry Id */
+            entry_id: string | null;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Recurring Cost Id
+             * Format: uuid
+             */
+            recurring_cost_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "recorded" | "scheduled" | "awaiting_amount";
+        };
         /**
          * RedisHealth
          * @description Redis health status and metrics.
@@ -81212,6 +81773,334 @@ export interface operations {
             };
         };
     };
+    api_v1_overview_cost_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCategoryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_record_id_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCategoryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostEntryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_record_id_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostEntryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_costs_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostSummary"];
+                };
+            };
+        };
+    };
     api_v1_overview_estimates_get: {
         parameters: {
             query?: never;
@@ -82214,6 +83103,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PhaseProgressItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringCostCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_record_id_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringCostUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsItem"];
                 };
             };
             /** @description Validation Error */

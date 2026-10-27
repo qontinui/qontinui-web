@@ -84,6 +84,15 @@ MILESTONE_STATUSES: tuple[str, ...] = ("planned", "in_progress", "done", "at_ris
 #: Enforced by ``ck_overview_cost_lines_kind``.
 COST_LINE_KINDS: tuple[str, ...] = ("build_non_labour", "run_annual")
 
+#: How often a recurring cost falls due. Enforced by
+#: ``ck_overview_recurring_costs_cadence``.
+RECURRING_CADENCES: tuple[str, ...] = ("monthly", "quarterly", "annual")
+
+#: Whether a recurring cost charges the same every period (``fixed`` — a
+#: subscription) or a different amount each time (``variable`` — a usage bill
+#: such as AWS). Enforced by ``ck_overview_recurring_costs_amount_kind``.
+RECURRING_AMOUNT_KINDS: tuple[str, ...] = ("fixed", "variable")
+
 #: The coord tenant roles a project may grant overview editing to. ``admin``
 #: is always among them (``ck_overview_settings_editing_roles``): widening
 #: who may edit is the setting's purpose, and it must never be usable to lock
@@ -784,6 +793,183 @@ class Milestone(_AuditMixin, Base):
     status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'planned'"), default="planned"
     )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
+class CostCategory(_AuditMixin, Base):
+    """A heading costs are grouped under on the Costs page — hardware, AI
+    tools, legal and registration, whatever the project chooses. A category
+    in use cannot be deleted (``RESTRICT``; the store refuses first with a
+    sentence), so no recorded cost silently loses its heading."""
+
+    __tablename__ = "cost_categories"
+    __table_args__ = (
+        Index(
+            "uq_overview_cost_categories_name",
+            "tenant_id",
+            text("lower(name)"),
+            unique=True,
+        ),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
+class RecurringCost(_AuditMixin, Base):
+    """A cost that falls due on a cadence — a subscription, a hosting bill.
+
+    It is a SCHEDULE, not money spent: each period it covers is either a
+    recorded :class:`CostEntry` (``recurring_cost_id`` + ``period_start``) or,
+    when none is recorded, derived on read — a ``fixed`` cost's amount is
+    known, so the period counts as a scheduled charge; a ``variable`` one's
+    is not, so the period is "awaiting its amount" and never a zero.
+    """
+
+    __tablename__ = "recurring_costs"
+    __table_args__ = (
+        CheckConstraint(
+            "cadence IN ('monthly', 'quarterly', 'annual')",
+            name="ck_overview_recurring_costs_cadence",
+        ),
+        CheckConstraint(
+            "amount_kind IN ('fixed', 'variable')",
+            name="ck_overview_recurring_costs_amount_kind",
+        ),
+        CheckConstraint(
+            "amount_kind <> 'fixed' OR amount_micros IS NOT NULL",
+            name="ck_overview_recurring_costs_fixed_has_amount",
+        ),
+        CheckConstraint(
+            "end_date IS NULL OR end_date >= start_date",
+            name="ck_overview_recurring_costs_period",
+        ),
+        Index("ix_overview_recurring_costs_tenant", "tenant_id", "start_date"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    vendor: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    category_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.cost_categories.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    cadence: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'monthly'"), default="monthly"
+    )
+    amount_kind: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'fixed'"), default="fixed"
+    )
+    #: The charge per period for a ``fixed`` cost; for a ``variable`` one an
+    #: optional typical figure, shown as a guide and never counted.
+    amount_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+
+
+class CostEntry(_AuditMixin, Base):
+    """Money actually spent: a one-time purchase, or one period of a
+    recurring cost (``recurring_cost_id`` and ``period_start`` set together,
+    at most one entry per period).
+
+    ``expects_delivery`` marks a physical item; ``received_on`` is the day it
+    arrived, so "ordered and not yet here" is ``expects_delivery AND
+    received_on IS NULL``. A negative amount is a refund.
+    """
+
+    __tablename__ = "cost_entries"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_overview_cost_entries_quantity"),
+        CheckConstraint(
+            "received_on IS NULL OR expects_delivery",
+            name="ck_overview_cost_entries_received_needs_delivery",
+        ),
+        CheckConstraint(
+            "(recurring_cost_id IS NULL) = (period_start IS NULL)",
+            name="ck_overview_cost_entries_period_with_recurring",
+        ),
+        UniqueConstraint(
+            "recurring_cost_id",
+            "period_start",
+            name="uq_overview_cost_entries_period",
+        ),
+        Index("ix_overview_cost_entries_tenant", "tenant_id", "incurred_on"),
+        {"schema": _SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    incurred_on: Mapped[date] = mapped_column(Date, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    vendor: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    category_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.cost_categories.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    amount_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    quantity: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
+    expects_delivery: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    received_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    order_ref: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    notes: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''"), default=""
+    )
+    recurring_cost_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey(f"{_SCHEMA}.recurring_costs.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
     )

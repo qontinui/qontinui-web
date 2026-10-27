@@ -324,6 +324,46 @@ export async function deleteMilestone<T>(
   if (!response.ok) throw await refusal<T>(response);
 }
 
+/** Delete a recorded cost, built on `version` (the one on screen). */
+export async function deleteCostEntry<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/cost-entries/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
+/** Delete a recurring cost that has no recorded periods (the server refuses
+ *  one that has: it is given an end date instead). */
+export async function deleteRecurringCost<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/recurring-costs/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
+/** Delete a cost category no cost uses. */
+export async function deleteCostCategory<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/cost-categories/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
 /** A page's versions, newest first. */
 export async function fetchPageVersions<T>(pageId: string): Promise<T> {
   const response = await send(
