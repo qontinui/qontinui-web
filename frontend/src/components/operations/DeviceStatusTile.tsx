@@ -444,9 +444,11 @@ export function DeviceStatusTile({
                     the list on its fallback poll
                     (`DEVICE_STATUS_POLL_FALLBACK_MS`, 5 s; this tile's test
                     holds it under 10 s) — never that the list stopped. A
-                    re-read that fails is said by the error badge and by the
-                    count and body (unknown, or a past-tense stale list), so
-                    these words hold whether or not a re-read succeeds. */}
+                    re-read that fails is said elsewhere: always by the error
+                    badge; by the count ("unknown") while no read has ever
+                    answered; and by the body while the list is empty (UNKNOWN,
+                    or the past-tense stale sentence). So these words hold
+                    whether or not a re-read succeeds. */}
                 {presenting
                   ? "re-read every few seconds"
                   : "polling (WS offline)"}
