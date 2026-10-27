@@ -1,10 +1,12 @@
 /**
- * The presentation scope client's save refusals (plan
+ * The presentation scope client's refusals (plan
  * `2026-10-23-console-presentation-spaces` D3.3). A 409 is one of two
  * refusals of the save's compare-and-set, and the form acts differently on
  * each: a version that moved is re-read and the edit kept for the operator to
  * check; a project that is not the edit's sets the edit aside. The client is
- * what tells them apart, from the backend's `error` code.
+ * what tells them apart, from the backend's `error` code. The read's 403 for
+ * a caller no project resolves for is one typed refusal, and the client reads
+ * it as one.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +18,7 @@ import { BackendError } from "@/lib/errors/backend-error-message";
 import {
   PresentationScopeConflict,
   conflictKindOf,
+  fetchPresentationScope,
   savePresentationScope,
 } from "./presentationScope";
 
@@ -34,6 +37,52 @@ function answer(status: number, body: unknown): Response {
 }
 
 beforeEach(() => http.fetch.mockReset());
+
+const NO_PROJECT_SENTENCE =
+  "No project could be resolved for this request: select a project you " +
+  "belong to, or ask a project admin to add you.";
+
+/**
+ * The read's 403 when no project resolves for the caller, the same on both
+ * arms (coord refusing the operator, and an identity naming no project): the
+ * token in `error` and in the envelope's `discriminator`, the sentence in
+ * `message` (`backend/app/api/v1/endpoints/presentation.py`).
+ */
+const NO_PROJECT_REFUSAL = {
+  error: "tenant_not_resolved",
+  message: NO_PROJECT_SENTENCE,
+  timestamp: 1761523200,
+  path: "http://localhost:8000/api/v1/presentation/scope",
+  refusal: {
+    code: "permission_denied",
+    discriminator: "tenant_not_resolved",
+    next_action: { kind: "fix_request" },
+    glossary_terms: [],
+    detail: NO_PROJECT_SENTENCE,
+    source: "web_backend",
+    observed_at: "2026-10-27T00:00:00+00:00",
+  },
+};
+
+describe("fetchPresentationScope", () => {
+  it("reads the no-project 403 as the typed refusal, not as a bare token", async () => {
+    http.fetch.mockResolvedValue(answer(403, NO_PROJECT_REFUSAL));
+    const refused = await fetchPresentationScope().catch((e) => e);
+    expect(refused).toBeInstanceOf(BackendError);
+    expect(refused).not.toBeInstanceOf(PresentationScopeConflict);
+    expect((refused as BackendError).status).toBe(403);
+    expect((refused as BackendError).reading).toMatchObject({
+      kind: "refusal",
+      refusal: {
+        code: "permission_denied",
+        discriminator: "tenant_not_resolved",
+        next_action: { kind: "fix_request" },
+      },
+    });
+    // The message the loader holds as the read's failure names the condition.
+    expect((refused as Error).message).toContain("(tenant_not_resolved)");
+  });
+});
 
 describe("conflictKindOf", () => {
   it.each<[string, string, "version" | "tenant"]>([
