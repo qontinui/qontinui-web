@@ -22,6 +22,7 @@ import {
   HOME_STATUS_PALETTE,
   NOTHING_READ,
   UNIT_CLASSES,
+  boundText,
   correctnessHasNoSource,
   degradationRawLine,
   degradationSubjectText,
@@ -1190,7 +1191,8 @@ describe("round-8 review — R8 for what the view does not know", () => {
   // A watcher row's `freshness_bound_secs` is coord's copy of the watcher's
   // `bound_secs`: the THRESHOLD its verdict applies, not the age of any data.
   // An overdue watcher's last success is OLDER than it, so "may be up to 1m
-  // old" would be false.
+  // 30s old" would be false. 90 s is coord's smallest watcher bound: 3 x the
+  // ledger's 30 s throttle floor — and it is not "1m".
   it("words an overdue watcher's bound as the threshold its last success passed", () => {
     const overdue = row({
       source: "watcher:merge_scheduler.dispatch",
@@ -1199,10 +1201,65 @@ describe("round-8 review — R8 for what the view does not know", () => {
       error: "last_success_older_than_3x_interval",
     });
     expect(sourceRowReason(overdue)).toBe(
-      "last run is overdue · last success older than its 1m freshness bound · exclusions not stated"
+      "last run is overdue · last success older than its 1m 30s freshness bound · exclusions not stated"
     );
     expect(sourceRowReason(overdue)).not.toMatch(/may be up to/);
   });
+
+  // coord's real train-health row: its bound is TRAIN_HEALTH_CACHE_TTL, 20 s
+  // (qontinui-coord `pr_merge/train_health.rs`, copied by `project_state.rs`).
+  // Rounded down to the minute it read "may be up to 0m old" — current data,
+  // when the memo can be 20 s old.
+  it("words coord's 20 s train-health bound to the second", () => {
+    const train = {
+      source: "train_health (per authority repo)",
+      freshness_bound_secs: 20,
+      rows_considered: 4,
+    };
+    expect(sourceAgePhrase(row({ ...train, state: "read" }))).toBe(
+      "may be up to 20s old"
+    );
+    expect(sourceRowReason(row({ ...train, state: "read" }))).toBe(
+      "may be up to 20s old · exclusions not stated"
+    );
+    expect(
+      sourceAgePhrase(row({ ...train, state: "stale", rows_excluded: 1 }))
+    ).toBe("freshness bound 20s");
+  });
+
+  it.each([
+    [0, "0s"],
+    [1, "1s"],
+    [20, "20s"],
+    [59, "59s"],
+    [60, "1m"],
+    [61, "1m 1s"],
+    [90, "1m 30s"],
+    [135, "2m 15s"],
+    [300, "5m"],
+    [3599, "59m 59s"],
+    [3600, "1h"],
+    [3690, "1h 1m 30s"],
+    [5400, "1h 30m"],
+    [86_399, "23h 59m 59s"],
+    [86_400, "1d"],
+    [90_061, "1d 1h 1m 1s"],
+    [259_200, "3d"],
+  ])("writes a %ps bound exactly, as %p", (secs, want) => {
+    expect(boundText(secs)).toBe(want);
+  });
+
+  // Not values coord's integer seconds produce; quoted, never rounded into a
+  // different bound.
+  it.each([
+    [-5, "-5s"],
+    [20.5, "20.5s"],
+  ])(
+    "quotes a bound coord's integers cannot produce (%p) as itself",
+    (secs, want) => {
+      expect(boundText(secs)).toBe(want);
+    }
+  );
 
   it.each([
     [

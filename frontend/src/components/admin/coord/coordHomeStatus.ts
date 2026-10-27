@@ -1238,19 +1238,23 @@ export function sourceErrorSentence(s: SourceCoverageView): string | null {
  *   verdicts may come from its memo, up to one memo TTL old).
  * - Any other row not read in full: the bound is stated as a bound. No age is
  *   promised for data the row may not hold.
+ *
+ * The bound is written with {@link boundText}, to the second: coord's bounds
+ * are not whole minutes (train health's is its 20 s memo TTL, and a watcher's
+ * is at least 3 x the ledger's 30 s throttle floor, 90 s).
  */
 export function sourceAgePhrase(s: SourceCoverageView): string {
   const bound = s.freshnessBoundSecs;
   if (isWatcherSource(s.source)) {
     if (bound === null) return "freshness bound not stated";
     return s.error === "last_success_older_than_3x_interval"
-      ? `last success older than its ${durationText(bound)} freshness bound`
-      : `freshness bound ${durationText(bound)}`;
+      ? `last success older than its ${boundText(bound)} freshness bound`
+      : `freshness bound ${boundText(bound)}`;
   }
   if (bound === null) return "maximum age not stated";
   return s.state === "read"
-    ? `may be up to ${durationText(bound)} old`
-    : `freshness bound ${durationText(bound)}`;
+    ? `may be up to ${boundText(bound)} old`
+    : `freshness bound ${boundText(bound)}`;
 }
 
 /**
@@ -1727,4 +1731,29 @@ export function durationText(secs: number | null): string {
   if (d > 0) return `${d}d ${h % 24}h`;
   if (h > 0) return `${h}h ${m % 60}m`;
   return `${Math.max(m, 0)}m`;
+}
+
+/**
+ * A bound coord states in seconds, written EXACTLY: `20s`, `1m 30s`, `5m`,
+ * `1h 1m 30s`, `3d`. Every non-zero unit is kept and nothing is rounded.
+ *
+ * {@link durationText} rounds an AGE down to the minute, which is fine for
+ * "open for 40m" and false for a bound: it turned train health's 20 s memo
+ * TTL into "may be up to 0m old" and a watcher's 90 s bound into "1m". A
+ * value coord's integer seconds cannot produce (negative or fractional) is
+ * quoted as the number of seconds it is, never rounded into a different one.
+ */
+export function boundText(secs: number): string {
+  if (!Number.isInteger(secs) || secs < 0) return `${secs}s`;
+  if (secs === 0) return "0s";
+  const parts: string[] = [];
+  const d = Math.floor(secs / 86_400);
+  const h = Math.floor((secs % 86_400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (s > 0) parts.push(`${s}s`);
+  return parts.join(" ");
 }

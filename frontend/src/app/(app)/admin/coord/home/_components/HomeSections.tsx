@@ -40,6 +40,7 @@ import {
   HOME_ATTENTION_BY_KIND,
   HOME_STATUS_PALETTE,
   UNIT_CLASSES,
+  boundText,
   correctnessHasNoSource,
   degradationRawLine,
   degradationSubjectText,
@@ -1203,7 +1204,7 @@ export function DoesNotKnowSection({
                       Freshness bound:{" "}
                       {s.freshnessBoundSecs === null
                         ? "not stated"
-                        : durationText(s.freshnessBoundSecs)}
+                        : boundText(s.freshnessBoundSecs)}
                       {" · "}Rows considered: {s.rowsConsidered ?? "not stated"}
                       {" · "}Rows excluded: {s.rowsExcluded ?? "not stated"}
                     </p>

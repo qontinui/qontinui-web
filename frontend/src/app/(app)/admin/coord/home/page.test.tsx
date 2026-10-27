@@ -1285,13 +1285,53 @@ describe("/admin/coord/home", () => {
     const rows = within(dnk).getAllByTestId("coord-home.does-not-know.row");
     const watcherRow = rows[rows.length - 1];
     expect(watcherRow).toHaveTextContent(
-      "last run is overdue · last success older than its 1m freshness bound · exclusions not stated"
+      "last run is overdue · last success older than its 1m 30s freshness bound · exclusions not stated"
     );
     expect(
       watcherRow.querySelector('[title^="Last successful run "]')
     ).not.toBeNull();
     expect(watcherRow.querySelector('[title^="Read "]')).toBeNull();
     expect(rows[0].querySelector('[title^="Read "]')).not.toBeNull();
+    // Expanded, the detail states the same bound, to the second.
+    fireEvent.click(within(dnk).getByText("Watcher feeding Degrading"));
+    expect(watcherRow).toHaveTextContent(
+      "Freshness bound: 1m 30s · Rows considered: not stated"
+    );
+  });
+
+  // coord's real train-health row: its bound is the train-health memo TTL,
+  // 20 s. Rounded down to the minute it read "may be up to 0m old" and
+  // "Freshness bound: 0m" — current data, when it can be 20 s old.
+  it("states coord's 20 s train-health bound to the second, collapsed and expanded", async () => {
+    const base = doorBody();
+    await renderWith(
+      doorBody({
+        does_not_know: [
+          ...(base.does_not_know as unknown[]),
+          {
+            source: "train_health (per authority repo)",
+            state: "read",
+            as_of: "2026-09-30T12:00:00Z",
+            freshness_bound_secs: 20,
+            rows_considered: 4,
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    const trainRow = within(dnk)
+      .getByText("Merge train health, per repository")
+      .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
+    expect(trainRow).toHaveTextContent(
+      "may be up to 20s old · exclusions not stated"
+    );
+    expect(trainRow).not.toHaveTextContent(/0m/);
+    fireEvent.click(
+      within(dnk).getByText("Merge train health, per repository")
+    );
+    expect(trainRow).toHaveTextContent(
+      "Freshness bound: 20s · Rows considered: 4 · Rows excluded: not stated"
+    );
   });
 
   // `useVisiblePoll`'s single-flight guard covers the poll only; a press
