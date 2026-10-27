@@ -83,6 +83,12 @@ import {
   UNKNOWN_AMBER,
   WAITING_AMBER,
 } from "@/components/console/statusRow";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  classifyCoordError,
+  describeCoordPollError,
+} from "@/components/operations/coordPollError";
+import { readErrorBody } from "@/lib/errors/backend-error-message";
 
 /** Poll cadence — the profile's "the right altitude, not the fastest feed". */
 export const PROJECT_STATE_POLL_MS = 60_000;
@@ -179,6 +185,12 @@ export function stallWindowDays(windowSecs: number | null): number {
 /**
  * The on-screen label per class (R8). `stalled` is worded as the measurement
  * it is — see the module doc; the word "stalled" never reaches the screen.
+ *
+ * Each label is true of EVERY unit in its class, as coord's `class_rules`
+ * define it. `blocked_on_dependency` holds two kinds of unit: one with an
+ * upstream in the dependency graph that is not finished, and one whose own
+ * status is `blocked` ("a self-declared block coord cannot name"). "waiting on
+ * other work" is true only of the first, so the label names both.
  */
 export function unitClassLabel(
   cls: UnitClass,
@@ -192,7 +204,7 @@ export function unitClassLabel(
     case "stalled":
       return `no recorded change in ${stallWindowDays(windowSecs)} days`;
     case "blocked_on_dependency":
-      return "waiting on other work";
+      return "blocked or waiting on other work";
     case "waiting_on_gate":
       return "waiting on a condition";
     case "not_started":
@@ -260,6 +272,33 @@ function parseNamedList(raw: unknown): NamedList | null {
     ];
   });
   return { units, omitted: num(o.omitted) };
+}
+
+/**
+ * A named unit's age, worded by what coord measured it from (`age_basis`).
+ *
+ * Coord names two lists (`named_list` in `project_state.rs`). `stalled` is
+ * aged from the last recorded status change. `waiting_on_gate` is aged from
+ * `first_in_progress_at` — the first recorded move into `in_progress` — and it
+ * holds ANY in-vocabulary, unfinished unit with an open gate, a draft, vetted
+ * or ready one included. Such a unit's age is not "in progress for X": it may
+ * never have started (`first_in_progress_at` null, age null), or have started
+ * and moved back. "First in progress X ago" is true whatever the unit's
+ * status is now.
+ */
+export function namedUnitAgePhrase(u: NamedUnit): string {
+  if (u.ageBasis === "last_recorded_change") {
+    return u.ageSecs === null
+      ? "no recorded change time"
+      : `last change ${durationText(u.ageSecs)} ago`;
+  }
+  if (u.ageBasis === "first_in_progress") {
+    if (u.firstInProgressAt === null) return "never recorded in progress";
+    return u.ageSecs === null
+      ? `first in progress ${absoluteTime(u.firstInProgressAt)}`
+      : `first in progress ${durationText(u.ageSecs)} ago`;
+  }
+  return "age not stated";
 }
 
 export interface RepoGroup {
@@ -344,14 +383,19 @@ export function attributedText(u: AttributedUnits): string {
 
 /**
  * How much in-flight work is attributed to the initiative (plan question 8).
- * Only an alignment of `read` carries counts; `unknown` (no declared link, or
- * the unit read failed) is "not yet attributable", never a zero.
+ * Only an alignment of `read` carries counts, and nothing else is a zero.
+ * Coord serves `unknown` for two different reasons, told apart by its
+ * `reason` token (`initiative_block` in coord#3053's `project_state.rs`):
+ * `no_declared_link` (no unit carries a link yet) is "not yet attributable";
+ * `work_units_could_not_read` (the unit read failed this time) is not about
+ * "yet" at all. An alignment coord did not state is unknown.
  */
 export function initiativeAttributionPhrase(i: InitiativeView): string {
   if (i.alignment !== "read") {
-    return i.alignment === "unknown" || i.alignment === null
-      ? "work attributed to it: not yet attributable"
-      : "work attributed to it: unknown";
+    if (i.alignment !== "unknown") return "work attributed to it: unknown";
+    return i.reason?.startsWith("work_units_could_not_read")
+      ? "work attributed to it: the work units could not be read, so it was not counted"
+      : "work attributed to it: not yet attributable";
   }
   const items = i.inScope ?? [];
   const parts = items.map((it) => it.units?.inFlight ?? null);
@@ -919,6 +963,26 @@ export function planeLabel(plane: string | null): string {
   return PLANE_LABEL[plane] ?? plane.replace(/_/g, " ");
 }
 
+/**
+ * A degradation's subject for the collapsed row (R8): its name only. Coord's
+ * subject id — a device UUID beside a hostname — is a raw id, so it goes to
+ * the expanded detail's last line ({@link degradationRawLine}).
+ */
+export function degradationSubjectText(d: DegradationView): string {
+  return d.subjectName ?? "unnamed subject";
+}
+
+/** The expanded detail's last line: the row id, subject id and response. */
+export function degradationRawLine(d: DegradationView): string {
+  return [
+    d.id,
+    d.subjectId !== null ? `subject ${d.subjectId}` : null,
+    d.autoRemediation?.response ?? null,
+  ]
+    .filter((p): p is string => p !== null && p !== "")
+    .join(" · ");
+}
+
 /** Plain words for a degradation's remediation binding. */
 export function remediationPhrase(d: DegradationView): string {
   if (d.declared) return "declared by an operator — not a fault";
@@ -1375,6 +1439,37 @@ export interface HomeStripReadState {
 /** "at the last good read (T)" — the qualifier a stale view carries. */
 export function lastGoodReadPhrase(generatedAt: string | null): string {
   return `at the last good read (${absoluteTime(generatedAt)})`;
+}
+
+/** The page's words for a deployment that does not serve the door yet. */
+export const PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT =
+  "this deployment does not serve the project-state door yet — unknown";
+
+/**
+ * Why a read of the door delivered nothing, as the clause the unread line
+ * ("…could not be read: <this>.") and the stale strip ("Last failure:
+ * <this>.") print. Each adds its own full stop, so none is kept here.
+ *
+ * The shared classifier's arms that name a known coord answer come first —
+ * coord's read deadline, an operator's route switch, a deployment without the
+ * route. Then a body carrying the `Refusal` envelope is rendered through
+ * `lib/errors` (`readErrorBody`, i.e. `Refusal::render()`'s sentence): the web
+ * proxy's own `504 coord_timeout` and `502 coord_unreachable` carry one, and
+ * the raw JSON envelope is not a reason anyone can read. Anything else is the
+ * rejection's own message, as before.
+ */
+export function projectStateErrorText(err: unknown): string {
+  const status = httpStatusOf(err);
+  const body = httpBodyOf(err);
+  let text: string | null = null;
+  if (status !== null && classifyCoordError(status, body).kind === "other") {
+    const reading = readErrorBody(body ?? "", status);
+    if (reading.kind !== "unstructured") text = reading.sentence;
+  }
+  text ??= describeCoordPollError(err, {
+    routeUnavailableText: PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
+  });
+  return text.replace(/\.\s*$/, "");
 }
 
 /**

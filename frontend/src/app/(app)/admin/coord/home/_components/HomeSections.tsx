@@ -41,12 +41,15 @@ import {
   HOME_STATUS_PALETTE,
   UNIT_CLASSES,
   correctnessHasNoSource,
+  degradationRawLine,
+  degradationSubjectText,
   degradationsGapPhrase,
   durationText,
   needsYouReason,
   needsDisplayCount,
   nothingNeedsYou,
   lastGoodReadPhrase,
+  namedUnitAgePhrase,
   openDegradations,
   planeFreshnessPhrase,
   planeWatcherNames,
@@ -159,20 +162,28 @@ export function HomeStripSection({
   lastError: string | null;
   onRefresh: () => Promise<void>;
 }) {
+  // R8: the tenant's UUID is a raw id, so it is the title, never the text.
   const tenant = tenantId
-    ? `Tenant: ${tenantName ?? "not in your project list"} (${tenantId})`
+    ? `Tenant: ${tenantName ?? "not in your project list"}`
     : "Tenant: not stated by coord";
   const age = generatedAt
     ? `Showing coord's answer from ${relativeTime(generatedAt)} (${absoluteTime(generatedAt)}).`
     : "";
-  const detail = [
+  const lead = [
     stale ? staleDetail(age) : null,
     stale && lastError ? `Last failure: ${lastError}.` : null,
     strip.detail,
-    tenant,
   ]
     .filter(Boolean)
     .join(" ");
+  const detail = (
+    <>
+      {lead ? `${lead} ` : ""}
+      <span title={tenantId ?? undefined} data-testid="coord-home.strip.tenant">
+        {tenant}
+      </span>
+    </>
+  );
   return (
     <section
       className="flex items-center gap-2"
@@ -441,13 +452,6 @@ export function NeedsYouSection({
 // 3. Degrading
 // ---------------------------------------------------------------------------
 
-function subjectText(d: DegradationView): string {
-  const name = d.subjectName ?? d.subjectId ?? "unnamed subject";
-  return d.subjectName && d.subjectId && d.subjectId !== d.subjectName
-    ? `${name} (${d.subjectId})`
-    : name;
-}
-
 function DegradationRow({
   d,
   kind,
@@ -485,7 +489,7 @@ function DegradationRow({
         </span>
       }
       status={<HomeBadge kind={kind} label={label} />}
-      reason={subjectText(d)}
+      reason={degradationSubjectText(d)}
       time={time}
       attention={HOME_ATTENTION_BY_KIND[kind]}
       expanded={expanded}
@@ -516,11 +520,11 @@ function DegradationRow({
           ) : undefined
         }
         raw={
-          <span className="font-mono text-[10px] text-muted-foreground/60 break-all">
-            {d.id}
-            {d.autoRemediation?.response
-              ? ` · ${d.autoRemediation.response}`
-              : ""}
+          <span
+            className="font-mono text-[10px] text-muted-foreground/60 break-all"
+            data-testid="coord-home.degrading.raw"
+          >
+            {degradationRawLine(d)}
           </span>
         }
       />
@@ -789,9 +793,7 @@ function NamedUnits({
               {u.title ?? u.slug}
             </Link>
             <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
-              {u.ageBasis === "last_recorded_change"
-                ? `last change ${durationText(u.ageSecs)} ago`
-                : `in progress for ${durationText(u.ageSecs)}`}
+              {namedUnitAgePhrase(u)}
             </span>
           </li>
         ))}

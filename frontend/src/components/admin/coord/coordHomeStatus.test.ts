@@ -23,6 +23,8 @@ import {
   NOTHING_READ,
   UNIT_CLASSES,
   correctnessHasNoSource,
+  degradationRawLine,
+  degradationSubjectText,
   degradationsGapPhrase,
   deriveHomeStrip,
   nothingNeedsYou,
@@ -41,8 +43,10 @@ import {
   watcherReasonWords,
   decisionDomainLabel,
   initiativeAttributionPhrase,
+  namedUnitAgePhrase,
   needsYouReason,
   parseProjectState,
+  projectStateErrorText,
   unitClassLabel,
   internalHref,
   windowLabel,
@@ -670,6 +674,54 @@ describe("coord needs_me wire at 4907c36ff", () => {
       "work attributed to it: not yet attributable"
     );
   });
+
+  // coord#3053 serves `unknown` for two reasons. A failed unit read is not
+  // "not yet attributable": nothing was counted this time.
+  it("says the work units could not be read, not 'not yet', when that is coord's reason", () => {
+    const failed = parseProjectState({
+      on_track: {
+        state: "could_not_read",
+        initiative: {
+          state: "read",
+          status: "live",
+          alignment: "unknown",
+          reason:
+            "work_units_could_not_read — the unit read failed, so no attribution was counted",
+          in_scope: [
+            {
+              text: "a",
+              key: "a",
+              units: null,
+              reason: "work_units_could_not_read",
+            },
+          ],
+        },
+      },
+    })!.onTrack.initiative!;
+    expect(initiativeAttributionPhrase(failed)).toBe(
+      "work attributed to it: the work units could not be read, so it was not counted"
+    );
+    const noLink = parseProjectState({
+      on_track: {
+        state: "read",
+        initiative: {
+          state: "read",
+          alignment: "unknown",
+          reason:
+            "no_declared_link — no work unit carries metadata.initiative_item yet",
+        },
+      },
+    })!.onTrack.initiative!;
+    expect(initiativeAttributionPhrase(noLink)).toBe(
+      "work attributed to it: not yet attributable"
+    );
+    const unstated = parseProjectState({
+      on_track: { state: "read", initiative: { state: "read" } },
+    })!.onTrack.initiative!;
+    expect(initiativeAttributionPhrase(unstated)).toBe(
+      "work attributed to it: unknown"
+    );
+  });
 });
 
 describe("round-7 review — blank recommendations, link targets, windows", () => {
@@ -1219,5 +1271,143 @@ describe("round-8 review — R8 for what the view does not know", () => {
       absentLabel: "as of: unknown",
       absentTitle: "Coord recorded no read time",
     });
+  });
+});
+
+describe("round-2 review — what a named unit's age, a subject and a failed read say", () => {
+  const unit = (over: Record<string, unknown>) =>
+    parseProjectState({
+      on_track: {
+        state: "read",
+        groups: [
+          {
+            key: "r",
+            kind: "repo",
+            named: {
+              waiting_on_gate: { units: [{ slug: "s", ...over }], omitted: 0 },
+            },
+          },
+        ],
+      },
+    })!.onTrack.groups![0].named.waitingOnGate!.units[0];
+
+  // coord's waiting_on_gate list is aged from first_in_progress_at, and holds
+  // ANY unfinished in-vocabulary unit with an open gate — a draft one too.
+  it.each([
+    [
+      "a draft unit that never started",
+      {
+        first_in_progress_at: null,
+        age_secs: null,
+        age_basis: "first_in_progress",
+      },
+      "never recorded in progress",
+    ],
+    [
+      "a vetted unit that was once in progress",
+      {
+        first_in_progress_at: "2026-08-21T00:00:00Z",
+        age_secs: 40 * 86_400,
+        age_basis: "first_in_progress",
+      },
+      "first in progress 40d 0h ago",
+    ],
+    [
+      "a unit with no recorded change in the window",
+      {
+        last_recorded_change_at: "2026-09-02T00:00:00Z",
+        age_secs: 28 * 86_400,
+        age_basis: "last_recorded_change",
+      },
+      "last change 28d 0h ago",
+    ],
+    [
+      "an age whose basis coord did not state",
+      { age_secs: 3600 },
+      "age not stated",
+    ],
+  ])("words %s as %p, never 'in progress for'", (_case, over, want) => {
+    const phrase = namedUnitAgePhrase(unit(over));
+    expect(phrase).toBe(want);
+    expect(phrase).not.toMatch(/in progress for/);
+  });
+
+  it("labels the blocked class so it is true of a self-declared block too", () => {
+    expect(unitClassLabel("blocked_on_dependency", null)).toBe(
+      "blocked or waiting on other work"
+    );
+  });
+
+  it("keeps a degradation's subject id off the collapsed row, on the raw line", () => {
+    const d = parseProjectState({
+      degradations: {
+        state: "read",
+        open: [
+          {
+            id: "fleet_health:resource:dev-1",
+            subject: { kind: "device", name: "box-1", id: "dev-1" },
+            auto_remediation: { bound: true, response: "agent:runner_restart" },
+          },
+          { id: "fleet_drain:dev-2", subject: { kind: "device", id: "dev-2" } },
+        ],
+      },
+    })!.degradations.open!;
+    expect(degradationSubjectText(d[0])).toBe("box-1");
+    expect(degradationRawLine(d[0])).toBe(
+      "fleet_health:resource:dev-1 · subject dev-1 · agent:runner_restart"
+    );
+    expect(degradationSubjectText(d[1])).toBe("unnamed subject");
+    expect(degradationRawLine(d[1])).toBe("fleet_drain:dev-2 · subject dev-2");
+  });
+
+  /** A rejection from `readJson`, in its exact shape. */
+  const rejected = (status: number, body: string) =>
+    new Error(
+      `GET /api/v1/operations/project-state failed: ${status} - ${body}`
+    );
+
+  const TIMEOUT_504 =
+    '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.example.test/api/v1/operations/project-state"}';
+  const UNREACHABLE_502 =
+    '{"error":"BAD_GATEWAY","message":"coord is not reachable","refusal":{"code":"upstream_unavailable","detail":"coord is not reachable","discriminator":"coord_unreachable","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"}}';
+
+  it.each([
+    [
+      "the proxy's 504 coord_timeout refusal",
+      rejected(504, TIMEOUT_504),
+      "A service this operation depends on did not answer in time (coord_timeout). Try again later",
+    ],
+    [
+      "the proxy's 502 coord_unreachable refusal",
+      rejected(502, UNREACHABLE_502),
+      "A service this operation depends on could not be reached (coord_unreachable). Try again later",
+    ],
+    [
+      "a deployment without the route",
+      rejected(404, '{"error":"NOT_FOUND","message":"Not Found"}'),
+      "this deployment does not serve the project-state door yet — unknown",
+    ],
+    [
+      "coord's read deadline",
+      rejected(503, '{"error":"deadline","budget_ms":8000}'),
+      "coord read deadline (8000 ms) exceeded — unknown",
+    ],
+    [
+      "a coord 500 with no refusal envelope",
+      rejected(500, '{"error":"INTERNAL","message":"coord: internal"}'),
+      'GET /api/v1/operations/project-state failed: 500 - {"error":"INTERNAL","message":"coord: internal"}',
+    ],
+    ["a network failure", new TypeError("Failed to fetch"), "Failed to fetch"],
+    [
+      "a message that ends in a full stop",
+      new Error(
+        "Request timeout - backend may be starting up. Please try again."
+      ),
+      "Request timeout - backend may be starting up. Please try again",
+    ],
+  ])("words %s for the page, with no closing full stop", (_case, err, want) => {
+    const text = projectStateErrorText(err);
+    expect(text).toBe(want);
+    expect(text).not.toMatch(/\.$/);
   });
 });

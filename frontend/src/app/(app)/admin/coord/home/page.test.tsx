@@ -362,6 +362,67 @@ describe("/admin/coord/home", () => {
     );
   });
 
+  // coord ages its waiting_on_gate list from first_in_progress_at, and the
+  // list holds ANY unfinished unit with an open gate — a draft one included.
+  // A unit that never started is not "in progress for unknown".
+  it("words a waiting unit's age by what coord measured, for a draft that never started", async () => {
+    const base = doorBody();
+    const group = (
+      (base.on_track as Record<string, unknown>).groups as Record<
+        string,
+        unknown
+      >[]
+    )[0];
+    await renderWith(
+      doorBody({
+        on_track: {
+          ...(base.on_track as Record<string, unknown>),
+          groups: [
+            {
+              ...group,
+              named: {
+                stalled: { units: [], omitted: 0 },
+                waiting_on_gate: {
+                  units: [
+                    {
+                      slug: "2026-10-20-a-draft-plan",
+                      title: "A draft plan",
+                      first_in_progress_at: null,
+                      last_recorded_change_at: "2026-10-20T00:00:00Z",
+                      age_secs: null,
+                      age_basis: "first_in_progress",
+                    },
+                    {
+                      slug: "2026-09-01-a-vetted-plan",
+                      title: "A vetted plan",
+                      first_in_progress_at: "2026-09-10T00:00:00Z",
+                      last_recorded_change_at: "2026-10-01T00:00:00Z",
+                      age_secs: 40 * 86_400,
+                      age_basis: "first_in_progress",
+                    },
+                  ],
+                  omitted: 0,
+                },
+              },
+            },
+          ],
+        },
+      })
+    );
+    const onTrack = screen.getByTestId("coord-home.on-track");
+    fireEvent.click(within(onTrack).getByText(/shipped 4/));
+    const waiting = within(onTrack).getByTestId(
+      "coord-home.on-track.named.waiting_on_condition"
+    );
+    expect(
+      within(waiting).getByText("A draft plan").closest("li")
+    ).toHaveTextContent(/never recorded in progress$/);
+    expect(
+      within(waiting).getByText("A vetted plan").closest("li")
+    ).toHaveTextContent(/first in progress 40d 0h ago$/);
+    expect(waiting).not.toHaveTextContent(/in progress for/);
+  });
+
   it("never renders the word 'stalled', even with named units open", async () => {
     await renderWith(doorBody());
     const onTrack = screen.getByTestId("coord-home.on-track");
@@ -990,6 +1051,42 @@ describe("/admin/coord/home", () => {
     );
   });
 
+  // coord#3053 serves the initiative inside a could_not_read on_track block
+  // when the unit read failed, with alignment `unknown` for THAT reason.
+  it("says the initiative's work was not counted when the unit read failed", async () => {
+    await renderWith(
+      doorBody({
+        on_track: {
+          state: "could_not_read",
+          error: "the dependency DAG hit its node ceiling",
+          initiative: {
+            state: "read",
+            status: "live",
+            ends: "2026-10-31",
+            alignment: "unknown",
+            reason:
+              "work_units_could_not_read — the unit read failed, so no attribution was counted",
+            in_scope: [
+              {
+                text: "remote runner session access",
+                key: "remote-runner",
+                units: null,
+                reason: "work_units_could_not_read",
+              },
+            ],
+          },
+        },
+      })
+    );
+    const alignment = screen.getByTestId(
+      "coord-home.on-track.initiative.alignment"
+    );
+    expect(alignment).toHaveTextContent(
+      "work attributed to it: the work units could not be read, so it was not counted"
+    );
+    expect(alignment).not.toHaveTextContent("not yet attributable");
+  });
+
   it("renders the initiative's in-scope items verbatim, alignment not yet attributable", async () => {
     await renderWith(doorBody());
     expect(
@@ -1010,11 +1107,53 @@ describe("/admin/coord/home", () => {
     );
   });
 
-  it("shows the tenant name and id in the strip", async () => {
+  // R8: the tenant's UUID is a raw id — the title, never the strip's text.
+  it("shows the tenant name in the strip, its id only in the title", async () => {
     await renderWith(doorBody());
     expect(screen.getByTestId("coord-home.strip")).toHaveTextContent(
-      `Tenant: Qontinui (${TENANT_ID})`
+      "Tenant: Qontinui"
     );
+    expect(screen.getByTestId("coord-home.strip")).not.toHaveTextContent(
+      TENANT_ID
+    );
+    expect(screen.getByTestId("coord-home.strip.tenant")).toHaveAttribute(
+      "title",
+      TENANT_ID
+    );
+  });
+
+  // R8: a degradation's subject id (a device UUID beside its hostname) is a
+  // raw id — on the expanded detail's last line only.
+  it("names a degradation's subject on the row and keeps its id for the raw line", async () => {
+    await renderWith(doorBody());
+    const row = screen.getByTestId("coord-home.degrading.degrading");
+    expect(row).toHaveTextContent("box-1");
+    expect(row).not.toHaveTextContent("dev-1");
+    fireEvent.click(screen.getByText("A runner stopped answering"));
+    expect(
+      within(row).getByTestId("coord-home.degrading.raw")
+    ).toHaveTextContent(/^alert:7 · subject dev-1 · agent:runner_restart$/);
+  });
+
+  // The proxy's own 504 carries a Refusal envelope; its raw JSON is not a
+  // reason. The strip's "Last failure:" renders the refusal's sentence.
+  it("words a failed poll's 504 refusal as its sentence, not its JSON", async () => {
+    await renderWith(doorBody());
+    httpFetch.mockResolvedValueOnce(
+      new Response(
+        '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"}}',
+        { status: 504 }
+      )
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-home.refresh"));
+    });
+    const strip = screen.getByTestId("coord-home.strip");
+    await waitFor(() => expect(strip).toHaveAttribute("data-stale", "true"));
+    expect(strip).toHaveTextContent(
+      "Last failure: A service this operation depends on did not answer in time (coord_timeout). Try again later."
+    );
+    expect(strip).not.toHaveTextContent(/GATEWAY_TIMEOUT|\{|later\.\./);
   });
 
   it("shows a degradation's onset and keeps the cleared count visible while collapsed", async () => {

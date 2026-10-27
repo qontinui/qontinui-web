@@ -30,13 +30,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
-import {
-  COORD_DASHBOARD_POLL_OPTIONS,
-  describeCoordPollError,
-} from "@/components/operations/coordPollError";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
   PROJECT_STATE_POLL_MS,
   parseProjectState,
+  projectStateErrorText,
   type ProjectStateView,
 } from "@/components/admin/coord/coordHomeStatus";
 import { fetchProjectState } from "@/lib/api/operations/projectState";
@@ -77,12 +75,7 @@ export function useProjectState(): ProjectStateRead {
     } catch (err) {
       if (cancelled.current) return;
       settle(seq, null);
-      setLastError(
-        describeCoordPollError(err, {
-          routeUnavailableText:
-            "this deployment does not serve the project-state door yet — unknown",
-        })
-      );
+      setLastError(projectStateErrorText(err));
     }
   }, [issue, settle]);
 

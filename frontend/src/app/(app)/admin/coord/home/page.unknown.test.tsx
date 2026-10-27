@@ -512,7 +512,19 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
           504,
           '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.example.test/api/v1/operations/project-state"}'
         ),
-        'failed: 504 - {"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord"',
+        // The body carries the Refusal envelope, so the line renders its
+        // sentence (lib/errors), never the raw JSON.
+        "could not be read: A service this operation depends on did not answer in time (coord_timeout). Try again later. Every count",
+      ],
+      [
+        // The proxy's own 502 when coord is not reachable at all
+        // (`_coord_unreachable`): also a refusal.
+        "the proxy could not reach coord (502 coord_unreachable)",
+        answeredWith(
+          502,
+          '{"error":"BAD_GATEWAY","message":"coord is not reachable","refusal":{"code":"upstream_unavailable","detail":"coord is not reachable","discriminator":"coord_unreachable","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"}}'
+        ),
+        "could not be read: A service this operation depends on could not be reached (coord_unreachable). Try again later. Every count",
       ],
       [
         // NOT a shape this route sends: coord answers /coord/project-state
@@ -538,6 +550,9 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       async (_case, arrange, reason) => {
         const unread = await renderUnread(arrange);
         expect(unread).toHaveTextContent(reason);
+        // The reason is a clause: the line adds the one full stop.
+        expect(unread.textContent ?? "").not.toMatch(/\.\./);
+        expect(unread).not.toHaveTextContent(/"refusal"|"discriminator"/);
         expect(unread).toHaveTextContent(
           "Every count on this page is a dash, not a zero."
         );
