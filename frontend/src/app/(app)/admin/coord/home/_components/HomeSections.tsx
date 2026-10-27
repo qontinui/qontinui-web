@@ -84,7 +84,14 @@ function HomeBadge({ kind, label }: { kind: HomeRowKind; label: string }) {
   );
 }
 
-/** The sentence a block renders in place of its content when it is not read. */
+/**
+ * The sentence a block renders in place of its content when it is not read.
+ *
+ * `unknown` stands for three different cases, which the parser folds into one
+ * state: coord's own `unknown`, a block absent from coord's body, and a
+ * state string this page does not recognise. Its sentence must be true of all
+ * three, so it claims only what they share: coord gave no reading.
+ */
 export function notReadSentence(what: string, state: BlockState): string {
   switch (state) {
     case "not_implemented":
@@ -95,7 +102,7 @@ export function notReadSentence(what: string, state: BlockState): string {
       return `Incomplete — coord could only partly read ${what}.`;
     case "unknown":
     case "read":
-      return `Not known — coord's answer about ${what} was not recognised.`;
+      return `Not known — coord gave no reading of ${what}.`;
   }
 }
 

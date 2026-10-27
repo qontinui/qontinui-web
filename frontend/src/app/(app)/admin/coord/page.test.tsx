@@ -41,9 +41,7 @@ describe("/admin/coord in presentation mode", () => {
   it("redirects to the one screen carrying the URL's query", () => {
     window.history.replaceState(null, "", "/admin/coord?present=1");
     renderInPresentationMode(<CoordLandingPage />);
-    expect(router.replace).toHaveBeenCalledWith(
-      "/admin/coord/home?present=1"
-    );
+    expect(router.replace).toHaveBeenCalledWith("/admin/coord/home?present=1");
   });
 
   it("adds no query of its own", () => {

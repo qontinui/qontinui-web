@@ -1068,10 +1068,13 @@ export function lastGoodReadPhrase(generatedAt: string | null): string {
 }
 
 /**
- * The single derived headline (R1). Pure. `view === null` means no read ever
- * delivered a body: the strip then says it cannot tell and every badge is `–`.
- * `read.stale` means the latest poll failed and `view` is the last good one:
- * the strip is then never green, and says so in its headline.
+ * The single derived headline (R1). Pure. `view === null` means no read has
+ * delivered a project state. Three cases look like that: the first read has
+ * not finished, every read failed, or coord answered with something that is
+ * not a project state. The strip then says it cannot tell, in words true of
+ * all three (the page names which one under the strip), and every badge is
+ * `–`. `read.stale` means the latest poll failed and `view` is the last good
+ * one: the strip is then never green, and says so in its headline.
  */
 export function deriveHomeStrip(
   view: ProjectStateView | null,
@@ -1081,7 +1084,7 @@ export function deriveHomeStrip(
     return {
       level: "amber",
       attention: "waiting",
-      headline: "Cannot tell — coord has not answered",
+      headline: "Cannot tell — coord's project state has not been read",
       detail:
         "Nothing on this page has been read yet; every count is a dash, not a zero.",
       badges: [

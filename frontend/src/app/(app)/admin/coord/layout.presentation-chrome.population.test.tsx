@@ -188,9 +188,7 @@ describe("/admin/coord — where a signed-in presenter lands", () => {
     expect(screen.getByTestId("coord-landing")).toBeTruthy();
     expect(screen.queryByText("Shown in the operator view only")).toBeNull();
     await waitFor(() =>
-      expect(router.replace).toHaveBeenCalledWith(
-        "/admin/coord/home?present=1"
-      )
+      expect(router.replace).toHaveBeenCalledWith("/admin/coord/home?present=1")
     );
     // The tab recorded the URL's choice, so the console it lands on presents.
     await waitFor(() =>
