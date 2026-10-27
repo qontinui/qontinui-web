@@ -5024,7 +5024,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5051,7 +5054,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5078,7 +5084,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5105,7 +5114,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5134,7 +5146,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
