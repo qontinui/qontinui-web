@@ -232,11 +232,24 @@ SERVED = [
     # What the ai-tasks page's ``screenshotUrl`` asks for.
     ("screenshots/shot.png", "screenshots/shot.png", "image/png"),
     (".dev-logs/screenshots/shot.png", "screenshots/shot.png", "image/png"),
-    # Absolute paths a runner recorded, POSIX and (as a browser sends it) Windows.
+    # A leading .dev-logs/ is dropped before the direct lookup. tap.png sits
+    # in mobile/screenshots/, where no lookup by file name looks.
+    (
+        ".dev-logs/mobile/screenshots/tap.png",
+        "mobile/screenshots/tap.png",
+        "image/png",
+    ),
+    # Absolute paths a runner recorded, POSIX and (as a browser sends it)
+    # Windows, found by file name in screenshots/ and playwright-screenshots/.
     (LISTED_PATH, "screenshots/shot.png", "image/png"),
     (
         "C:/Users/op/ws/.dev-logs/screenshots/shot.png",
         "screenshots/shot.png",
+        "image/png",
+    ),
+    (
+        "/home/operator/ws/.dev-logs/playwright-screenshots/login%20page.png",
+        "playwright-screenshots/login page.png",
         "image/png",
     ),
     (
@@ -329,6 +342,28 @@ def test_a_symlink_is_judged_by_where_it_lands(
     _assert_discloses_nothing(body)
     # Nothing local was servable, so the runner was asked for the image path.
     assert runner.seen == [f"/screenshots/{link}"]
+
+
+def test_a_dev_logs_that_is_itself_a_link_serves_where_it_resolves(
+    server_port: int, runner: StandInRunner, workspace: Path, tmp_path: Path
+) -> None:
+    """``.dev-logs`` may be a link (to a larger disk, say). An image is judged
+    against the directory the link resolves to: no resolved file is inside
+    the link's own path."""
+    target = tmp_path / "elsewhere" / "dev-logs"
+    target.parent.mkdir()
+    (workspace / ".dev-logs").rename(target)
+    try:
+        (workspace / ".dev-logs").symlink_to(target, target_is_directory=True)
+    except OSError as exc:  # e.g. Windows without the symlink privilege
+        pytest.skip(f"this host cannot create a symlink: {exc}")
+
+    status, content_type, body = _get(server_port, "screenshots/shot.png")
+
+    assert status == 200, body
+    assert body == PNG + b"screenshots/shot.png"
+    assert content_type == "image/png"
+    assert runner.seen == [], f"a local file reached the runner: {runner.seen}"
 
 
 #: Traversal and its encodings, ``.``/empty segments, and the characters that
