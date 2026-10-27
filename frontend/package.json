@@ -53,7 +53,7 @@
     "@qontinui/navigation": "^0.3.1",
     "@qontinui/shared-types": "^2.4.0",
     "@qontinui/studio-scenes": "file:vendor/qontinui-studio-scenes-0.1.0.tgz",
-    "@qontinui/ui-bridge": "^0.31.1",
+    "@qontinui/ui-bridge": "^0.35.0",
     "@qontinui/ui-bridge-auto": "^0.2.0",
     "@qontinui/workflow-ui": "^0.1.0",
     "@qontinui/workflow-utils": "^0.1.0",

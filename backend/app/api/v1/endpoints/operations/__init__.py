@@ -11126,6 +11126,283 @@ async def get_ci_hosting(
     return _ci_hosting_view(payload, can_edit=can_edit)
 
 
+# ---- Secrets broker device (fleet-policy column) ---------------------------
+#
+# Plan ``2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them``
+# Phase 3. The tenant's designated secrets-broker device lives in the typed,
+# versioned column ``coord.fleet_runtime_policy.secrets_broker_device_id``
+# (alembic ``secrets_broker_01``), on the TENANT-band row of the
+# ``secrets_broker`` domain. coord admits a broker report on
+# ``POST /coord/secrets-broker/events`` only from a device JWT whose
+# ``device_id`` equals it, so setting it is an authorization decision and an
+# operator action.
+#
+# This is a dedicated door onto a dedicated coord route, rather than a field on
+# the generic ``PUT /fleet-policy`` above, because the value is a DEVICE, not a
+# level: it is proven bound to the tenant before it is written (below), and the
+# write must touch NOTHING but the device column. The generic PUT writes a whole
+# row (level, master_enabled, controls), and any door that re-sends a level it
+# read first is a read-then-overwrite race and, worse, freezes the system band
+# into a copy on the tenant row. So this door never reads, sends or preserves a
+# level.
+#
+# Coord wire contract this encodes (the qontinui-coord half of Phase 3):
+#
+# * ``PUT /coord/fleet-policy/secrets-broker-device`` with exactly
+#   ``{"device_id": <uuid | null>}`` (``null`` clears). coord re-checks the
+#   device's tenant binding and writes ONLY the ``secrets_broker_device_id``
+#   column of the tenant-band ``secrets_broker`` row. It never touches
+#   ``level`` or ``master_enabled``. When no tenant row exists it creates one
+#   whose level does not govern, so the system band (or the domain's no-row
+#   default) still does. The schema has no NULL level (``level`` and
+#   ``master_enabled`` are NOT NULL), so "inherit" is spelled the way the store
+#   already spells it for the repo band: ``level = 'inherit'``, which coord's
+#   resolver must then also skip at the tenant band. It answers 503
+#   ``column_not_present`` while ``secrets_broker_01`` has not reached its
+#   database.
+# * ``GET /coord/fleet-policy?domain=secrets_broker`` answers, beside the usual
+#   resolved fields, ``secrets_broker_device_id``: the TENANT-band row's value
+#   (a UUID string) or ``null``. A coord whose answer carries NO such key
+#   predates the column's reader: UNKNOWN, never "no broker".
+#
+# Until that coord route is deployed, coord answers this door 404 or 405. That
+# is surfaced as 502 ``coord_secrets_broker_device_route_missing``, never as
+# written.
+
+#: The fleet-policy domain whose tenant-band row carries the broker device.
+SECRETS_BROKER_DOMAIN = "secrets_broker"
+#: coord's device-only write route (writes the device column and nothing else).
+_SECRETS_BROKER_DEVICE_ROUTE = "/coord/fleet-policy/secrets-broker-device"
+#: The key coord's fleet-policy GET carries the device under.
+_SECRETS_BROKER_DEVICE_KEY = "secrets_broker_device_id"
+
+
+class SecretsBrokerDeviceView(BaseModel):
+    """The tenant's designated secrets-broker device, as coord resolves it."""
+
+    #: The designated device, or ``None`` when none is designated, in which
+    #: case coord refuses every broker report for this tenant. Meaningful only
+    #: when ``reported`` is true.
+    device_id: UUID | None = None
+    #: ``False`` when coord's answer carried no ``secrets_broker_device_id`` key
+    #: at all (a coord predating the column's reader) or carried one this proxy
+    #: could not parse. That is UNKNOWN, never "no broker designated".
+    reported: bool
+    #: The ``secrets_broker`` domain's resolved level (``off`` under a disabled
+    #: master), and the band it came from (``"none"`` when no row exists).
+    effective_level: str
+    master_enabled: bool
+    resolved_scope: str
+    #: Whether the caller may write: the SAME effective-tenant rule
+    #: ``require_coord_tenant_admin`` applies to the PUT. UI gating only;
+    #: coord re-checks with ``rbac::is_tenant_admin``.
+    can_edit: bool
+
+
+class SecretsBrokerDevicePut(BaseModel):
+    """Closed body for the broker-device write.
+
+    ``device_id: null`` clears the designation (every broker report is then
+    refused). The field is REQUIRED, so an empty body is a 422 rather than a
+    silent clear.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID | None
+
+
+class SecretsBrokerDeviceWriteResult(BaseModel):
+    """What was written, and, separately, what coord now resolves.
+
+    ``effective`` is ``None`` with ``readback_error`` set when the write landed
+    but the re-read failed. That is UNKNOWN, not "applied".
+    """
+
+    ok: bool
+    written_device_id: UUID | None
+    versioned: bool | None = None
+    version: int | None = None
+    updated_by: str | None = None
+    effective: SecretsBrokerDeviceView | None = None
+    readback_error: str | None = None
+
+
+def _secrets_broker_device_view(
+    payload: Any, *, can_edit: bool
+) -> SecretsBrokerDeviceView:
+    """Project coord's ``secrets_broker`` fleet-policy body onto the device view."""
+    body = payload if isinstance(payload, dict) else {}
+    view = _fleet_policy_view(body, domain=SECRETS_BROKER_DOMAIN, can_edit=can_edit)
+    reported = _SECRETS_BROKER_DEVICE_KEY in body
+    device_id: UUID | None = None
+    raw = body.get(_SECRETS_BROKER_DEVICE_KEY)
+    if raw is not None:
+        try:
+            device_id = UUID(str(raw))
+        except (TypeError, ValueError):
+            # An unparseable device is not "none designated": it is UNKNOWN.
+            reported = False
+    return SecretsBrokerDeviceView(
+        device_id=device_id,
+        reported=reported,
+        effective_level=view.effective_level,
+        master_enabled=view.master_enabled,
+        resolved_scope=view.resolved_scope,
+        can_edit=can_edit,
+    )
+
+
+def _secrets_broker_refusal(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"error": code, "code": code, "message": message},
+    )
+
+
+async def _require_device_bound_to_tenant(device_id: UUID, tenant_id: UUID) -> None:
+    """Refuse unless coord PROVES ``device_id`` is bound to ``tenant_id``.
+
+    Reads coord's single-device ``GET /coord/devices/:id/state`` on the
+    operator's bearer (coord's ``FleetPrincipal`` accepts it). That read
+    HYDRATES ``tenant_ids`` from ``coord.tenant_devices``, and its tri-state is
+    the point: ``null`` is "coord could not read the binding set" (UNKNOWN), so
+    the write is refused rather than trusted. Designating a broker is an
+    authorization, and an unproven one fails closed. ``[]`` and a list without
+    this tenant are a proven "not bound".
+    """
+    try:
+        row = await _proxy_coord_get(
+            f"/coord/devices/{device_id}/state", tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise _secrets_broker_refusal(
+                422,
+                "device_not_found",
+                "Coord knows no device with this id.",
+            ) from exc
+        raise
+    body = row if isinstance(row, dict) else {}
+    if str(body.get("device_id")) != str(device_id):
+        raise _secrets_broker_refusal(
+            502,
+            "coord_device_state_malformed",
+            "Coord answered for a different device.",
+        )
+    bindings = body.get("tenant_ids")
+    if not isinstance(bindings, list):
+        raise _secrets_broker_refusal(
+            503,
+            "device_binding_unknown",
+            "Coord could not say which tenants this device is bound to, so the "
+            "designation was not written. Retry once coord answers.",
+        )
+    if str(tenant_id) not in {str(t) for t in bindings}:
+        raise _secrets_broker_refusal(
+            422,
+            "device_not_in_tenant",
+            "This device is not bound to this tenant, so it cannot be its "
+            "secrets broker.",
+        )
+
+
+@router.get("/secrets-broker/device", response_model=SecretsBrokerDeviceView)
+async def get_secrets_broker_device(
+    request: Request,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> SecretsBrokerDeviceView:
+    """Read the tenant's designated secrets-broker device.
+
+    ``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the
+    superuser bypass), the same rule ``require_coord_tenant_admin`` applies to
+    this door's PUT, which writes through coord's device-only
+    ``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).
+    ``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be
+    wrong.
+    """
+    payload = await _proxy_coord_get(
+        "/coord/fleet-policy",
+        params={"domain": SECRETS_BROKER_DOMAIN},
+        tenant_id=tenant_id,
+    )
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _secrets_broker_device_view(payload, can_edit=can_edit)
+
+
+@router.put("/secrets-broker/device", response_model=SecretsBrokerDeviceWriteResult)
+async def put_secrets_broker_device(
+    body: SecretsBrokerDevicePut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> SecretsBrokerDeviceWriteResult:
+    """Designate (or clear) the tenant's secrets-broker device, then READ BACK.
+
+    Tenant-admin gated web-side; coord re-checks admin and the device's tenant
+    binding. The order is: prove the binding, write the device column alone,
+    re-read. A failed proof writes nothing; nothing but the device is ever
+    sent, so no level is read, carried or overwritten. A coord without the
+    route (404/405) is an error, never "written". A failed re-read after a
+    landed write is UNKNOWN (``readback_error``), not "applied".
+    """
+    if body.device_id is not None:
+        await _require_device_bound_to_tenant(body.device_id, tenant_id)
+
+    device = str(body.device_id) if body.device_id is not None else None
+    try:
+        written = await _proxy_coord_put(
+            _SECRETS_BROKER_DEVICE_ROUTE,
+            {"device_id": device},
+            tenant_id=tenant_id,
+            structured_errors=True,
+        )
+    except HTTPException as exc:
+        if exc.status_code in (404, 405):
+            raise _secrets_broker_refusal(
+                502,
+                "coord_secrets_broker_device_route_missing",
+                "This coord does not serve the secrets-broker device route yet, "
+                "so nothing was written.",
+            ) from exc
+        raise
+    echo = written if isinstance(written, dict) else {}
+
+    effective: SecretsBrokerDeviceView | None = None
+    readback_error: str | None = None
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/fleet-policy",
+            params={"domain": SECRETS_BROKER_DOMAIN},
+            tenant_id=tenant_id,
+        )
+        effective = _secrets_broker_device_view(payload, can_edit=True)
+    except HTTPException as exc:
+        readback_error = f"read-back failed: coord returned {exc.status_code}"
+    except Exception as exc:  # noqa: BLE001 — the WRITE succeeded; don't lose it
+        readback_error = f"read-back failed: {exc}"
+
+    if readback_error is not None:
+        logger.warning("secrets_broker_device.readback_failed", detail=readback_error)
+
+    version = echo.get("version")
+    versioned = echo.get("versioned")
+    updated_by = echo.get("updated_by")
+    return SecretsBrokerDeviceWriteResult(
+        ok=bool(echo.get("ok", True)),
+        written_device_id=body.device_id,
+        versioned=versioned if isinstance(versioned, bool) else None,
+        version=version if isinstance(version, int) else None,
+        updated_by=updated_by if isinstance(updated_by, str) else None,
+        effective=effective,
+        readback_error=readback_error,
+    )
+
+
 # ---- Unfinished sessions + auto-resume toggle proxy ---------------------
 #
 # Plan ``2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed``

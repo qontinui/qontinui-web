@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { usePresentationMode } from "@/components/presentation";
 import { relativeTime } from "./utils";
 import {
   isRoutingLabel,
@@ -69,12 +70,22 @@ const dotColors: Record<CiRunnerStatus, string> = {
  * The freshness line is not decoration either. This is a mirror up to a
  * registrar poll old; a page that implies live GitHub truth will eventually
  * tell an operator a delabelled host is fine.
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 7)
+ *
+ * A runner's labels include per-machine names, so an outsider sees only the
+ * two routing labels — the ones the routing verdict is about — and a count of
+ * the rest. The status and the verdict are unchanged.
  */
 export function CiRunnerBadge({ ciRunner, className }: CiRunnerBadgeProps) {
   const { status, labels, lastJobAt } = ciRunner;
+  const { presenting } = usePresentationMode();
   const mirrored = ciRunner.source === "coord-mirror";
   const missing = mirrored ? missingRoutingLabels(labels) : [];
   const routable = mirrored && matchesFleetRouting(labels);
+  // D3.3: a label that is not a routing label may be a machine's name.
+  const shownLabels = presenting ? labels.filter(isRoutingLabel) : labels;
+  const otherLabels = labels.length - shownLabels.length;
 
   // A mirrored row carries NO job history — coord's CI-runner read does not
   // serve one — so deriving "No jobs run yet" from a null `lastJobAt` would be
@@ -126,7 +137,7 @@ export function CiRunnerBadge({ ciRunner, className }: CiRunnerBadgeProps) {
 
       {labels.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {labels.map((label) => (
+          {shownLabels.map((label) => (
             <Badge
               key={label}
               variant="outline"
@@ -148,6 +159,16 @@ export function CiRunnerBadge({ ciRunner, className }: CiRunnerBadgeProps) {
               {label}
             </Badge>
           ))}
+          {otherLabels > 0 && (
+            <span
+              className="text-[10px] text-muted-foreground"
+              data-testid="ci-runner-labels-withheld"
+            >
+              {otherLabels === 1
+                ? "+1 more label"
+                : `+${otherLabels} more labels`}
+            </span>
+          )}
         </div>
       )}
 

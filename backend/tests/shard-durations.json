@@ -74,6 +74,7 @@
   "tests/test_conftest_test_pg_dsn.py": 0.0,
   "tests/test_constraints.py": 1.5,
   "tests/test_coord_agent_questions_effect_migration.py": 7.1,
+  "tests/test_coord_agent_questions_recommendation_migration.py": 7.1,
   "tests/test_coord_agent_sessions_context_01_migration.py": 12.1,
   "tests/test_coord_agent_worktrees_client_allocation_id_01_migration.py": 11.2,
   "tests/test_coord_agent_worktrees_credentialed_at_01_migration.py": 11.6,

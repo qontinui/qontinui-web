@@ -47926,6 +47926,156 @@
         "title": "SearchResultItem",
         "type": "object"
       },
+      "SecretsBrokerDevicePut": {
+        "additionalProperties": false,
+        "description": "Closed body for the broker-device write.\n\n``device_id: null`` clears the designation (every broker report is then\nrefused). The field is REQUIRED, so an empty body is a 422 rather than a\nsilent clear.",
+        "properties": {
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          }
+        },
+        "required": [
+          "device_id"
+        ],
+        "title": "SecretsBrokerDevicePut",
+        "type": "object"
+      },
+      "SecretsBrokerDeviceView": {
+        "description": "The tenant's designated secrets-broker device, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "effective_level": {
+            "title": "Effective Level",
+            "type": "string"
+          },
+          "master_enabled": {
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "reported": {
+            "title": "Reported",
+            "type": "boolean"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reported",
+          "effective_level",
+          "master_enabled",
+          "resolved_scope",
+          "can_edit"
+        ],
+        "title": "SecretsBrokerDeviceView",
+        "type": "object"
+      },
+      "SecretsBrokerDeviceWriteResult": {
+        "description": "What was written, and, separately, what coord now resolves.\n\n``effective`` is ``None`` with ``readback_error`` set when the write landed\nbut the re-read failed. That is UNKNOWN, not \"applied\".",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecretsBrokerDeviceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "versioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versioned"
+          },
+          "written_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Device Id"
+          }
+        },
+        "required": [
+          "ok",
+          "written_device_id"
+        ],
+        "title": "SecretsBrokerDeviceWriteResult",
+        "type": "object"
+      },
       "SectionDrift": {
         "description": "Per-section rollup of key deltas.",
         "properties": {
@@ -104689,6 +104839,78 @@
           }
         },
         "summary": "Register Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/secrets-broker/device": {
+      "get": {
+        "description": "Read the tenant's designated secrets-broker device.\n\n``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the\nsuperuser bypass), the same rule ``require_coord_tenant_admin`` applies to\nthis door's PUT, which writes through coord's device-only\n``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).\n``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be\nwrong.",
+        "operationId": "api_v1_operations_secrets_broker_device_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretsBrokerDeviceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Secrets Broker Device",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Designate (or clear) the tenant's secrets-broker device, then READ BACK.\n\nTenant-admin gated web-side; coord re-checks admin and the device's tenant\nbinding. The order is: prove the binding, write the device column alone,\nre-read. A failed proof writes nothing; nothing but the device is ever\nsent, so no level is read, carried or overwritten. A coord without the\nroute (404/405) is an error, never \"written\". A failed re-read after a\nlanded write is UNKNOWN (``readback_error``), not \"applied\".",
+        "operationId": "api_v1_operations_secrets_broker_device_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretsBrokerDevicePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretsBrokerDeviceWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Secrets Broker Device",
         "tags": [
           "operations"
         ]
