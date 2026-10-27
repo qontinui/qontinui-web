@@ -1611,6 +1611,21 @@ their provenance too: while presenting, one `Provenance` chip per read behind
 them — the component registry, the runner's health, and the two app registries
 — sits on the line under the strip, beside the runner it reads.
 
+### 3.11 The session-flow console — recorded under §6.4
+
+`/admin/coord/overlord/flow` (plan
+`2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`
+Phase 4) composes `HealthStrip`, `StatCluster`, `RecordList`/`RecordRow`/
+`RecordDetail`, `RowTime`, `CollapsiblePanel` and `RefreshButton`. It declares
+no attention table (its rows are not classified, so `RecordRow`'s `attention`
+is ABSENT, not `"none"`), and records two things rather than shipping them
+silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Metric tiles are headed `StatCluster`s, not a tile component** | `overlord/flow/page.tsx` (`MetricTile`) | Each metric (time-to-close, nudge → progress, nudge → finished, latest UNKNOWN share) is an `h2` + one `<StatCluster>` + a one-line explanation, two per row from `sm` up. Every value is one of THREE things (`overlordFlowStatus.ts`): a measured number; coord's explicit `null`, rendered as the words `no data` with a `title` saying why nothing was measurable; or unknown (field absent, read failed), rendered as `–`. | R6 says an unfetched count is `–`. This page also receives a value coord ANSWERED as not measurable (a median over no closed session, a rate over no nudge), and rendering that as `–` would call an answer unknown, while `0` would claim a measurement. A bordered tile per metric would be a new card shape (§6.4); the cluster already is the console's count vocabulary. |
+| **A categorical series palette, validated, in `config/theme.ts`** | `chartCategorical` (`config/theme.ts`), used by `overlord/flow/_components/VerdictHistogramChart.tsx` | The console's first multi-series stacked chart: one bar per triage pass, three verdicts on fixed categorical slots (a slot follows the verdict, never its rank), every other verdict folded into a neutral "other", UNKNOWN in muted grey, and the full per-pass breakdown in the tooltip and an `sr-only` table. Built like §3.8's count chart otherwise. | `colors.brand.*` fails as a categorical set on the console's dark surfaces (slate blue vs muted violet: ΔE 11.9 normal, 5.9 deutan), so a chart that needs more than one identity hue needs slots that pass. The slots are identity, never severity — they are not R3 families and must not be read as such. |
+
 ---
 
 ## 4. The attention palette

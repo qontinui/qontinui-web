@@ -4594,6 +4594,134 @@ async def get_operator_touch_constraint_verdict(
     )
 
 
+# ---- Overlord session flow (the pass-ledger reads) ------------------------
+#
+# Plan ``2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-
+# development-runs-on-anecdote`` Phase 4. coord's ``coord.overlord_passes`` /
+# ``coord.overlord_pass_rows`` hold one row per ``/triage-sessions`` pass and
+# one per terminal it screened; ``GET /coord/overlord/flow`` derives the flow
+# metrics (time-to-close, nudge→progress, nudge→finished, unchanged sessions,
+# UNKNOWN share, the per-pass verdict series) over a window of them, and the
+# two ``passes`` routes read the ledger itself. These proxies feed the
+# ``/admin/coord/overlord/flow`` page.
+#
+# Error posture is the operator-touch section's, for the same reason:
+# ``_proxy_coord_passthrough``. coord answers a ledger the web revision has not
+# provisioned with a typed ``503 {"error": "schema_migration_pending"}``, a
+# query it refuses with a typed ``422`` naming the field
+# (``invalid_vocabulary`` / ``invalid_shape``), and an absent pass with
+# ``404 {"error": "pass_not_found"}``. The page renders a failed read as
+# UNKNOWN and needs coord's ``error`` key intact to say why.
+#
+# Every QUERY parameter is declared as a string and forwarded EXPLICITLY,
+# unchanged, and only when set. coord owns their bounds (``window_hours`` max
+# 2160, ``unchanged_min_passes`` min 2, ``limit`` max 200, …); restating them
+# here would answer a FastAPI ``422 {detail: [...]}`` of a third shape — which
+# the page would misattribute to coord — and would drift from coord's own
+# numbers. What this edge DOES validate is the one input it splices into a URL
+# PATH: ``pass_id`` is typed ``UUID``, so ``..`` or an encoded separator can
+# never re-address a different coord route, and the canonical form is what
+# goes on the wire. A parameter the contract does not name is not declared,
+# so FastAPI drops it rather than forwarding it.
+
+
+@router.get("/coord/overlord/flow")
+async def get_overlord_flow(
+    window_hours: str | None = Query(default=None),
+    device_id: str | None = Query(default=None),
+    runner_port: str | None = Query(default=None),
+    unchanged_min_passes: str | None = Query(default=None),
+    nudge_window_passes: str | None = Query(default=None),
+    group_by: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/overlord/flow`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``window``, ``truncated``, ``passes_considered``,
+    ``full_passes_considered``, ``time_to_close`` (``median_secs`` /
+    ``p90_secs`` are ``null`` when ``count == 0``), ``nudge`` (rates ``null``
+    when ``nudged == 0``), ``unchanged``, ``unknown_share`` (``share`` ``null``
+    over an empty pass), ``verdict_series`` and, with
+    ``group_by=overlord_version``, ``groups``. A ``null`` is coord saying
+    "not measurable", and must reach the page as ``null`` — never a ``0``.
+
+    Every parameter is a STRING forwarded unchanged; coord's typed 422/503
+    bodies pass through verbatim — see the section note.
+    """
+    candidates = {
+        "window_hours": window_hours,
+        "device_id": device_id,
+        "runner_port": runner_port,
+        "unchanged_min_passes": unchanged_min_passes,
+        "nudge_window_passes": nudge_window_passes,
+        "group_by": group_by,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/overlord/flow",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/overlord/passes")
+async def list_overlord_passes(
+    device_id: str | None = Query(default=None),
+    runner_port: str | None = Query(default=None),
+    scope: str | None = Query(default=None),
+    mode: str | None = Query(default=None),
+    since: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    offset: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/overlord/passes`` (tenant-scoped list).
+
+    Answers ``{ok, passes, total_matching, truncated, limit, offset}``, newest
+    ``started_at`` first, each pass WITHOUT its rows. Filters are strings
+    forwarded unchanged (``scope`` ``full|filtered``, ``mode``
+    ``report|act``, ``since`` RFC 3339, ``limit`` ≤ 200 — coord validates);
+    error bodies pass through verbatim.
+    """
+    candidates = {
+        "device_id": device_id,
+        "runner_port": runner_port,
+        "scope": scope,
+        "mode": mode,
+        "since": since,
+        "limit": limit,
+        "offset": offset,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/overlord/passes",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/overlord/passes/{pass_id}")
+async def get_overlord_pass(
+    pass_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/overlord/passes/{pass_id}`` (tenant-scoped).
+
+    Answers ``{ok, pass: {<pass fields>, rows: [...]}}``; a pass absent in the
+    caller's tenant is coord's ``404 {"error": "pass_not_found"}``, passed
+    through verbatim. ``pass_id`` is typed ``UUID`` because it is spliced into
+    the coord URL path — see the section note.
+    """
+    return await _proxy_coord_passthrough(
+        "GET",
+        f"/coord/overlord/passes/{pass_id}",
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Alerts (full rollup; read API for agents and the red-main banner) ---
 
 

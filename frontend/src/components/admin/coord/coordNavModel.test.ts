@@ -85,6 +85,7 @@ describe("coordNavModel", () => {
       "Verification",
       "Agents",
       "Unfinished Sessions",
+      "Session Flow",
       "Agent Commands",
       "Agent Skills",
       "Prompt Log",
