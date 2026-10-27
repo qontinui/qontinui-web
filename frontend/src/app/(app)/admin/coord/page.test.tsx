@@ -7,7 +7,10 @@
  * presentation mode it is safe to show — and it must be shown: a withheld page
  * never mounts, so it never redirects, and `/admin/coord` is where `/`,
  * `/login` and `/dashboard` send a signed-in user. The redirect keeps the
- * query, so a `?present=1` arrival lands presenting.
+ * query, so a `?present=1` arrival lands presenting. Its target is
+ * `/admin/coord/home`, the operator's one screen (plan
+ * `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+ * Phase 4).
  */
 
 import { screen } from "@testing-library/react";
@@ -35,17 +38,15 @@ describe("/admin/coord in presentation mode", () => {
     expectPresentationSafe(view);
   });
 
-  it("redirects to the console carrying the URL's query", () => {
+  it("redirects to the one screen carrying the URL's query", () => {
     window.history.replaceState(null, "", "/admin/coord?present=1");
     renderInPresentationMode(<CoordLandingPage />);
-    expect(router.replace).toHaveBeenCalledWith(
-      "/admin/coord/pipeline?present=1"
-    );
+    expect(router.replace).toHaveBeenCalledWith("/admin/coord/home?present=1");
   });
 
   it("adds no query of its own", () => {
     window.history.replaceState(null, "", "/admin/coord");
     renderInPresentationMode(<CoordLandingPage />);
-    expect(router.replace).toHaveBeenCalledWith("/admin/coord/pipeline");
+    expect(router.replace).toHaveBeenCalledWith("/admin/coord/home");
   });
 });
