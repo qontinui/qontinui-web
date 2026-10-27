@@ -871,8 +871,11 @@ async def _caller_owns_runner_host(
 #: saved workflow a UUID (``trigger-<workflow>-<ms>-<u8>``,
 #: ``<id>-replay-<uuid>``), so letters, digits, ``-`` and ``_`` are the
 #: characters a minted id carries. Anything else is a 422 naming this rule,
-#: before the runner is contacted. The length bound fits a replay of a replay
-#: (124 characters) with room to spare; it is a bound, not a format.
+#: before the runner is contacted. The length bound is a bound, not a format.
+#: The longest bases the runner mints are 67 characters
+#: (``trigger-<uuid>-<ms>-<u8>`` and ``unified-workflow-<uuid>-<ms>``), and a
+#: replay appends ``-replay-<uuid>`` (44 more), so a replay of a replay of one
+#: is 155 characters. Four levels (243) fit; five (287) do not.
 _TaskRunIdQuery = Annotated[
     str,
     Query(

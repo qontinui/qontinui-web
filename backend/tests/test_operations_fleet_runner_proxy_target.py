@@ -61,17 +61,21 @@ APPS_BODY = {
 }
 
 #: Ids of every shape the runner mints: a bare UUID, the trigger and ticket
-#: composites, an underscore, and a replay of a replay (124 characters). Fixed
-#: values, so the parametrized node ids are the same in every collection.
+#: composites, an underscore, a replay of a replay of a bare UUID (124
+#: characters), and a replay of a replay of the longest minted base,
+#: ``trigger-<uuid>-<ms>-<u8>`` (155 characters). Fixed values, so the
+#: parametrized node ids are the same in every collection.
 _U1 = "0f8c2a4e-7b1d-4c3a-9e5f-2d6b8a1c3e70"
 _U2 = "5a9d3c1b-2e4f-4a6c-8b7d-1c3e5f7a9b20"
 _U3 = "c4e6a8b0-d2f4-4e6a-8c0b-2d4f6a8c0e10"
+LONGEST_REPLAY_ID = f"trigger-{_U1}-1700000000000-ab12cd34-replay-{_U2}-replay-{_U3}"
 PLAIN_IDS = [
     _U1,
     "trigger-wf-1700000000000-ab12cd34",
     "ticket-github-42-ab12cd34",
     "unified_workflow_1",
     f"{_U1}-replay-{_U2}-replay-{_U3}",
+    LONGEST_REPLAY_ID,
 ]
 
 #: Ids that rewrite the runner path, or are no task-run id at all.
@@ -255,6 +259,12 @@ def test_a_plain_id_reaches_only_its_own_task_run_route(
     assert resp.json() == {"ok": True, "route": f"/task-runs/{task_run_id}/{route}"}
     query = "?tail_chars=5000" if route == "output" else ""
     assert runner.seen == [f"/task-runs/{task_run_id}/{route}{query}"]
+
+
+def test_the_longest_plain_id_is_the_runners_worst_case() -> None:
+    """A 67-character base plus two ``-replay-<uuid>`` (44 each)."""
+    assert len(f"trigger-{_U1}-1700000000000-ab12cd34") == 67
+    assert len(LONGEST_REPLAY_ID) == 155
 
 
 @pytest.mark.parametrize("route", ROUTES)
