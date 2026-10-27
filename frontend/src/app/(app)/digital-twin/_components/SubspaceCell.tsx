@@ -1,13 +1,20 @@
 "use client";
 
 import { useUIElement } from "@qontinui/ui-bridge/react";
+import { NAVIGATION_ONLY_PROPS } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import {
+  UNSERVED_AGE,
+  WORST_BUCKET,
+  datesWorstBucket,
+  formatAgeWhenRead,
   formatRatio,
-  formatStaleness,
   presentStatus,
+  readingAge,
+  upperFirst,
 } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
+import { UnknownBadge } from "./FidelityFigures";
 
 interface SubspaceCellProps {
   row: ResolvedSubspace;
@@ -31,7 +38,14 @@ interface SubspaceCellProps {
  * One sub-space tile. Shows the symbol, name, twin and status; for live-probed
  * observers it also surfaces the credibility envelope (coverage /
  * credibility / staleness) — the goal-#3/#4 usefulness+accuracy signal —
- * verbatim from coord.
+ * verbatim from coord. The staleness is the reading's age when it was read
+ * ("45s stale when read"), never an age now: the cell shows the probe's answer
+ * some time after it was read. The envelope door's age is its worst bucket's
+ * — the bucket its drift class comes from — and says so ("worst bucket 12s
+ * stale when read"); with no age served it is "age UNKNOWN", never "live"
+ * (`readingAge`). A press only opens
+ * the read-only detail drawer, so the tile is navigation-only and stays live
+ * in presentation mode.
  */
 export function SubspaceCell({
   row,
@@ -41,6 +55,9 @@ export function SubspaceCell({
 }: SubspaceCellProps) {
   const style = presentStatus(row);
   const metrics = row.liveProbed ? row.metrics : undefined;
+  const age = metrics
+    ? readingAge(metrics.staleness_seconds, row.doorShape)
+    : null;
   const id = uiId ?? `digital-twin-cell-${row.id}`;
 
   // Register with the UI Bridge so the cell is discoverable + clickable by a
@@ -55,6 +72,7 @@ export function SubspaceCell({
     <button
       ref={ref}
       type="button"
+      {...NAVIGATION_ONLY_PROPS}
       data-testid={id}
       onClick={() => onSelect(row)}
       title={style.meaning}
@@ -94,9 +112,26 @@ export function SubspaceCell({
           <span title="credibility">
             cred {formatRatio(metrics.credibility)}
           </span>
-          <span title="staleness">
-            {formatStaleness(metrics.staleness_seconds)}
-          </span>
+          {age === null ? (
+            <span
+              title="staleness when read"
+              data-testid={`${id}-age`}
+              className="flex items-center gap-1"
+            >
+              age <UnknownBadge title={`${upperFirst(UNSERVED_AGE)}.`} />
+            </span>
+          ) : datesWorstBucket(age, row.doorShape) ? (
+            <span
+              title="staleness when read of the worst bucket, the one its drift class comes from"
+              data-testid={`${id}-age`}
+            >
+              {WORST_BUCKET} {formatAgeWhenRead(age)}
+            </span>
+          ) : (
+            <span title="staleness when read" data-testid={`${id}-age`}>
+              {formatAgeWhenRead(age)}
+            </span>
+          )}
         </div>
       )}
     </button>

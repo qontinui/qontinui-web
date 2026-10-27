@@ -19,6 +19,7 @@
  * | `Caption` + `./captions` | captions from ONE registry composed of one file per lens surface (D5) |
  * | `LENS_SURFACES`, `TOUR_SURFACE` | the five lens pages in tour order, and the tour |
  * | `usePresentationHref`, `presentationHref` | a link to a lens page that carries `?present=1` while presenting, so a new tab opened from it still presents |
+ * | `LensLink`, `lensLinkTarget` | a link to a page that may not be presentable: while presenting it carries `?present=1` where its page can be presented, and is plain text where it cannot (out of the lens trees, or not registered ready) — never a click out of the lens or into a withheld page (D3) |
  * | `Provenance` | source + as-of beside a number; UNKNOWN when either is unknown |
  * | `HeadlineFigures` | a lens page's few screen-share-sized figures, each known with its as-of or UNKNOWN with the reason |
  * | `SectionCaption` | a section's caption plus one provenance chip per source behind its numbers |
@@ -133,7 +134,14 @@ export {
 } from "./lensSurfaces";
 export type { LensSurface, LensSurfaceId } from "./lensSurfaces";
 
-export { lensLinkHref, usePresentationHref } from "./presentationLinks";
+export {
+  lensLinkHref,
+  lensLinkTarget,
+  usePresentationHref,
+} from "./presentationLinks";
+
+export { LensLink } from "./LensLink";
+export type { LensLinkProps } from "./LensLink";
 
 export {
   PROVENANCE_UNKNOWN,
