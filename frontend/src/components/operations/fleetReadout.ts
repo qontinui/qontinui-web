@@ -46,9 +46,16 @@ export const F2V_NO_KNOWN_ONSET = "unknown — no episode with a known onset";
  *
  * A failed LATEST read over a retained body keeps the numbers and says so in
  * the title — a retained verdict must not look re-confirmed.
+ *
+ * `plainKinds` (presentation mode, plan
+ * `2026-10-23-console-presentation-spaces` Phase 7) spells each slowest kind
+ * in words ("runner wedged") rather than as coord's alert-kind token
+ * (`runner_wedged`), which the operator reads as a filter term and an
+ * outsider cannot read at all.
  */
 export function faultToVisibilityBadge(
-  read: Pick<UseFaultToVisibilityResult, "data" | "loading" | "error">
+  read: Pick<UseFaultToVisibilityResult, "data" | "loading" | "error">,
+  options: { plainKinds?: boolean } = {}
 ): HealthBadge {
   const base = {
     key: "fault-to-visibility",
@@ -80,7 +87,7 @@ export function faultToVisibilityBadge(
     .slice(0, 3)
     .map(
       (k) =>
-        `${k.kind} p90 ${formatDurationSecs(k.p90)} (onset known ${k.onset_known_n}/${k.episodes_n})`
+        `${options.plainKinds ? k.kind.replaceAll("_", " ") : k.kind} p90 ${formatDurationSecs(k.p90)} (onset known ${k.onset_known_n}/${k.episodes_n})`
     );
   const title = [
     `Fault-to-visibility over ${data.window}: p50 ${p50}, p90 ${p90}.`,

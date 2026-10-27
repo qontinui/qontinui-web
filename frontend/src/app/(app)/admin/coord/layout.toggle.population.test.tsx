@@ -84,7 +84,10 @@ import CoordLayout from "./layout";
 beforeEach(() => {
   window.sessionStorage.clear();
   window.localStorage.clear();
-  window.history.replaceState(null, "", "/admin/coord/devops");
+  // A console page that is not a lens surface, so it is never registered
+  // presentation-ready and the layout's `PresentationPage` always withholds
+  // it. (It was `/admin/coord/devops` until Phase 7 registered that route.)
+  window.history.replaceState(null, "", "/admin/coord/pipeline");
 });
 
 afterEach(() => {
