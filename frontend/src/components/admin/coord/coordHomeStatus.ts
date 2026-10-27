@@ -768,13 +768,27 @@ function parsePlanes(raw: unknown): PlaneView[] | null {
   });
 }
 
-/** Coord's watcher-freshness reason tokens, in plain words (R8). */
+/**
+ * Coord's watcher-freshness reason tokens, in plain words (R8). Each says only
+ * what coord's heartbeat table can show (qontinui-coord
+ * `crates/coord/src/project_state.rs` `watcher_freshness`, over
+ * `worker_ledger`'s `coord.worker_heartbeats`):
+ *
+ * - `no_successful_tick` — the watcher has heartbeat rows, but none whose
+ *   last outcome is a clean success. A row keeps only its replica's LAST
+ *   outcome, so this is "no successful run on record", not "never ran".
+ * - `no_heartbeat_row` — no row at all. Coord deletes a departed replica's row
+ *   seven days after its last tick, so this is "no heartbeat on record", not
+ *   "never reported".
+ * - `last_success_older_than_3x_interval` — the freshest clean success is
+ *   older than three times the watcher's effective interval.
+ */
 const WATCHER_REASON_WORDS: Readonly<Record<string, string>> = {
-  no_successful_tick: "has not completed a run",
+  no_successful_tick: "no successful run on record",
   last_success_older_than_3x_interval: "last run is overdue",
   heartbeat_read_failed: "status could not be read",
   no_declared_interval: "no expected interval declared",
-  no_heartbeat_row: "has never reported",
+  no_heartbeat_row: "no heartbeat on record",
 };
 
 /** Coord's watcher states, in plain words, for when no reason is given. */
@@ -803,12 +817,18 @@ export function watcherReasonWords(
  * One plane's watcher freshness, in words. Watcher names are internal
  * vocabulary, so they are NOT in this sentence — see
  * {@link planeWatcherNames}, which the page puts in a `title` only.
+ *
+ * A plane coord feeds with NO watcher (`disk`, `PLANE_WATCHERS`
+ * `(InfraPlane::Disk, &[])`) is only as fresh as the reading that is its sole
+ * evidence: coord's `fresh` is whether the fleet roster was read with its
+ * resource dimension scraped. Not fresh there is a reading that could not be
+ * taken — no watcher is involved, so none is named as missing or stale.
  */
 export function planeFreshnessPhrase(p: PlaneView): string {
   if (p.watchers.length === 0) {
-    return p.fresh === true
-      ? "read directly, no watcher"
-      : "no watcher reported";
+    if (p.fresh === true) return "read directly, no watcher";
+    if (p.fresh === false) return "no watcher; its reading could not be taken";
+    return "no watcher; freshness not stated";
   }
   if (p.fresh === true) {
     return p.watchers.length === 1
@@ -912,30 +932,84 @@ export function remediationPhrase(d: DegradationView): string {
 }
 
 /**
+ * The sources coord's degradations block reads, by their exact
+ * `does_not_know` ids (qontinui-coord `crates/coord/src/project_state.rs`
+ * `degradations_block`), in words that fit mid-sentence (R8). Each one that
+ * coord does not serve as `read` (or `not_implemented`) is a partial source:
+ * coord's own `partial` test is exactly "a source failed or was truncated, or
+ * the heartbeats could not be read", and every such case marks its row here.
+ */
+const DEGRADATION_SOURCE_WORDS: Readonly<Record<string, string>> = {
+  "coord.alerts (operator-plane kinds)": "infrastructure alerts",
+  "fleet_health roster": "machines in the fleet",
+  "train_health (per authority repo)": "merge train health",
+  "infra_health_observations (cloud, latest per resource)":
+    "cloud service health",
+  fleet_drain: "machine drains",
+  worker_heartbeats: "watcher heartbeats",
+};
+
+/**
+ * A degradation source state that leaves the block partial. `not_implemented`
+ * is not one: coord serves it for the cloud breach read when the caller may
+ * not see operator-global infra, and does not count that as partial.
+ */
+const PARTIAL_SOURCE_STATES: ReadonlySet<BlockState> = new Set([
+  "could_not_read",
+  "stale",
+  "unknown",
+]);
+
+/**
  * Why a `stale` degradations block is incomplete: the clause the page prints
  * after "Incomplete view —".
  *
- * Coord's `headline_reason` explains its HEADLINE, not the staleness. Any open
- * row makes the headline `degraded`, whatever the state, and the reason is then
- * "at least one operator-plane degradation is open" — a false cause for the
- * gap on a stale block. Only the `unknown` headline's reason lists why the
- * block is partial (a watcher not fresh, a source not fully read, a row
- * ceiling), so that is the one arm that quotes it. Otherwise the gap is worded
- * from the planes coord served as not fresh. Failing that, it is worded from
- * what `stale` itself guarantees: a source was not fully read, or a watcher
- * feeding it is not fresh.
+ * Built from STRUCTURE coord serves beside the block, never from its
+ * `headline_reason` prose. That reason explains the HEADLINE, not the
+ * staleness — on a block with an open row it is "at least one operator-plane
+ * degradation is open", a false cause for the gap — and on the `unknown`
+ * headline it quotes coord's raw source ids (R8). The causes coord's
+ * `assemble_degradations_rows` folds into `stale` are each visible here:
+ *
+ * - a plane with watchers served `fresh: false` — a watcher feeding it is
+ *   stale or unknown;
+ * - a plane with NO watcher served `fresh: false` (`disk`) — its reading
+ *   could not be taken; no watcher is involved, so none is blamed;
+ * - a degradation source in `sources` (`does_not_know`) that is not read — a
+ *   failed or truncated read, named in words.
+ *
+ * Failing all three (a coord that serves neither), it is worded from what
+ * `stale` itself guarantees.
  */
-export function degradationsGapPhrase(deg: DegradationsView): string {
-  if (deg.headline === "unknown") {
-    const reason = nonBlank(deg.headlineReason);
-    if (reason !== null) return withoutVerdictWords(reason);
-  }
-  const notFresh = (deg.planes ?? [])
-    .filter((p) => p.fresh === false)
+export function degradationsGapPhrase(
+  deg: DegradationsView,
+  sources: SourceCoverageView[] | null = null
+): string {
+  const planes = deg.planes ?? [];
+  const parts: string[] = [];
+  const watched = planes
+    .filter((p) => p.fresh === false && p.watchers.length > 0)
     .map((p) => planeLabel(p.plane));
-  if (notFresh.length > 0) {
-    return `not every watcher is fresh (${notFresh.join(", ")})`;
+  if (watched.length > 0) {
+    parts.push(`not every watcher is fresh (${watched.join(", ")})`);
   }
+  for (const p of planes) {
+    if (p.fresh === false && p.watchers.length === 0) {
+      parts.push(`the ${planeLabel(p.plane)} reading could not be taken`);
+    }
+  }
+  const partial = [
+    ...new Set(
+      (sources ?? []).flatMap((s) => {
+        const words = DEGRADATION_SOURCE_WORDS[s.source];
+        return words !== undefined && PARTIAL_SOURCE_STATES.has(s.state)
+          ? [words]
+          : [];
+      })
+    ),
+  ];
+  if (partial.length > 0) parts.push(`not fully read: ${partial.join(", ")}`);
+  if (parts.length > 0) return parts.join("; ");
   return "a source feeding it was not fully read, or a watcher feeding it is not fresh";
 }
 
@@ -1065,30 +1139,67 @@ export function sourceLabel(
 
 /**
  * A row's `error` in words. A watcher row's error is coord's reason TOKEN, so
- * it is worded like the plane line's ({@link watcherReasonWords}); any other
- * row's error is coord's own sentence, kept, with the stalled class reworded.
+ * it is worded like the plane line's ({@link watcherReasonWords}). Any other
+ * row's error is coord's own error chain — an `anyhow` context such as
+ * "SELECT coord.work_units (project-state class split): …", internal
+ * vocabulary — so the row only says coord reported one, and the chain itself
+ * goes to the expanded detail's last line ({@link sourceRawLine}, R8).
  */
 export function sourceErrorWords(s: SourceCoverageView): string | null {
   if (s.error === null) return null;
   return isWatcherSource(s.source)
     ? watcherReasonWords(s.error, s.state)
-    : withoutVerdictWords(s.error);
+    : "coord reported an error";
+}
+
+/** The expanded detail's sentence for a row's `error`; null when none. */
+export function sourceErrorSentence(s: SourceCoverageView): string | null {
+  if (s.error === null) return null;
+  if (!isWatcherSource(s.source)) {
+    return "Coord reported an error; it is quoted on the last line.";
+  }
+  const words = watcherReasonWords(s.error, s.state);
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}.`;
+}
+
+/**
+ * What a row's `freshness_bound_secs` says, in words true of its kind of row.
+ *
+ * - A watcher row: coord copies the watcher's `bound_secs`, the THRESHOLD its
+ *   freshness verdict applies (3 x the effective interval) — not the age of
+ *   any data. Coord lists the row because the watcher is not fresh, so for
+ *   `last_success_older_than_3x_interval` its last success is OLDER than the
+ *   bound; for any other reason the bound is stated only as the threshold.
+ * - Any other row coord read in full: a maximum age (train health's per-repo
+ *   verdicts may come from its memo, up to one memo TTL old).
+ * - Any other row not read in full: the bound is stated as a bound. No age is
+ *   promised for data the row may not hold.
+ */
+export function sourceAgePhrase(s: SourceCoverageView): string {
+  const bound = s.freshnessBoundSecs;
+  if (isWatcherSource(s.source)) {
+    if (bound === null) return "freshness bound not stated";
+    return s.error === "last_success_older_than_3x_interval"
+      ? `last success older than its ${durationText(bound)} freshness bound`
+      : `freshness bound ${durationText(bound)}`;
+  }
+  if (bound === null) return "maximum age not stated";
+  return s.state === "read"
+    ? `may be up to ${durationText(bound)} old`
+    : `freshness bound ${durationText(bound)}`;
 }
 
 /**
  * The collapsed row's reason, in words: why it was not read (when coord said),
- * how old it may be, and how many rows it left out. A field coord did not
- * state is said to be not stated — never a dash, never a zero.
+ * what its freshness bound says ({@link sourceAgePhrase}), and how many rows
+ * it left out. A field coord did not state is said to be not stated — never a
+ * dash, never a zero.
  */
 export function sourceRowReason(s: SourceCoverageView): string {
   const parts: string[] = [];
   const error = sourceErrorWords(s);
   if (error !== null) parts.push(error);
-  parts.push(
-    s.freshnessBoundSecs === null
-      ? "maximum age not stated"
-      : `may be up to ${durationText(s.freshnessBoundSecs)} old`
-  );
+  parts.push(sourceAgePhrase(s));
   parts.push(
     s.rowsExcluded === null
       ? "exclusions not stated"
@@ -1097,11 +1208,40 @@ export function sourceRowReason(s: SourceCoverageView): string {
   return parts.join(" · ");
 }
 
-/** The raw ids for a row's expanded detail's last line (R8). */
+/**
+ * The expanded detail's last line (R8: raw ids only there): coord's source id,
+ * then its error — a watcher's reason token, or another row's error chain with
+ * the stalled class reworded, since that word never reaches the screen.
+ */
 export function sourceRawLine(s: SourceCoverageView): string {
-  return isWatcherSource(s.source) && s.error !== null
-    ? `${s.source} · ${s.error}`
-    : s.source;
+  if (s.error === null) return s.source;
+  const error = isWatcherSource(s.source)
+    ? s.error
+    : withoutVerdictWords(s.error);
+  return `${s.source} · ${error}`;
+}
+
+/**
+ * How a row's `as_of` is captioned. A source's `as_of` is when coord read it.
+ * A watcher row's is coord's copy of the watcher's own `as_of` — the time of
+ * its freshest SUCCESSFUL run — which is not a read at all.
+ */
+export function sourceTimeWords(s: SourceCoverageView): {
+  verb: string;
+  absentLabel: string;
+  absentTitle: string;
+} {
+  return isWatcherSource(s.source)
+    ? {
+        verb: "Last successful run",
+        absentLabel: "last success: unknown",
+        absentTitle: "No successful run time was served for this watcher",
+      }
+    : {
+        verb: "Read",
+        absentLabel: "as of: unknown",
+        absentTitle: "Coord recorded no read time",
+      };
 }
 
 // ---------------------------------------------------------------------------

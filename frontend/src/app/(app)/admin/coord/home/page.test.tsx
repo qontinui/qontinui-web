@@ -495,7 +495,12 @@ describe("/admin/coord/home", () => {
     expect(screen.getByText("A runner stopped answering")).toBeInTheDocument();
   });
 
-  it("quotes coord's reason for the gap only on its unknown headline, where it lists the cause", async () => {
+  // coord's unknown headline names the partial source by its raw id
+  // ("source `fleet_drain` was not fully read"). R8: the sentence names it in
+  // words, from the does_not_know row coord served beside the block, and
+  // coord's own reason is kept for the title only.
+  it("names a partial source in words on the unknown headline, keeping coord's reason for the title", async () => {
+    const base = doorBody();
     await renderWith(
       doorBody({
         degradations: {
@@ -506,13 +511,64 @@ describe("/admin/coord/home", () => {
           recently_cleared: [],
           planes: {},
         },
+        does_not_know: [
+          ...(base.does_not_know as unknown[]),
+          { source: "fleet_drain", state: "could_not_read", error: "timeout" },
+        ],
       })
     );
-    expect(
-      screen.getByTestId("coord-home.degrading.incomplete")
-    ).toHaveTextContent(
-      "Incomplete view — source `fleet_drain` was not fully read. The rows below are real; there may be others."
+    const line = screen.getByTestId("coord-home.degrading.incomplete");
+    expect(line).toHaveTextContent(
+      /^Incomplete view — not fully read: machine drains\. The rows below are real; there may be others\.$/
     );
+    expect(line).not.toHaveTextContent(/fleet_drain|`/);
+    expect(line).toHaveAttribute(
+      "title",
+      "source `fleet_drain` was not fully read"
+    );
+  });
+
+  // coord's disk plane has NO watcher: its `fresh` is whether the fleet
+  // roster was read with its resource dimension scraped. A failed reading is
+  // not a watcher, and neither the gap sentence nor the plane line may say so.
+  it("words a disk reading that could not be taken without blaming a watcher", async () => {
+    const base = doorBody();
+    await renderWith(
+      doorBody({
+        degradations: {
+          ...(base.degradations as Record<string, unknown>),
+          state: "stale",
+          headline: "degraded",
+          headline_reason: "at least one operator-plane degradation is open",
+          planes: {
+            runner: {
+              fresh: true,
+              watchers: [{ name: "health_ledger", state: "fresh" }],
+            },
+            disk: { watchers: [], fresh: false, detection_bound_secs: 180 },
+          },
+        },
+        does_not_know: [
+          ...(base.does_not_know as unknown[]),
+          {
+            source: "fleet_health roster",
+            state: "stale",
+            error:
+              "resource_scrape_up=false, credential_dark_scrape_up=true — a dimension of the roster could not be read",
+          },
+        ],
+      })
+    );
+    const line = screen.getByTestId("coord-home.degrading.incomplete");
+    expect(line).toHaveTextContent(
+      /^Incomplete view — the disk reading could not be taken; not fully read: machines in the fleet\. The rows below are real; there may be others\.$/
+    );
+    expect(line).not.toHaveTextContent(/watcher/);
+    const planesLine = screen.getByTestId("coord-home.degrading.planes");
+    expect(planesLine).toHaveTextContent(
+      "disk: no watcher; its reading could not be taken"
+    );
+    expect(planesLine).not.toHaveTextContent(/no watcher reported/);
   });
 
   it.each([
@@ -565,7 +621,7 @@ describe("/admin/coord/home", () => {
       })
     );
     expect(screen.getByTestId("coord-home.degrading.planes")).toHaveTextContent(
-      "merge train: 1 of 1 watcher not fresh — has not completed a run"
+      "merge train: 1 of 1 watcher not fresh — no successful run on record"
     );
     expect(
       screen.getByTestId("coord-home.degrading.planes")
@@ -1043,12 +1099,60 @@ describe("/admin/coord/home", () => {
       .getByText("Watcher feeding merge train")
       .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
     expect(watcherRow).toHaveTextContent(
-      "has not completed a run · may be up to 5m old · exclusions not stated"
+      "no successful run on record · freshness bound 5m · exclusions not stated"
     );
+    expect(watcherRow).not.toHaveTextContent(/may be up to/);
     fireEvent.click(within(dnk).getByText("Watcher feeding merge train"));
     expect(
       within(watcherRow).getByTestId("coord-home.does-not-know.raw")
     ).toHaveTextContent("watcher:stuck_pr_watcher · no_successful_tick");
+    // coord's error chain is not on the collapsed row; expanded, it is
+    // quoted on the detail's last line only.
+    const drainRow = within(dnk)
+      .getByText("Machine drains")
+      .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
+    expect(drainRow).toHaveTextContent(
+      "coord reported an error · maximum age not stated · exclusions not stated"
+    );
+    expect(drainRow).not.toHaveTextContent(/timeout/);
+    fireEvent.click(within(dnk).getByText("Machine drains"));
+    expect(drainRow).toHaveTextContent(
+      "Coord reported an error; it is quoted on the last line."
+    );
+    expect(
+      within(drainRow).getByTestId("coord-home.does-not-know.raw")
+    ).toHaveTextContent(/^fleet_drain · timeout$/);
+  });
+
+  // A watcher row's `as_of` is the watcher's last SUCCESSFUL run (coord
+  // copies it from the plane), not a time coord read anything.
+  it("captions a watcher row's time as its last successful run, and a source's as its read", async () => {
+    const base = doorBody();
+    await renderWith(
+      doorBody({
+        does_not_know: [
+          ...(base.does_not_know as unknown[]),
+          {
+            source: "watcher:merge_scheduler.dispatch",
+            state: "stale",
+            as_of: "2026-09-30T09:00:00Z",
+            freshness_bound_secs: 90,
+            error: "last_success_older_than_3x_interval",
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    const rows = within(dnk).getAllByTestId("coord-home.does-not-know.row");
+    const watcherRow = rows[rows.length - 1];
+    expect(watcherRow).toHaveTextContent(
+      "last run is overdue · last success older than its 1m freshness bound · exclusions not stated"
+    );
+    expect(
+      watcherRow.querySelector('[title^="Last successful run "]')
+    ).not.toBeNull();
+    expect(watcherRow.querySelector('[title^="Read "]')).toBeNull();
+    expect(rows[0].querySelector('[title^="Read "]')).not.toBeNull();
   });
 
   // `useVisiblePoll`'s single-flight guard covers the poll only; a press

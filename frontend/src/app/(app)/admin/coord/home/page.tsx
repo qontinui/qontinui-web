@@ -83,6 +83,7 @@ export default function CoordHomePage() {
       />
       <DegradingSection
         deg={shown.degradations}
+        sources={shown.doesNotKnow}
         stale={stale}
         generatedAt={shown.generatedAt}
       />

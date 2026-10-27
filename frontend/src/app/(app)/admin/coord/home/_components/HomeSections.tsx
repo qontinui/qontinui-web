@@ -56,10 +56,11 @@ import {
   withoutVerdictWords,
   planeLabel,
   remediationPhrase,
-  sourceErrorWords,
+  sourceErrorSentence,
   sourceLabel,
   sourceRawLine,
   sourceRowReason,
+  sourceTimeWords,
   stallWindowDays,
   unitClassLabel,
   unservedDecisionsSentence,
@@ -529,10 +530,16 @@ function DegradationRow({
 
 export function DegradingSection({
   deg,
+  sources = null,
   stale = false,
   generatedAt = null,
 }: {
   deg: DegradationsView;
+  /**
+   * What the view does not know (`does_not_know`): the gap sentence names the
+   * degradation sources coord did not fully read from it.
+   */
+  sources?: SourceCoverageView[] | null;
   /** The latest poll failed; this is the last good read (style guide R6). */
   stale?: boolean;
   generatedAt?: string | null;
@@ -581,9 +588,16 @@ export function DegradingSection({
             <p
               className="m-0 text-sm text-muted-foreground"
               data-testid="coord-home.degrading.incomplete"
+              // R8: coord's own reason names raw source ids, so it is kept
+              // for the title only; the sentence is built from structure.
+              title={
+                deg.headlineReason
+                  ? withoutVerdictWords(deg.headlineReason)
+                  : undefined
+              }
             >
-              Incomplete view — {degradationsGapPhrase(deg)}. The rows below are
-              real; there may be others.
+              Incomplete view — {degradationsGapPhrase(deg, sources)}. The rows
+              below are real; there may be others.
             </p>
           )}
           {open === null && (
@@ -1152,16 +1166,19 @@ export function DoesNotKnowSection({
                 />
               }
               reason={sourceRowReason(s)}
-              time={
-                <RowTime
-                  at={s.asOf}
-                  verb="Read"
-                  absent={{
-                    label: "as of: unknown",
-                    title: "Coord recorded no read time",
-                  }}
-                />
-              }
+              time={(() => {
+                const words = sourceTimeWords(s);
+                return (
+                  <RowTime
+                    at={s.asOf}
+                    verb={words.verb}
+                    absent={{
+                      label: words.absentLabel,
+                      title: words.absentTitle,
+                    }}
+                  />
+                );
+              })()}
               attention={
                 HOME_ATTENTION_BY_KIND[
                   s.state === "read" ? "source_read" : "source_not_read"
@@ -1178,7 +1195,7 @@ export function DoesNotKnowSection({
                       {s.state === "read"
                         ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
                         : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
-                      {s.error ? ` ${sourceErrorWords(s)}` : ""}
+                      {s.error ? ` ${sourceErrorSentence(s)}` : ""}
                     </p>
                     <p className="m-0 text-muted-foreground">
                       Freshness bound:{" "}

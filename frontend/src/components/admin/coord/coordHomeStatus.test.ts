@@ -26,10 +26,13 @@ import {
   degradationsGapPhrase,
   deriveHomeStrip,
   nothingNeedsYou,
+  sourceAgePhrase,
+  sourceErrorSentence,
   sourceErrorWords,
   sourceLabel,
   sourceRawLine,
   sourceRowReason,
+  sourceTimeWords,
   unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
@@ -469,11 +472,15 @@ describe("review fixes — parsing", () => {
 });
 
 describe("round-2 review — R8 for watchers and domains, honest red headline", () => {
+  // Each says only what coord's heartbeat table can show: a row keeps its
+  // replica's LAST outcome, and a departed replica's row is deleted after
+  // seven days — so neither "never ran" nor "never reported" is knowable.
   it.each([
-    ["no_successful_tick", "has not completed a run"],
+    ["no_successful_tick", "no successful run on record"],
     ["last_success_older_than_3x_interval", "last run is overdue"],
     ["heartbeat_read_failed", "status could not be read"],
     ["no_declared_interval", "no expected interval declared"],
+    ["no_heartbeat_row", "no heartbeat on record"],
     ["something_new", "state unknown"],
     [null, "state unknown"],
   ])("words watcher reason %p as %p", (token, words) => {
@@ -495,7 +502,9 @@ describe("round-2 review — R8 for watchers and domains, honest red headline", 
       ],
       detectionBoundSecs: null,
     });
-    expect(phrase).toBe("1 of 2 watchers not fresh — has not completed a run");
+    expect(phrase).toBe(
+      "1 of 2 watchers not fresh — no successful run on record"
+    );
     expect(phrase).not.toMatch(/_/);
   });
 
@@ -526,7 +535,7 @@ describe("round-2 review — R8 for watchers and domains, honest red headline", 
   it("words a watcher by its state when coord gives no reason", () => {
     expect(watcherReasonWords(null, "stale")).toBe("stale");
     expect(watcherReasonWords("no_successful_tick", "stale")).toBe(
-      "has not completed a run"
+      "no successful run on record"
     );
     expect(watcherReasonWords(null, "weird")).toBe("state unknown");
     expect(watcherReasonWords(null, null)).toBe("state unknown");
@@ -750,7 +759,7 @@ describe("round-8 review — the partial and unread captions say what is true", 
     expect(phrase).toBe("not every watcher is fresh (merge train)");
   });
 
-  it("names every plane served as not fresh, and none served fresh or unstated", () => {
+  it("names every watched plane served as not fresh, and none served fresh or unstated", () => {
     const phrase = degradationsGapPhrase(
       deg({
         state: "stale",
@@ -758,8 +767,19 @@ describe("round-8 review — the partial and unread captions say what is true", 
         headline_reason: "at least one operator-plane degradation is open",
         planes: {
           ...STALE_MERGE_TRAIN,
-          build_capacity: { fresh: false, watchers: [] },
-          disk: { watchers: [] },
+          build_capacity: {
+            fresh: false,
+            watchers: [
+              {
+                name: "ci_queue_wait",
+                state: "unknown",
+                reason: "no_heartbeat_row",
+              },
+            ],
+          },
+          cloud_service: {
+            watchers: [{ name: "github_ratelimit_watcher", state: "fresh" }],
+          },
         },
       })
     );
@@ -767,6 +787,61 @@ describe("round-8 review — the partial and unread captions say what is true", 
       "not every watcher is fresh (merge train, build capacity)"
     );
   });
+
+  // coord's real disk shape: the one plane with NO watcher
+  // (`PLANE_WATCHERS` `(InfraPlane::Disk, &[])`), whose `fresh` is whether
+  // the fleet roster was read with its resource dimension scraped. When that
+  // read fails no watcher is involved, so none may be blamed.
+  const DISK_NOT_TAKEN = {
+    disk: {
+      kinds: [],
+      joined_sources: [
+        "fleet_health resource headroom (a machine whose worst lane reads `breach`)",
+      ],
+      as_of: null,
+      interval_secs: null,
+      watchers: [],
+      fresh: false,
+      detection_bound_secs: 180,
+    },
+  };
+
+  it("words a no-watcher plane that is not fresh as a reading not taken, never as a watcher", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        headline: "degraded",
+        headline_reason: "at least one operator-plane degradation is open",
+        planes: { ...STALE_MERGE_TRAIN, ...DISK_NOT_TAKEN },
+      })
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (merge train); the disk reading could not be taken"
+    );
+    const diskOnly = degradationsGapPhrase(
+      deg({ state: "stale", headline: "unknown", planes: DISK_NOT_TAKEN })
+    );
+    expect(diskOnly).toBe("the disk reading could not be taken");
+    expect(diskOnly).not.toMatch(/watcher/);
+  });
+
+  it.each([
+    [true, "read directly, no watcher"],
+    [false, "no watcher; its reading could not be taken"],
+    [null, "no watcher; freshness not stated"],
+  ] as const)(
+    "words a no-watcher plane served fresh=%p as %p",
+    (fresh, words) => {
+      expect(
+        planeFreshnessPhrase({
+          plane: "disk",
+          fresh,
+          watchers: [],
+          detectionBoundSecs: 180,
+        })
+      ).toBe(words);
+    }
+  );
 
   it.each([
     ["no planes served", undefined],
@@ -789,42 +864,114 @@ describe("round-8 review — the partial and unread captions say what is true", 
     }
   );
 
-  it("quotes coord's reason on the unknown headline, where it lists why the block is partial", () => {
+  /** does_not_know rows, through the real parser. */
+  function sources(rows: Record<string, unknown>[]) {
+    return parseProjectState({ does_not_know: rows })!.doesNotKnow;
+  }
+
+  // coord's `unknown` headline lists the partial sources by their raw ids
+  // ("source `fleet_drain` was not fully read"). R8: the page builds the
+  // clause from the does_not_know rows instead, in words.
+  it("names partial degradation sources in words on the unknown headline, never quoting coord's ids", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        headline: "unknown",
+        headline_reason:
+          "a watcher feeding this view is stale or has no heartbeat; source `fleet_drain` was not fully read; source `train_health` was not fully read",
+        planes: STALE_MERGE_TRAIN,
+      }),
+      sources([
+        { source: "work_units", state: "read" },
+        { source: "fleet_drain", state: "could_not_read", error: "timeout" },
+        {
+          source: "train_health (per authority repo)",
+          state: "stale",
+          error: "qontinui-web: derivation timed out",
+        },
+        { source: "fleet_health roster", state: "read" },
+      ])
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (merge train); not fully read: machine drains, merge train health"
+    );
+    expect(phrase).not.toMatch(/`|_|source /);
+  });
+
+  it.each([
+    [
+      "the open-alert read hit its row ceiling",
+      { source: "coord.alerts (operator-plane kinds)", state: "stale" },
+      "not fully read: infrastructure alerts",
+    ],
+    [
+      "the roster's resource dimension was not scraped",
+      { source: "fleet_health roster", state: "stale" },
+      "not fully read: machines in the fleet",
+    ],
+    [
+      "the cloud breach read failed",
+      {
+        source: "infra_health_observations (cloud, latest per resource)",
+        state: "could_not_read",
+      },
+      "not fully read: cloud service health",
+    ],
+    [
+      "the heartbeats could not be read",
+      { source: "worker_heartbeats", state: "could_not_read" },
+      "not fully read: watcher heartbeats",
+    ],
+  ])("names a partial source when %s", (_case, row, want) => {
     expect(
       degradationsGapPhrase(
-        deg({
-          state: "stale",
-          headline: "unknown",
-          headline_reason:
-            "a watcher feeding this view is stale or has no heartbeat; source `train_health` was not fully read",
-          planes: STALE_MERGE_TRAIN,
-        })
+        deg({ state: "stale", headline: "unknown" }),
+        sources([row])
+      )
+    ).toBe(want);
+  });
+
+  it.each([
+    [
+      "a cloud breach read withheld from this caller (not_implemented)",
+      {
+        source: "infra_health_observations (cloud, latest per resource)",
+        state: "not_implemented",
+      },
+    ],
+    [
+      "a degradation source read in full",
+      { source: "fleet_drain", state: "read" },
+    ],
+    [
+      "a source the degradations block does not read",
+      { source: "work_units", state: "could_not_read" },
+    ],
+  ])("does not count %s as a partial source", (_case, row) => {
+    expect(
+      degradationsGapPhrase(
+        deg({ state: "stale", headline: "unknown" }),
+        sources([row])
       )
     ).toBe(
-      "a watcher feeding this view is stale or has no heartbeat; source `train_health` was not fully read"
+      "a source feeding it was not fully read, or a watcher feeding it is not fresh"
     );
   });
 
-  it("rewords the stalled class in coord's reason, and ignores a blank one", () => {
-    expect(
-      degradationsGapPhrase(
-        deg({
-          state: "stale",
-          headline: "unknown",
-          headline_reason: "the train watcher stalled",
-        })
-      )
-    ).toBe("the train watcher without recorded change");
-    expect(
-      degradationsGapPhrase(
-        deg({
-          state: "stale",
-          headline: "unknown",
-          headline_reason: "   ",
-          planes: STALE_MERGE_TRAIN,
-        })
-      )
-    ).toBe("not every watcher is fresh (merge train)");
+  it("never quotes coord's reason, on any headline", () => {
+    for (const headline of ["unknown", "degraded"]) {
+      expect(
+        degradationsGapPhrase(
+          deg({
+            state: "stale",
+            headline,
+            headline_reason: "the train watcher stalled",
+          })
+        )
+      ).toBe(
+        "a source feeding it was not fully read, or a watcher feeding it is not fresh"
+      );
+    }
   });
 
   it.each([
@@ -966,7 +1113,9 @@ describe("round-8 review — R8 for what the view does not know", () => {
     ).toBe("may be up to 10m old · 2 excluded");
     expect(
       sourceRowReason(row({ state: "could_not_read", error: "timeout" }))
-    ).toBe("timeout · maximum age not stated · exclusions not stated");
+    ).toBe(
+      "coord reported an error · maximum age not stated · exclusions not stated"
+    );
   });
 
   it("words a watcher row's reason token, keeping the token for the raw line", () => {
@@ -976,23 +1125,99 @@ describe("round-8 review — R8 for what the view does not know", () => {
       freshness_bound_secs: 300,
       error: "no_successful_tick",
     });
-    expect(sourceErrorWords(w)).toBe("has not completed a run");
+    expect(sourceErrorWords(w)).toBe("no successful run on record");
+    expect(sourceErrorSentence(w)).toBe("No successful run on record.");
     expect(sourceRowReason(w)).toBe(
-      "has not completed a run · may be up to 5m old · exclusions not stated"
+      "no successful run on record · freshness bound 5m · exclusions not stated"
     );
     expect(sourceRawLine(w)).toBe(
       "watcher:stuck_pr_watcher · no_successful_tick"
     );
   });
 
-  it("keeps a non-watcher error as coord's sentence, without the stalled class", () => {
+  // A watcher row's `freshness_bound_secs` is coord's copy of the watcher's
+  // `bound_secs`: the THRESHOLD its verdict applies, not the age of any data.
+  // An overdue watcher's last success is OLDER than it, so "may be up to 1m
+  // old" would be false.
+  it("words an overdue watcher's bound as the threshold its last success passed", () => {
+    const overdue = row({
+      source: "watcher:merge_scheduler.dispatch",
+      state: "stale",
+      freshness_bound_secs: 90,
+      error: "last_success_older_than_3x_interval",
+    });
+    expect(sourceRowReason(overdue)).toBe(
+      "last run is overdue · last success older than its 1m freshness bound · exclusions not stated"
+    );
+    expect(sourceRowReason(overdue)).not.toMatch(/may be up to/);
+  });
+
+  it.each([
+    [
+      "a watcher row with no bound",
+      { source: "watcher:x", state: "unknown", error: "no_heartbeat_row" },
+      "freshness bound not stated",
+    ],
+    [
+      "a source read in full",
+      {
+        source: "train_health (per authority repo)",
+        state: "read",
+        freshness_bound_secs: 300,
+      },
+      "may be up to 5m old",
+    ],
+    [
+      "a source NOT read in full",
+      {
+        source: "train_health (per authority repo)",
+        state: "stale",
+        freshness_bound_secs: 300,
+      },
+      "freshness bound 5m",
+    ],
+    [
+      "a source with no bound",
+      { source: "fleet_drain", state: "read" },
+      "maximum age not stated",
+    ],
+  ])("words the bound of %s as %p", (_case, over, want) => {
+    expect(sourceAgePhrase(row(over))).toBe(want);
+  });
+
+  // R8: a non-watcher row's error is coord's error chain — internal
+  // vocabulary — so it reaches only the expanded detail's last line.
+  it("keeps a non-watcher error chain off the row and quotes it on the raw line, without the stalled class", () => {
     const r = row({
       state: "could_not_read",
-      error: "the work_units sub-read stalled",
+      error:
+        "SELECT coord.work_units (project-state class split): the work_units sub-read stalled",
     });
-    expect(sourceErrorWords(r)).toBe(
-      "the work_units sub-read without recorded change"
+    expect(sourceErrorWords(r)).toBe("coord reported an error");
+    expect(sourceRowReason(r)).not.toMatch(/SELECT|coord\.work_units|stalled/);
+    expect(sourceErrorSentence(r)).toBe(
+      "Coord reported an error; it is quoted on the last line."
     );
-    expect(sourceRawLine(r)).toBe("work_units");
+    expect(sourceRawLine(r)).toBe(
+      "work_units · SELECT coord.work_units (project-state class split): the work_units sub-read without recorded change"
+    );
+    expect(sourceRawLine(row({ state: "read" }))).toBe("work_units");
+  });
+
+  // A watcher row's `as_of` is the watcher's freshest SUCCESSFUL run, not a
+  // read; a source row's is when coord read it.
+  it("captions a watcher row's time as its last successful run, never as a read", () => {
+    expect(
+      sourceTimeWords(row({ source: "watcher:health_ledger", state: "stale" }))
+    ).toEqual({
+      verb: "Last successful run",
+      absentLabel: "last success: unknown",
+      absentTitle: "No successful run time was served for this watcher",
+    });
+    expect(sourceTimeWords(row({ state: "read" }))).toEqual({
+      verb: "Read",
+      absentLabel: "as of: unknown",
+      absentTitle: "Coord recorded no read time",
+    });
   });
 });
