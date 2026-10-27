@@ -21,7 +21,7 @@ import {
   renderInPresentationMode,
 } from "@/test/presentation";
 import type { GroupPlan } from "../_lib/twin-plans";
-import { PRESENTATION_PLAN_LIMIT, TwinPlanList } from "./TwinPlanList";
+import { TwinPlanList } from "./TwinPlanList";
 
 /** A unit whose every repository names the tenant's own owner. */
 const OWN = { area: "ui-bridge", repos: ["qontinui/qontinui-web"] };
@@ -260,17 +260,13 @@ describe("TwinPlanList — presentation mode, as the tenant's scope decides", ()
     expect(within(item).getByText("UNKNOWN")).toBeInTheDocument();
   });
 
-  it("turns density down: a few unfinished plans, the rest and the finished ones counted", () => {
-    const unfinished = Array.from(
-      { length: PRESENTATION_PLAN_LIMIT + 2 },
-      (_, i) =>
-        plan(
-          unit(
-            `2026-09-${String(i + 1).padStart(2, "0")}-p`,
-            "in_progress",
-            BARE
-          )
-        )
+  it("turns density down: eight unfinished plans, the rest and the finished ones counted", () => {
+    // Literals, not the component's constant: the limit's value is what this
+    // pins (style guide §6.5, density down).
+    const unfinished = Array.from({ length: 10 }, (_, i) =>
+      plan(
+        unit(`2026-09-${String(i + 1).padStart(2, "0")}-p`, "in_progress", BARE)
+      )
     );
     const finished = [1, 2, 3].map((i) =>
       plan(unit(`2026-08-0${i}-done`, "shipped", BARE))
@@ -279,9 +275,7 @@ describe("TwinPlanList — presentation mode, as the tenant's scope decides", ()
       <TwinPlanList plans={[...unfinished, ...finished]} complete />,
       { scope: READY }
     );
-    expect(screen.getAllByTestId("digital-twin-plan")).toHaveLength(
-      PRESENTATION_PLAN_LIMIT
-    );
+    expect(screen.getAllByTestId("digital-twin-plan")).toHaveLength(8);
     expect(screen.getByText("and 2 more unfinished plans")).toBeInTheDocument();
     expect(screen.getByText("3 shipped or closed")).toBeInTheDocument();
     expect(screen.queryByTestId("digital-twin-plans-finished")).toBeNull();
