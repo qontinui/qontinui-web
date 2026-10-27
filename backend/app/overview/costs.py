@@ -29,6 +29,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
@@ -50,7 +51,7 @@ from app.schemas.overview_costs import (
     entry_problem,
     recurring_problem,
 )
-from app.services.overview_costs import is_due_date, summarize
+from app.services.overview_costs import due_dates, is_due_date, summarize
 
 
 def _now() -> datetime:
@@ -148,6 +149,22 @@ class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
     own rules in ``_check`` (create and update) and ``_before_delete``."""
 
     model: type[Row]
+    #: What a constraint the checks could not see coming (a concurrent write
+    #: won the race between check and flush) is reported as — a 409 the
+    #: reader can act on, never a 500.
+    race_error: str = "conflict"
+    race_message: str = (
+        "Somebody else changed this at the same time. Reload and try again."
+    )
+
+    async def _flush(self, ctx: StoreContext, *, delete: Row | None = None) -> None:
+        try:
+            async with ctx.db.begin_nested():
+                if delete is not None:
+                    await ctx.db.delete(delete)
+                await ctx.db.flush()
+        except IntegrityError as exc:
+            raise StoreRefused(409, self.race_error, self.race_message) from exc
 
     def _read(self, row: Row) -> Any:
         raise NotImplementedError
@@ -189,7 +206,7 @@ class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
             updated_by=ctx.access.actor,
         )
         ctx.db.add(row)
-        await ctx.db.flush()
+        await self._flush(ctx)
         return self._read(row)
 
     async def update(
@@ -213,7 +230,7 @@ class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
         row.version += 1
         row.updated_by = ctx.access.actor
         row.updated_at = _now()
-        await ctx.db.flush()
+        await self._flush(ctx)
         return before, self._read(row)
 
     async def delete(
@@ -224,13 +241,16 @@ class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
         if row.version != expected_version:
             raise StaleVersion(before)
         await self._before_delete(ctx, row)
-        await ctx.db.delete(row)
-        await ctx.db.flush()
+        await self._flush(ctx, delete=row)
         return before
 
 
 class CostCategoryStore(_Store[CostCategory]):
     model = CostCategory
+    race_message = (
+        "Somebody else just added a category with that name, or a cost to "
+        "this category. Reload and try again."
+    )
 
     def _read(self, row: CostCategory) -> CostCategoryRead:
         return category_read(row)
@@ -264,8 +284,13 @@ class CostCategoryStore(_Store[CostCategory]):
             )
 
     async def _before_delete(self, ctx: StoreContext, row: CostCategory) -> None:
-        used = await _count(ctx.db, CostEntry.category_id == row.id) + await _count(
-            ctx.db, RecurringCost.category_id == row.id
+        tenant = ctx.access.tenant_id
+        used = await _count(
+            ctx.db, CostEntry.tenant_id == tenant, CostEntry.category_id == row.id
+        ) + await _count(
+            ctx.db,
+            RecurringCost.tenant_id == tenant,
+            RecurringCost.category_id == row.id,
         )
         if used:
             raise StoreRefused(
@@ -278,6 +303,10 @@ class CostCategoryStore(_Store[CostCategory]):
 
 class RecurringCostStore(_Store[RecurringCost]):
     model = RecurringCost
+    race_error = "periods_recorded"
+    race_message = (
+        "A period of this cost was recorded at the same time. Reload and try again."
+    )
 
     def _read(self, row: RecurringCost) -> RecurringCostRead:
         return recurring_read(row)
@@ -309,6 +338,7 @@ class RecurringCostStore(_Store[RecurringCost]):
             raise StoreRefused(422, "invalid_recurring_cost", problem)
         if row is None:
             return
+        await self._refuse_rewriting_history(ctx, values, row)
         # The schedule decides which periods exist. Moving it would strand
         # periods already recorded on dates it no longer falls due.
         schedule = ("start_date", "end_date", "cadence")
@@ -316,7 +346,8 @@ class RecurringCostStore(_Store[RecurringCost]):
             recorded = (
                 await ctx.db.execute(
                     select(CostEntry.period_start).where(
-                        CostEntry.recurring_cost_id == row.id
+                        CostEntry.tenant_id == ctx.access.tenant_id,
+                        CostEntry.recurring_cost_id == row.id,
                     )
                 )
             ).scalars()
@@ -339,8 +370,38 @@ class RecurringCostStore(_Store[RecurringCost]):
                     "and add a new one.",
                 )
 
+    async def _refuse_rewriting_history(
+        self, ctx: StoreContext, values: dict[str, Any], row: RecurringCost
+    ) -> None:
+        """A fixed cost's unrecorded periods are priced from the cost itself,
+        on read. Once one has fallen due, changing the amount, currency or
+        kind would silently re-price spend already counted."""
+        if "fixed" not in (row.amount_kind, values["amount_kind"]):
+            return  # a variable cost's amount is only a guide
+        priced = ("amount_micros", "currency", "amount_kind")
+        if all(values[f] == getattr(row, f) for f in priced):
+            return
+        due = next(
+            due_dates(row.start_date, row.end_date, row.cadence, _now().date()), None
+        )
+        if due is None:
+            return
+        raise StoreRefused(
+            409,
+            "price_in_use",
+            f"“{row.name}” has already fallen due at its current amount (first "
+            f"on {due.isoformat()}), and those periods count towards what was "
+            "spent. If the price changed, give this cost a last due date and add "
+            "a new one at the new price. If the amount was entered wrongly, "
+            "remove the cost and add it again.",
+        )
+
     async def _before_delete(self, ctx: StoreContext, row: RecurringCost) -> None:
-        recorded = await _count(ctx.db, CostEntry.recurring_cost_id == row.id)
+        recorded = await _count(
+            ctx.db,
+            CostEntry.tenant_id == ctx.access.tenant_id,
+            CostEntry.recurring_cost_id == row.id,
+        )
         if recorded:
             raise StoreRefused(
                 409,
@@ -352,6 +413,11 @@ class RecurringCostStore(_Store[RecurringCost]):
 
 class CostEntryStore(_Store[CostEntry]):
     model = CostEntry
+    race_error = "period_already_recorded"
+    race_message = (
+        "That period was recorded by somebody else at the same time, or its "
+        "category was just removed. Reload and try again."
+    )
 
     def _read(self, row: CostEntry) -> CostEntryRead:
         return entry_read(row)
@@ -410,10 +476,14 @@ class CostEntryStore(_Store[CostEntry]):
         cost = (
             (
                 await ctx.db.execute(
-                    select(RecurringCost).where(
+                    # Locked, so a concurrent reschedule (which locks the
+                    # same row) cannot move the due dates under this check.
+                    select(RecurringCost)
+                    .where(
                         RecurringCost.id == recurring_cost_id,
                         RecurringCost.tenant_id == ctx.access.tenant_id,
                     )
+                    .with_for_update()
                 )
             )
             .scalars()
@@ -433,6 +503,7 @@ class CostEntryStore(_Store[CostEntry]):
             )
         taken = await _count(
             ctx.db,
+            CostEntry.tenant_id == ctx.access.tenant_id,
             CostEntry.recurring_cost_id == recurring_cost_id,
             CostEntry.period_start == period_start,
         )

@@ -360,18 +360,28 @@ export function recurringRowProblem(row: {
     : null;
 }
 
-/** A create body (or a patch) as the API takes it: a currency is always
- *  sent, the project's own when the row names none. */
+/**
+ * A create body or a patch as the API takes it. A row with no currency (a
+ * varying cost with no typical amount) is created in the project's base
+ * currency; a patch that clears the amount leaves the stored currency alone.
+ * Returns a sentence instead when a create needs a currency and the base one
+ * is not known (the summary has not loaded) — never a guessed one.
+ */
 export function recurringBody(
   fields: Partial<RecurringRow>,
-  baseCurrency: string
-): Record<string, unknown> {
+  baseCurrency: string | null,
+  mode: "create" | "update"
+): Record<string, unknown> | string {
   const body: Record<string, unknown> = { ...fields };
   delete body.id;
   delete body.version;
   delete body.supplied;
-  if ("currency" in body && body.currency === null)
-    body.currency = baseCurrency;
+  if ("currency" in body && body.currency === null) {
+    if (mode === "update") delete body.currency;
+    else if (baseCurrency) body.currency = baseCurrency;
+    else
+      return "Give it a currency — the project's own is not known yet. Reload and try again.";
+  }
   return body;
 }
 
@@ -470,8 +480,8 @@ export function parseRecurringCsv(
       // The name is how the row is matched, so a paste never rewrites it.
       supplied: [
         "start_date",
-        "cadence",
-        "amount_kind",
+        ...(cadence ? ["cadence"] : []),
+        ...(kind ? ["amount_kind"] : []),
         ...(vendor ? ["vendor"] : []),
         ...(category ? ["category_id"] : []),
         ...(amount ? ["amount_micros"] : []),

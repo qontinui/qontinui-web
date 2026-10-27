@@ -163,12 +163,22 @@ describe("rules mirrored from the server", () => {
     ).toBeNull();
   });
 
-  it("a recurring cost always sends a currency", () => {
-    expect(recurringBody({ name: "AWS", currency: null }, "EUR")).toEqual({
-      name: "AWS",
-      currency: "EUR",
-    });
-    expect(recurringBody({ name: "AWS" }, "EUR")).toEqual({ name: "AWS" });
+  it("a recurring cost's currency is never guessed", () => {
+    expect(
+      recurringBody({ name: "AWS", currency: null }, "EUR", "create")
+    ).toEqual({ name: "AWS", currency: "EUR" });
+    expect(
+      typeof recurringBody({ name: "AWS", currency: null }, null, "create")
+    ).toBe("string");
+    // Clearing a typical amount keeps the stored currency.
+    expect(
+      recurringBody({ amount_micros: null, currency: null }, "EUR", "update")
+    ).toEqual({ amount_micros: null });
     expect(RECURRING_WRITABLE).toContain("currency");
+  });
+
+  it("a pasted recurring cost changes only the columns it fills", () => {
+    const { rows } = parseRecurringCsv("Domain,,,,,,,2025-01-01", []);
+    expect(rows[0]!.supplied).toEqual(["start_date"]);
   });
 });
