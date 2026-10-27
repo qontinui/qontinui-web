@@ -1966,6 +1966,19 @@ seconds count the tick would leave behind; and a render with no client clock (se
 hydration) states the instant in UTC to the minute, so the HTML and the first client
 render agree.
 
+**A kept reading, and two reads of one thing.** R6's stale arm holds on a lens
+surface too, in both modes. A reading kept after its latest read failed (react-query
+keeps a query's data when a refetch fails) is named as the last read: the failure
+leads, the reading is introduced as the last one read, it is never headed "Live", its
+own staleness is worded as of when it was read ("its data was 30s stale when read"),
+and a dot drawn from it is the ignorance floor — the dot says what is true now. Where
+one panel shows two reads of one thing, every sentence names which read it describes,
+and each read is dated by its own `Provenance` chip, `persistent` because nothing
+else in the panel dates it: the sub-space drawer's Status is the page probe's answer,
+its Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
+`drawer-reading.ts`; every state of both reads, in both modes, is a row of
+`SubspaceDetail.matrix.test.tsx`).
+
 **Density down.** Presentation mode never adds a row to a page: what it changes is
 which of the page's own elements render, and how large a caption is. A page does not
 grow a second presentation layout.
