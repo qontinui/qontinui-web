@@ -55,7 +55,26 @@ def _coord_detail(resp: httpx.Response) -> Any:
 
 
 def _refuse_coord(resp: httpx.Response) -> HTTPException:
-    """Coord 4xx passes through with its status; anything else is a 502."""
+    """Coord 4xx passes through with its status; anything else is a 502.
+
+    Except 401/403: those refuse WEB's service credential, not the operator, who
+    already passed :func:`require_coord_tenant_admin`. Passed through, they would
+    read in the browser as the operator's own session failing, so they are a 502.
+    """
+    if resp.status_code in (401, 403):
+        logger.warning(
+            "overlord_label_coord_refused_web",
+            status=resp.status_code,
+            body=resp.text[:500],
+        )
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error": "coord_upstream_error",
+                "coord_status": resp.status_code,
+                "coord_detail": _coord_detail(resp),
+            },
+        )
     if 400 <= resp.status_code < 500:
         return HTTPException(status_code=resp.status_code, detail=_coord_detail(resp))
     logger.warning(
