@@ -33,7 +33,12 @@ the UI reads (a bare app's ``detail``, production's ``message``);
 ``fleet.ts`` and checks it declares exactly ``ADMIN_REQUIRED_DETAIL``, so a
 rewording of the constant and the literal together is still red here; and the
 frontend's ``src/lib/api/fleet.test.ts`` checks ``app/api/admin_deps.py`` from
-its side, so a frontend-only rewording is red there.
+its side, so a frontend-only rewording is red there. Each side's CI is
+path-filtered, so each file the other side reads is in that side's filters:
+``fleet.ts`` in ``backend-ci.yml``
+(:func:`test_backend_ci_runs_this_module_on_a_fleet_ts_only_change`) and
+``admin_deps.py`` in ``frontend-ci.yml`` (asserted in ``fleet.test.ts``). A
+change to either file alone then runs the check that reads it, in its own PR.
 """
 
 import re
@@ -46,6 +51,7 @@ from uuid import uuid4
 import httpx
 import pytest
 import pytest_asyncio
+import yaml  # type: ignore[import-untyped]
 from fastapi import FastAPI
 from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -68,14 +74,9 @@ REFUSAL_SENTENCE = "Not authorized. Admin access required."
 WIRES = ["detail", "message"]
 
 # backend/tests/x.py -> parents[2] is the repo root.
-_FLEET_UI_API = (
-    Path(__file__).resolve().parents[2]
-    / "frontend"
-    / "src"
-    / "lib"
-    / "api"
-    / "fleet.ts"
-)
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_FLEET_UI_API = _REPO_ROOT / "frontend" / "src" / "lib" / "api" / "fleet.ts"
+_BACKEND_CI = _REPO_ROOT / ".github" / "workflows" / "backend-ci.yml"
 _PLATFORM_ADMIN_REFUSAL_DECL = re.compile(
     r'^export const PLATFORM_ADMIN_REFUSAL = "(?P<sentence>[^"\\]*)";$',
     re.MULTILINE,
@@ -292,6 +293,28 @@ def test_the_fleet_ui_keys_on_the_sentence_this_backend_sends() -> None:
         f"{match.group('sentence')!r}, but require_admin refuses with "
         f"{ADMIN_REQUIRED_DETAIL!r}. Change both together."
     )
+
+
+def test_backend_ci_runs_this_module_on_a_fleet_ts_only_change() -> None:
+    """A frontend-only PR that reshapes ``PLATFORM_ADMIN_REFUSAL`` must run the
+    check above in ITS OWN CI.
+
+    Backend CI is path-filtered. Without ``fleet.ts`` in both filters, such a
+    PR runs no Backend CI at all, and the check first fails on a later,
+    unrelated backend PR or on the nightly run (the path-scoped-gate trap
+    ``backend-ci.yml`` documents).
+    """
+    workflow = yaml.safe_load(_BACKEND_CI.read_text(encoding="utf-8"))
+    # PyYAML reads the bare key ``on`` as the boolean True (YAML 1.1).
+    triggers = workflow.get("on", workflow.get(True))
+    relative = _FLEET_UI_API.relative_to(_REPO_ROOT).as_posix()
+    for trigger in ("pull_request", "push"):
+        paths = triggers[trigger]["paths"]
+        assert relative in paths, (
+            f"{relative} is not in backend-ci.yml `on.{trigger}.paths`, so a "
+            "change to it alone never runs "
+            "test_the_fleet_ui_keys_on_the_sentence_this_backend_sends."
+        )
 
 
 # ---------------------------------------------------------------------------

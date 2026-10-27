@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 /**
  * `/settings/fleet` designates test hosts through `designateTestTarget` /
@@ -108,10 +109,10 @@ describe("fleet designation refusals", () => {
  */
 describe("the platform-admin refusal sentence", () => {
   // src/lib/api -> the repo root is four levels up.
-  const ADMIN_DEPS = join(
-    __dirname,
-    "../../../../backend/app/api/admin_deps.py"
-  );
+  const REPO_ROOT = join(__dirname, "../../../..");
+  const ADMIN_DEPS_PATH = "backend/app/api/admin_deps.py";
+  const ADMIN_DEPS = join(REPO_ROOT, ADMIN_DEPS_PATH);
+  const FRONTEND_CI = join(REPO_ROOT, ".github/workflows/frontend-ci.yml");
 
   it("is the sentence the backend's require_admin refuses with", () => {
     const source = readFileSync(ADMIN_DEPS, "utf8");
@@ -129,5 +130,25 @@ describe("the platform-admin refusal sentence", () => {
       true
     );
     expect(isPlatformAdminRefusal(403, { detail: backendSentence })).toBe(true);
+  });
+
+  // Frontend CI is path-filtered. Without admin_deps.py in both filters, a
+  // backend-only PR that reshapes the assignment runs no Frontend CI, and the
+  // check above first fails on a later, unrelated frontend PR.
+  it("runs in the PR that changes admin_deps.py alone", () => {
+    const workflow = parseYaml(readFileSync(FRONTEND_CI, "utf8")) as {
+      on?: Record<string, { paths?: unknown } | undefined>;
+    };
+    for (const trigger of ["pull_request", "push"]) {
+      const paths = workflow.on?.[trigger]?.paths;
+      expect(
+        Array.isArray(paths) ? paths : null,
+        `frontend-ci.yml has no on.${trigger}.paths list`
+      ).not.toBeNull();
+      expect(
+        paths,
+        `${ADMIN_DEPS_PATH} is not in frontend-ci.yml on.${trigger}.paths, so a change to it alone never runs the check above`
+      ).toContain(ADMIN_DEPS_PATH);
+    }
   });
 });
