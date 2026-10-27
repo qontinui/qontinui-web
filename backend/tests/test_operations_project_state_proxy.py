@@ -12,7 +12,11 @@ progress panel render coord's bytes. What is pinned:
   ``read`` arrives with NO counts, and the proxy must not invent any (an
   absent count and a zero are different claims; the page renders the first as
   unknown);
-* a coord it cannot reach is a 502, never an empty 200.
+* a coord it cannot reach is a 502, never an empty 200;
+* the proxy waits for coord's own door budget (25s read, 5s connect), not the
+  module's 5s default — coord degrades a slow sub-read inside a 200, and a
+  proxy that gives up first turns that one degraded block into a page-wide
+  504; and a coord slower than the budget is a 504, never an empty 200.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -159,3 +163,36 @@ def test_coord_unreachable_is_502_not_an_empty_200(client: TestClient) -> None:
     finally:
         patcher.stop()
     assert resp.status_code == 502
+
+
+def test_waits_for_coords_door_budget_not_the_5s_default(client: TestClient) -> None:
+    """coord answers this door within a per-SUB-READ budget: on_track runs two
+    10s sub-reads one after the other, so a degraded-but-answering coord can
+    take ~20s. The client this route builds must wait 25s for the read and 5s
+    for the connect. Literals on purpose: a test reading the module's constant
+    would pass whatever it was set to."""
+    with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as client_cls:
+        instance = MagicMock()
+        instance.get = AsyncMock(return_value=_mock_response(200, COORD_BODY))
+        instance.__aenter__ = AsyncMock(return_value=instance)
+        instance.__aexit__ = AsyncMock(return_value=False)
+        client_cls.return_value = instance
+        resp = client.get(ROUTE)
+    assert resp.status_code == 200
+    assert client_cls.call_count == 1
+    timeout = client_cls.call_args.kwargs["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.read == 25.0
+    assert timeout.connect == 5.0
+
+
+def test_coord_slower_than_the_budget_is_a_504_not_an_empty_200(
+    client: TestClient,
+) -> None:
+    patcher, _ = _patched_client(error=httpx.ReadTimeout("slow"))
+    try:
+        resp = client.get(ROUTE)
+    finally:
+        patcher.stop()
+    assert resp.status_code == 504
+    assert resp.json()["detail"] == "timeout waiting for coord"

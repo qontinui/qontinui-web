@@ -19,7 +19,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchPlans, planRowsOf } from "@/lib/api/operations/coordPlans";
-import { fetchProjectState } from "@/lib/api/operations/projectState";
+import {
+  PROJECT_STATE_ONE_SHOT_OPTIONS,
+  fetchProjectState,
+} from "@/lib/api/operations/projectState";
 import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   useResourceList,
@@ -95,10 +98,14 @@ async function loadRecentlyFinished(): Promise<RecentlyFinished | null> {
 /**
  * The counts come from the project-state door. A door that answers with a
  * body that is not a project state is an error, not an empty project.
+ *
+ * One-shot options: the door can take up to coord's 25 s budget, so a `504`
+ * here is never retried — `httpClient`'s default would ask a coord that is
+ * already slow up to four more times (see `projectState.ts`).
  */
 async function loadProgress(): Promise<ProgressReading> {
   const [stateBody, finished] = await Promise.all([
-    fetchProjectState(),
+    fetchProjectState(PROJECT_STATE_ONE_SHOT_OPTIONS),
     loadRecentlyFinished(),
   ]);
   const view = parseProjectState(stateBody);

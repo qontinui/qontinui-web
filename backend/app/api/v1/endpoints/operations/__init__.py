@@ -185,6 +185,29 @@ _COORD_PR_LIST_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 # and skips hidden tabs (its load-discipline note).
 _COORD_MERGED_READ_TIMEOUT = httpx.Timeout(45.0, connect=5.0)
 
+# Timeout for coord's project-state synthesis door (``GET /coord/project-state``,
+# the operator's one screen). coord budgets that door per SUB-READ, not as a
+# whole: each sub-read runs under ``SUB_READ_TIMEOUT`` (10s, qontinui-coord
+# ``crates/coord/src/project_state.rs``), and one that runs out degrades only
+# its own block to ``could_not_read`` while the door still answers 200 (coord's
+# doc: the door "must not become the allocation-budget door that times out as
+# a whole"). The longest chain is ``on_track``: the initiative and the
+# dependency frontier run concurrently, and THEN the work-unit classification
+# runs as a second sub-read, so it can take 2 x 10s = 20s. The other blocks run
+# concurrently with it, each under the same 10s (the degradations train-health
+# fan-out shares a 9s deadline inside its own sub-read). 25s is those 20s plus
+# 5s for coord's assembly and the transport. At ``_COORD_TIMEOUT`` every answer
+# between 5s and coord's budget was a 504 here, and the page rendered EVERY
+# block as unknown instead of the one block coord had degraded. Connect stays
+# short: an unreachable coord should still fail fast.
+#
+# COST: this route resolves its tenant with ``get_tenant_id``, which holds no
+# backend DB session across the coord call, so a slow answer costs coord's
+# time and no pooled connection. Neither reader multiplies it:
+# ``/admin/coord/home`` polls single-flight every 60s with no retries, and the
+# ``/overview`` progress panel's one-shot read never retries a 504.
+_COORD_PROJECT_STATE_TIMEOUT = httpx.Timeout(25.0, connect=5.0)
+
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
 # longer sent to coord. Coord resolves the operator/tenant from the
 # forwarded Cognito bearer (``resolve_operator_optional`` middleware,
@@ -1104,8 +1127,9 @@ async def _proxy_coord_get(
     Default ``None`` puts nothing extra on the wire.
 
     ``timeout`` — override :data:`_COORD_TIMEOUT` for a read that is slow by
-    construction (the open-PR listing, :data:`_COORD_PR_LIST_TIMEOUT`, and the
-    recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None``
+    construction (the open-PR listing, :data:`_COORD_PR_LIST_TIMEOUT`, the
+    recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`, and the
+    project-state door, :data:`_COORD_PROJECT_STATE_TIMEOUT`). Default ``None``
     keeps the 5s fail-fast for every other proxy: coord answering a small JSON
     read slower than that means something is wrong, and that is worth surfacing.
 
@@ -5236,7 +5260,13 @@ async def get_project_state(
     drift-gated OpenAPI snapshots, so it is this repo's contract of record
     for the route.
     """
-    return await _proxy_coord_get("/coord/project-state", tenant_id=tenant_id)
+    # coord's door, not this module's 5s default: see
+    # ``_COORD_PROJECT_STATE_TIMEOUT`` for why it is slower by design.
+    return await _proxy_coord_get(
+        "/coord/project-state",
+        tenant_id=tenant_id,
+        timeout=_COORD_PROJECT_STATE_TIMEOUT,
+    )
 
 
 # ---- Machine drain / undrain --------------------------------------------
