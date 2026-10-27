@@ -202,6 +202,19 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(screen.queryByTestId("device-status-unknown")).toBeNull();
   });
 
+  it("operator, rows pushed before any read answered: listed under their own names, and the count stays unknown, on amber", () => {
+    renderTileIn(false, [baseRow()], NEVER_ANSWERED);
+    const rows = document.querySelectorAll(
+      "[data-ui-bridge-id='operations.device-status-row']"
+    );
+    expect(rows).toHaveLength(1);
+    // The operator's row names the machine as it reported itself.
+    expect(rows[0]).toHaveTextContent("test-host");
+    expect(count()).toBe("unknown");
+    expectUnknownAmber("device-status-count");
+    expect(screen.queryByTestId("device-status-unknown")).toBeNull();
+  });
+
   it("presenting, a read answered empty and the latest one failed: past tense, qualified by the failure — never the present-tense sentence", () => {
     renderTileIn(true, [], ANSWERED_THEN_FAILED);
     expect(screen.getByTestId("device-status-stale-empty")).toHaveTextContent(
@@ -239,12 +252,34 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     }
   });
 
+  it("(control) operator, a read that answered empty: a known zero, with the route agents post to and how long a row lives", () => {
+    renderTileIn(false, [], ANSWERED);
+    expect(screen.getByTestId("device-status-empty")).toHaveTextContent(
+      "No devices reporting status. Agents post here voluntarily via POST /coord/status; rows older than 1h are pruned."
+    );
+    expect(screen.queryByTestId("device-status-unknown")).toBeNull();
+    expect(screen.queryByTestId("device-status-stale-empty")).toBeNull();
+    expect(count()).toBe("0");
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(screen.getByTestId("device-status-count")).not.toHaveClass(cls);
+    }
+  });
+
   it("while the first read is in flight the count is a dash, never 0, and the body says it is loading", () => {
     renderTileIn(true, [], LOADING);
     expect(count()).toBe("–");
     expect(document.body.textContent).toContain("Loading device status");
     expect(screen.queryByTestId("device-status-empty")).toBeNull();
     expect(screen.queryByTestId("device-status-unknown")).toBeNull();
+  });
+
+  it("operator, while the first read is in flight: the count is a dash, never 0, and the body says it is loading", () => {
+    renderTileIn(false, [], LOADING);
+    expect(count()).toBe("–");
+    expect(document.body.textContent).toContain("Loading device status");
+    expect(screen.queryByTestId("device-status-empty")).toBeNull();
+    expect(screen.queryByTestId("device-status-unknown")).toBeNull();
+    expect(screen.queryByTestId("device-status-stale-empty")).toBeNull();
   });
 });
 
