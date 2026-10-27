@@ -262,7 +262,6 @@ describe("stageSummary", () => {
     const verify = stageSummary(FIXTURE).verify;
     expect(verify).toEqual({
       probed: 3,
-      restricted: 0,
       live: 2, // implemented + partial answer; blind does not
       pending: 0,
       served: 0,
@@ -279,7 +278,6 @@ describe("stageSummary", () => {
   it("counts a stage no row observes as all zeros", () => {
     expect(stageSummary(FIXTURE).intent).toEqual({
       probed: 0,
-      restricted: 0,
       live: 0,
       pending: 0,
       served: 0,
