@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { httpClient } from "@/services/service-factory";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import { useActiveRunner } from "@/contexts/active-runner-context";
@@ -97,23 +97,38 @@ export function useDashboardRunner(): DashboardRunner {
   };
 }
 
-/** `GET /health`, whole — the build and the SDK and trust posture. */
+const healthKey = (deviceId: string | null) =>
+  [UI_BRIDGE_DASHBOARD_KEY, "health", deviceId] as const;
+const componentsKey = (deviceId: string | null) =>
+  [UI_BRIDGE_DASHBOARD_KEY, "components", deviceId] as const;
+const fleetAppsKey = () => [UI_BRIDGE_DASHBOARD_KEY, "fleet-apps"] as const;
+
+/**
+ * `GET /health`, whole — the build and the SDK and trust posture.
+ *
+ * With no runner targeted the query has no function at all (`skipToken`), so
+ * nothing — not even a `refetch()`, which ignores `enabled` — can send the
+ * relay a request with no device id.
+ */
 export function useRunnerHealthRead(deviceId: string | null) {
   return useQuery({
-    queryKey: [UI_BRIDGE_DASHBOARD_KEY, "health", deviceId],
-    queryFn: () => fetchRunnerHealth(deviceId as string),
-    enabled: !!deviceId,
+    queryKey: healthKey(deviceId),
+    queryFn:
+      deviceId === null ? skipToken : () => fetchRunnerHealth(deviceId),
     staleTime: 30_000,
     ...READ_DEFAULTS,
   });
 }
 
-/** `GET /ui-bridge/control/components` — the component action registry. */
+/**
+ * `GET /ui-bridge/control/components` — the component action registry. Like
+ * the health read, it has no function while no runner is targeted.
+ */
 export function useRunnerComponentsRead(deviceId: string | null) {
   return useQuery({
-    queryKey: [UI_BRIDGE_DASHBOARD_KEY, "components", deviceId],
-    queryFn: () => fetchRunnerComponents(deviceId as string),
-    enabled: !!deviceId,
+    queryKey: componentsKey(deviceId),
+    queryFn:
+      deviceId === null ? skipToken : () => fetchRunnerComponents(deviceId),
     staleTime: 30_000,
     ...READ_DEFAULTS,
   });
@@ -122,11 +137,46 @@ export function useRunnerComponentsRead(deviceId: string | null) {
 /** `GET /api/v1/fleet/apps` — the web's app registry. */
 export function useFleetAppsRead() {
   return useQuery({
-    queryKey: [UI_BRIDGE_DASHBOARD_KEY, "fleet-apps"],
+    queryKey: fleetAppsKey(),
     queryFn: () => httpClient.get<WebAppConfig[]>(FLEET_APPS_PATH),
     staleTime: 60_000,
     ...READ_DEFAULTS,
   });
+}
+
+/**
+ * The page's Refresh: re-read every metadata read the page is SHOWING — the
+ * runner's health and components, the web registry, and the digital twin's
+ * reads the page reuses (the runner's app list, each app's spec list and
+ * graph). The live snapshot and page health are not among them: they run
+ * only from their own buttons.
+ *
+ * Only ACTIVE queries are re-read (`refetchQueries({ type: "active" })`). A
+ * read the page holds disabled stays unasked: every runner read while no
+ * runner is targeted. A query's own `refetch()` ignores `enabled` and would
+ * run it anyway, sending the relay a request with no device id.
+ */
+export function useDashboardRefresh(
+  deviceId: string | null
+): () => Promise<unknown> {
+  const queryClient = useQueryClient();
+  return useCallback(
+    () =>
+      Promise.all(
+        [
+          healthKey(deviceId),
+          componentsKey(deviceId),
+          fleetAppsKey(),
+          // The digital twin's reads (`useUiBridge.ts`), by their own keys.
+          ["digital-twin", "apps", deviceId],
+          ["digital-twin", "spec-list", deviceId],
+          ["digital-twin", "spec-graph", deviceId],
+        ].map((queryKey) =>
+          queryClient.refetchQueries({ queryKey, type: "active" })
+        )
+      ),
+    [queryClient, deviceId]
+  );
 }
 
 /**

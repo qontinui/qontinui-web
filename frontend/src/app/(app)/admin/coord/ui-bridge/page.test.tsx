@@ -98,11 +98,12 @@ function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <UiBridgeDashboardPage />
     </QueryClientProvider>
   );
+  return { ...view, client };
 }
 
 beforeEach(() => {
@@ -680,5 +681,28 @@ describe("no runner", () => {
       fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
     });
     expect(state.relay?.requests).toEqual([]);
+  });
+
+  it("refreshes no runner read — none is sent, and none is run without a device to send it to", async () => {
+    state.target = { kind: "unavailable", reason: "no_eligible_runner" };
+    const { client } = renderPage();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-ui-bridge-app-row")).toHaveLength(2)
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    expect(state.relay?.requests).toEqual([]);
+    // A query's own `refetch()` ignores `enabled`: Refresh pressing it on a
+    // read with no runner would RUN that read, which can only fail.
+    const runnerReads = client
+      .getQueryCache()
+      .findAll({ queryKey: ["ui-bridge-dashboard"] })
+      .filter((q) => q.queryKey[1] !== "fleet-apps");
+    expect(runnerReads.length).toBeGreaterThan(0);
+    expect(
+      runnerReads.map((q) => `${String(q.queryKey[1])} ${q.state.status}`)
+    ).toEqual(runnerReads.map((q) => `${String(q.queryKey[1])} pending`));
   });
 });

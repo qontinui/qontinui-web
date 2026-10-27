@@ -49,7 +49,6 @@
  */
 
 import { useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { HealthStrip, RefreshButton } from "@/components/console";
 import {
   Caption,
@@ -68,6 +67,7 @@ import { buildLabel, type BuildReading } from "./_lib/relaySource";
 import { buildReadingOf, readRunnerPosture } from "./_lib/runnerHealth";
 import {
   occlusionReadOf,
+  useDashboardRefresh,
   useDashboardRunner,
   useFleetAppsRead,
   usePageHealthRun,
@@ -96,7 +96,6 @@ const asOfOf = (read: ReadState<unknown>): number | null =>
 const SWEEP_RELAYED = isRelayed(RUNNER_ROUTES.visibility);
 
 export default function UiBridgeDashboardPage() {
-  const queryClient = useQueryClient();
   const { deviceId, identity, noRunner } = useDashboardRunner();
   const machine = useMachineName(identity);
 
@@ -161,28 +160,7 @@ export default function UiBridgeDashboardPage() {
     componentsRoute: RUNNER_ROUTES.components,
   });
 
-  const refreshHealth = healthQuery.refetch;
-  const refreshComponents = componentsQuery.refetch;
-  const refreshWebApps = fleetAppsQuery.refetch;
-  const refresh = () =>
-    Promise.all([
-      refreshHealth(),
-      refreshComponents(),
-      refreshWebApps(),
-      // The twin's reads: the runner's app list and every app's spec reads.
-      queryClient.refetchQueries({
-        queryKey: ["digital-twin", "apps", deviceId],
-        type: "active",
-      }),
-      queryClient.refetchQueries({
-        queryKey: ["digital-twin", "spec-list", deviceId],
-        type: "active",
-      }),
-      queryClient.refetchQueries({
-        queryKey: ["digital-twin", "spec-graph", deviceId],
-        type: "active",
-      }),
-    ]);
+  const refresh = useDashboardRefresh(deviceId);
 
   return (
     <div

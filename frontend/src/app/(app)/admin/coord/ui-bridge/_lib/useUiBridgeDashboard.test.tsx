@@ -210,6 +210,21 @@ describe("the metadata reads", () => {
     expect(asked()).toEqual([]);
   });
 
+  it("ask nothing with no runner targeted even when refetched — `refetch()` ignores `enabled`", async () => {
+    const opts = { wrapper: wrapper() };
+    const health = renderHook(() => useRunnerHealthRead(null), opts);
+    const components = renderHook(() => useRunnerComponentsRead(null), opts);
+    await act(async () => {
+      await Promise.allSettled([
+        health.result.current.refetch(),
+        components.result.current.refetch(),
+      ]);
+    });
+    await settle();
+    // Without a runner the relay would be asked with no device id at all.
+    expect(asked()).toEqual([]);
+  });
+
   it("read the targeted runner's health and components over the relay", async () => {
     const opts = { wrapper: wrapper() };
     const health = renderHook(() => useRunnerHealthRead(DEVICE_ID), opts);
