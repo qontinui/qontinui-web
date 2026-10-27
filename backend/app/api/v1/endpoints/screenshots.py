@@ -1,12 +1,27 @@
 """
 Verification screenshot images for the ai-tasks page.
 
-The runner saves the screenshots its verification steps take under the
-workspace's ``.dev-logs/`` (``screenshots/``, ``playwright-screenshots/``) and
-records a path to each: ``screenshots/<file>.png``, the same with a
-``.dev-logs/`` prefix, or an absolute path. The ai-tasks page asks for
-``/api/v1/screenshots/<that path>`` with any leading ``.dev-logs/`` dropped
-(``screenshotUrl`` in ``frontend/src/app/(app)/ai-tasks/[id]/_components/utils.ts``).
+The ai-tasks page asks for ``/api/v1/screenshots/<path>`` with the
+screenshot path a verification step result carries, any leading
+``.dev-logs/`` dropped (``screenshotUrl`` in
+``frontend/src/app/(app)/ai-tasks/[id]/_components/utils.ts``). The runner's
+screenshot action records that path as ``.dev-logs/screenshots/<file>.png``,
+beside the absolute path it wrote; a step result may carry an absolute path
+instead.
+
+That ``.dev-logs/`` is a label, not a location. The runner writes the file,
+and its Playwright screenshots (``playwright-screenshots/``), into its OWN
+dev-logs directory: ``<platform data dir>/qontinui-runner/dev-logs`` unless
+its ``dev_logs_dir`` setting points elsewhere, and a secondary runner one
+``instance-<id>/`` level below that (qontinui-runner ``5dc3f37f``:
+``action_service.rs`` :606-643, ``paths.rs`` :34-72 and :135-140,
+``executor/file_logger.rs`` :26-34, ``instance.rs`` :110-127 and :199-217).
+So the local arm below finds a runner's screenshot only where that setting
+points a primary runner at this workspace's ``.dev-logs/``. At the default,
+the local arm cannot see the file and the runner arm cannot fetch it (third
+rule below), so every runner screenshot is a 404. That gap is older than
+this module's guards, and it is not closed by widening what the route
+serves.
 
 The route takes no credential, so it serves image files under ``.dev-logs/``
 and nothing else. On a dev or co-located backend :func:`_parent_dir` is the
@@ -18,7 +33,8 @@ Three rules keep it to images:
 * The requested path must NAME an image file (:func:`_image_request`). Anything
   else is a 404 before the filesystem or the runner is touched.
 * A local file is served only when it RESOLVES, symlinks followed, to a regular
-  image file inside ``<workspace>/.dev-logs/`` (:func:`_local_image`).
+  image file inside the directory ``<workspace>/.dev-logs/`` resolves to
+  (:func:`_local_image`).
 * Otherwise the co-located runner is asked for ``GET /screenshots/<path>``
   (:func:`_runner_image`). The first rule is what keeps that GET on an image
   path. Without it, ``list``, ``list?x`` and ``./list`` reached the runner's
@@ -76,8 +92,9 @@ _IMAGE_MEDIA_TYPES: Mapping[str, str] = MappingProxyType(
 #: name the runner writes holds a control character.
 _FORBIDDEN_CHARS = re.compile(r"[\\%?#\x00-\x1f\x7f]")
 
-#: The ``.dev-logs`` directories the runner saves screenshots in. An absolute
-#: path it recorded is found here by file name.
+#: The subdirectories a dev-logs directory keeps screenshots in. An absolute
+#: path the runner recorded is looked up by its file name in each of them,
+#: under this workspace's ``.dev-logs``.
 _SCREENSHOT_DIRS = ("screenshots", "playwright-screenshots")
 
 #: The co-located runner the route falls back to, and how long it waits for it.
@@ -229,9 +246,14 @@ async def get_screenshot(path: str) -> Response:
 
     ``path`` is the image's path as the runner recorded it (a leading
     ``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.
-    The file is served from the workspace's ``.dev-logs`` when this backend
-    runs beside the runner, and fetched from the co-located runner otherwise.
-    Anything that is not an image file under ``.dev-logs`` is a 404.
+    It is served from this workspace's ``.dev-logs`` when this backend runs
+    from a checkout and the image is there, and asked of the co-located
+    runner otherwise. The runner writes its screenshots into its own
+    dev-logs directory, which is this ``.dev-logs`` only where its
+    ``dev_logs_dir`` setting says so, and serves none under
+    ``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every
+    runner screenshot is a 404. So is anything that is not an image file
+    under ``.dev-logs``.
     """
     request = _image_request(path)
     if request is None:

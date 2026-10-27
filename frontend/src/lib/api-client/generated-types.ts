@@ -22110,9 +22110,14 @@ export interface paths {
          *
          *     ``path`` is the image's path as the runner recorded it (a leading
          *     ``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.
-         *     The file is served from the workspace's ``.dev-logs`` when this backend
-         *     runs beside the runner, and fetched from the co-located runner otherwise.
-         *     Anything that is not an image file under ``.dev-logs`` is a 404.
+         *     It is served from this workspace's ``.dev-logs`` when this backend runs
+         *     from a checkout and the image is there, and asked of the co-located
+         *     runner otherwise. The runner writes its screenshots into its own
+         *     dev-logs directory, which is this ``.dev-logs`` only where its
+         *     ``dev_logs_dir`` setting says so, and serves none under
+         *     ``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every
+         *     runner screenshot is a 404. So is anything that is not an image file
+         *     under ``.dev-logs``.
          */
         get: operations["api_v1_screenshots_path_get"];
         put?: never;

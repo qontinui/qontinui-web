@@ -125605,7 +125605,7 @@
     },
     "/api/v1/screenshots/{path}": {
       "get": {
-        "description": "Serve one verification screenshot image.\n\n``path`` is the image's path as the runner recorded it (a leading\n``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.\nThe file is served from the workspace's ``.dev-logs`` when this backend\nruns beside the runner, and fetched from the co-located runner otherwise.\nAnything that is not an image file under ``.dev-logs`` is a 404.",
+        "description": "Serve one verification screenshot image.\n\n``path`` is the image's path as the runner recorded it (a leading\n``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.\nIt is served from this workspace's ``.dev-logs`` when this backend runs\nfrom a checkout and the image is there, and asked of the co-located\nrunner otherwise. The runner writes its screenshots into its own\ndev-logs directory, which is this ``.dev-logs`` only where its\n``dev_logs_dir`` setting says so, and serves none under\n``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every\nrunner screenshot is a 404. So is anything that is not an image file\nunder ``.dev-logs``.",
         "operationId": "api_v1_screenshots_path_get",
         "parameters": [
           {
