@@ -29,12 +29,6 @@ vi.mock("./_hooks/useSubspaceRaw", () => ({ useSubspaceRaw: () => idle }));
 vi.mock("./_hooks/useDeliveryVerdict", () => ({
   useDeliveryVerdict: () => idle,
 }));
-// The Twin map is the default tab (Phase 5): its two data hooks, idle, so the
-// title is rendered over a page that has read nothing.
-vi.mock("./_hooks/useTwinWorkUnits", () => ({ useTwinWorkUnits: () => idle }));
-vi.mock("./_hooks/useAppTwin", () => ({
-  useAppTwin: () => ({ deviceId: null, apps: idle, graph: idle }),
-}));
 vi.mock("@qontinui/ui-bridge/react", () => ({
   useUIElement: () => ({ ref: () => undefined }),
 }));
@@ -42,6 +36,9 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 vi.mock("./_components/TwinCatalog", () => ({ TwinCatalog: () => null }));
 vi.mock("./_components/AskTheTwin", () => ({ AskTheTwin: () => null }));
 vi.mock("./_components/UiBridgePanel", () => ({ UiBridgePanel: () => null }));
+// The Twin map, the default tab, captions itself: stubbed so the
+// why-it-matters below can only be the page title's.
+vi.mock("./_components/TwinMap", () => ({ TwinMap: () => null }));
 
 import DigitalTwinPage from "./page";
 
