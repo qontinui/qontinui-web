@@ -263,7 +263,7 @@ describe("coordNavModel", () => {
     ]);
   });
 
-  it("puts the UI Bridge dashboard under Dev Ops for a coord admin only — its app registry read is not partitioned by project", () => {
+  it("offers the UI Bridge dashboard under Dev Ops to a coord admin only — the menu flag; the page gates its unpartitioned read itself", () => {
     const leaf = group("devops").items.find(
       (i) => i.href === "/admin/coord/ui-bridge"
     );

@@ -13,7 +13,10 @@
  * - the occlusion row reads UNKNOWN on every runner, whatever any runner
  *   answers and whatever page health returns — the sweep is not asked for,
  *   because no relay carries it (coord finding 99796499);
- * - the live snapshot and page health run only when asked.
+ * - the live snapshot and page health run only when asked;
+ * - the web app registry, which is not partitioned by project, is read only
+ *   for staff: any other viewer — a coord admin who is not staff, or a member
+ *   who opened the URL — makes no such read, and reads that half as UNKNOWN.
  *
  * The occlusion sweep's own honesty rule, for the day a relay carries it, is
  * driven through the page in `page.sweepRelayed.test.tsx`.
@@ -54,10 +57,20 @@ import {
 } from "./__fixtures__/runnerBodies";
 import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
 
+/** Staff: the one viewer the web app registry is read for. */
+const STAFF = { is_superuser: true, coord_is_admin: true };
+/** A coord admin of the active tenant who is not staff — offered the page. */
+const COORD_ADMIN = { is_superuser: false, coord_is_admin: true };
+/** A plain member, who can open the page by its URL. */
+const MEMBER = { is_superuser: false, coord_is_admin: false };
+
 const state = vi.hoisted(() => ({
   target: { kind: "pending" } as RunnerTarget,
   relay: null as RelayFake | null,
   fleetApps: (async () => []) as () => Promise<unknown>,
+  /** Every `GET /api/v1/fleet/apps` the page made. */
+  fleetAppsReads: 0,
+  user: null as { is_superuser: boolean; coord_is_admin: boolean } | null,
 }));
 
 vi.mock("@/contexts/active-runner-context", () => ({
@@ -82,12 +95,18 @@ vi.mock("@/services/service-factory", () => ({
     get: (url: string) => {
       if (url !== "/api/v1/fleet/apps")
         throw new Error(`unexpected GET ${url}`);
+      state.fleetAppsReads += 1;
       return state.fleetApps();
     },
   },
 }));
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "https://api.test" },
+}));
+// Who is signed in. The page mounts under the app's `AuthProvider`; here the
+// hook answers with the viewer the test sets.
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ user: state.user }),
 }));
 
 import UiBridgeDashboardPage from "./page";
@@ -114,6 +133,8 @@ beforeEach(() => {
   state.target = RUNNER;
   state.relay = relayFake();
   state.fleetApps = async () => FLEET_APPS;
+  state.fleetAppsReads = 0;
+  state.user = STAFF;
 });
 
 afterEach(() => {
@@ -473,6 +494,74 @@ describe("a stale pairing", () => {
     expect(sdk).toHaveTextContent(`request ${REQUEST_ID_NOT_OWNED}`);
     // Operator mode: the reason is the operator's, verbatim.
     expect(sdk.querySelector("[data-redacted]")).toBeNull();
+  });
+});
+
+/**
+ * The web app registry answers any signed-in user with every row of
+ * `project.apps`, which is not partitioned by project, and the menu does not
+ * stand between a viewer and this page — any signed-in member can open its
+ * URL. So the page makes that read only for staff (`webRegistryAccessOf`).
+ */
+describe("a viewer who is not staff", () => {
+  /** Let any request a render or a press would start actually start. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+
+  it.each([
+    ["a coord admin of the active tenant", COORD_ADMIN],
+    ["a member who opened the URL", MEMBER],
+  ])(
+    "makes no web registry read for %s — on mount or on Refresh — and reads that half as UNKNOWN with the reason",
+    async (_label, user) => {
+      state.user = user;
+      renderPage();
+      await screen.findByTestId("coord-ui-bridge-actions-counts");
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
+      });
+      await settle();
+      // The refresh did run: the runner reads it covers were asked again.
+      expect(
+        state.relay?.requests.filter((r) => r === "GET health").length
+      ).toBeGreaterThanOrEqual(2);
+      expect(state.fleetAppsReads).toBe(0);
+
+      expect(
+        screen.getByTestId("coord-ui-bridge-apps-web-not-read")
+      ).toHaveTextContent(
+        "UNKNOWNThe web app registry is read only for staff: it is not kept per project, so it can list other projects' applications."
+      );
+      expect(
+        screen.queryByTestId("coord-ui-bridge-apps-web-unknown")
+      ).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId("coord-ui-bridge-app-row")).toEqual([]);
+      expect(
+        screen.getByTestId("coord-ui-bridge-apps-counts")
+      ).toHaveTextContent("in the web registry –");
+      // The runner's own list is still asked of the viewer's own runner.
+      expect(state.relay?.requests).toContain("GET apps");
+      expect(
+        await screen.findByTestId("coord-ui-bridge-apps-runner-unknown")
+      ).toHaveTextContent("UNKNOWN");
+      // Neither registry answered, so the total is a dash, never a count.
+      expect(
+        screen.getByTestId("coord-ui-bridge-health-apps")
+      ).toHaveTextContent("apps –");
+    }
+  );
+
+  it("still reads the web registry for staff — the same page, the same runner", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-ui-bridge-app-row")).toHaveLength(2)
+    );
+    expect(state.fleetAppsReads).toBe(1);
+    expect(
+      screen.queryByTestId("coord-ui-bridge-apps-web-not-read")
+    ).not.toBeInTheDocument();
   });
 });
 

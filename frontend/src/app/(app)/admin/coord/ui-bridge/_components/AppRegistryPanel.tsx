@@ -9,7 +9,9 @@
  * Presentation mode (D3.4): neither registry is read while presenting —
  * neither is kept per project, so either can list other projects'
  * applications — and each half is a labelled UNKNOWN saying so
- * (`useUiBridgeDashboard.ts` `appRegistryReadsOf`). Should a caller hand
+ * (`useUiBridgeDashboard.ts` `appRegistryReadsOf`). In operator mode the web
+ * registry is read only for staff; for any other viewer its half is the same
+ * labelled UNKNOWN, with that reason (`webRegistryAccessOf`). Should a caller hand
  * this panel rows while presenting anyway, it still holds D3.3: an app's name
  * is shown only for the runner's own app, whose repository the tenant's
  * first-party list can clear; every other name renders as its descriptor,

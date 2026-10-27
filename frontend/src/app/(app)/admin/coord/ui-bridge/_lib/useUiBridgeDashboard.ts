@@ -7,8 +7,9 @@
  * relay allowlist names); the spec list and graph, the live snapshot and the
  * runner's app list are the digital twin's own hooks (`useUiBridge.ts`),
  * reused rather than forked, so both pages share one cache entry per runner.
- * The web registry is a plain web-backend read. Neither app registry is
- * read while presenting ({@link appRegistryReadsOf}).
+ * The web registry is a plain web-backend read, made only for staff and never
+ * while presenting ({@link webRegistryAccessOf}); the runner's app list is not
+ * read while presenting either ({@link appRegistryReadsOf}).
  *
  * Nothing here polls: the dashboard's numbers change when a runner's UI or
  * build changes, so the page re-reads on the operator's refresh. The live
@@ -23,6 +24,7 @@
 import { useCallback, useMemo } from "react";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { httpClient } from "@/services/service-factory";
+import { useAuth } from "@/contexts/auth-context";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import { useActiveRunner } from "@/contexts/active-runner-context";
 import {
@@ -37,6 +39,7 @@ import type {
 import {
   RUNNER_APP_LIST_NOT_IN_LENS,
   WEB_REGISTRY_NOT_IN_LENS,
+  WEB_REGISTRY_STAFF_ONLY,
   type RegistryRead,
   type WebAppConfig,
 } from "./appRegistryStatus";
@@ -154,18 +157,66 @@ export function useRunnerComponentsRead(deviceId: string | null) {
   });
 }
 
+/** Whether this render reads the web app registry — and, when not, why. */
+export type WebRegistryAccess =
+  | { readonly read: true }
+  | { readonly read: false; readonly reason: string };
+
+/** Who is looking, as far as the web registry read is concerned. */
+export interface WebRegistryViewer {
+  /** Whether the page is presenting (`usePresentationMode`). */
+  readonly presenting: boolean;
+  /** Whether the viewer is staff (`user.is_superuser`). */
+  readonly staff: boolean;
+}
+
 /**
- * `GET /api/v1/fleet/apps` — the web's app registry. Not read while
- * presenting: the route is not partitioned by project
- * ({@link appRegistryReadsOf}), so the query has no function then.
+ * Whether the page reads the web app registry — decided here, and nowhere
+ * else: the read's query function ({@link useFleetAppsRead}) and the half the
+ * panel is handed ({@link appRegistryReadsOf}) both take this answer.
+ *
+ * `GET /api/v1/fleet/apps` is not partitioned by project: `list_apps`
+ * (backend `fleet_targets.py`) answers any signed-in user with every row of
+ * `project.apps`, so it can hold other projects' applications. And the menu
+ * does not stand between a viewer and the read — any signed-in member can open
+ * this page's URL. So until the route is scoped to the acting organisation,
+ * the page makes the read only for staff (`is_superuser`, the gate Test
+ * Targets — the route's other reader — has in the menu), and never while
+ * presenting (plan `2026-10-23-console-presentation-spaces` D3.4), whoever is
+ * viewing.
+ */
+export function webRegistryAccessOf({
+  presenting,
+  staff,
+}: WebRegistryViewer): WebRegistryAccess {
+  if (presenting) return { read: false, reason: WEB_REGISTRY_NOT_IN_LENS };
+  if (!staff) return { read: false, reason: WEB_REGISTRY_STAFF_ONLY };
+  return { read: true };
+}
+
+/** {@link webRegistryAccessOf} for the viewer of this render. */
+export function useWebRegistryAccess(): WebRegistryAccess {
+  const { presenting } = usePresentationMode();
+  const { user } = useAuth();
+  return webRegistryAccessOf({
+    presenting,
+    staff: user?.is_superuser === true,
+  });
+}
+
+/**
+ * `GET /api/v1/fleet/apps` — the web's app registry. Read only where
+ * {@link webRegistryAccessOf} says so; everywhere else the query has no
+ * function (`skipToken`), so nothing — not a `refetch()`, which ignores
+ * `enabled` — can make the read.
  */
 export function useFleetAppsRead() {
-  const { presenting } = usePresentationMode();
+  const access = useWebRegistryAccess();
   return useQuery({
     queryKey: fleetAppsKey(),
-    queryFn: presenting
-      ? skipToken
-      : () => httpClient.get<WebAppConfig[]>(FLEET_APPS_PATH),
+    queryFn: access.read
+      ? () => httpClient.get<WebAppConfig[]>(FLEET_APPS_PATH)
+      : skipToken,
     staleTime: 60_000,
     ...READ_DEFAULTS,
   });
@@ -175,7 +226,8 @@ export function useFleetAppsRead() {
  * The runner's own app list (`GET /apps`) — the digital twin's
  * `useRunnerApps`, reused. Not read while presenting, for the web registry's
  * reason ({@link appRegistryReadsOf}): the hook is handed no device then, so
- * its query is disabled.
+ * its query is disabled. In operator mode it is read for any viewer: the
+ * relay reaches only a runner the viewer owns.
  */
 export function useRunnerAppListRead(deviceId: string | null) {
   const { presenting } = usePresentationMode();
@@ -191,9 +243,10 @@ export function useRunnerAppListRead(deviceId: string | null) {
  *
  * Only ACTIVE queries are re-read (`refetchQueries({ type: "active" })`). A
  * read the page holds disabled stays unasked: every runner read while no
- * runner is targeted, and both app registries while presenting. A query's
- * own `refetch()` ignores `enabled` and would run it anyway — sending the
- * relay a request with no device id, or making a read the lens does not make.
+ * runner is targeted, the web registry for a viewer who is not staff, and
+ * both app registries while presenting. A query's own `refetch()` ignores
+ * `enabled` and would run it anyway — sending the relay a request with no
+ * device id, or making a read the page declines.
  */
 export function useDashboardRefresh(
   deviceId: string | null
@@ -326,6 +379,8 @@ export function occlusionReadOf({
 export interface AppRegistryReadsInput {
   /** Whether the page is presenting (`usePresentationMode`). */
   readonly presenting: boolean;
+  /** Whether the web registry is read ({@link useWebRegistryAccess}). */
+  readonly webAccess: WebRegistryAccess;
   /** The web registry's query ({@link useFleetAppsRead}). */
   readonly web: QueryView<WebAppConfig[]>;
   /** The runner's own app list ({@link useRunnerAppListRead}). */
@@ -344,29 +399,30 @@ export interface AppRegistryReadsInput {
  * acting organisation's data (plan `2026-10-23-console-presentation-spaces`
  * D3.4), so while presenting neither is READ — their hooks hold the queries
  * disabled — and neither is SHOWN: a value an operator-mode read left in the
- * cache is not handed on either. Each half is `not-read`, with the reason the
- * panel renders as a labelled UNKNOWN.
+ * cache is not handed on either. The web registry is not read for a viewer
+ * who is not staff either ({@link webRegistryAccessOf}), and is not shown to
+ * one whatever the cache holds. Each such half is `not-read`, with the reason
+ * the panel renders as a labelled UNKNOWN.
  */
 export function appRegistryReadsOf({
   presenting,
+  webAccess,
   web,
   runner,
 }: AppRegistryReadsInput): {
   readonly web: RegistryRead<readonly WebAppConfig[]>;
   readonly runner: RegistryRead<readonly RegisteredApp[]>;
 } {
-  if (presenting) {
-    return {
-      web: { state: "not-read", reason: WEB_REGISTRY_NOT_IN_LENS },
-      runner: { state: "not-read", reason: RUNNER_APP_LIST_NOT_IN_LENS },
-    };
-  }
   return {
-    web: readStateOf(web, (d) => (Array.isArray(d) ? d : null)),
-    // A body that is not an object (`null` included) is an answer this page
-    // cannot read — UNKNOWN, never a crash.
-    runner: readStateOf(runner, (d) =>
-      isRecord(d) && Array.isArray(d.apps) ? d.apps : null
-    ),
+    web: webAccess.read
+      ? readStateOf(web, (d) => (Array.isArray(d) ? d : null))
+      : { state: "not-read", reason: webAccess.reason },
+    runner: presenting
+      ? { state: "not-read", reason: RUNNER_APP_LIST_NOT_IN_LENS }
+      : // A body that is not an object (`null` included) is an answer this
+        // page cannot read — UNKNOWN, never a crash.
+        readStateOf(runner, (d) =>
+          isRecord(d) && Array.isArray(d.apps) ? d.apps : null
+        ),
   };
 }

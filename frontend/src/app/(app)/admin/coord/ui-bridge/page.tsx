@@ -9,7 +9,7 @@
  *
  * | panel | source |
  * |---|---|
- * | Registered applications | web `GET /api/v1/fleet/apps` + the runner's `GET /apps`; neither read while presenting |
+ * | Registered applications | web `GET /api/v1/fleet/apps` (staff only) + the runner's `GET /apps`; neither read while presenting |
  * | Screens and states | the runner's `apps/{id}/spec/list` and `/spec/graph` |
  * | Live element snapshot | the runner's `ui-bridge/control/snapshot`, on demand |
  * | Capabilities and trust | the runner's `/health` (`sdkFeatures`, `uiBridgeBinding`, build) |
@@ -35,7 +35,10 @@
  * - **0 for a number it could not read.** A missing count is `–`.
  * - **Another project's applications.** Neither app registry is partitioned
  *   by project, so while presenting neither is read, and each half reads
- *   UNKNOWN and says why (`appRegistryReadsOf`).
+ *   UNKNOWN and says why (`appRegistryReadsOf`). The web registry answers any
+ *   signed-in user with every row, and any signed-in member can open this
+ *   URL, so in operator mode too it is read only for staff; for every other
+ *   viewer its half reads UNKNOWN and says why (`webRegistryAccessOf`).
  *
  * Presentation mode (plan D1–D3) changes the rendering — captions before
  * each panel, provenance beside every figure, every panel held open, the app
@@ -87,6 +90,7 @@ import {
   useRunnerAppListRead,
   useRunnerComponentsRead,
   useRunnerHealthRead,
+  useWebRegistryAccess,
 } from "./_lib/useUiBridgeDashboard";
 import { AppRegistryPanel } from "./_components/AppRegistryPanel";
 import { ComponentActionsPanel } from "./_components/ComponentActionsPanel";
@@ -116,6 +120,9 @@ export default function UiBridgeDashboardPage() {
 
   const healthQuery = useRunnerHealthRead(deviceId);
   const componentsQuery = useRunnerComponentsRead(deviceId);
+  // Whether the web registry is read for this viewer: staff only, never while
+  // presenting. The read's own hook asks the same question, so the two agree.
+  const webAccess = useWebRegistryAccess();
   const fleetAppsQuery = useFleetAppsRead();
   const runnerAppsQuery = useRunnerAppListRead(deviceId);
   const healthRun = usePageHealthRun(deviceId, SWEEP_RELAYED);
@@ -124,6 +131,7 @@ export default function UiBridgeDashboardPage() {
   const components = readStateOf(queryView(componentsQuery), readComponents);
   const { web, runner: runnerApps } = appRegistryReadsOf({
     presenting,
+    webAccess,
     web: queryView(fleetAppsQuery),
     runner: queryView(runnerAppsQuery),
   });

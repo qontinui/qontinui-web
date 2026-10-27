@@ -65,6 +65,10 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "https://api.test" },
 }));
+// Staff: the viewer the web app registry is read for (`webRegistryAccessOf`).
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ user: { is_superuser: true, coord_is_admin: true } }),
+}));
 // The one fake that makes this file this file: a relay that carries the sweep.
 vi.mock("./_lib/relayReads", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./_lib/relayReads")>()),

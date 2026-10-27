@@ -21,14 +21,15 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review / Taste Inbox
- *   Dev Ops ▸ Overview / CI / UI Bridge† / Computers† / Spawns† /
+ *   Dev Ops ▸ Overview / CI / UI Bridge‡ / Computers† / Spawns† /
  *             Session load† / Trees° / Launch session° / Runner Drain° /
  *             Test Targets° / Migrations° / Deploys° / Releases° / Git Ops° /
  *             Federation° / Memory° / Onboarding° / Onboarding Status°
  *   Access ▸  Members / Agent Registry
  *
  *   (° = operator-only; † = coord tenant admin of the active tenant, the same
- *   gate as the page's proxies)
+ *   gate as the page's proxies; ‡ = that same menu gate with no proxy gate
+ *   behind it — the page guards its own reads, see the leaf)
  *
  * `Spawns` (every spawn coord was asked to place, where it went and how it
  * ended) and `Launch session` (the launcher at `/admin/coord/spawn`) are two
@@ -586,20 +587,27 @@ export const GROUPS: NavGroup[] = [
         // Plan `2026-10-23-console-presentation-spaces` Phase 6: the UI Bridge
         // dashboard — the app registry, each app's screens and states, a live
         // element snapshot, the runner's SDK and trust posture, its component
-        // actions with their declared effects, and page health.
-        // `coordAdminOnly`, though most of its reads are a member's own: the
-        // runner reads go over the relay to a runner the viewer owns (the
-        // relay refuses any other device). Its app registry panel is why. It
-        // reads `GET /api/v1/fleet/apps`, which any signed-in user may call,
-        // and that route is NOT partitioned by project: `list_apps`
-        // (`fleet_targets.py`) returns every row of `project.apps`, so it can
-        // hold other projects' applications. Until that read is scoped to the
-        // acting organisation, the menu offers the page to a coord admin of
-        // the active tenant or a superuser, and the page makes neither app
-        // registry read while presenting (`useUiBridgeDashboard.ts`
-        // `appRegistryReadsOf`). A group leaf rather than a sixth direct tab:
-        // it is a page opened to inspect or to present (it is lens surface 4
-        // of the tour), not a daily destination.
+        // actions with their declared effects, and page health. A group leaf
+        // rather than a sixth direct tab: it is a page opened to inspect or
+        // to present (it is lens surface 4 of the tour), not a daily
+        // destination.
+        //
+        // `coordAdminOnly` decides who the MENU offers the page to: a coord
+        // admin of the active tenant, or a superuser. Unlike Computers and
+        // Spawns below, no proxy behind this page carries the matching gate,
+        // and any signed-in member can open its URL (`admin/coord/layout.tsx`
+        // lets every signed-in member view the console's pages). So the flag
+        // guards no data, and the page guards its reads itself. Its runner
+        // reads go over the relay, which serves only a runner the viewer owns
+        // (it refuses any other device). Its web app registry read, `GET
+        // /api/v1/fleet/apps`, is the one to watch: `list_apps`
+        // (`fleet_targets.py`) answers any signed-in user with every row of
+        // `project.apps`, which is not partitioned by project. Until that
+        // read is scoped to the acting organisation, the page makes it only
+        // for staff (`is_superuser`, the gate Test Targets — the route's
+        // other reader — has here) and never while presenting; every other
+        // viewer sees that half as a labelled UNKNOWN
+        // (`useUiBridgeDashboard.ts` `webRegistryAccessOf`).
         href: "/admin/coord/ui-bridge",
         label: "UI Bridge",
         icon: AppWindow,

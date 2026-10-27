@@ -30,6 +30,16 @@
  * `spec_api/apps.rs` `handle_list_apps`), which on a runner bound to the
  * shared database is that same table. Each half is then a {@link RegistryRead}
  * of `not-read`, and the panel renders its reason as a labelled UNKNOWN.
+ *
+ * **Nor is the web registry read for anyone but staff**, in operator mode
+ * either. The menu is not what stands between a viewer and that read: any
+ * signed-in member can open the page's URL, and the route answers any of them
+ * with every row. So until `list_apps` is scoped to the acting organisation
+ * the page makes the read only for staff (`is_superuser`), and every other
+ * viewer reads that half as `not-read` with {@link WEB_REGISTRY_STAFF_ONLY}.
+ * The page still asks for the runner's own list in operator mode, whoever is
+ * viewing: the relay reaches only a runner the viewer owns, so that list is
+ * what the viewer's own runner can already read.
  */
 
 import {
@@ -52,6 +62,15 @@ export type RegistryRead<T> =
 /** Why the presentation lens does not read the web registry (D3.4). */
 export const WEB_REGISTRY_NOT_IN_LENS =
   "The web app registry is not read while presenting: it is not kept per project, so it can list other projects' applications.";
+
+/**
+ * Why the page does not read the web registry for a viewer who is not staff,
+ * in operator mode: the route answers any signed-in user with every row, so
+ * the page makes the read only for staff until it is scoped to the acting
+ * organisation.
+ */
+export const WEB_REGISTRY_STAFF_ONLY =
+  "The web app registry is read only for staff: it is not kept per project, so it can list other projects' applications.";
 
 /** Why the presentation lens does not read the runner's own app list (D3.4). */
 export const RUNNER_APP_LIST_NOT_IN_LENS =
@@ -238,8 +257,9 @@ const SIDE_NAME: Record<AppRegistrySide, string> = {
  *   never made.
  *
  * Today every runner's app list is unread (no relay carries `GET /apps` —
- * `relayReads.ts`), so this is a floor on every runner until one does; and
- * while presenting neither registry is read, so it is `unknown`.
+ * `relayReads.ts`), so for staff this is a floor on every runner until one
+ * does. For any other viewer the web registry is not read either, and while
+ * presenting neither registry is read, so for both it is `unknown`.
  */
 export type AppTotal =
   | { readonly kind: "exact"; readonly count: number }

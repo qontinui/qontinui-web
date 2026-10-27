@@ -11,7 +11,10 @@
  *   for the new one;
  * - where no relay carries the sweep — every runner today — it is not asked at
  *   all, and the occlusion row is decided without reading any answer to it
- *   (`occlusionReadOf`; coord finding 99796499).
+ *   (`occlusionReadOf`; coord finding 99796499);
+ * - the web app registry, which is not partitioned by project, is read only
+ *   for staff and never while presenting (`webRegistryAccessOf`), and a half
+ *   the page declines is never handed on (`appRegistryReadsOf`).
  */
 
 import React, { type ReactNode } from "react";
@@ -32,6 +35,11 @@ import {
   OCCLUSION_NOT_RELAYED,
   type OcclusionReading,
 } from "./occlusionStatus";
+import {
+  RUNNER_APP_LIST_NOT_IN_LENS,
+  WEB_REGISTRY_NOT_IN_LENS,
+  WEB_REGISTRY_STAFF_ONLY,
+} from "./appRegistryStatus";
 import type { QueryView, ReadState } from "./readState";
 
 const OTHER_DEVICE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -40,6 +48,7 @@ const state = vi.hoisted(() => ({
   target: { kind: "pending" } as RunnerTarget,
   relay: null as RelayFake | null,
   gets: [] as string[],
+  user: null as { is_superuser: boolean; coord_is_admin: boolean } | null,
 }));
 
 vi.mock("@/contexts/active-runner-context", () => ({
@@ -70,16 +79,24 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "https://api.test" },
 }));
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ user: state.user }),
+}));
 
 import {
   FLEET_APPS_PATH,
+  appRegistryReadsOf,
   occlusionReadOf,
   useDashboardRunner,
   useFleetAppsRead,
   usePageHealthRun,
   useRunnerComponentsRead,
   useRunnerHealthRead,
+  webRegistryAccessOf,
 } from "./useUiBridgeDashboard";
+
+const STAFF = { is_superuser: true, coord_is_admin: true };
+const COORD_ADMIN = { is_superuser: false, coord_is_admin: true };
 
 /** A relay that carries the sweep — no runner's does yet; the follow-up's case. */
 const RELAYED = true;
@@ -113,6 +130,7 @@ const askedFor = (route: string, device: string) =>
 beforeEach(() => {
   state.relay = relayFake();
   state.gets = [];
+  state.user = STAFF;
 });
 
 afterEach(() => {
@@ -242,7 +260,7 @@ describe("the metadata reads", () => {
     );
   });
 
-  it("read the web registry from the web backend, needing no runner", async () => {
+  it("read the web registry from the web backend for staff, needing no runner", async () => {
     const { result } = renderHook(() => useFleetAppsRead(), {
       wrapper: wrapper(),
     });
@@ -250,6 +268,119 @@ describe("the metadata reads", () => {
     expect(FLEET_APPS_PATH).toBe("/api/v1/fleet/apps");
     expect(state.gets).toEqual(["/api/v1/fleet/apps"]);
     expect(asked()).toEqual([]);
+  });
+});
+
+describe("the web registry read — staff only, never while presenting", () => {
+  it.each([
+    ["a coord admin who is not staff", COORD_ADMIN],
+    ["a member", { is_superuser: false, coord_is_admin: false }],
+    ["nobody resolved", null],
+  ])(
+    "makes no read for %s — not even on refetch(), which ignores `enabled`",
+    async (_label, user) => {
+      state.user = user;
+      const { result } = renderHook(() => useFleetAppsRead(), {
+        wrapper: wrapper(),
+      });
+      await settle();
+      await act(async () => {
+        await result.current.refetch().catch(() => undefined);
+      });
+      await settle();
+      expect(state.gets).toEqual([]);
+      expect(result.current.data).toBeUndefined();
+    }
+  );
+
+  it("makes no read for staff while presenting", async () => {
+    const Queries = wrapper();
+    const { result } = renderHook(() => useFleetAppsRead(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <FixedPresentationMode presenting>
+          <Queries>{children}</Queries>
+        </FixedPresentationMode>
+      ),
+    });
+    await settle();
+    await act(async () => {
+      await result.current.refetch().catch(() => undefined);
+    });
+    await settle();
+    expect(state.gets).toEqual([]);
+  });
+
+  it("is decided in one place: staff in operator mode only, with the reason each other viewer is given", () => {
+    expect(webRegistryAccessOf({ presenting: false, staff: true })).toEqual({
+      read: true,
+    });
+    expect(webRegistryAccessOf({ presenting: false, staff: false })).toEqual({
+      read: false,
+      reason: WEB_REGISTRY_STAFF_ONLY,
+    });
+    // Presenting declines it for staff too, with the lens's own reason.
+    for (const staff of [true, false]) {
+      expect(webRegistryAccessOf({ presenting: true, staff })).toEqual({
+        read: false,
+        reason: WEB_REGISTRY_NOT_IN_LENS,
+      });
+    }
+  });
+});
+
+describe("appRegistryReadsOf — a half the page declines is never handed on", () => {
+  /** A query that DID answer — as a value an earlier read left in the cache. */
+  const answered = <D,>(data: D): QueryView<D> => ({
+    data,
+    error: null,
+    isError: false,
+    isFetching: false,
+    dataUpdatedAt: 5,
+    asked: true,
+  });
+  const web = answered(FLEET_APPS);
+  const runner = answered({ ok: true, apps: [] });
+
+  it("hands staff both reads in operator mode", () => {
+    const reads = appRegistryReadsOf({
+      presenting: false,
+      webAccess: { read: true },
+      web,
+      runner,
+    });
+    expect(reads.web.state).toBe("ok");
+    expect(reads.runner.state).toBe("ok");
+  });
+
+  it("hands a viewer who is not staff the runner's list, and the web half as not read — whatever the cache holds", () => {
+    const reads = appRegistryReadsOf({
+      presenting: false,
+      webAccess: webRegistryAccessOf({ presenting: false, staff: false }),
+      web,
+      runner,
+    });
+    expect(reads.web).toEqual({
+      state: "not-read",
+      reason: WEB_REGISTRY_STAFF_ONLY,
+    });
+    expect(reads.runner.state).toBe("ok");
+  });
+
+  it("hands on neither while presenting", () => {
+    const reads = appRegistryReadsOf({
+      presenting: true,
+      webAccess: webRegistryAccessOf({ presenting: true, staff: true }),
+      web,
+      runner,
+    });
+    expect(reads.web).toEqual({
+      state: "not-read",
+      reason: WEB_REGISTRY_NOT_IN_LENS,
+    });
+    expect(reads.runner).toEqual({
+      state: "not-read",
+      reason: RUNNER_APP_LIST_NOT_IN_LENS,
+    });
   });
 });
 

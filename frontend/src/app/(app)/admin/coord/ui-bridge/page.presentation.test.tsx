@@ -70,6 +70,12 @@ const state = vi.hoisted(() => ({
   fleetApps: (async () => []) as () => Promise<unknown>,
   /** Every `GET /api/v1/fleet/apps` the page made. */
   fleetAppsReads: 0,
+  /**
+   * Staff throughout: the one viewer the web registry is read for in
+   * operator mode, so the operator-mode renders below do read it, and what
+   * presenting declines is the lens's doing, not the viewer's.
+   */
+  user: { is_superuser: true, coord_is_admin: true },
 }));
 
 vi.mock("@/contexts/active-runner-context", () => ({
@@ -101,6 +107,9 @@ vi.mock("@/services/service-factory", () => ({
 }));
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "https://api.test" },
+}));
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ user: state.user }),
 }));
 
 import UiBridgeDashboardPage from "./page";
