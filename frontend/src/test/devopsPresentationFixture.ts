@@ -141,7 +141,10 @@ function hostSample(deviceId: string) {
     swap_used_bytes: null,
     disk_total_bytes: 1,
     disk_free_bytes: 1,
-    disk_mount: "/",
+    // The resources table's disk cell carries the sample's mount: fed the
+    // same client-naming label as the volume census, so its absence from a
+    // presentation render is redaction rather than a mount that names nobody.
+    disk_mount: VOLUME_MOUNT,
     build_slots_total: 4,
     build_slots_busy: 1,
     build_queue_depth: 0,

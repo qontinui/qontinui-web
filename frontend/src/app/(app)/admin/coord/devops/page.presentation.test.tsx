@@ -414,6 +414,12 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     expect(
       resourceRows.some((r) => r.textContent?.includes("instance 1"))
     ).toBe(true);
+    // Each row's disk figure is shown without the sample's mount, a path
+    // someone chose that names a client here (the operator test below shows
+    // the same rows DO carry it for the operator).
+    for (const row of resourceRows) {
+      expect(row.textContent).not.toContain(VOLUME_MOUNT);
+    }
   });
 
   it("opens with three headline figures, each with its provenance", async () => {
@@ -737,8 +743,16 @@ describe("/admin/coord/devops for the operator — the console is unchanged", ()
     // Real names: the operator's alias for machine A, and the hostnames.
     expect(screen.getAllByText(DISPLAY_NAME_A).length).toBeGreaterThan(0);
     expect(document.body.innerHTML).toContain(HOST_B);
-    // The operator still reads the volume's own mount.
+    // The operator still reads the volume's own mount — on the machine card
+    // and beside each resources row's disk figure.
     expect(screen.getAllByText(VOLUME_MOUNT).length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByTestId("fleet-resource-row")
+          .some((r) => r.textContent?.includes(VOLUME_MOUNT))
+      ).toBe(true)
+    );
     expect(document.querySelector('[data-machine-alias="true"]')).toBeNull();
 
     expect(screen.queryByTestId("devops-headline-strip")).toBeNull();

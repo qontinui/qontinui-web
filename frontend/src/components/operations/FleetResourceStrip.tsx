@@ -1608,7 +1608,12 @@ export function FleetResourceStrip({
                                   s.disk_free_bytes,
                                   s.disk_total_bytes
                                 )}
-                                {s.disk_mount && (
+                                {/* The mount is a path someone chose
+                                    (`/Volumes/<label>`, `/home/<user>`), so it
+                                    can name a person or a client: an outsider
+                                    reads the figure without it (D3.3; style
+                                    guide §3.10, "Positions, not names"). */}
+                                {s.disk_mount && !presenting && (
                                   <span className="text-muted-foreground">
                                     {" "}
                                     {s.disk_mount}
