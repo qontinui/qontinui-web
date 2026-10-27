@@ -46040,6 +46040,7 @@
             "title": "Instance Name"
           },
           "ip": {
+            "description": "The runner's IPv4 or IPv6 address literal, with no zone id.",
             "title": "Ip",
             "type": "string"
           },

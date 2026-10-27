@@ -47320,7 +47320,10 @@ export interface components {
             hostname: string;
             /** Instance Name */
             instance_name?: string | null;
-            /** Ip */
+            /**
+             * Ip
+             * @description The runner's IPv4 or IPv6 address literal, with no zone id.
+             */
             ip: string;
             /** Lan Reachable */
             lan_reachable?: boolean | null;
