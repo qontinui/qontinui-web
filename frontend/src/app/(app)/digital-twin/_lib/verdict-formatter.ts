@@ -7,7 +7,9 @@
 
 import { citationCounts } from "./delivery-citations";
 import {
-  UNREPORTED_AGE,
+  UNSERVED_AGE,
+  WORST_BUCKET,
+  datesWorstBucket,
   formatRatio,
   formatReadingAge,
   readingAge,
@@ -72,8 +74,9 @@ export interface SummaryOptions {
   /**
    * The shape of the door the verdict was read from; by default coord's twin
    * door, whose answer is a DriftVerdict. An `envelope` door's answer is not
-   * one and reports no age, so its freshness is UNKNOWN, never "live"
-   * (`status-presentation.ts` `readingAge`).
+   * one: its age, when one is served, is its worst bucket's — the bucket its
+   * drift class comes from — and is named so; with none served its freshness
+   * is UNKNOWN, never "live" (`status-presentation.ts` `readingAge`).
    */
   readonly doorShape?: DoorShape | null;
 }
@@ -188,13 +191,21 @@ export interface VerdictSummary {
  * shown beside, or after, the time it was read — a cached answer, one kept
  * after a failed read, or a lookup left on screen (`formatAgeWhenRead`).
  */
-function trustSentence(verdict: DriftVerdict, age: ReadingAge): string {
+function trustSentence(
+  verdict: DriftVerdict,
+  age: ReadingAge,
+  doorShape: DoorShape | null | undefined
+): string {
   const trust = trustPhrase(verdict);
   const provenance = verdict.provenance ?? "unknown source";
   if (age === null) {
-    return `${trust}, from ${provenance}; ${UNREPORTED_AGE}, so its freshness when read is UNKNOWN.`;
+    return `${trust}, from ${provenance}; ${UNSERVED_AGE}, so its freshness when read is UNKNOWN.`;
   }
-  return `${trust}; its data was ${formatReadingAge(age)} when read, from ${provenance}.`;
+  // An envelope door's age dates its worst bucket, not the whole answer.
+  const whose = datesWorstBucket(age, doorShape)
+    ? `its ${WORST_BUCKET}'s data`
+    : "its data";
+  return `${trust}; ${whose} was ${formatReadingAge(age)} when read, from ${provenance}.`;
 }
 
 export function summarizeVerdict(
@@ -209,7 +220,7 @@ export function summarizeVerdict(
 
   const sentences = [
     `${capitalize(name)} is ${drift}.`,
-    trustSentence(verdict, age),
+    trustSentence(verdict, age, options.doorShape),
   ];
   const extra = instanceClause(verdict, options);
   if (extra) sentences.push(extra);
@@ -220,8 +231,10 @@ export function summarizeVerdict(
     { label: "Credibility", value: formatRatio(verdict.credibility) },
     {
       label: "Freshness when read",
-      value: formatReadingAge(age),
-      ...(age === null ? { unknownReason: UNREPORTED_AGE } : {}),
+      value: datesWorstBucket(age, options.doorShape)
+        ? `${formatReadingAge(age)} (${WORST_BUCKET})`
+        : formatReadingAge(age),
+      ...(age === null ? { unknownReason: UNSERVED_AGE } : {}),
     },
     // "Data source", not "Source": beside a provenance chip, whose own
     // "source:" names who read it, one label names one thing.

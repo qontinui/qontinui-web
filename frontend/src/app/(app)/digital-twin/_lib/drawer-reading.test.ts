@@ -154,8 +154,20 @@ function row(
   };
 }
 
-/** coord's admin outbound door's answer, as it really sends it: no age. */
-const METRICS: VerdictMetrics = outboundEnvelope("nominal");
+/**
+ * coord's admin outbound door's answer as the backend serves it: its worst
+ * bucket's age, 12 s when read.
+ */
+const METRICS: VerdictMetrics = outboundEnvelope({
+  drift: "nominal",
+  ageSeconds: 12,
+});
+
+/** The same answer from a backend that predates carrying that age. */
+const METRICS_UNDATED: VerdictMetrics = outboundEnvelope({
+  drift: "nominal",
+  ageSeconds: null,
+});
 
 const PROBE = { refreshFailed: false, error: null, asOf: PROBE_AT };
 const PROBE_HELD = {
@@ -356,7 +368,7 @@ describe("drawerSummary — an envelope door, read by the probe", () => {
     expect(summary?.reading?.envelope?.heading).toBe(LIVE_ENVELOPE_HEADING);
   });
 
-  it("says its age is UNKNOWN, never live: the door reports none, and its answer is no DriftVerdict", () => {
+  it("dates it by its worst bucket's age, and says so: the class is that bucket's, and the answer has no age of its own", () => {
     const outbound = row("outbound", "envelope", { metrics: METRICS });
     for (const probe of [PROBE, PROBE_HELD]) {
       for (const presenting of [false, true]) {
@@ -367,13 +379,35 @@ describe("drawerSummary — an envelope door, read by the probe", () => {
           presenting,
         })?.reading;
         expect(reading?.prose).toBe(
-          "Outbound is classified “nominal”. Coverage 100%, credibility 95%, from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN."
+          "Outbound is classified “nominal”. Coverage 100%, credibility 95%; its worst bucket's data was 12s stale when read, from persisted_oplog."
         );
-        expect(reading?.prose).not.toMatch(/\blive\b/);
+        expect(reading?.prose).not.toMatch(/its data was/);
+        expect(reading?.envelope?.facts).toContainEqual({
+          label: "Freshness when read",
+          value: "12s stale (worst bucket)",
+        });
+      }
+    }
+  });
+
+  it("says its age is UNKNOWN when none was served, never live, and blames no one", () => {
+    const outbound = row("outbound", "envelope", { metrics: METRICS_UNDATED });
+    for (const probe of [PROBE, PROBE_HELD]) {
+      for (const presenting of [false, true]) {
+        const reading = drawerSummary({
+          row: outbound,
+          probe,
+          own: { kind: "none" },
+          presenting,
+        })?.reading;
+        expect(reading?.prose).toBe(
+          "Outbound is classified “nominal”. Coverage 100%, credibility 95%, from persisted_oplog; no age was served for this reading, so its freshness when read is UNKNOWN."
+        );
+        expect(reading?.prose).not.toMatch(/\blive\b|coord reported/);
         expect(reading?.envelope?.facts).toContainEqual({
           label: "Freshness when read",
           value: "UNKNOWN",
-          unknownReason: "coord reported no age for this data",
+          unknownReason: "no age was served for this reading",
         });
       }
     }

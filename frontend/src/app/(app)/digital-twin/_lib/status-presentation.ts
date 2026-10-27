@@ -285,19 +285,27 @@ export const COUNT_FILLS = {
 } as const;
 
 /**
- * How old a reading was when it was read, as its door reports it: seconds
- * stale; `"live"`; or `null` — UNKNOWN, because the door reported no age.
+ * How old a reading was when it was read: seconds stale; `"live"`; or `null`
+ * — UNKNOWN, because no age was served for it.
  *
  * `"live"` is coord's meaning for a missing `staleness_seconds` on a
  * DriftVerdict, and only there: the verdict carries it "when the answer came
  * from a cached fallback", and omits it "on a fresh live answer"
- * (`twin_verdict.rs`). An `envelope` door's answer is NOT a DriftVerdict. The
- * admin outbound door (`OutboundBudgetResponse`, `outbound_budget_read.rs`)
- * has no top-level `staleness_seconds` at all, since each bucket carries its
- * own age. A missing age there means nothing was reported. It is UNKNOWN,
+ * (`twin_verdict.rs`). Every door shape but one is read as the backend reads
+ * it, as a DriftVerdict.
+ *
+ * An `envelope` door's answer is NOT a DriftVerdict. The admin outbound door
+ * (`OutboundBudgetResponse`, `outbound_budget_read.rs`) has no answer-level
+ * age: each bucket carries its own, coord sorts the buckets worst-first, and
+ * the answer's drift class is the first bucket's. The web backend serves
+ * that bucket's age as the reading's `staleness_seconds`
+ * (`digital_twin.py` `_class_bucket_age`), so an envelope door's age dates
+ * its worst bucket — the one its class comes from — and not the rest of the
+ * answer, and every sentence about it names that bucket
+ * ({@link datesWorstBucket}). A missing one means no age was served: no
+ * bucket was observed, or a backend that predates carrying it. It is UNKNOWN,
  * never live (`verification-and-evidence`
- * `unknown-must-not-render-as-a-default`). Every other door shape is read as
- * the backend reads it, as a DriftVerdict.
+ * `unknown-must-not-render-as-a-default`).
  *
  * A number that is not finite is no age either; JSON cannot carry one.
  */
@@ -314,8 +322,29 @@ export function readingAge(
   return Number.isFinite(stalenessSeconds) ? stalenessSeconds : null;
 }
 
-/** Why a reading's age is UNKNOWN, as the sentences about it say. */
-export const UNREPORTED_AGE = "coord reported no age for this data";
+/**
+ * Why a reading's age is UNKNOWN, as the sentences about it say. True
+ * whichever half deploys first: a backend that predates carrying the
+ * envelope door's age serves none, and so does one over an answer with no
+ * bucket.
+ */
+export const UNSERVED_AGE = "no age was served for this reading";
+
+/**
+ * Whether `age` dates only the worst bucket of an envelope door's answer —
+ * the bucket its drift class comes from — rather than the reading as a whole
+ * ({@link readingAge}). Every sentence that shows such an age names that
+ * bucket ({@link WORST_BUCKET}).
+ */
+export function datesWorstBucket(
+  age: ReadingAge,
+  doorShape: DoorShape | null | undefined
+): boolean {
+  return doorShape === "envelope" && typeof age === "number";
+}
+
+/** How a sentence names the bucket an envelope door's age dates. */
+export const WORST_BUCKET = "worst bucket";
 
 /** A {@link ReadingAge} in words: "45s stale", "live" or "UNKNOWN". */
 export function formatReadingAge(age: ReadingAge): string {

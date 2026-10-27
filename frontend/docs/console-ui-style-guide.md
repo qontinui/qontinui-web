@@ -2035,11 +2035,17 @@ surface too, in both modes. A reading kept after its latest read failed (react-q
 keeps a query's data when a refetch fails) is named as the last read. The failure
 leads, the reading is introduced as the last one read, it is never headed "Live", and
 its own staleness is worded as of when it was read ("its data was 30s stale when
-read"). An age a door did not report is UNKNOWN, never "live". A missing
+read"). An age that was not served is UNKNOWN, never "live": a missing
 `staleness_seconds` means a live answer only on coord's DriftVerdict, and the admin
-outbound door's envelope is not one. So its age reads UNKNOWN in the drawer, on the
-matrix cell and on the Twin map alike (`digital-twin/_lib/status-presentation.ts`
-`readingAge`).
+outbound door's envelope is not one. That door has no answer-level age. Each bucket
+carries its own, and its drift class is its worst (first) bucket's. So the web backend
+serves that bucket's age (`digital_twin.py` `_class_bucket_age`), and every sentence
+that shows it names the bucket: "its worst bucket's data was 12s stale when read" in
+the drawer, "worst bucket 12s stale when read" on the matrix cell, "outbound's dated by
+its worst bucket" on the Twin map (`digital-twin/_lib/status-presentation.ts`
+`readingAge`, `datesWorstBucket`). With no age served (no bucket observed, or a backend
+that predates carrying it) all three read UNKNOWN with the reason "no age was served
+for this reading". That reason is true whichever half deploys first, and blames no one.
 
 Where a kept reading's dot goes depends on what carries it:
 
@@ -2061,7 +2067,8 @@ its own `Provenance` chip, and that chip dates it, `persistent` because nothing 
 in the panel does. The sub-space drawer's Status is the page probe's answer, and its
 Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
 `drawer-reading.ts`). Every state of both reads that can occur, in both modes, is a
-row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer.
+row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer,
+with its worst bucket's age served and without.
 That file's docblock names the combinations it leaves out because they cannot occur.
 
 **Density down.** Presentation mode never adds a record row to a page: what it changes

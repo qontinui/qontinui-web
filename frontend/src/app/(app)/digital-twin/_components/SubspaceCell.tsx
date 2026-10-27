@@ -4,7 +4,9 @@ import { useUIElement } from "@qontinui/ui-bridge/react";
 import { NAVIGATION_ONLY_PROPS } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import {
-  UNREPORTED_AGE,
+  UNSERVED_AGE,
+  WORST_BUCKET,
+  datesWorstBucket,
   formatAgeWhenRead,
   formatRatio,
   presentStatus,
@@ -38,8 +40,10 @@ interface SubspaceCellProps {
  * credibility / staleness) — the goal-#3/#4 usefulness+accuracy signal —
  * verbatim from coord. The staleness is the reading's age when it was read
  * ("45s stale when read"), never an age now: the cell shows the probe's answer
- * some time after it was read. A staleness its door did not report (the
- * envelope door's) is "age UNKNOWN", never "live" (`readingAge`). A press only opens
+ * some time after it was read. The envelope door's age is its worst bucket's
+ * — the bucket its drift class comes from — and says so ("worst bucket 12s
+ * stale when read"); with no age served it is "age UNKNOWN", never "live"
+ * (`readingAge`). A press only opens
  * the read-only detail drawer, so the tile is navigation-only and stays live
  * in presentation mode.
  */
@@ -114,7 +118,14 @@ export function SubspaceCell({
               data-testid={`${id}-age`}
               className="flex items-center gap-1"
             >
-              age <UnknownBadge title={`${upperFirst(UNREPORTED_AGE)}.`} />
+              age <UnknownBadge title={`${upperFirst(UNSERVED_AGE)}.`} />
+            </span>
+          ) : datesWorstBucket(age, row.doorShape) ? (
+            <span
+              title="staleness when read of the worst bucket, the one its drift class comes from"
+              data-testid={`${id}-age`}
+            >
+              {WORST_BUCKET} {formatAgeWhenRead(age)}
             </span>
           ) : (
             <span title="staleness when read" data-testid={`${id}-age`}>

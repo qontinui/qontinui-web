@@ -10,7 +10,7 @@
  * |---|---|---|
  * | observed | live probes answering, of those coord answers this workspace with a verdict (coord's live twin probe) | apps registered with the runner's UI Bridge |
  * | coverage | the answering probes' own average coverage | pages of the runner's own interface with a readable model |
- * | staleness | the oldest answering reading; UNKNOWN when one came with no age (the envelope door reports none) | UNKNOWN: the models carry no time |
+ * | staleness | the oldest answering reading (the envelope door's dated by its worst bucket); UNKNOWN when one came with no age served | UNKNOWN: the models carry no time |
  * | honesty | violations among the parts coord's twin self-check measures | UNKNOWN: the self-check does not cover interface models |
  *
  * Nothing here is ever a zero standing in for an unknown: a failed read, a
@@ -27,7 +27,12 @@ import type { CaptionKey } from "@/components/presentation";
 import { statusSuffix } from "./failure-text";
 import { coverageOf, gradedOf } from "./lifecycle";
 import { probeUnread, type ProbeRead, type ProbeSilence } from "./probe-read";
-import { formatRatio, readingAge } from "./status-presentation";
+import {
+  WORST_BUCKET,
+  datesWorstBucket,
+  formatRatio,
+  readingAge,
+} from "./status-presentation";
 import {
   formatAge,
   readFidelity,
@@ -313,15 +318,19 @@ function stalenessFigure(
       asOf: probe.asOf,
     };
   }
-  // Each reading's age as its door reports it: coord omits a DriftVerdict's
-  // `staleness_seconds` on an answer it computed live, but an envelope door
-  // reports no age at all, so its reading's age is UNKNOWN (`readingAge`).
+  // Each reading's age as it was served: coord omits a DriftVerdict's
+  // `staleness_seconds` on an answer it computed live; an envelope door's age
+  // is its worst bucket's, and with none served it is UNKNOWN (`readingAge`).
   const ages = answering.map((row) => ({
     row,
     age: readingAge(row.metrics?.staleness_seconds, row.doorShape),
   }));
   const undated = ages.filter((a) => a.age === null).map((a) => a.row);
   const dated = ages.flatMap((a) => (typeof a.age === "number" ? [a.age] : []));
+  // The readings dated by one bucket rather than as a whole, named as such.
+  const bucketDated = ages
+    .filter((a) => datesWorstBucket(a.age, a.row.doorShape))
+    .map((a) => partName(a.row.id));
   if (undated.length > 0) {
     // Any reading of unknown age may be the oldest, so the oldest is unknown.
     return {
@@ -346,15 +355,26 @@ function stalenessFigure(
     key: "staleness",
     state: "known",
     value: formatAge(Math.max(...dated)),
-    detail: `the oldest of ${plural(answering.length, "answering reading")}`,
+    detail:
+      `the oldest of ${plural(answering.length, "answering reading")}` +
+      (bucketDated.length > 0
+        ? `; ${listed(bucketDated)}'s dated by its ${WORST_BUCKET}`
+        : ""),
     source,
     asOf: probe.asOf,
   };
 }
 
+/** `a`, `a and b`, `a, b and c`. */
+function listed(names: readonly string[]): string {
+  return names.length === 1
+    ? names[0]!
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /**
  * Why a twin's oldest reading is UNKNOWN: which answering readings came with
- * no age, and what the others say.
+ * no age served, and what the others say.
  */
 function undatedReason(
   undated: readonly ResolvedSubspace[],
@@ -365,7 +385,7 @@ function undatedReason(
   const whose =
     names.length === 1
       ? `${names[0]}'s reading`
-      : `the readings of ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+      : `the readings of ${listed(names)}`;
   const others = answering - undated.length;
   const oldest = dated.length === 0 ? null : formatAge(Math.max(...dated));
   let rest = "";
@@ -380,7 +400,7 @@ function undatedReason(
         ? `; the other ${others} answering probes read live`
         : `; the oldest of the other ${others} answering readings is ${oldest}`;
   }
-  return `coord reported no age for ${whose}${rest}`;
+  return `no age was served for ${whose}${rest}`;
 }
 
 function honestyFigure(

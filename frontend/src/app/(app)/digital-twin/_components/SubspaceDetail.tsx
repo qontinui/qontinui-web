@@ -117,8 +117,9 @@ function SummaryLine({ line }: { line: DrawerLine }) {
  *   JSON an AI agent receives, summarized; for the admin outbound budget, an
  *   `envelope` door off the twin door, the probe's answer for the row, once
  *   there is one. Each reading is dated by when it was read, and its
- *   staleness is its staleness then — UNKNOWN for the envelope door, which
- *   reports no age (never "live"). One kept after a failed read leads with
+ *   staleness is its staleness then — for the envelope door, its worst
+ *   bucket's, named so, or UNKNOWN when no age was served (never "live").
+ *   One kept after a failed read leads with
  *   that failure, is introduced as the last one read, and its envelope is
  *   never headed "Live". With no reading the Summary says why (not made, in
  *   flight, failed), and an envelope door with no probe answer has none.

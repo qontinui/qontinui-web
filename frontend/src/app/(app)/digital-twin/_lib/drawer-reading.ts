@@ -11,8 +11,10 @@
  * way the reading is shown with WHEN it was read — a Provenance chip, in both
  * modes, since nothing else in the drawer dates it — and the verdict's own
  * staleness is its staleness WHEN READ, never an age now. An envelope door's
- * answer is not a DriftVerdict and reports no age, so its freshness is
- * UNKNOWN, never "live" (`status-presentation.ts` `readingAge`).
+ * answer is not a DriftVerdict: its age, when the backend serves one, is its
+ * worst bucket's — the bucket its drift class comes from — and is named so;
+ * with none served its freshness is UNKNOWN, never "live"
+ * (`status-presentation.ts` `readingAge`).
  *
  * Every line the Summary says about a read says which read it is about: by
  * name — the drawer's own ("This drawer's own read of …") or coord's live
@@ -363,8 +365,10 @@ function ownReadSummary(
 /**
  * An envelope door's reading: the envelope fields the probe carried for the
  * row, or `null` when its answer carried none. The door's answer is not a
- * DriftVerdict, and its `staleness_seconds` is always missing (the admin
- * outbound door reports none), so the reading's freshness is UNKNOWN.
+ * DriftVerdict and has no answer-level age: the `staleness_seconds` the
+ * backend serves for it is its worst bucket's age (`digital_twin.py`
+ * `_class_bucket_age`), which the summary names as that bucket's; with none
+ * served the reading's freshness is UNKNOWN.
  */
 function envelopeVerdictOf(row: ResolvedSubspace): DriftVerdict | null {
   if (!row.metrics) return null;

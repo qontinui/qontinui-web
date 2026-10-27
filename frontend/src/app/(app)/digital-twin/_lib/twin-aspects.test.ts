@@ -203,15 +203,55 @@ describe("plantFidelity — from the live probe", () => {
     expect(f.staleness).toMatchObject({ state: "known", value: "read live" });
   });
 
-  /** coord's admin outbound door answering as it really does: no age. */
+  /**
+   * coord's admin outbound door, from a backend that served no age for it:
+   * one that predates carrying its worst bucket's.
+   */
   const OUTBOUND: SubspaceProbe = {
     id: "outbound",
     status: "implemented",
     door_shape: "envelope",
-    metrics: outboundEnvelope("nominal"),
+    metrics: outboundEnvelope({ drift: "nominal", ageSeconds: null }),
   };
 
-  it("says the oldest reading is UNKNOWN when the envelope door's came with no age, never read live", () => {
+  /** The same door with its worst bucket's age served: 15 minutes when read. */
+  const OUTBOUND_DATED: SubspaceProbe = {
+    ...OUTBOUND,
+    metrics: outboundEnvelope({ drift: "nominal", ageSeconds: 900 }),
+  };
+
+  it("takes the envelope door's worst-bucket age into the oldest, and says whose it is", () => {
+    const rows = rowsFor([
+      probe("workers", "implemented", 1, 600),
+      probe("webhook_pulse", "implemented", 1, null),
+      OUTBOUND_DATED,
+    ]);
+    const f = figures("process", probeRead({ rows }));
+    expect(f.staleness).toEqual({
+      key: "staleness",
+      state: "known",
+      value: "15m old",
+      detail:
+        "the oldest of 3 answering readings; outbound's dated by its worst bucket",
+      source: "coord's live twin probe",
+      asOf: NOW - 5_000,
+    });
+  });
+
+  it("names no bucket when no envelope door's age is among the readings", () => {
+    const rows = rowsFor([
+      probe("workers", "implemented", 1, 600),
+      probe("webhook_pulse", "implemented", 1, 30),
+    ]);
+    const f = figures("process", probeRead({ rows }));
+    expect(f.staleness).toMatchObject({
+      state: "known",
+      value: "10m old",
+      detail: "the oldest of 2 answering readings",
+    });
+  });
+
+  it("says the oldest reading is UNKNOWN when the envelope door's came with no age served, never read live", () => {
     const rows = rowsFor([
       probe("workers", "implemented", 1, null),
       probe("webhook_pulse", "implemented", 1, null),
@@ -222,7 +262,7 @@ describe("plantFidelity — from the live probe", () => {
       key: "staleness",
       state: "unknown",
       reason:
-        "coord reported no age for outbound's reading; the other 2 answering probes read live",
+        "no age was served for outbound's reading; the other 2 answering probes read live",
       source: "coord's live twin probe",
       asOf: NOW - 5_000,
     });
@@ -241,16 +281,16 @@ describe("plantFidelity — from the live probe", () => {
         OUTBOUND,
       ])
     ).toBe(
-      "coord reported no age for outbound's reading; the oldest of the other 2 answering readings is 10m old"
+      "no age was served for outbound's reading; the oldest of the other 2 answering readings is 10m old"
     );
     expect(reason([probe("workers", "implemented", 1, 600), OUTBOUND])).toBe(
-      "coord reported no age for outbound's reading; the other answering reading is 10m old"
+      "no age was served for outbound's reading; the other answering reading is 10m old"
     );
     expect(reason([probe("workers", "implemented", 1, null), OUTBOUND])).toBe(
-      "coord reported no age for outbound's reading; the other answering probe read live"
+      "no age was served for outbound's reading; the other answering probe read live"
     );
     expect(reason([OUTBOUND])).toBe(
-      "coord reported no age for outbound's reading"
+      "no age was served for outbound's reading"
     );
   });
 

@@ -16,8 +16,12 @@
  *   flight. Each answer is the body its door really sends. The envelope
  *   door's is coord's admin outbound body (`test-catalog.ts`
  *   `outboundEnvelope`). Its coverage is exactly 1 or 0, so it answers
- *   implemented or blind and never partial. It reports no age, so its
- *   reading's freshness is UNKNOWN.
+ *   implemented or blind and never partial. It has no answer-level age: the
+ *   backend serves its worst bucket's, which the drawer names as that
+ *   bucket's. A backend that predates carrying it serves none, and so does
+ *   an answer with no bucket; then its freshness is UNKNOWN. The frontend and
+ *   the backend deploy separately, so both the dated and the undated answer
+ *   are rows.
  * - **Axis B — the drawer's own raw read**, for a row on coord's twin door
  *   (`schema`, a verdict door; `worktree`, a report door): not made (online,
  *   offline), in flight, answered, FAILED with an earlier answer still held
@@ -184,6 +188,8 @@ interface Answer {
   readonly notAReading: boolean;
   /** The envelope door's reading of this answer, in words; none without. */
   readonly envelopeProse?: string;
+  /** What that reading's envelope says of its age. */
+  readonly envelopeFreshness?: Freshness;
   /** The probe error token the row carries, if any. */
   readonly token?: string;
 }
@@ -211,7 +217,7 @@ const graded = (
   label: string,
   predicate: string,
   cellMetrics: VerdictMetrics,
-  envelopeProse?: string
+  envelope?: { prose: string; freshness: Freshness }
 ): Answer => ({
   name,
   status,
@@ -224,16 +230,26 @@ const graded = (
     door_shape: DOOR_SHAPE[id as Door],
   }),
   notAReading: false,
-  envelopeProse,
+  envelopeProse: envelope?.prose,
+  envelopeFreshness: envelope?.freshness,
 });
 
 const FOUND_FULL =
   "found this observer answering with full coverage for this tenant.";
 const FOUND_BLIND =
   "found this observer built but disabled or unconfigured for this tenant — not the same as unbuilt.";
-/** What the envelope door's answer says of its age: it reports none. */
+/**
+ * What a reading's envelope says of its age: the age its door served, or
+ * UNKNOWN on the ignorance floor, with why, where none was served.
+ */
+type Freshness = { readonly reported: string } | { readonly unknown: string };
+
+/** The envelope door's answer with no age served (an older backend, or no bucket). */
 const NO_AGE =
-  "from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN.";
+  "from persisted_oplog; no age was served for this reading, so its freshness when read is UNKNOWN.";
+const UNSERVED: Freshness = {
+  unknown: "No age was served for this reading.",
+};
 
 /** The twin door's verdicts, which `schema` answers with. */
 const IMPLEMENTED = graded(
@@ -268,16 +284,33 @@ const BLIND = graded(
 
 /**
  * coord's admin outbound door, which `outbound` answers with: its real body
- * (`outboundEnvelope`). Buckets observed, worst one exhausted: implemented.
- * No bucket: coverage 0 and drift `unknown`, so blind.
+ * (`outboundEnvelope`). Buckets observed, worst one exhausted: implemented,
+ * dated by that bucket's age (12 s when read) — or, from a backend that
+ * predates carrying it, with no age. No bucket: coverage 0 and drift
+ * `unknown`, so blind, with no age.
  */
 const OUTBOUND_IMPLEMENTED = graded(
   "implemented",
-  "implemented (worst bucket exhausted)",
+  "implemented (worst bucket exhausted, its age served)",
   "Live",
   FOUND_FULL,
-  outboundEnvelope("exhausted"),
-  `Outbound is classified “exhausted”. Coverage 100%, credibility 95%, ${NO_AGE}`
+  outboundEnvelope({ drift: "exhausted", ageSeconds: 12 }),
+  {
+    prose:
+      "Outbound is classified “exhausted”. Coverage 100%, credibility 95%; its worst bucket's data was 12s stale when read, from persisted_oplog.",
+    freshness: { reported: "12s stale (worst bucket)" },
+  }
+);
+const OUTBOUND_IMPLEMENTED_UNDATED = graded(
+  "implemented",
+  "implemented (worst bucket exhausted, no age served)",
+  "Live",
+  FOUND_FULL,
+  outboundEnvelope({ drift: "exhausted", ageSeconds: null }),
+  {
+    prose: `Outbound is classified “exhausted”. Coverage 100%, credibility 95%, ${NO_AGE}`,
+    freshness: UNSERVED,
+  }
 );
 const OUTBOUND_BLIND = graded(
   "blind",
@@ -285,7 +318,10 @@ const OUTBOUND_BLIND = graded(
   "Blind",
   FOUND_BLIND,
   outboundEnvelope(null),
-  `Outbound is unknown — the observer could not read this for your tenant. Coverage 0%, credibility 95%, ${NO_AGE}`
+  {
+    prose: `Outbound is unknown — the observer could not read this for your tenant. Coverage 0%, credibility 95%, ${NO_AGE}`,
+    freshness: UNSERVED,
+  }
 );
 const SERVED: Answer = {
   name: "served",
@@ -378,6 +414,7 @@ const ANSWERS: Record<Door, readonly Answer[]> = {
   ],
   outbound: [
     OUTBOUND_IMPLEMENTED,
+    OUTBOUND_IMPLEMENTED_UNDATED,
     OUTBOUND_BLIND,
     RESTRICTED,
     errorWithToken("coord_timeout", "the read timed out"),
@@ -847,16 +884,6 @@ function expectStatus(drawer: HTMLElement, cell: Cell) {
   }
 }
 
-/**
- * What a reading's envelope says of its age: the age its door reported, or
- * UNKNOWN on the ignorance floor, with why, where the door reported none.
- */
-type Freshness = { readonly reported: string } | { readonly unknown: string };
-
-/** The envelope door's: it reports no age. */
-const UNREPORTED: Freshness = {
-  unknown: "Coord reported no age for this data.",
-};
 
 /**
  * The lines the Summary must say, in order, the reading it must show, and its
@@ -898,7 +925,7 @@ function expectedSummary(cell: Cell): SummaryExpectation | null {
       lines,
       reading: { prose, source: "coord's live twin probe", age: PROBE_AGE },
       heading: held ? RETAINED_HEADING : LIVE_HEADING,
-      freshness: UNREPORTED,
+      freshness: probe.answer!.envelopeFreshness!,
     };
   }
 
@@ -1104,12 +1131,15 @@ function expectNoFalseSentence(drawer: HTMLElement, cell: Cell) {
   // A reading is never aged by its own staleness.
   expect(text).not.toMatch(/data is \d/);
   // An age the envelope door did not report is never called live: coord
-  // means a missing staleness as live only of a DriftVerdict.
+  // means a missing staleness as live only of a DriftVerdict. And an age it
+  // did serve dates its worst bucket, never the whole reading.
   if (cell.shape === "envelope") {
     expect(text, "envelope age").not.toMatch(
-      /live when read|Freshness when read\s*live/
+      /live when read|Freshness when read\s*live|its data was/
     );
   }
+  // An age that is UNKNOWN never blames coord: coord dates every bucket.
+  expect(text, "no blame").not.toMatch(/coord reported no age/i);
   // Nothing points at a report the drawer may not show.
   expect(text).not.toMatch(/open the drawer/i);
   const liveHeadings = text.split(LIVE_HEADING).length - 1;

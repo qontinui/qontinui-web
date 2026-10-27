@@ -31,6 +31,18 @@ export type OutboundDriftClass =
   | "unknown";
 
 /**
+ * The worst bucket coord's admin outbound door observed — the first, worst-
+ * first, and the one the answer's drift class comes from — as the backend
+ * serves it: its class, and its age in seconds when read, or `null` for a
+ * backend that predates carrying that age (`digital_twin.py`
+ * `_class_bucket_age`). The two halves deploy separately, so both occur.
+ */
+export interface WorstBucket {
+  readonly drift: OutboundDriftClass;
+  readonly ageSeconds: number | null;
+}
+
+/**
  * The metrics the backend copies out of coord's admin outbound door: the
  * door's real body, never an invented one (qontinui-coord
  * `outbound_budget_read.rs` `OutboundBudgetResponse`, read through
@@ -40,23 +52,22 @@ export type OutboundDriftClass =
  *   never in between, so the door never answers `partial`.
  * - `drift_class` is the worst bucket's class, or `unknown` with no bucket.
  * - `credibility` and `provenance` are the door's constants.
- * - It has NO `posterior` and NO `staleness_seconds`. The door reports
- *   neither (each bucket carries its own age), so the backend passes both
+ * - It has NO `posterior`: the door reports none, so the backend passes it
  *   through as null.
+ * - It has no answer-level age. Each bucket carries its own, and the backend
+ *   serves the worst bucket's as `staleness_seconds`: `null` with no bucket,
+ *   or from a backend that predates it.
  *
- * `worstBucket` is the worst bucket's class, or `null` when coord observed
- * none.
+ * `worst` is the worst bucket, or `null` when coord observed none.
  */
-export function outboundEnvelope(
-  worstBucket: OutboundDriftClass | null
-): VerdictMetrics {
+export function outboundEnvelope(worst: WorstBucket | null): VerdictMetrics {
   return {
-    coverage: worstBucket === null ? 0 : 1,
+    coverage: worst === null ? 0 : 1,
     credibility: 0.95,
     posterior: null,
-    staleness_seconds: null,
+    staleness_seconds: worst?.ageSeconds ?? null,
     provenance: "persisted_oplog",
-    drift_class: worstBucket ?? "unknown",
+    drift_class: worst?.drift ?? "unknown",
   };
 }
 

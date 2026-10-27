@@ -107,6 +107,11 @@ export interface VerdictMetrics {
   coverage: number | null;
   credibility: number | null;
   posterior: number | null;
+  /**
+   * The reading's age when read. For an `envelope` door, its worst bucket's
+   * age — the bucket its drift class comes from (`digital_twin.py`
+   * `_class_bucket_age`); see {@link DoorShape}.
+   */
   staleness_seconds: number | null;
   provenance: string | null;
   drift_class: string | null;
@@ -119,9 +124,11 @@ export interface VerdictMetrics {
  *    `verdict`;
  *  - `envelope` — some of a DriftVerdict's fields at the top level (the admin
  *    outbound door's `OutboundBudgetResponse`: `coverage`, `credibility`,
- *    `provenance`, `drift_class`). It is NOT a DriftVerdict. It carries no
- *    `staleness_seconds`, since each bucket has its own age, so a missing one
- *    is an age not reported, never coord's "fresh live answer"
+ *    `provenance`, `drift_class`). It is NOT a DriftVerdict, and has no
+ *    answer-level age: each bucket carries its own, and the class is the
+ *    worst (first) bucket's. The backend serves that bucket's age as the
+ *    reading's `staleness_seconds`, so it dates the worst bucket only, and a
+ *    missing one is no age served, never coord's "fresh live answer"
  *    (`status-presentation.ts` `readingAge`);
  *  - `report` — `{subspace, tool, verdict}` where `verdict` is the tool's own
  *    report, not a DriftVerdict, so it is never graded.

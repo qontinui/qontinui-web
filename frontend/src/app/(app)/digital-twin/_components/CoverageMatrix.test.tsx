@@ -244,13 +244,13 @@ describe("CoverageMatrix joined to coord's catalog", () => {
     state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
     setProbe(
       probesFor(MANIFEST_SNAPSHOT_IDS, {
-        // coord's admin outbound door as it really answers: buckets
-        // observed, and no age reported.
+        // coord's admin outbound door as the backend serves it: buckets
+        // observed, and the worst one's age, 12 s when read.
         outbound: {
           id: "outbound",
           status: "implemented",
           door_shape: "envelope",
-          metrics: outboundEnvelope("burning"),
+          metrics: outboundEnvelope({ drift: "burning", ageSeconds: 12 }),
         },
         // A twin-door verdict that omits its staleness: computed live.
         schema: {
@@ -287,17 +287,13 @@ describe("CoverageMatrix joined to coord's catalog", () => {
     const outbound = screen.getByTestId("digital-twin-cell-outbound");
     expect(outbound).toHaveTextContent("Live");
     expect(outbound).toHaveTextContent("cov 100%");
-    // The same missing staleness reads two ways, by the door it came from:
-    // the envelope door reported no age (UNKNOWN, on the floor), while the
-    // twin door's verdict was computed live.
+    // The envelope door's age dates its worst bucket, and the cell says so.
     const age = (id: string) =>
       screen.getByTestId(`digital-twin-cell-${id}-age`).textContent;
-    expect(age("outbound")).toBe("age UNKNOWN");
-    expect(screen.getByTestId("digital-twin-cell-outbound-age")).toContainElement(
-      within(outbound).getByText("UNKNOWN")
-    );
+    expect(age("outbound")).toBe("worst bucket 12s stale when read");
     // An age the cell shows is the reading's when it was read, never an age
-    // now: the cell shows the probe's answer some time after that read.
+    // now: the cell shows the probe's answer some time after that read. A
+    // twin door's verdict that omits its staleness was computed live.
     expect(age("schema")).toBe("live when read");
     expect(age("release")).toBe("45s stale when read");
     const worktree = screen.getByTestId("digital-twin-cell-worktree");
@@ -313,16 +309,50 @@ describe("CoverageMatrix joined to coord's catalog", () => {
       "1 served (a report, not graded)"
     );
     // The outbound drawer shows the envelope the probe carried: there is no
-    // twin-door raw read for an admin door. Its age is UNKNOWN there too.
+    // twin-door raw read for an admin door. Its age is the worst bucket's
+    // there too, and named so.
     fireEvent.click(outbound);
     const drawer = within(screen.getByRole("dialog"));
     expect(drawer.getByTestId("digital-twin-drawer-summary")).toHaveTextContent(
-      "Coverage 100%, credibility 95%, from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN."
+      "Coverage 100%, credibility 95%; its worst bucket's data was 12s stale when read, from persisted_oplog."
     );
     expect(drawer.getByText("Live credibility envelope")).toBeInTheDocument();
     expect(
       drawer.getByText("Freshness when read").parentElement
+    ).toHaveTextContent(/^Freshness when read12s stale \(worst bucket\)$/);
+  });
+
+  it("says an envelope door's age is UNKNOWN when none was served, on the cell and in the drawer", () => {
+    // A backend that predates carrying the worst bucket's age serves none:
+    // the frontend and the backend deploy separately.
+    state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+    setProbe(
+      probesFor(MANIFEST_SNAPSHOT_IDS, {
+        outbound: {
+          id: "outbound",
+          status: "implemented",
+          door_shape: "envelope",
+          metrics: outboundEnvelope({ drift: "burning", ageSeconds: null }),
+        },
+      })
+    );
+    render(<CoverageMatrix />);
+    const outbound = screen.getByTestId("digital-twin-cell-outbound");
+    const age = screen.getByTestId("digital-twin-cell-outbound-age");
+    expect(age).toHaveTextContent(/^age UNKNOWN$/);
+    expect(within(age).getByText("UNKNOWN")).toHaveAttribute(
+      "title",
+      "No age was served for this reading."
+    );
+    fireEvent.click(outbound);
+    const drawer = within(screen.getByRole("dialog"));
+    expect(drawer.getByTestId("digital-twin-drawer-summary")).toHaveTextContent(
+      "Coverage 100%, credibility 95%, from persisted_oplog; no age was served for this reading, so its freshness when read is UNKNOWN."
+    );
+    expect(
+      drawer.getByText("Freshness when read").parentElement
     ).toHaveTextContent(/^Freshness when readUNKNOWN$/);
+    expect(document.body.textContent).not.toMatch(/coord reported no age/i);
   });
 
   it("titles a partial and an error cell with the answer the probe gave for that row", () => {
@@ -847,7 +877,7 @@ describe("CoverageMatrix's open drawer follows the probe", () => {
     id: "outbound",
     status: "implemented",
     door_shape: "envelope",
-    metrics: outboundEnvelope("nominal"),
+    metrics: outboundEnvelope({ drift: "nominal", ageSeconds: 12 }),
   };
 
   it("moves from Probing… to the answer when the probe answers while it is open", () => {

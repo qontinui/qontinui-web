@@ -386,7 +386,7 @@ describe("resolveSubspaces joined to coord's catalog", () => {
       id: "outbound",
       status: "implemented",
       door_shape: "envelope",
-      metrics: outboundEnvelope("burning"),
+      metrics: outboundEnvelope({ drift: "burning", ageSeconds: 12 }),
     },
   ];
 
@@ -413,7 +413,7 @@ describe("resolveSubspaces joined to coord's catalog", () => {
     );
     expect(outbound.cellStatus).toBe("implemented");
     expect(outbound.doorShape).toBe("envelope");
-    expect(outbound.metrics).toEqual(outboundEnvelope("burning"));
+    expect(outbound.metrics).toEqual(outboundEnvelope({ drift: "burning", ageSeconds: 12 }));
   });
 
   it("keeps a report door's cell served — neither healthy nor partial", () => {

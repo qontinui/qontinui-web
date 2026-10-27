@@ -252,28 +252,45 @@ describe("summarizeVerdict — what a missing staleness means, by the door it ca
     }
   });
 
-  it("says an envelope door's age is UNKNOWN, with why — never live", () => {
+  it("says an envelope door's age is UNKNOWN when none was served, with a reason true of either half — never live", () => {
     const { prose, facts } = summarizeVerdict("outbound", NO_STALENESS, {
       doorShape: "envelope",
     });
     expect(prose).toBe(
-      "Outbound is classified “nominal”. Coverage 100%, credibility 95%, from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN."
+      "Outbound is classified “nominal”. Coverage 100%, credibility 95%, from persisted_oplog; no age was served for this reading, so its freshness when read is UNKNOWN."
     );
     expect(facts).toContainEqual({
       label: "Freshness when read",
       value: "UNKNOWN",
-      unknownReason: "coord reported no age for this data",
+      unknownReason: "no age was served for this reading",
     });
-    expect(prose).not.toMatch(/\blive\b/);
+    expect(prose).not.toMatch(/\blive\b|coord reported/);
   });
 
-  it("takes an age an envelope door does report", () => {
+  it("names a served envelope age as its worst bucket's: the class is that bucket's, and the answer has no age of its own", () => {
     const { prose, facts } = summarizeVerdict(
       "outbound",
       { ...NO_STALENESS, staleness_seconds: 45 },
       { doorShape: "envelope" }
     );
+    expect(prose).toContain(
+      "its worst bucket's data was 45s stale when read, from persisted_oplog."
+    );
+    expect(prose).not.toContain("its data was");
+    expect(facts).toContainEqual({
+      label: "Freshness when read",
+      value: "45s stale (worst bucket)",
+    });
+  });
+
+  it("names no bucket for a twin-door verdict's age", () => {
+    const { prose, facts } = summarizeVerdict(
+      "outbound",
+      { ...NO_STALENESS, staleness_seconds: 45 },
+      { doorShape: "verdict_wrapper" }
+    );
     expect(prose).toContain("its data was 45s stale when read");
+    expect(prose).not.toContain("bucket");
     expect(facts).toContainEqual({
       label: "Freshness when read",
       value: "45s stale",
