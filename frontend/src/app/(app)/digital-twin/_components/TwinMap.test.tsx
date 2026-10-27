@@ -283,6 +283,39 @@ describe("TwinMap — a failed source is a labelled UNKNOWN, never zero", () => 
     }
   });
 
+  it("renders a degraded probe answer (HTTP 200, no probe made) as UNKNOWN, never 0 observed", () => {
+    const body = stubBody(
+      "**/api/v1/digital-twin/subspaces"
+    ) as SubspacesProbeResponse;
+    state.probe = {
+      ...idle,
+      data: {
+        ...body,
+        degraded: true,
+        subspaces: body.subspaces.map((s) => ({
+          id: s.id,
+          status: "error",
+          error: "coord_unavailable",
+        })),
+      } satisfies SubspacesProbeResponse,
+      dataUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    for (const aspect of ["environment", "process"]) {
+      for (const key of ["observed", "coverage", "staleness"]) {
+        const f = figure(aspect, key);
+        expect(f, `${aspect}.${key}`).toHaveAttribute(
+          "data-fidelity-state",
+          "unknown"
+        );
+        expect(f, `${aspect}.${key}`).toHaveTextContent(
+          "coord's live probe could not be made: coord could not be reached"
+        );
+        expect(f, `${aspect}.${key}`).not.toHaveTextContent(/\b\d+ of \d+\b/);
+      }
+    }
+  });
+
   it("renders a failed work-unit read as UNKNOWN with the reason, not as no plans", () => {
     state.workUnits = {
       ...idle,

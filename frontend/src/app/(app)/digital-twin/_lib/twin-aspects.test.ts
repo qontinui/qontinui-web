@@ -18,6 +18,7 @@ import {
   aspectRows,
   partName,
   plantFidelity,
+  probeDegradedReason,
   twinAspect,
   type AppTwinRead,
   type FidelityFigure,
@@ -102,6 +103,7 @@ function probeRead(over: Partial<ProbeRead> = {}): ProbeRead {
     rows: rowsFor(ENV_PROBES),
     failed: false,
     error: null,
+    degraded: null,
     restricted: false,
     asOf: NOW - 5_000,
     failedAt: null,
@@ -215,6 +217,33 @@ describe("plantFidelity — from the live probe", () => {
         "coord's live probe could not be read (HTTP 502)"
       );
       expect(f[key].state === "unknown" && f[key].asOf, key).toBe(NOW - 1_000);
+    }
+  });
+
+  it("renders a degraded answer as UNKNOWN with its cause — its stand-in cells are not 0 answering", () => {
+    // The backend's degraded matrix: one `error` cell per id coord last
+    // declared, no probe made.
+    const cells: SubspaceProbe[] = ENV_PROBES.map((p) => ({
+      id: p.id,
+      status: "error",
+      error: "coord_unavailable",
+    }));
+    const degraded = probeRead({
+      rows: rowsFor(cells),
+      degraded: probeDegradedReason({ degraded: true, subspaces: cells }),
+    });
+    // Read as an answer, these cells WOULD be "0 of 3" — the zero this guards.
+    expect(
+      figures("environment", probeRead({ rows: rowsFor(cells) })).observed
+    ).toMatchObject({ state: "known", value: "0 of 3" });
+    const f = figures("environment", degraded);
+    for (const key of ["observed", "coverage", "staleness"] as const) {
+      expectNoZeroFor(f[key]);
+      expect(f[key].state === "unknown" && f[key].reason, key).toBe(
+        "coord's live probe could not be made: coord could not be reached"
+      );
+      // When the degraded answer came back — the attempt that failed.
+      expect(f[key].state === "unknown" && f[key].asOf, key).toBe(NOW - 5_000);
     }
   });
 
@@ -451,5 +480,51 @@ describe("appTwinFidelity — the UI Bridge app twin", () => {
     });
     expect(f.observed.state).toBe("loading");
     expect(f.coverage.state).toBe("loading");
+  });
+});
+
+describe("probeDegradedReason — a probe answer that made no probe", () => {
+  const cell = (error?: string): SubspaceProbe => ({
+    id: "schema",
+    status: "error",
+    error,
+  });
+
+  it("is null for an answer that is not degraded", () => {
+    expect(probeDegradedReason(undefined)).toBeNull();
+    expect(
+      probeDegradedReason({ subspaces: [cell("coord_timeout")] })
+    ).toBeNull();
+    expect(
+      probeDegradedReason({
+        degraded: false,
+        subspaces: [cell("coord_unavailable")],
+      })
+    ).toBeNull();
+  });
+
+  it("names the cause the backend's token gives", () => {
+    expect(
+      probeDegradedReason({
+        degraded: true,
+        subspaces: [cell("coord_unavailable")],
+      })
+    ).toBe("coord's live probe could not be made: coord could not be reached");
+    expect(
+      probeDegradedReason({
+        degraded: true,
+        subspaces: [cell("catalog_unavailable")],
+      })
+    ).toBe(
+      "coord's live probe could not be made: coord's catalog of live probes could not be read"
+    );
+  });
+
+  it("names no cause it does not know — an empty answer, or a token it has no words for", () => {
+    for (const subspaces of [[], [cell()], [cell("something_new")]]) {
+      expect(probeDegradedReason({ degraded: true, subspaces })).toBe(
+        "coord's live probe could not be made"
+      );
+    }
   });
 });

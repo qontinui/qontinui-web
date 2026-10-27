@@ -20,6 +20,7 @@ import {
   appTwinFidelity,
   aspectRows,
   plantFidelity,
+  probeDegradedReason,
   twinAspect,
   type ProbeRead,
   type TwinAspectId,
@@ -127,6 +128,8 @@ export function TwinMap() {
     rows,
     failed: probeQuery.isError && !probeQuery.data,
     error: probeQuery.error,
+    // An HTTP 200 that made no probe: UNKNOWN, never "0 of N observed".
+    degraded: probeDegradedReason(probeQuery.data),
     restricted: allProbesRestricted(probeQuery.data),
     asOf: at(probeQuery.dataUpdatedAt),
     failedAt: at(probeQuery.errorUpdatedAt),
