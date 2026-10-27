@@ -46,9 +46,11 @@ import {
   renderInPresentationMode,
 } from "@/test/presentation";
 import {
+  COMPONENTS_BODY,
   DEVICE_ID,
   DEVICE_NOT_OWNED_BODY,
   FLEET_APPS,
+  PAGE_HEALTH_BODY,
   NOT_CONNECTED_BODY,
   REQUEST_ID_NOT_CONNECTED,
   REQUEST_ID_NOT_OWNED,
@@ -166,10 +168,111 @@ beforeEach(() => {
   window.sessionStorage.clear();
 });
 
+/**
+ * Everything the fixtures hold that an outsider must not read — each of it on
+ * this page in operator mode, much of it one click down. The proof passes all
+ * of it as `forbidden`, so a guard that withholds any one of them is pinned.
+ */
+const COMPONENT_TEXT = COMPONENTS_BODY.data.components.flatMap((component) => [
+  component.id,
+  component.name,
+  ...("description" in component && component.description
+    ? [component.description]
+    : []),
+  ...component.actions.flatMap((action) => [
+    action.id,
+    action.label,
+    ...("description" in action && action.description
+      ? [action.description]
+      : []),
+  ]),
+]);
+const FORBIDDEN = [
+  ...COMPONENT_TEXT,
+  // A declaration that is not an effect class, quoted in the operator's detail.
+  "mutate",
+  // Another app, and local paths and URLs.
+  "example-portal",
+  "Example Portal",
+  "/home/dev/src",
+  "127.0.0.1",
+  // The window's own text, quoted by page health.
+  "Partner A",
+  // The runner's engineering detail lines (`spatial_coverage`, `text_signals`).
+  "Left=70%",
+  "css_signals=0",
+  // A check this build does not know, whose detail names a client.
+  "Acme Corp",
+  // The runner's own name and hostname.
+  "Build box",
+  "build-host-1",
+];
+
+/**
+ * Page health with one more finding: a check this build does not know, so
+ * the page has no plain reading of it, and the runner's detail line is all
+ * there is — naming a client.
+ */
+const PAGE_HEALTH_WITH_UNKNOWN_CHECK = pageHealthBodyWith({
+  findings: [
+    ...PAGE_HEALTH_BODY.data.findings,
+    {
+      check: "brand_check",
+      severity: "WARNING",
+      detail: "Acme Corp banner missing",
+      data: { banner: false },
+    },
+  ],
+});
+
 describe("the UI Bridge dashboard while presenting", () => {
   it("is safe to show an outsider: no write control, no cost, every caption", async () => {
+    state.relay = relayFake({
+      visibility: () => json(200, VISIBILITY_HIDES_TEXT),
+      pageHealth: () => json(200, PAGE_HEALTH_WITH_UNKNOWN_CHECK),
+    });
     const view = await renderPresenting();
-    expectPresentationSafe(view, { captions: CAPTIONS });
+    expect(
+      screen.getAllByTestId("coord-ui-bridge-health-finding")
+    ).toHaveLength(7);
+    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    // What one click shows is in front of the audience too: open every
+    // component's detail — its actions, their declarations, its description
+    // and raw ids — one at a time, and check each.
+    const rows = screen.getAllByTestId("coord-ui-bridge-component-row");
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      fireEvent.click(within(row).getByRole("button"));
+      expect(
+        within(row).getAllByTestId("coord-ui-bridge-action").length
+      ).toBeGreaterThan(0);
+      expectPresentationSafe(view, {
+        captions: CAPTIONS,
+        forbidden: FORBIDDEN,
+      });
+    }
+  });
+
+  it("holds every panel open while presenting — one the operator collapsed opens, caption and figures", async () => {
+    const view = renderSwitchable();
+    const panel = await screen.findByTestId("coord-ui-bridge-actions");
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    const trigger = within(panel).getAllByRole("button")[0];
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(trigger);
+    expect(
+      screen.queryByTestId("coord-ui-bridge-actions-counts")
+    ).not.toBeInTheDocument();
+
+    view.present();
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-counts")
+    ).toBeInTheDocument();
+    expect(
+      panel.querySelector(
+        '[data-presentation-caption="ui-bridge.component-actions"]'
+      )
+    ).not.toBeNull();
   });
 
   it("aliases the runner and never prints its hostname or name", async () => {
