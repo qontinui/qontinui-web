@@ -126,10 +126,17 @@ export type {
 export { FleetConditionsPanel } from "./FleetConditionsPanel";
 export type { FleetConditionsPanelProps } from "./FleetConditionsPanel";
 export { FleetResourcesSection } from "./FleetResourcesSection";
+export { FleetWorktreeSlotsSection } from "./FleetWorktreeSlotsSection";
+export { buildWorktreeSlotRows, slotRowIsKnown } from "./fleetWorktreeSlots";
+export type { WorktreeSlotRow } from "./fleetWorktreeSlots";
+export { DevOpsHeadlineStrip } from "./DevOpsHeadlineStrip";
+export type { DevOpsHeadlineStripProps } from "./DevOpsHeadlineStrip";
 export {
-  buildWorktreeSlotRows,
-  FleetWorktreeSlotsSection,
-} from "./FleetWorktreeSlotsSection";
+  DEVOPS_SOURCES,
+  ciRunnersReadyFigure,
+  machinesHealthyFigure,
+  workspacesInUseFigure,
+} from "./devOpsHeadline";
 export { FleetRolesSection } from "./FleetRolesSection";
 export { useFleetWorktreeSlots } from "./useFleetWorktreeSlots";
 export type {

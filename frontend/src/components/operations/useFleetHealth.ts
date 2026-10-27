@@ -28,6 +28,7 @@ import {
   COORD_DASHBOARD_POLL_OPTIONS,
   describeCoordPollError,
 } from "./coordPollError";
+import { servedAsOfMs } from "./servedAsOf";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
 /**
@@ -54,11 +55,22 @@ export interface UseFleetHealthResult {
    * would assert "no machines" on no evidence.
    */
   error: string | null;
+  /**
+   * When the current `data` was true, or `null` before the first success:
+   * coord's own `as_of` on the body (`fleet_health.rs`), else the moment the
+   * answer arrived (`servedAsOfMs`). The presentation lens's provenance chips
+   * state it beside every figure derived from this read (plan
+   * `2026-10-23-console-presentation-spaces` Phase 7). Stamped ONLY on
+   * success, the same rule `useFleetResourceSamples` keeps: a failed poll
+   * must not make the last answer look newer than it is.
+   */
+  asOfMs: number | null;
   refresh: () => Promise<void>;
 }
 
 export function useFleetHealth(): UseFleetHealthResult {
   const [data, setData] = useState<FleetHealthPayload | null>(null);
+  const [asOfMs, setAsOfMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +83,7 @@ export function useFleetHealth(): UseFleetHealthResult {
       const body = await fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS);
       if (!isCurrent()) return;
       setData(body);
+      setAsOfMs(servedAsOfMs(body, Date.now()));
       setError(null);
     } catch (e) {
       if (!isCurrent()) return;
@@ -82,5 +95,5 @@ export function useFleetHealth(): UseFleetHealthResult {
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_HEALTH_POLL_MS);
 
-  return { data, loading, error, refresh };
+  return { data, loading, error, asOfMs, refresh };
 }
