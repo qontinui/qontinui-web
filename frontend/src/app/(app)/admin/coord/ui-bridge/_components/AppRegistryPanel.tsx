@@ -39,6 +39,7 @@ import {
   APP_PRESENCE_ATTENTION_BY_KIND,
   APP_PRESENCE_LABEL,
   APP_PRESENCE_PALETTE,
+  KNOWN_UPDATE_STRATEGIES,
   appTotalMeaning,
   appTotalOf,
   appTotalValue,
@@ -288,6 +289,10 @@ export function AppRegistryPanel({
                 presenting ? undefined : (
                   <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
                     app {row.appId}
+                    {row.updateStrategy !== null &&
+                    !KNOWN_UPDATE_STRATEGIES.has(row.updateStrategy)
+                      ? ` · strategy ${row.updateStrategy}`
+                      : ""}
                     {row.repoRoot ? ` · checkout ${row.repoRoot}` : ""}
                     {row.uiBridgeUrl ? ` · UI Bridge ${row.uiBridgeUrl}` : ""}
                   </p>

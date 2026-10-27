@@ -177,7 +177,19 @@ export function mergeAppRegistries(
   });
 }
 
-/** An update strategy in an operator's words. */
+/** The strategies this build knows by name. */
+export const KNOWN_UPDATE_STRATEGIES: ReadonlySet<string> = new Set([
+  "pull_only",
+  "pull_build",
+]);
+
+/**
+ * An update strategy in an operator's words, from a FIXED vocabulary: a value
+ * this build does not know is "other", never echoed. The string comes from a
+ * registry, and the row's reason renders in presentation mode too, so the
+ * page's own word is what reaches it (D3.3 fails closed); the operator's raw
+ * line shows the value itself.
+ */
 export function updateStrategyLabel(strategy: string | null): string {
   switch (strategy) {
     case "pull_only":
@@ -187,7 +199,7 @@ export function updateStrategyLabel(strategy: string | null): string {
     case null:
       return "–";
     default:
-      return strategy;
+      return "other";
   }
 }
 

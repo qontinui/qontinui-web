@@ -11,7 +11,7 @@
  * the operator, and the runner's own app is named.
  */
 
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   expectPresentationSafe,
@@ -43,6 +43,8 @@ const RUNNER_APPS: RegisteredApp[] = [
     display_name: "Acme Portal",
     repo_root: "/home/dev/src/acme-portal",
     ui_bridge_url: "http://127.0.0.1:5173",
+    // A strategy this build does not know: the row says "other", never this.
+    update_strategy: "acme_rollout",
     last_seen_at_ms: 1761200000000,
   },
 ];
@@ -62,6 +64,7 @@ const FORBIDDEN = [
   "Acme Portal",
   "/home/dev/src",
   "127.0.0.1",
+  "acme_rollout",
 ];
 
 describe("the app registry panel handed rows while presenting", () => {
@@ -80,11 +83,35 @@ describe("the app registry panel handed rows while presenting", () => {
     expect(
       rows.some((r) => within(r).queryByText("Qontinui Runner") !== null)
     ).toBe(true);
+    const strategies: string[] = [];
     for (const row of rows) {
       fireEvent.click(within(row).getAllByRole("button")[0]);
-      expect(within(row).getByText(/^Update strategy: /)).toBeInTheDocument();
+      strategies.push(
+        within(row).getByText(/^Update strategy: /).textContent ?? ""
+      );
       expectPresentationSafe(view, { forbidden: FORBIDDEN });
     }
+    // Rows are ordered by app id: acme-portal, example-portal, qontinui-runner.
+    // The strategy nobody named reads as the page's own word.
+    expect(strategies).toEqual([
+      "Update strategy: other.",
+      "Update strategy: pull only.",
+      "Update strategy: pull and build.",
+    ]);
+  });
+
+  it("keeps the strategy this build does not know for the operator, on the raw line", () => {
+    render(
+      <AppRegistryPanel
+        web={ok<readonly WebAppConfig[]>(FLEET_APPS)}
+        webError={null}
+        runner={ok<readonly RegisteredApp[]>(RUNNER_APPS)}
+        build={BUILD}
+      />
+    );
+    const acme = screen.getAllByTestId("coord-ui-bridge-app-row")[0];
+    fireEvent.click(within(acme).getAllByRole("button")[0]);
+    expect(acme).toHaveTextContent("strategy acme_rollout");
   });
 
   it("leaves the web backend's own refusal out, keeping the registry's UNKNOWN", () => {

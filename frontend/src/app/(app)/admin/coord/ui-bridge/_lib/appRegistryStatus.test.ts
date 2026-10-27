@@ -160,10 +160,16 @@ describe("appTotalOf — the apps across both registries", () => {
 });
 
 describe("updateStrategyLabel", () => {
-  it("names the two strategies and dashes an unknown one", () => {
+  it("names the two strategies and dashes a missing one", () => {
     expect(updateStrategyLabel("pull_only")).toBe("pull only");
     expect(updateStrategyLabel("pull_build")).toBe("pull and build");
     expect(updateStrategyLabel(null)).toBe("–");
+  });
+
+  it("calls any other value 'other' — a registry's string is never echoed", () => {
+    for (const strategy of ["nightly_rebuild", "Acme Corp rollout", "", "PULL_ONLY"]) {
+      expect(updateStrategyLabel(strategy), strategy).toBe("other");
+    }
   });
 });
 
