@@ -267,7 +267,16 @@ describe("ciRunnersReadyFigure", () => {
     expect(v.asOf).toBe("2026-10-23T12:00:00Z");
   });
 
-  it("counts a runner ready only when it is online AND carries both routing labels", () => {
+  it("is UNKNOWN — never 0 — when the roster lists no runner because the ones it returned could not be placed", () => {
+    // Coord answered with registrations, and the console could place none
+    // of them: those are runners nobody counted, not an empty fleet.
+    for (const over of [{ unplaceableRows: 2 }, { shadowedRows: 1 }]) {
+      const v = unknown(ciRunnersReadyFigure(mirror([], over)));
+      expect(v.reason).toMatch(/could not place/);
+    }
+  });
+
+  it("counts a runner ready only when it is idle, online AND carries both routing labels", () => {
     const v = known(
       ciRunnersReadyFigure(
         mirror([
@@ -280,16 +289,27 @@ describe("ciRunnersReadyFigure", () => {
         ])
       )
     );
-    expect(v.value).toBe("2 of 6");
+    expect(v.value).toBe("1 of 6");
+    // A partition: the one ready runner and every other one, each named once.
     expect(v.detail).toBe(
-      "Ready to take a job; 1 running a job now, 1 offline, 1 runner online but not receiving fleet jobs and 2 with status unknown."
+      "Idle and able to take a job now; 1 running a job, 1 offline, 1 runner online but not receiving fleet jobs and 2 with status unknown."
     );
+  });
+
+  it("does not count a runner that is busy with a job as ready", () => {
+    const v = known(
+      ciRunnersReadyFigure(
+        mirror([mirrorRow("a", "busy"), mirrorRow("b", "busy")])
+      )
+    );
+    expect(v.value).toBe("0 of 2");
+    expect(v.detail).toBe("Idle and able to take a job now; 2 running a job.");
   });
 
   it("says when every runner is ready, and when the roster is incomplete", () => {
     expect(
       known(ciRunnersReadyFigure(mirror([mirrorRow("a", "idle")]))).detail
-    ).toBe("Every registered runner can take a job.");
+    ).toBe("Every registered runner is idle and can take a job.");
     const partial = known(
       ciRunnersReadyFigure(
         mirror([mirrorRow("a", "idle")], { unplaceableRows: 1 })

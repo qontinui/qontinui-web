@@ -251,19 +251,33 @@ export function ciRunnersReadyFigure(read: CiRunnerMirrorRead): HeadlineValue {
   }
   const rows = [...read.byHostname.values()];
   const incomplete = read.unplaceableRows > 0 || read.shadowedRows > 0;
+  if (rows.length === 0) {
+    // An answered roster that lists nothing is a measured zero ONLY when it
+    // dropped nothing. Registrations the console could not place are runners
+    // nobody can count, so a 0 there would be UNKNOWN shown as zero.
+    return incomplete
+      ? {
+          state: "unknown",
+          reason:
+            "The CI runner list came back with registrations the console could not place, so how many runners can take a job is not known right now.",
+        }
+      : {
+          state: "known",
+          value: "0",
+          detail: "No self-hosted CI runners are registered.",
+          asOf: read.asOf,
+        };
+  }
   const note = incomplete
     ? " Some registrations could not be listed, so the roster is incomplete."
     : "";
-  if (rows.length === 0) {
-    return {
-      state: "known",
-      value: "0",
-      detail: `No self-hosted CI runners are registered.${note}`,
-      asOf: read.asOf,
-    };
-  }
+  // A partition of the roster, so the detail line can name every runner the
+  // figure leaves out. "Ready" is what the label says it counts: a runner
+  // that can take a job NOW — online, idle, and carrying the labels fleet
+  // jobs route on. A busy runner is running its one job and is counted
+  // apart from them, never inside the figure.
   let ready = 0;
-  let running = 0;
+  let busy = 0;
   let offline = 0;
   let unrouted = 0;
   let unknown = 0;
@@ -273,21 +287,18 @@ export function ciRunnersReadyFigure(read: CiRunnerMirrorRead): HeadlineValue {
     const status = normalizeCiRunnerStatus(row.ci_runner_status);
     if (status === "offline") {
       offline += 1;
-      continue;
-    }
-    if (status === "unknown") {
+    } else if (status === "unknown") {
       unknown += 1;
-      continue;
-    }
-    if (!matchesFleetRouting(row.ci_runner_labels)) {
+    } else if (!matchesFleetRouting(row.ci_runner_labels)) {
       unrouted += 1;
-      continue;
+    } else if (status === "busy") {
+      busy += 1;
+    } else {
+      ready += 1;
     }
-    ready += 1;
-    if (status === "busy") running += 1;
   }
   const parts: string[] = [];
-  if (running > 0) parts.push(`${running} running a job now`);
+  if (busy > 0) parts.push(`${busy} running a job`);
   if (offline > 0) parts.push(`${offline} offline`);
   if (unrouted > 0) {
     parts.push(
@@ -300,8 +311,8 @@ export function ciRunnersReadyFigure(read: CiRunnerMirrorRead): HeadlineValue {
     value: `${ready} of ${rows.length}`,
     detail:
       (parts.length === 0
-        ? "Every registered runner can take a job."
-        : `Ready to take a job; ${joinParts(parts)}.`) + note,
+        ? "Every registered runner is idle and can take a job."
+        : `Idle and able to take a job now; ${joinParts(parts)}.`) + note,
     asOf: read.asOf,
   };
 }
