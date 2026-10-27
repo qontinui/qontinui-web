@@ -119,6 +119,30 @@ describe("deriveDashboardHealth", () => {
     );
   });
 
+  it("is red for a CURRENT broken page or hidden text even when the health did not answer — a failed /health says nothing about either", () => {
+    const page = deriveDashboardHealth(
+      input({
+        health: FAILED,
+        pageHealth: { state: "ok", value: "critical", stale: false, asOf: 1 },
+      })
+    );
+    expect(page.level).toBe("red");
+    expect(page.headline).toBe(
+      "Page health reports Machine A's current page as broken."
+    );
+    const hidden = deriveDashboardHealth(
+      input({
+        health: FAILED,
+        components: FAILED,
+        occlusion: { state: "ok", value: "hides-text", stale: false, asOf: 1 },
+      })
+    );
+    expect(hidden.level).toBe("red");
+    expect(hidden.headline).toBe(
+      "Text on Machine A's screen is hidden behind an overlay."
+    );
+  });
+
   it("is amber when there is no runner", () => {
     const none = deriveDashboardHealth(
       input({ noRunner: "the runner list has not answered yet" })
@@ -213,6 +237,10 @@ describe("deriveDashboardHealth — a stale read", () => {
     ({ state: "ok", value, stale: true, asOf: 1 }) as const;
   const fresh = <T,>(value: T) =>
     ({ state: "ok", value, stale: false, asOf: 1 }) as const;
+  const FAILED_READ = {
+    state: "failed",
+    issue: { kind: "failed", cause: "x", requestId: null, quotes: true },
+  } as const;
 
   it.each([
     ["health", { health: stale({}) }, "health"],
@@ -264,7 +292,7 @@ describe("deriveDashboardHealth — a stale read", () => {
     );
   });
 
-  it("is still red for a CURRENT broken page beside a stale read", () => {
+  it("is still red for a CURRENT broken page beside a stale read — and names the stale read", () => {
     const h = deriveDashboardHealth(
       input({
         components: stale(COUNTS),
@@ -272,6 +300,33 @@ describe("deriveDashboardHealth — a stale read", () => {
       })
     );
     expect(h.level).toBe("red");
+    expect(h.headline).toBe(
+      "Page health reports Machine A's current page as broken. The last refresh of its component actions failed, so what this page shows of it is from an earlier read."
+    );
+  });
+
+  it("names the stale reads beside a health read that failed — the badges still show their figures", () => {
+    const h = deriveDashboardHealth(
+      input({ health: FAILED_READ, components: stale(COUNTS) })
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "Machine A's health did not answer, so its build and SDK features are UNKNOWN. The last refresh of its component actions failed, so what this page shows of it is from an earlier read."
+    );
+    expect(badge(h, "actions")?.label).toBe("actions 7");
+  });
+
+  it("names the stale reads beside component actions that failed", () => {
+    const h = deriveDashboardHealth(
+      input({
+        components: FAILED_READ,
+        pageHealth: stale("critical" as const),
+      })
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "Machine A's component actions are UNKNOWN — the read failed. The last refresh of its page health failed, so what this page shows of it is from an earlier read. That earlier read reported its page as broken."
+    );
   });
 
   it("labels the app total when a registry behind it is from an earlier read", () => {

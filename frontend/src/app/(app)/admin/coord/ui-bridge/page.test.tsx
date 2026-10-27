@@ -466,6 +466,54 @@ describe("an unreachable runner", () => {
     expect(strip).toHaveAttribute("data-health-level", "amber");
   });
 
+  it("still turns the strip red when page health finds the page broken — a /health that did not answer says nothing about the page", async () => {
+    state.relay = relayFake({
+      health: () => json(503, NOT_CONNECTED_BODY),
+      pageHealth: () => json(200, pageHealthBodyWith({ summary: "CRITICAL" })),
+    });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    await screen.findByTestId("coord-ui-bridge-health-counts");
+    const strip = screen.getByTestId("coord-ui-bridge-health-strip");
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "red")
+    );
+    expect(strip).toHaveTextContent(
+      "Page health reports Build box's current page as broken."
+    );
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-summary")
+    ).toHaveTextContent("critical");
+  });
+
+  it("names the component figures as an earlier read's when their refresh failed beside the health", async () => {
+    let componentReads = 0;
+    state.relay = relayFake({
+      health: () => json(503, NOT_CONNECTED_BODY),
+      components: () => {
+        componentReads += 1;
+        return componentReads === 1
+          ? json(200, COMPONENTS_ALL_DECLARED_BODY)
+          : json(503, NOT_CONNECTED_BODY);
+      },
+    });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
+    });
+    await screen.findByTestId("coord-ui-bridge-actions-stale");
+    const strip = screen.getByTestId("coord-ui-bridge-health-strip");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(
+        "Build box's health did not answer, so its build and SDK features are UNKNOWN. The last refresh of its component actions failed, so what this page shows of it is from an earlier read."
+      )
+    );
+    expect(strip).toHaveTextContent("actions 7");
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+  });
+
   it("still reads the web registry, which needs no runner", async () => {
     renderPage();
     await waitFor(() =>

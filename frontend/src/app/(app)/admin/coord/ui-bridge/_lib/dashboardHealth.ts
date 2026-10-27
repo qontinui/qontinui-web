@@ -28,6 +28,13 @@
  * which figures are from an earlier read — over a green that read would have
  * given, and over a red: a page an earlier read found broken is reported as
  * that, at that read, not as broken now.
+ *
+ * Red is decided first, by CURRENT reads alone: a page page health has just
+ * found broken, or text the sweep has just found hidden, is red whatever else
+ * did not answer — a `/health` that failed says nothing about either. And
+ * every headline names the stale reads behind the badges, the red ones and
+ * the amber ones that report a failed read included, not only the headline
+ * whose subject they are.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -172,10 +179,56 @@ export function deriveDashboardHealth(
       badges,
     };
   }
+
+  // The reads whose figures are an earlier read's: their latest refresh
+  // failed. Every headline below names them, so a kept value is never
+  // presented as re-confirmed (R6).
+  const stale = [
+    isStale(input.health) ? "health" : null,
+    isStale(input.components) ? "component actions" : null,
+    isStale(input.pageHealth) ? "page health" : null,
+    isStale(input.occlusion) ? "occlusion check" : null,
+  ].filter((name): name is string => name !== null);
+  const earlier =
+    value(input.pageHealth) === "critical" && isStale(input.pageHealth)
+      ? " That earlier read reported its page as broken."
+      : value(input.occlusion) === "hides-text" && isStale(input.occlusion)
+        ? " That earlier read found text on its screen hidden behind an overlay."
+        : "";
+  const staleClause = `the last refresh of its ${listed(stale)} failed, so what this page shows of ${
+    stale.length === 1 ? "it" : "them"
+  } is from an earlier read.${earlier}`;
+  /** The stale reads, as a sentence after a headline about something else. */
+  const staleNote =
+    stale.length > 0
+      ? ` ${staleClause.charAt(0).toUpperCase()}${staleClause.slice(1)}`
+      : "";
+
+  // Red is a statement about NOW, so only a current read may make it — and a
+  // current one makes it whatever else did not answer: a failed `/health`
+  // says nothing about a page page health has just found broken.
+  const pageHealth = current(input.pageHealth);
+  const occlusion = current(input.occlusion);
+  if (pageHealth === "critical") {
+    return {
+      level: "red",
+      headline: `Page health reports ${input.machine}'s current page as broken.${staleNote}`,
+      badges,
+    };
+  }
+  if (occlusion === "hides-text") {
+    return {
+      level: "red",
+      headline: `Text on ${input.machine}'s screen is hidden behind an overlay.${staleNote}`,
+      badges,
+    };
+  }
+
   if (input.health.state === "failed") {
     // Say what the failed read leaves unknown, and nothing more: the other
     // runner reads are their own answers, and the badges beside this
-    // sentence show the ones that came back.
+    // sentence show the ones that came back — said to be an earlier read's
+    // where they are.
     const components =
       input.components.state === "failed"
         ? ` Its component actions are UNKNOWN too — ${issuePhrase(
@@ -185,59 +238,24 @@ export function deriveDashboardHealth(
         : "";
     return {
       level: "amber",
-      headline: `${input.machine}'s health did not answer, so its build and SDK features are UNKNOWN.${components}`,
+      headline: `${input.machine}'s health did not answer, so its build and SDK features are UNKNOWN.${components}${staleNote}`,
       badges,
     };
   }
-
-  // Red is a statement about NOW, so only a current read may make it.
-  const pageHealth = current(input.pageHealth);
-  const occlusion = current(input.occlusion);
-  if (pageHealth === "critical") {
-    return {
-      level: "red",
-      headline: `Page health reports ${input.machine}'s current page as broken.`,
-      badges,
-    };
-  }
-  if (occlusion === "hides-text") {
-    return {
-      level: "red",
-      headline: `Text on ${input.machine}'s screen is hidden behind an overlay.`,
-      badges,
-    };
-  }
-
   if (input.components.state === "failed") {
     return {
       level: "amber",
       headline: `${input.machine}'s component actions are UNKNOWN — ${issuePhrase(
         input.components.issue,
         input.componentsRoute
-      )}.`,
+      )}.${staleNote}`,
       badges,
     };
   }
-  const stale = [
-    isStale(input.health) ? "health" : null,
-    isStale(input.components) ? "component actions" : null,
-    isStale(input.pageHealth) ? "page health" : null,
-    isStale(input.occlusion) ? "occlusion check" : null,
-  ].filter((name): name is string => name !== null);
   if (stale.length > 0) {
-    const earlier =
-      value(input.pageHealth) === "critical" && isStale(input.pageHealth)
-        ? " That earlier read reported its page as broken."
-        : value(input.occlusion) === "hides-text" && isStale(input.occlusion)
-          ? " That earlier read found text on its screen hidden behind an overlay."
-          : "";
     return {
       level: "amber",
-      headline: `${input.machine}: the last refresh of its ${listed(
-        stale
-      )} failed, so what this page shows of ${
-        stale.length === 1 ? "it" : "them"
-      } is from an earlier read.${earlier}`,
+      headline: `${input.machine}: ${staleClause}`,
       badges,
     };
   }
