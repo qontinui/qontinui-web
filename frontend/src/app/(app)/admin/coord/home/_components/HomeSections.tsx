@@ -124,11 +124,17 @@ function NotRead({
   what,
   state,
   testId,
+  error = null,
   children,
 }: {
   what: string;
   state: BlockState;
   testId: string;
+  /**
+   * The block's `error`: coord's error chain, which run_sub_read also puts in
+   * the matching does-not-know row.
+   */
+  error?: string | null;
   children?: ReactNode;
 }) {
   return (
@@ -139,6 +145,21 @@ function NotRead({
     >
       <p className="m-0">{notReadSentence(what, state)}</p>
       {children}
+      {error !== null && error.trim() !== "" && (
+        // R8, as the does-not-know row words the same chain: an `anyhow`
+        // context ("SELECT coord.work_units (…): …") is internal vocabulary,
+        // so the block says coord reported an error and quotes the chain one
+        // disclosure down, on a raw last line.
+        <details className="text-xs" data-testid={`${testId}.error`}>
+          <summary className="cursor-pointer">Coord reported an error</summary>
+          <p
+            className="m-0 mt-1 font-mono text-[10px] text-muted-foreground/60 break-all"
+            data-testid={`${testId}.error.raw`}
+          >
+            {withoutVerdictWords(error)}
+          </p>
+        </details>
+      )}
     </div>
   );
 }
@@ -583,11 +604,8 @@ export function DegradingSection({
           what="infrastructure degradations"
           state={deg.state}
           testId="coord-home.degrading.not-read"
-        >
-          {deg.error && (
-            <p className="m-0">Coord said: {withoutVerdictWords(deg.error)}</p>
-          )}
-        </NotRead>
+          error={deg.error}
+        />
       ) : (
         <>
           {deg.state === "stale" && (
@@ -991,13 +1009,8 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
           what="work-unit progress"
           state={onTrack.state}
           testId="coord-home.on-track.not-read"
-        >
-          {onTrack.error && (
-            <p className="m-0">
-              Coord said: {withoutVerdictWords(onTrack.error)}
-            </p>
-          )}
-        </NotRead>
+          error={onTrack.error}
+        />
       ) : (
         <>
           {onTrack.historyNotRecorded !== null &&

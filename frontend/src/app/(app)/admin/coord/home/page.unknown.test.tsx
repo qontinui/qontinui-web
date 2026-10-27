@@ -17,7 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 
 /**
  * The stubbed transport: `httpClient.fetch`, which `fetchProjectState` calls
@@ -175,6 +175,20 @@ async function renderUnread(arrange: () => void) {
 
 function strip() {
   return screen.getByTestId("coord-home.strip.health");
+}
+
+/**
+ * The text a reader sees without opening anything: a closed `<details>` shows
+ * its `<summary>` only. (jsdom's `textContent` includes the hidden rest.)
+ */
+function shownText(el: HTMLElement): string {
+  const clone = el.cloneNode(true) as HTMLElement;
+  for (const d of Array.from(clone.querySelectorAll("details:not([open])"))) {
+    for (const child of Array.from(d.children)) {
+      if (child.tagName !== "SUMMARY") child.remove();
+    }
+  }
+  return clone.textContent ?? "";
 }
 
 function expectNoNeedsYouCalm() {
@@ -427,6 +441,97 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         "Coord served no list of what it could not read."
       );
     });
+  });
+
+  describe("a block coord could not read, with coord's error chain", () => {
+    // coord's run_sub_read puts ONE error string in both the block's `error`
+    // and the matching does_not_know row (qontinui-coord project_state.rs:
+    // the on_track `fail` path, and the alert read behind degradations). The
+    // row keeps that chain off its collapsed text (R8), so the block must
+    // too: it says coord reported an error and quotes the chain one
+    // disclosure down, on a raw last line.
+    it.each([
+      [
+        "on_track",
+        "coord-home.on-track.not-read",
+        "work_units",
+        "Work units",
+        {
+          state: "could_not_read",
+          error:
+            "SELECT coord.work_units (project-state class split): error returned from database: canceling statement due to statement timeout",
+          stall_window_secs: 1_209_600,
+        },
+        "Not known — coord could not read work-unit progress this time; nothing here is a zero.",
+      ],
+      [
+        "degradations",
+        "coord-home.degrading.not-read",
+        "coord.alerts (operator-plane kinds)",
+        "Infrastructure alerts",
+        {
+          state: "could_not_read",
+          headline: "unknown",
+          error:
+            "SELECT open coord.alerts (operator-plane kinds): pool timed out while waiting for an open connection",
+        },
+        "Not known — coord could not read infrastructure degradations this time; nothing here is a zero.",
+      ],
+    ])(
+      "words a could_not_read %s block's error as its does-not-know row does",
+      async (key, testId, source, label, block, sentence) => {
+        await renderView({
+          ...replaced(key, block),
+          does_not_know: [
+            { source, state: "could_not_read", error: block.error },
+          ],
+        });
+        const notRead = screen.getByTestId(testId);
+        expect(notRead).toHaveTextContent(sentence);
+        const shown = shownText(notRead);
+        expect(shown).toContain("Coord reported an error");
+        expect(shown).not.toMatch(/SELECT|coord\.|Coord said/);
+        // The chain is quoted, whole, inside a closed disclosure.
+        const raw = screen.getByTestId(`${testId}.error.raw`);
+        expect(raw).toHaveTextContent(block.error);
+        const disclosure = raw.closest("details");
+        expect(disclosure).not.toBeNull();
+        expect(disclosure).not.toHaveAttribute("open");
+        expect(disclosure?.querySelector("summary")).toHaveTextContent(
+          /^Coord reported an error$/
+        );
+        // The does-not-know row words the same chain the same way.
+        const row = within(screen.getByTestId("coord-home.does-not-know"))
+          .getByText(label)
+          .closest('[data-testid="coord-home.does-not-know.row"]');
+        expect(row).toHaveTextContent("coord reported an error");
+        expect(row).not.toHaveTextContent(/SELECT/);
+      }
+    );
+
+    it.each([
+      ["no error", {}],
+      ["an empty error", { error: "" }],
+    ])(
+      "names no error on a could_not_read block coord gave %s",
+      async (_case, extra) => {
+        await renderView(
+          replaced("on_track", {
+            state: "could_not_read",
+            stall_window_secs: 1_209_600,
+            ...extra,
+          })
+        );
+        expect(
+          screen.getByTestId("coord-home.on-track.not-read")
+        ).toHaveTextContent(
+          /^Not known — coord could not read work-unit progress this time; nothing here is a zero\.$/
+        );
+        expect(
+          screen.queryByTestId("coord-home.on-track.not-read.error")
+        ).not.toBeInTheDocument();
+      }
+    );
   });
 
   describe("a read that delivered no project state at all", () => {
