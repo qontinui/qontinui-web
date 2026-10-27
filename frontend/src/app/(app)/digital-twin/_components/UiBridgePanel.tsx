@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
-import { OperatorOnly } from "@/components/presentation";
+import { OperatorOnly, Provenance } from "@/components/presentation";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import {
   useRunnerApps,
@@ -74,6 +74,17 @@ function Counter({
  * failure leads, and the capture below it is the one before it.
  */
 export const SNAPSHOT_RETAINED_LEAD = "As last captured, before that failure:";
+
+/**
+ * The read a capture, or a failed attempt at one, comes from — the source its
+ * `Provenance` chip names (the UI Bridge dashboard's words for the same read).
+ */
+export const SNAPSHOT_SOURCE = "the runner's live snapshot";
+
+/** An epoch-ms react-query time, or `null` when nothing was ever recorded. */
+function recordedAt(ms: number): number | null {
+  return ms > 0 ? ms : null;
+}
 
 /** An array's length, or undefined when the payload does not carry the key. */
 function lengthOf(v: unknown): number | undefined {
@@ -248,6 +259,16 @@ export function UiBridgePanel() {
  *    the App field's id, read from on-disk IR (no running app needed).
  *  - AUTOMATION-required: a live snapshot of the runner's OWN window,
  *    captured on demand. It does not follow the App field.
+ *
+ * The snapshot is read only when Capture asks: never on a mount, a runner
+ * switch or a reconnect. Everything the Live card says about it follows that
+ * read's own state, which react-query keeps for the runner across mounts
+ * (leaving the tab or flipping presentation mode unmounts this inspector),
+ * never a flag of this mount's. So it says the same thing whenever it is
+ * read: a capture carries the time it was taken, a failed attempt the time
+ * it failed, and a capture kept after a re-capture failed stays under that
+ * failure, introduced as {@link SNAPSHOT_RETAINED_LEAD} (style guide R6,
+ * §6.5).
  */
 function UiBridgeInspector() {
   // The runner this tree targets (explicit choice, else coord's pick), read
@@ -259,7 +280,6 @@ function UiBridgeInspector() {
   // admit cannot answer (see `isValidAppId`).
   const appIdValid = isValidAppId(appId);
   const appIdInvalid = appId !== "" && !appIdValid;
-  const [snapshotRequested, setSnapshotRequested] = useState(false);
 
   // The runner's registered apps, when it can say; the static suggestions
   // otherwise (loading, a 403 from a runner whose relay allowlist predates
@@ -278,7 +298,10 @@ function UiBridgeInspector() {
 
   const specList = useRunnerSpecList(deviceId, appId);
   const specGraph = useRunnerSpecGraph(deviceId, appId);
-  const snapshot = useRunnerSnapshot(deviceId, snapshotRequested);
+  // Never enabled: only Capture's `refetch()` reads it. Enabled by a flag of
+  // this mount's, a capture asked of one runner was made of the next one the
+  // target switched to, with no press — the key changes, the flag does not.
+  const snapshot = useRunnerSnapshot(deviceId, false);
 
   // useMemo so the array reference is stable across renders (the `?? []`
   // otherwise makes a new array every render).
@@ -465,20 +488,29 @@ function UiBridgeInspector() {
           <CaptureSnapshotButton
             fetching={snapshot.isFetching}
             onCapture={() => {
-              setSnapshotRequested(true);
-              if (snapshotRequested) snapshot.refetch();
+              snapshot.refetch();
             }}
           />
 
-          {snapshot.isError && snapshotRequested && (
-            <RelayFailure
-              errors={[snapshot.error]}
-              subject="a live snapshot of the runner's window"
-            />
+          {/* The latest attempt failed: whenever this card is read, not only
+              in the mount that pressed Capture, and dated by the attempt. */}
+          {snapshot.isError && (
+            <div className="mb-2 space-y-1.5">
+              <RelayFailure
+                errors={[snapshot.error]}
+                subject="a live snapshot of the runner's window"
+              />
+              <Provenance
+                persistent
+                source={SNAPSHOT_SOURCE}
+                asOf={recordedAt(snapshot.errorUpdatedAt)}
+                data-testid="ui-bridge-snapshot-failure-provenance"
+              />
+            </div>
           )}
           {snap && (
             <>
-              {snapshot.isError && snapshotRequested && (
+              {snapshot.isError && (
                 // React-query keeps the last capture when a re-capture
                 // fails: the failure above leads, and this is the capture
                 // before it, not the window as it is now (style guide R6,
@@ -491,6 +523,15 @@ function UiBridgeInspector() {
                 </p>
               )}
               <SnapshotSubject snap={snap} />
+              {/* When it was captured, in operator mode too: nothing else on
+                  the card dates it, and a capture is never "now". */}
+              <Provenance
+                persistent
+                source={SNAPSHOT_SOURCE}
+                asOf={recordedAt(snapshot.dataUpdatedAt)}
+                className="mb-2"
+                data-testid="ui-bridge-snapshot-provenance"
+              />
               {typeof snap.note === "string" && snap.note && (
                 <p className="mb-2 text-xs text-amber-700 dark:text-amber-500">
                   {snap.note}

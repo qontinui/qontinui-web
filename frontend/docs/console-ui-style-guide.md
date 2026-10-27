@@ -2107,7 +2107,13 @@ Where a kept reading's dot goes depends on what carries it:
   same runner reads the same way. Its App field's suggestions and its graph counts
   are the runner's only while their latest read answered
   (`digital-twin/_components/UiBridgePanel.tsx`). Its live snapshot is a capture,
-  not a count: one kept after a re-capture failed stays under the failure,
+  not a count, read only when Capture asks: never by a mount, a runner switch or a
+  reconnect (`digital-twin/_hooks/useUiBridge.ts` `useRunnerSnapshot`). What the
+  card says of it follows that read's own state, which react-query keeps for the
+  runner across mounts, never a flag of the mount that asked, so it says the same
+  after the operator leaves the tab and comes back. A capture carries the time it
+  was taken and a failed attempt the time it failed, each on a `persistent`
+  `Provenance` chip, and one kept after a re-capture failed stays under the failure,
   introduced as "As last captured, before that failure:".
 
 Where one panel shows two reads of one thing, every line about a read says which read

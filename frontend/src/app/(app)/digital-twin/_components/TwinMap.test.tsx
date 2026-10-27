@@ -929,10 +929,7 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
           for (const aspect of PLANTS) {
             const unprobed = c.unprobed.includes(aspect);
             // A twin the notice leaves out says nothing in it is probed live.
-            if (
-              notice &&
-              !notice.textContent?.includes(`the ${aspect} twin`)
-            ) {
+            if (notice && !notice.textContent?.includes(`the ${aspect} twin`)) {
               expect(unprobed, aspect).toBe(true);
             }
             for (const key of ["observed", "coverage", "staleness"]) {
