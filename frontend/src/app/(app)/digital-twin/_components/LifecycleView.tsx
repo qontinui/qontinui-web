@@ -301,10 +301,13 @@ function StageSection({
             <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <span className="text-muted-foreground">Console:</span>
               {stage.consoleLinks.map((link) => (
+                // Plain text while presenting unless the page can be
+                // presented (LensLink): no click leaves the lens.
                 <LensLink
                   key={link.href}
                   href={link.href}
                   className="font-medium text-primary underline-offset-4 hover:underline"
+                  textClassName="font-medium"
                 >
                   {link.label}
                 </LensLink>

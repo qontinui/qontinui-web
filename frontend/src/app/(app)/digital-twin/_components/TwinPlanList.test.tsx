@@ -1,12 +1,15 @@
 /**
  * The Twin map's plan list (plan `2026-10-23-console-presentation-spaces`
  * Phase 5, D3.3). The operator sees every plan with its title, its live
- * status and a link to its work unit. In presentation mode a title shows —
- * and is linked, since the link's URL carries the slug — only when the
- * tenant's presentation scope (Phase 1's `PresentationScopeProvider`, which
- * the lens feeds from `GET /api/v1/presentation/scope`) clears it; a scope
- * still loading, failed or unknown clears nothing; and coord's opaque status
- * text never reaches the screen.
+ * status and a link to its work unit. In presentation mode a title shows
+ * only when the tenant's presentation scope (Phase 1's
+ * `PresentationScopeProvider`, which the lens feeds from
+ * `GET /api/v1/presentation/scope`) clears it; a scope still loading, failed
+ * or unknown clears nothing; and coord's opaque status text never reaches the
+ * screen. No title is linked while presenting here: the work-unit page is not
+ * presentation-ready (`LensLink`). What the list itself decides about the
+ * link once that page is — never for a title it withholds, since the URL
+ * carries the slug — is `TwinPlanList.linkable.test.tsx`.
  */
 
 import { render, screen, within } from "@testing-library/react";
@@ -125,7 +128,7 @@ describe("TwinPlanList — operator mode", () => {
 });
 
 describe("TwinPlanList — presentation mode, as the tenant's scope decides", () => {
-  it("shows and links a title whose every repository is first-party", () => {
+  it("shows a title whose every repository is first-party — unlinked, since its work-unit page cannot be presented", () => {
     const own = unit("2026-10-01-own-plan", "in_progress", OWN);
     const view = renderInPresentationMode(
       <TwinPlanList plans={[plan(own)]} complete />,
@@ -135,11 +138,12 @@ describe("TwinPlanList — presentation mode, as the tenant's scope decides", ()
     expect(item.querySelector('[data-redacted="false"]')).toHaveTextContent(
       "Title of 2026-10-01-own-plan"
     );
-    // A link to a console page carries the presentation while presenting, so a
-    // tab opened from it presents too (the page check fails one that does not).
+    // Not a dead end: the work-unit page would render "shown in the operator
+    // view only", so the title is plain text (LensLink).
+    expect(item.querySelector("a")).toBeNull();
     expect(within(item).getByTestId("digital-twin-plan-link")).toHaveAttribute(
-      "href",
-      "/admin/coord/work-units/2026-10-01-own-plan?present=1"
+      "data-lens-link",
+      "unlinked"
     );
     expectPresentationSafe(view);
   });

@@ -60,7 +60,8 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
  * summary and credibility envelope come from the probe's own metrics. For
  * all rows it shows the twin and lifecycle stages, the backing coord tool /
  * observer module, the research doc and, while the row is still being built,
- * the plan building it — a link to that plan's work unit.
+ * the plan building it — a link to that plan's work unit (plain text while
+ * presenting, until that page can be presented: `LensLink`).
  *
  * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3.2)
  * the drawer keeps only navigation: "Ask the Twin about this" leads to a
@@ -307,6 +308,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                   href={workUnitHref(row.plan)}
                   data-testid="digital-twin-drawer-plan-link"
                   className="font-mono text-xs text-primary underline-offset-4 hover:underline"
+                  textClassName="font-mono text-xs"
                 >
                   {row.plan}
                 </LensLink>

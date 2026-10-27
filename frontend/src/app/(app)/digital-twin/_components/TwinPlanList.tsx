@@ -105,10 +105,13 @@ function PlanItem({ plan, complete }: { plan: GroupPlan; complete: boolean }) {
         <MissingUnitBadge complete={complete} />
       )}
       {linkable ? (
+        // While presenting, LensLink links only to a page that can be
+        // presented; the work-unit page is plain text until it is one.
         <LensLink
           href={workUnitHref(plan.slug)}
           data-testid="digital-twin-plan-link"
           className="min-w-0 truncate font-medium text-primary underline-offset-4 hover:underline"
+          textClassName="min-w-0 truncate"
         >
           {title}
         </LensLink>

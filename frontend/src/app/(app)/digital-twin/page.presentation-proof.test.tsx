@@ -201,6 +201,26 @@ function renderPresenting() {
   return renderInPresentationMode(<DigitalTwinPage />, { scope: SCOPE });
 }
 
+/**
+ * Every link on the screen that stays on this origin leads to a page that
+ * can be presented, and keeps the presentation. A link to any other console
+ * page — out of the lens trees (one click drops the lens), or a lens page not
+ * presentation-ready ("shown in the operator view only") — must be plain
+ * text while presenting (`LensLink`). An outbound link (a first-party PR on
+ * GitHub) is the redaction's to clear, not this check's.
+ */
+function expectOnlyPresentableLinks(where: string): void {
+  const origin = new URL(document.baseURI).origin;
+  for (const link of document.querySelectorAll("a[href]")) {
+    const url = new URL(link.getAttribute("href")!, document.baseURI);
+    if (url.origin !== origin) continue;
+    expect(isPresentationReady(url.pathname), `${where}: ${url.href}`).toBe(
+      true
+    );
+    expect(url.searchParams.get("present"), `${where}: ${url.href}`).toBe("1");
+  }
+}
+
 describe("/digital-twin in presentation mode", () => {
   it("opens on the Twin map, captioned, with nothing to press but navigation and no cost", () => {
     const view = renderPresenting();
@@ -212,6 +232,7 @@ describe("/digital-twin in presentation mode", () => {
       captions: TWIN_MAP_CAPTIONS,
       forbidden: PLAN_NAMES,
     });
+    expectOnlyPresentableLinks("Twin map");
     // Every fidelity figure and plan count carries its source and age.
     const map = screen.getByTestId("digital-twin-twin-map");
     expect(
@@ -250,6 +271,8 @@ describe("/digital-twin in presentation mode", () => {
       "source: coord's work-unit list"
     );
 
+    expectOnlyPresentableLinks("the process twin's parts and plans");
+
     // Filtering by a part is navigation, and stays safe.
     await user.click(within(detail).getByTestId("digital-twin-part-gates"));
     expectPresentationSafe(view, { forbidden: PLAN_NAMES });
@@ -264,6 +287,7 @@ describe("/digital-twin in presentation mode", () => {
     // Ask the Twin is replaced, not hidden: no input, no Ask button, no socket.
     expect(screen.getByTestId("ask-the-twin-presented")).toBeInTheDocument();
     expectPresentationSafe(view, { captions: ["digital-twin.page"] });
+    expectOnlyPresentableLinks("Completeness");
 
     // A row Ask the Twin can answer: the drawer's ask is held back too.
     await user.click(screen.getByTestId("digital-twin-cell-gates"));
@@ -286,17 +310,18 @@ describe("/digital-twin in presentation mode", () => {
 
     await user.click(screen.getByRole("tab", { name: "Lifecycle" }));
     await screen.findByTestId("digital-twin-stage-verify");
-    // The stages link to console pages, and every such link keeps the
-    // presentation (the page check fails one that does not; this names it).
-    const consoleLinks = [
-      ...document.querySelectorAll<HTMLAnchorElement>(
-        'a[href^="/admin/coord"]'
-      ),
-    ];
-    expect(consoleLinks.length).toBeGreaterThan(0);
-    for (const link of consoleLinks) {
-      expect(link.getAttribute("href")).toMatch(/[?&]present=1$/);
-    }
+    // The stages name the console pages that cover them. None of those pages
+    // can be presented — /sessions is out of the lens, and no listed console
+    // page is presentation-ready — so each is plain text, never a link out.
+    const sessions = within(
+      screen.getByTestId("digital-twin-stage-implement")
+    ).getByText("Sessions");
+    expect(sessions).toHaveAttribute("data-lens-link", "unlinked");
+    expect(sessions.closest("a")).toBeNull();
+    expect(
+      within(screen.getByTestId("digital-twin-stage-verify")).getByText("Gates")
+    ).toHaveAttribute("data-lens-link", "unlinked");
+    expectOnlyPresentableLinks("Lifecycle");
     expectPresentationSafe(view);
 
     await user.click(screen.getByRole("tab", { name: "Delivery" }));
@@ -308,15 +333,17 @@ describe("/digital-twin in presentation mode", () => {
     expect(screen.queryByRole("button", { name: /raw data/i })).toBeNull();
     expect(document.querySelector('a[href*="github.com"]')).toBeNull();
     expectPresentationSafe(view);
+    expectOnlyPresentableLinks("Delivery");
 
     await user.click(screen.getByRole("tab", { name: "UI Bridge" }));
     expect(
       await screen.findByTestId("ui-bridge-presented")
     ).toBeInTheDocument();
     expectPresentationSafe(view);
+    expectOnlyPresentableLinks("UI Bridge");
   });
 
-  it("keeps the presentation on the drawer's link to the plan building a sub-space", async () => {
+  it("names the plan building a sub-space in the drawer, as plain text while its work-unit page cannot be presented", async () => {
     const view = renderPresenting();
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: "Completeness" }));
@@ -325,11 +352,15 @@ describe("/digital-twin in presentation mode", () => {
     );
     await screen.findByRole("dialog");
     // The slug is the manifest's own — the product's, not a tenant's — so it
-    // shows, and the link to its work unit opens presenting.
-    expect(screen.getByTestId("digital-twin-drawer-plan-link")).toHaveAttribute(
-      "href",
-      "/admin/coord/work-units/2026-10-11-process-twin-event-log-and-flow-metrics?present=1"
+    // shows; its work-unit page is not presentation-ready, so it is not a link
+    // into "shown in the operator view only".
+    const planned = screen.getByTestId("digital-twin-drawer-plan-link");
+    expect(planned).toHaveTextContent(
+      "2026-10-11-process-twin-event-log-and-flow-metrics"
     );
+    expect(planned).toHaveAttribute("data-lens-link", "unlinked");
+    expect(planned.closest("a")).toBeNull();
+    expectOnlyPresentableLinks("the drawer");
     expectPresentationSafe(view);
   });
 });

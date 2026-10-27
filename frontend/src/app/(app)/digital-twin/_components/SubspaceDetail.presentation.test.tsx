@@ -1,7 +1,9 @@
 /**
  * The sub-space drawer in presentation mode (plan
- * `2026-10-23-console-presentation-spaces` D3.3): what it says when the
- * row's live read fails. The Dialog is stubbed to render in place, as in
+ * `2026-10-23-console-presentation-spaces` D3): what it says when the row's
+ * live read fails, and the plan building a row, which is plain text while
+ * its work-unit page cannot be presented. The Dialog is stubbed to render in
+ * place, as in
  * `SubspaceDetail.navigation.test.tsx`, so the drawer is inside the view the
  * page check reads; the page proof (`page.presentation-proof.test.tsx`)
  * drives the real one.
@@ -63,19 +65,28 @@ const SCOPE: PresentationScopeState = {
   scope: { firstPartyOwners: ["qontinui"], confidentialTerms: ["Acme Corp"] },
 };
 
+function manifestRow(id: string): SubspaceManifestEntry {
+  const entry = (manifest.subspaces as SubspaceManifestEntry[]).find(
+    (r) => r.id === id
+  );
+  if (!entry) throw new Error(`no manifest row ${id}`);
+  return entry;
+}
+
 /** `schema`, live-probed on a verdict door, so the drawer reads its raw verdict. */
 function liveRow(): ResolvedSubspace {
-  const entry = (manifest.subspaces as SubspaceManifestEntry[]).find(
-    (r) => r.id === "schema"
-  );
-  if (!entry) throw new Error("no manifest row schema");
   return {
-    ...entry,
+    ...manifestRow("schema"),
     cellStatus: "implemented",
     liveProbed: true,
     doorShape: "verdict_wrapper",
   };
 }
+
+const UNOBSERVED = {
+  unobservable:
+    "this file mocks @qontinui/ui-bridge/react; the page proof reads the real registry",
+} as const;
 
 beforeEach(() => {
   state.raw = {
@@ -97,17 +108,34 @@ describe("SubspaceDetail — a failed live read", () => {
   it("says only its HTTP status in presentation mode", () => {
     const view = renderInPresentationMode(
       <SubspaceDetail row={liveRow()} onOpenChange={() => {}} />,
-      {
-        scope: SCOPE,
-        uiBridge: {
-          unobservable:
-            "this file mocks @qontinui/ui-bridge/react; the page proof reads the real registry",
-        },
-      }
+      { scope: SCOPE, uiBridge: UNOBSERVED }
     );
     expect(
       screen.getByTestId("digital-twin-drawer-read-error")
     ).toHaveTextContent(/^Could not read the live verdict \(HTTP 502\)\.$/);
     expectPresentationSafe(view, { forbidden: [HOST, "acme"] });
+  });
+});
+
+describe("SubspaceDetail — Planned in, while presenting", () => {
+  it("names the plan building a row as plain text: its work-unit page cannot be presented", () => {
+    // `flow` is built by an explicit manifest plan slug — the product's own
+    // name for it, not a tenant's, so it shows.
+    const flow: ResolvedSubspace = {
+      ...manifestRow("flow"),
+      cellStatus: "planned",
+      liveProbed: false,
+    };
+    expect(flow.plan).toBeTruthy();
+    const view = renderInPresentationMode(
+      <SubspaceDetail row={flow} onOpenChange={() => {}} />,
+      { scope: SCOPE, uiBridge: UNOBSERVED }
+    );
+    const planned = screen.getByTestId("digital-twin-drawer-plan-link");
+    expect(planned).toHaveTextContent(flow.plan!);
+    expect(planned).toHaveAttribute("data-lens-link", "unlinked");
+    expect(planned.closest("a")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+    expectPresentationSafe(view);
   });
 });
