@@ -67,8 +67,10 @@ describe("CoordUnreachableBanner", () => {
     const el = notice("digital-twin-coord-unreachable");
     expect(el).toHaveAttribute("data-reading", "unknown");
     expect(el).toHaveTextContent("UNKNOWN");
+    // The view still renders below the notice, so it says what that is —
+    // not that nothing live is shown.
     expect(el).toHaveTextContent(
-      "Coord's live probe could not be read (HTTP 502), so no live status is shown here."
+      "Coord's live probe could not be read (HTTP 502), so the live statuses below are not a current reading."
     );
     expect(document.body).not.toHaveTextContent(
       /upstream connect error|\/api\/v1|coordination layer/
@@ -82,8 +84,30 @@ describe("CoordUnreachableBanner", () => {
     );
     const el = notice("digital-twin-coord-unreachable");
     expect(el).toHaveTextContent(
-      "Coord's live probe could not be read, so no live status is shown here."
+      "Coord's live probe could not be read, so the live statuses below are not a current reading."
     );
     expect(el).not.toHaveTextContent(/HTTP|Failed to fetch/);
+  });
+
+  const DEGRADED =
+    "coord's live probe could not be made: coord could not be reached";
+
+  it("tells the operator a degraded answer's cells are stand-ins, not readings", () => {
+    render(<CoordUnreachableBanner error={null} degraded={DEGRADED} />);
+    expect(notice("digital-twin-coord-unreachable")).toHaveTextContent(
+      "Coord's live probe could not be made: coord could not be reached. The live cells below stand in for the probes coord last declared — they are not readings; the taxonomy below is still accurate."
+    );
+  });
+
+  it("names a degraded answer's cause as the UNKNOWN in presentation mode", () => {
+    const view = renderInPresentationMode(
+      <CoordUnreachableBanner error={null} degraded={DEGRADED} />
+    );
+    const el = notice("digital-twin-coord-unreachable");
+    expect(el).toHaveAttribute("data-reading", "unknown");
+    expect(el).toHaveTextContent(
+      "Coord's live probe could not be made: coord could not be reached, so the live statuses below are not a current reading."
+    );
+    expectPresentationSafe(view);
   });
 });

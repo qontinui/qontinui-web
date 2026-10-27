@@ -16,7 +16,7 @@ import {
   RESTRICTED_COUNT_MEANING,
 } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
-import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
+import { FIDELITY_SOURCE, probeDegradedReason } from "../_lib/twin-aspects";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
 import {
@@ -86,6 +86,7 @@ export function CoverageMatrix() {
   );
   const summary = useMemo(() => summarize(rows), [rows]);
   const unlisted = useMemo(() => unlistedDeclaredProbes(catalog), [catalog]);
+  const degraded = probeDegradedReason(data);
 
   const tiers: (1 | 2 | 3)[] = [1, 2, 3];
 
@@ -147,7 +148,10 @@ export function CoverageMatrix() {
         </p>
       )}
 
-      {isError && <CoordUnreachableBanner error={error} />}
+      {/* A degraded answer (HTTP 200, no probe made) has no reading either. */}
+      {(isError || degraded !== null) && (
+        <CoordUnreachableBanner error={error} degraded={degraded} />
+      )}
 
       {tiers.map((tier) => {
         const tierRows = rows.filter((r) => r.tier === tier);

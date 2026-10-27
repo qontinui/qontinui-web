@@ -17,7 +17,7 @@ import {
 import type { CoverageCounts, LifecycleStageInfo } from "../_lib/lifecycle";
 import { allProbesRestricted, resolveSubspaces } from "../_lib/resolve";
 import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
-import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
+import { FIDELITY_SOURCE, probeDegradedReason } from "../_lib/twin-aspects";
 import type { ResolvedSubspace } from "../_lib/types";
 import { LensLink } from "./LensLink";
 import { SubspaceCell } from "./SubspaceCell";
@@ -361,6 +361,7 @@ export function LifecycleView() {
   const byTwin = useMemo(() => twinSummary(rows), [rows]);
   const probing = rows.some((r) => r.cellStatus === "probing");
   const anyRestricted = rows.some((r) => r.cellStatus === "restricted");
+  const degraded = probeDegradedReason(data);
 
   // The whole-view notice only when EVERY probe was refused; a single refused
   // sub-space renders as its own `restricted` cell.
@@ -420,7 +421,10 @@ export function LifecycleView() {
         <HonestyLegend probing={probing} restricted={anyRestricted} />
       </section>
 
-      {isError && <CoordUnreachableBanner error={error} />}
+      {/* A degraded answer (HTTP 200, no probe made) has no reading either. */}
+      {(isError || degraded !== null) && (
+        <CoordUnreachableBanner error={error} degraded={degraded} />
+      )}
 
       <ol className="space-y-4">
         {LIFECYCLE_STAGES.map((stage, index) => (

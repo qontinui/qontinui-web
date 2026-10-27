@@ -5,8 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { UNKNOWN_AMBER } from "@/components/console";
 import { usePresentationMode } from "@/components/presentation";
 import { cn } from "@/lib/utils";
+import { statusSuffix } from "../_lib/failure-text";
 import { RESTRICTED_REASON } from "../_lib/twin-aspects";
-import { httpStatusOf } from "../_lib/twin-fidelity";
 
 /**
  * The two notices every view of the sub-space probe shares (the Completeness
@@ -22,9 +22,17 @@ import { httpStatusOf } from "../_lib/twin-fidelity";
 /** A labelled UNKNOWN, for a reading the page does not have. */
 export function UnknownReading({
   reason,
+  consequence,
   "data-testid": testId,
 }: {
   reason: string;
+  /**
+   * What the missing reading means for what is on screen, after "so": each
+   * caller says it, because it is a claim about the view around the notice
+   * — "no live status is shown here" holds only where the notice replaces
+   * the view.
+   */
+  consequence: string;
   "data-testid"?: string;
 }) {
   return (
@@ -40,8 +48,7 @@ export function UnknownReading({
         UNKNOWN
       </Badge>
       <span className="text-muted-foreground">
-        {reason.charAt(0).toUpperCase() + reason.slice(1)}, so no live status is
-        shown here.
+        {reason.charAt(0).toUpperCase() + reason.slice(1)}, so {consequence}.
       </span>
     </div>
   );
@@ -61,6 +68,8 @@ export function TwinAccessRestricted() {
     return (
       <UnknownReading
         reason={RESTRICTED_REASON}
+        // Rendered INSTEAD of the view: nothing live is on screen.
+        consequence="no live status is shown here"
         data-testid="digital-twin-access-restricted"
       />
     );
@@ -81,14 +90,30 @@ export function TwinAccessRestricted() {
   );
 }
 
-/** The probe request itself failed; the manifest still renders below it. */
-export function CoordUnreachableBanner({ error }: { error: unknown }) {
+/**
+ * The probe has no current reading: the request failed, or it answered
+ * degraded — HTTP 200 with no probe made (`probeDegradedReason`), its cells
+ * stand-ins. The view still renders below it (the manifest, and cells with
+ * their last or stand-in status), so the notice says those are not a current
+ * reading rather than that nothing live is shown.
+ */
+export function CoordUnreachableBanner({
+  error,
+  degraded = null,
+}: {
+  error: unknown;
+  /** Why a degraded answer holds no reading, or `null` (`probeDegradedReason`). */
+  degraded?: string | null;
+}) {
   const { presenting } = usePresentationMode();
   if (presenting) {
-    const status = httpStatusOf(error);
     return (
       <UnknownReading
-        reason={`coord's live probe could not be read${status === null ? "" : ` (HTTP ${status})`}`}
+        reason={
+          degraded ??
+          `coord's live probe could not be read${statusSuffix(error)}`
+        }
+        consequence="the live statuses below are not a current reading"
         data-testid="digital-twin-coord-unreachable"
       />
     );
@@ -99,11 +124,19 @@ export function CoordUnreachableBanner({ error }: { error: unknown }) {
       className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
     >
       <AlertTriangle className="size-4 shrink-0" />
-      <span>
-        Could not reach the coordination layer
-        {error instanceof Error ? `: ${error.message}` : ""}. Live cells fall
-        back to their last status; the taxonomy below is still accurate.
-      </span>
+      {degraded !== null ? (
+        <span>
+          {degraded.charAt(0).toUpperCase() + degraded.slice(1)}. The live cells
+          below stand in for the probes coord last declared — they are not
+          readings; the taxonomy below is still accurate.
+        </span>
+      ) : (
+        <span>
+          Could not reach the coordination layer
+          {error instanceof Error ? `: ${error.message}` : ""}. Live cells fall
+          back to their last status; the taxonomy below is still accurate.
+        </span>
+      )}
     </div>
   );
 }

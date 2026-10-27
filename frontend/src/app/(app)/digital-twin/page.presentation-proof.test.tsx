@@ -619,6 +619,18 @@ describe("/digital-twin in presentation mode, when its sources fail", () => {
       forbidden: [...FAILURE_FORBIDDEN, ...PLAN_NAMES],
     });
 
+    // Every view of the probe names the outage the same way.
+    for (const tab of ["Completeness", "Lifecycle"]) {
+      await user.click(screen.getByRole("tab", { name: tab }));
+      expect(
+        await screen.findByTestId("digital-twin-coord-unreachable"),
+        tab
+      ).toHaveTextContent(
+        "Coord's live probe could not be made: coord could not be reached, so the live statuses below are not a current reading."
+      );
+      expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+    }
+
     await user.click(screen.getByRole("tab", { name: "Delivery" }));
     await user.type(
       screen.getByPlaceholderText(/approach-d-conductor-engine/),
