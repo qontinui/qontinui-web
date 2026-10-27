@@ -1,7 +1,7 @@
 """coord.agent_questions — the recommendation and what overturning it changes
 
 Revision ID: coord_agent_questions_recommendation
-Revises: presentation_scope_01
+Revises: secrets_broker_01
 Create Date: 2026-09-30
 
 Phase 3 (qontinui-web half) of plan
@@ -160,7 +160,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_questions_recommendation"
-down_revision: str | Sequence[str] | None = "presentation_scope_01"
+down_revision: str | Sequence[str] | None = "secrets_broker_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

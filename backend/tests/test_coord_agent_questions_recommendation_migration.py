@@ -57,7 +57,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_agent_questions_recommendation"
-_PARENT_REVISION_ID = "presentation_scope_01"
+_PARENT_REVISION_ID = "secrets_broker_01"
 _REVISION_FILENAME = "coord_agent_questions_recommendation.py"
 
 _TABLE = "agent_questions"
