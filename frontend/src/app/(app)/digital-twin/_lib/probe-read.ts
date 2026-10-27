@@ -5,9 +5,11 @@
  *
  * The three views render the same `useDigitalTwinSubspaces` answer, so they
  * share ONE rule for when that answer holds no reading at all
- * ({@link probeUnread}): the request failed with no earlier answer held, or
- * the backend answered degraded — HTTP 200 with no probe made, its cells
- * stand-ins ({@link probeDegradedReason}). Then nothing drawn from the probe
+ * ({@link probeUnread}): the request failed with no earlier answer held; the
+ * backend answered degraded — HTTP 200 with no probe made, its cells
+ * stand-ins ({@link probeDegradedReason}); or there is no answer, no failure
+ * and no read in flight — react-query holding the read
+ * ({@link probeUnansweredReason}). Then nothing drawn from the probe
  * is a count. Every live-probed row resolves `unknown` (`resolveSubspaces`),
  * never the stand-in's red "Error"; and every figure, gauge and count over
  * those rows is a labelled UNKNOWN naming why, dated by the attempt — never a
@@ -34,6 +36,12 @@ export interface ProbeQuery {
   readonly error: unknown;
   readonly dataUpdatedAt: number;
   readonly errorUpdatedAt: number;
+  /**
+   * Whether react-query's `onlineManager` holds this browser online. It makes
+   * no read while it does not (the app's default `online` network mode), so
+   * this is what names why a probe with no answer has no read in flight.
+   */
+  readonly online: boolean;
 }
 
 /** The probe as the views read it. */
@@ -57,6 +65,12 @@ export interface ProbeRead {
    * ({@link probeDegradedReason}); `null` for a real answer.
    */
   readonly degraded: string | null;
+  /**
+   * There is no answer, no failure and no read in flight — react-query is
+   * holding the read — and this is why ({@link probeUnansweredReason});
+   * `null` otherwise.
+   */
+  readonly unanswered: string | null;
   /** Every probe was refused (`allProbesRestricted`). */
   readonly restricted: boolean;
   /** When the answer shown was read (epoch ms), or `null`. */
@@ -104,14 +118,38 @@ export function probeDegradedReason(
 }
 
 /**
+ * Why the probe has no answer, no failure and no read in flight, or `null`
+ * when it has one of those.
+ *
+ * React-query makes no read while its `onlineManager` holds this browser
+ * offline (the app's default `online` network mode), and pauses a retry while
+ * the browser is offline or this tab is hidden. Then the probe is pending but
+ * not fetching: `isLoading` is false, so without this rule every live row
+ * would resolve the `error` of a probe that ran, when none answered. Offline
+ * is the one cause this page can see, so it is named only when it holds.
+ */
+export function probeUnansweredReason(
+  query: Pick<ProbeQuery, "data" | "isError" | "isLoading" | "online">
+): string | null {
+  if (query.data || query.isError || query.isLoading) return null;
+  return query.online
+    ? "coord's live probe has not answered, and no read of it is in flight"
+    : "coord's live probe has not answered: this browser is offline";
+}
+
+/**
  * Why the probe holds no reading at all, or `null` when it holds one — THE
  * rule every view of the probe applies. A failed read with nothing held is
- * dated by the failed attempt; a degraded answer by when it came back. A
- * failed refresh over an earlier answer is not silence: that answer is a
- * reading, shown with its own age.
+ * dated by the failed attempt; a degraded answer by when it came back; a held
+ * read by nothing, since no attempt of it answered or failed. A failed refresh
+ * over an earlier answer is not silence: that answer is a reading, shown with
+ * its own age.
  */
 export function probeUnread(
-  probe: Pick<ProbeRead, "failed" | "error" | "degraded" | "asOf" | "failedAt">
+  probe: Pick<
+    ProbeRead,
+    "failed" | "error" | "degraded" | "unanswered" | "asOf" | "failedAt"
+  >
 ): ProbeSilence | null {
   if (probe.failed) {
     return {
@@ -122,6 +160,9 @@ export function probeUnread(
   // Its cells are stand-ins, not readings; the as-of is when it was asked.
   if (probe.degraded !== null) {
     return { reason: probe.degraded, asOf: probe.asOf };
+  }
+  if (probe.unanswered !== null) {
+    return { reason: probe.unanswered, asOf: null };
   }
   return null;
 }
@@ -142,6 +183,7 @@ export function probeReadOf(
     refreshFailed: query.isError && !!query.data,
     error: query.error,
     degraded: probeDegradedReason(query.data),
+    unanswered: probeUnansweredReason(query),
     restricted: allProbesRestricted(query.data),
     asOf: at(query.dataUpdatedAt),
     failedAt: at(query.errorUpdatedAt),

@@ -7,7 +7,8 @@
  */
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { onlineManager } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   expectPresentationSafe,
   renderInPresentationMode,
@@ -828,5 +829,121 @@ describe("CoverageMatrix's open drawer follows the probe", () => {
     expect(
       within(screen.getByRole("dialog")).getByRole("heading")
     ).toHaveTextContent("memory");
+  });
+});
+
+/**
+ * React-query makes no read while this browser is offline (the app's default
+ * `online` network mode): a probe that has not answered yet is then pending
+ * but not fetching — no data, not loading, no error. No probe ran, so no cell
+ * may read as the Error of one that did, and no drawer may describe an
+ * answer.
+ */
+describe("CoverageMatrix while react-query holds the probe's read — UNKNOWN, never Error", () => {
+  const OFFLINE =
+    "Coord's live probe has not answered: this browser is offline";
+
+  const UNOBSERVED = {
+    unobservable: "CoverageMatrix.test.tsx mocks @qontinui/ui-bridge/react",
+  } as const;
+
+  /** No answer, no failure, no read in flight; coord's catalog held. */
+  function heldRead() {
+    state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+    state.probe = {
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+      dataUpdatedAt: 0,
+      errorUpdatedAt: 0,
+    };
+  }
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  it("renders every probed cell and the live gauge UNKNOWN, naming the browser offline", () => {
+    heldRead();
+    onlineManager.setOnline(false);
+    render(<CoverageMatrix />);
+    expect(screen.queryAllByText("Error")).toHaveLength(0);
+    for (const id of MANIFEST_SNAPSHOT_IDS) {
+      const cell = screen.getByTestId(`digital-twin-cell-${id}`);
+      expect(cell, id).toHaveTextContent("UNKNOWN");
+      expect(cell.getAttribute("title"), id).toContain(OFFLINE);
+      expect(cell.getAttribute("title"), id).not.toContain("was probed");
+    }
+    const live = screen.getByTestId("digital-twin-gauge-live");
+    expect(live).toHaveAttribute("data-reading", "unknown");
+    expect(live).toHaveTextContent(`${OFFLINE}.`);
+    expect(
+      screen.getByTestId("digital-twin-coord-unreachable")
+    ).toHaveTextContent(OFFLINE);
+  });
+
+  /** Open the outbound drawer: UNKNOWN with why, and no probe answer claimed. */
+  function expectHeldOutboundDrawer() {
+    fireEvent.click(screen.getByTestId("digital-twin-cell-outbound"));
+    const drawer = screen.getByRole("dialog");
+    expect(statusOf(drawer)).toHaveTextContent("UNKNOWN");
+    expect(drawer).toHaveTextContent(OFFLINE);
+    expect(drawer.textContent).not.toMatch(
+      /The probe returned|was probed|credibility envelope/i
+    );
+    expect(
+      within(drawer).queryByTestId("digital-twin-drawer-summary")
+    ).toBeNull();
+  }
+
+  it("opens the outbound drawer on UNKNOWN with why, claiming no probe answer — operator mode", () => {
+    heldRead();
+    onlineManager.setOnline(false);
+    render(<CoverageMatrix />);
+    expectHeldOutboundDrawer();
+  });
+
+  it("opens the outbound drawer on UNKNOWN with why, claiming no probe answer — while presenting", () => {
+    heldRead();
+    onlineManager.setOnline(false);
+    const view = renderInPresentationMode(<CoverageMatrix />, {
+      uiBridge: UNOBSERVED,
+    });
+    expectHeldOutboundDrawer();
+    expectPresentationSafe(view);
+  });
+
+  it("says why a raw door's own read is missing rather than leaving its Summary empty", () => {
+    heldRead();
+    onlineManager.setOnline(false);
+    render(<CoverageMatrix />);
+    fireEvent.click(screen.getByTestId("digital-twin-cell-schema"));
+    const drawer = screen.getByRole("dialog");
+    expect(
+      within(drawer).getByTestId("digital-twin-drawer-read-held")
+    ).toHaveTextContent(
+      "This drawer's own read of the observer has not been made: this browser is offline."
+    );
+    expect(within(drawer).queryByText("Live credibility envelope")).toBeNull();
+  });
+
+  it("names no cause it cannot see when the read is held with the browser online", () => {
+    heldRead();
+    render(<CoverageMatrix />);
+    const cell = screen.getByTestId("digital-twin-cell-schema");
+    expect(cell).toHaveTextContent("UNKNOWN");
+    expect(cell.getAttribute("title")).toContain(
+      "Coord's live probe has not answered, and no read of it is in flight"
+    );
+    fireEvent.click(cell);
+    expect(
+      within(screen.getByRole("dialog")).getByTestId(
+        "digital-twin-drawer-read-held"
+      )
+    ).toHaveTextContent(
+      "This drawer's own read of the observer has not answered, and none is in flight."
+    );
+    expect(document.body.textContent).not.toMatch(/offline/);
   });
 });

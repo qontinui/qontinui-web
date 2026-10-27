@@ -101,7 +101,17 @@ export function readFidelity(
     };
   }
 
-  const report = query.data?.verdict as Record<string, unknown> | undefined;
+  // Neither answered, failed nor in flight: react-query is holding the read
+  // (it makes none while this browser is offline). coord was not asked, so
+  // it did not "return no report".
+  if (query.data === undefined) {
+    return {
+      kind: "unknown",
+      reason:
+        "no read of coord's twin-fidelity report has answered, and none is in flight",
+    };
+  }
+  const report = query.data.verdict as Record<string, unknown> | undefined;
   if (!report || typeof report !== "object") {
     return { kind: "unknown", reason: "coord returned no report" };
   }

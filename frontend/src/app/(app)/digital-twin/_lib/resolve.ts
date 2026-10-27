@@ -9,10 +9,12 @@
  *   coord declares). Its status comes from the live probe (implemented /
  *   partial / blind / served / error / restricted); while the probe is
  *   loading it shows `probing`. These are the only live verdicts on the page.
- *   While the probe holds NO reading — it failed with nothing held, or
- *   answered degraded with stand-in cells (`probe-read.ts` `probeUnread`) —
- *   every live-probed row is `unknown`, carrying the reason: a stand-in cell
- *   is not the observer's status, and never the `error` of a probe that ran.
+ *   While the probe holds NO reading — it failed with nothing held, answered
+ *   degraded with stand-in cells, or has no answer, no failure and no read in
+ *   flight because react-query is holding it (`probe-read.ts` `probeUnread`)
+ *   — every live-probed row is `unknown`, carrying the reason: a stand-in
+ *   cell is not the observer's status, and never the `error` of a probe that
+ *   ran.
  * - A manifest `snapshot` row coord's catalog does NOT declare shows
  *   `not-served`: the manifest and coord have drifted, and the cell says so
  *   instead of reading as an observer error.
@@ -113,6 +115,10 @@ export function allProbesRestricted(
  * answered nothing, and every other status belongs to a row this page does
  * not probe. Listed rather than excluded, so a status added later is not an
  * answer until it is put here.
+ *
+ * {@link resolveSubspaces} keeps `error` to those two: with no answer at all
+ * a row is `probing` while a read is in flight and `unknown` otherwise, so a
+ * missing cell is `error` only beside an answer.
  */
 const PROBE_ANSWERS: ReadonlySet<CellStatus> = new Set<CellStatus>([
   "implemented",
@@ -209,11 +215,20 @@ function resolveOne(
 }
 
 /**
+ * Why there is no reading when a caller hands over no answer, no read in
+ * flight and no reason of its own. `probeReadOf` always names one; this keeps
+ * the rule that no answer is never an `error` true for every caller.
+ */
+export const NO_ANSWER_REASON = "coord's live probe has not answered";
+
+/**
  * Resolve every manifest row. `catalog` is coord's served catalog; without it
  * (or before it loads) the manifest's own `snapshot` rows stand in for coord's
  * declaration. `noReading` is why the probe holds no reading at all
  * (`probeUnread`), or `null` when `probes` is an answer: given, every
- * live-probed row resolves `unknown` with it, whatever `probes` holds.
+ * live-probed row resolves `unknown` with it, whatever `probes` holds. With
+ * no `probes` and no read in flight there is no answer either way, so the
+ * rows are `unknown` even without a reason ({@link NO_ANSWER_REASON}).
  */
 export function resolveSubspaces(
   probes: SubspaceProbe[] | undefined,
@@ -223,8 +238,10 @@ export function resolveSubspaces(
 ): ResolvedSubspace[] {
   const probesById = new Map((probes ?? []).map((p) => [p.id, p]));
   const declared = declaredProbes(catalog);
+  const silence =
+    noReading ?? (probes === undefined && !isProbing ? NO_ANSWER_REASON : null);
   return manifest.subspaces.map((e) =>
-    resolveOne(e, probesById, declared, isProbing, noReading)
+    resolveOne(e, probesById, declared, isProbing, silence)
   );
 }
 

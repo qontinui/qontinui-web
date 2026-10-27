@@ -443,7 +443,16 @@ export function planReadOf(
         at: query.errorUpdatedAt > 0 ? query.errorUpdatedAt : null,
       };
     }
-    return { kind: "loading" };
+    if (query.isLoading) return { kind: "loading" };
+    // Neither answered, failed nor in flight: react-query is holding the read
+    // (it makes none while this browser is offline). "Reading…" would claim a
+    // read that is not being made, and never resolve.
+    return {
+      kind: "error",
+      reason:
+        "no read of coord's work-unit list has answered, and none is in flight",
+      at: null,
+    };
   }
   const incomplete = incompleteReason(data, mode);
   return {

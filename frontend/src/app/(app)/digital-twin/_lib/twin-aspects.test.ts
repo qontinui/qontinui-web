@@ -25,7 +25,7 @@ import {
   type RelayRead,
   type ReportRead,
 } from "./twin-aspects";
-import { probeDegradedReason, type ProbeRead } from "./probe-read";
+import { probeDegradedReason, probeReadOf, type ProbeRead } from "./probe-read";
 import type {
   RawVerdictResponse,
   ResolvedSubspace,
@@ -104,6 +104,7 @@ function probeRead(over: Partial<ProbeRead> = {}): ProbeRead {
     refreshFailed: false,
     error: null,
     degraded: null,
+    unanswered: null,
     restricted: false,
     asOf: NOW - 5_000,
     failedAt: null,
@@ -244,6 +245,29 @@ describe("plantFidelity — from the live probe", () => {
       );
       // When the degraded answer came back — the attempt that failed.
       expect(f[key].state === "unknown" && f[key].asOf, key).toBe(NOW - 5_000);
+    }
+  });
+
+  it("renders a read react-query holds offline as UNKNOWN, named, with no attempt to date it", () => {
+    const held = probeReadOf(
+      {
+        data: undefined,
+        isLoading: false,
+        isError: false,
+        error: null,
+        dataUpdatedAt: 0,
+        errorUpdatedAt: 0,
+        online: false,
+      },
+      undefined
+    );
+    const f = figures("environment", held);
+    for (const key of ["observed", "coverage", "staleness"] as const) {
+      expectNoZeroFor(f[key]);
+      expect(f[key].state === "unknown" && f[key].reason, key).toBe(
+        "coord's live probe has not answered: this browser is offline"
+      );
+      expect(f[key].state === "unknown" && f[key].asOf, key).toBeNull();
     }
   });
 

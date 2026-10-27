@@ -27,6 +27,7 @@ import {
   OperatorOnly,
   usePresentationMode,
 } from "@/components/presentation";
+import { useBrowserOnline } from "../_hooks/useBrowserOnline";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
 import { failureTail } from "../_lib/failure-text";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
@@ -94,6 +95,9 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
     row?.id ?? null,
     !!row && readsRaw
   );
+  // Why that read may be held: react-query makes none while this browser is
+  // offline.
+  const online = useBrowserOnline();
   const [showRaw, setShowRaw] = useState(false);
 
   // Collapse the raw view whenever a different sub-space is opened.
@@ -132,6 +136,9 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   // report door's report. While the page's probe holds no reading, that read
   // is the only one on screen, so the Status must not say there is none.
   const style = presentDrawerStatus(row, readsRaw && !!verdict);
+  // The drawer's own read has neither answered, failed nor started:
+  // react-query is holding it. Said, so the Summary never stands empty.
+  const ownReadHeld = readsRaw && !data && !isLoading && !isError;
   // An envelope door has no raw read here; the probe already carried its
   // top-level DriftVerdict fields, so its live envelope is those metrics.
   const envelopeVerdict: DriftVerdict | null =
@@ -190,6 +197,16 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-3.5 animate-spin" /> Reading the
                   observer…
+                </p>
+              )}
+              {ownReadHeld && (
+                <p
+                  data-testid="digital-twin-drawer-read-held"
+                  className="text-sm text-muted-foreground"
+                >
+                  {online
+                    ? "This drawer's own read of the observer has not answered, and none is in flight."
+                    : "This drawer's own read of the observer has not been made: this browser is offline."}
                 </p>
               )}
               {isError && (

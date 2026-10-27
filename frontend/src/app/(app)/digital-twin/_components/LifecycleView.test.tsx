@@ -8,7 +8,8 @@
  */
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { onlineManager } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   expectPresentationSafe,
   renderInPresentationMode,
@@ -474,7 +475,28 @@ describe("LifecycleView while the probe holds no reading — UNKNOWN, never a co
       operator:
         /coord made no probe, so every live count and cell below is UNKNOWN/,
     },
+    {
+      // React-query makes no read while this browser is offline: the probe
+      // is pending but not fetching — no answer, no failure, none in flight.
+      name: "a read react-query holds while this browser is offline",
+      arrange: () => {
+        state.probe = {
+          data: undefined,
+          isLoading: false,
+          isError: false,
+          error: null,
+        };
+        onlineManager.setOnline(false);
+      },
+      reason: "Coord's live probe has not answered: this browser is offline.",
+      operator:
+        /Coord's live probe has not answered: this browser is offline, so every live count and cell below is UNKNOWN/,
+    },
   ];
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
 
   function intro(container: HTMLElement): HTMLElement {
     const el = container.querySelector<HTMLElement>(

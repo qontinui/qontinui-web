@@ -354,6 +354,20 @@ describe("planReadOf — the read, honest about what it did not see", () => {
     expect(read.at).toBe(5);
   });
 
+  it("is UNKNOWN, never still reading, while react-query holds the read with nothing answered", () => {
+    // Pending and not fetching (this browser offline): no answer, no
+    // failure, no read in flight — "Reading…" would never resolve.
+    const held = {
+      kind: "error",
+      reason:
+        "no read of coord's work-unit list has answered, and none is in flight",
+      at: null,
+    };
+    expect(planReadOf(query(), OPERATOR)).toEqual(held);
+    // No upstream text is quoted, so presenting words it the same.
+    expect(planReadOf(query(), PRESENTING)).toEqual(held);
+  });
+
   it("is ready and complete over a walk that reached the end", () => {
     const read = planReadOf(
       query({ data: complete, dataUpdatedAt: 42 }),

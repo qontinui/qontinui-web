@@ -11,10 +11,11 @@ import { describe, expect, it } from "vitest";
 import {
   probeDegradedReason,
   probeReadOf,
+  probeUnansweredReason,
   probeUnread,
   type ProbeQuery,
 } from "./probe-read";
-import { manifest } from "./resolve";
+import { manifest, probeAnswered } from "./resolve";
 import type { SubspaceProbe, SubspacesProbeResponse } from "./types";
 
 const NOW = Date.parse("2026-10-23T12:00:00Z");
@@ -54,9 +55,15 @@ function query(over: Partial<ProbeQuery> = {}): ProbeQuery {
     error: null,
     dataUpdatedAt: 0,
     errorUpdatedAt: 0,
+    online: true,
     ...over,
   };
 }
+
+const OFFLINE_REASON =
+  "coord's live probe has not answered: this browser is offline";
+const HELD_REASON =
+  "coord's live probe has not answered, and no read of it is in flight";
 
 const http502 = new Error(
   "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
@@ -108,11 +115,74 @@ describe("probeUnread — the one rule for when the probe holds no reading", () 
     expect(
       probeUnread(probeReadOf(query({ isLoading: true }), undefined))
     ).toBeNull();
+    // A read already in flight when the browser went offline is still one.
+    expect(
+      probeUnread(
+        probeReadOf(query({ isLoading: true, online: false }), undefined)
+      )
+    ).toBeNull();
+  });
+
+  it("is a read react-query holds while this browser is offline: named, with no attempt to date it", () => {
+    // Pending and not fetching: no answer, no failure, no read in flight.
+    const read = probeReadOf(query({ online: false }), undefined);
+    expect(read.unanswered).toBe(OFFLINE_REASON);
+    expect(read.failed).toBe(false);
+    expect(probeUnread(read)).toEqual({ reason: OFFLINE_REASON, asOf: null });
+  });
+
+  it("names no cause it cannot see when a read is held with the browser online", () => {
+    // A retry paused while this tab is hidden, or a cancelled first read.
+    expect(probeUnread(probeReadOf(query(), undefined))).toEqual({
+      reason: HELD_REASON,
+      asOf: null,
+    });
+  });
+
+  it("leaves a failure, a degraded answer and an answer to their own rules, offline or not", () => {
+    const failed = probeReadOf(
+      query({
+        isError: true,
+        error: http502,
+        errorUpdatedAt: NOW,
+        online: false,
+      })
+    );
+    expect(failed.unanswered).toBeNull();
+    expect(probeUnread(failed)?.reason).toBe(
+      "coord's live probe could not be read (HTTP 502)"
+    );
+    const degraded = probeReadOf(
+      query({ data: DEGRADED, dataUpdatedAt: NOW, online: false })
+    );
+    expect(degraded.unanswered).toBeNull();
+    expect(probeUnread(degraded)?.reason).toBe(DEGRADED_REASON);
+    // An answer held from before the browser went offline is a reading.
+    const held = probeReadOf(
+      query({ data: ANSWER, dataUpdatedAt: NOW, online: false })
+    );
+    expect(held.unanswered).toBeNull();
+    expect(probeUnread(held)).toBeNull();
+  });
+});
+
+describe("probeUnansweredReason — a probe react-query is holding", () => {
+  it("is null for an answer, a failure, or a read in flight", () => {
+    expect(probeUnansweredReason(query({ data: ANSWER }))).toBeNull();
+    expect(probeUnansweredReason(query({ isError: true }))).toBeNull();
+    expect(probeUnansweredReason(query({ isLoading: true }))).toBeNull();
+  });
+
+  it("names the browser being offline only when react-query holds it so", () => {
+    expect(probeUnansweredReason(query({ online: false }))).toBe(
+      OFFLINE_REASON
+    );
+    expect(probeUnansweredReason(query({ online: true }))).toBe(HELD_REASON);
   });
 });
 
 describe("probeReadOf — rows under no reading", () => {
-  const live = (rows: readonly { id: string; liveProbed: boolean }[]) =>
+  const live = <T extends { liveProbed: boolean }>(rows: readonly T[]) =>
     rows.filter((r) => r.liveProbed);
 
   it("resolves every live-probed row of a degraded answer UNKNOWN with the reason — never its stand-in error", () => {
@@ -128,6 +198,19 @@ describe("probeReadOf — rows under no reading", () => {
       // The stand-in's token and metrics are not the observer's.
       expect(row.error, row.id).toBeUndefined();
       expect(row.metrics, row.id).toBeUndefined();
+    }
+    expect(rows.some((r) => r.cellStatus === "error")).toBe(false);
+  });
+
+  it("resolves every live-probed row of a held read UNKNOWN — never the error of a probe that ran", () => {
+    const { rows } = probeReadOf(query({ online: false }), undefined);
+    const liveRows = live(rows);
+    expect(liveRows.length).toBe(SNAPSHOT_IDS.length);
+    for (const row of liveRows) {
+      expect(row.cellStatus, row.id).toBe("unknown");
+      expect(row.unknownReason, row.id).toBe(OFFLINE_REASON);
+      // So nothing about the row may describe a probe answer.
+      expect(probeAnswered(row), row.id).toBe(false);
     }
     expect(rows.some((r) => r.cellStatus === "error")).toBe(false);
   });

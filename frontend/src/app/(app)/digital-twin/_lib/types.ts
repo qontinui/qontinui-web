@@ -173,8 +173,9 @@ export interface SubspacesProbeResponse {
  * Only a live-probed row can be `implemented` / `partial` / `blind` /
  * `served` / `error` / `probing` / `restricted` — those are probe results. A
  * live-probed row is `unknown` while the probe holds no reading at all (it
- * failed with nothing held, or answered degraded with stand-in cells —
- * `probe-read.ts` `probeUnread`): no probe answered for it, so it has no
+ * failed with nothing held, answered degraded with stand-in cells, or has no
+ * answer, no failure and no read in flight because react-query is holding it
+ * — `probe-read.ts` `probeUnread`): no probe answered for it, so it has no
  * status to show, and certainly not the `error` of a probe that was made. A
  * built row this page does not probe is `interactive` (a coord tool answers
  * it) or `unprobed` (no coord tool): either way a manifest claim, never the

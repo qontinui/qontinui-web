@@ -60,12 +60,15 @@ function probe(over: Partial<ProbeRead> = {}): ProbeRead {
     refreshFailed: false,
     error: null,
     degraded: null,
+    unanswered: null,
     restricted: false,
     asOf: null,
     failedAt: null,
     ...over,
   };
 }
+
+const OFFLINE = "coord's live probe has not answered: this browser is offline";
 
 const FAILED = probe({ failed: true, error: UPSTREAM });
 const DEGRADED =
@@ -142,6 +145,28 @@ describe("CoordUnreachableBanner", () => {
     expect(el).toHaveAttribute("data-reading", "unknown");
     expect(el).toHaveTextContent(
       "Coord's live probe could not be made: coord could not be reached, so the live statuses below are not a current reading."
+    );
+    expectPresentationSafe(view);
+  });
+
+  it("tells the operator a held read has no answer, so its counts and cells are UNKNOWN — with no transport error to quote", () => {
+    render(<CoordUnreachableBanner probe={probe({ unanswered: OFFLINE })} />);
+    const el = notice("digital-twin-coord-unreachable");
+    expect(el).toHaveTextContent(
+      "Coord's live probe has not answered: this browser is offline, so every live count and cell below is UNKNOWN; the taxonomy below is still accurate."
+    );
+    // Nothing reached coord: no "fall back to their last status".
+    expect(el).not.toHaveTextContent(/coordination layer|last status/);
+  });
+
+  it("names a held read's cause as the UNKNOWN in presentation mode", () => {
+    const view = renderInPresentationMode(
+      <CoordUnreachableBanner probe={probe({ unanswered: OFFLINE })} />
+    );
+    const el = notice("digital-twin-coord-unreachable");
+    expect(el).toHaveAttribute("data-reading", "unknown");
+    expect(el).toHaveTextContent(
+      "Coord's live probe has not answered: this browser is offline, so the live statuses below are not a current reading."
     );
     expectPresentationSafe(view);
   });

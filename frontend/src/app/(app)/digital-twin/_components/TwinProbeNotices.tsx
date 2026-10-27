@@ -87,10 +87,15 @@ export function TwinAccessRestricted() {
 
 /** What the operator is told the live cells show, for each way the probe can fail. */
 function operatorText(
-  probe: Pick<ProbeRead, "failed" | "error" | "degraded">
+  probe: Pick<ProbeRead, "failed" | "error" | "degraded" | "unanswered">
 ): string {
   if (probe.degraded !== null) {
     return `${upperFirst(probe.degraded)}. coord made no probe, so every live count and cell below is UNKNOWN; the taxonomy below is still accurate.`;
+  }
+  // No read was answered, failed or is in flight: nothing reached coord, so
+  // there is no transport error to quote.
+  if (probe.unanswered !== null) {
+    return `${upperFirst(probe.unanswered)}, so every live count and cell below is UNKNOWN; the taxonomy below is still accurate.`;
   }
   const cause = `Could not reach the coordination layer${probe.error instanceof Error ? `: ${probe.error.message}` : ""}.`;
   return probe.failed
@@ -99,10 +104,11 @@ function operatorText(
 }
 
 /**
- * The probe has no current reading — the request failed, or it answered
- * degraded: HTTP 200 with no probe made (`probeUnread`, the rule every view
- * of the probe applies) — or its last refresh failed over an earlier answer.
- * Renders nothing otherwise, so a view mounts it unconditionally.
+ * The probe has no current reading — the request failed, it answered
+ * degraded (HTTP 200 with no probe made), or react-query is holding its read
+ * with nothing answered (`probeUnread`, the rule every view of the probe
+ * applies) — or its last refresh failed over an earlier answer. Renders
+ * nothing otherwise, so a view mounts it unconditionally.
  *
  * It sits ABOVE everything it qualifies — the live counts as well as the
  * cells — so "below" covers them all: the view still renders under it (the
@@ -115,7 +121,13 @@ export function CoordUnreachableBanner({
 }: {
   probe: Pick<
     ProbeRead,
-    "failed" | "refreshFailed" | "error" | "degraded" | "asOf" | "failedAt"
+    | "failed"
+    | "refreshFailed"
+    | "error"
+    | "degraded"
+    | "unanswered"
+    | "asOf"
+    | "failedAt"
   >;
 }) {
   const { presenting } = usePresentationMode();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  NO_ANSWER_REASON,
   allProbesRestricted,
   declaredProbes,
   manifest,
@@ -130,10 +131,27 @@ describe("resolveSubspaces", () => {
     expect(row.cellStatus).toBe("probing");
   });
 
-  it("shows 'error' for a snapshot row with no probe once loaded", () => {
+  it("shows 'error' for a snapshot row an answer came back without", () => {
     const rows = resolveSubspaces([], false);
     const row = rows.find((r) => r.id === snapshotId)!;
     expect(row.cellStatus).toBe("error");
+  });
+
+  it("shows 'unknown', never 'error', with no answer and no read in flight", () => {
+    // No probe ran, so no row may claim one failed — even from a caller
+    // that names no reason.
+    const rows = resolveSubspaces(undefined, false);
+    const live = rows.filter((r) => r.liveProbed);
+    expect(live.length).toBeGreaterThan(0);
+    for (const row of live) {
+      expect(row.cellStatus, row.id).toBe("unknown");
+      expect(row.unknownReason, row.id).toBe(NO_ANSWER_REASON);
+      expect(probeAnswered(row), row.id).toBe(false);
+    }
+    expect(rows.some((r) => r.cellStatus === "error")).toBe(false);
+    // A caller's own reason outranks the default.
+    const named = resolveSubspaces(undefined, false, undefined, "why");
+    expect(named.find((r) => r.id === snapshotId)!.unknownReason).toBe("why");
   });
 
   it("maps a probe's status onto the snapshot cell and carries metrics", () => {
