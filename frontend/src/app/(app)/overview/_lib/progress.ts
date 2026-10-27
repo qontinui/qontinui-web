@@ -20,8 +20,8 @@
  * | `shipped`               | Done          | |
  * | `in_flight`             | In progress   | |
  * | `stalled`               | In progress   | still in progress; "no recorded change in 14 days" is the operator's measurement, not a business state |
- * | `blocked_on_dependency` | Blocked       | waiting on other work first |
- * | `waiting_on_gate`       | Blocked       | waiting on a condition before it can move |
+ * | `blocked_on_dependency` | Blocked       | waiting on other work first, or its own status is `blocked` |
+ * | `waiting_on_gate`       | Blocked       | waiting on a condition (an open gate) before it can move |
  * | `not_started`           | Planned       | draft, vetted or ready — not started |
  * | `closed_other`          | (not counted) | superseded or obsolete: it will not be done, so it counts toward nothing |
  * | `off_vocabulary`        | Status unknown| kept in the total, so it can only pull the done share down |
@@ -40,9 +40,22 @@
  * `STATUS_ALIASES` and `IN_FLIGHT_ONLY_WORDS`). That table classes
  * `in-progress`, `vetted_unattested` and `archived` exactly as `in_progress`,
  * `vetted` and `obsolete`, and `partial` as in flight outright. Each of those
- * therefore lands where its old tone put it: In progress, Planned, counted
- * toward nothing, and In progress. What does differ:
+ * therefore lands where its old tone put it — In progress, Planned, counted
+ * toward nothing, and In progress — unless coord classes the unit as waiting
+ * on a gate or on a dependency first (the first bullet below). Only
+ * `archived`, which coord classes as closed before that check, always holds.
+ * What does differ:
  *
+ * - A unit counts as Blocked whenever an open gate (unmuted, unarchived) is
+ *   anchored to it, or an upstream in its dependency graph is not finished,
+ *   whatever its status says — unless that status is shipped, closed, empty
+ *   or unrecognised, which coord classes first. Coord's class rule tests
+ *   `waiting_on_gate`, then `blocked_on_dependency`, BEFORE in flight and not
+ *   started (qontinui-coord `project_state.rs` `UNIT_CLASS_SQL`). The old
+ *   count put such a unit under In progress, Ready to start or Planned by its
+ *   status tone; only status `blocked` was Blocked. This is the largest
+ *   visible change: gated or dependency-waiting work moves from In progress
+ *   and Planned to Blocked.
  * - The door matches the stored value exactly, so a status it does not
  *   recognise reads `off_vocabulary` → Status unknown. That covers a spelling
  *   the old tone table knew and the alias table does not (`partially`, which
@@ -148,9 +161,11 @@ export function progressFromOnTrack(
     return {
       counted: false,
       reason:
+        // The panel's sentence already says "right now"; the reason does not
+        // repeat it.
         onTrack.state === "read"
           ? "the count came back without its totals"
-          : "the count could not be read right now",
+          : "the count could not be read",
     };
   }
   const counts: Record<ProgressBucket, number> = {
