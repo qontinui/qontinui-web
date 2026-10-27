@@ -81,6 +81,7 @@ describe("coordNavModel", () => {
       "Plan Follow-ups",
       "Questions",
       "Findings",
+      "Dossiers",
       "Operator Touches",
       "Verification",
       "Agents",
@@ -118,8 +119,10 @@ describe("coordNavModel", () => {
     expect(labels("devops")).toEqual([
       "Overview",
       "CI",
+      "UI Bridge",
       "Computers",
       "Spawns",
+      "Session load",
       "Trees",
       "Launch session",
       "Runner Drain",
@@ -144,13 +147,15 @@ describe("coordNavModel", () => {
     // Plain member: exactly Overview and CI (resolved Q3, extended by the
     // CI dashboard plan's D1 — both are member reads).
     expect(visibleLabels("devops", MEMBER)).toEqual(["Overview", "CI"]);
-    // A coord admin who is NOT staff sees Computers and Spawns and nothing
-    // operator-only.
+    // A coord admin who is NOT staff sees UI Bridge, Computers, Spawns and
+    // Session load and nothing operator-only.
     expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
       "Overview",
       "CI",
+      "UI Bridge",
       "Computers",
       "Spawns",
+      "Session load",
     ]);
     // A superuser sees every Dev Ops member.
     expect(visibleLabels("devops", SUPERUSER)).toEqual(labels("devops"));
@@ -169,6 +174,19 @@ describe("coordNavModel", () => {
     expect(launcher?.testId).toBe("coord-nav-spawn");
     const spawnWords = items.filter((i) => /\bspawn/i.test(i.label));
     expect(spawnWords.map((i) => i.label)).toEqual(["Spawns"]);
+  });
+
+  it("puts Session load beside Spawns, gated on coord tenant admin like its proxies", () => {
+    const items = group("devops").items;
+    const hrefs = items.map((i) => i.href);
+    const load = items.find((i) => i.href === "/admin/coord/session-load");
+    expect(load?.label).toBe("Session load");
+    expect(load?.testId).toBe("coord-nav-session-load");
+    expect(load?.coordAdminOnly).toBe(true);
+    expect(load?.operatorOnly).toBeUndefined();
+    expect(hrefs.indexOf("/admin/coord/session-load")).toBe(
+      hrefs.indexOf("/admin/coord/spawns") + 1
+    );
   });
 
   it("asks admin IN THE ACTIVE TENANT, as require_coord_tenant_admin does", () => {
@@ -244,6 +262,19 @@ describe("coordNavModel", () => {
       "/admin/coord/agent-registry",
       "/admin/coord/tenant-policy",
     ]);
+  });
+
+  it("offers the UI Bridge dashboard under Dev Ops to a coord admin only — the menu flag; the page gates its unpartitioned read itself", () => {
+    const leaf = group("devops").items.find(
+      (i) => i.href === "/admin/coord/ui-bridge"
+    );
+    expect(leaf?.label).toBe("UI Bridge");
+    expect(leaf?.testId).toBe("coord-nav-ui-bridge");
+    expect(leaf?.coordAdminOnly).toBe(true);
+    expect(leaf?.operatorOnly).toBeUndefined();
+    expect(visibleLabels("devops", MEMBER)).not.toContain("UI Bridge");
+    expect(visibleLabels("devops", COORD_ADMIN)).toContain("UI Bridge");
+    expect(findActiveLeaf("/admin/coord/ui-bridge")?.group?.id).toBe("devops");
   });
 
   it("has unique testIds and no href that prefixes another", () => {

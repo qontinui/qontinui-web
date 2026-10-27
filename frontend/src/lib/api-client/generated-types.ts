@@ -10539,6 +10539,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/dossiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Dossiers
+         * @description Return one page of dossier heads for the calling operator's tenant.
+         *
+         *     The body is coord's, verbatim: ``{"dossiers": [...], "facets":
+         *     {"readiness", "remediation_state"}, "facets_scope", "dedup",
+         *     "*_applied" echoes, ...}`` plus the bounded-read envelope (``available``,
+         *     ``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,
+         *     ``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant
+         *     is coord's to resolve from the forwarded bearer; nothing in the request
+         *     names it.
+         *
+         *     Degraded answers carry every envelope key as UNKNOWN (``null``), ``facets``
+         *     as ``null`` and ``dossiers`` empty, plus ``unavailable`` /
+         *     ``unavailable_kind`` — a page reading that body must say "could not read",
+         *     never "no dossiers".
+         */
+        get: operations["api_v1_operations_coord_dossiers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/findings": {
         parameters: {
             query?: never;
@@ -15994,6 +16027,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/session-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Runs
+         * @description Proxy coord's ``GET /coord/session-runs`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{runs: [Run], shown, total, truncated, next_cursor, as_of}``,
+         *     newest first, or coord's ``503 schema_missing`` while the run record is
+         *     not migrated. A ``Run`` carries its device, session id and ``run_seq``,
+         *     ``initiator``, ``work_type`` (and the facts it was classified from —
+         *     ``skill``, ``first_command``, ``spawn_origin``, ``dispatch_source``,
+         *     ``gate_id``, ``spawn_request_id`` …), its timestamps, ``wall_seconds`` and
+         *     ``held_after_finish_seconds`` (``null`` while open), ``end_reason`` /
+         *     ``end_source`` and ``history_complete`` (``false`` on a backfilled row).
+         */
+        get: operations["api_v1_operations_session_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/concurrency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Concurrency
+         * @description Proxy coord's ``GET /coord/session-runs/concurrency`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from, grid, devices:
+         *     [Device], truncated, as_of}``. A ``Device`` carries ``name``, ``budget``
+         *     (``{state: "published" | "zero" | "none", value, label}`` — read from
+         *     ``max_concurrent_agents``, never from a role), ``last_heartbeat`` /
+         *     ``heartbeat_age_seconds``, ``known_device``, ``open_now``, ``peak``,
+         *     ``p95`` and its ``series`` of ``{bucket_start, source, total, by_work_type}``.
+         */
+        get: operations["api_v1_operations_session_runs_concurrency_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Growth
+         * @description Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from,
+         *     recording_since, devices_recording, series: [Bucket], fleet, truncated,
+         *     as_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and
+         *     their totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;
+         *     ``fleet`` carries ``available_state`` — ``published``,
+         *     ``no_budget_published`` (no device published a budget) or
+         *     ``zero_budget_published`` (every published budget is 0) — with
+         *     ``available_slot_hours_per_day`` / ``_per_bucket`` (published non-zero
+         *     budgets × 24) stated only for ``published`` and ``null`` otherwise, never
+         *     0; and how many devices published a budget, a zero budget or none.
+         *     ``recording_since: null`` means nothing is recorded yet — an absent bucket
+         *     before it is UNKNOWN, not zero.
+         */
+        get: operations["api_v1_operations_session_runs_growth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Stats
+         * @description Proxy coord's ``GET /coord/session-runs/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, since, group_by, population, groups: [Group],
+         *     classifier_version, as_of}``. Each group carries ``runs``, ``open_now``,
+         *     ``wall_seconds {p50, p90, p99, sum, samples}`` over OBSERVED ends only,
+         *     ``slot_hours``, ``active_seconds``, ``held_after_finish_seconds {sum,
+         *     samples}`` and the ``inferred`` / ``reconciled`` / ``unknown`` counts. A
+         *     percentile over no observed end is ``null`` — coord's UNKNOWN.
+         */
+        get: operations["api_v1_operations_session_runs_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/sessions": {
         parameters: {
             query?: never;
@@ -18552,6 +18701,24 @@ export interface paths {
          *     is an operator's assertion and it takes an operator's credential.
          */
         patch: operations["api_v1_plan_library_artifact_id_kind_patch"];
+        trace?: never;
+    };
+    "/api/v1/presentation/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the active project's presentation scope */
+        get: operations["api_v1_presentation_scope_get"];
+        /** Replace the active project's stored presentation scope */
+        put: operations["api_v1_presentation_scope_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects": {
@@ -44552,6 +44719,114 @@ export interface components {
              * @enum {string}
              */
             written_scope: "all" | "code_only" | "none";
+        };
+        /**
+         * PresentationScopeConfigured
+         * @description What the project has stored — the form's editable half.
+         */
+        PresentationScopeConfigured: {
+            /** Confidential Terms */
+            confidential_terms: string[];
+            /**
+             * First Party Owners
+             * @description The stored owners, or null when none are configured.
+             */
+            first_party_owners: string[] | null;
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Updated By
+             * @description The email of whoever saved it last, when that is known.
+             */
+            updated_by: string | null;
+            /**
+             * Version
+             * @description 0 when the project has never saved a scope.
+             */
+            version: number;
+        };
+        /**
+         * PresentationScopeDefaults
+         * @description What applies when nothing is configured, read fresh for this viewer.
+         */
+        PresentationScopeDefaults: {
+            /**
+             * Registered Repo Owners
+             * @description The owners of this project's registered repositories, or null when they could not be read.
+             */
+            registered_repo_owners: string[] | null;
+            /** Registered Repo Owners Unknown Reason */
+            registered_repo_owners_unknown_reason: ("tenant_scope_mismatch" | "coord_unreachable" | "coord_refused" | "coord_unreadable") | null;
+            /**
+             * Viewer Other Tenant Names
+             * @description The names of the viewer's other projects. Always withheld for this viewer, whatever is configured.
+             */
+            viewer_other_tenant_names: string[];
+        };
+        /**
+         * PresentationScopeOut
+         * @description The scope a presentation-mode render applies, and how it was reached.
+         */
+        PresentationScopeOut: {
+            /**
+             * Can Edit
+             * @description Whether this caller may PUT the scope: an admin of this project, or qontinui staff — the same rule the PUT enforces.
+             */
+            can_edit: boolean;
+            /**
+             * Confidential Terms
+             * @description The configured terms plus the viewer's other projects' names.
+             */
+            confidential_terms: string[];
+            configured: components["schemas"]["PresentationScopeConfigured"];
+            defaults: components["schemas"]["PresentationScopeDefaults"];
+            /**
+             * First Party Owners
+             * @description The owners whose items may show their titles. Null means UNKNOWN (see first_party_owners_unknown_reason): withhold everything.
+             */
+            first_party_owners: string[] | null;
+            /**
+             * First Party Owners Source
+             * @enum {string}
+             */
+            first_party_owners_source: "configured" | "registered_repos";
+            /** First Party Owners Unknown Reason */
+            first_party_owners_unknown_reason: ("tenant_scope_mismatch" | "coord_unreachable" | "coord_refused" | "coord_unreadable") | null;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+        };
+        /**
+         * PresentationScopeWrite
+         * @description ``PUT /presentation/scope`` — replaces the tenant's stored scope.
+         *
+         *     A refusal names a confidential term by its position, never by its text:
+         *     the terms are the names presentation mode exists to keep off screen.
+         */
+        PresentationScopeWrite: {
+            /**
+             * Confidential Terms
+             * @description Terms that withhold a title wherever they appear, matched ignoring case, accents, spacing and punctuation. Stored trimmed with whitespace collapsed; a term matching an earlier one is dropped. The viewer's other projects' names are always added on read and are never stored.
+             */
+            confidential_terms: string[];
+            /**
+             * Expected Tenant Id
+             * Format: uuid
+             * @description The `tenant_id` of the scope this edit was made against. It never chooses the row -- the write lands in the project this request resolves to -- it only refuses a write made for another project: when the two differ the answer is 409 `presentation_scope_tenant_mismatch` and nothing is written.
+             */
+            expected_tenant_id: string;
+            /**
+             * Expected Version
+             * @description The `configured.version` this edit was made against (0 when the project has never saved a scope). A write against a version that moved answers 409 `presentation_scope_conflict`.
+             */
+            expected_version: number;
+            /**
+             * First Party Owners
+             * @description GitHub owners whose repositories are this project's own, or null to use the owners of the project's registered repositories. An empty list withholds every title in presentation mode. Stored trimmed, without a leading @, lower-cased and de-duplicated.
+             */
+            first_party_owners: string[] | null;
         };
         /**
          * PresignedUrlResponse
@@ -73012,6 +73287,72 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_dossiers_get: {
+        parameters: {
+            query?: {
+                /** @description Repeatable (or comma-separated). Exact readiness match; ``none`` selects heads whose readiness is NULL (UNKNOWN). */
+                readiness?: string[] | null;
+                /** @description Exact dossier slug. */
+                slug?: string | null;
+                /** @description Case-insensitive substring over slug and title. */
+                q?: string | null;
+                /** @description Inclusive lower bound on ``recurrence_count``. */
+                recurrence_min?: number | null;
+                /** @description Inclusive upper bound on ``recurrence_count``. */
+                recurrence_max?: number | null;
+                /** @description ISO date. */
+                last_seen_since?: string | null;
+                /** @description ISO date. */
+                last_seen_until?: string | null;
+                /** @description ISO date. */
+                first_seen_since?: string | null;
+                /** @description ISO date. */
+                first_seen_until?: string | null;
+                /** @description ISO date. */
+                updated_since?: string | null;
+                /** @description ISO date. */
+                updated_until?: string | null;
+                /** @description Ledger-derived (free text, lags the plan); ``remediation_state`` is the live one. */
+                has_open_remediation?: boolean | null;
+                /** @description Repeatable. The LIVE roll-up of the dossier's remediation plans against coord's work units: none | draft | vetted | in_progress | shipped | closed | unknown. */
+                remediation_state?: string[] | null;
+                /** @description last_seen (coord's default) | first_seen | updated | recurrence_count | slug. */
+                sort?: string | null;
+                /** @description desc (default) | asc. */
+                order?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description The previous answer's ``next_cursor``, verbatim, under the SAME filters and sort. A foreign or stale one is coord's typed 400. */
+                cursor?: string | null;
+                /** @description ``true`` adds each head's body (coord caps the page at 20). */
+                include_body?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_coord_findings_get: {
         parameters: {
             query?: {
@@ -78706,6 +79047,154 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_session_runs_get: {
+        parameters: {
+            query?: {
+                /** @description Only runs classified as this work type. */
+                work_type?: string | null;
+                /** @description Only runs on this coord device. */
+                device?: string | null;
+                /** @description Only runs this initiator started. */
+                initiator?: ("operator" | "coord" | "runner_local" | "unknown") | null;
+                /** @description Only runs started at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only runs started before this instant (offset required). */
+                until?: string | null;
+                /** @description coord's ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_concurrency_get: {
+        parameters: {
+            query?: {
+                /** @description Only this coord device (unset = every device that ran a session). */
+                device?: string | null;
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Series bucket width; coord's default is ``1h``. */
+                bucket?: ("1m" | "5m" | "15m" | "1h" | "hour" | "6h" | "1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_growth_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Day (coord's default) or week buckets. */
+                bucket?: ("1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_stats_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Group by ``work_type`` (coord's default), ``device``, or both. */
+                group_by?: ("work_type" | "device" | "device,work_type" | "work_type,device") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_sessions_get: {
         parameters: {
             query?: {
@@ -82087,6 +82576,73 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkArtifactSummary"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_presentation_scope_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresentationScopeOut"];
+                };
+            };
+        };
+    };
+    api_v1_presentation_scope_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresentationScopeWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresentationScopeOut"];
+                };
+            };
+            /** @description Not an admin of the active project. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The stored scope moved since expected_version, or the active project is not expected_tenant_id. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -27,10 +27,16 @@
  *
  * so a caller expresses "unknown" by passing `null`/`undefined`, which is what
  * an unfetched value already is.
+ *
+ * **Navigation-only by construction.** A filter tab narrows a VIEW (§3.3: a
+ * control that changes a write target is deliberately a different control),
+ * so the tabs and the query input carry `NAVIGATION_ONLY_PROPS` and stay live
+ * in presentation mode (plan `2026-10-23-console-presentation-spaces` D3.2).
  */
 
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { NAVIGATION_ONLY_PROPS } from "./navigationOnly";
 
 export interface FilterTab<Id extends string> {
   id: Id;
@@ -86,6 +92,7 @@ export function FilterTabs<Id extends string>({
     >
       {tabs.map((tab) => (
         <Button
+          {...NAVIGATION_ONLY_PROPS}
           key={tab.id}
           size="sm"
           variant={active === tab.id ? "secondary" : "ghost"}
@@ -107,6 +114,7 @@ export function FilterTabs<Id extends string>({
       ))}
       {onQueryChange && (
         <input
+          {...NAVIGATION_ONLY_PROPS}
           value={query ?? ""}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={queryPlaceholder}
