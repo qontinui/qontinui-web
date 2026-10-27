@@ -25,6 +25,7 @@ the forwarded request for an admin.
 
 from __future__ import annotations
 
+import tomllib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -58,19 +59,34 @@ REFUSAL_SENTENCE = "Not authorized. Admin access required."
 DEVICE_TOKEN = "coord-device-jwt-for-an-admins-device"
 
 #: What a non-admin could plant before the gate: a command check the runner's
-#: workflow loop executes.
+#: workflow loop executes. It is laid out as the web's own generator writes one
+#: (``@qontinui/workflow-utils`` ``generateConstraintToml``), with the keys the
+#: runner reads: its ``CheckConfig::Command`` (qontinui-runner
+#: ``src-tauri/src/constraint_engine/config.rs``) takes the command as ``cmd``,
+#: and a config it cannot parse is answered ``valid: false`` and not written.
 COMMAND_TOML = (
     "[[constraint]]\n"
-    'id = "planted"\n'
+    'id = "project:planted"\n'
     'name = "Planted"\n'
     'severity = "warn"\n'
+    "\n"
     "[constraint.check]\n"
     'type = "command"\n'
-    'command = "echo planted"\n'
+    'cmd = "echo planted"\n'
 )
 
 #: A task-run id of a shape the runner mints.
 TASK_RUN_ID = "trigger-wf-1700000000000-ab12cd34"
+
+
+def test_the_planted_config_is_a_command_check_in_the_runners_keys() -> None:
+    """:data:`COMMAND_TOML` is the payload the module says it is: one custom
+    constraint whose check is a ``command`` the runner would run, spelled as
+    the runner parses it (``cmd``; ``cwd`` and ``timeout_secs`` default)."""
+    (constraint,) = tomllib.loads(COMMAND_TOML)["constraint"]
+
+    assert constraint["id"].startswith("project:")
+    assert constraint["check"] == {"type": "command", "cmd": "echo planted"}
 
 
 @dataclass(frozen=True)

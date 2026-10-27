@@ -58,9 +58,9 @@ RUNNER_PORT = 9876
 _TIMEOUT = httpx.Timeout(15.0)
 
 #: Statuses that, from THIS backend, are about the caller's own credential: the
-#: frontend's HTTP client reads a 401 as an expired session, and a 403 is how
-#: ``require_admin`` refuses the caller. A runner answering one of them is
-#: never relayed as ours.
+#: frontend's HTTP client reads a 401 as an expired session, a 403 is how
+#: ``require_admin`` refuses the caller, and a 407 asks the caller for proxy
+#: credentials. A runner answering one of them is never relayed as ours.
 _CALLER_CREDENTIAL_STATUSES = frozenset({401, 403, 407})
 
 

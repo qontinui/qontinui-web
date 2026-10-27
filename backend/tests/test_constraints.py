@@ -254,13 +254,14 @@ def test_a_runner_refusal_of_the_request_is_relayed_in_its_words(
     )
 
 
-@pytest.mark.parametrize("runner_status", [500, 401, 403])
+@pytest.mark.parametrize("runner_status", [500, 401, 403, 407])
 def test_a_runner_failure_or_credential_refusal_is_a_502(
     admin_client: TestClient, runner: StandInRunner, runner_status: int
 ) -> None:
-    """A 5xx is the runner's failure, not this backend's; a runner 401 or 403
-    relayed as ours would read as the caller's own session failing (a 401 signs
-    the browser out) or as ``require_admin`` refusing them."""
+    """A 5xx is the runner's failure, not this backend's; a runner 401, 403 or
+    407 relayed as ours would read as the caller's own session failing (a 401
+    signs the browser out), as ``require_admin`` refusing them, or as a proxy
+    asking the caller for credentials."""
     runner.script(
         "GET",
         "/constraints/config",
