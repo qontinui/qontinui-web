@@ -5243,17 +5243,25 @@ async def get_project_state(
     ``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault
     stays true behind a lagging watcher. Those rows are real but are not known
     to be all of them, so no count may be taken from them.
-    ``does_not_know`` lists every source the door read, with ``state``,
-    ``as_of``, ``freshness_bound_secs``, rows considered / excluded and why.
+    ``does_not_know`` lists every source the door read or tried to read,
+    plus a ``watcher:<name>`` row for each feeding watcher that is not
+    fresh, each with ``state``, ``as_of``, ``freshness_bound_secs``, rows
+    considered / excluded and why, and its ``error``. On a watcher row,
+    ``as_of`` is the watcher's last successful run and
+    ``freshness_bound_secs`` the threshold its freshness verdict applies,
+    not the age of any data.
 
-    ``on_track.totals`` is ``{row_count, classes}`` over a closed,
-    exhaustive-with-zeros class set (``shipped``, ``in_flight``,
-    ``stalled``, ``blocked_on_dependency``, ``waiting_on_gate``,
-    ``not_started``, ``closed_other``, ``off_vocabulary``, ``unset``) whose
-    sum coord asserts equals ``row_count``. ``stalled`` is a MECHANICAL
-    absence-of-recorded-change class (``stall_rule`` /
-    ``stall_window_secs`` ride the wire); it is not a verdict and the page
-    does not render the word.
+    ``on_track.totals`` is ``{row_count, classes, excluded}``. ``classes``
+    is a closed, exhaustive-with-zeros class set (``shipped``,
+    ``in_flight``, ``stalled``, ``blocked_on_dependency``,
+    ``waiting_on_gate``, ``not_started``, ``closed_other``,
+    ``off_vocabulary``, ``unset``) whose sum coord asserts equals
+    ``row_count``. ``excluded`` is ``{merge_shepherd_bookkeeping}``: coord's
+    own merge-shepherd bookkeeping units, left out of ``row_count`` and
+    every class and counted only there (the ``/overview`` panel states that
+    count). ``stalled`` is a MECHANICAL absence-of-recorded-change class
+    (``stall_rule`` / ``stall_window_secs`` ride the wire); it is not a
+    verdict and the page does not render the word.
 
     Declares no ``response_model``, so nothing here filters a field coord
     adds. This docstring is what FastAPI renders into the committed,
