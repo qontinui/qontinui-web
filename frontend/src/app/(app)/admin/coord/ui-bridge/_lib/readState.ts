@@ -55,6 +55,16 @@ export const NOT_ASKED: QueryView<never> = {
   asked: false,
 };
 
+/**
+ * Whether an answer is a JSON object — the first thing a body's reader checks,
+ * because a 200 can carry `null`, an array or a scalar, and dereferencing one
+ * of those throws during render (a stack trace where a labelled UNKNOWN
+ * belongs).
+ */
+export function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
 /** The issue for an answer that arrived but could not be read. */
 export const UNREADABLE_ANSWER: SourceIssue = {
   kind: "failed",

@@ -45,6 +45,8 @@ import {
   VISIBILITY_CLEAR_OBSERVED,
   VISIBILITY_CLEAR_UNOBSERVED,
   VISIBILITY_HIDES_TEXT,
+  SPEC_GRAPH_BODY,
+  SPEC_LIST_BODY,
   componentsBodyWithDisclosure,
   pageHealthBodyWith,
 } from "./__fixtures__/runnerBodies";
@@ -878,5 +880,65 @@ describe("registry entries the page cannot read", () => {
     );
     expect(strip).toHaveTextContent("actions ≥2");
     expect(strip).toHaveAttribute("data-health-level", "amber");
+  });
+});
+
+/**
+ * A 200 whose body is not the object the page reads — `null`, or a list
+ * holding an entry that is not an object. The page reads it as an answer it
+ * cannot read: a labelled UNKNOWN, or a floor — never a stack trace.
+ */
+describe("an answer that is not the shape the page reads", () => {
+  const UNREADABLE = "the runner answered, but not in the shape this page reads";
+
+  it.each([
+    [
+      "the runner's app list",
+      { apps: () => json(200, null) },
+      "coord-ui-bridge-apps-runner-unknown",
+      `This runner's own app list could not be read: ${UNREADABLE}.`,
+    ],
+    [
+      "the spec list",
+      { specList: () => json(200, null) },
+      "coord-ui-bridge-spec-list-unknown",
+      `The app's screens could not be read: ${UNREADABLE}.`,
+    ],
+    [
+      "the spec graph",
+      { specGraph: () => json(200, null) },
+      "coord-ui-bridge-spec-graph-unknown",
+      `The app's states and transitions could not be read: ${UNREADABLE}.`,
+    ],
+  ] as const)(
+    "renders a null body for %s as a labelled UNKNOWN, and the page stays up",
+    async (_label, over, testId, text) => {
+      state.relay = relayFake(over);
+      renderPage();
+      expect(await screen.findByTestId(testId)).toHaveTextContent(text);
+      expect(screen.getByTestId("coord-ui-bridge-page")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("coord-ui-bridge-actions-counts")
+      ).toBeInTheDocument();
+    }
+  );
+
+  it("counts a graph page that is not an object as unreadable, and lists no screen for a spec entry that is not one", async () => {
+    state.relay = relayFake({
+      specList: () =>
+        json(200, { ok: true, specs: [null, 7, ...SPEC_LIST_BODY.specs] }),
+      specGraph: () =>
+        json(200, { ok: true, pages: [null, ...SPEC_GRAPH_BODY.pages] }),
+    });
+    renderPage();
+    const counts = await screen.findByTestId("coord-ui-bridge-spec-counts");
+    await waitFor(() => expect(counts).toHaveTextContent("states 4"));
+    expect(counts).toHaveTextContent("screens 3");
+    expect(
+      screen.getByTestId("coord-ui-bridge-spec-unreadable")
+    ).toHaveTextContent("1 screen's model could not be read");
+    expect(screen.getAllByTestId("coord-ui-bridge-spec-screen")).toHaveLength(
+      2
+    );
   });
 });

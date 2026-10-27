@@ -46,6 +46,7 @@ import {
 } from "./occlusionStatus";
 import {
   NOT_ASKED,
+  isRecord,
   queryView,
   readStateOf,
   type QueryView,
@@ -361,8 +362,10 @@ export function appRegistryReadsOf({
   }
   return {
     web: readStateOf(web, (d) => (Array.isArray(d) ? d : null)),
+    // A body that is not an object (`null` included) is an answer this page
+    // cannot read — UNKNOWN, never a crash.
     runner: readStateOf(runner, (d) =>
-      Array.isArray(d.apps) ? d.apps : null
+      isRecord(d) && Array.isArray(d.apps) ? d.apps : null
     ),
   };
 }

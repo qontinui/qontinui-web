@@ -39,9 +39,11 @@ import {
   isValidAppId,
   RUNNER_APP_ID,
   summarizeSpecGraph,
+  type SpecGraphPage,
+  type SpecGraphSummary,
 } from "@/app/(app)/digital-twin/_lib/ui-bridge-types";
 import { appRepoOf } from "../_lib/firstParty";
-import { queryView, readStateOf } from "../_lib/readState";
+import { isRecord, queryView, readStateOf } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import {
   INVALID_APP_ID_STATUS,
@@ -74,6 +76,55 @@ interface ScreenLine {
   readonly transitions: number | null;
 }
 
+/** The spec list, as this panel reads it. */
+interface SpecListReading {
+  /** Every entry the list sent — its screens count. */
+  readonly count: number;
+  /** The ids of the entries that are spec objects naming one. */
+  readonly specIds: readonly string[];
+  /** The runner's reason for an empty list (`no-pages-registered`), if any. */
+  readonly emptyReason: string | null;
+}
+
+/** The spec graph, as this panel reads it. */
+interface SpecGraphReading {
+  readonly summary: SpecGraphSummary;
+  readonly pages: readonly SpecGraphPage[];
+}
+
+/**
+ * A spec-list body, or null when it is not one. A body that is not an object
+ * (`null` included) cannot be read; an entry that is not an object names no
+ * screen, but is still one of the entries the list sent.
+ */
+function readSpecList(body: unknown): SpecListReading | null {
+  if (!isRecord(body) || !Array.isArray(body.specs)) return null;
+  return {
+    count: body.specs.length,
+    specIds: body.specs.flatMap((spec: unknown) =>
+      isRecord(spec) && typeof spec.specId === "string" && spec.specId
+        ? [spec.specId]
+        : []
+    ),
+    emptyReason:
+      typeof body.reason === "string" && body.reason ? body.reason : null,
+  };
+}
+
+/**
+ * A spec-graph body, or null when it is not one. A page entry that is not an
+ * object is read as an empty page, which `summarizeSpecGraph` counts as
+ * unreadable (the totals become a floor) — where reading its fields would
+ * throw during render.
+ */
+function readSpecGraph(body: unknown): SpecGraphReading | null {
+  if (!isRecord(body) || !Array.isArray(body.pages)) return null;
+  const pages: SpecGraphPage[] = body.pages.map((page: unknown) =>
+    isRecord(page) ? (page as SpecGraphPage) : {}
+  );
+  return { summary: summarizeSpecGraph({ pages }), pages };
+}
+
 export function SpecGraphPanel({
   deviceId,
   build,
@@ -85,19 +136,17 @@ export function SpecGraphPanel({
   const valid = isValidAppId(appId);
   const specList = useRunnerSpecList(deviceId, appId);
   const specGraph = useRunnerSpecGraph(deviceId, appId);
-  const list = readStateOf(queryView(specList), (d) =>
-    Array.isArray(d.specs) ? d : null
-  );
-  const graph = readStateOf(queryView(specGraph), (d) =>
-    Array.isArray(d.pages) ? summarizeSpecGraph(d) : null
-  );
-  const graphPages = specGraph.data?.pages;
-  const listSpecs = list.state === "ok" ? specList.data?.specs : undefined;
+  // A body that is not an object, or an entry inside one that is not, is an
+  // answer this page cannot read: UNKNOWN or a floor, never a crash in render.
+  const list = readStateOf(queryView(specList), readSpecList);
+  const graph = readStateOf(queryView(specGraph), readSpecGraph);
+  const graphPages = graph.state === "ok" ? graph.value.pages : undefined;
+  const listSpecIds = list.state === "ok" ? list.value.specIds : undefined;
 
   const screens = useMemo<ScreenLine[]>(() => {
     const out = new Map<string, ScreenLine>();
     for (const page of graphPages ?? []) {
-      if (!page.id) continue;
+      if (typeof page.id !== "string" || !page.id) continue;
       const readable =
         Array.isArray(page.stateIds) && Array.isArray(page.transitionIds);
       out.set(page.id, {
@@ -106,19 +155,15 @@ export function SpecGraphPanel({
         transitions: readable ? (page.transitionIds?.length ?? null) : null,
       });
     }
-    for (const spec of listSpecs ?? []) {
-      if (spec.specId && !out.has(spec.specId)) {
-        out.set(spec.specId, {
-          id: spec.specId,
-          states: null,
-          transitions: null,
-        });
+    for (const specId of listSpecIds ?? []) {
+      if (!out.has(specId)) {
+        out.set(specId, { id: specId, states: null, transitions: null });
       }
     }
     return [...out.values()];
-  }, [graphPages, listSpecs]);
+  }, [graphPages, listSpecIds]);
 
-  const summary = graph.state === "ok" ? graph.value : null;
+  const summary = graph.state === "ok" ? graph.value.summary : null;
   const suggestions = useMemo(
     () => [...new Set([RUNNER_APP_ID, ...appIds])].filter(isValidAppId),
     [appIds]
@@ -238,7 +283,7 @@ export function SpecGraphPanel({
                   label: "screens ",
                   value:
                     summary?.pages ??
-                    (list.state === "ok" ? list.value.specs?.length : null),
+                    (list.state === "ok" ? list.value.count : null),
                 },
                 { key: "states", label: "states ", value: summary?.states },
                 {
@@ -301,7 +346,7 @@ export function SpecGraphPanel({
                   data-testid="coord-ui-bridge-spec-empty"
                 >
                   The runner has no screens registered for this app
-                  {list.state === "ok" && list.value.reason
+                  {list.state === "ok" && list.value.emptyReason
                     ? " (it says no pages are registered)"
                     : ""}
                   .
