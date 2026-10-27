@@ -394,6 +394,114 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
     expect(drawer.queryByText("coord_unavailable")).toBeNull();
   });
 
+  /**
+   * `outbound` is coord's admin `envelope` door: the drawer has no raw read of
+   * it, so everything it says about the row comes from the probe's answer
+   * for it. Coord's catalog is still held here — it is cached for five
+   * minutes while the probe refetches every minute, the shape of an outage
+   * that starts mid-session — so the row keeps its envelope door while the
+   * probe has no answer for it. No sentence in its drawer may then describe an
+   * answer, in either mode.
+   */
+  describe("the outbound envelope row's drawer, with coord's catalog still held", () => {
+    /** What only an answer from the probe could make true. */
+    const ANSWER_CLAIMS: readonly RegExp[] = [
+      /The probe returned/,
+      /credibility envelope/i,
+      /was probed/,
+      /\bError\b/,
+      /coord_unavailable/,
+    ];
+
+    const UNOBSERVED = {
+      unobservable: "CoverageMatrix.test.tsx mocks @qontinui/ui-bridge/react",
+    } as const;
+
+    /** Open the outbound row's drawer; its dialog element. */
+    function openOutbound(): HTMLElement {
+      fireEvent.click(screen.getByTestId("digital-twin-cell-outbound"));
+      return screen.getByRole("dialog");
+    }
+
+    function expectNoAnswerClaimed(drawer: HTMLElement) {
+      for (const claim of ANSWER_CLAIMS) {
+        expect(drawer.textContent, String(claim)).not.toMatch(claim);
+      }
+      // Its Summary would describe the probe's answer; with none, it is shut.
+      expect(
+        within(drawer).queryByTestId("digital-twin-drawer-summary")
+      ).toBeNull();
+    }
+
+    function statusOf(drawer: HTMLElement): HTMLElement {
+      return within(drawer).getByText("Status").parentElement!;
+    }
+
+    for (const arm of ARMS) {
+      // The reason as the drawer's meaning starts its sentence (no full stop).
+      const cause = arm.reason.replace(/\.$/, "");
+
+      it(`reads UNKNOWN with why after ${arm.name}, and claims no probe answer — operator mode`, () => {
+        state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+        arm.arrange();
+        render(<CoverageMatrix />);
+        const drawer = openOutbound();
+        expect(statusOf(drawer)).toHaveTextContent("UNKNOWN");
+        expect(drawer).toHaveTextContent(cause);
+        expectNoAnswerClaimed(drawer);
+      });
+
+      it(`reads UNKNOWN with why after ${arm.name}, and claims no probe answer — while presenting`, () => {
+        state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+        arm.arrange();
+        const view = renderInPresentationMode(<CoverageMatrix />, {
+          uiBridge: UNOBSERVED,
+        });
+        const drawer = openOutbound();
+        expect(statusOf(drawer)).toHaveTextContent("UNKNOWN");
+        expect(drawer).toHaveTextContent(cause);
+        expectNoAnswerClaimed(drawer);
+        expectPresentationSafe(view);
+      });
+    }
+
+    it("claims no probe answer while the probe is still in flight, either", () => {
+      state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+      state.probe = {
+        data: undefined,
+        isLoading: true,
+        isError: false,
+        error: null,
+        dataUpdatedAt: 0,
+        errorUpdatedAt: 0,
+      };
+      render(<CoverageMatrix />);
+      const drawer = openOutbound();
+      expect(statusOf(drawer)).toHaveTextContent("Probing…");
+      expectNoAnswerClaimed(drawer);
+    });
+
+    it("still says the probe returned no envelope when it answered the row without one", () => {
+      state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+      setProbe(
+        probesFor(MANIFEST_SNAPSHOT_IDS, {
+          outbound: {
+            id: "outbound",
+            status: "error",
+            error: "http_500",
+            door_shape: "envelope",
+          },
+        })
+      );
+      render(<CoverageMatrix />);
+      const drawer = openOutbound();
+      expect(statusOf(drawer)).toHaveTextContent("Error");
+      expect(
+        within(drawer).getByTestId("digital-twin-drawer-summary")
+      ).toHaveTextContent("The probe returned no credibility envelope.");
+    });
+  });
+
   it("keeps the last answer's count after a failed refresh — a reading, dated — under the notice", () => {
     setProbe(probesFor(SNAPSHOT_IDS));
     state.probe = {

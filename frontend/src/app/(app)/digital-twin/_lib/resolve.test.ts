@@ -4,10 +4,12 @@ import {
   allProbesRestricted,
   declaredProbes,
   manifest,
+  probeAnswered,
   resolveSubspaces,
   summarize,
   unlistedDeclaredProbes,
 } from "./resolve";
+import { STATUS_STYLES } from "./status-presentation";
 import type {
   CellStatus,
   SubspaceProbe,
@@ -535,5 +537,74 @@ describe("allProbesRestricted", () => {
       })
     ).toBe(false);
     expect(allProbesRestricted(undefined)).toBe(false);
+  });
+});
+
+describe("probeAnswered", () => {
+  // Every cell status there is: STATUS_STYLES is a Record over CellStatus.
+  const ALL = Object.keys(STATUS_STYLES) as CellStatus[];
+
+  it("is true only where the status is the live probe's answer for the row", () => {
+    expect(
+      ALL.filter((cellStatus) =>
+        probeAnswered({ liveProbed: true, cellStatus })
+      ).sort()
+    ).toEqual([
+      "blind",
+      "error",
+      "implemented",
+      "partial",
+      "restricted",
+      "served",
+    ]);
+  });
+
+  it("is false while the probe is in flight or holds no reading — nothing has answered", () => {
+    expect(probeAnswered({ liveProbed: true, cellStatus: "probing" })).toBe(
+      false
+    );
+    expect(probeAnswered({ liveProbed: true, cellStatus: "unknown" })).toBe(
+      false
+    );
+  });
+
+  it("is false for every row this page does not probe", () => {
+    for (const cellStatus of ALL) {
+      expect(probeAnswered({ liveProbed: false, cellStatus }), cellStatus).toBe(
+        false
+      );
+    }
+  });
+
+  it("follows the rows resolveSubspaces makes, with coord's catalog held", () => {
+    const outbound = (rows: ReturnType<typeof resolveSubspaces>) =>
+      rows.find((r) => r.id === "outbound")!;
+    const catalog = stubCatalog();
+    expect(
+      probeAnswered(outbound(resolveSubspaces(undefined, true, catalog)))
+    ).toBe(false);
+    expect(
+      probeAnswered(
+        outbound(
+          resolveSubspaces(
+            undefined,
+            false,
+            catalog,
+            "coord's live probe could not be made: coord could not be reached"
+          )
+        )
+      )
+    ).toBe(false);
+    expect(
+      probeAnswered(
+        outbound(
+          resolveSubspaces(
+            [{ id: "outbound", status: "partial", door_shape: "envelope" }],
+            false,
+            catalog
+          )
+        )
+      )
+    ).toBe(true);
   });
 });

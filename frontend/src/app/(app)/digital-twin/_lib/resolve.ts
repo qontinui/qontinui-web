@@ -104,6 +104,36 @@ export function allProbesRestricted(
   );
 }
 
+/**
+ * The cell statuses that are the live probe's ANSWER for a row: an
+ * observer's verdict (`implemented` / `partial` / `blind`), a report
+ * (`served`), a refusal (`restricted`), or an `error` — a read the probe made
+ * that failed, or an answer that came back with no cell for the row. A probe
+ * still in flight (`probing`) or holding no reading at all (`unknown`) has
+ * answered nothing, and every other status belongs to a row this page does
+ * not probe. Listed rather than excluded, so a status added later is not an
+ * answer until it is put here.
+ */
+const PROBE_ANSWERS: ReadonlySet<CellStatus> = new Set<CellStatus>([
+  "implemented",
+  "partial",
+  "blind",
+  "served",
+  "restricted",
+  "error",
+]);
+
+/**
+ * Whether the live probe has answered for `row` ({@link PROBE_ANSWERS}): the
+ * condition for saying anything about what that answer carried, such as an
+ * `envelope` door's credibility envelope.
+ */
+export function probeAnswered(
+  row: Pick<ResolvedSubspace, "liveProbed" | "cellStatus">
+): boolean {
+  return row.liveProbed && PROBE_ANSWERS.has(row.cellStatus);
+}
+
 function resolveOne(
   entry: SubspaceManifestEntry,
   probesById: Map<string, SubspaceProbe>,

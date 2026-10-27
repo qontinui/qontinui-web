@@ -30,6 +30,7 @@ import {
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
 import { failureTail } from "../_lib/failure-text";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
+import { probeAnswered } from "../_lib/resolve";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
 import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
@@ -57,11 +58,14 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
  * `report` door's answer is not a DriftVerdict, so it gets no verdict
  * summary — only its raw JSON. An `envelope` door (the admin outbound budget)
  * is not on the twin door at all, so there is no raw read to fetch here: its
- * summary and credibility envelope come from the probe's own metrics. For
- * all rows it shows the twin and lifecycle stages, the backing coord tool /
- * observer module, the research doc and, while the row is still being built,
- * the plan building it — a link to that plan's work unit (plain text while
- * presenting, until that page can be presented: `LensLink`).
+ * summary and credibility envelope come from the probe's own answer for the
+ * row, and only once there is one (`probeAnswered`). While the probe is in
+ * flight, or holds no reading at all, there is no answer to describe, so the
+ * Summary stays shut and the Status says why. For all rows it shows the twin
+ * and lifecycle stages, the backing coord tool / observer module, the
+ * research doc and, while the row is still being built, the plan building it
+ * — a link to that plan's work unit (plain text while presenting, until that
+ * page can be presented: `LensLink`).
  *
  * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3.2)
  * the drawer keeps only navigation: "Ask the Twin about this" leads to a
@@ -73,7 +77,11 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   const { presenting } = usePresentationMode();
   const readsRaw = !!row && row.liveProbed && row.doorShape !== "envelope";
   const isReport = row?.doorShape === "report";
-  const isEnvelope = !!row && row.liveProbed && row.doorShape === "envelope";
+  // An envelope door the probe has answered for. Its answer is all the drawer
+  // can say of the row: with none (in flight, or no reading held) a sentence
+  // about it would describe an answer that does not exist.
+  const envelopeAnswered =
+    !!row && row.doorShape === "envelope" && probeAnswered(row);
   const { data, isLoading, isError, error } = useSubspaceRaw(
     row?.id ?? null,
     !!row && readsRaw
@@ -116,7 +124,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   // An envelope door has no raw read here; the probe already carried its
   // top-level DriftVerdict fields, so its live envelope is those metrics.
   const envelopeVerdict: DriftVerdict | null =
-    isEnvelope && row.metrics
+    envelopeAnswered && row.metrics
       ? {
           coverage: row.metrics.coverage,
           credibility: row.metrics.credibility,
@@ -157,8 +165,9 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
         </DialogHeader>
 
         <div className="max-h-[70vh] overflow-y-auto pr-1 text-sm">
-          {/* Human-digestible summary (live-probed observers only). */}
-          {(readsRaw || isEnvelope) && (
+          {/* Human-digestible summary (live-probed observers only; an
+              envelope door's only once the probe has answered for it). */}
+          {(readsRaw || envelopeAnswered) && (
             <div
               data-testid="digital-twin-drawer-summary"
               className="mb-3 rounded-md border border-border bg-muted/40 p-3"
@@ -183,7 +192,7 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                 </p>
               )}
               {summary && <p className="text-sm">{summary.prose}</p>}
-              {isEnvelope && !envelopeVerdict && (
+              {envelopeAnswered && !envelopeVerdict && (
                 <p className="text-sm text-muted-foreground">
                   The probe returned no credibility envelope.
                 </p>
