@@ -895,14 +895,15 @@ describe("on-demand reads", () => {
 
 /**
  * The page-health header is what stays in view while the panel is closed
- * (R7), so it states the read as it stands: a kept verdict as the earlier
- * run's, and a run with no reading without guessing why.
+ * (R7), so it states the read as it stands: a kept verdict as an earlier
+ * run's, however many re-runs have failed since, and a run with no reading
+ * without guessing why.
  */
 describe("the page-health header", () => {
   const badgeTitle = (summary: HTMLElement) =>
     summary.querySelector("[data-status-kind]")?.getAttribute("title") ?? "";
 
-  it("marks a kept verdict as the earlier run's after a re-run that failed — never as current", async () => {
+  it("marks a kept verdict as an earlier run's after one failed re-run, and after two — never as current", async () => {
     let runs = 0;
     state.relay = relayFake({
       pageHealth: () => {
@@ -912,13 +913,15 @@ describe("the page-health header", () => {
           : json(503, NOT_CONNECTED_BODY);
       },
     });
-    renderPage();
+    const { client } = renderPage();
     await screen.findByTestId("coord-ui-bridge-actions-counts");
     fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
     await screen.findByTestId("coord-ui-bridge-health-counts");
     const summary = screen.getByTestId("coord-ui-bridge-health-summary");
     expect(summary).toHaveAttribute("data-read-state", "ok");
     expect(summary).toHaveTextContent(/^warning$/);
+    const keptTitle =
+      "warning — The last run failed, so this is an earlier run's result — not a reading of the page as it is now.";
 
     // Run it again; this time the relay does not answer.
     await act(async () => {
@@ -927,9 +930,31 @@ describe("the page-health header", () => {
     await screen.findByTestId("coord-ui-bridge-health-stale");
     expect(summary).toHaveAttribute("data-read-state", "stale");
     expect(summary).toHaveTextContent(/^warning from the earlier run$/);
-    expect(badgeTitle(summary)).toBe(
-      "warning — The last run failed, so this is the run before it — not a reading of the page as it is now."
+    expect(badgeTitle(summary)).toBe(keptTitle);
+
+    // And once more, failing too. The verdict is kept through every failed
+    // re-run, so it is now two runs back, and the run just before the latest
+    // failed with no verdict of its own: the header still says only that this
+    // is an earlier run's result, and still not that it is current.
+    expect(screen.getByTestId("coord-ui-bridge-health-run")).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    });
+    // Nothing on the page changes between the two failures, so wait on the
+    // query itself until it has recorded the second, then let its observers'
+    // notice (a zero-delay timer) reach the page before reading the header.
+    await waitFor(() =>
+      expect(
+        client.getQueryState(["ui-bridge-dashboard", "page-health", DEVICE_ID])
+      ).toMatchObject({ errorUpdateCount: 2, fetchStatus: "idle" })
     );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    expect(runs).toBe(3);
+    expect(summary).toHaveAttribute("data-read-state", "stale");
+    expect(summary).toHaveTextContent(/^warning from the earlier run$/);
+    expect(badgeTitle(summary)).toBe(keptTitle);
   });
 
   it("says page health has no reading — not that it did not answer — when the runner answered in a shape the page cannot read", async () => {

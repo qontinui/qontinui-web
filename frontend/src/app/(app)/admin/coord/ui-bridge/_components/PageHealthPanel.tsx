@@ -83,12 +83,16 @@ export const PAGE_HEALTH_BUTTON_TITLE =
 
 /**
  * The header badge's reason over a KEPT result: the latest run failed, so the
- * verdict shown is the run before it (R6: a kept verdict may not look
- * re-confirmed). The header is what stays in view while the panel is closed
- * (R7), so it also says so in words, beside the badge.
+ * verdict shown is an earlier run's (R6: a kept verdict may not look
+ * re-confirmed). It names no particular run, because React Query keeps the
+ * last successful result through ANY number of failed re-runs
+ * (`readState.ts`): after two, the run just before the latest failed too and
+ * has no verdict, so "the run before it" would point at the wrong one. The
+ * header is what stays in view while the panel is closed (R7), so it also
+ * says so in words, beside the badge.
  */
 export const PAGE_HEALTH_EARLIER_RUN_REASON =
-  "The last run failed, so this is the run before it — not a reading of the page as it is now.";
+  "The last run failed, so this is an earlier run's result — not a reading of the page as it is now.";
 
 /**
  * The header badge's reason when page health has no reading: the run failed,
