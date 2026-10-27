@@ -29,7 +29,7 @@ export const DIGITAL_TWIN_CAPTIONS = {
     // reason; a plan's status is read from the work unit that tracks it. Not
     // "every plan opens its work unit": while presenting, a plan whose title
     // the lens withholds is not linked.
-    whyItMatters: copy`Each figure is read from a named source and shown with its age, or shown as ${term("unknown", "unknown")} with the reason, and a ${term("plan")}'s status is read from the ${term("work_unit", "work unit")} that tracks it, so the map is read from the factory's own records rather than drawn for the occasion.`,
+    whyItMatters: copy`Each figure is read from a named source and shown with its age, or shown as ${term("unknown", "unknown")} with the reason, and a ${term("plan", "plan")}'s status is read from the ${term("work_unit", "work unit")} that tracks it, so the map is read from the factory's own records rather than drawn for the occasion.`,
   },
   "digital-twin.aspect-environment": {
     title: "Environment twin",
@@ -60,7 +60,10 @@ export const DIGITAL_TWIN_CAPTIONS = {
   },
   "digital-twin.aspect-detail": {
     title: "What it observes, and the plans moving it",
-    oneLiner: copy`The parts of the factory this twin observes, and every ${term("plan")} tied to them with its live status.`,
-    whyItMatters: copy`Each ${term("plan")}'s status is read from its ${term("work_unit", "work unit")}, which records its pull requests and status history.`,
+    // Not "every plan … with its live status": while presenting the list
+    // shows at most eight unfinished plans and only counts the rest, and the
+    // finished ones are counted, not listed (TwinPlanList).
+    oneLiner: copy`The parts of the factory this twin observes, and the ${term("plan", "plans")} tied to them, unfinished ones first, with their live status.`,
+    whyItMatters: copy`Each ${term("plan", "plan")}'s status is read from its ${term("work_unit", "work unit")}, which records its pull requests and status history.`,
   },
 } as const satisfies SurfaceCaptions<"digital-twin">;

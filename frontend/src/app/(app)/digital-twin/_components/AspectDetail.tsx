@@ -222,7 +222,7 @@ export function AspectDetail({
           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {selectedName
               ? `Plans moving ${selectedName}`
-              : `Plans moving the ${title.toLowerCase()}`}
+              : `Plans moving the ${aspect.noun}`}
           </h4>
           <PlanPanel read={read} rows={shownRows} />
         </div>

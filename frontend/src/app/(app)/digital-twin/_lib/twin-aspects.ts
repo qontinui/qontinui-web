@@ -54,6 +54,12 @@ export interface TwinAspect {
   readonly id: TwinAspectId;
   /** Its card's caption — title, one-liner and why it matters. */
   readonly captionKey: CaptionKey;
+  /**
+   * What a sentence calls it ("the plans moving the UI Bridge app twin"):
+   * its own casing, never a lower-cased title, which would lower a proper
+   * noun.
+   */
+  readonly noun: string;
   /** Whether a manifest row is one of this aspect's parts. */
   readonly includes: (
     row: Pick<SubspaceManifestEntry, "twin" | "layer">
@@ -71,21 +77,25 @@ export const TWIN_ASPECTS: readonly TwinAspect[] = [
   {
     id: "environment",
     captionKey: "digital-twin.aspect-environment",
+    noun: "environment twin",
     includes: (row) => row.twin === "environment",
   },
   {
     id: "process",
     captionKey: "digital-twin.aspect-process",
+    noun: "process twin",
     includes: (row) => row.twin === "process",
   },
   {
     id: "intent",
     captionKey: "digital-twin.aspect-intent",
+    noun: "intent twin",
     includes: (row) => row.twin === "intent",
   },
   {
     id: "ui-bridge",
     captionKey: "digital-twin.aspect-ui-bridge",
+    noun: "UI Bridge app twin",
     includes: (row) => row.layer === "ui-bridge",
   },
 ];

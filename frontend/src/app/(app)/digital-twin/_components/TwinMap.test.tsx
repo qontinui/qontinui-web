@@ -252,6 +252,15 @@ describe("TwinMap — each aspect with its fidelity and the plans moving it", ()
     ).toBeGreaterThan(0);
   });
 
+  it("heads each drill-down with the aspect's own name — a proper noun keeps its case", async () => {
+    render(<TwinMap />);
+    const { detail } = await openAspect("ui-bridge");
+    expect(
+      within(detail).getByText("Plans moving the UI Bridge app twin")
+    ).toBeInTheDocument();
+    expect(within(detail).queryByText(/ui bridge app twin/)).toBeNull();
+  });
+
   it("counts a part's plans exactly over a complete read, and says none is unfinished", async () => {
     render(<TwinMap />);
     const { user, detail } = await openAspect("process");
