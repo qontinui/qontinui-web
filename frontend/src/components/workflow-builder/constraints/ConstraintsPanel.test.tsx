@@ -8,7 +8,11 @@
  * - a read that never delivered is a labelled UNKNOWN with its reason, never
  *   "No built-in constraints loaded", and offers no editor either, since a
  *   save would overwrite the project's config with an empty editor;
- * - a save the backend refuses takes the editors away with the refusal.
+ * - a save the backend refuses takes the editors away with the refusal;
+ * - the "unsaved" chip shows only for an edit to what was read, and goes
+ *   once the save lands: never while the read is out, failed or refused;
+ * - a re-read is offered beside Save while nothing is unsaved, and one that
+ *   fails keeps the lists, labelled stale with its reason.
  *
  * The panel is rendered whole, with the network stubbed at `httpClient.fetch`
  * (`src/test/constraintsRoutes.ts`), so the real API client, its refusal
@@ -89,6 +93,7 @@ describe("ConstraintsPanel", () => {
     expect(note.textContent).toContain(CONSTRAINTS_ADMIN_ONLY);
     expectNoListAndNoEditor();
     expect(screen.queryByTestId("constraints-read-failed")).toBeNull();
+    expect(screen.queryByText("unsaved")).toBeNull();
   });
 
   it("labels a read that failed as unknown, with its reason, and offers no editor", async () => {
@@ -103,6 +108,8 @@ describe("ConstraintsPanel", () => {
     );
     expectNoListAndNoEditor();
     expect(screen.queryByTestId("constraints-admin-only")).toBeNull();
+    // Nothing was read, so nothing can be unsaved.
+    expect(screen.queryByText("unsaved")).toBeNull();
   });
 
   it("reads again from the unknown state and then shows what the runner answered", async () => {
@@ -151,6 +158,7 @@ describe("ConstraintsPanel while the read is out", () => {
 
     expect(html).toContain('data-testid="constraints-loading"');
     expect(html).not.toContain("No built-in constraints loaded");
+    expect(html).not.toContain("unsaved");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -165,5 +173,71 @@ describe("ConstraintsPanel while the read is out", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(screen.getByTestId("constraints-loading")).toBeTruthy();
     expectNoListAndNoEditor();
+    expect(screen.queryByText("unsaved")).toBeNull();
+  });
+});
+
+describe("ConstraintsPanel after a read", () => {
+  function saveButton(): HTMLButtonElement {
+    return screen.getByTitle("Save constraints") as HTMLButtonElement;
+  }
+
+  it("says an edit is unsaved until the save lands", async () => {
+    render(<ConstraintsPanel />);
+    await screen.findByText(NO_SECRETS.name);
+    expect(screen.queryByText("unsaved")).toBeNull();
+    expect(saveButton().disabled).toBe(true);
+
+    fireEvent.click(screen.getByText("Add"));
+    expect(screen.getByText("unsaved")).toBeTruthy();
+    expect(saveButton().disabled).toBe(false);
+
+    fireEvent.click(saveButton());
+
+    expect(await screen.findByText("Constraints saved")).toBeTruthy();
+    expect(calls()).toContain("POST /config");
+    expect(screen.queryByText("unsaved")).toBeNull();
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it("keeps the lists, labelled stale with the reason, when a re-read fails", async () => {
+    render(<ConstraintsPanel />);
+    await screen.findByText(NO_SECRETS.name);
+    expect(screen.queryByTestId("constraints-read-stale")).toBeNull();
+
+    routes["GET /active"] = RUNNER_UNREACHABLE;
+    fireEvent.click(screen.getByTestId("constraints-reread"));
+
+    const note = await screen.findByTestId("constraints-read-stale");
+    expect(note.textContent).toContain(
+      "What is shown below is from an earlier read and may be out of date."
+    );
+    expect(note.textContent).toContain(
+      `Reason: Failed to fetch active constraints: ${RUNNER_UNREACHABLE_SENTENCE}`
+    );
+    // What the earlier read delivered is still there, with its editors.
+    expect(screen.getByText("Built-in Constraints")).toBeTruthy();
+    expect(screen.getByText(NO_SECRETS.name)).toBeTruthy();
+    expect(saveButton()).toBeTruthy();
+    expect(screen.queryByTestId("constraints-read-failed")).toBeNull();
+
+    // A re-read that delivers takes the label away.
+    routes = readableRoutes();
+    fireEvent.click(screen.getByTestId("constraints-reread"));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("constraints-read-stale")).toBeNull()
+    );
+    expect(screen.getByText(NO_SECRETS.name)).toBeTruthy();
+  });
+
+  it("offers no re-read while an edit is unsaved, since its answer would replace the edit", async () => {
+    render(<ConstraintsPanel />);
+    await screen.findByText(NO_SECRETS.name);
+    expect(screen.getByTestId("constraints-reread")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Add"));
+
+    expect(screen.queryByTestId("constraints-reread")).toBeNull();
   });
 });

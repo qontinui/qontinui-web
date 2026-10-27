@@ -15,8 +15,11 @@
  * They render only when the read delivered (`readState === "read"`). A viewer
  * who is not a platform admin sees `ConstraintsAdminOnly` instead, and a read
  * that never delivered is a labelled UNKNOWN with its reason, never an empty
- * list; neither offers an editor or Save. A read that failed after an earlier
- * one delivered keeps that read's sections, labelled stale.
+ * list; neither offers an editor or Save. Beside Save sits a re-read, offered
+ * only while nothing is unsaved, since what it answers replaces the editor's
+ * contents. A re-read that fails keeps the earlier read's sections, labelled
+ * stale with the reason. The "unsaved" chip follows the hook's `isDirty`, so
+ * it never shows while nothing was read.
  */
 
 import { useState } from "react";
@@ -195,20 +198,31 @@ export function ConstraintsPanel() {
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={!isDirty || isSaving}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Save constraints"
-                  >
-                    {isSaving ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-1.5">
+                    {/* Not while an edit is unsaved: the answer would replace it. */}
+                    {!isDirty && (
+                      <RefreshButton
+                        onRefresh={reload}
+                        label="Read the constraints again"
+                        title="Asks the runner for this project's constraints again"
+                        data-testid="constraints-reread"
+                      />
                     )}
-                    {isSaving ? "Saving..." : "Save"}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={!isDirty || isSaving}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Save constraints"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      {isSaving ? "Saving..." : "Save"}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Built-in Constraints Section */}

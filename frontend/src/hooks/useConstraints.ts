@@ -73,7 +73,11 @@ export interface UseConstraintsReturn {
   aiConstraints: Constraint[];
   /** Resource limits (local state). */
   resourceLimits: ResourceLimits;
-  /** Whether the local state differs from the last loaded/saved config. */
+  /**
+   * Whether the local state differs from the config last read or saved.
+   * False while nothing was read (`readState` is not `read`): there is no
+   * config for an edit to differ from, and `save` would refuse it anyway.
+   */
   isDirty: boolean;
   /** Whether data is currently loading. */
   loading: boolean;
@@ -137,8 +141,10 @@ export function useConstraints(
   const [readFailure, setReadFailure] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Snapshot of the last saved/loaded state for dirty tracking
-  const savedStateRef = useRef<string>("");
+  // The config last read or saved, serialized, for dirty tracking. Null while
+  // nothing was read. State, not a ref: a save moves it without touching the
+  // constraints, and `isDirty` must be derived again when it does.
+  const [savedState, setSavedState] = useState<string | null>(null);
   // The issue number of the newest read: only it may settle the state, so a
   // slower, older read cannot overwrite a newer one's answer.
   const readSeqRef = useRef(0);
@@ -168,8 +174,10 @@ export function useConstraints(
   );
 
   const isDirty = useMemo(
-    () => serializeState(constraints, resourceLimits) !== savedStateRef.current,
-    [constraints, resourceLimits, serializeState]
+    () =>
+      savedState !== null &&
+      serializeState(constraints, resourceLimits) !== savedState,
+    [constraints, resourceLimits, savedState, serializeState]
   );
 
   // --------------------------------------------------------------------------
@@ -181,11 +189,11 @@ export function useConstraints(
     setConstraints([]);
     setResourceLimits({});
     setConfigPath(undefined);
-    savedStateRef.current = serializeState([], {});
+    setSavedState(null);
     setReadState("admin-only");
     setReadFailure(null);
     setError(null);
-  }, [serializeState]);
+  }, []);
 
   const reload = useCallback(async () => {
     const seq = ++readSeqRef.current;
@@ -213,7 +221,7 @@ export function useConstraints(
       }
 
       // Snapshot the loaded state
-      savedStateRef.current = serializeState(activeConstraints, limits);
+      setSavedState(serializeState(activeConstraints, limits));
       setReadState("read");
       setReadFailure(null);
     } catch (err) {
@@ -326,7 +334,7 @@ export function useConstraints(
 
       // Update config path and snapshot
       setConfigPath(result.path);
-      savedStateRef.current = serializeState(constraints, resourceLimits);
+      setSavedState(serializeState(constraints, resourceLimits));
       return true;
     } catch (err) {
       if (isConstraintsAdminRefusal(err)) {
