@@ -25,15 +25,21 @@ export const UI_BRIDGE_CAPTIONS = {
   },
   "ui-bridge.apps": {
     title: "Registered applications",
-    oneLiner: copy`Every application the fleet knows how to drive, as the web and this ${term("runner", "runner")} each record it.`,
-    whyItMatters: copy`One registry spans every machine, so an agent on any ${term("runner", "runner")} opens the same application by the same name and checks it against the same model.`,
+    oneLiner: copy`The applications registered for agents to drive, in the web's registry and in this ${term("runner", "runner")}'s own list.`,
+    // Each sentence is checked against the code: a runner on its own
+    // database keeps its own rows (`appRegistryStatus.ts`), and neither list
+    // is partitioned by project, so the lens reads neither
+    // (`appRegistryReadsOf`) — and a caption renders only while presenting.
+    whyItMatters: copy`An agent addresses an application by the id it is registered under, and a ${term("runner", "runner")} with its own database keeps its own list, so the two can differ. Neither list is kept per project, so neither is read while presenting.`,
   },
   "ui-bridge.spec-graph": {
     title: "Screens and states",
     oneLiner:
       "The screens an application declares, and the states and transitions on each of them.",
-    whyItMatters:
-      "The model is extracted from the application's own source rather than drawn by hand, so it changes when the code changes and an agent can work out a route through the interface before it touches anything.",
+    // What the panel reads (`spec/list`, `spec/graph`), not how the model was
+    // made: a spec can be hand-authored, generated or migrated, and the page
+    // shows none of that provenance.
+    whyItMatters: copy`The ${term("runner", "runner")} keeps this model of the application on disk and reads it without running the application, so an agent can work out a route through the interface before it touches anything.`,
   },
   "ui-bridge.snapshot": {
     title: "Live element snapshot",
@@ -44,7 +50,11 @@ export const UI_BRIDGE_CAPTIONS = {
   "ui-bridge.sdk-posture": {
     title: "Capabilities and trust",
     oneLiner: copy`Which UI Bridge capabilities this ${term("runner", "runner")} ships, and how strictly it checks who may register an application with it.`,
-    whyItMatters: copy`Every registration that reaches a ${term("runner", "runner")} through the cloud relay is checked against fixed rules, and these counters show each rule at work rather than asserting that it is.`,
+    // The binding guards the UI Bridge's registrant routes, which pages of
+    // any origin call on the runner directly — not the cloud relay this page
+    // reads over — and it may be enforcing, only counting, or off
+    // (qontinui-runner `mcp/relay_binding.rs` `BindingMode`).
+    whyItMatters: copy`Applications register with a ${term("runner", "runner")}'s UI Bridge from their own pages, and the ${term("runner", "runner")} can check who each registration comes from, so that only its maker, or the ${term("operator", "operator")}, may replace or remove it. These counters show what each rule did in the mode shown — refusing when it enforces, only counting when it shadows, nothing when it is off — rather than asserting that the checks are on.`,
   },
   "ui-bridge.component-actions": {
     title: "Controls and what they do",
