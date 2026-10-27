@@ -33,4 +33,9 @@ regexes = [
   '''AKIAIOSFODNN7EXAMPL2''',
   '''sk-abcdef1234567890''',
   '''MIIEpAIBAAKCAQEA7bq0\\nmoresecretbytes''',
+  # Planted fake fixture in backend/tests/test_secrets_broker_01_migration.py
+  # (`_TOKEN_LOWER`): a fabricated lowercase value-shaped token the migration's
+  # CHECK grammars are tested against. Matches only that literal. Same
+  # range-scan rationale as above.
+  '''kq3zt7mvx9wbn2plr8yhj4cswg6u''',
 ]
