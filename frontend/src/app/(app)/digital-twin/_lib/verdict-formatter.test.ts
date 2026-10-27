@@ -237,57 +237,60 @@ describe("summarizeVerdict — what a missing staleness means, by the door it ca
     provenance: "persisted_oplog",
   };
 
-  it("says a twin-door verdict without one was live: coord omits it on a live answer", () => {
+  it("says a twin-door verdict without one was live when read: coord omits it on a live answer", () => {
     for (const doorShape of [undefined, null, "verdict_wrapper"] as const) {
       const { prose, facts } = summarizeVerdict("outbound", NO_STALENESS, {
         doorShape,
       });
       expect(prose, String(doorShape)).toContain(
-        "data is live, read from persisted_oplog."
+        "its data was live when read, from persisted_oplog."
       );
-      expect(facts).toContainEqual({ label: "Freshness", value: "live" });
+      expect(facts).toContainEqual({
+        label: "Freshness when read",
+        value: "live",
+      });
     }
   });
 
-  it("says an envelope door's age is UNKNOWN, with why, in both wordings — never live", () => {
-    const now = summarizeVerdict("outbound", NO_STALENESS, {
+  it("says an envelope door's age is UNKNOWN, with why — never live", () => {
+    const { prose, facts } = summarizeVerdict("outbound", NO_STALENESS, {
       doorShape: "envelope",
     });
-    expect(now.prose).toBe(
-      "Outbound is classified “nominal”. Coverage 100%, credibility 95%, read from persisted_oplog; coord reported no age for this data, so its freshness is UNKNOWN."
-    );
-    expect(now.facts).toContainEqual({
-      label: "Freshness",
-      value: "UNKNOWN",
-      unknownReason: "coord reported no age for this data",
-    });
-    const then = summarizeVerdict("outbound", NO_STALENESS, {
-      doorShape: "envelope",
-      freshness: "when-read",
-    });
-    expect(then.prose).toBe(
+    expect(prose).toBe(
       "Outbound is classified “nominal”. Coverage 100%, credibility 95%, from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN."
     );
-    expect(then.facts).toContainEqual({
+    expect(facts).toContainEqual({
       label: "Freshness when read",
       value: "UNKNOWN",
       unknownReason: "coord reported no age for this data",
     });
-    for (const { prose } of [now, then]) {
-      expect(prose).not.toMatch(/\blive\b/);
-    }
+    expect(prose).not.toMatch(/\blive\b/);
   });
 
   it("takes an age an envelope door does report", () => {
     const { prose, facts } = summarizeVerdict(
       "outbound",
       { ...NO_STALENESS, staleness_seconds: 45 },
-      { doorShape: "envelope", freshness: "when-read" }
+      { doorShape: "envelope" }
     );
     expect(prose).toContain("its data was 45s stale when read");
     expect(facts).toContainEqual({
       label: "Freshness when read",
       value: "45s stale",
     });
+  });
+});
+
+describe("summarizeVerdict — a staleness is the verdict's age when it was read", () => {
+  it("never words it as an age now: every summary is shown after its read", () => {
+    const { prose, facts } = summarizeVerdict(
+      "delivery",
+      deliveryVerdict("none", { status: "shipped", prs: [] }),
+      {}
+    );
+    expect(prose).toContain("its data was 0s stale when read, from join:live.");
+    expect(prose).not.toMatch(/data is \d|data is live/);
+    expect(facts.map((f) => f.label)).toContain("Freshness when read");
+    expect(facts.map((f) => f.label)).not.toContain("Freshness");
   });
 });

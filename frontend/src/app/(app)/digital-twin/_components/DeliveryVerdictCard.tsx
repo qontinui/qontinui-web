@@ -23,10 +23,16 @@ import {
 } from "@/components/presentation";
 import { useDeliveryVerdict } from "../_hooks/useDeliveryVerdict";
 import { isRetiredCitation } from "../_lib/delivery-citations";
+import { RETAINED_LEAD } from "../_lib/drawer-reading";
 import { failureTail } from "../_lib/failure-text";
 import { presentedPlanStatus } from "../_lib/twin-plans";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
-import { formatRatio, formatStaleness } from "../_lib/status-presentation";
+import {
+  formatRatio,
+  formatReadingAge,
+  formatStalenessWhenRead,
+  readingAge,
+} from "../_lib/status-presentation";
 import type {
   DeliveryAnchorKind,
   DeliveryComponents,
@@ -57,6 +63,14 @@ import type {
  * target render only when they are provably first-party (a PR loses its
  * outbound link otherwise, since the URL names its repository), and the raw
  * JSON is `OperatorOnly`.
+ *
+ * The verdict stays on screen after it is read, so its staleness, and each
+ * deploy observation's, is worded as of that read ("45s stale when read"),
+ * and the `Provenance` chip says when that was. A verdict react-query keeps
+ * after its latest read failed (a refetch on reconnect) is the last one read:
+ * the failure leads, and the verdict is introduced as the last read (style
+ * guide R6, §6.5). Its facts name the data's own source "Data source", since
+ * the chip's "source:" names who read it: one label, one referent.
  */
 
 /** Visual vocabulary for the canonical delivery drift classes. */
@@ -259,7 +273,7 @@ function EnvRow({ env }: { env: DeliveryEnv }) {
       <span className="shrink-0 text-xs text-muted-foreground">
         {env.drift_class ?? "—"}
         {env.observed_age_seconds !== null
-          ? ` · ${formatStaleness(env.observed_age_seconds)}`
+          ? ` · ${formatStalenessWhenRead(env.observed_age_seconds)}`
           : ""}
       </span>
     </li>
@@ -382,6 +396,16 @@ export function DeliveryVerdictCard() {
 
       {verdict && summary && (
         <div className="mt-4 space-y-3 text-sm">
+          {isError && (
+            // React-query keeps the verdict when a refetch fails: the
+            // failure above leads, and this is the last verdict read.
+            <p
+              data-testid="delivery-verdict-retained"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {RETAINED_LEAD}
+            </p>
+          )}
           <div
             data-testid="delivery-verdict-envelope"
             className="flex items-center gap-2"
@@ -397,7 +421,7 @@ export function DeliveryVerdictCard() {
               </span>
             )}
             <span className="ml-auto text-xs text-muted-foreground">
-              {formatStaleness(verdict.staleness_seconds)}
+              {formatStalenessWhenRead(verdict.staleness_seconds)}
             </span>
             <Provenance
               source="coord's delivery verdict"
@@ -457,10 +481,15 @@ export function DeliveryVerdictCard() {
             <Fact label="Coverage" value={formatRatio(verdict.coverage)} />
             <Fact label="Credibility" value={formatRatio(verdict.credibility)} />
             <Fact
-              label="Freshness"
-              value={formatStaleness(verdict.staleness_seconds)}
+              label="Freshness when read"
+              value={formatReadingAge(
+                readingAge(verdict.staleness_seconds, "verdict_wrapper")
+              )}
             />
-            <Fact label="Source" value={verdict.provenance ?? "—"} />
+            {/* "Data source", not "Source": beside the provenance chip,
+                whose own "source:" names who read it, one label names one
+                thing. */}
+            <Fact label="Data source" value={verdict.provenance ?? "—"} />
           </dl>
 
           <OperatorOnly>

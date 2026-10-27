@@ -11,6 +11,11 @@
  * The verdict is the page's own Spec CI stub with three cited PRs (one
  * first-party, one foreign, one with coord's bare repository name) and two
  * deploy targets (one first-party, one foreign) put in its place.
+ *
+ * In both modes the card's sentences hold after the read they describe: a
+ * staleness is the verdict's when read, the data's own source is not labelled
+ * like the chip's reader, and a verdict kept after a failed read is the last
+ * one read.
  */
 
 import { readFileSync } from "node:fs";
@@ -31,19 +36,25 @@ const state = vi.hoisted(() => ({
   verdict: undefined as unknown,
   /** When set, a lookup fails with this error instead of answering. */
   error: null as unknown,
+  /**
+   * With `error` set: react-query still holds the verdict an earlier read
+   * returned, as it does when a refetch fails.
+   */
+  retained: false,
 }));
 
 vi.mock("../_hooks/useDeliveryVerdict", () => ({
   useDeliveryVerdict: (slug: string) => {
     const asked = slug.trim() !== "";
     const failed = asked && state.error !== null;
+    const held = asked && (!failed || state.retained);
     return {
-      data: asked && !failed ? state.verdict : undefined,
+      data: held ? state.verdict : undefined,
       isLoading: false,
       isError: failed,
       error: failed ? state.error : null,
       isFetching: false,
-      dataUpdatedAt: asked && !failed ? Date.parse("2026-10-23T12:00:00Z") : 0,
+      dataUpdatedAt: held ? Date.parse("2026-10-23T12:00:00Z") : 0,
     };
   },
 }));
@@ -132,6 +143,7 @@ function envTargets(): string[] {
 beforeEach(() => {
   state.verdict = verdict();
   state.error = null;
+  state.retained = false;
 });
 
 /** A host and a client named only in the upstream error body. */
@@ -299,5 +311,98 @@ describe("DeliveryVerdictCard — coord's unit status and internal id", () => {
     const fact = screen.getByText("Plan").closest("div")!;
     expect(fact).toHaveTextContent(/^Plan\s*—$/);
     expectPresentationSafe(view, { forbidden: [PLAN_ID] });
+  });
+});
+
+describe("DeliveryVerdictCard — what it says of a read, after that read", () => {
+  /** Each mode's render of the card, with a verdict looked up. */
+  const MODES = [
+    [
+      "operator",
+      () => {
+        render(<DeliveryVerdictCard />, { wrapper: WithBridge });
+        return null;
+      },
+    ],
+    [
+      "presenting",
+      () => renderInPresentationMode(<DeliveryVerdictCard />, { scope: SCOPE }),
+    ],
+  ] as const;
+
+  /** The value of the fact labelled exactly `label`, or `null` without one. */
+  function fact(label: string): string | null {
+    const dt = [...document.querySelectorAll("dt")].find(
+      (el) => el.textContent === label
+    );
+    return dt?.nextElementSibling?.textContent ?? null;
+  }
+
+  for (const [mode, renderCard] of MODES) {
+    it(`words each staleness as of its read, never as an age now · ${mode}`, async () => {
+      (state.verdict as DeliveryVerdictResponse).verdict.staleness_seconds = 45;
+      const view = renderCard();
+      await lookUp();
+      const envelope = screen.getByTestId("delivery-verdict-envelope");
+      expect(envelope).toHaveTextContent("45s stale when read");
+      expect(document.body).toHaveTextContent(
+        "its data was 45s stale when read, from coord_delivery_join_live."
+      );
+      expect(fact("Freshness when read")).toBe("45s stale");
+      expect(fact("Freshness")).toBeNull();
+      // Each deploy observation's age, as of the same read.
+      for (const row of screen.getAllByTestId("delivery-env-target")) {
+        expect(row.closest("li")).toHaveTextContent("30s stale when read");
+      }
+      expect(document.body.textContent).not.toMatch(/data is \d|data is live/);
+      if (view) expectPresentationSafe(view);
+    });
+
+    it(`says a verdict computed live was live when read · ${mode}`, async () => {
+      // coord omits a DriftVerdict's staleness on an answer it computed live.
+      delete (state.verdict as DeliveryVerdictResponse).verdict
+        .staleness_seconds;
+      const view = renderCard();
+      await lookUp();
+      expect(screen.getByTestId("delivery-verdict-envelope")).toHaveTextContent(
+        "live when read"
+      );
+      expect(fact("Freshness when read")).toBe("live");
+      if (view) expectPresentationSafe(view);
+    });
+
+    it(`labels the data's own source apart from the chip that names its reader · ${mode}`, async () => {
+      const view = renderCard();
+      await lookUp();
+      expect(fact("Data source")).toBe("coord_delivery_join_live");
+      expect(fact("Source")).toBeNull();
+      if (view) expectPresentationSafe(view);
+    });
+
+    it(`introduces a verdict kept after a failed read as the last one read, the failure first · ${mode}`, async () => {
+      state.error = LEAKY;
+      state.retained = true;
+      const view = renderCard();
+      await lookUp();
+      const failure = screen.getByTestId("delivery-verdict-error");
+      const lead = screen.getByTestId("delivery-verdict-retained");
+      const envelope = screen.getByTestId("delivery-verdict-envelope");
+      expect(lead).toHaveTextContent(/^As last read, before that failure:$/);
+      // The failure leads, then the lead, then the verdict it introduces.
+      expect(
+        failure.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(
+        lead.compareDocumentPosition(envelope) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      if (view) expectPresentationSafe(view, { forbidden: [HOST, "acme"] });
+    });
+  }
+
+  it("has no lead line over a verdict the latest read returned", async () => {
+    render(<DeliveryVerdictCard />, { wrapper: WithBridge });
+    await lookUp();
+    expect(screen.queryByTestId("delivery-verdict-retained")).toBeNull();
   });
 });

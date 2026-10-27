@@ -246,10 +246,7 @@ function verdictReading(
   doorShape: DoorShape,
   read: Pick<DrawerReading, "retained" | "source" | "asOf">
 ): DrawerReading {
-  const summary = summarizeVerdict(subspaceId, verdict, {
-    freshness: "when-read",
-    doorShape,
-  });
+  const summary = summarizeVerdict(subspaceId, verdict, { doorShape });
   return {
     ...read,
     prose: summary.prose,

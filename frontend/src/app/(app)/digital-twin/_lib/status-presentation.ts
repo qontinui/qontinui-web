@@ -269,12 +269,29 @@ export function formatReadingAge(age: ReadingAge): string {
 }
 
 /**
- * A DriftVerdict's own staleness in words, where a missing one is "live"
- * (coord's contract, {@link readingAge}). A reading whose door may not answer
- * with a DriftVerdict goes through {@link readingAge} instead.
+ * A {@link ReadingAge} as of when it was read: "45s stale when read", "live
+ * when read", or "UNKNOWN".
+ *
+ * A reading's own staleness is its age at the moment it was read, never its
+ * age now. Every reading on this page is shown some time after that moment:
+ * the backend caches the probe's answer for up to 30 s, react-query holds it
+ * between refetches, and keeps it after a failed one; a delivery verdict stays
+ * on screen until the next lookup. So "45s stale" alone would claim an age
+ * the reading no longer has. The time since the read is what its as-of says.
  */
-export function formatStaleness(seconds: number | null | undefined): string {
-  return formatReadingAge(readingAge(seconds, "verdict_wrapper"));
+export function formatAgeWhenRead(age: ReadingAge): string {
+  return age === null ? "UNKNOWN" : `${formatReadingAge(age)} when read`;
+}
+
+/**
+ * A DriftVerdict's own staleness as of when it was read, where a missing one
+ * is "live when read" (coord's contract, {@link readingAge}). A reading whose
+ * door may not answer with a DriftVerdict goes through {@link readingAge}.
+ */
+export function formatStalenessWhenRead(
+  seconds: number | null | undefined
+): string {
+  return formatAgeWhenRead(readingAge(seconds, "verdict_wrapper"));
 }
 
 export function formatRatio(value: number | null | undefined): string {

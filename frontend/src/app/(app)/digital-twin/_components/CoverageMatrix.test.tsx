@@ -266,6 +266,20 @@ describe("CoverageMatrix joined to coord's catalog", () => {
             drift_class: "none",
           },
         },
+        // A twin-door verdict that reports its staleness: 45s when read.
+        release: {
+          id: "release",
+          status: "implemented",
+          door_shape: "verdict_wrapper",
+          metrics: {
+            coverage: 1,
+            credibility: 0.9,
+            posterior: 0.9,
+            staleness_seconds: 45,
+            provenance: "ecs_describe_tasks",
+            drift_class: "none",
+          },
+        },
         worktree: { id: "worktree", status: "served", door_shape: "report" },
       })
     );
@@ -276,13 +290,16 @@ describe("CoverageMatrix joined to coord's catalog", () => {
     // The same missing staleness reads two ways, by the door it came from:
     // the envelope door reported no age (UNKNOWN, on the floor), while the
     // twin door's verdict was computed live.
-    const age = (cell: HTMLElement) =>
-      cell.querySelector('[title="staleness"]')?.textContent;
-    expect(age(outbound)).toBe("age UNKNOWN");
-    expect(
-      screen.getByTestId("digital-twin-cell-outbound-age-unknown")
-    ).toContainElement(within(outbound).getByText("UNKNOWN"));
-    expect(age(screen.getByTestId("digital-twin-cell-schema"))).toBe("live");
+    const age = (id: string) =>
+      screen.getByTestId(`digital-twin-cell-${id}-age`).textContent;
+    expect(age("outbound")).toBe("age UNKNOWN");
+    expect(screen.getByTestId("digital-twin-cell-outbound-age")).toContainElement(
+      within(outbound).getByText("UNKNOWN")
+    );
+    // An age the cell shows is the reading's when it was read, never an age
+    // now: the cell shows the probe's answer some time after that read.
+    expect(age("schema")).toBe("live when read");
+    expect(age("release")).toBe("45s stale when read");
     const worktree = screen.getByTestId("digital-twin-cell-worktree");
     expect(worktree).toHaveTextContent("Served");
     expect(worktree).not.toHaveTextContent("Partial");

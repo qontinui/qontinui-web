@@ -5,8 +5,8 @@ import { NAVIGATION_ONLY_PROPS } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import {
   UNREPORTED_AGE,
+  formatAgeWhenRead,
   formatRatio,
-  formatReadingAge,
   presentStatus,
   readingAge,
   upperFirst,
@@ -36,8 +36,10 @@ interface SubspaceCellProps {
  * One sub-space tile. Shows the symbol, name, twin and status; for live-probed
  * observers it also surfaces the credibility envelope (coverage /
  * credibility / staleness) — the goal-#3/#4 usefulness+accuracy signal —
- * verbatim from coord. A staleness its door did not report (the envelope
- * door's) is "age UNKNOWN", never "live" (`readingAge`). A press only opens
+ * verbatim from coord. The staleness is the reading's age when it was read
+ * ("45s stale when read"), never an age now: the cell shows the probe's answer
+ * some time after it was read. A staleness its door did not report (the
+ * envelope door's) is "age UNKNOWN", never "live" (`readingAge`). A press only opens
  * the read-only detail drawer, so the tile is navigation-only and stays live
  * in presentation mode.
  */
@@ -108,14 +110,16 @@ export function SubspaceCell({
           </span>
           {age === null ? (
             <span
-              title="staleness"
-              data-testid={`${id}-age-unknown`}
+              title="staleness when read"
+              data-testid={`${id}-age`}
               className="flex items-center gap-1"
             >
               age <UnknownBadge title={`${upperFirst(UNREPORTED_AGE)}.`} />
             </span>
           ) : (
-            <span title="staleness">{formatReadingAge(age)}</span>
+            <span title="staleness when read" data-testid={`${id}-age`}>
+              {formatAgeWhenRead(age)}
+            </span>
           )}
         </div>
       )}

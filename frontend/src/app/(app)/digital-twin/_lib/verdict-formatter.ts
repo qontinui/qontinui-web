@@ -70,14 +70,6 @@ export interface SummaryOptions {
    */
   readonly statusWord?: (status: string) => string;
   /**
-   * How the verdict's own staleness is worded. `present` (the default): "data
-   * is 30s stale" — for a verdict read just now. `when-read`: "its data was
-   * 30s stale when read" — for a reading shown beside the time it was read,
-   * which may be minutes ago (a cached answer, or the last one kept after a
-   * failed read): its staleness then is not its age now.
-   */
-  readonly freshness?: "present" | "when-read";
-  /**
    * The shape of the door the verdict was read from; by default coord's twin
    * door, whose answer is a DriftVerdict. An `envelope` door's answer is not
    * one and reports no age, so its freshness is UNKNOWN, never "live"
@@ -190,23 +182,19 @@ export interface VerdictSummary {
   facts: VerdictFact[];
 }
 
-/** The sentence on the verdict's trust, freshness and source. */
-function trustSentence(
-  verdict: DriftVerdict,
-  age: ReadingAge,
-  whenRead: boolean
-): string {
+/**
+ * The sentence on the verdict's trust, freshness and source. The staleness is
+ * the verdict's age when it was read, never its age now: every summary is
+ * shown beside, or after, the time it was read — a cached answer, one kept
+ * after a failed read, or a lookup left on screen (`formatAgeWhenRead`).
+ */
+function trustSentence(verdict: DriftVerdict, age: ReadingAge): string {
   const trust = trustPhrase(verdict);
   const provenance = verdict.provenance ?? "unknown source";
   if (age === null) {
-    return whenRead
-      ? `${trust}, from ${provenance}; ${UNREPORTED_AGE}, so its freshness when read is UNKNOWN.`
-      : `${trust}, read from ${provenance}; ${UNREPORTED_AGE}, so its freshness is UNKNOWN.`;
+    return `${trust}, from ${provenance}; ${UNREPORTED_AGE}, so its freshness when read is UNKNOWN.`;
   }
-  const fresh = formatReadingAge(age);
-  return whenRead
-    ? `${trust}; its data was ${fresh} when read, from ${provenance}.`
-    : `${trust}; data is ${fresh}, read from ${provenance}.`;
+  return `${trust}; its data was ${formatReadingAge(age)} when read, from ${provenance}.`;
 }
 
 export function summarizeVerdict(
@@ -218,11 +206,10 @@ export function summarizeVerdict(
   const drift = driftClassPhrase(verdict.drift_class);
   const age = readingAge(verdict.staleness_seconds, options.doorShape);
   const provenance = verdict.provenance ?? "unknown source";
-  const whenRead = options.freshness === "when-read";
 
   const sentences = [
     `${capitalize(name)} is ${drift}.`,
-    trustSentence(verdict, age, whenRead),
+    trustSentence(verdict, age),
   ];
   const extra = instanceClause(verdict, options);
   if (extra) sentences.push(extra);
@@ -232,7 +219,7 @@ export function summarizeVerdict(
     { label: "Coverage", value: formatRatio(verdict.coverage) },
     { label: "Credibility", value: formatRatio(verdict.credibility) },
     {
-      label: whenRead ? "Freshness when read" : "Freshness",
+      label: "Freshness when read",
       value: formatReadingAge(age),
       ...(age === null ? { unknownReason: UNREPORTED_AGE } : {}),
     },

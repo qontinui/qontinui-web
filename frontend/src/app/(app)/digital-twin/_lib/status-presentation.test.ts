@@ -5,9 +5,10 @@ import { manifest } from "./resolve";
 import {
   RESTRICTED_COUNT_MEANING,
   STATUS_STYLES,
+  formatAgeWhenRead,
   formatRatio,
   formatReadingAge,
-  formatStaleness,
+  formatStalenessWhenRead,
   pageAccessLabel,
   presentStatus,
   readingAge,
@@ -228,13 +229,20 @@ describe("readingAge — how old a reading was when read, as its door reports it
     expect(readingAge(Number.POSITIVE_INFINITY, null)).toBeNull();
   });
 
-  it("words each age, UNKNOWN included, and a DriftVerdict's as before", () => {
+  it("words each age, UNKNOWN included", () => {
     expect(formatReadingAge(null)).toBe("UNKNOWN");
     expect(formatReadingAge("live")).toBe("live");
     expect(formatReadingAge(45)).toBe("45s stale");
     expect(formatReadingAge(600)).toBe("10m stale");
     expect(formatReadingAge(7200)).toBe("2h stale");
-    expect(formatStaleness(null)).toBe("live");
-    expect(formatStaleness(30)).toBe("30s stale");
+  });
+
+  it("words an age shown after its read as of that read, never as an age now", () => {
+    expect(formatAgeWhenRead(45)).toBe("45s stale when read");
+    expect(formatAgeWhenRead("live")).toBe("live when read");
+    expect(formatAgeWhenRead(null)).toBe("UNKNOWN");
+    // A DriftVerdict's: a missing staleness was live when it was read.
+    expect(formatStalenessWhenRead(null)).toBe("live when read");
+    expect(formatStalenessWhenRead(30)).toBe("30s stale when read");
   });
 });
