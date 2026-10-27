@@ -1,7 +1,7 @@
 /** Shared visual vocabulary for cell statuses — colors + human labels. */
 
 import { UNKNOWN_AMBER } from "@/components/console/statusRow";
-import type { AskVia, CellStatus, ResolvedSubspace } from "./types";
+import type { AskVia, CellStatus, DoorShape, ResolvedSubspace } from "./types";
 
 /** A reason as the start of a sentence: its first letter capitalised. */
 export function upperFirst(text: string): string {
@@ -226,11 +226,55 @@ export const COUNT_FILLS = {
   claim: "bg-indigo-300 dark:bg-indigo-700",
 } as const;
 
+/**
+ * How old a reading was when it was read, as its door reports it: seconds
+ * stale; `"live"`; or `null` — UNKNOWN, because the door reported no age.
+ *
+ * `"live"` is coord's meaning for a missing `staleness_seconds` on a
+ * DriftVerdict, and only there: the verdict carries it "when the answer came
+ * from a cached fallback", and omits it "on a fresh live answer"
+ * (`twin_verdict.rs`). An `envelope` door's answer is NOT a DriftVerdict. The
+ * admin outbound door (`OutboundBudgetResponse`, `outbound_budget_read.rs`)
+ * has no top-level `staleness_seconds` at all, since each bucket carries its
+ * own age. A missing age there means nothing was reported. It is UNKNOWN,
+ * never live (`verification-and-evidence`
+ * `unknown-must-not-render-as-a-default`). Every other door shape is read as
+ * the backend reads it, as a DriftVerdict.
+ *
+ * A number that is not finite is no age either; JSON cannot carry one.
+ */
+export type ReadingAge = number | "live" | null;
+
+/** A reading's {@link ReadingAge}, from what its door is and what it carried. */
+export function readingAge(
+  stalenessSeconds: number | null | undefined,
+  doorShape: DoorShape | null | undefined
+): ReadingAge {
+  if (stalenessSeconds === null || stalenessSeconds === undefined) {
+    return doorShape === "envelope" ? null : "live";
+  }
+  return Number.isFinite(stalenessSeconds) ? stalenessSeconds : null;
+}
+
+/** Why a reading's age is UNKNOWN, as the sentences about it say. */
+export const UNREPORTED_AGE = "coord reported no age for this data";
+
+/** A {@link ReadingAge} in words: "45s stale", "live" or "UNKNOWN". */
+export function formatReadingAge(age: ReadingAge): string {
+  if (age === null) return "UNKNOWN";
+  if (age === "live") return "live";
+  if (age < 60) return `${age}s stale`;
+  if (age < 3600) return `${Math.round(age / 60)}m stale`;
+  return `${Math.round(age / 3600)}h stale`;
+}
+
+/**
+ * A DriftVerdict's own staleness in words, where a missing one is "live"
+ * (coord's contract, {@link readingAge}). A reading whose door may not answer
+ * with a DriftVerdict goes through {@link readingAge} instead.
+ */
 export function formatStaleness(seconds: number | null | undefined): string {
-  if (seconds === null || seconds === undefined) return "live";
-  if (seconds < 60) return `${seconds}s stale`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m stale`;
-  return `${Math.round(seconds / 3600)}h stale`;
+  return formatReadingAge(readingAge(seconds, "verdict_wrapper"));
 }
 
 export function formatRatio(value: number | null | undefined): string {

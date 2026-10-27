@@ -70,7 +70,11 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 
 import { manifest } from "../_lib/resolve";
 import { COUNT_FILLS } from "../_lib/status-presentation";
-import { MANIFEST_SNAPSHOT_IDS, catalogDeclaring } from "../_lib/test-catalog";
+import {
+  MANIFEST_SNAPSHOT_IDS,
+  catalogDeclaring,
+  outboundEnvelope,
+} from "../_lib/test-catalog";
 import { CoverageMatrix } from "./CoverageMatrix";
 
 const SNAPSHOT_IDS = manifest.subspaces
@@ -240,16 +244,25 @@ describe("CoverageMatrix joined to coord's catalog", () => {
     state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
     setProbe(
       probesFor(MANIFEST_SNAPSHOT_IDS, {
+        // coord's admin outbound door as it really answers: buckets
+        // observed, and no age reported.
         outbound: {
           id: "outbound",
-          status: "partial",
+          status: "implemented",
           door_shape: "envelope",
+          metrics: outboundEnvelope("burning"),
+        },
+        // A twin-door verdict that omits its staleness: computed live.
+        schema: {
+          id: "schema",
+          status: "implemented",
+          door_shape: "verdict_wrapper",
           metrics: {
-            coverage: 0.6,
-            credibility: 0.9,
-            posterior: null,
+            coverage: 1,
+            credibility: 0.95,
+            posterior: 0.9,
             staleness_seconds: null,
-            provenance: "outbound_budget_observations",
+            provenance: "alembic_graph",
             drift_class: "none",
           },
         },
@@ -258,8 +271,18 @@ describe("CoverageMatrix joined to coord's catalog", () => {
     );
     render(<CoverageMatrix />);
     const outbound = screen.getByTestId("digital-twin-cell-outbound");
-    expect(outbound).toHaveTextContent("Partial");
-    expect(outbound).toHaveTextContent("cov 60%");
+    expect(outbound).toHaveTextContent("Live");
+    expect(outbound).toHaveTextContent("cov 100%");
+    // The same missing staleness reads two ways, by the door it came from:
+    // the envelope door reported no age (UNKNOWN, on the floor), while the
+    // twin door's verdict was computed live.
+    const age = (cell: HTMLElement) =>
+      cell.querySelector('[title="staleness"]')?.textContent;
+    expect(age(outbound)).toBe("age UNKNOWN");
+    expect(
+      screen.getByTestId("digital-twin-cell-outbound-age-unknown")
+    ).toContainElement(within(outbound).getByText("UNKNOWN"));
+    expect(age(screen.getByTestId("digital-twin-cell-schema"))).toBe("live");
     const worktree = screen.getByTestId("digital-twin-cell-worktree");
     expect(worktree).toHaveTextContent("Served");
     expect(worktree).not.toHaveTextContent("Partial");
@@ -273,13 +296,16 @@ describe("CoverageMatrix joined to coord's catalog", () => {
       "1 served (a report, not graded)"
     );
     // The outbound drawer shows the envelope the probe carried: there is no
-    // twin-door raw read for an admin door.
+    // twin-door raw read for an admin door. Its age is UNKNOWN there too.
     fireEvent.click(outbound);
     const drawer = within(screen.getByRole("dialog"));
     expect(drawer.getByTestId("digital-twin-drawer-summary")).toHaveTextContent(
-      "Coverage 60%, credibility 90%"
+      "Coverage 100%, credibility 95%, from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN."
     );
     expect(drawer.getByText("Live credibility envelope")).toBeInTheDocument();
+    expect(
+      drawer.getByText("Freshness when read").parentElement
+    ).toHaveTextContent(/^Freshness when readUNKNOWN$/);
   });
 
   it("names a probe coord declares that the manifest has no row for", () => {
@@ -507,10 +533,12 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
       setProbe(
         probesFor(MANIFEST_SNAPSHOT_IDS, {
+          // The backend's cell for a door that failed (`_probe_subspace`).
           outbound: {
             id: "outbound",
             status: "error",
-            error: "http_500",
+            error: "coord_tool_failed",
+            http_status: 500,
             door_shape: "envelope",
           },
         })
@@ -613,13 +641,18 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       state.raw = { schema: { isLoading: true } };
       render(<CoverageMatrix />);
       const drawer = openSchema();
+      // The Summary names whose read is in flight: the drawer's, not the
+      // probe's the Status speaks for.
       expect(
         within(drawer).getByTestId("digital-twin-drawer-summary")
-      ).toHaveTextContent("Reading the observer…");
+      ).toHaveTextContent(
+        "This drawer's own read of the observer is in flight…"
+      );
       expect(drawer).toHaveTextContent(
         "Coord's live probe could not be read (HTTP 502), so there is no current reading of this observer"
       );
-      expect(drawer.textContent).not.toMatch(/drawer's own read/);
+      // The Status points at no reading the drawer does not have.
+      expect(drawer.textContent).not.toMatch(/this drawer's own read of it/i);
     });
 
     it("still says there is no current reading when its own read failed too", () => {
@@ -635,13 +668,16 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       };
       render(<CoverageMatrix />);
       const drawer = openSchema();
+      // Two failed reads, and each sentence says which one it is about.
       expect(
         within(drawer).getByTestId("digital-twin-drawer-read-error")
-      ).toBeInTheDocument();
+      ).toHaveTextContent(
+        "This drawer's own read of the live verdict failed: GET /api/v1/digital-twin/subspace/schema/raw failed: 502 - upstream."
+      );
       expect(drawer).toHaveTextContent(
         "Coord's live probe could not be read (HTTP 502), so there is no current reading of this observer"
       );
-      expect(drawer.textContent).not.toMatch(/drawer's own read/);
+      expect(drawer.textContent).not.toMatch(/this drawer's own read of it/i);
       expect(
         within(drawer).queryByText("Live credibility envelope")
       ).toBeNull();
@@ -746,19 +782,12 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
  * drawer left open across an answer must say what that answer says.
  */
 describe("CoverageMatrix's open drawer follows the probe", () => {
-  /** The outbound envelope door answering partial, with its envelope. */
-  const OUTBOUND_PARTIAL: SubspaceProbe = {
+  /** The outbound envelope door's answer, as coord really sends it. */
+  const OUTBOUND_ANSWER: SubspaceProbe = {
     id: "outbound",
-    status: "partial",
+    status: "implemented",
     door_shape: "envelope",
-    metrics: {
-      coverage: 0.6,
-      credibility: 0.9,
-      posterior: null,
-      staleness_seconds: null,
-      provenance: "outbound_budget_observations",
-      drift_class: "none",
-    },
+    metrics: outboundEnvelope("nominal"),
   };
 
   it("moves from Probing… to the answer when the probe answers while it is open", () => {
@@ -779,19 +808,19 @@ describe("CoverageMatrix's open drawer follows the probe", () => {
       within(before).queryByTestId("digital-twin-drawer-summary")
     ).toBeNull();
 
-    setProbe(probesFor(MANIFEST_SNAPSHOT_IDS, { outbound: OUTBOUND_PARTIAL }));
+    setProbe(probesFor(MANIFEST_SNAPSHOT_IDS, { outbound: OUTBOUND_ANSWER }));
     view.rerender(<CoverageMatrix />);
 
     // Still open, and saying what the cell beneath it now says.
     expect(screen.getByTestId("digital-twin-cell-outbound")).toHaveTextContent(
-      "Partial"
+      "Live"
     );
     const after = screen.getByRole("dialog");
-    expect(statusOf(after)).toHaveTextContent("Partial");
+    expect(statusOf(after)).toHaveTextContent("Live");
     expect(statusOf(after)).not.toHaveTextContent("Probing…");
     expect(
       within(after).getByTestId("digital-twin-drawer-summary")
-    ).toHaveTextContent("Coverage 60%, credibility 90%");
+    ).toHaveTextContent("Coverage 100%, credibility 95%");
     expect(
       within(after).getByText("Live credibility envelope")
     ).toBeInTheDocument();

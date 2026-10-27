@@ -40,11 +40,12 @@ import {
 import { drawerStatusAsOf, presentDrawerStatus } from "../_lib/drawer-status";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import type { ProbeAttempt } from "../_lib/probe-read";
-import { pageAccessLabel } from "../_lib/status-presentation";
+import { pageAccessLabel, upperFirst } from "../_lib/status-presentation";
 import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
 import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
 import { workUnitHref } from "../_lib/twin-plans";
 import type { ResolvedSubspace } from "../_lib/types";
+import { UnknownBadge } from "./FidelityFigures";
 
 interface SubspaceDetailProps {
   row: ResolvedSubspace | null;
@@ -116,7 +117,8 @@ function SummaryLine({ line }: { line: DrawerLine }) {
  *   JSON an AI agent receives, summarized; for the admin outbound budget, an
  *   `envelope` door off the twin door, the probe's answer for the row, once
  *   there is one. Each reading is dated by when it was read, and its
- *   staleness is its staleness then. One kept after a failed read leads with
+ *   staleness is its staleness then — UNKNOWN for the envelope door, which
+ *   reports no age (never "live"). One kept after a failed read leads with
  *   that failure, is introduced as the last one read, and its envelope is
  *   never headed "Live". With no reading the Summary says why (not made, in
  *   flight, failed), and an envelope door with no probe answer has none.
@@ -341,7 +343,17 @@ export function SubspaceDetail({
                 {reading.envelope.heading}
               </p>
               {reading.envelope.facts.map((f) => (
-                <Field key={f.label} label={f.label} value={f.value} />
+                <Field
+                  key={f.label}
+                  label={f.label}
+                  value={
+                    f.unknownReason !== undefined ? (
+                      <UnknownBadge title={`${upperFirst(f.unknownReason)}.`} />
+                    ) : (
+                      f.value
+                    )
+                  }
+                />
               ))}
             </>
           )}

@@ -4,11 +4,15 @@ import { useUIElement } from "@qontinui/ui-bridge/react";
 import { NAVIGATION_ONLY_PROPS } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import {
+  UNREPORTED_AGE,
   formatRatio,
-  formatStaleness,
+  formatReadingAge,
   presentStatus,
+  readingAge,
+  upperFirst,
 } from "../_lib/status-presentation";
 import type { ResolvedSubspace } from "../_lib/types";
+import { UnknownBadge } from "./FidelityFigures";
 
 interface SubspaceCellProps {
   row: ResolvedSubspace;
@@ -32,8 +36,10 @@ interface SubspaceCellProps {
  * One sub-space tile. Shows the symbol, name, twin and status; for live-probed
  * observers it also surfaces the credibility envelope (coverage /
  * credibility / staleness) — the goal-#3/#4 usefulness+accuracy signal —
- * verbatim from coord. A press only opens the read-only detail drawer, so the
- * tile is navigation-only and stays live in presentation mode.
+ * verbatim from coord. A staleness its door did not report (the envelope
+ * door's) is "age UNKNOWN", never "live" (`readingAge`). A press only opens
+ * the read-only detail drawer, so the tile is navigation-only and stays live
+ * in presentation mode.
  */
 export function SubspaceCell({
   row,
@@ -43,6 +49,9 @@ export function SubspaceCell({
 }: SubspaceCellProps) {
   const style = presentStatus(row);
   const metrics = row.liveProbed ? row.metrics : undefined;
+  const age = metrics
+    ? readingAge(metrics.staleness_seconds, row.doorShape)
+    : null;
   const id = uiId ?? `digital-twin-cell-${row.id}`;
 
   // Register with the UI Bridge so the cell is discoverable + clickable by a
@@ -97,9 +106,17 @@ export function SubspaceCell({
           <span title="credibility">
             cred {formatRatio(metrics.credibility)}
           </span>
-          <span title="staleness">
-            {formatStaleness(metrics.staleness_seconds)}
-          </span>
+          {age === null ? (
+            <span
+              title="staleness"
+              data-testid={`${id}-age-unknown`}
+              className="flex items-center gap-1"
+            >
+              age <UnknownBadge title={`${upperFirst(UNREPORTED_AGE)}.`} />
+            </span>
+          ) : (
+            <span title="staleness">{formatReadingAge(age)}</span>
+          )}
         </div>
       )}
     </button>

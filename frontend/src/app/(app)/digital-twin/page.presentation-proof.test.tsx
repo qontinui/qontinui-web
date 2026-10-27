@@ -599,7 +599,7 @@ describe("/digital-twin in presentation mode, when its sources fail", () => {
     expect(
       screen.getByTestId("digital-twin-drawer-read-error")
     ).toHaveTextContent(
-      "Could not read the live verdict or report (HTTP 502)."
+      "This drawer's own read of the live verdict or report failed (HTTP 502)."
     );
     expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
     await user.keyboard("{Escape}");

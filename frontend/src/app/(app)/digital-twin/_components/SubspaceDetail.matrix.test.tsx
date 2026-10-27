@@ -13,7 +13,11 @@
  *   failed; no reading — a failed read, a degraded answer (coord unreachable,
  *   coord's catalog unreadable), a read react-query holds (offline, or online
  *   with none in flight), a failed refresh over a degraded answer; and in
- *   flight.
+ *   flight. Each answer is the body its door really sends. The envelope
+ *   door's is coord's admin outbound body (`test-catalog.ts`
+ *   `outboundEnvelope`). Its coverage is exactly 1 or 0, so it answers
+ *   implemented or blind and never partial. It reports no age, so its
+ *   reading's freshness is UNKNOWN.
  * - **Axis B — the drawer's own raw read**, for a row on coord's twin door
  *   (`schema`, a verdict door; `worktree`, a report door): not made (online,
  *   offline), in flight, answered, FAILED with an earlier answer still held
@@ -30,19 +34,28 @@
  * - **Axis C — operator mode and presentation mode** (the page check runs on
  *   every presenting cell).
  *
- * Two pairs are left out because one browser cannot be in both states at
- * once: a probe held OFFLINE beside a drawer read held ONLINE, and the
- * reverse. Every other combination is a cell, and two rows the page does not
- * probe are checked under every kind of probe state.
+ * Only combinations that cannot occur are left out, for two reasons:
+ *
+ * - One browser has one online state. So there is no probe held OFFLINE
+ *   beside a drawer read held ONLINE, and no reverse of it.
+ * - coord's twin door never serves the envelope door. `outbound` is outside
+ *   its allow-set by design, so it answers 404 (`twin_routes.rs`,
+ *   `twin_probe_door.rs`). So when the envelope door's shape is unknown and
+ *   the drawer reads it raw, that read is only ever unmade, in flight or
+ *   failed. It has no answered or retained arm (`UNANSWERED_OWN_ARMS`).
+ *
+ * Every other combination is a cell, and two rows the page does not probe
+ * are checked under every kind of probe state.
  *
  * The expectations below are written out here, not imported from the
  * modules under test, so a sentence changed there is a sentence checked here.
  * What every cell checks, beyond its own expectations: no reading is aged by
- * its own staleness ("data is 30s stale"); "Live credibility envelope" heads
- * only a reading the latest read returned; "this drawer's own read of it"
- * appears only beside such a reading; "no current reading" never beside one;
- * a status is "Last answer: …" exactly when the probe's refresh failed over
- * it; and nothing points at a report the drawer does not show.
+ * its own staleness ("data is 30s stale"); a reading's freshness is what its
+ * door reported, so the envelope door's is never "live"; "Live credibility
+ * envelope" heads only a reading the latest read returned; "this drawer's own
+ * read of it" appears only beside such a reading; "no current reading" never
+ * beside one; a status is "Last answer: …" exactly when the probe's refresh
+ * failed over it; and nothing points at a report the drawer does not show.
  */
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
@@ -59,6 +72,7 @@ import type {
   SubspaceProbe,
   SubspacesProbeResponse,
   TwinCatalogResponse,
+  VerdictMetrics,
 } from "../_lib/types";
 
 /** What the drawer's raw read (`useSubspaceRaw`) holds for one sub-space. */
@@ -111,8 +125,13 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
   useUIElement: () => ({ ref: () => {} }),
 }));
 
+import { UNKNOWN_AMBER } from "@/components/console/statusRow";
 import { STATUS_STYLES } from "../_lib/status-presentation";
-import { MANIFEST_SNAPSHOT_IDS, catalogDeclaring } from "../_lib/test-catalog";
+import {
+  MANIFEST_SNAPSHOT_IDS,
+  catalogDeclaring,
+  outboundEnvelope,
+} from "../_lib/test-catalog";
 import { CoverageMatrix } from "./CoverageMatrix";
 
 // ---------------------------------------------------------------------------
@@ -169,13 +188,20 @@ interface Answer {
   readonly token?: string;
 }
 
-/** The metrics the backend grades each status from (`_classify`). */
-const metrics = (coverage: number | null, driftClass = "none") => ({
+/**
+ * The metrics the backend copies out of a twin-door DriftVerdict, from which
+ * it grades the status (`_classify`). Only the coverage reaches the drawer:
+ * a twin-door row's Summary is the drawer's own read.
+ */
+const verdictMetrics = (
+  coverage: number | null,
+  driftClass = "none"
+): VerdictMetrics => ({
   coverage,
-  credibility: 0.9,
-  posterior: null,
-  staleness_seconds: 45,
-  provenance: "outbound_budget_observations",
+  credibility: 0.95,
+  posterior: 0.9,
+  staleness_seconds: null,
+  provenance: "alembic_graph",
   drift_class: driftClass,
 });
 
@@ -184,8 +210,8 @@ const graded = (
   name: string,
   label: string,
   predicate: string,
-  cellMetrics: ReturnType<typeof metrics>,
-  envelopeProse: string
+  cellMetrics: VerdictMetrics,
+  envelopeProse?: string
 ): Answer => ({
   name,
   status,
@@ -195,27 +221,34 @@ const graded = (
     id,
     status,
     metrics: cellMetrics,
-    door_shape: id === "outbound" ? "envelope" : "verdict_wrapper",
+    door_shape: DOOR_SHAPE[id as Door],
   }),
   notAReading: false,
   envelopeProse,
 });
 
+const FOUND_FULL =
+  "found this observer answering with full coverage for this tenant.";
+const FOUND_BLIND =
+  "found this observer built but disabled or unconfigured for this tenant — not the same as unbuilt.";
+/** What the envelope door's answer says of its age: it reports none. */
+const NO_AGE =
+  "from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN.";
+
+/** The twin door's verdicts, which `schema` answers with. */
 const IMPLEMENTED = graded(
   "implemented",
   "implemented",
   "Live",
-  "found this observer answering with full coverage for this tenant.",
-  metrics(1),
-  "Outbound is in sync — declared matches actual. Coverage 100%, credibility 90%; its data was 45s stale when read, from outbound_budget_observations."
+  FOUND_FULL,
+  verdictMetrics(1)
 );
 const PARTIAL = graded(
   "partial",
   "partial",
   "Partial",
   "found this observer answering, but with some dimensions unconfigured (coverage below 100%).",
-  metrics(0.6),
-  "Outbound is in sync — declared matches actual. Coverage 60%, credibility 90%; its data was 45s stale when read, from outbound_budget_observations."
+  verdictMetrics(0.6)
 );
 /** The backend's partial for an answer that carried no coverage to grade. */
 const PARTIAL_UNGRADED = graded(
@@ -223,16 +256,36 @@ const PARTIAL_UNGRADED = graded(
   "partial (no coverage to grade)",
   "Partial",
   "found this observer answering, with no coverage in its answer to grade.",
-  metrics(null),
-  "Outbound is in sync — declared matches actual. Coverage —, credibility 90%; its data was 45s stale when read, from outbound_budget_observations."
+  verdictMetrics(null)
 );
 const BLIND = graded(
   "blind",
   "blind",
   "Blind",
-  "found this observer built but disabled or unconfigured for this tenant — not the same as unbuilt.",
-  metrics(0, "unknown"),
-  "Outbound is unknown — the observer could not read this for your tenant. Coverage 0%, credibility 90%; its data was 45s stale when read, from outbound_budget_observations."
+  FOUND_BLIND,
+  verdictMetrics(0, "unknown")
+);
+
+/**
+ * coord's admin outbound door, which `outbound` answers with: its real body
+ * (`outboundEnvelope`). Buckets observed, worst one exhausted: implemented.
+ * No bucket: coverage 0 and drift `unknown`, so blind.
+ */
+const OUTBOUND_IMPLEMENTED = graded(
+  "implemented",
+  "implemented (worst bucket exhausted)",
+  "Live",
+  FOUND_FULL,
+  outboundEnvelope("exhausted"),
+  `Outbound is classified “exhausted”. Coverage 100%, credibility 95%, ${NO_AGE}`
+);
+const OUTBOUND_BLIND = graded(
+  "blind",
+  "blind (no bucket observed)",
+  "Blind",
+  FOUND_BLIND,
+  outboundEnvelope(null),
+  `Outbound is unknown — the observer could not read this for your tenant. Coverage 0%, credibility 95%, ${NO_AGE}`
 );
 const SERVED: Answer = {
   name: "served",
@@ -324,10 +377,8 @@ const ANSWERS: Record<Door, readonly Answer[]> = {
     ERROR_NO_CELL,
   ],
   outbound: [
-    IMPLEMENTED,
-    PARTIAL,
-    PARTIAL_UNGRADED,
-    BLIND,
+    OUTBOUND_IMPLEMENTED,
+    OUTBOUND_BLIND,
     RESTRICTED,
     errorWithToken("coord_timeout", "the read timed out"),
     ERROR_404,
@@ -796,11 +847,26 @@ function expectStatus(drawer: HTMLElement, cell: Cell) {
   }
 }
 
-/** The lines the Summary must say, in order, and the reading it must show. */
+/**
+ * What a reading's envelope says of its age: the age its door reported, or
+ * UNKNOWN on the ignorance floor, with why, where the door reported none.
+ */
+type Freshness = { readonly reported: string } | { readonly unknown: string };
+
+/** The envelope door's: it reports no age. */
+const UNREPORTED: Freshness = {
+  unknown: "Coord reported no age for this data.",
+};
+
+/**
+ * The lines the Summary must say, in order, the reading it must show, and its
+ * envelope's heading and freshness.
+ */
 interface SummaryExpectation {
   readonly lines: readonly [testId: string, text: string][];
   readonly reading: { prose: string; source: string; age: string } | null;
   readonly heading: string | null;
+  readonly freshness: Freshness | null;
 }
 
 function expectedSummary(cell: Cell): SummaryExpectation | null {
@@ -825,13 +891,14 @@ function expectedSummary(cell: Cell): SummaryExpectation | null {
           ? "Its last answer carried no credibility envelope."
           : "The probe returned no credibility envelope.",
       ]);
-      return { lines, reading: null, heading: null };
+      return { lines, reading: null, heading: null, freshness: null };
     }
     if (held) lines.push(["digital-twin-drawer-read-retained", RETAINED_LEAD]);
     return {
       lines,
       reading: { prose, source: "coord's live twin probe", age: PROBE_AGE },
       heading: held ? RETAINED_HEADING : LIVE_HEADING,
+      freshness: UNREPORTED,
     };
   }
 
@@ -843,11 +910,12 @@ function expectedSummary(cell: Cell): SummaryExpectation | null {
       : cell.shape === "verdict_wrapper"
         ? "verdict"
         : "verdict or report";
+  // Named as the drawer's own read, never left to guess beside the Status.
   const failure: [string, string] = [
     "digital-twin-drawer-read-error",
     presenting
-      ? `Could not read the live ${noun} (HTTP 502).`
-      : `Could not read the live ${noun}: GET /api/v1/digital-twin/subspace/${cell.door}/raw failed: 502 - upstream.`,
+      ? `This drawer's own read of the live ${noun} failed (HTTP 502).`
+      : `This drawer's own read of the live ${noun} failed: GET /api/v1/digital-twin/subspace/${cell.door}/raw failed: 502 - upstream.`,
   ];
   const kind = ownReading(cell);
   const name = cell.door.charAt(0).toUpperCase() + cell.door.slice(1);
@@ -862,6 +930,10 @@ function expectedSummary(cell: Cell): SummaryExpectation | null {
           source: "this drawer's own read of coord",
           age: READ_AGE,
         };
+  // The twin door's verdict reported its age: 30s, as its body says.
+  const freshness: Freshness | null =
+    kind === "verdict" ? { reported: "30s stale" } : null;
+  const none = { reading: null, heading: null, freshness: null };
   switch (own.kind) {
     case "unmade":
       return {
@@ -873,16 +945,17 @@ function expectedSummary(cell: Cell): SummaryExpectation | null {
               : "This drawer's own read of the observer has not been made: this browser is offline.",
           ],
         ],
-        reading: null,
-        heading: null,
+        ...none,
       };
     case "in-flight":
       return {
         lines: [
-          ["digital-twin-drawer-read-in-flight", "Reading the observer…"],
+          [
+            "digital-twin-drawer-read-in-flight",
+            "This drawer's own read of the observer is in flight…",
+          ],
         ],
-        reading: null,
-        heading: null,
+        ...none,
       };
     case "answered":
       return reading === null
@@ -893,17 +966,17 @@ function expectedSummary(cell: Cell): SummaryExpectation | null {
                 `This drawer's own read of the observer answered with no ${noun}.`,
               ],
             ],
-            reading: null,
-            heading: null,
+            ...none,
           }
         : {
             lines: [],
             reading,
             heading: kind === "verdict" ? LIVE_HEADING : null,
+            freshness,
           };
     case "retained":
       return reading === null
-        ? { lines: [failure], reading: null, heading: null }
+        ? { lines: [failure], ...none }
         : {
             lines: [
               failure,
@@ -911,9 +984,10 @@ function expectedSummary(cell: Cell): SummaryExpectation | null {
             ],
             reading,
             heading: kind === "verdict" ? RETAINED_HEADING : null,
+            freshness,
           };
     case "failed":
-      return { lines: [failure], reading: null, heading: null };
+      return { lines: [failure], ...none };
   }
 }
 
@@ -961,10 +1035,27 @@ function expectSummary(drawer: HTMLElement, cell: Cell) {
   const heading = d.queryByTestId("digital-twin-drawer-envelope-heading");
   if (expected.heading === null) {
     expect(heading, "no envelope heading").toBeNull();
+    expect(d.queryByText("Freshness when read"), "no freshness").toBeNull();
   } else {
     expect(heading?.textContent, "envelope heading").toBe(expected.heading);
-    expect(d.getByText("Freshness when read")).toBeInTheDocument();
     expect(d.queryByText("Freshness")).toBeNull();
+    const field = d.getByText("Freshness when read").parentElement!;
+    const freshness = expected.freshness!;
+    if ("reported" in freshness) {
+      expect(field.textContent, "freshness").toBe(
+        `Freshness when read${freshness.reported}`
+      );
+    } else {
+      // UNKNOWN on the ignorance floor, saying why — never a plain value.
+      expect(field.textContent, "freshness").toBe("Freshness when readUNKNOWN");
+      const badge = within(field).getByText("UNKNOWN");
+      expect(badge.getAttribute("title"), "why UNKNOWN").toBe(
+        freshness.unknown
+      );
+      for (const token of UNKNOWN_AMBER.split(" ")) {
+        expect(badge.classList.contains(token), `floor ${token}`).toBe(true);
+      }
+    }
   }
 }
 
@@ -1012,6 +1103,13 @@ function expectNoFalseSentence(drawer: HTMLElement, cell: Cell) {
   const text = drawer.textContent ?? "";
   // A reading is never aged by its own staleness.
   expect(text).not.toMatch(/data is \d/);
+  // An age the envelope door did not report is never called live: coord
+  // means a missing staleness as live only of a DriftVerdict.
+  if (cell.shape === "envelope") {
+    expect(text, "envelope age").not.toMatch(
+      /live when read|Freshness when read\s*live/
+    );
+  }
   // Nothing points at a report the drawer may not show.
   expect(text).not.toMatch(/open the drawer/i);
   const liveHeadings = text.split(LIVE_HEADING).length - 1;

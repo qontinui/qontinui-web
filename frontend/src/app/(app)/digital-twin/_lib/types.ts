@@ -117,8 +117,12 @@ export interface VerdictMetrics {
  * `DoorShape`):
  *  - `verdict_wrapper` — `{subspace, tool, verdict}`, the DriftVerdict under
  *    `verdict`;
- *  - `envelope` — the DriftVerdict fields at the top level (the admin outbound
- *    door);
+ *  - `envelope` — some of a DriftVerdict's fields at the top level (the admin
+ *    outbound door's `OutboundBudgetResponse`: `coverage`, `credibility`,
+ *    `provenance`, `drift_class`). It is NOT a DriftVerdict. It carries no
+ *    `staleness_seconds`, since each bucket has its own age, so a missing one
+ *    is an age not reported, never coord's "fresh live answer"
+ *    (`status-presentation.ts` `readingAge`);
  *  - `report` — `{subspace, tool, verdict}` where `verdict` is the tool's own
  *    report, not a DriftVerdict, so it is never graded.
  */

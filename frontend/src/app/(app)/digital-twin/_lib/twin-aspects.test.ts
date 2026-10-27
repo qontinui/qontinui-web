@@ -26,6 +26,7 @@ import {
   type ReportRead,
 } from "./twin-aspects";
 import { probeDegradedReason, probeReadOf, type ProbeRead } from "./probe-read";
+import { outboundEnvelope } from "./test-catalog";
 import type {
   RawVerdictResponse,
   ResolvedSubspace,
@@ -200,6 +201,57 @@ describe("plantFidelity — from the live probe", () => {
     const rows = rowsFor([probe("schema", "implemented", 1, null)]);
     const f = figures("environment", probeRead({ rows }));
     expect(f.staleness).toMatchObject({ state: "known", value: "read live" });
+  });
+
+  /** coord's admin outbound door answering as it really does: no age. */
+  const OUTBOUND: SubspaceProbe = {
+    id: "outbound",
+    status: "implemented",
+    door_shape: "envelope",
+    metrics: outboundEnvelope("nominal"),
+  };
+
+  it("says the oldest reading is UNKNOWN when the envelope door's came with no age, never read live", () => {
+    const rows = rowsFor([
+      probe("workers", "implemented", 1, null),
+      probe("webhook_pulse", "implemented", 1, null),
+      OUTBOUND,
+    ]);
+    const f = figures("process", probeRead({ rows }));
+    expect(f.staleness).toEqual({
+      key: "staleness",
+      state: "unknown",
+      reason:
+        "coord reported no age for outbound's reading; the other 2 answering probes read live",
+      source: "coord's live twin probe",
+      asOf: NOW - 5_000,
+    });
+  });
+
+  it("keeps what the other readings say beside the reading of unknown age", () => {
+    const reason = (probes: SubspaceProbe[]) => {
+      const f = figures("process", probeRead({ rows: rowsFor(probes) }));
+      expect(f.staleness.state).toBe("unknown");
+      return f.staleness.state === "unknown" ? f.staleness.reason : null;
+    };
+    expect(
+      reason([
+        probe("workers", "implemented", 1, 600),
+        probe("webhook_pulse", "partial", 0.5, 30),
+        OUTBOUND,
+      ])
+    ).toBe(
+      "coord reported no age for outbound's reading; the oldest of the other 2 answering readings is 10m old"
+    );
+    expect(reason([probe("workers", "implemented", 1, 600), OUTBOUND])).toBe(
+      "coord reported no age for outbound's reading; the other answering reading is 10m old"
+    );
+    expect(reason([probe("workers", "implemented", 1, null), OUTBOUND])).toBe(
+      "coord reported no age for outbound's reading; the other answering probe read live"
+    );
+    expect(reason([OUTBOUND])).toBe(
+      "coord reported no age for outbound's reading"
+    );
   });
 
   it("renders a failed probe as UNKNOWN with its reason — never as 0 answering", () => {

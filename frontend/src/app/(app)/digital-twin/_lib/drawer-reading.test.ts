@@ -14,6 +14,7 @@ import {
   type OwnReadQuery,
 } from "./drawer-reading";
 import { manifest } from "./resolve";
+import { outboundEnvelope } from "./test-catalog";
 import { FIDELITY_SOURCE } from "./twin-aspects";
 import type {
   DoorShape,
@@ -153,14 +154,8 @@ function row(
   };
 }
 
-const METRICS: VerdictMetrics = {
-  coverage: 0.6,
-  credibility: 0.9,
-  posterior: null,
-  staleness_seconds: 45,
-  provenance: "outbound_budget_observations",
-  drift_class: "none",
-};
+/** coord's admin outbound door's answer, as it really sends it: no age. */
+const METRICS: VerdictMetrics = outboundEnvelope("nominal");
 
 const PROBE = { refreshFailed: false, error: null, asOf: PROBE_AT };
 const PROBE_HELD = {
@@ -238,7 +233,7 @@ describe("drawerSummary — a row the drawer reads itself", () => {
     expect(
       drawerSummary({ row: schema, probe: PROBE, own, presenting: true })
         ?.lines[0]?.text
-    ).toBe("Could not read the live verdict (HTTP 502).");
+    ).toBe("This drawer's own read of the live verdict failed (HTTP 502).");
   });
 
   it("says a report door's failure is its report's, and points at the raw report in operator mode only", () => {
@@ -261,7 +256,7 @@ describe("drawerSummary — a row the drawer reads itself", () => {
         own: failed,
         presenting: true,
       })?.lines[0]?.text
-    ).toBe("Could not read the live report (HTTP 502).");
+    ).toBe("This drawer's own read of the live report failed (HTTP 502).");
     const answered = ownReadOf(true, query({ data: report }), true, "report");
     const prose = (presenting: boolean) =>
       drawerSummary({ row: worktree, probe: PROBE, own: answered, presenting })
@@ -276,6 +271,46 @@ describe("drawerSummary — a row the drawer reads itself", () => {
         presenting: false,
       })?.reading?.envelope
     ).toBeNull();
+  });
+
+  it("names its own read in every line about it, the one in flight included", () => {
+    const say = (q: OwnReadQuery) =>
+      drawerSummary({
+        row: schema,
+        probe: PROBE,
+        own: ownReadOf(true, q, true, "verdict_wrapper"),
+        presenting: true,
+      })?.lines.map((l) => l.text);
+    expect(say(query({ isLoading: true }))).toEqual([
+      "This drawer's own read of the observer is in flight…",
+    ]);
+    expect(say(query({ isError: true, error: HTTP_502 }))).toEqual([
+      "This drawer's own read of the live verdict failed (HTTP 502).",
+    ]);
+  });
+
+  it("reads a twin-door verdict that omits its staleness as live when read: coord omits it on a live answer", () => {
+    const fresh = { ...BODY.verdict };
+    delete fresh.staleness_seconds;
+    const own = ownReadOf(
+      true,
+      query({ data: { ...BODY, verdict: fresh }, dataUpdatedAt: READ_AT }),
+      true,
+      "verdict_wrapper"
+    );
+    const reading = drawerSummary({
+      row: schema,
+      probe: PROBE,
+      own,
+      presenting: false,
+    })?.reading;
+    expect(reading?.prose).toContain(
+      "its data was live when read, from alembic_graph."
+    );
+    expect(reading?.envelope?.facts).toContainEqual({
+      label: "Freshness when read",
+      value: "live",
+    });
   });
 
   it("says an answer that carried no verdict did, and shows no reading", () => {
@@ -319,6 +354,29 @@ describe("drawerSummary — an envelope door, read by the probe", () => {
       asOf: PROBE_AT,
     });
     expect(summary?.reading?.envelope?.heading).toBe(LIVE_ENVELOPE_HEADING);
+  });
+
+  it("says its age is UNKNOWN, never live: the door reports none, and its answer is no DriftVerdict", () => {
+    const outbound = row("outbound", "envelope", { metrics: METRICS });
+    for (const probe of [PROBE, PROBE_HELD]) {
+      for (const presenting of [false, true]) {
+        const reading = drawerSummary({
+          row: outbound,
+          probe,
+          own: { kind: "none" },
+          presenting,
+        })?.reading;
+        expect(reading?.prose).toBe(
+          "Outbound is classified “nominal”. Coverage 100%, credibility 95%, from persisted_oplog; coord reported no age for this data, so its freshness when read is UNKNOWN."
+        );
+        expect(reading?.prose).not.toMatch(/\blive\b/);
+        expect(reading?.envelope?.facts).toContainEqual({
+          label: "Freshness when read",
+          value: "UNKNOWN",
+          unknownReason: "coord reported no age for this data",
+        });
+      }
+    }
   });
 
   it("names a held answer the probe's last, after its failure, never Live", () => {

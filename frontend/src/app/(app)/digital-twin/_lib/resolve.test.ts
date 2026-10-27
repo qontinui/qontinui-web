@@ -11,6 +11,7 @@ import {
   unlistedDeclaredProbes,
 } from "./resolve";
 import { STATUS_STYLES } from "./status-presentation";
+import { outboundEnvelope } from "./test-catalog";
 import type {
   CellStatus,
   SubspaceProbe,
@@ -380,18 +381,12 @@ describe("resolveSubspaces joined to coord's catalog", () => {
     { id: "release", status: "implemented", door_shape: "verdict_wrapper" },
     { id: "worktree", status: "served", door_shape: "report" },
     { id: "workers", status: "partial", door_shape: "verdict_wrapper" },
+    // coord's admin outbound door, as it really answers (`outboundEnvelope`).
     {
       id: "outbound",
-      status: "partial",
+      status: "implemented",
       door_shape: "envelope",
-      metrics: {
-        coverage: 0.6,
-        credibility: 0.9,
-        posterior: null,
-        staleness_seconds: null,
-        provenance: "outbound_budget_observations",
-        drift_class: "none",
-      },
+      metrics: outboundEnvelope("burning"),
     },
   ];
 
@@ -416,9 +411,9 @@ describe("resolveSubspaces joined to coord's catalog", () => {
       resolveSubspaces(probes, false, stubCatalog()),
       "outbound"
     );
-    expect(outbound.cellStatus).toBe("partial");
+    expect(outbound.cellStatus).toBe("implemented");
     expect(outbound.doorShape).toBe("envelope");
-    expect(outbound.metrics?.coverage).toBe(0.6);
+    expect(outbound.metrics).toEqual(outboundEnvelope("burning"));
   });
 
   it("keeps a report door's cell served — neither healthy nor partial", () => {
@@ -617,7 +612,7 @@ describe("probeAnswered", () => {
       probeAnswered(
         outbound(
           resolveSubspaces(
-            [{ id: "outbound", status: "partial", door_shape: "envelope" }],
+            [{ id: "outbound", status: "implemented", door_shape: "envelope" }],
             false,
             catalog
           )

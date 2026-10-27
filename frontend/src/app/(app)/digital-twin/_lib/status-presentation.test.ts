@@ -6,8 +6,11 @@ import {
   RESTRICTED_COUNT_MEANING,
   STATUS_STYLES,
   formatRatio,
+  formatReadingAge,
+  formatStaleness,
   pageAccessLabel,
   presentStatus,
+  readingAge,
 } from "./status-presentation";
 
 describe("presentStatus", () => {
@@ -197,5 +200,41 @@ describe("STATUS_STYLES.restricted", () => {
 
   it("gives the gauge's restricted count a plural tooltip", () => {
     expect(RESTRICTED_COUNT_MEANING).toContain("these sub-spaces");
+  });
+});
+
+describe("readingAge — how old a reading was when read, as its door reports it", () => {
+  it("reads a DriftVerdict's missing staleness as live: coord omits it on a fresh live answer", () => {
+    for (const door of [
+      "verdict_wrapper",
+      "report",
+      null,
+      undefined,
+    ] as const) {
+      expect(readingAge(null, door), String(door)).toBe("live");
+      expect(readingAge(undefined, door), String(door)).toBe("live");
+    }
+  });
+
+  it("reads the envelope door's missing staleness as UNKNOWN, never live: its answer is no DriftVerdict and reports no age", () => {
+    expect(readingAge(null, "envelope")).toBeNull();
+    expect(readingAge(undefined, "envelope")).toBeNull();
+  });
+
+  it("takes an age any door reports, and no age from a number that is not one", () => {
+    expect(readingAge(45, "envelope")).toBe(45);
+    expect(readingAge(0, "verdict_wrapper")).toBe(0);
+    expect(readingAge(Number.NaN, "verdict_wrapper")).toBeNull();
+    expect(readingAge(Number.POSITIVE_INFINITY, null)).toBeNull();
+  });
+
+  it("words each age, UNKNOWN included, and a DriftVerdict's as before", () => {
+    expect(formatReadingAge(null)).toBe("UNKNOWN");
+    expect(formatReadingAge("live")).toBe("live");
+    expect(formatReadingAge(45)).toBe("45s stale");
+    expect(formatReadingAge(600)).toBe("10m stale");
+    expect(formatReadingAge(7200)).toBe("2h stale");
+    expect(formatStaleness(null)).toBe("live");
+    expect(formatStaleness(30)).toBe("30s stale");
   });
 });

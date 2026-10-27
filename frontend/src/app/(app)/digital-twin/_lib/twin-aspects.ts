@@ -10,7 +10,7 @@
  * |---|---|---|
  * | observed | live probes answering, of those coord answers this workspace with a verdict (coord's live twin probe) | apps registered with the runner's UI Bridge |
  * | coverage | the answering probes' own average coverage | pages of the runner's own interface with a readable model |
- * | staleness | the oldest answering reading | UNKNOWN: the models carry no time |
+ * | staleness | the oldest answering reading; UNKNOWN when one came with no age (the envelope door reports none) | UNKNOWN: the models carry no time |
  * | honesty | violations among the parts coord's twin self-check measures | UNKNOWN: the self-check does not cover interface models |
  *
  * Nothing here is ever a zero standing in for an unknown: a failed read, a
@@ -27,7 +27,7 @@ import type { CaptionKey } from "@/components/presentation";
 import { statusSuffix } from "./failure-text";
 import { coverageOf, gradedOf } from "./lifecycle";
 import { probeUnread, type ProbeRead, type ProbeSilence } from "./probe-read";
-import { formatRatio } from "./status-presentation";
+import { formatRatio, readingAge } from "./status-presentation";
 import {
   formatAge,
   readFidelity,
@@ -313,11 +313,26 @@ function stalenessFigure(
       asOf: probe.asOf,
     };
   }
-  const ages = answering
-    .map((r) => r.metrics?.staleness_seconds)
-    .filter(finite);
-  if (ages.length === 0) {
-    // coord omits `staleness_seconds` on an answer it computed live.
+  // Each reading's age as its door reports it: coord omits a DriftVerdict's
+  // `staleness_seconds` on an answer it computed live, but an envelope door
+  // reports no age at all, so its reading's age is UNKNOWN (`readingAge`).
+  const ages = answering.map((row) => ({
+    row,
+    age: readingAge(row.metrics?.staleness_seconds, row.doorShape),
+  }));
+  const undated = ages.filter((a) => a.age === null).map((a) => a.row);
+  const dated = ages.flatMap((a) => (typeof a.age === "number" ? [a.age] : []));
+  if (undated.length > 0) {
+    // Any reading of unknown age may be the oldest, so the oldest is unknown.
+    return {
+      key: "staleness",
+      state: "unknown",
+      reason: undatedReason(undated, answering.length, dated),
+      source,
+      asOf: probe.asOf,
+    };
+  }
+  if (dated.length === 0) {
     return {
       key: "staleness",
       state: "known",
@@ -330,11 +345,42 @@ function stalenessFigure(
   return {
     key: "staleness",
     state: "known",
-    value: formatAge(Math.max(...ages)),
+    value: formatAge(Math.max(...dated)),
     detail: `the oldest of ${plural(answering.length, "answering reading")}`,
     source,
     asOf: probe.asOf,
   };
+}
+
+/**
+ * Why a twin's oldest reading is UNKNOWN: which answering readings came with
+ * no age, and what the others say.
+ */
+function undatedReason(
+  undated: readonly ResolvedSubspace[],
+  answering: number,
+  dated: readonly number[]
+): string {
+  const names = undated.map((row) => partName(row.id));
+  const whose =
+    names.length === 1
+      ? `${names[0]}'s reading`
+      : `the readings of ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const others = answering - undated.length;
+  const oldest = dated.length === 0 ? null : formatAge(Math.max(...dated));
+  let rest = "";
+  if (others === 1) {
+    rest =
+      oldest === null
+        ? "; the other answering probe read live"
+        : `; the other answering reading is ${oldest}`;
+  } else if (others > 1) {
+    rest =
+      oldest === null
+        ? `; the other ${others} answering probes read live`
+        : `; the oldest of the other ${others} answering readings is ${oldest}`;
+  }
+  return `coord reported no age for ${whose}${rest}`;
 }
 
 function honestyFigure(

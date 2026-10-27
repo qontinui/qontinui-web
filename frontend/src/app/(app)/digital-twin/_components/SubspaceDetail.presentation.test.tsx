@@ -126,7 +126,9 @@ describe("SubspaceDetail — a failed live read", () => {
     );
     expect(
       screen.getByTestId("digital-twin-drawer-read-error")
-    ).toHaveTextContent(/^Could not read the live verdict \(HTTP 502\)\.$/);
+    ).toHaveTextContent(
+      /^This drawer's own read of the live verdict failed \(HTTP 502\)\.$/
+    );
     expectPresentationSafe(view, { forbidden: [HOST, "acme"] });
   });
 });

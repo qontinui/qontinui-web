@@ -10,7 +10,14 @@
  * reading is the page probe's answer for the row, once there is one. Either
  * way the reading is shown with WHEN it was read — a Provenance chip, in both
  * modes, since nothing else in the drawer dates it — and the verdict's own
- * staleness is its staleness WHEN READ, never an age now.
+ * staleness is its staleness WHEN READ, never an age now. An envelope door's
+ * answer is not a DriftVerdict and reports no age, so its freshness is
+ * UNKNOWN, never "live" (`status-presentation.ts` `readingAge`).
+ *
+ * Every line the Summary says about a read says which read it is about: by
+ * name — the drawer's own ("This drawer's own read of …") or coord's live
+ * probe — or by pointing back at the line before it that names it
+ * ({@link RETAINED_LEAD}).
  *
  * A reading kept after a failed read (react-query keeps a query's data when a
  * refetch fails; the probe keeps its last answer the same way) is RETAINED:
@@ -228,14 +235,20 @@ export interface DrawerSummaryInput {
   readonly presenting: boolean;
 }
 
-/** A verdict as a reading: its words, and its envelope under `heading`. */
+/**
+ * A verdict as a reading: its words, and its envelope under `heading`.
+ * `doorShape` is the door it was read from, which says what a missing
+ * staleness means (`status-presentation.ts` `readingAge`).
+ */
 function verdictReading(
   subspaceId: string,
   verdict: DriftVerdict,
+  doorShape: DoorShape,
   read: Pick<DrawerReading, "retained" | "source" | "asOf">
 ): DrawerReading {
   const summary = summarizeVerdict(subspaceId, verdict, {
     freshness: "when-read",
+    doorShape,
   });
   return {
     ...read,
@@ -280,8 +293,10 @@ function ownReadSummary(
         : "verdict or report";
   const failure = (error: unknown): DrawerLine => ({
     kind: "read-error",
-    // The message quotes the upstream body: the operator's alone.
-    text: `Could not read the live ${noun}${failureTail(error, presenting)}.`,
+    // Named as the drawer's own read, so beside the probe's Status it is
+    // never left to guess which read failed. The message quotes the
+    // upstream body: the operator's alone.
+    text: `This drawer's own read of the live ${noun} failed${failureTail(error, presenting)}.`,
   });
   switch (own.kind) {
     case "unmade":
@@ -298,7 +313,12 @@ function ownReadSummary(
       };
     case "in-flight":
       return {
-        lines: [{ kind: "read-in-flight", text: "Reading the observer…" }],
+        lines: [
+          {
+            kind: "read-in-flight",
+            text: "This drawer's own read of the observer is in flight…",
+          },
+        ],
         reading: null,
       };
     case "failed":
@@ -335,15 +355,19 @@ function ownReadSummary(
         reading:
           reading.kind === "report"
             ? reportReading(presenting, read)
-            : verdictReading(row.id, reading.value, read),
+            : // The drawer reads coord's twin door, whose verdict is a
+              // DriftVerdict: a staleness it omits means a live answer.
+              verdictReading(row.id, reading.value, "verdict_wrapper", read),
       };
     }
   }
 }
 
 /**
- * An envelope door's reading: the top-level DriftVerdict fields the probe
- * carried for the row, or `null` when its answer carried none.
+ * An envelope door's reading: the envelope fields the probe carried for the
+ * row, or `null` when its answer carried none. The door's answer is not a
+ * DriftVerdict, and its `staleness_seconds` is always missing (the admin
+ * outbound door reports none), so the reading's freshness is UNKNOWN.
  */
 function envelopeVerdictOf(row: ResolvedSubspace): DriftVerdict | null {
   if (!row.metrics) return null;
@@ -393,7 +417,7 @@ function envelopeDoorSummary(
     lines: held
       ? [...lines, { kind: "read-retained", text: RETAINED_LEAD }]
       : lines,
-    reading: verdictReading(row.id, verdict, {
+    reading: verdictReading(row.id, verdict, "envelope", {
       retained: held,
       source: FIDELITY_SOURCE.probe,
       asOf: probe.asOf,
