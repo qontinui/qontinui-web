@@ -48,6 +48,13 @@ export const FIRST_PARTY_REPO = "qontinui/qontinui-web";
 /** A volume label someone typed, naming a client (MUST_NOT_APPEAR catches it). */
 export const VOLUME_MOUNT = "/Volumes/Acme Corp share";
 /**
+ * A task with NO confidential term in it, on a repository whose owner is not
+ * first-party: only the owner arm of the redaction can withhold it, so a
+ * presented task row wired to the wrong repository shows it.
+ */
+export const NEUTRAL_FOREIGN_TASK = "Tune the quokka cache warmer";
+export const FOREIGN_OWNER_REPO = "other-owner/quokka-service";
+/**
  * A machine that appears ONLY inside failure text. The failure is
  * transport-shaped (no HTTP status to parse), the shape every hook on the page
  * passes through as its own words — so absent from the presentation DOM means
@@ -84,6 +91,8 @@ export const MUST_NOT_APPEAR = [
   OPERATOR_ID,
   "tenant-secret",
   "gate-0000",
+  // The neutral task and its foreign repository (`NEUTRAL_FOREIGN_TASK`).
+  "quokka",
   ERROR_HOST,
   ERROR_DEVICE,
 ];
@@ -399,8 +408,24 @@ export function mockDevOpsRoutes(
             },
             occurred_at: NOW_ISO(),
           },
+          // A write whose ACTOR is one of the fleet's machines (an agent on
+          // machine A's device credential released machine B): the Operator
+          // line names machine A by its alias, never by its device id.
+          {
+            audit_id: "audit-5",
+            operator_id: DEV_A,
+            action: "fleet.drain.clear",
+            resource_kind: "coord.devices",
+            resource_key: DEV_B,
+            metadata: {
+              device_id: DEV_B,
+              drained: false,
+              reason: "rebuild finished",
+            },
+            occurred_at: NOW_ISO(),
+          },
         ],
-        count: 4,
+        count: 5,
       });
     }
     if (u.includes("fleet/health")) {
@@ -621,13 +646,15 @@ export function seedDeviceStatus(rows: Map<string, unknown>): void {
     },
   });
   // Machine B: a session heartbeating without progress, whose correlation
-  // topic names a client — the stall tooltip's other arm.
+  // topic names a client — the stall tooltip's other arm. Its task names no
+  // client at all, on a repository whose owner is not first-party: the
+  // redaction's owner arm is the only thing that can withhold it.
   rows.set(HOST_B, {
     device_id: DEV_B,
     hostname: HOST_B,
-    current_task: null,
-    current_repo: null,
-    current_branch: null,
+    current_task: NEUTRAL_FOREIGN_TASK,
+    current_repo: FOREIGN_OWNER_REPO,
+    current_branch: "tune-cache",
     free_text: null,
     details: {},
     tenant_id: null,
@@ -663,7 +690,7 @@ export async function settle() {
   await waitFor(() =>
     expect(
       document.querySelectorAll('[data-testid^="audit-row-"]').length
-    ).toBe(4)
+    ).toBe(5)
   );
   await waitFor(() =>
     expect(screen.getAllByTestId("fleet-resource-row").length).toBeGreaterThan(

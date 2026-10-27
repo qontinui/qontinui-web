@@ -150,6 +150,7 @@ import {
   machineSectionChips,
   mockDevOpsRoutes,
   MUST_NOT_APPEAR,
+  NEUTRAL_FOREIGN_TASK,
   readFailure,
   SCOPE,
   SECTION_SOURCES,
@@ -296,6 +297,16 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     expect(
       screen.getByTestId("coord-devops-conditions-setting-12")
     ).toBeTruthy();
+    // Both machines report a task, and both are withheld as descriptors —
+    // machine A's for naming a client, machine B's ONLY because its
+    // repository's owner is not first-party (its text names nobody).
+    const taskCells = document.querySelectorAll(
+      '[data-ui-bridge-id="operations.device-status-task"]'
+    );
+    expect(taskCells).toHaveLength(2);
+    for (const cell of taskCells) {
+      expect(cell.querySelector('[data-redacted="true"]')).not.toBeNull();
+    }
 
     checkBehindEveryDisclosure(() => {
       // `innerHTML` is text AND every attribute: a `data-hostname`, a
@@ -403,6 +414,13 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     // alias — not withheld, and not its id.
     fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-1")));
     expect(screen.getByTestId("audit-blast-audit-1")).toHaveTextContent(aliasA);
+    // A write whose ACTOR is a machine: the Operator line is machine A's
+    // alias too, and the machine it released is B's.
+    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-5")));
+    expect(screen.getByTestId("audit-detail-audit-5")).toHaveTextContent(
+      `Operator: ${aliasA}`
+    );
+    expect(screen.getByTestId("audit-blast-audit-5")).toHaveTextContent(aliasB);
     const unknownRow = slotRows.find(
       (r) => r.getAttribute("data-worktree-slots-state") === "unknown"
     )!;
@@ -848,6 +866,9 @@ describe("/admin/coord/devops for the operator — the console is unchanged", ()
 
     // Real names: the operator's alias for machine A, and the hostnames.
     expect(screen.getAllByText(DISPLAY_NAME_A).length).toBeGreaterThan(0);
+    // ...and every task as reported, the one withheld from an outsider for
+    // its repository's owner alone included.
+    expect(document.body.textContent).toContain(NEUTRAL_FOREIGN_TASK);
     expect(document.body.innerHTML).toContain(HOST_B);
     // The operator still reads the volume's own mount — on the machine card
     // and beside each resources row's disk figure.
