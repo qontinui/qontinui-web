@@ -102146,10 +102146,14 @@
             }
           },
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "query",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -102215,10 +102219,14 @@
             }
           },
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "query",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }

@@ -76024,6 +76024,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_output_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
                 tail_chars?: number;
             };
@@ -76060,6 +76061,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_workflow_state_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             header?: never;
