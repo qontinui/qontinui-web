@@ -365,7 +365,7 @@ describe("/admin/coord/home", () => {
     );
     // …and with coord's exclusion reason that names the class expanded too.
     const dnk = screen.getByTestId("coord-home.does-not-know");
-    fireEvent.click(within(dnk).getByText("work_unit_status_history"));
+    fireEvent.click(within(dnk).getByText("Work unit status changes"));
     expect(dnk).toHaveTextContent("Why excluded:");
     expect(document.body.textContent ?? "").not.toMatch(/stalled/i);
     expect(onTrack).toHaveTextContent("no recorded change in 14 days");
@@ -973,6 +973,74 @@ describe("/admin/coord/home", () => {
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
       "1 of 3 sources not read"
     );
+  });
+
+  // R8: coord's `source` strings are its own identifiers. The row says what
+  // the source is in words; the raw id is in the title and, once expanded,
+  // in the detail's last line only.
+  it("labels each source in words, keeping coord's raw ids off the collapsed rows", async () => {
+    const base = doorBody();
+    await renderWith(
+      doorBody({
+        degradations: {
+          ...(base.degradations as Record<string, unknown>),
+          state: "stale",
+          planes: {
+            merge_train: {
+              fresh: false,
+              watchers: [
+                {
+                  name: "stuck_pr_watcher",
+                  state: "stale",
+                  reason: "no_successful_tick",
+                },
+              ],
+            },
+          },
+        },
+        does_not_know: [
+          ...(base.does_not_know as unknown[]),
+          {
+            source: "watcher:stuck_pr_watcher",
+            state: "stale",
+            freshness_bound_secs: 300,
+            error: "no_successful_tick",
+          },
+          {
+            source: "fleet_drain",
+            state: "could_not_read",
+            error: "timeout",
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    for (const [label, raw] of [
+      ["Work units", "work_units"],
+      ["Work unit status changes", "work_unit_status_history"],
+      [
+        "Decisions waiting on you",
+        "needs_me (agent_questions operator audience + operator gates)",
+      ],
+      ["Watcher feeding merge train", "watcher:stuck_pr_watcher"],
+      ["Machine drains", "fleet_drain"],
+    ]) {
+      expect(within(dnk).getByText(label)).toHaveAttribute("title", raw);
+    }
+    // Nothing collapsed prints a raw id, a reason token or the old shorthand.
+    expect(dnk.textContent ?? "").not.toMatch(
+      /work_unit|watcher:|needs_me|fleet_drain|no_successful_tick|bound –|excluded –/
+    );
+    const watcherRow = within(dnk)
+      .getByText("Watcher feeding merge train")
+      .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
+    expect(watcherRow).toHaveTextContent(
+      "has not completed a run · may be up to 5m old · exclusions not stated"
+    );
+    fireEvent.click(within(dnk).getByText("Watcher feeding merge train"));
+    expect(
+      within(watcherRow).getByTestId("coord-home.does-not-know.raw")
+    ).toHaveTextContent("watcher:stuck_pr_watcher · no_successful_tick");
   });
 
   it("keeps the last good render on a failed poll and says it is stale", async () => {

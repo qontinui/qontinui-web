@@ -26,6 +26,10 @@ import {
   degradationsGapPhrase,
   deriveHomeStrip,
   nothingNeedsYou,
+  sourceErrorWords,
+  sourceLabel,
+  sourceRawLine,
+  sourceRowReason,
   unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
@@ -851,5 +855,144 @@ describe("round-8 review — the partial and unread captions say what is true", 
     ],
   ])("unservedDecisionsSentence(%p)", (count, want) => {
     expect(unservedDecisionsSentence(count)).toBe(want);
+  });
+});
+
+describe("round-8 review — R8 for what the view does not know", () => {
+  // Every `source` string coord's door writes into does_not_know, verbatim
+  // from qontinui-coord crates/coord/src/project_state.rs (the one-screen
+  // door, and its needs_me phase).
+  const COORD_SOURCES: ReadonlyArray<readonly [string, string]> = [
+    ["prompt_documents:initiative/current-initiative", "Current initiative"],
+    ["work_unit_dependency_frontier", "Work unit dependencies"],
+    ["work_units", "Work units"],
+    ["work_unit_status_history", "Work unit status changes"],
+    [
+      "work_unit_pr_citations (cited PR state)",
+      "Pull requests the work units cite",
+    ],
+    ["coord.alerts (operator-plane kinds)", "Infrastructure alerts"],
+    ["fleet_health roster", "Machines in the fleet"],
+    ["train_health (per authority repo)", "Merge train health, per repository"],
+    [
+      "infra_health_observations (cloud, latest per resource)",
+      "Cloud service health",
+    ],
+    ["fleet_drain", "Machine drains"],
+    ["worker_heartbeats", "Watcher heartbeats"],
+    ["fault_to_visibility_metric", "Time for a fault to reach this view"],
+    ["verification_metrics", "Verification measurements"],
+    [
+      "needs_me (agent_questions operator audience + operator gates)",
+      "Decisions waiting on you",
+    ],
+    [
+      "agent_questions (pending, audience operator)",
+      "Questions waiting on you",
+    ],
+    [
+      "gates (open operator_approval, clearance_audience operator)",
+      "Approvals waiting on you",
+    ],
+    [
+      "agent_questions.recommendation / if_overturned",
+      "Recommendations on your questions",
+    ],
+    ["agent_questions.withdrawn_at", "Whether questions were withdrawn"],
+  ];
+
+  it.each(COORD_SOURCES)("labels coord's %p as %p", (source, label) => {
+    expect(sourceLabel(source)).toBe(label);
+  });
+
+  it.each(COORD_SOURCES)(
+    "puts no internal token in the label for %p",
+    (source) => {
+      expect(sourceLabel(source)).not.toMatch(/_|:|\(|\./);
+    }
+  );
+
+  const PLANES = parseProjectState({
+    degradations: {
+      planes: {
+        runner: {
+          fresh: false,
+          watchers: [{ name: "health_ledger", state: "stale" }],
+        },
+        credential: {
+          fresh: false,
+          watchers: [{ name: "health_ledger", state: "stale" }],
+        },
+        merge_train: {
+          fresh: false,
+          watchers: [{ name: "stuck_pr_watcher", state: "stale" }],
+        },
+      },
+    },
+  })!.degradations.planes;
+
+  it("names a watcher row by the area it feeds, never by the watcher's name", () => {
+    expect(sourceLabel("watcher:stuck_pr_watcher", PLANES)).toBe(
+      "Watcher feeding merge train"
+    );
+    expect(sourceLabel("watcher:health_ledger", PLANES)).toBe(
+      "Watcher feeding runner, credential"
+    );
+  });
+
+  it.each([
+    ["a watcher no plane lists", "watcher:leader_flap_watcher", PLANES],
+    ["no planes served", "watcher:stuck_pr_watcher", null],
+  ] as const)("still words a watcher row with %s", (_case, source, planes) => {
+    expect(sourceLabel(source, planes)).toBe("Watcher feeding Degrading");
+  });
+
+  it("spaces a source it has no label for, as it does an unknown domain", () => {
+    expect(sourceLabel("deploy_freshness_feed")).toBe("Deploy freshness feed");
+  });
+
+  const row = (over: Partial<Record<string, unknown>>) =>
+    parseProjectState({ does_not_know: [{ source: "work_units", ...over }] })!
+      .doesNotKnow![0];
+
+  it("words a collapsed row in full, never as '–' shorthand", () => {
+    expect(sourceRowReason(row({ state: "read" }))).toBe(
+      "maximum age not stated · exclusions not stated"
+    );
+    expect(
+      sourceRowReason(
+        row({ state: "read", freshness_bound_secs: 600, rows_excluded: 2 })
+      )
+    ).toBe("may be up to 10m old · 2 excluded");
+    expect(
+      sourceRowReason(row({ state: "could_not_read", error: "timeout" }))
+    ).toBe("timeout · maximum age not stated · exclusions not stated");
+  });
+
+  it("words a watcher row's reason token, keeping the token for the raw line", () => {
+    const w = row({
+      source: "watcher:stuck_pr_watcher",
+      state: "stale",
+      freshness_bound_secs: 300,
+      error: "no_successful_tick",
+    });
+    expect(sourceErrorWords(w)).toBe("has not completed a run");
+    expect(sourceRowReason(w)).toBe(
+      "has not completed a run · may be up to 5m old · exclusions not stated"
+    );
+    expect(sourceRawLine(w)).toBe(
+      "watcher:stuck_pr_watcher · no_successful_tick"
+    );
+  });
+
+  it("keeps a non-watcher error as coord's sentence, without the stalled class", () => {
+    const r = row({
+      state: "could_not_read",
+      error: "the work_units sub-read stalled",
+    });
+    expect(sourceErrorWords(r)).toBe(
+      "the work_units sub-read without recorded change"
+    );
+    expect(sourceRawLine(r)).toBe("work_units");
   });
 });

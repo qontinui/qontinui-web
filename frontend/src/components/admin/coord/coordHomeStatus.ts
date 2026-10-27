@@ -986,6 +986,124 @@ function parseSource(raw: unknown, index: number): SourceCoverageView | null {
   };
 }
 
+/**
+ * Human labels for the sources coord lists in `does_not_know` (R8). Coord's
+ * `source` strings are its own identifiers — table names, metric names,
+ * `watcher:<name>` — so the page labels each row with words, and the raw id
+ * goes only in the row's `title` and in the expanded detail's last line.
+ * Keyed by coord's exact strings in qontinui-coord
+ * `crates/coord/src/project_state.rs` (the one-screen door and its needs_me
+ * phase). A source this table does not know gets {@link humanised} words, the
+ * way {@link decisionDomainLabel} spaces an unknown domain.
+ */
+const SOURCE_LABEL: Readonly<Record<string, string>> = {
+  "prompt_documents:initiative/current-initiative": "Current initiative",
+  work_unit_dependency_frontier: "Work unit dependencies",
+  work_units: "Work units",
+  work_unit_status_history: "Work unit status changes",
+  "work_unit_pr_citations (cited PR state)":
+    "Pull requests the work units cite",
+  "coord.alerts (operator-plane kinds)": "Infrastructure alerts",
+  "fleet_health roster": "Machines in the fleet",
+  "train_health (per authority repo)": "Merge train health, per repository",
+  "infra_health_observations (cloud, latest per resource)":
+    "Cloud service health",
+  fleet_drain: "Machine drains",
+  worker_heartbeats: "Watcher heartbeats",
+  fault_to_visibility_metric: "Time for a fault to reach this view",
+  verification_metrics: "Verification measurements",
+  "needs_me (agent_questions operator audience + operator gates)":
+    "Decisions waiting on you",
+  "agent_questions (pending, audience operator)": "Questions waiting on you",
+  "gates (open operator_approval, clearance_audience operator)":
+    "Approvals waiting on you",
+  "agent_questions.recommendation / if_overturned":
+    "Recommendations on your questions",
+  "agent_questions.withdrawn_at": "Whether questions were withdrawn",
+};
+
+/**
+ * The prefix of a `does_not_know` row coord adds for each watcher that is not
+ * fresh (`watcher:<name>`). Its `error` is the watcher's reason TOKEN.
+ */
+const WATCHER_SOURCE_PREFIX = "watcher:";
+
+function isWatcherSource(source: string): boolean {
+  return source.startsWith(WATCHER_SOURCE_PREFIX);
+}
+
+/** Underscores spaced and the first letter capitalised. */
+function humanised(text: string): string {
+  const spaced = text.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * The words a `does_not_know` row is labelled with. A watcher row is named by
+ * the area(s) it feeds, read from the degradations planes coord served
+ * beside it (the watcher's own name is internal vocabulary). A watcher coord
+ * lists without a plane, or with no planes served, still feeds the Degrading
+ * block, which is how coord chose to list it.
+ */
+export function sourceLabel(
+  source: string,
+  planes: PlaneView[] | null = null
+): string {
+  const known = SOURCE_LABEL[source];
+  if (known) return known;
+  if (isWatcherSource(source)) {
+    const name = source.slice(WATCHER_SOURCE_PREFIX.length);
+    const fed = (planes ?? [])
+      .filter((p) => p.watchers.some((w) => w.name === name))
+      .map((p) => planeLabel(p.plane));
+    return fed.length > 0
+      ? `Watcher feeding ${fed.join(", ")}`
+      : "Watcher feeding Degrading";
+  }
+  return humanised(source);
+}
+
+/**
+ * A row's `error` in words. A watcher row's error is coord's reason TOKEN, so
+ * it is worded like the plane line's ({@link watcherReasonWords}); any other
+ * row's error is coord's own sentence, kept, with the stalled class reworded.
+ */
+export function sourceErrorWords(s: SourceCoverageView): string | null {
+  if (s.error === null) return null;
+  return isWatcherSource(s.source)
+    ? watcherReasonWords(s.error, s.state)
+    : withoutVerdictWords(s.error);
+}
+
+/**
+ * The collapsed row's reason, in words: why it was not read (when coord said),
+ * how old it may be, and how many rows it left out. A field coord did not
+ * state is said to be not stated — never a dash, never a zero.
+ */
+export function sourceRowReason(s: SourceCoverageView): string {
+  const parts: string[] = [];
+  const error = sourceErrorWords(s);
+  if (error !== null) parts.push(error);
+  parts.push(
+    s.freshnessBoundSecs === null
+      ? "maximum age not stated"
+      : `may be up to ${durationText(s.freshnessBoundSecs)} old`
+  );
+  parts.push(
+    s.rowsExcluded === null
+      ? "exclusions not stated"
+      : `${s.rowsExcluded} excluded`
+  );
+  return parts.join(" · ");
+}
+
+/** The raw ids for a row's expanded detail's last line (R8). */
+export function sourceRawLine(s: SourceCoverageView): string {
+  return isWatcherSource(s.source) && s.error !== null
+    ? `${s.source} · ${s.error}`
+    : s.source;
+}
+
 // ---------------------------------------------------------------------------
 // The whole view
 // ---------------------------------------------------------------------------

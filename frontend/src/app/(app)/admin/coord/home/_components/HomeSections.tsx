@@ -56,6 +56,10 @@ import {
   withoutVerdictWords,
   planeLabel,
   remediationPhrase,
+  sourceErrorWords,
+  sourceLabel,
+  sourceRawLine,
+  sourceRowReason,
   stallWindowDays,
   unitClassLabel,
   unservedDecisionsSentence,
@@ -71,6 +75,7 @@ import {
   type NeedsMeItem,
   type NeedsMeView,
   type OnTrackView,
+  type PlaneView,
   type RepoGroup,
   type SourceCoverageView,
 } from "@/components/admin/coord/coordHomeStatus";
@@ -1094,22 +1099,13 @@ export function CorrectSection({
 // 6. What this view does not know
 // ---------------------------------------------------------------------------
 
-function sourceReason(s: SourceCoverageView): string {
-  const parts: string[] = [];
-  parts.push(
-    s.freshnessBoundSecs === null
-      ? "bound –"
-      : `bound ${durationText(s.freshnessBoundSecs)}`
-  );
-  parts.push(`excluded ${s.rowsExcluded ?? "–"}`);
-  if (s.error) parts.push(withoutVerdictWords(s.error));
-  return parts.join(" · ");
-}
-
 export function DoesNotKnowSection({
   sources,
+  planes = null,
 }: {
   sources: SourceCoverageView[] | null;
+  /** The degradations planes, which name the area a watcher row feeds. */
+  planes?: PlaneView[] | null;
 }) {
   const count =
     sources === null
@@ -1144,14 +1140,18 @@ export function DoesNotKnowSection({
           renderRow={(s, ctx) => (
             <RecordRow
               identity={s.state === "read" ? "read" : "not read"}
-              label={<span title={s.source}>{s.source}</span>}
+              // R8: words on the row; coord's raw id only in the title and
+              // the detail's last line.
+              label={
+                <span title={s.source}>{sourceLabel(s.source, planes)}</span>
+              }
               status={
                 <HomeBadge
                   kind={s.state === "read" ? "source_read" : "source_not_read"}
                   label={BLOCK_STATE_PHRASE[s.state]}
                 />
               }
-              reason={sourceReason(s)}
+              reason={sourceRowReason(s)}
               time={
                 <RowTime
                   at={s.asOf}
@@ -1178,7 +1178,7 @@ export function DoesNotKnowSection({
                       {s.state === "read"
                         ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
                         : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
-                      {s.error ? ` ${withoutVerdictWords(s.error)}` : ""}
+                      {s.error ? ` ${sourceErrorWords(s)}` : ""}
                     </p>
                     <p className="m-0 text-muted-foreground">
                       Freshness bound:{" "}
@@ -1194,6 +1194,14 @@ export function DoesNotKnowSection({
                       </p>
                     )}
                   </div>
+                }
+                raw={
+                  <span
+                    className="font-mono text-[10px] text-muted-foreground/60 break-all"
+                    data-testid="coord-home.does-not-know.raw"
+                  >
+                    {sourceRawLine(s)}
+                  </span>
                 }
               />
             </RecordRow>

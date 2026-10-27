@@ -92,7 +92,10 @@ export default function CoordHomePage() {
         expanded={correctOpen}
         onToggle={() => setCorrectOpen((o) => !o)}
       />
-      <DoesNotKnowSection sources={shown.doesNotKnow} />
+      <DoesNotKnowSection
+        sources={shown.doesNotKnow}
+        planes={shown.degradations.planes}
+      />
     </div>
   );
 }
