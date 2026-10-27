@@ -520,6 +520,10 @@ export function OperatorAuditPanel({
   // re-fetch on every keystroke — only `resourceKeyFilter` feeds `load`.
   const [resourceKeyInput, setResourceKeyInput] = useState("");
   const [resourceKeyFilter, setResourceKeyFilter] = useState("");
+  const clearResourceKey = useCallback(() => {
+    setResourceKeyInput("");
+    setResourceKeyFilter("");
+  }, []);
 
   // Both the proxy and coord gate this feed on coord-tenant admin, so a
   // non-admin read is a certain 403. It is not issued: the panel says who can
@@ -724,10 +728,7 @@ export function OperatorAuditPanel({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    setResourceKeyInput("");
-                    setResourceKeyFilter("");
-                  }}
+                  onClick={clearResourceKey}
                   data-testid="operator-audit-resource-key-clear"
                 >
                   Clear
@@ -735,6 +736,40 @@ export function OperatorAuditPanel({
               ) : null}
             </form>
           )}
+
+          {/* A resource-key search the operator applied before presenting
+              still narrows the feed, and its form is not rendered for an
+              outsider — so the narrowing is SAID, in fixed words (the key is
+              an identifier), with a way back to the whole feed. A narrowed
+              read under a caption about the fleet's changes would otherwise
+              pass for the whole record. Nothing is re-read when the mode
+              changes: the view shows what it was asked, and says so. */}
+          {presenting && resourceKeyFilter ? (
+            <div
+              className="flex flex-wrap items-center gap-2 text-xs"
+              role="status"
+              data-testid="operator-audit-narrowed"
+            >
+              <Badge variant="outline" className="text-[10px]">
+                narrowed
+              </Badge>
+              <span className="text-muted-foreground">
+                Showing one resource&apos;s changes only; changes to everything
+                else are not shown.
+              </span>
+              <Button
+                // Widens what is displayed; writes nothing (D3.2).
+                {...NAVIGATION_ONLY_PROPS}
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearResourceKey}
+                data-testid="operator-audit-narrowed-clear"
+              >
+                Show every resource
+              </Button>
+            </div>
+          ) : null}
 
           {confirmedNonAdmin ? (
             <p
@@ -778,7 +813,20 @@ export function OperatorAuditPanel({
               expandedKey={openKey}
               onExpandedKeyChange={setOpenKey}
               empty={
-                allRows.length > 0 ? (
+                presenting ? (
+                  // Fixed words: the operator's sentence names coord's
+                  // action filter and its row limit.
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="operator-audit-empty-presented"
+                  >
+                    {allRows.length > 0
+                      ? "Every row read is an access check, not a change, and this view hides access checks."
+                      : resourceKeyFilter
+                        ? "No recorded change matches this view, which is narrowed to one resource."
+                        : "No recorded change matches this view."}
+                  </p>
+                ) : allRows.length > 0 ? (
                   <p
                     className="text-xs text-muted-foreground"
                     data-testid="operator-audit-all-hidden"
@@ -797,6 +845,12 @@ export function OperatorAuditPanel({
                         <span className="font-mono">
                           via: {filter.via}
                         </span>{" "}
+                      </>
+                    ) : null}
+                    {resourceKeyFilter ? (
+                      <>
+                        for resource key{" "}
+                        <span className="font-mono">{resourceKeyFilter}</span>{" "}
                       </>
                     ) : null}
                     rows for this tenant at all &mdash; coord applies the filter
