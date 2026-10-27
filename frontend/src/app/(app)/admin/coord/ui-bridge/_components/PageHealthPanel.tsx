@@ -82,6 +82,23 @@ export const PAGE_HEALTH_BUTTON_TITLE =
   "Check the runner's current screen now. It changes no setting, session, file or app state: the runner re-reads the elements in its window to answer.";
 
 /**
+ * The header badge's reason over a KEPT result: the latest run failed, so the
+ * verdict shown is the run before it (R6: a kept verdict may not look
+ * re-confirmed). The header is what stays in view while the panel is closed
+ * (R7), so it also says so in words, beside the badge.
+ */
+export const PAGE_HEALTH_EARLIER_RUN_REASON =
+  "The last run failed, so this is the run before it — not a reading of the page as it is now.";
+
+/**
+ * The header badge's reason when page health has no reading: the run failed,
+ * or the runner answered in a shape this page cannot read. Neutral on which,
+ * because the panel's body says which.
+ */
+export const PAGE_HEALTH_NO_READING_REASON =
+  "Page health has no reading; the panel says why.";
+
+/**
  * Where the occlusion row's reading comes from, for its provenance chip. It
  * is named even while the row is UNKNOWN: the chip then says no time came
  * with it (amber), which is the truth.
@@ -243,18 +260,35 @@ export function PageHealthPanel({
       }
       summary={
         // The header is visible while the panel is closed (R7), so it states
-        // the read as it stands — never "not run" over a run that failed.
+        // the read as it stands — never "not run" over a run that failed, and
+        // never a kept verdict as if the latest run had confirmed it.
         <span
           className="text-xs text-muted-foreground"
           data-testid="coord-ui-bridge-health-summary"
-          data-read-state={pageHealth.state}
+          data-read-state={
+            pageHealth.state === "ok" && pageHealth.stale
+              ? "stale"
+              : pageHealth.state
+          }
         >
           {pageHealth.state === "ok" ? (
-            <HealthBadge kind={pageHealth.value.summary} />
+            pageHealth.stale ? (
+              <span className="inline-flex items-center gap-1.5">
+                <HealthBadge
+                  kind={pageHealth.value.summary}
+                  reason={PAGE_HEALTH_EARLIER_RUN_REASON}
+                />{" "}
+                <span data-testid="coord-ui-bridge-health-summary-earlier">
+                  from the earlier run
+                </span>
+              </span>
+            ) : (
+              <HealthBadge kind={pageHealth.value.summary} />
+            )
           ) : pageHealth.state === "failed" ? (
             <HealthBadge
               kind="unknown"
-              reason="Page health did not answer; the panel says why."
+              reason={PAGE_HEALTH_NO_READING_REASON}
             />
           ) : pageHealth.state === "loading" ? (
             "checking…"

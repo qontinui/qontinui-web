@@ -49,6 +49,7 @@ import {
   VISIBILITY_CLEAR_UNOBSERVED,
   VISIBILITY_HIDES_TEXT,
   NATIVE_CAPTURE_NOTE,
+  PAGE_HEALTH_BODY,
   SPEC_GRAPH_BODY,
   SPEC_LIST_BODY,
   componentsBodyWithDisclosure,
@@ -889,6 +890,64 @@ describe("on-demand reads", () => {
     ).toHaveTextContent(
       "The runner withheld a live snapshot of the runner's screen: Terminal streaming is off for this project."
     );
+  });
+});
+
+/**
+ * The page-health header is what stays in view while the panel is closed
+ * (R7), so it states the read as it stands: a kept verdict as the earlier
+ * run's, and a run with no reading without guessing why.
+ */
+describe("the page-health header", () => {
+  const badgeTitle = (summary: HTMLElement) =>
+    summary.querySelector("[data-status-kind]")?.getAttribute("title") ?? "";
+
+  it("marks a kept verdict as the earlier run's after a re-run that failed — never as current", async () => {
+    let runs = 0;
+    state.relay = relayFake({
+      pageHealth: () => {
+        runs += 1;
+        return runs === 1
+          ? json(200, PAGE_HEALTH_BODY)
+          : json(503, NOT_CONNECTED_BODY);
+      },
+    });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    await screen.findByTestId("coord-ui-bridge-health-counts");
+    const summary = screen.getByTestId("coord-ui-bridge-health-summary");
+    expect(summary).toHaveAttribute("data-read-state", "ok");
+    expect(summary).toHaveTextContent(/^warning$/);
+
+    // Run it again; this time the relay does not answer.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    });
+    await screen.findByTestId("coord-ui-bridge-health-stale");
+    expect(summary).toHaveAttribute("data-read-state", "stale");
+    expect(summary).toHaveTextContent(/^warning from the earlier run$/);
+    expect(badgeTitle(summary)).toBe(
+      "warning — The last run failed, so this is the run before it — not a reading of the page as it is now."
+    );
+  });
+
+  it("says page health has no reading — not that it did not answer — when the runner answered in a shape the page cannot read", async () => {
+    state.relay = relayFake({ pageHealth: () => json(200, null) });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    expect(
+      await screen.findByTestId("coord-ui-bridge-health-unknown")
+    ).toHaveTextContent(
+      "the runner answered, but not in the shape this page reads"
+    );
+    const summary = screen.getByTestId("coord-ui-bridge-health-summary");
+    expect(summary).toHaveAttribute("data-read-state", "failed");
+    expect(badgeTitle(summary)).toContain(
+      "Page health has no reading; the panel says why."
+    );
+    expect(badgeTitle(summary)).not.toMatch(/did not answer/);
   });
 });
 
