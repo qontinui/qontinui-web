@@ -252,6 +252,25 @@ describe("TwinMap — each aspect with its fidelity and the plans moving it", ()
     ).toBeGreaterThan(0);
   });
 
+  it("counts a part's plans exactly over a complete read, and says none is unfinished", async () => {
+    render(<TwinMap />);
+    const { user, detail } = await openAspect("process");
+    expect(
+      within(detail).getByTestId("digital-twin-part-merge_train")
+    ).toHaveTextContent(/· 1 plan$/);
+    expect(
+      within(detail).getByTestId("digital-twin-part-coord")
+    ).toHaveTextContent(/· 0 plans$/);
+    await user.click(
+      within(detail).getByTestId("digital-twin-part-merge_train")
+    );
+    expect(
+      within(detail).getByTestId("digital-twin-plans-none-unfinished")
+    ).toHaveTextContent(
+      "No unfinished plan — every plan tied to these parts is shipped or closed."
+    );
+  });
+
   it("names, for the operator, mapped areas that no work unit carries", async () => {
     render(<TwinMap />);
     const { detail } = await openAspect("process");
@@ -374,6 +393,39 @@ describe("TwinMap — a failed source is a labelled UNKNOWN, never zero", () => 
       screen.getByTestId("digital-twin-plans-incomplete")
     ).toHaveTextContent(
       /INCOMPLETE — coord's work-unit list stopped answering after 2 pages/
+    );
+  });
+
+  it("over an incomplete read, counts a part's plans as a floor, unknown when none was found — never 0", async () => {
+    state.workUnits = {
+      ...idle,
+      data: {
+        kind: "partial",
+        rows: UNITS,
+        bodySignal: null,
+        pages: 20,
+        reason: "page_cap",
+      } satisfies WalkOutcome,
+      dataUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    const { user, detail } = await openAspect("process");
+    const part = (id: string) =>
+      within(detail).getByTestId(`digital-twin-part-${id}`);
+    // Maps areas; one shipped unit found on the pages read.
+    expect(part("merge_train")).toHaveTextContent(/· at least 1 plan$/);
+    // Maps an area no unit read carries: unknown, not zero.
+    expect(part("coord")).toHaveTextContent(/· plans unknown$/);
+    expect(part("coord")).not.toHaveTextContent(/0 plans/);
+    // Maps no area, only its explicit plan: exact whatever was read.
+    expect(part("process_log")).toHaveTextContent(/· 1 plan$/);
+    expect(part("cascade")).toHaveTextContent(/· 0 plans$/);
+
+    await user.click(part("merge_train"));
+    expect(
+      within(detail).getByTestId("digital-twin-plans-none-unfinished")
+    ).toHaveTextContent(
+      "No unfinished plan was found among the work units read — the read was incomplete, so some may be missing."
     );
   });
 

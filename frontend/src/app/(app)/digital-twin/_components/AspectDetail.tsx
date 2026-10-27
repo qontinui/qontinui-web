@@ -22,15 +22,34 @@ import type { ResolvedSubspace } from "../_lib/types";
 import { ASPECT_DETAIL_ID, PLAN_SOURCE } from "./AspectCard";
 import { TwinPlanList } from "./TwinPlanList";
 
+/**
+ * A part's plan count. It is exact over a complete read, and for a part
+ * that maps no area (its plans are its explicit slug, read or not). Over a
+ * partial read a part's areas may sit on unread pages, so the plans found
+ * are only a floor, and none found is UNKNOWN — never zero.
+ */
+function partPlanCount(
+  row: Pick<ResolvedSubspace, "areas">,
+  count: number,
+  complete: boolean
+): string {
+  const plans = count === 1 ? "1 plan" : `${count} plans`;
+  if (complete || (row.areas ?? []).length === 0) return plans;
+  return count === 0 ? "plans unknown" : `at least ${plans}`;
+}
+
 /** One part on its own line: status, and how many plans move it; a press filters the plans. */
 function PartRow({
   row,
   plans,
+  complete,
   selected,
   onSelect,
 }: {
   row: ResolvedSubspace;
   plans: SubspacePlans | null;
+  /** The work-unit read reached the end of coord's list. */
+  complete: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -59,7 +78,7 @@ function PartRow({
         </span>
         <span className="shrink-0 text-xs text-muted-foreground">
           {style.label}
-          {count !== null && ` · ${count === 1 ? "1 plan" : `${count} plans`}`}
+          {count !== null && ` · ${partPlanCount(row, count, complete)}`}
         </span>
       </button>
     </li>
@@ -189,6 +208,7 @@ export function AspectDetail({
                 key={row.id}
                 row={row}
                 plans={perPart?.get(row.id) ?? null}
+                complete={read.kind === "ready" && read.index.complete}
                 selected={part === row.id}
                 onSelect={() =>
                   setPart((current) => (current === row.id ? null : row.id))

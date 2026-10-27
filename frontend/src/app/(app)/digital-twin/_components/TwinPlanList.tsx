@@ -183,9 +183,14 @@ export function TwinPlanList({
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          No unfinished plan — every plan tied to these parts is shipped or
-          closed.
+        <p
+          data-testid="digital-twin-plans-none-unfinished"
+          className="text-sm text-muted-foreground"
+        >
+          {/* Over a partial read, "none" is only "none found". */}
+          {complete
+            ? "No unfinished plan — every plan tied to these parts is shipped or closed."
+            : "No unfinished plan was found among the work units read — the read was incomplete, so some may be missing."}
         </p>
       )}
       {unfinished.length > shown.length && (

@@ -115,6 +115,22 @@ describe("TwinPlanList — operator mode", () => {
     expect(onlyPlan()).toHaveAttribute("data-plan-progress", "unknown");
   });
 
+  it("says no plan is unfinished — and over a partial read, only that none was found", () => {
+    const done = unit("2026-09-01-done", "shipped", BARE);
+    const { rerender } = render(<TwinPlanList plans={[plan(done)]} complete />);
+    expect(
+      screen.getByTestId("digital-twin-plans-none-unfinished")
+    ).toHaveTextContent(
+      "No unfinished plan — every plan tied to these parts is shipped or closed."
+    );
+    rerender(<TwinPlanList plans={[plan(done)]} complete={false} />);
+    expect(
+      screen.getByTestId("digital-twin-plans-none-unfinished")
+    ).toHaveTextContent(
+      "No unfinished plan was found among the work units read — the read was incomplete, so some may be missing."
+    );
+  });
+
   it("says why there are no plans — and that a partial read may have missed some", () => {
     const { rerender } = render(<TwinPlanList plans={[]} complete />);
     expect(screen.getByTestId("digital-twin-plans-empty")).toHaveTextContent(
