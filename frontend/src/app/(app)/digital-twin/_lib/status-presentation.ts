@@ -360,11 +360,13 @@ export function formatReadingAge(age: ReadingAge): string {
  * when read", or "UNKNOWN".
  *
  * A reading's own staleness is its age at the moment it was read, never its
- * age now. Every reading on this page is shown some time after that moment:
- * the backend caches the probe's answer for up to 30 s, react-query holds it
- * between refetches, and keeps it after a failed one; a delivery verdict stays
- * on screen until the next lookup. So "45s stale" alone would claim an age
- * the reading no longer has. The time since the read is what its as-of says.
+ * age now. Every reading on this page is shown some time after that moment.
+ * The backend caches its twin-door probes for up to 30 s (the operator-gated
+ * outbound door is probed on every request). React-query holds the probe's
+ * answer between refetches and keeps it after a failed one, and a delivery
+ * verdict stays on screen until the next lookup. So "45s stale" alone would
+ * claim an age the reading no longer has. The time since the read is what its
+ * as-of says.
  */
 export function formatAgeWhenRead(age: ReadingAge): string {
   return age === null ? "UNKNOWN" : `${formatReadingAge(age)} when read`;
