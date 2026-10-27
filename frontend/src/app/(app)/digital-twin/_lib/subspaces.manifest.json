@@ -535,6 +535,21 @@
       "observer_module": "outbound_budget_observer.rs"
     },
     {
+      "id": "secrets_broker",
+      "symbol": "Ξ_SecretsBroker",
+      "tier": 2,
+      "layer": "coord",
+      "twin": "process",
+      "stages": ["operate"],
+      "description": "Secrets broker: agent secret ops and mints, credential inventory, rotation due, exposure, operator actions. Value-shaped residual refused at coord ingest.",
+      "research_status": "partial",
+      "research_doc": "theory/process-twin.md",
+      "query_kind": "snapshot",
+      "coord_query_tool": "coord_query_secrets_broker",
+      "observer_module": "secrets_broker.rs",
+      "plan": "2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them"
+    },
+    {
       "id": "action_expectations",
       "symbol": "Ξ_ActionExpectations",
       "tier": 2,
