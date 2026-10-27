@@ -1968,16 +1968,35 @@ render agree.
 
 **A kept reading, and two reads of one thing.** R6's stale arm holds on a lens
 surface too, in both modes. A reading kept after its latest read failed (react-query
-keeps a query's data when a refetch fails) is named as the last read: the failure
-leads, the reading is introduced as the last one read, it is never headed "Live", its
-own staleness is worded as of when it was read ("its data was 30s stale when read"),
-and a dot drawn from it is the ignorance floor — the dot says what is true now. Where
-one panel shows two reads of one thing, every sentence names which read it describes,
-and each read is dated by its own `Provenance` chip, `persistent` because nothing
-else in the panel dates it: the sub-space drawer's Status is the page probe's answer,
-its Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
-`drawer-reading.ts`; every state of both reads, in both modes, is a row of
-`SubspaceDetail.matrix.test.tsx`).
+keeps a query's data when a refetch fails) is named as the last read. The failure
+leads, the reading is introduced as the last one read, it is never headed "Live", and
+its own staleness is worded as of when it was read ("its data was 30s stale when
+read"). An age a door did not report is UNKNOWN, never "live". A missing
+`staleness_seconds` means a live answer only on coord's DriftVerdict, and the admin
+outbound door's envelope is not one. So its age reads UNKNOWN in the drawer, on the
+matrix cell and on the Twin map alike (`digital-twin/_lib/status-presentation.ts`
+`readingAge`).
+
+Where a kept reading's dot goes depends on what carries it:
+
+- **A panel that states a verdict on one reading** draws the dot on the ignorance
+  floor, because the dot says what is true now. The sub-space drawer's Status reads
+  "Last answer: Live" on the amber ring.
+- **A list of rows under a page notice** keeps R6's row arm instead. The Completeness
+  matrix's and the Lifecycle view's cells keep their last answer's hue and label, and
+  `CoordUnreachableBanner` says above them that they are not a current reading. The
+  drawer covers that notice, so it says so itself.
+
+Where one panel shows two reads of one thing, every line about a read says which read
+it is about. It does so by name ("Coord's live probe's latest read failed", "This
+drawer's own read of the live verdict failed") or by pointing back at the line before
+it ("As last read, before that failure:"). A reading names its read as the source of
+its own `Provenance` chip, and that chip dates it, `persistent` because nothing else
+in the panel does. The sub-space drawer's Status is the page probe's answer, and its
+Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
+`drawer-reading.ts`). Every state of both reads that can occur, in both modes, is a
+row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer.
+That file's docblock names the combinations it leaves out because they cannot occur.
 
 **Density down.** Presentation mode never adds a row to a page: what it changes is
 which of the page's own elements render, and how large a caption is. A page does not
