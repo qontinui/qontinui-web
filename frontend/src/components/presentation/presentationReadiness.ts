@@ -90,6 +90,10 @@ export const LENS_TREES: readonly string[] = ["/admin/coord", "/digital-twin"];
  */
 export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
   { route: "/admin/coord", provenBy: "app/(app)/admin/coord/page.test.tsx" },
+  {
+    route: "/admin/coord/ui-bridge",
+    provenBy: "app/(app)/admin/coord/ui-bridge/page.presentation.test.tsx",
+  },
 ];
 
 /** `pathname` without its query, hash and trailing slash. */
