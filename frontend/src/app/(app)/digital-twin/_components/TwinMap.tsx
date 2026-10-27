@@ -104,7 +104,8 @@ function PlanReadLine({ read }: { read: TwinPlanRead }) {
  * A probe answer kept after its latest read failed still feeds the figures
  * and part rows, so the map's own notice leads above them and names them as
  * that last answer (`TwinMapHeldNotice`, style guide R6 and 6.5). It names
- * only the twins the probe feeds, those with a live-probed part.
+ * only the twins whose figures that answer decides: under coord's catalog,
+ * those with a part it declares; with the catalog unread, every twin.
  */
 export function TwinMap() {
   // The probe as every view of it reads it: a failed or degraded answer

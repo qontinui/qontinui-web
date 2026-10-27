@@ -21,7 +21,11 @@
  */
 
 import { statusSuffix } from "./failure-text";
-import { allProbesRestricted, resolveSubspaces } from "./resolve";
+import {
+  allProbesRestricted,
+  declaredProbes,
+  resolveSubspaces,
+} from "./resolve";
 import type {
   ResolvedSubspace,
   SubspacesProbeResponse,
@@ -73,6 +77,14 @@ export interface ProbeRead {
   readonly unanswered: string | null;
   /** Every probe was refused (`allProbesRestricted`). */
   readonly restricted: boolean;
+  /**
+   * Whether coord's catalog declaration is held (`resolve.ts`
+   * `declaredProbes`): then which parts are live-probed is coord's to say.
+   * Without it the manifest's `snapshot` rows and the rows the probe's
+   * answer has a cell for are the live-probed ones (`resolveSubspaces`), so
+   * which parts are live-probed rests on that answer too.
+   */
+  readonly declared: boolean;
   /** When the answer shown was read (epoch ms), or `null`. */
   readonly asOf: number | null;
   /** When the last failed attempt was made (epoch ms), or `null`. */
@@ -202,6 +214,7 @@ export function probeReadOf(
     degraded: probeDegradedReason(query.data),
     unanswered: probeUnansweredReason(query),
     restricted: allProbesRestricted(query.data),
+    declared: declaredProbes(catalog) !== null,
     asOf: at(query.dataUpdatedAt),
     failedAt: at(query.errorUpdatedAt),
   };

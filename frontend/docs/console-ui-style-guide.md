@@ -2067,17 +2067,23 @@ Where a kept reading's dot goes depends on what carries it:
 - **The Twin map** has a notice of its own above its cards, worded for the map
   (`TwinMapHeldNotice`), in both modes. Its live-probed part rows keep R6's row arm
   under it. Its probe figures, which draw no dot, keep the last answer's values. The
-  notice names both as that answer, and only for the twins the probe feeds: those
-  with a live-probed part, as coord's catalog declares them
-  (`digital-twin/_lib/twin-aspects.ts` `probeFedAspects`). A twin with none shows its
-  probe figures as UNKNOWN because nothing in it is probed live, a reason the probe's
-  answer has no part in, so the notice never calls them that answer. Under a catalog
-  that declares no intent row it reads "the Observed, Coverage and Staleness figures
-  of the environment twin and the process twin, and the statuses of the live-probed
-  parts below, are its last answer, not a current reading", and a `Provenance` chip
-  dates it. With no twin fed, nothing on the map is the probe's answer, and there is
-  no notice. A probe holding no reading at all needs no notice there either: every
-  probe figure and live part is then UNKNOWN with the reason.
+  notice names both as that answer, and only for the twins whose figures the answer
+  decides (`digital-twin/_lib/twin-aspects.ts` `probeFedAspects`). Under coord's
+  catalog those are the twins with a part it declares. A twin with none shows its
+  probe figures as UNKNOWN because nothing in it is probed live, whatever coord
+  answered or refused and whether or not the probe holds a reading, as the Lifecycle
+  view says of a stage nothing probes. The catalog says that, not the answer, so the
+  notice never calls those figures that answer. With the catalog unread, the
+  manifest's `snapshot` rows and the rows the answer has a cell for are the
+  live-probed ones (`resolve.ts`), so the answer decides every twin's figures, even
+  that a twin has no live-probed part, and the notice names every twin. Under a
+  catalog that declares no intent row it reads "the Observed, Coverage and Staleness
+  figures of the environment twin and the process twin, and the statuses of the
+  live-probed parts below, are its last answer, not a current reading", and a
+  `Provenance` chip dates it. With no twin to name, nothing on the map is the
+  probe's answer, and there is no notice. A probe holding no reading at all needs no
+  notice there either: every probe figure of a twin with a live-probed part, and
+  every live part, is then UNKNOWN with the reason.
   The map's Staleness figure is worded as of the read ("15m stale when read"), since
   in operator mode no chip dates it.
 - **A figure with no notice above it** keeps no reading. On the Twin map the Honesty

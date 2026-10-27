@@ -15,7 +15,12 @@
  *
  * A twin with no live-probed part has no probe figure at all: its observed,
  * coverage and staleness are UNKNOWN because nothing in it is probed live,
- * whatever the probe answered ({@link probeFedAspects}).
+ * whatever the probe holds — an answer, a refusal of every reading, or no
+ * reading at all ({@link NOT_PROBED_REASON}), as the Lifecycle view says of a
+ * stage nothing probes. Which parts are live-probed is coord's catalog's to
+ * say; with that catalog unread, the manifest's `snapshot` rows and the rows
+ * the probe's answer has a cell for stand in for it (`resolve.ts`), so the
+ * answer decides it too ({@link probeFedAspects}).
  *
  * Nothing here is ever a zero standing in for an unknown: a failed read, a
  * degraded probe answer (no probe made — the rule `probe-read.ts`
@@ -176,36 +181,44 @@ export const FIDELITY_SOURCE = {
 } as const;
 
 /**
- * The aspects whose Observed, Coverage and Staleness figures the live probe
- * feeds, in display order: those read from the probe that have at least one
- * live-probed part. A part is live-probed when coord's catalog declares it
- * (`resolve.ts`), so which twins these are is coord's to say, never this
- * page's. A twin with none is not one: its three figures are UNKNOWN because
- * nothing in it is probed live, whatever the probe answered (`probeSilence`).
- * Nor is the UI Bridge app twin, whose figures come from the runner.
+ * The aspects whose Observed, Coverage and Staleness figures the live probe's
+ * answer decides, in display order. Only the twins read from the probe can
+ * be among them; the UI Bridge app twin's figures come from the runner.
+ *
+ * Which parts are live-probed decides it (`resolve.ts`), and that is
+ * coord's catalog's to say while the page holds it (`declared`):
+ * - Under the catalog: the twins with a part it declares. A twin with none
+ *   shows its figures as UNKNOWN because nothing in it is probed live
+ *   ({@link NOT_PROBED_REASON}), which the catalog says and no probe answer
+ *   does, so it is not one.
+ * - With the catalog unread: every twin. The manifest's `snapshot` rows and
+ *   the rows the answer has a cell for are then the live-probed ones, so the
+ *   answer decides even that a twin has no live-probed part.
  */
 export function probeFedAspects(
-  rows: readonly ResolvedSubspace[]
+  rows: readonly ResolvedSubspace[],
+  declared: boolean
 ): TwinAspect[] {
   return TWIN_ASPECTS.filter(
     (aspect) =>
       aspect.figuresFrom === "probe" &&
-      coverageOf(aspectRows(aspect, rows)).probed > 0
+      (!declared || coverageOf(aspectRows(aspect, rows)).probed > 0)
   );
 }
 
 /**
  * What on the Twin map shows the live probe's answer, as the subject of a
- * sentence: the probe figures of each twin it feeds ({@link probeFedAspects})
+ * sentence: the probe figures of each twin it decides ({@link probeFedAspects})
  * and the statuses of the live-probed parts in a drill-down. Every
  * live-probed part belongs to one of those twins, the UI Bridge app twin's
- * included (its rows are the environment twin's too). `null` when the probe
- * feeds no twin, so nothing on the map is its answer.
+ * included (its rows are the environment twin's too). `null` when the answer
+ * decides no twin's figures, so nothing on the map is that answer.
  */
 export function probeFedContent(
-  rows: readonly ResolvedSubspace[]
+  rows: readonly ResolvedSubspace[],
+  declared: boolean
 ): string | null {
-  const fed = probeFedAspects(rows);
+  const fed = probeFedAspects(rows, declared);
   if (fed.length === 0) return null;
   const twins = listed(fed.map((aspect) => `the ${aspect.noun}`));
   return `the ${FIDELITY_LABEL.observed}, ${FIDELITY_LABEL.coverage} and ${FIDELITY_LABEL.staleness} figures of ${twins}, and the statuses of the live-probed parts below`;
@@ -240,6 +253,13 @@ export type FidelityFigure =
 export const RESTRICTED_REASON =
   "coord does not share the twin's live readings with this workspace";
 
+/**
+ * The reason a twin with no live-probed part has no probe figure: there is
+ * nothing in it to read live, whatever coord answers or refuses.
+ */
+export const NOT_PROBED_REASON =
+  "nothing in this twin is probed live yet; its parts answer only when asked";
+
 /** The reason the self-check is missing for a workspace coord does not show it to (a 403). */
 export const SELF_CHECK_INTERNAL_REASON =
   "coord shares its twin self-check only with Qontinui's own workspace";
@@ -267,25 +287,27 @@ function finite(value: number | null | undefined): value is number {
 
 /**
  * The reason the probe says nothing about `rows`, or `null` when it does.
- * Shared by the three probe-sourced figures, so they cannot disagree; and it
- * starts from `probeUnread`, the rule the Completeness and Lifecycle views
- * apply too, so no view of the probe counts what another calls UNKNOWN.
+ * Shared by the three probe-sourced figures, so they cannot disagree.
+ *
+ * A twin with no live-probed part comes first, whatever the probe holds: an
+ * answer, a refusal of every reading, or no reading at all. Nothing in it is
+ * read live, so neither coord's refusal nor the probe's silence is why its
+ * figures are UNKNOWN; the Lifecycle view says the same of a stage nothing
+ * probes. After that it applies `probeUnread`, the rule the Completeness and
+ * Lifecycle views apply too, so no view of the probe counts what another
+ * calls UNKNOWN.
  */
 function probeSilence(
   rows: readonly ResolvedSubspace[],
   probe: ProbeRead
 ): ProbeSilence | "probing" | null {
+  const counts = coverageOf(rows);
+  if (counts.probed === 0) {
+    return { reason: NOT_PROBED_REASON, asOf: probe.asOf };
+  }
   const unread = probeUnread(probe);
   if (unread) return unread;
   if (probe.restricted) return { reason: RESTRICTED_REASON, asOf: probe.asOf };
-  const counts = coverageOf(rows);
-  if (counts.probed === 0) {
-    return {
-      reason:
-        "nothing in this twin is probed live yet; its parts answer only when asked",
-      asOf: probe.asOf,
-    };
-  }
   if (counts.pending > 0) return "probing";
   if (gradedOf(counts) === 0) {
     return {

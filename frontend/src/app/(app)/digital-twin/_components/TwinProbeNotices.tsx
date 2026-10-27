@@ -167,26 +167,29 @@ export function CoordUnreachableBanner({ probe }: { probe: ProbeAttempt }) {
  * `Provenance` chip in both modes, and says it is not a current reading. It
  * is worded for the map: the banner's "cells" and "taxonomy" are not on it.
  *
- * It names only the twins the probe feeds (`twin-aspects.ts`
- * `probeFedContent`): those with a live-probed part, as coord's catalog
- * declares them. A twin with none shows UNKNOWN figures for a reason the
- * probe's answer has no part in, so calling them that answer would be false;
- * and with no such twin nothing on the map is the probe's answer, so there is
- * no notice.
+ * It names only the twins whose figures that answer decides (`twin-aspects.ts`
+ * `probeFedContent`). Under coord's catalog those are the twins with a part
+ * it declares: a twin with none shows its figures as UNKNOWN because nothing
+ * in it is probed live, which the catalog says and the answer does not, so
+ * calling them that answer would be false. With the catalog unread it is
+ * every twin, since the manifest's `snapshot` rows and the answer's own cells
+ * then say which parts are live-probed (`resolve.ts`). With no twin to name,
+ * nothing on the map is the probe's answer, so there is no notice.
  *
  * A probe holding no reading at all needs no notice here: every probe figure
- * is then UNKNOWN with the reason, and every live part UNKNOWN with it
- * (`twin-aspects.ts` `probeSilence`, `resolve.ts`). Renders nothing otherwise,
- * so the map mounts it unconditionally. Both modes say the HTTP status only:
- * the failure's own text is the operator's, on the Completeness tab's banner.
+ * of a twin with a live-probed part is then UNKNOWN with the reason, and
+ * every live part UNKNOWN with it (`twin-aspects.ts` `probeSilence`,
+ * `resolve.ts`). Renders nothing otherwise, so the map mounts it
+ * unconditionally. Both modes say the HTTP status only: the failure's own
+ * text is the operator's, on the Completeness tab's banner.
  */
 export function TwinMapHeldNotice({
   probe,
 }: {
-  probe: ProbeAttempt & Pick<ProbeRead, "rows">;
+  probe: ProbeAttempt & Pick<ProbeRead, "rows" | "declared">;
 }) {
   if (!probe.refreshFailed || probeUnread(probe) !== null) return null;
-  const content = probeFedContent(probe.rows);
+  const content = probeFedContent(probe.rows, probe.declared);
   if (content === null) return null;
   return (
     <UnknownReading

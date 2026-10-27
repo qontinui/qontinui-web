@@ -10,6 +10,7 @@ import { isCaptionKey } from "@/components/presentation";
 import { manifest, resolveSubspaces } from "./resolve";
 import { RunnerRelayError } from "./runner-relay";
 import {
+  NOT_PROBED_REASON,
   NO_RUNNER_REASON,
   RESTRICTED_REASON,
   SELF_CHECK_INTERNAL_REASON,
@@ -26,8 +27,14 @@ import {
   type RelayRead,
   type ReportRead,
 } from "./twin-aspects";
-import { probeDegradedReason, probeReadOf, type ProbeRead } from "./probe-read";
 import {
+  probeDegradedReason,
+  probeReadOf,
+  type ProbeQuery,
+  type ProbeRead,
+} from "./probe-read";
+import {
+  MANIFEST_SNAPSHOT_IDS,
   catalogDeclaring as declaring,
   outboundEnvelope,
 } from "./test-catalog";
@@ -35,6 +42,7 @@ import type {
   RawVerdictResponse,
   ResolvedSubspace,
   SubspaceProbe,
+  SubspacesProbeResponse,
   TwinCatalogEntry,
   TwinCatalogResponse,
 } from "./types";
@@ -103,6 +111,7 @@ const ENV_PROBES: SubspaceProbe[] = [
   probe("deps", "blind", 0),
 ];
 
+/** A probe answer over rows coord's catalog declares (`rowsFor`). */
 function probeRead(over: Partial<ProbeRead> = {}): ProbeRead {
   return {
     rows: rowsFor(ENV_PROBES),
@@ -112,6 +121,7 @@ function probeRead(over: Partial<ProbeRead> = {}): ProbeRead {
     degraded: null,
     unanswered: null,
     restricted: false,
+    declared: true,
     asOf: NOW - 5_000,
     failedAt: null,
     ...over,
@@ -420,18 +430,248 @@ describe("plantFidelity — from the live probe", () => {
   });
 });
 
+/** An answer whose cells are `ids`, each `status`; every one refused is `restricted`. */
+function answerOf(
+  ids: readonly string[],
+  status: "implemented" | "restricted" = "implemented"
+): SubspacesProbeResponse {
+  return {
+    subspaces: ids.map((id) =>
+      status === "restricted" ? { id, status } : probe(id, status, 1)
+    ),
+    probed: ids.length,
+    restricted: status === "restricted",
+  };
+}
+
+/** The probe query `probeReadOf` reads, answered at `NOW - 5s` unless told otherwise. */
+function probeQuery(over: Partial<ProbeQuery> = {}): ProbeQuery {
+  return {
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
+    online: true,
+    ...over,
+  };
+}
+
+const ANSWERED_AT = NOW - 5_000;
+const REFRESH_FAILED_AT = NOW - 1_000;
+const HTTP_502 = new Error(
+  "GET /api/v1/digital-twin/subspaces failed: 502 - bad gateway"
+);
+/** The query holding `data`, answered; or kept after its refresh failed. */
+const answeredQuery = (data: SubspacesProbeResponse) =>
+  probeQuery({ data, dataUpdatedAt: ANSWERED_AT });
+const heldQuery = (data: SubspacesProbeResponse) =>
+  probeQuery({
+    data,
+    dataUpdatedAt: ANSWERED_AT,
+    isError: true,
+    error: HTTP_502,
+    errorUpdatedAt: REFRESH_FAILED_AT,
+  });
+
 /**
- * The twins whose probe figures the live probe feeds — what the Twin map's
- * held-probe notice may call the probe's answer. Which parts are live-probed
- * is coord's catalog's to say (`resolve.ts`). Coord declared no intent row
- * on 2026-10-27, so the intent twin's probe figures were UNKNOWN for a
- * reason the probe's answer has no part in.
+ * A twin with no live-probed part, in every state of the probe, under coord's
+ * catalog and with it unread (the manifest's `snapshot` rows standing in).
+ * The intent twin has none either way here: the manifest marks none of its
+ * rows `snapshot`, and no answer below has a cell for one. Its three probe
+ * figures say nothing in it is probed live in every state — before a refusal
+ * of every reading, and before the probe's silence, neither of which is why
+ * they are UNKNOWN — dated by the probe's last answer, if it has one. The
+ * process twin, which has live-probed parts, says what the probe holds, so
+ * the order is visible against it.
  */
-describe("probeFedAspects — the twins the live probe feeds", () => {
-  const answered = (ids: readonly string[]): SubspaceProbe[] =>
-    ids.map((id) => probe(id, "implemented", 1));
-  const declared = (ids: readonly string[]) =>
-    resolveSubspaces(answered(ids), false, declaring(ids));
+describe("plantFidelity — a twin with no live-probed part, in every state of the probe", () => {
+  const PROCESS_IDS = MANIFEST_SNAPSHOT_IDS.filter(
+    (id) => manifest.subspaces.find((s) => s.id === id)?.twin === "process"
+  );
+  const ANSWER = answerOf(MANIFEST_SNAPSHOT_IDS);
+  const REFUSED = answerOf(MANIFEST_SNAPSHOT_IDS, "restricted");
+  const DEGRADED: SubspacesProbeResponse = {
+    degraded: true,
+    probed: 0,
+    restricted: false,
+    subspaces: MANIFEST_SNAPSHOT_IDS.map((id) => ({
+      id,
+      status: "error",
+      error: "coord_unavailable",
+    })),
+  };
+  const DEGRADED_REASON =
+    "coord's live probe could not be made: coord could not be reached";
+
+  /** What the process twin's three probe figures say in a state. */
+  type ProcessSays =
+    | { readonly state: "known" }
+    | { readonly state: "loading" }
+    | {
+        readonly state: "unknown";
+        readonly reason: string;
+        readonly asOf: number | null;
+      };
+
+  const STATES: readonly {
+    name: string;
+    query: ProbeQuery;
+    process: ProcessSays;
+  }[] = [
+    {
+      name: "answered",
+      query: answeredQuery(ANSWER),
+      process: { state: "known" },
+    },
+    {
+      name: "answered, every reading refused",
+      query: answeredQuery(REFUSED),
+      process: {
+        state: "unknown",
+        reason: RESTRICTED_REASON,
+        asOf: ANSWERED_AT,
+      },
+    },
+    {
+      name: "held after a failed refresh",
+      query: heldQuery(ANSWER),
+      process: { state: "known" },
+    },
+    {
+      name: "held after a failed refresh, every reading refused",
+      query: heldQuery(REFUSED),
+      process: {
+        state: "unknown",
+        reason: RESTRICTED_REASON,
+        asOf: ANSWERED_AT,
+      },
+    },
+    {
+      name: "failed with nothing held",
+      query: probeQuery({
+        isError: true,
+        error: HTTP_502,
+        errorUpdatedAt: REFRESH_FAILED_AT,
+      }),
+      process: {
+        state: "unknown",
+        reason: "coord's live probe could not be read (HTTP 502)",
+        asOf: REFRESH_FAILED_AT,
+      },
+    },
+    {
+      name: "degraded",
+      query: answeredQuery(DEGRADED),
+      process: {
+        state: "unknown",
+        reason: DEGRADED_REASON,
+        asOf: ANSWERED_AT,
+      },
+    },
+    {
+      name: "degraded, held after a failed refresh",
+      query: heldQuery(DEGRADED),
+      process: {
+        state: "unknown",
+        reason: DEGRADED_REASON,
+        asOf: ANSWERED_AT,
+      },
+    },
+    {
+      name: "unanswered, offline",
+      query: probeQuery({ online: false }),
+      process: {
+        state: "unknown",
+        reason: "coord's live probe has not answered: this browser is offline",
+        asOf: null,
+      },
+    },
+    {
+      name: "unanswered, online, none in flight",
+      query: probeQuery(),
+      process: {
+        state: "unknown",
+        reason:
+          "coord's live probe has not answered, and no read of it is in flight",
+        asOf: null,
+      },
+    },
+    {
+      name: "in flight",
+      query: probeQuery({ isLoading: true }),
+      process: { state: "loading" },
+    },
+  ];
+
+  const CATALOGS: readonly {
+    name: string;
+    catalog: TwinCatalogResponse | undefined;
+  }[] = [
+    { name: "coord's catalog", catalog: declaring(MANIFEST_SNAPSHOT_IDS) },
+    { name: "no catalog read", catalog: undefined },
+  ];
+
+  const probeFigures = (
+    id: "process" | "intent",
+    read: ProbeRead
+  ): FidelityFigure[] =>
+    plantFidelity(
+      aspectRows(twinAspect(id), read.rows),
+      read,
+      reportRead(),
+      NOW
+    ).filter((f) => f.key !== "honesty");
+
+  for (const { name: catalogName, catalog } of CATALOGS) {
+    for (const s of STATES) {
+      it(`${s.name} · ${catalogName}`, () => {
+        const read = probeReadOf(s.query, catalog);
+        expect(PROCESS_IDS.length).toBeGreaterThan(0);
+
+        for (const f of probeFigures("intent", read)) {
+          expect(f, f.key).toEqual({
+            key: f.key,
+            state: "unknown",
+            reason: NOT_PROBED_REASON,
+            source: "coord's live twin probe",
+            asOf: read.asOf,
+          });
+        }
+
+        const process = probeFigures("process", read);
+        if (s.process.state === "unknown") {
+          for (const f of process) {
+            expect(f, f.key).toEqual({
+              key: f.key,
+              state: "unknown",
+              reason: s.process.reason,
+              source: "coord's live twin probe",
+              asOf: s.process.asOf,
+            });
+          }
+        } else {
+          expect(process[0]!.state).toBe(s.process.state);
+        }
+      });
+    }
+  }
+});
+
+/**
+ * The twins whose probe figures the live probe's answer decides — what the
+ * Twin map's held-probe notice may call that answer. Under coord's catalog
+ * they are the twins with a part it declares; coord declared no intent row
+ * on 2026-10-27, so the intent twin's figures said nothing in it is probed
+ * live, which the catalog says and no answer does. With the catalog unread,
+ * the manifest's `snapshot` rows and the answer's own cells say which parts
+ * are live-probed, so the answer decides every twin's figures.
+ *
+ * Each case is read answered and kept after a failed refresh, through
+ * `probeReadOf` as the page reads it.
+ */
+describe("probeFedAspects — the twins whose figures the probe's answer decides", () => {
   // A catalog from a coord that declares the flag on every entry and sets it
   // on none: nothing is live-probed.
   const NOTHING_PROBEABLE: TwinCatalogResponse = {
@@ -443,28 +683,33 @@ describe("probeFedAspects — the twins the live probe feeds", () => {
   };
   const FIGURES = "the Observed, Coverage and Staleness figures of";
   const PARTS = "and the statuses of the live-probed parts below";
+  const ALL_THREE = `${FIGURES} the environment twin, the process twin and the intent twin, ${PARTS}`;
 
   const CASES: readonly {
     name: string;
-    rows: ResolvedSubspace[];
+    catalog: TwinCatalogResponse | undefined;
+    answer: SubspacesProbeResponse;
     fed: readonly string[];
     content: string | null;
   }[] = [
     {
       name: "a catalog declaring no intent row",
-      rows: declared(["schema", "workers"]),
+      catalog: declaring(["schema", "workers"]),
+      answer: answerOf(["schema", "workers"]),
       fed: ["environment", "process"],
       content: `${FIGURES} the environment twin and the process twin, ${PARTS}`,
     },
     {
       name: "a catalog declaring an intent row",
-      rows: declared(["schema", "workers", "metrics"]),
+      catalog: declaring(["schema", "workers", "metrics"]),
+      answer: answerOf(["schema", "workers", "metrics"]),
       fed: ["environment", "process", "intent"],
-      content: `${FIGURES} the environment twin, the process twin and the intent twin, ${PARTS}`,
+      content: ALL_THREE,
     },
     {
       name: "a catalog declaring one twin's rows",
-      rows: declared(["workers"]),
+      catalog: declaring(["workers"]),
+      answer: answerOf(["workers"]),
       fed: ["process"],
       content: `${FIGURES} the process twin, ${PARTS}`,
     },
@@ -472,48 +717,105 @@ describe("probeFedAspects — the twins the live probe feeds", () => {
       // A UI Bridge layer row is the environment twin's: the app twin's own
       // figures are the runner's, so it is never named.
       name: "a catalog declaring a UI Bridge layer row",
-      rows: declared(["dom"]),
+      catalog: declaring(["dom"]),
+      answer: answerOf(["dom"]),
       fed: ["environment"],
       content: `${FIGURES} the environment twin, ${PARTS}`,
     },
     {
       name: "a catalog declaring nothing probeable",
-      rows: resolveSubspaces(answered(["schema"]), false, NOTHING_PROBEABLE),
+      catalog: NOTHING_PROBEABLE,
+      answer: answerOf(["schema"]),
       fed: [],
       content: null,
     },
     {
-      // With no catalog read, the manifest's snapshot rows and any row a
-      // probe came back for are the live-probed ones.
       name: "no catalog read, and a probe answer for an intent row",
-      rows: resolveSubspaces(answered(["metrics"]), false),
+      catalog: undefined,
+      answer: answerOf(["metrics"]),
       fed: ["environment", "process", "intent"],
-      content: `${FIGURES} the environment twin, the process twin and the intent twin, ${PARTS}`,
+      content: ALL_THREE,
+    },
+    {
+      // The answer's lack of an intent cell is what leaves the intent twin
+      // with no live-probed part: its figures are that answer's too.
+      name: "no catalog read, and no probe answer for an intent row",
+      catalog: undefined,
+      answer: answerOf(["schema", "workers"]),
+      fed: ["environment", "process", "intent"],
+      content: ALL_THREE,
+    },
+    {
+      // The refusal is the answer the declared twins' figures show; the
+      // intent twin's say nothing in it is probed live, which the catalog
+      // says, whatever coord refuses.
+      name: "every reading refused, under a catalog declaring no intent row",
+      catalog: declaring(["schema", "workers"]),
+      answer: answerOf(["schema", "workers"], "restricted"),
+      fed: ["environment", "process"],
+      content: `${FIGURES} the environment twin and the process twin, ${PARTS}`,
+    },
+    {
+      name: "every reading refused, with no catalog read",
+      catalog: undefined,
+      answer: answerOf(["schema", "workers"], "restricted"),
+      fed: ["environment", "process", "intent"],
+      content: ALL_THREE,
+    },
+    {
+      name: "every reading refused, under a catalog declaring nothing probeable",
+      catalog: NOTHING_PROBEABLE,
+      answer: answerOf(["schema"], "restricted"),
+      fed: [],
+      content: null,
     },
   ];
 
+  const READS = [
+    { name: "answered", query: answeredQuery },
+    { name: "held after a failed refresh", query: heldQuery },
+  ] as const;
+
   for (const c of CASES) {
-    it(`names the twins with a live-probed part: ${c.name}`, () => {
-      expect(probeFedAspects(c.rows).map((aspect) => aspect.id)).toEqual(c.fed);
-      expect(probeFedContent(c.rows)).toBe(c.content);
-    });
+    for (const r of READS) {
+      it(`names the twins it decides: ${c.name} · ${r.name}`, () => {
+        const read = probeReadOf(r.query(c.answer), c.catalog);
+        expect(read.declared).toBe(c.catalog !== undefined);
+        expect(
+          probeFedAspects(read.rows, read.declared).map((aspect) => aspect.id)
+        ).toEqual(c.fed);
+        expect(probeFedContent(read.rows, read.declared)).toBe(c.content);
+      });
+    }
   }
 
-  it("never names a twin whose probe figures say nothing in it is probed live", () => {
+  /**
+   * The notice and the figures cannot disagree: a twin it leaves out says
+   * nothing in it is probed live, and coord's catalog — not the answer — is
+   * what says so. Every other twin's figures are that answer's, so it is
+   * named.
+   */
+  it("leaves out exactly the twins coord's catalog says nothing in is probed live", () => {
     for (const c of CASES) {
-      const fed = new Set(probeFedAspects(c.rows).map((aspect) => aspect.id));
-      for (const id of ["environment", "process", "intent"] as const) {
-        const silent = plantFidelity(
-          aspectRows(twinAspect(id), c.rows),
-          probeRead({ rows: c.rows }),
-          reportRead(),
-          NOW
-        ).some(
-          (f) =>
-            f.state === "unknown" &&
-            f.reason.startsWith("nothing in this twin is probed live")
+      for (const r of READS) {
+        const read = probeReadOf(r.query(c.answer), c.catalog);
+        const fed = new Set(
+          probeFedAspects(read.rows, read.declared).map((aspect) => aspect.id)
         );
-        expect(fed.has(id), `${c.name}: ${id}`).toBe(!silent);
+        for (const id of ["environment", "process", "intent"] as const) {
+          const probeFigures = plantFidelity(
+            aspectRows(twinAspect(id), read.rows),
+            read,
+            reportRead(),
+            NOW
+          ).filter((f) => f.key !== "honesty");
+          const notProbed = probeFigures.every(
+            (f) => f.state === "unknown" && f.reason === NOT_PROBED_REASON
+          );
+          expect(fed.has(id), `${c.name} · ${r.name}: ${id}`).toBe(
+            !(notProbed && read.declared)
+          );
+        }
       }
     }
   });
