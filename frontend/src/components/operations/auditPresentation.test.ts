@@ -16,6 +16,7 @@ import {
   auditScope,
   indexDevices,
   VERBATIM_BLAST_KEYS,
+  presentedAuditActionLabel,
 } from "./auditPresentation";
 import type { AuditRow } from "./operatorAudit";
 
@@ -178,5 +179,31 @@ describe("the blast-radius values shown as they are", () => {
     ]) {
       expect(VERBATIM_BLAST_KEYS.has(key), key).toBe(false);
     }
+  });
+});
+
+describe("presentedAuditActionLabel — an action as an outsider reads it", () => {
+  it("is the console's label when the action has one", () => {
+    expect(presentedAuditActionLabel("fleet.drain.set")).toBe(
+      "Drained a machine"
+    );
+    expect(presentedAuditActionLabel("pr_merge.kill_switch.activate")).toBe(
+      "Fired the merge kill switch"
+    );
+  });
+
+  it("is the action's family in fixed words otherwise — never coord's own id", () => {
+    expect(presentedAuditActionLabel("pr_merge.kill_switch")).toBe(
+      "A merge train change"
+    );
+    expect(presentedAuditActionLabel("fleet_policy.something_new")).toBe(
+      "A fleet policy change"
+    );
+    expect(presentedAuditActionLabel("fleet.something_new")).toBe(
+      "A fleet change"
+    );
+    expect(presentedAuditActionLabel("totally.unknown_thing")).toBe(
+      "A recorded change"
+    );
   });
 });

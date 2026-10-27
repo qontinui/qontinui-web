@@ -214,6 +214,10 @@ function NotRegisteredBadge({
  * closed even when this tenant assigned Workhorse.
  */
 function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
+  // Coord's effective state is a token (`closed_by_role`): the operator reads
+  // it verbatim, an outsider in words — the same spelling the row's summary
+  // line already uses (`laneSummary`).
+  const { presenting } = usePresentationMode();
   return (
     <Table className="text-xs" data-testid="fleet-roles-lanes">
       <TableHeader>
@@ -252,15 +256,19 @@ function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
                   <DrainText lane={lane} />
                 )}
               </TableCell>
-              <TableCell className="font-mono">
+              <TableCell className={presenting ? undefined : "font-mono"}>
                 {na ? (
                   "n/a"
                 ) : lane === null ? (
                   "not served"
                 ) : lane.effective === "not_registered" ? (
                   <NotRegisteredBadge maybeCut={maybeCut} />
+                ) : lane.effective === null ? (
+                  "not served"
+                ) : presenting ? (
+                  lane.effective.replaceAll("_", " ")
                 ) : (
-                  (lane.effective ?? "not served")
+                  lane.effective
                 )}
               </TableCell>
             </TableRow>

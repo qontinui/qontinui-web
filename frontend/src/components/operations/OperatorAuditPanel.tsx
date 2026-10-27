@@ -83,6 +83,7 @@ import {
   auditResourceRepo,
   auditScope,
   indexDevices,
+  presentedAuditActionLabel,
   VERBATIM_BLAST_KEYS,
 } from "./auditPresentation";
 import { DEVOPS_SOURCES } from "./devOpsHeadline";
@@ -361,7 +362,10 @@ function PresentedAuditRow({
 }) {
   const blast = blastRadiusOf(row);
   const reason = reasonOf(row);
+  // An action the console has no label for reads as its family in fixed
+  // words, never as coord's own id (`presentedAuditActionLabel`).
   const actionLabel = describeAuditAction(row.action);
+  const presentedAction = presentedAuditActionLabel(row.action);
   const machine = auditResourceMachine(row, byId);
   const actor = auditActorMachine(row, byId);
   return (
@@ -369,11 +373,8 @@ function PresentedAuditRow({
       rowKey={row.audit_id}
       data-testid={`audit-row-${row.audit_id}`}
       identity={
-        <span
-          className={actionLabel.mapped ? undefined : "font-mono"}
-          data-audit-action-mapped={actionLabel.mapped ? "true" : "false"}
-        >
-          {actionLabel.label}
+        <span data-audit-action-mapped={actionLabel.mapped ? "true" : "false"}>
+          {presentedAction}
         </span>
       }
       label={
@@ -388,7 +389,7 @@ function PresentedAuditRow({
             descriptor={{
               kind: auditResourceKindWord(row.resource_kind),
               area: auditAreaWord(row.action),
-              status: actionLabel.label,
+              status: presentedAction,
               at: row.occurred_at,
             }}
           />
@@ -659,9 +660,14 @@ export function OperatorAuditPanel({
                 </option>
               ))}
             </select>
-            <span className="text-[11px] text-muted-foreground">
-              {filter.hint}
-            </span>
+            {/* The hint names coord's action families (`fleet.*`,
+                `via: agent_evidence`): the operator's vocabulary. The option
+                labels say what each filter shows. */}
+            {!presenting && (
+              <span className="text-[11px] text-muted-foreground">
+                {filter.hint}
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

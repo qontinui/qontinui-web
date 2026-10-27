@@ -424,11 +424,15 @@ export default function CoordDevOpsPage() {
    */
   const readoutBadges = useMemo<HealthBadge[]>(
     () => [
-      faultToVisibilityBadge({
-        data: faultToVisibility.data,
-        loading: faultToVisibility.loading,
-        error: faultToVisibility.error,
-      }),
+      faultToVisibilityBadge(
+        {
+          data: faultToVisibility.data,
+          loading: faultToVisibility.loading,
+          error: faultToVisibility.error,
+        },
+        // An outsider reads each slowest kind in words, not coord's token.
+        { plainKinds: presenting }
+      ),
       buildResolvabilityBadge(fleet.data, fleet.error),
     ],
     [
@@ -437,6 +441,7 @@ export default function CoordDevOpsPage() {
       faultToVisibility.error,
       fleet.data,
       fleet.error,
+      presenting,
     ]
   );
 

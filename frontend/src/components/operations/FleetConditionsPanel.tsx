@@ -181,10 +181,14 @@ export function FleetConditionsPanel({
         label: `${d.label} `,
         value: d.count,
         tone: "default",
-        title: `Unclaimed conditions owned by the ${d.label} agents (${d.domain}).`,
+        // Coord's domain token (`merge_train`) is the operator's filter term,
+        // and vocabulary an outsider cannot read.
+        title: presenting
+          ? `Unclaimed conditions owned by the ${d.label} agents.`
+          : `Unclaimed conditions owned by the ${d.label} agents (${d.domain}).`,
         "data-testid": `coord-devops-conditions-domain-${d.domain}`,
       })),
-    [summary.byDomain]
+    [summary.byDomain, presenting]
   );
 
   const settingStats = useMemo<Stat[]>(
@@ -199,9 +203,12 @@ export function FleetConditionsPanel({
         tone: "muted",
         title: [
           // Coord's summary is free text — it can name the machine drained
-          // and who drained it — so an outsider sees only the kind (D3.3).
+          // and who drained it — so an outsider sees only what the label
+          // already says (D3.3); the kind token is the operator's.
           presenting ? null : s.summary,
-          `${s.kind} — a deliberate setting coord is reflecting back, not a fault.`,
+          presenting
+            ? "A deliberate setting coord is reflecting back, not a fault."
+            : `${s.kind} — a deliberate setting coord is reflecting back, not a fault.`,
           s.since ? `In effect since ${s.since}.` : null,
         ]
           .filter(Boolean)

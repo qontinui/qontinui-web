@@ -1092,6 +1092,23 @@ function FloorsLegend({
   missingFloors: number;
   warnMargin: number | undefined;
 }) {
+  const { presenting } = usePresentationMode();
+  // The legend teaches the operator to read the Admission column, in coord's
+  // vocabulary; an outsider has the section caption instead (plan
+  // `2026-10-23-console-presentation-spaces` D1, density down). What stays is
+  // the one UNKNOWN statement the legend carries, in plain words.
+  if (presenting) {
+    return missingFloors > 0 ? (
+      <p
+        className="text-[10px] text-muted-foreground"
+        data-testid="fleet-resource-floors-missing"
+      >
+        {missingFloors} lane{missingFloors === 1 ? " has" : "s have"} a limit
+        that was not reported, so room for more work there reads unknown —
+        which is not healthy.
+      </p>
+    ) : null;
+  }
   return (
     <div
       className="rounded border border-dashed p-2 space-y-1"
@@ -1167,9 +1184,9 @@ function FloorsLegend({
         and a recoverable delay never becomes a failed build. Both are shown;
         neither is inferred. The row&apos;s colour is coord&apos;s{" "}
         <em>admission verdict</em> against these floors — not a band over the
-        pressure ratio. This page keeps no threshold of its own, so a red row
-        means the dispatcher has already stopped electing that lane. Memory and
-        disk are kept apart because memory frees on its own and disk does not.
+        pressure ratio. This page keeps no threshold of its own: a red row
+        means a guard on that lane is refusing work. Memory and disk are kept
+        apart because memory frees on its own and disk does not.
       </p>
       {missingFloors > 0 && (
         <p

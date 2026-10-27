@@ -702,6 +702,45 @@ export async function settle() {
   );
 }
 
+/**
+ * Vocabulary an outsider cannot read (`audience_profile/external-evaluator`:
+ * "verdict codes, sub-space identifiers, internal status words shown without
+ * translation"): coord's snake_case tokens (`closed_by_role`,
+ * `pr_merge.kill_switch`), an action family (`fleet.*`), an environment
+ * variable (`COORD_MAX_WORKTREES`), a coord table (`coord.ci_dispatches`), an
+ * HTTP route (`POST /coord/status`) or a dev host.
+ */
+export const ENGINEERING_VOCABULARY =
+  /\b[a-z]+_[a-z_]+\b|\b[a-z_]+\.\*|\b[A-Z]{2,}_[A-Z_]{2,}\b|\bcoord\.[a-z_]+|\b(?:GET|POST|PUT|PATCH|DELETE) \/|localhost/;
+
+/**
+ * Where the page shows engineering vocabulary right now: its text (every
+ * rendered node, sr-only included), and every `title` and `aria-label` a
+ * pointer or a screen reader reaches — each hit with its context. A hover
+ * card's content is read only while it is open, by the caller.
+ */
+export function engineeringVocabularyOnPage(): string[] {
+  const found: string[] = [];
+  const scan = (where: string, text: string | null | undefined) => {
+    if (!text) return;
+    const hit = ENGINEERING_VOCABULARY.exec(text);
+    if (hit) {
+      const at = hit.index;
+      found.push(
+        `${where}: …${text.slice(Math.max(0, at - 50), at + hit[0].length + 30)}…`
+      );
+    }
+  };
+  scan("text", document.body.textContent);
+  for (const el of document.querySelectorAll("[title]")) {
+    scan("title", el.getAttribute("title"));
+  }
+  for (const el of document.querySelectorAll("[aria-label]")) {
+    scan("aria-label", el.getAttribute("aria-label"));
+  }
+  return found;
+}
+
 /** The disclosure toggle inside a row or panel (a pure `aria-expanded` one). */
 export function toggleOf(container: Element): HTMLElement {
   const toggle = container.querySelector("button[aria-expanded]");

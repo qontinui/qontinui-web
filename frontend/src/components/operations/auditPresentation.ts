@@ -25,7 +25,7 @@
 
 import type { MachineIdentity } from "@/components/presentation";
 import type { FleetDeviceRef } from "./fleetResources";
-import type { AuditRow } from "./operatorAudit";
+import { describeAuditAction, type AuditRow } from "./operatorAudit";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -120,6 +120,21 @@ export function auditAreaWord(action: string): string | null {
     if (action.startsWith(prefix)) return word;
   }
   return null;
+}
+
+/**
+ * What an action reads as in presentation mode: the console's label when it
+ * has one ("Drained a machine"), else the action's family in fixed words ("A
+ * merge train change") — never coord's own id. The operator view shows an
+ * unlabelled id as a real fact and a working filter term
+ * (`describeAuditAction`); to an outsider `pr_merge.kill_switch` is an
+ * internal word shown without translation.
+ */
+export function presentedAuditActionLabel(action: string): string {
+  const described = describeAuditAction(action);
+  if (described.mapped) return described.label;
+  const area = auditAreaWord(action);
+  return area === null ? "A recorded change" : `A ${area} change`;
 }
 
 /** How many entries a promoted list key holds, read off the raw metadata. */

@@ -142,6 +142,7 @@ import {
   DEVOPS_CAPTIONS,
   type DevOpsFixture,
   DISPLAY_NAME_A,
+  engineeringVocabularyOnPage,
   ERROR_DEVICE,
   ERROR_HOST,
   FIRST_PARTY_REPO,
@@ -405,6 +406,32 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     );
     expect(document.body.textContent).not.toMatch(/census/);
     fireEvent.blur(unknownCell!);
+  });
+
+  it("shows no coord token, table, route or variable — in text, titles or labels, behind every disclosure", async () => {
+    mockRoutes();
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+    // Every carrier of coord vocabulary IS on the page — an unlabelled audit
+    // action, a role lane's state, the conditions' owners and settings, the
+    // slowest fault kinds, the resource legend's one unknown — so the scan
+    // below finds translation, not an empty page.
+    expect(screen.getByTestId("audit-row-audit-2")).toHaveTextContent(
+      "A merge train change"
+    );
+    expect(
+      screen.getByTestId("coord-devops-conditions-domain-merge_train")
+    ).toBeTruthy();
+    expect(screen.getByTestId("coord-devops-f2v-badge")).toBeTruthy();
+    checkBehindEveryDisclosure(() => {
+      expect(engineeringVocabularyOnPage()).toEqual([]);
+    });
+    // A role row's lane table, opened: coord's state in words.
+    const lanes = [...document.querySelectorAll('[data-testid="fleet-roles-lanes"]')];
+    expect(lanes.some((t) => /closed by role/.test(t.textContent ?? ""))).toBe(
+      true
+    );
   });
 
   it("names machines by alias, and one machine by ONE alias across the machine card, the resources table and the worktree slots", async () => {
@@ -690,6 +717,8 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
       "No machine has reported what it is working on in the last hour."
     );
     expect(empty.textContent).not.toMatch(/POST|\/coord\//);
+    // ...and nothing anywhere on the page is coord's own vocabulary.
+    expect(engineeringVocabularyOnPage()).toEqual([]);
     expect(screen.getByTestId("fleet-roles-unknown")).toHaveTextContent(
       FAILURE_SENTENCE_WITHHELD
     );
