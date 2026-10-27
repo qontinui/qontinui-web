@@ -41,7 +41,8 @@ import {
   renderInPresentationMode,
 } from "@/test/presentation";
 import { RESTRICTED_REASON } from "./_lib/probe-read";
-import type { SubspacesProbeResponse } from "./_lib/types";
+import { isDeclaredProbe, manifest } from "./_lib/resolve";
+import type { SubspacesProbeResponse, TwinCatalogResponse } from "./_lib/types";
 
 /**
  * What each data hook answers. `probe` is set before every test; the others
@@ -316,12 +317,43 @@ async function expectProbeViewsUnknown(
   ).toBeTruthy();
 }
 
+/** The ids of the process twin's rows `keep` admits, sorted. */
+function processPartIds(keep: (id: string, queryKind: string) => boolean) {
+  return manifest.subspaces
+    .filter((s) => s.twin === "process" && keep(s.id, s.query_kind))
+    .map((s) => s.id)
+    .sort();
+}
+
+/**
+ * The process twin's live parts: its rows the page's own stub catalog declares
+ * probeable. Read from the stub and the manifest, never pinned, so a row added
+ * to both moves it (main's secrets_broker row made eight nine).
+ */
+const STUB_CATALOG = stubBody(
+  "**/api/v1/digital-twin/catalog"
+) as TwinCatalogResponse;
+const PROCESS_LIVE_PARTS = processPartIds((id) =>
+  STUB_CATALOG.entries.some((e) => e.subspace === id && isDeclaredProbe(e))
+);
+
 /** The open drill-down's live parts: UNKNOWN with `reason`, none reading "Error". */
 function expectDrillDownPartsUnknown(detail: HTMLElement, reason: string) {
+  // With the catalog unread the page takes the manifest's `snapshot` rows as
+  // the live ones (`resolve.ts`). Over the stub the two are one set, so this
+  // holds for a test that fails the catalog too, and a page that stopped
+  // probing a part the catalog declares is still caught.
+  expect(PROCESS_LIVE_PARTS.length).toBeGreaterThan(0);
+  expect(processPartIds((_, kind) => kind === "snapshot")).toEqual(
+    PROCESS_LIVE_PARTS
+  );
   const parts = within(detail).getAllByTestId(/^digital-twin-part-/);
   const unknown = parts.filter((p) => p.textContent?.includes("UNKNOWN"));
-  // The process twin's eight live parts, by the page's own stub catalog.
-  expect(unknown).toHaveLength(8);
+  expect(
+    unknown
+      .map((p) => p.dataset.testid!.replace(/^digital-twin-part-/, ""))
+      .sort()
+  ).toEqual(PROCESS_LIVE_PARTS);
   for (const part of unknown) {
     expect(part.getAttribute("title")).toContain(reason);
   }

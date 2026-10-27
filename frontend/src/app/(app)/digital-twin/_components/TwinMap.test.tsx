@@ -1142,3 +1142,68 @@ describe("TwinMap — the UI Bridge app twin's figures are the runner's latest a
     }
   }
 });
+
+/**
+ * Main's secrets_broker row (qontinui-web 0d90debbb): a process-twin part that
+ * coord answers on a `report` door, built by the plan the row names. It maps
+ * no area. On 2026-10-27 no area on the tenant's 5,369 work units fit it: its
+ * own plan's unit carries none, and the credential areas there are the
+ * runner's and coord's own credentials, not the broker's. So in both modes it
+ * reads as served and not graded, and its one plan is that slug's work unit.
+ */
+describe("TwinMap — the secrets broker: a report door, moved by the plan it names", () => {
+  const ROW = manifest.subspaces.find((s) => s.id === "secrets_broker")!;
+  const BROKER: CoordPlanRow = {
+    slug: ROW.plan!,
+    title: "Plan: Secrets broker — agents act on secrets, never see them",
+    status: "in_progress",
+    authored_at: "2026-10-20T00:00:00Z",
+    metadata: { source_path: `qontinui-dev-notes/plans/${ROW.plan}.md` },
+  };
+
+  beforeEach(() => {
+    state.workUnits = {
+      ...idle,
+      data: walk([...UNITS, BROKER]),
+      dataUpdatedAt: READ_AT,
+    };
+  });
+
+  /** Opens the process twin, then the broker's part; returns its one plan. */
+  async function openBroker(): Promise<HTMLElement> {
+    const { user, detail } = await openAspect("process");
+    const part = within(detail).getByTestId("digital-twin-part-secrets_broker");
+    expect(part).toHaveTextContent(/^secrets brokerServed · 1 plan$/);
+    expect(part.getAttribute("title")).toContain("served, not graded");
+    await user.click(part);
+    expect(
+      within(detail).getByText("Plans moving secrets broker")
+    ).toBeInTheDocument();
+    const plans = within(detail).getAllByTestId("digital-twin-plan");
+    expect(plans).toHaveLength(1);
+    expect(within(plans[0]!).getByText("In progress")).toBeInTheDocument();
+    return plans[0]!;
+  }
+
+  it("operator: served, not graded, with its plan linked to its work unit", async () => {
+    render(<TwinMap />);
+    const plan = await openBroker();
+    expect(plan).toHaveTextContent(BROKER.title!);
+    expect(within(plan).getByTestId("digital-twin-plan-link")).toHaveAttribute(
+      "href",
+      `/admin/coord/work-units/${encodeURIComponent(ROW.plan!)}`
+    );
+  });
+
+  it("presenting: the same reading, with its plan's title withheld and unlinked", async () => {
+    const view = presentTwinMap();
+    const plan = await openBroker();
+    // coord names the plan's repository without an owner, so the lens
+    // cannot prove it first-party: a descriptor, and no link carrying the slug.
+    expect(plan.querySelector('[data-redacted="true"]')).not.toBeNull();
+    expect(plan.querySelector("a")).toBeNull();
+    expectPresentationSafe(view, {
+      forbidden: [...FORBIDDEN, BROKER.title!, ROW.plan!],
+    });
+  });
+});
