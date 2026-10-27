@@ -30,10 +30,12 @@ const FLEET_API = `${ApiConfig.API_BASE_URL}/api/v1/fleet`;
 /**
  * The sentence the backend's `require_admin` refuses an active user who is not
  * a platform admin with (`backend/app/api/admin_deps.py`
- * `ADMIN_REQUIRED_DETAIL`; the backend pins it in
- * `tests/test_fleet_apps_platform_admin_gate.py`). It is what tells THIS 403
- * apart from any other — a proxy's or a WAF's — which must not be explained
- * as an access rule.
+ * `ADMIN_REQUIRED_DETAIL`). It is what tells THIS 403 apart from any other — a
+ * proxy's or a WAF's — which must not be explained as an access rule, so the
+ * two copies must stay equal. Each side's tests read the other's:
+ * `fleet.test.ts` checks the backend's assignment, and the backend's
+ * `tests/test_fleet_apps_platform_admin_gate.py` checks this declaration,
+ * which it expects on one line in exactly this form.
  */
 export const PLATFORM_ADMIN_REFUSAL = "Not authorized. Admin access required.";
 

@@ -21,13 +21,24 @@ and "the row is unchanged" is read back with a column ``SELECT``, which always
 round-trips to the database (autoflushing anything a handler staged first), so
 it observes what the route actually wrote.
 
-The 403 body is pinned exactly: the fleet UI renders its "limited to platform
-administrators" state only for THIS refusal (``frontend/src/lib/api/fleet.ts``
-``PLATFORM_ADMIN_REFUSAL``), so rewording ``ADMIN_REQUIRED_DETAIL`` without the
-frontend would turn that state into a generic error.
+The refusal SENTENCE is a wire contract. The fleet UI renders its "limited to
+platform administrators" state only for this refusal, matched by strict
+equality against ``frontend/src/lib/api/fleet.ts`` ``PLATFORM_ADMIN_REFUSAL``,
+so a rewording of ``ADMIN_REQUIRED_DETAIL`` on this side alone would show every
+non-admin a generic load error instead. It is pinned three ways: the 403 tests
+compare the body with the LITERAL :data:`REFUSAL_SENTENCE` (never with the
+constant the route sends, which would follow a rewording), in both wire shapes
+the UI reads (a bare app's ``detail``, production's ``message``);
+:func:`test_the_fleet_ui_keys_on_the_sentence_this_backend_sends` reads
+``fleet.ts`` and checks it declares exactly ``ADMIN_REQUIRED_DETAIL``, so a
+rewording of the constant and the literal together is still red here; and the
+frontend's ``src/lib/api/fleet.test.ts`` checks ``app/api/admin_deps.py`` from
+its side, so a frontend-only rewording is red there.
 """
 
+import re
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
@@ -37,12 +48,38 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy import select
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.admin_deps import ADMIN_REQUIRED_DETAIL
+from app.middleware.error_handler import http_exception_handler
 from app.models.app_registry import App
 from app.models.user import User
 
 PREFIX = "/api/v1/fleet"
+
+#: The refusal sentence, as a LITERAL. ``frontend/src/lib/api/fleet.ts``
+#: ``PLATFORM_ADMIN_REFUSAL`` keys on exactly this text, so changing it is a
+#: wire change for both sides, made in both files and both tests at once.
+REFUSAL_SENTENCE = "Not authorized. Admin access required."
+
+#: The two shapes a refusal reaches the fleet UI in, by the key carrying the
+#: sentence: a bare FastAPI app's ``{"detail": ...}``, and the production
+#: envelope ``app.main`` serves through ``http_exception_handler``.
+WIRES = ["detail", "message"]
+
+# backend/tests/x.py -> parents[2] is the repo root.
+_FLEET_UI_API = (
+    Path(__file__).resolve().parents[2]
+    / "frontend"
+    / "src"
+    / "lib"
+    / "api"
+    / "fleet.ts"
+)
+_PLATFORM_ADMIN_REFUSAL_DECL = re.compile(
+    r'^export const PLATFORM_ADMIN_REFUSAL = "(?P<sentence>[^"\\]*)";$',
+    re.MULTILINE,
+)
 
 #: The row every test starts from: (update_strategy, build_command, start_command).
 ORIGINAL = ("pull_build", "npm run build", "npm start")
@@ -62,7 +99,7 @@ REWRITTEN = ("pull_only", "echo rewritten-build", "echo rewritten-start")
 # ---------------------------------------------------------------------------
 
 
-def _build_app(db: Any) -> FastAPI:
+def _build_app(db: Any, *, wire: str) -> FastAPI:
     from app.api.deps import get_async_db
     from app.api.v1.endpoints.fleet_targets import router
 
@@ -71,6 +108,14 @@ def _build_app(db: Any) -> FastAPI:
     # ``get_async_db`` too, so the auth path resolves users from this session.
     app.dependency_overrides[get_async_db] = lambda: db
     app.include_router(router, prefix=PREFIX)
+    if wire == "message":
+        # ``app.main``'s handler: the error envelope production serves. The
+        # ignore is ``app.main``'s own: Starlette types the handler slot as
+        # taking ``Exception``, and this handler is narrowed to HTTPException.
+        app.add_exception_handler(
+            StarletteHTTPException,
+            http_exception_handler,  # type: ignore[arg-type]
+        )
     return app
 
 
@@ -124,10 +169,10 @@ async def _config_of(db: Any, app_id: str) -> tuple[str, str | None, str | None]
 
 
 class _Env:
-    """A client plus the users it can authenticate as, by bearer."""
+    """One client per wire shape, plus the users they authenticate as."""
 
-    def __init__(self, client: httpx.AsyncClient, db: Any) -> None:
-        self.client = client
+    def __init__(self, clients: dict[str, httpx.AsyncClient], db: Any) -> None:
+        self.clients = clients
         self.db = db
         self.tokens: dict[str, User] = {}
 
@@ -136,22 +181,38 @@ class _Env:
         self.tokens[token] = user
         return {"Authorization": f"Bearer {token}"}
 
-    async def call(self, method: str, app_id: str, user: User) -> httpx.Response:
+    async def call(
+        self, method: str, app_id: str, user: User, *, wire: str = "detail"
+    ) -> httpx.Response:
         """``GET /apps`` or ``PATCH /apps/{app_id}`` (with :data:`REWRITE`)."""
+        client = self.clients[wire]
         if method == "GET":
-            return await self.client.get(f"{PREFIX}/apps", headers=self.auth(user))
-        return await self.client.patch(
+            return await client.get(f"{PREFIX}/apps", headers=self.auth(user))
+        return await client.patch(
             f"{PREFIX}/apps/{app_id}", json=REWRITE, headers=self.auth(user)
         )
 
 
+def _assert_admin_refusal(response: httpx.Response, wire: str) -> None:
+    """The whole body: the sentence the frontend keys on, and no registry row."""
+    body = response.json()
+    if wire == "detail":
+        assert body == {"detail": REFUSAL_SENTENCE}
+    else:
+        assert set(body) == {"error", "message", "timestamp", "path"}, body
+        assert body["message"] == REFUSAL_SENTENCE
+
+
 @pytest_asyncio.fixture()
 async def env(async_db_session: Any) -> AsyncIterator[_Env]:
-    app = _build_app(async_db_session)
-    client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    )
-    e = _Env(client, async_db_session)
+    clients = {
+        wire: httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=_build_app(async_db_session, wire=wire)),
+            base_url="http://testserver",
+        )
+        for wire in WIRES
+    }
+    e = _Env(clients, async_db_session)
 
     async def _verify(token: str, _session: Any) -> User:
         from app.auth.cognito_user import CognitoAuthError
@@ -165,7 +226,7 @@ async def env(async_db_session: Any) -> AsyncIterator[_Env]:
         "app.auth.cognito_user.verify_cognito_token_and_resolve_user",
         side_effect=_verify,
     ):
-        async with client:
+        async with clients["detail"], clients["message"]:
             yield e
 
 
@@ -175,25 +236,26 @@ async def env(async_db_session: Any) -> AsyncIterator[_Env]:
 
 
 @pytest.mark.asyncio
-async def test_a_non_superuser_cannot_read_the_registry(env: _Env) -> None:
+@pytest.mark.parametrize("wire", WIRES)
+async def test_a_non_superuser_cannot_read_the_registry(env: _Env, wire: str) -> None:
     member = await _make_user(env.db, superuser=False)
     app_id = await _make_app(env.db)
 
-    response = await env.call("GET", app_id, member)
+    response = await env.call("GET", app_id, member, wire=wire)
 
     assert response.status_code == 403, response.text
-    # The whole body: the refusal the frontend keys on, and no registry row.
-    assert response.json() == {"detail": ADMIN_REQUIRED_DETAIL}
+    _assert_admin_refusal(response, wire)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("wire", WIRES)
 async def test_a_non_superuser_cannot_rewrite_commands_and_the_row_is_unchanged(
-    env: _Env,
+    env: _Env, wire: str
 ) -> None:
     member = await _make_user(env.db, superuser=False)
     app_id = await _make_app(env.db)
 
-    response = await env.call("PATCH", app_id, member)
+    response = await env.call("PATCH", app_id, member, wire=wire)
 
     # One assertion, so a gate that let the write through reports BOTH halves:
     # the status it answered and the columns it changed.
@@ -201,7 +263,35 @@ async def test_a_non_superuser_cannot_rewrite_commands_and_the_row_is_unchanged(
         403,
         ORIGINAL,
     ), response.text
-    assert response.json() == {"detail": ADMIN_REQUIRED_DETAIL}
+    _assert_admin_refusal(response, wire)
+
+
+def test_the_fleet_ui_keys_on_the_sentence_this_backend_sends() -> None:
+    """``fleet.ts`` declares ``PLATFORM_ADMIN_REFUSAL`` as exactly this sentence.
+
+    The 403 tests above pin the literal, which a rewording of BOTH the constant
+    and :data:`REFUSAL_SENTENCE` would get past; the frontend would then still
+    compare against the old sentence and show every non-admin a generic error.
+    This reads the consumer's declaration and fails closed when it cannot.
+    """
+    if not _FLEET_UI_API.is_file():
+        pytest.fail(
+            f"{_FLEET_UI_API} is missing, so the frontend's copy of the refusal "
+            "sentence cannot be checked; fail rather than pass on nothing."
+        )
+    match = _PLATFORM_ADMIN_REFUSAL_DECL.search(
+        _FLEET_UI_API.read_text(encoding="utf-8")
+    )
+    assert match is not None, (
+        f"{_FLEET_UI_API} no longer declares "
+        '`export const PLATFORM_ADMIN_REFUSAL = "...";` on one line. If it moved '
+        "or changed shape, retarget this check; do not delete it."
+    )
+    assert match.group("sentence") == ADMIN_REQUIRED_DETAIL, (
+        "The fleet UI keys its platform-admin state on "
+        f"{match.group('sentence')!r}, but require_admin refuses with "
+        f"{ADMIN_REQUIRED_DETAIL!r}. Change both together."
+    )
 
 
 # ---------------------------------------------------------------------------

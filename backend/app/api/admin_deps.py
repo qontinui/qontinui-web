@@ -8,8 +8,12 @@ from app.models.user import User
 #: The sentence an authenticated, active user who is not a platform admin is
 #: refused with (403). A client that must tell THIS refusal apart from any
 #: other 403 — a proxy's, a WAF's — keys on it: the fleet app-config UI does
-#: (``frontend/src/lib/api/fleet.ts`` ``PLATFORM_ADMIN_REFUSAL``), so rewording
-#: it is a wire change, pinned by ``tests/test_fleet_apps_platform_admin_gate.py``.
+#: (``frontend/src/lib/api/fleet.ts`` ``PLATFORM_ADMIN_REFUSAL``, by strict
+#: equality), so rewording it is a wire change for both sides. Each side's
+#: tests check the other's copy: ``tests/test_fleet_apps_platform_admin_gate.py``
+#: compares the 403 body with the literal sentence and reads ``fleet.ts``, and
+#: ``frontend/src/lib/api/fleet.test.ts`` reads this assignment, which it
+#: expects on one line in exactly this form.
 ADMIN_REQUIRED_DETAIL = "Not authorized. Admin access required."
 
 
