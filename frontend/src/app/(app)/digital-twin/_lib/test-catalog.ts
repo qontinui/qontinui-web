@@ -2,8 +2,10 @@
  * A served-catalog fixture for the view tests: one coord catalog entry per
  * named manifest row, in coord `twin_probe_door.rs` `served_entry` shape, with
  * the door coord declares for it — the admin `envelope` door for `outbound`,
- * a `report` door for `worktree`, and a `verdict_wrapper` twin door for every
- * other row. Also the body coord's admin outbound door really answers
+ * a `report` door for each row coord answers with its own report
+ * (`REPORT_DOORS`), and a `verdict_wrapper` twin door for every other row
+ * (`test-catalog.test.ts` holds these to the derived spec's catalog stub).
+ * Also the body coord's admin outbound door really answers
  * (`outboundEnvelope`). Every outbound probe answer that a digital-twin test
  * builds by hand with an envelope uses it.
  *
@@ -73,9 +75,20 @@ export function outboundEnvelope(worst: WorstBucket | null): VerdictMetrics {
 
 const OUTBOUND_DOOR = "/admin/coord/outbound-budget";
 
+/**
+ * The rows coord answers on its twin door with a report of its own rather
+ * than a verdict: served, not graded.
+ */
+export const REPORT_DOORS: ReadonlySet<string> = new Set([
+  "worktree",
+  "train_activity",
+  "merge_economics",
+  "secrets_broker",
+]);
+
 function doorShapeOf(id: string): DoorShape {
   if (id === "outbound") return "envelope";
-  if (id === "worktree") return "report";
+  if (REPORT_DOORS.has(id)) return "report";
   return "verdict_wrapper";
 }
 
