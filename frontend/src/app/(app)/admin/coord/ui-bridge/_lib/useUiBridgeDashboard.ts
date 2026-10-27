@@ -7,7 +7,8 @@
  * relay allowlist names); the spec list and graph, the live snapshot and the
  * runner's app list are the digital twin's own hooks (`useUiBridge.ts`),
  * reused rather than forked, so both pages share one cache entry per runner.
- * The web registry is a plain web-backend read.
+ * The web registry is a plain web-backend read. Neither app registry is
+ * read while presenting ({@link appRegistryReadsOf}).
  *
  * Nothing here polls: the dashboard's numbers change when a runner's UI or
  * build changes, so the page re-reads on the operator's refresh. The live

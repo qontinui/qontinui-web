@@ -37,11 +37,13 @@
  *   by project, so while presenting neither is read, and each half reads
  *   UNKNOWN and says why (`appRegistryReadsOf`).
  *
- * Presentation mode (plan D1–D3) changes only the rendering: captions before
+ * Presentation mode (plan D1–D3) changes the rendering — captions before
  * each panel, provenance beside every figure, every panel held open, the app
  * picker operator-only, machine names aliased, free text through
  * `RedactedText` (`_lib/firstParty.ts` says which text can be attributed),
- * and the window's own text left out. There is no write control on the page:
+ * and the window's own text left out — and fetches nothing new. The reads it
+ * declines are the two app registries (D3.4, the bullet above); every other
+ * read is the operator view's. There is no write control on the page:
  * the two buttons that are not panel toggles — capture a snapshot, run page
  * health — change no setting, session, file or app state. Each can make the
  * runner re-read its window's elements (page health always; the snapshot
