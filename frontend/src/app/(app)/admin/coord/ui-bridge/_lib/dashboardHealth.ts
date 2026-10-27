@@ -29,12 +29,13 @@
  * given, and over a red: a page an earlier read found broken is reported as
  * that, at that read, not as broken now.
  *
- * Red is decided first, by CURRENT reads alone: a page page health has just
- * found broken, or text the sweep has just found hidden, is red whatever else
- * did not answer — a `/health` that failed says nothing about either. And
- * every headline names the stale reads behind the badges, the red ones and
- * the amber ones that report a failed read included, not only the headline
- * whose subject they are.
+ * Red outranks every amber that reports a failed read, and only CURRENT reads
+ * decide it: a page that page health has just found broken, or text that the
+ * sweep has just found hidden, is red whatever else did not answer — a
+ * `/health` that failed says nothing about either. And every headline names
+ * the stale reads behind the badges, the red ones and the amber ones that
+ * report a failed read included, not only the headline whose subject they
+ * are.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -207,7 +208,7 @@ export function deriveDashboardHealth(
 
   // Red is a statement about NOW, so only a current read may make it — and a
   // current one makes it whatever else did not answer: a failed `/health`
-  // says nothing about a page page health has just found broken.
+  // says nothing about a page that page health has just found broken.
   const pageHealth = current(input.pageHealth);
   const occlusion = current(input.occlusion);
   if (pageHealth === "critical") {
