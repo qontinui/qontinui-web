@@ -1077,6 +1077,24 @@ export function degradationsGapPhrase(
   return "a source feeding it was not fully read, or a watcher feeding it is not fresh";
 }
 
+/**
+ * The `title` of the "Incomplete view" line: coord's `headline_reason`, and
+ * ONLY on the `unknown` headline — null otherwise.
+ *
+ * Coord's reason explains its HEADLINE. On `unknown` that reason is the list
+ * of why the block is partial (a stale watcher, a source not fully read, a
+ * row ceiling hit), so it explains the gap, in coord's own words — kept for
+ * the title because it names raw source ids (R8). A stale block that carries
+ * an open row is headlined `degraded`, whose reason is "at least one
+ * operator-plane degradation is open": hovering the gap sentence would offer
+ * that as the gap's cause, the false cause {@link degradationsGapPhrase}
+ * keeps out of the sentence.
+ */
+export function degradationsGapTitle(deg: DegradationsView): string | null {
+  if (deg.headline !== "unknown" || deg.headlineReason === null) return null;
+  return withoutVerdictWords(deg.headlineReason);
+}
+
 // ---------------------------------------------------------------------------
 // correctness + does_not_know
 // ---------------------------------------------------------------------------

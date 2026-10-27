@@ -552,6 +552,9 @@ describe("/admin/coord/home", () => {
       /^Incomplete view — not every watcher is fresh \(merge train\)\. The rows below are real; there may be others\.$/
     );
     expect(line).not.toHaveTextContent(/at least one/);
+    // Nor is that reason the line's tooltip: it explains the headline, not
+    // the gap, so hovering the gap must not offer it as the cause.
+    expect(line).not.toHaveAttribute("title");
     // The open row is still shown: positive facts survive a stale block.
     expect(screen.getByText("A runner stopped answering")).toBeInTheDocument();
   });
@@ -625,6 +628,7 @@ describe("/admin/coord/home", () => {
       /^Incomplete view — the disk reading could not be taken; not fully read: machines in the fleet\. The rows below are real; there may be others\.$/
     );
     expect(line).not.toHaveTextContent(/watcher/);
+    expect(line).not.toHaveAttribute("title");
     const planesLine = screen.getByTestId("coord-home.degrading.planes");
     expect(planesLine).toHaveTextContent(
       "disk: no watcher; its reading could not be taken"

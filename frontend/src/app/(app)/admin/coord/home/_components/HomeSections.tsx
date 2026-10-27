@@ -45,6 +45,7 @@ import {
   degradationRawLine,
   degradationSubjectText,
   degradationsGapPhrase,
+  degradationsGapTitle,
   durationText,
   needsYouReason,
   needsDisplayCount,
@@ -594,12 +595,10 @@ export function DegradingSection({
               className="m-0 text-sm text-muted-foreground"
               data-testid="coord-home.degrading.incomplete"
               // R8: coord's own reason names raw source ids, so it is kept
-              // for the title only; the sentence is built from structure.
-              title={
-                deg.headlineReason
-                  ? withoutVerdictWords(deg.headlineReason)
-                  : undefined
-              }
+              // for the title only, and only on the `unknown` headline, the
+              // one whose reason explains the gap; the sentence is built from
+              // structure.
+              title={degradationsGapTitle(deg) ?? undefined}
             >
               Incomplete view — {degradationsGapPhrase(deg, sources)}. The rows
               below are real; there may be others.

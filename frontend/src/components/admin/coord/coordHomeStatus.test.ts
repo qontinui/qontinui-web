@@ -27,6 +27,7 @@ import {
   degradationRawLine,
   degradationSubjectText,
   degradationsGapPhrase,
+  degradationsGapTitle,
   deriveHomeStrip,
   nothingNeedsYou,
   sourceAgePhrase,
@@ -1025,6 +1026,46 @@ describe("round-8 review — the partial and unread captions say what is true", 
         "a source feeding it was not fully read, or a watcher feeding it is not fresh"
       );
     }
+  });
+
+  // The gap line's title is coord's reason only where that reason explains
+  // the gap: the `unknown` headline lists why the block is partial; the
+  // `degraded` headline's reason explains only that a row is open.
+  it("titles the gap line with coord's reason on the unknown headline only", () => {
+    expect(
+      degradationsGapTitle(
+        deg({
+          state: "stale",
+          headline: "unknown",
+          headline_reason:
+            "a watcher feeding this view is stale or has no heartbeat; source `fleet_drain` was not fully read",
+        })
+      )
+    ).toBe(
+      "a watcher feeding this view is stale or has no heartbeat; source `fleet_drain` was not fully read"
+    );
+    expect(
+      degradationsGapTitle(
+        deg({
+          state: "stale",
+          headline: "unknown",
+          headline_reason: "the train watcher stalled",
+        })
+      )
+    ).toBe("the train watcher without recorded change");
+    expect(
+      degradationsGapTitle(
+        deg({
+          state: "stale",
+          headline: "degraded",
+          headline_reason: "at least one operator-plane degradation is open",
+          open: [{ id: "alert:1", plane: "runner" }],
+        })
+      )
+    ).toBeNull();
+    expect(
+      degradationsGapTitle(deg({ state: "stale", headline: "unknown" }))
+    ).toBeNull();
   });
 
   it.each([
