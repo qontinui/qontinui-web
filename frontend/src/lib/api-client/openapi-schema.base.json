@@ -87059,7 +87059,7 @@
     },
     "/api/v1/fleet/apps": {
       "get": {
-        "description": "List registered apps + their fleet-fresh config.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp \u2014 the fleet UI is an operator surface.",
+        "description": "List registered apps + their fleet-fresh config. Platform admins only.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp, build and start commands included \u2014 which is why it is gated on\n:func:`require_admin` rather than on any signed-in user.",
         "operationId": "api_v1_fleet_apps_get",
         "responses": {
           "200": {
@@ -87090,7 +87090,7 @@
     },
     "/api/v1/fleet/apps/{app_id}": {
       "patch": {
-        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).",
+        "description": "Edit an app's update strategy + build/start commands. Platform admins only.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).\n\nGated on :func:`require_admin`: a stored command is executed by the\nauto-fresh engine on every fleet machine that auto-freshes this app, and\n``project.apps`` is shared across tenants. The refusal comes from the\ndependency, before this body reads or touches the row.",
         "operationId": "api_v1_fleet_apps_app_id_patch",
         "parameters": [
           {

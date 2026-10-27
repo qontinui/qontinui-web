@@ -7548,11 +7548,12 @@ export interface paths {
         };
         /**
          * List Apps
-         * @description List registered apps + their fleet-fresh config.
+         * @description List registered apps + their fleet-fresh config. Platform admins only.
          *
          *     ``project.apps`` is not user-partitioned (it is the runner-local app
          *     registry mirrored on shared Postgres), so this returns every registered
-         *     app — the fleet UI is an operator surface.
+         *     app, build and start commands included — which is why it is gated on
+         *     :func:`require_admin` rather than on any signed-in user.
          */
         get: operations["api_v1_fleet_apps_get"];
         put?: never;
@@ -7578,10 +7579,15 @@ export interface paths {
         head?: never;
         /**
          * Update App Config
-         * @description Edit an app's update strategy + build/start commands.
+         * @description Edit an app's update strategy + build/start commands. Platform admins only.
          *
          *     Fields left ``None`` are unchanged. ``build_command`` / ``start_command``
          *     are cleared by sending a blank value (empty or whitespace-only).
+         *
+         *     Gated on :func:`require_admin`: a stored command is executed by the
+         *     auto-fresh engine on every fleet machine that auto-freshes this app, and
+         *     ``project.apps`` is shared across tenants. The refusal comes from the
+         *     dependency, before this body reads or touches the row.
          */
         patch: operations["api_v1_fleet_apps_app_id_patch"];
         trace?: never;
