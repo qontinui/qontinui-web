@@ -40,7 +40,7 @@ import {
   expectPresentationSafe,
   renderInPresentationMode,
 } from "@/test/presentation";
-import { RESTRICTED_REASON } from "./_lib/twin-aspects";
+import { RESTRICTED_REASON } from "./_lib/probe-read";
 import type { SubspacesProbeResponse } from "./_lib/types";
 
 /**
@@ -826,6 +826,27 @@ describe("/digital-twin restricted, in presentation mode", () => {
     );
     expect(observed).toHaveAttribute("data-fidelity-state", "unknown");
     expect(observed).toHaveTextContent(RESTRICTED_REASON);
+
+    // Its drill-down's live parts too — never "Restricted" with a refused
+    // part's own reason, the restricted-access message shown as data.
+    await user.click(
+      within(screen.getByTestId("digital-twin-aspect-card-process")).getByRole(
+        "button",
+        { name: /show its parts and plans/i }
+      )
+    );
+    const detail = screen.getByTestId("digital-twin-aspect-detail-process");
+    expectDrillDownPartsUnknown(
+      detail,
+      "Coord does not share the twin's live readings with this workspace"
+    );
+    for (const part of within(detail).getAllByTestId(/^digital-twin-part-/)) {
+      expect(part).not.toHaveTextContent(/\bRestricted\b/);
+      expect(part.getAttribute("title")).not.toMatch(
+        /Qontinui-internal|unaffected/
+      );
+    }
+    expectPresentationSafe(view);
 
     for (const tab of ["Completeness", "Lifecycle"]) {
       await user.click(screen.getByRole("tab", { name: tab }));

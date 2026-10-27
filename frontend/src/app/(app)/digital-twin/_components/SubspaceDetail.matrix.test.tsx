@@ -38,10 +38,16 @@
  * - **Axis C — operator mode and presentation mode** (the page check runs on
  *   every presenting cell).
  *
- * Only combinations that cannot occur are left out, for two reasons:
+ * Only combinations that cannot occur are left out, for three reasons:
  *
  * - One browser has one online state. So there is no probe held OFFLINE
  *   beside a drawer read held ONLINE, and no reverse of it.
+ * - No drawer opens over an answer that refused EVERY reading (`resolve.ts`
+ *   `allProbesRestricted`). Both views that open one replace themselves with
+ *   the access notice then (`TwinAccessRestricted`), and the Twin map, which
+ *   keeps its cards, opens no drawer: its parts say UNKNOWN naming the
+ *   refusal (`probe-read.ts` `probeReadOf`, `TwinMap.test.tsx`). A refusal
+ *   of the row alone is a row here (`restricted`).
  * - coord's twin door never serves the envelope door. `outbound` is outside
  *   its allow-set by design, so it answers 404 (`twin_routes.rs`,
  *   `twin_probe_door.rs`). So when the envelope door's shape is unknown and

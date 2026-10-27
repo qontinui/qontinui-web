@@ -12,8 +12,7 @@ import {
   expectPresentationSafe,
   renderInPresentationMode,
 } from "@/test/presentation";
-import type { ProbeRead } from "../_lib/probe-read";
-import { RESTRICTED_REASON } from "../_lib/twin-aspects";
+import { RESTRICTED_REASON, type ProbeRead } from "../_lib/probe-read";
 import {
   CoordUnreachableBanner,
   TwinAccessRestricted,

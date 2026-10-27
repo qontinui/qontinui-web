@@ -111,6 +111,8 @@ export function TwinMap() {
   // The probe as every view of it reads it: a failed or degraded answer
   // (HTTP 200, no probe made) is UNKNOWN on every figure, never "0 of N
   // observed", and its parts are UNKNOWN in the drill-down, never "Error".
+  // An answer that refused every reading is UNKNOWN on both too, naming the
+  // refusal: the map does not replace itself the way the other views do.
   const probe = useProbeRead();
   const { rows } = probe;
   const reportQuery = useSubspaceRaw(FIDELITY_SUBSPACE, true);

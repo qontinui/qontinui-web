@@ -2084,6 +2084,13 @@ Where a kept reading's dot goes depends on what carries it:
   probe's answer, and there is no notice. A probe holding no reading at all needs no
   notice there either: every probe figure of a twin with a live-probed part, and
   every live part, is then UNKNOWN with the reason.
+  An answer in which coord refused every reading is an answer, but no observer was
+  read in it. The other views replace themselves with the access notice; the map
+  keeps its cards, and both its probe figures and its live parts say UNKNOWN, naming
+  that refusal, in both modes (`digital-twin/_lib/probe-read.ts` `probeReadOf`). A
+  part never reads "Restricted" then: that status's meaning is a refusal of one
+  sub-space, the others unaffected, which is false of an answer that refused them
+  all.
   The map's Staleness figure is worded as of the read ("15m stale when read"), since
   in operator mode no chip dates it.
 - **A figure with no notice above it** keeps no reading. On the Twin map the Honesty

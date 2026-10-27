@@ -38,7 +38,12 @@
 import type { CaptionKey } from "@/components/presentation";
 import { statusSuffix } from "./failure-text";
 import { coverageOf, gradedOf } from "./lifecycle";
-import { probeUnread, type ProbeRead, type ProbeSilence } from "./probe-read";
+import {
+  RESTRICTED_REASON,
+  probeUnread,
+  type ProbeRead,
+  type ProbeSilence,
+} from "./probe-read";
 import {
   CLASS_BUCKET,
   datesWorstBucket,
@@ -248,10 +253,6 @@ export type FidelityFigure =
       readonly state: "loading";
       readonly source: string;
     };
-
-/** The reason a whole twin's live readings are missing because coord refused them. */
-export const RESTRICTED_REASON =
-  "coord does not share the twin's live readings with this workspace";
 
 /**
  * The reason a twin with no live-probed part has no probe figure: there is

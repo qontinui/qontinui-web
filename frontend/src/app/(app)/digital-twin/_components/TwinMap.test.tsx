@@ -772,6 +772,14 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
    * are live-probed, so the answer decides every twin's figures and the
    * notice names them all. Each row is also read as an answer the latest
    * read returned, over which there is no notice at all.
+   *
+   * Every row is read in both modes, and every aspect's drill-down with it:
+   * a live part says what the answer says of it. Where coord refused every
+   * reading, that is UNKNOWN naming the refusal, as the figures say it —
+   * never "Restricted" with a refused part's own reason ("Qontinui-internal
+   * ... your other sub-spaces are unaffected"), which is false of an answer
+   * that refused them all, and in presentation mode the restricted-access
+   * message shown as data.
    */
   const FED: readonly {
     catalog: string;
@@ -866,55 +874,118 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
 
   const PLANTS = ["environment", "process", "intent"] as const;
 
+  /**
+   * The parts a row of {@link FED} probes live: those its catalog declares,
+   * or, with the catalog unread, the manifest's `snapshot` rows and the
+   * rows the answer has a cell for.
+   */
+  function livePartIds(
+    catalog: TwinCatalogResponse | undefined,
+    body: SubspacesProbeResponse
+  ): ReadonlySet<string> {
+    if (catalog) {
+      return new Set(
+        catalog.entries.filter(isDeclaredProbe).map((entry) => entry.subspace)
+      );
+    }
+    const cells = new Set(body.subspaces.map((cell) => cell.id));
+    return new Set(
+      manifest.subspaces
+        .filter((s) => s.query_kind === "snapshot" || cells.has(s.id))
+        .map((s) => s.id)
+    );
+  }
+
+  /** A live part's title where coord refused every reading. */
+  const REFUSED_PART =
+    "Coord does not share the twin's live readings with this workspace, so there is no current reading of this observer — its status is unknown, not a failure of the observer.";
+
   for (const c of FED) {
     for (const kept of [true, false]) {
-      const read = kept ? "kept after its refresh failed" : "the latest read's";
-      it(`names only the twins whose figures the answer decides, under ${c.catalog} · ${read}`, () => {
-        state.catalog = c.declares();
-        if (kept) {
-          holdProbe(answer(c.refused));
-        } else {
-          state.probe = {
-            ...idle,
-            data: answer(c.refused),
-            dataUpdatedAt: READ_AT,
-          };
-        }
-        render(<TwinMap />);
-        const notice = screen.queryByTestId("digital-twin-map-probe-held");
-        if (!kept || c.names === null) {
-          // A current answer, or nothing on the map that is the answer.
-          expect(notice).toBeNull();
-        } else {
-          expect(notice).toHaveTextContent(
-            `Coord's live probe's latest read failed (HTTP 502), so the Observed, Coverage and Staleness figures of ${c.names}, and the statuses of the live-probed parts below, are its last answer, not a current reading.`
-          );
-        }
-        for (const aspect of PLANTS) {
-          const unprobed = c.unprobed.includes(aspect);
-          // A twin the notice leaves out says nothing in it is probed live.
-          if (notice && !notice.textContent?.includes(`the ${aspect} twin`)) {
-            expect(unprobed, aspect).toBe(true);
+      for (const mode of ["operator", "presenting"] as const) {
+        const read = kept
+          ? "kept after its refresh failed"
+          : "the latest read's";
+        it(`shows the answer as the answer it is, under ${c.catalog} · ${read} · ${mode}`, async () => {
+          const catalog = c.declares();
+          const body = answer(c.refused);
+          state.catalog = catalog;
+          if (kept) {
+            holdProbe(body);
+          } else {
+            state.probe = { ...idle, data: body, dataUpdatedAt: READ_AT };
           }
-          for (const key of ["observed", "coverage", "staleness"]) {
-            const f = figure(aspect, key);
-            if (unprobed) {
-              // Whatever coord answered or refused, and whatever is kept.
-              expect(f, `${aspect}.${key}`).toHaveTextContent(
-                "UNKNOWNnothing in this twin is probed live yet"
-              );
-            } else if (c.refused) {
-              expect(f, `${aspect}.${key}`).toHaveTextContent(
-                "UNKNOWNcoord does not share the twin's live readings with this workspace"
-              );
-            } else {
-              expect(f, `${aspect}.${key}`).not.toHaveTextContent(
-                "nothing in this twin is probed live"
-              );
+          const view = mode === "presenting" ? presentTwinMap() : null;
+          if (mode === "operator") render(<TwinMap />);
+          const notice = screen.queryByTestId("digital-twin-map-probe-held");
+          if (!kept || c.names === null) {
+            // A current answer, or nothing on the map that is the answer.
+            expect(notice).toBeNull();
+          } else {
+            expect(notice).toHaveTextContent(
+              `Coord's live probe's latest read failed (HTTP 502), so the Observed, Coverage and Staleness figures of ${c.names}, and the statuses of the live-probed parts below, are its last answer, not a current reading.`
+            );
+          }
+          for (const aspect of PLANTS) {
+            const unprobed = c.unprobed.includes(aspect);
+            // A twin the notice leaves out says nothing in it is probed live.
+            if (
+              notice &&
+              !notice.textContent?.includes(`the ${aspect} twin`)
+            ) {
+              expect(unprobed, aspect).toBe(true);
+            }
+            for (const key of ["observed", "coverage", "staleness"]) {
+              const f = figure(aspect, key);
+              if (unprobed) {
+                // Whatever coord answered or refused, and whatever is kept.
+                expect(f, `${aspect}.${key}`).toHaveTextContent(
+                  "UNKNOWNnothing in this twin is probed live yet"
+                );
+              } else if (c.refused) {
+                expect(f, `${aspect}.${key}`).toHaveTextContent(
+                  "UNKNOWNcoord does not share the twin's live readings with this workspace"
+                );
+              } else {
+                expect(f, `${aspect}.${key}`).not.toHaveTextContent(
+                  "nothing in this twin is probed live"
+                );
+              }
             }
           }
-        }
-      });
+
+          // Every part of every aspect's drill-down.
+          const live = livePartIds(catalog, body);
+          const refusedParts = new Set<string>();
+          for (const aspect of ASPECTS) {
+            const { detail } = await openAspect(aspect);
+            for (const row of within(detail).getAllByTestId(
+              /^digital-twin-part-/
+            )) {
+              const id = row
+                .getAttribute("data-testid")!
+                .slice("digital-twin-part-".length);
+              const title = row.getAttribute("title") ?? "";
+              // No part claims a refusal of itself alone.
+              expect(row, id).not.toHaveTextContent(/\bRestricted\b/);
+              expect(title, id).not.toMatch(/Qontinui-internal|unaffected/);
+              if (c.refused && live.has(id)) {
+                refusedParts.add(id);
+                expect(row, id).toHaveTextContent("UNKNOWN");
+                expect(title, id).toBe(REFUSED_PART);
+              } else {
+                expect(title, id).not.toContain(
+                  "does not share the twin's live readings"
+                );
+              }
+            }
+            if (view) expectPresentationSafe(view, { forbidden: FORBIDDEN });
+          }
+          // Not vacuous: a refusal reaches every live part, and only then.
+          expect(refusedParts.size).toBe(c.refused ? live.size : 0);
+          if (c.refused) expect(live.size).toBeGreaterThan(0);
+        });
+      }
     }
   }
 

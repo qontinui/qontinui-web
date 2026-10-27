@@ -42,7 +42,10 @@ function partPlanCount(
  * One part on its own line: status, and how many plans move it; a press
  * filters the plans. The status is the row's own (`presentStatus`): while the
  * probe holds no reading a live part is UNKNOWN on the ignorance floor, and
- * its title says why — never the red "Error" of a probe that was made.
+ * its title says why — never the red "Error" of a probe that was made. While
+ * coord refuses every reading it is UNKNOWN naming that refusal, as the cards
+ * above say it, never "Restricted" with a refused part's own reason (one
+ * Qontinui-internal sub-space, the others unaffected), which is false then.
  */
 function PartRow({
   row,

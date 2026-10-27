@@ -5,16 +5,13 @@ import { AlertTriangle, Lock } from "lucide-react";
 import { Provenance, usePresentationMode } from "@/components/presentation";
 import { statusSuffix } from "../_lib/failure-text";
 import {
+  RESTRICTED_REASON,
   probeUnread,
   type ProbeAttempt,
   type ProbeRead,
 } from "../_lib/probe-read";
 import { upperFirst } from "../_lib/status-presentation";
-import {
-  FIDELITY_SOURCE,
-  RESTRICTED_REASON,
-  probeFedContent,
-} from "../_lib/twin-aspects";
+import { FIDELITY_SOURCE, probeFedContent } from "../_lib/twin-aspects";
 import { UnknownBadge } from "./FidelityFigures";
 
 /**

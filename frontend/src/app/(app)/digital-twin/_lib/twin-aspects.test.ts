@@ -12,7 +12,6 @@ import { RunnerRelayError } from "./runner-relay";
 import {
   NOT_PROBED_REASON,
   NO_RUNNER_REASON,
-  RESTRICTED_REASON,
   SELF_CHECK_INTERNAL_REASON,
   TWIN_ASPECTS,
   appTwinFidelity,
@@ -28,6 +27,7 @@ import {
   type ReportRead,
 } from "./twin-aspects";
 import {
+  RESTRICTED_REASON,
   probeDegradedReason,
   probeReadOf,
   type ProbeQuery,

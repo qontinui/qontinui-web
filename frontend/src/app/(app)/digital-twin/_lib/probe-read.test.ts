@@ -278,6 +278,103 @@ describe("probeReadOf — rows under no reading", () => {
   });
 });
 
+/**
+ * A refusal is one sub-space's answer, and a `restricted` row's meaning says
+ * so: that sub-space is Qontinui-internal or admin-only, and the others are
+ * unaffected. An answer that refused EVERY reading makes that false for each
+ * row, and no observer was read in it, so its live rows are UNKNOWN naming
+ * the refusal — current or kept after a failed refresh. A refusal of some
+ * rows leaves each of them `restricted`, whatever the answer's flag says.
+ */
+describe("probeReadOf — rows under a refusal", () => {
+  const RESTRICTED_SENTENCE =
+    "coord does not share the twin's live readings with this workspace";
+  const live = <T extends { liveProbed: boolean }>(rows: readonly T[]) =>
+    rows.filter((r) => r.liveProbed);
+  /** `SNAPSHOT_IDS` answered, the ids in `refused` refused; `flag` the answer's own. */
+  const answerRefusing = (
+    refused: readonly string[],
+    flag: boolean
+  ): SubspacesProbeResponse => ({
+    subspaces: SNAPSHOT_IDS.map(
+      (id): SubspaceProbe => ({
+        id,
+        status: refused.includes(id) ? "restricted" : "implemented",
+      })
+    ),
+    probed: SNAPSHOT_IDS.length,
+    restricted: flag,
+  });
+  const SOME = SNAPSHOT_IDS.slice(0, 3);
+
+  const CASES: readonly {
+    name: string;
+    answer: SubspacesProbeResponse;
+    /** Every reading refused: the rows are UNKNOWN naming it. */
+    all: boolean;
+  }[] = [
+    {
+      name: "every reading refused",
+      answer: answerRefusing(SNAPSHOT_IDS, true),
+      all: true,
+    },
+    {
+      name: "some readings refused",
+      answer: answerRefusing(SOME, false),
+      all: false,
+    },
+    {
+      // The backend sets the flag only when every probe answered 403; a
+      // flag beside an answered cell is not every reading refused.
+      name: "flagged refused, with a reading answered",
+      answer: answerRefusing(SNAPSHOT_IDS.slice(1), true),
+      all: false,
+    },
+  ];
+  const READS = [
+    {
+      name: "answered",
+      query: (data: SubspacesProbeResponse) =>
+        query({ data, dataUpdatedAt: NOW }),
+    },
+    {
+      name: "kept after a failed refresh",
+      query: (data: SubspacesProbeResponse) =>
+        query({
+          data,
+          dataUpdatedAt: NOW - 120_000,
+          isError: true,
+          error: http502,
+          errorUpdatedAt: NOW,
+        }),
+    },
+  ] as const;
+
+  for (const c of CASES) {
+    for (const r of READS) {
+      it(`${c.name} · ${r.name}`, () => {
+        const read = probeReadOf(r.query(c.answer));
+        expect(read.restricted).toBe(c.all);
+        // An answer, not silence, in every case.
+        expect(probeUnread(read)).toBeNull();
+        const liveRows = live(read.rows);
+        expect(liveRows.length).toBe(SNAPSHOT_IDS.length);
+        for (const row of liveRows) {
+          const own = c.answer.subspaces.find((cell) => cell.id === row.id)!;
+          if (c.all) {
+            expect(row.cellStatus, row.id).toBe("unknown");
+            expect(row.unknownReason, row.id).toBe(RESTRICTED_SENTENCE);
+            expect(probeAnswered(row), row.id).toBe(false);
+          } else {
+            expect(row.cellStatus, row.id).toBe(own.status);
+            expect(row.unknownReason, row.id).toBeUndefined();
+          }
+        }
+      });
+    }
+  }
+});
+
 describe("probeDegradedReason — a probe answer that made no probe", () => {
   const cell = (error?: string): SubspaceProbe => ({
     id: "schema",

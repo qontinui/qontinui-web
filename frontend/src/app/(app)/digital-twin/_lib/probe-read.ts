@@ -16,6 +16,14 @@
  * "0 of N" that reads as a twin observing nothing
  * (`verification-and-evidence` `unknown-must-not-render-as-a-default`).
  *
+ * An answer in which coord refused EVERY reading ({@link ProbeRead}
+ * `restricted`) is an answer, not silence, so {@link probeUnread} does not
+ * cover it. But no observer was read in it either, so its live-probed rows
+ * resolve `unknown` as well, naming that ({@link RESTRICTED_REASON}). Each of
+ * their cells says `restricted`, and a refused row's own meaning — a
+ * Qontinui-internal or admin-only sub-space, the others unaffected
+ * (`status-presentation.ts`) — is false of an answer that refused them all.
+ *
  * Pure functions (unit-tested in `probe-read.test.ts`); `useProbeRead` is
  * the hook the views call.
  */
@@ -53,7 +61,9 @@ export interface ProbeRead {
   /**
    * Every manifest row joined with coord's catalog and the probe
    * (`resolveSubspaces`). While the probe holds no reading, every
-   * live-probed row is `unknown`, with the reason.
+   * live-probed row is `unknown`, with the reason; so is every one while
+   * coord refuses every reading (`restricted`), with
+   * {@link RESTRICTED_REASON}.
    */
   readonly rows: readonly ResolvedSubspace[];
   /** The probe failed and no earlier answer is held. */
@@ -114,6 +124,16 @@ export interface ProbeSilence {
   /** Epoch ms of that attempt, or `null` when its time is unknown. */
   readonly asOf: number | null;
 }
+
+/**
+ * Why a twin's live readings are missing when coord refused every one of
+ * them (`restricted`): the reason its probe figures give (`twin-aspects.ts`),
+ * its live-probed parts carry ({@link probeReadOf}), and the views' access
+ * notice gives while presenting (`TwinAccessRestricted`). True whatever made
+ * coord refuse them all.
+ */
+export const RESTRICTED_REASON =
+  "coord does not share the twin's live readings with this workspace";
 
 /** What each token of the backend's degraded probe answer means, in words. */
 const DEGRADED_CAUSE: Readonly<Record<string, string>> = {
@@ -201,7 +221,9 @@ const at = (ms: number): number | null => (ms > 0 ? ms : null);
 /**
  * The probe query, joined with coord's catalog, as the views read it. While
  * the probe holds no reading ({@link probeUnread}) its rows carry that, so no
- * view can draw a status or a count from a stand-in cell.
+ * view can draw a status or a count from a stand-in cell. While coord refuses
+ * every reading, its rows carry {@link RESTRICTED_REASON}, so no part claims
+ * the reason a refusal of that part alone would have.
  */
 export function probeReadOf(
   query: ProbeQuery,
@@ -225,7 +247,9 @@ export function probeReadOf(
       query.data?.subspaces,
       query.isLoading,
       catalog,
-      silence?.reason ?? null
+      // Either way no observer was read, so no live row has a status of its
+      // own: the probe holds no reading, or coord refused every one.
+      silence?.reason ?? (read.restricted ? RESTRICTED_REASON : null)
     ),
   };
 }

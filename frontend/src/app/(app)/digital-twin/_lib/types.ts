@@ -187,10 +187,13 @@ export interface SubspacesProbeResponse {
  * failed with nothing held, answered degraded with stand-in cells, or has no
  * answer, no failure and no read in flight because react-query is holding it
  * — `probe-read.ts` `probeUnread`): no probe answered for it, so it has no
- * status to show, and certainly not the `error` of a probe that was made. A
- * built row this page does not probe is `interactive` (a coord tool answers
- * it) or `unprobed` (no coord tool): either way a manifest claim, never the
- * live vocabulary. `not-served` is a manifest `snapshot` row coord's catalog
+ * status to show, and certainly not the `error` of a probe that was made.
+ * It is `unknown` too while coord refuses EVERY reading (`probeReadOf`): its
+ * observer was not read, and a `restricted` row's own meaning — the others
+ * unaffected — would be false. A refusal of some rows only leaves each of
+ * them `restricted`. A built row this page does not probe is `interactive`
+ * (a coord tool answers it) or `unprobed` (no coord tool): either way a
+ * manifest claim, never the live vocabulary. `not-served` is a manifest `snapshot` row coord's catalog
  * does not declare: the manifest and coord have drifted.
  */
 export type CellStatus =
@@ -223,8 +226,9 @@ export interface ResolvedSubspace extends SubspaceManifestEntry {
   error?: string;
   /**
    * Why an `unknown` row has no reading (`probeUnread`'s reason: "coord's
-   * live probe could not be made: coord could not be reached"); absent on
-   * every other status.
+   * live probe could not be made: coord could not be reached"; or, while
+   * coord refuses every reading, `probe-read.ts` `RESTRICTED_REASON`);
+   * absent on every other status.
    */
   unknownReason?: string;
 }

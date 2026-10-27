@@ -30,9 +30,12 @@ export interface StatusStyle {
  * healthy green nor the amber/red of a degraded or failed read. A hollow red
  * ring is drift between the manifest and coord (`not-served`): no probe ran,
  * so it never reuses the solid live vocabulary. `unknown` — the probe holds
- * no reading at all — sits on R3's ignorance floor (`UNKNOWN_AMBER`, the
- * console's own token): amber because nobody knows, never the red of a read
- * that failed nor a calm hue that would paint the ignorance as fine.
+ * no reading at all, or coord refused every one — sits on R3's ignorance
+ * floor (`UNKNOWN_AMBER`, the console's own token): amber because nobody
+ * knows, never the red of a read that failed nor a calm hue that would paint
+ * the ignorance as fine. `restricted`'s meaning is a refusal of that one
+ * sub-space, the others unaffected, so only such a refusal carries it: one
+ * that refused every sub-space is `unknown` (`probe-read.ts` `probeReadOf`).
  */
 export const STATUS_STYLES: Record<CellStatus, StatusStyle> = {
   implemented: {
