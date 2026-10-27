@@ -20,11 +20,14 @@
  *   resolves; it resolves per service, not per host.
  * - **Not reachable.** Per-job queue wait and duration would come from
  *   `coord.ci_dispatches`, and coord exposes **no read route** for that table
- *   — its only HTTP surface is the two ingest POSTs. The CI-node lane is also
- *   still dark behind `COORD_CI_DISPATCH_TO_RUNNERS_ENABLED`, so the table is
- *   effectively empty. Rendering those columns from anything else available
- *   here would mean inventing them, which is the confidently-wrong dashboard
- *   this plan exists to end. The panel says so instead.
+ *   — its only HTTP surface is the two ingest POSTs. (The CI-node lane that
+ *   writes it is armed in production: `ci_dispatch.rs` module doc. Whether a
+ *   repo is dispatched to it is decided per repo, so the table is not empty
+ *   by construction — it is unreadable from here.) Rendering those columns
+ *   from anything else available here would mean inventing them, which is the
+ *   confidently-wrong dashboard this plan exists to end. The panel says so
+ *   instead — in coord's words for the operator, in plain words for an
+ *   outsider.
  *
  * Occupancy is read from the SAME rows the strip renders and the CI
  * dispatcher ranks on — not derived a second way.
@@ -316,12 +319,22 @@ export function CiRunPanel({
           className="text-[10px] text-muted-foreground"
           data-testid="ci-run-missing-columns"
         >
-          Per-job <strong>queue wait</strong> and <strong>duration</strong> are
-          not shown because they are not available: they live in{" "}
-          <code>coord.ci_dispatches</code>, which coord exposes no read route
-          for, and the CI-node lane is still dark behind its dispatch flag.
-          Occupancy above is the live per-lane sample — the same rows the CI
-          dispatcher ranks on.
+          {presenting ? (
+            <>
+              Per-job <strong>queue wait</strong> and{" "}
+              <strong>duration</strong> are not shown here: the coordination
+              service does not publish them yet. The occupancy above is each
+              runner&apos;s own latest report.
+            </>
+          ) : (
+            <>
+              Per-job <strong>queue wait</strong> and{" "}
+              <strong>duration</strong> are not shown because they are not
+              available: they live in <code>coord.ci_dispatches</code>, which
+              coord exposes no read route for. Occupancy above is the live
+              per-lane sample — the same rows the CI dispatcher ranks on.
+            </>
+          )}
         </p>
       </CollapsiblePanel>
     </TooltipProvider>

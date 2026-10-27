@@ -322,10 +322,22 @@ export function DeviceStatusTile({
           Loading device status&hellip;
         </p>
       ) : sortedRows.length === 0 ? (
-        <div className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground">
-          No devices reporting status. Agents post here voluntarily via{" "}
-          <code className="bg-muted px-1 rounded">POST /coord/status</code>;
-          rows older than 1h are pruned.
+        <div
+          className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground"
+          data-testid="device-status-empty"
+        >
+          {/* The route agents post to is the operator's; an outsider reads
+              what the empty list means. Rows older than an hour are pruned,
+              so empty is "nothing reported in the last hour". */}
+          {presenting ? (
+            "No machine has reported what it is working on in the last hour."
+          ) : (
+            <>
+              No devices reporting status. Agents post here voluntarily via{" "}
+              <code className="bg-muted px-1 rounded">POST /coord/status</code>
+              ; rows older than 1h are pruned.
+            </>
+          )}
         </div>
       ) : (
         <ul

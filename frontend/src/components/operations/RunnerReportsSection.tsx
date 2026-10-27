@@ -20,7 +20,7 @@
  * per state — with no mechanism badges and no `title` detail: the runner's own
  * reports quote paths and error text, which can name the machine (D3.3), and
  * an evaluator needs the verdict, not the inventory (density down). UNKNOWN
- * still reads "unknown — <reason>".
+ * still reads "unknown — <reason>", the reason in plain words.
  */
 
 import { rowAccentClass, StatusBadge } from "@/components/console";
@@ -28,6 +28,7 @@ import { relativeTime } from "@/components/console/time";
 import { usePresentationMode } from "@/components/presentation";
 import {
   CAPABILITY_PALETTE,
+  presentedUnknownReason,
   WEDGE_PALETTE,
   type CapabilityKind,
   type RunnerReportView,
@@ -107,15 +108,17 @@ function PresentedRunnerReports({
   reports: ResolvedRunnerReports;
 }) {
   const { wedge, capability } = reports;
+  // An unknown report says why in plain words: coord's own reason is a token
+  // (`no_publisher`) an outsider cannot read (`presentedUnknownReason`).
   const stalls =
     wedge.state === "unknown"
-      ? `unknown — ${wedge.reason}`
+      ? `unknown — ${presentedUnknownReason(wedge.reason)}`
       : wedge.items.open.length === 0
         ? "none open"
         : `${wedge.items.open.length} open`;
   const mechanisms =
     capability.state === "unknown"
-      ? `unknown — ${capability.reason}`
+      ? `unknown — ${presentedUnknownReason(capability.reason)}`
       : capability.items.length === 0
         ? "the runner reported none"
         : capability.items

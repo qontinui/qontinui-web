@@ -371,6 +371,42 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     );
   });
 
+  it("says what a gap or a limit means in plain words, never in coord's vocabulary", async () => {
+    mockRoutes();
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+
+    // The CI panel's missing columns: why they are missing, without the
+    // table name or a retired claim that the lane is switched off.
+    const gap = screen.getByTestId("ci-run-missing-columns");
+    expect(gap).toHaveTextContent(/does not publish them yet/);
+    expect(gap.textContent).not.toMatch(/coord\.|still dark|dispatch flag/);
+
+    // The worktree cap is the one reported for the machine — no retired
+    // fleet-wide constant, no default.
+    fireEvent.focus(screen.getByText("Slots"));
+    const capTip = await screen.findByTestId("fleet-worktree-slots-cap-tip");
+    expect(capTip).toHaveTextContent(
+      "Agent workspaces in use, against the limit reported for this machine."
+    );
+    expect(capTip.textContent).not.toMatch(/COORD_|default 8/);
+    fireEvent.blur(screen.getByText("Slots"));
+
+    // A machine with no recent count says so, without coord's "census".
+    const [unknownCell] = screen.getAllByTestId(
+      "fleet-worktree-slots-unknown-cell"
+    );
+    fireEvent.focus(unknownCell!);
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "This machine has sent no recent count, so how many workspaces it holds is unknown."
+      )
+    );
+    expect(document.body.textContent).not.toMatch(/census/);
+    fireEvent.blur(unknownCell!);
+  });
+
   it("names machines by alias, and one machine by ONE alias across the machine card, the resources table and the worktree slots", async () => {
     mockRoutes();
     seedDeviceStatus();
@@ -647,6 +683,13 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
     const html = document.body.innerHTML;
     expect(html).not.toContain(ERROR_HOST);
     expect(html).not.toContain(ERROR_DEVICE);
+    // No machine reported its status: said plainly, without the route agents
+    // post to.
+    const empty = screen.getByTestId("device-status-empty");
+    expect(empty).toHaveTextContent(
+      "No machine has reported what it is working on in the last hour."
+    );
+    expect(empty.textContent).not.toMatch(/POST|\/coord\//);
     expect(screen.getByTestId("fleet-roles-unknown")).toHaveTextContent(
       FAILURE_SENTENCE_WITHHELD
     );
@@ -799,6 +842,11 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
         .getByTestId("coord-devops-credential-unknown-badge")
         .getAttribute("title")
     ).toContain(ERROR_HOST);
+    // The empty device-status list names the route agents post to — for the
+    // operator only.
+    expect(screen.getByTestId("device-status-empty")).toHaveTextContent(
+      "POST /coord/status"
+    );
     // The machine list's refresh-loop clock is the operator's: shown here,
     // over the same failed inventory read the presentation arm hides it over.
     await waitFor(() =>
@@ -885,6 +933,20 @@ describe("/admin/coord/devops for the operator — the console is unchanged", ()
     expect(screen.queryByTestId("devops-headline-strip")).toBeNull();
     expect(document.querySelector("[data-presentation-caption]")).toBeNull();
     expect(document.querySelector("[data-provenance]")).toBeNull();
+
+    // The operator's CI note names coord's table, and no longer claims the
+    // lane behind it is switched off (coord's ci_dispatch.rs: armed).
+    const gap = await screen.findByTestId("ci-run-missing-columns");
+    expect(gap).toHaveTextContent("coord.ci_dispatches");
+    expect(gap.textContent).not.toMatch(/still dark|dispatch flag/);
+    // The worktree cap is the one coord reports for the machine — not the
+    // retired fleet-wide constant.
+    fireEvent.focus(await screen.findByText("Slots"));
+    const capTip = await screen.findByTestId("fleet-worktree-slots-cap-tip");
+    expect(capTip).toHaveTextContent(
+      "Active worktree allocations against the cap coord reports for this machine."
+    );
+    expect(capTip.textContent).not.toMatch(/COORD_MAX_WORKTREES|default 8/);
   });
 
   it("a rename begun by the operator does not carry over into presentation mode", async () => {

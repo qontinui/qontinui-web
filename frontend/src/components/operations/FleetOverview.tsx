@@ -872,13 +872,20 @@ export function FleetOverview({
 
           {/* Machine cards grid */}
           {isEmpty ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+            <div
+              className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3"
+              data-testid="coord-devops-machines-empty"
+            >
               <Server className="h-10 w-10 opacity-30" />
               <p className="text-sm font-medium">No runners online</p>
-              <p className="text-xs max-w-sm text-center">
-                Connect a runner via Settings → Backend Connection, or launch a
-                Claude Code session on any machine to see it here.
-              </p>
+              {/* Where to go to connect one is the operator's next step, not
+                  something an outsider can act on. */}
+              {!presenting && (
+                <p className="text-xs max-w-sm text-center">
+                  Connect a runner via Settings → Backend Connection, or launch
+                  a Claude Code session on any machine to see it here.
+                </p>
+              )}
             </div>
           ) : (
             <div>

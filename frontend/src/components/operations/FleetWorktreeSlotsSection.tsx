@@ -291,10 +291,18 @@ export function FleetWorktreeSlotsSection({
                           Slots
                         </span>
                       </TooltipTrigger>
-                      <TooltipContent className="max-w-[22rem] text-[11px]">
-                        Active worktree allocations against the fleet-wide cap (
-                        <code>COORD_MAX_WORKTREES</code>, default 8). Not
-                        per-device-tunable today.
+                      {/* The fleet-wide `COORD_MAX_WORKTREES` this tooltip
+                          once named is retired (qontinui-coord
+                          `policies/isolation.rs` `MIN_DEVICE_WORKTREES`), so
+                          it states only that the cap is the one coord reports
+                          for the row. */}
+                      <TooltipContent
+                        className="max-w-[22rem] text-[11px]"
+                        data-testid="fleet-worktree-slots-cap-tip"
+                      >
+                        {presenting
+                          ? "Agent workspaces in use, against the limit reported for this machine."
+                          : "Active worktree allocations against the cap coord reports for this machine."}
                       </TooltipContent>
                     </Tooltip>
                   </th>
@@ -337,9 +345,9 @@ export function FleetWorktreeSlotsSection({
                               </span>
                             </TooltipTrigger>
                             <TooltipContent className="max-w-[22rem] text-[11px]">
-                              coord has no recent census for this device; the
-                              worktree count above cannot be corroborated as
-                              live.
+                              {presenting
+                                ? "This machine has sent no recent count, so how many workspaces it holds is unknown."
+                                : "coord has no recent census for this device; the worktree count above cannot be corroborated as live."}
                             </TooltipContent>
                           </Tooltip>
                         ) : (
