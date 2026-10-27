@@ -121,6 +121,7 @@ describe("coordNavModel", () => {
       "UI Bridge",
       "Computers",
       "Spawns",
+      "Session load",
       "Trees",
       "Launch session",
       "Runner Drain",
@@ -150,14 +151,15 @@ describe("coordNavModel", () => {
       "CI",
       "UI Bridge",
     ]);
-    // A coord admin who is NOT staff sees Computers and Spawns and nothing
-    // operator-only.
+    // A coord admin who is NOT staff sees Computers, Spawns and Session load
+    // and nothing operator-only.
     expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
       "Overview",
       "CI",
       "UI Bridge",
       "Computers",
       "Spawns",
+      "Session load",
     ]);
     // A superuser sees every Dev Ops member.
     expect(visibleLabels("devops", SUPERUSER)).toEqual(labels("devops"));
@@ -176,6 +178,19 @@ describe("coordNavModel", () => {
     expect(launcher?.testId).toBe("coord-nav-spawn");
     const spawnWords = items.filter((i) => /\bspawn/i.test(i.label));
     expect(spawnWords.map((i) => i.label)).toEqual(["Spawns"]);
+  });
+
+  it("puts Session load beside Spawns, gated on coord tenant admin like its proxies", () => {
+    const items = group("devops").items;
+    const hrefs = items.map((i) => i.href);
+    const load = items.find((i) => i.href === "/admin/coord/session-load");
+    expect(load?.label).toBe("Session load");
+    expect(load?.testId).toBe("coord-nav-session-load");
+    expect(load?.coordAdminOnly).toBe(true);
+    expect(load?.operatorOnly).toBeUndefined();
+    expect(hrefs.indexOf("/admin/coord/session-load")).toBe(
+      hrefs.indexOf("/admin/coord/spawns") + 1
+    );
   });
 
   it("asks admin IN THE ACTIVE TENANT, as require_coord_tenant_admin does", () => {

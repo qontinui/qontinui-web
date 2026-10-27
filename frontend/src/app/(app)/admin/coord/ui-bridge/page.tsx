@@ -42,7 +42,7 @@
  * the two buttons that are not panel toggles — capture a snapshot, run page
  * health — read, and say so.
  *
- * Console style (`frontend/docs/console-ui-style-guide.md`, §3.9 for this
+ * Console style (`frontend/docs/console-ui-style-guide.md`, §3.10 for this
  * page): no page title (R9), strip first (R1), panels collapsible with their
  * signal kept in the summary (R7), one line per record whose detail expands
  * in place (R2, R5).
