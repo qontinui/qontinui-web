@@ -51,6 +51,7 @@ const ADMIN_REFUSAL_ENVELOPE = {
     next_action: { kind: "none_terminal" },
     glossary_terms: [],
     detail: PLATFORM_ADMIN_REFUSAL,
+    observed_at: "2026-10-27T12:00:00+00:00",
     source: "web_backend",
   },
 };

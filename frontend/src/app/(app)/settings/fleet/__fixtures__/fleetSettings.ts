@@ -9,8 +9,11 @@ export const DEVICE_ID = "66666666-6666-6666-6666-666666666666";
 export const APP_ID = "qontinui-web";
 
 /**
- * `require_admin`'s refusal in the production error envelope. The sentence is
- * a LITERAL on purpose: the fleet UI keys on it, so a rewording on either side
+ * `require_admin`'s refusal in the production error envelope: the top level
+ * `app/middleware/error_handler.py` composes, with the typed refusal
+ * `app/core/refusal.py` nests under `refusal` (the body the backend's
+ * `tests/test_fleet_apps_platform_admin_gate.py` pins). The sentence is a
+ * LITERAL on purpose: the fleet UI keys on it, so a rewording on either side
  * must turn these tests red.
  */
 export const ADMIN_REFUSAL = {
@@ -18,6 +21,15 @@ export const ADMIN_REFUSAL = {
   message: "Not authorized. Admin access required.",
   timestamp: 1790000000,
   path: "https://api.test/api/v1/fleet/apps",
+  refusal: {
+    code: "permission_denied",
+    discriminator: "platform_admin_required",
+    next_action: { kind: "none_terminal" },
+    glossary_terms: [],
+    detail: "Not authorized. Admin access required.",
+    observed_at: "2026-10-27T12:00:00+00:00",
+    source: "web_backend",
+  },
 };
 
 export const PULL_BUILD_APP = {

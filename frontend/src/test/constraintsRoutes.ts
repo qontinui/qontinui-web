@@ -41,6 +41,7 @@ export const ADMIN_REFUSED: RouteAnswer = {
       next_action: { kind: "none_terminal" },
       glossary_terms: [],
       detail: PLATFORM_ADMIN_REFUSAL,
+      observed_at: "2026-10-27T12:00:00+00:00",
       source: "web_backend",
     },
   },
@@ -56,12 +57,15 @@ export const RUNNER_UNREACHABLE: RouteAnswer = {
   body: {
     error: "BAD_GATEWAY",
     message: RUNNER_UNREACHABLE_SENTENCE,
+    timestamp: 1790000000,
+    path: "https://api.test/api/v1/constraints/active",
     refusal: {
       code: "upstream_unavailable",
       discriminator: "constraints_runner_unreachable",
       next_action: { kind: "retry_later" },
       glossary_terms: ["runner"],
       detail: RUNNER_UNREACHABLE_SENTENCE,
+      observed_at: "2026-10-27T12:00:00+00:00",
       source: "web_backend",
     },
   },

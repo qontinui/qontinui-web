@@ -188,6 +188,15 @@ describe("FleetTestTargetsPanel app config admin gate", () => {
       message: "Not authorized. Admin access required.",
       timestamp: 1790000000,
       path: `https://api.test${url}`,
+      refusal: {
+        code: "permission_denied",
+        discriminator: "platform_admin_required",
+        next_action: { kind: "none_terminal" },
+        glossary_terms: [],
+        detail: "Not authorized. Admin access required.",
+        observed_at: "2026-10-27T12:00:00+00:00",
+        source: "web_backend",
+      },
     });
     return new Error(`${verb} ${url} failed: 403 - ${body}`);
   }
