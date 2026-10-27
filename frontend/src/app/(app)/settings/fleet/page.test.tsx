@@ -17,6 +17,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -171,6 +172,69 @@ describe("/settings/fleet app config admin gate", () => {
       await waitFor(() => expect(toastError).toHaveBeenCalled());
     }
   );
+
+  it("keeps the loader up while the registry read is out, though another read already failed", async () => {
+    let answerRegistry!: (response: Response) => void;
+    const registry = new Promise<Response>((resolve) => {
+      answerRegistry = resolve;
+    });
+    let devicesFailed = false;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/fleet/apps") && !init?.method) return registry;
+      if (url.endsWith("/fleet/test-targets")) return json(200, [DESIGNATION]);
+      if (url.endsWith("/fleet/freshness")) return json(200, []);
+      if (url.endsWith("/devices")) {
+        devicesFailed = true;
+        return json(500, { detail: "coord unavailable" });
+      }
+      throw new Error(`unexpected ${init?.method ?? "GET"} ${url}`);
+    });
+    render(<FleetSettingsPage />);
+
+    // `/devices` (the coord-backed read) has failed and its rejection has had
+    // every tick it needs; `/fleet/apps` is still out.
+    await waitFor(() => expect(devicesFailed).toBe(true));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+
+    // Nothing may say what the unread registry holds.
+    expect(screen.getByTestId("fleet-loading")).toBeInTheDocument();
+    expect(screen.queryByText(/No apps registered yet/)).toBeNull();
+    expect(screen.queryByTestId("fleet-designate-needs-registry")).toBeNull();
+    expect(screen.queryByTestId("fleet-apps-read-failed")).toBeNull();
+
+    // The registry answers: this viewer is not a platform admin.
+    answerRegistry(json(403, ADMIN_REFUSAL));
+    expect(await screen.findByTestId("fleet-apps-admin-only")).toBeVisible();
+    expect(screen.queryByText(/No apps registered yet/)).toBeNull();
+    expect(screen.queryByTestId("fleet-loading")).toBeNull();
+    // The failed read is still reported, and the refusal is not.
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError).toHaveBeenCalledWith(
+      "Failed to load fleet data: coord unavailable"
+    );
+  });
+
+  it("names every read that failed, not only the first", async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/fleet/apps") && !init?.method) {
+        return json(200, [PULL_BUILD_APP]);
+      }
+      if (url.endsWith("/fleet/test-targets")) {
+        return json(502, { detail: "test targets unavailable" });
+      }
+      if (url.endsWith("/fleet/freshness")) return json(200, []);
+      if (url.endsWith("/devices")) {
+        return json(500, { detail: "coord unavailable" });
+      }
+      throw new Error(`unexpected ${init?.method ?? "GET"} ${url}`);
+    });
+    render(<FleetSettingsPage />);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    expect(toastError).toHaveBeenCalledWith(
+      "Failed to load fleet data: test targets unavailable; coord unavailable"
+    );
+  });
 
   it("labels a refused save and takes the editors away", async () => {
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {

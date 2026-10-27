@@ -48,7 +48,8 @@ const FRESHNESS_POLL_MS = 10_000;
 /**
  * What the app-registry read (`GET /api/v1/fleet/apps`) answered.
  *
- * - `pending` — not back yet (the page shows its loader).
+ * - `pending` — not back yet. `fetchAll` keeps the page's loader up until
+ *   EVERY read has settled, so this state is never rendered past the loader.
  * - `read` — `apps` is the registry; an empty list is a real "none".
  * - `admin-only` — REFUSED: the viewer is not a platform admin. The registry
  *   and its editors are replaced by `AppConfigAdminOnly`, never by an empty
@@ -62,6 +63,10 @@ interface AppDraft {
   update_strategy: UpdateStrategy;
   build_command: string;
   start_command: string;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function draftFromApp(app: FleetApp): AppDraft {
@@ -160,20 +165,24 @@ export default function FleetSettingsPage() {
   }, []);
 
   const fetchAll = useCallback(async () => {
-    try {
-      await Promise.all([
-        fetchApps(),
-        fetchTargets(),
-        fetchFreshness(),
-        listRunners().then(setDevices),
-      ]);
-    } catch (err) {
-      toast.error(
-        `Failed to load fleet data: ${err instanceof Error ? err.message : String(err)}`
-      );
-    } finally {
-      setLoading(false);
+    // `allSettled`, not `all`: the loader comes down only once EVERY read has
+    // answered. With `all`, the first read to fail cleared it while the
+    // registry read was still out, and the page rendered that unknown registry
+    // as "No apps registered yet" and its add-form slot as "could not be
+    // read". It also toasted only the first failure; every one is named now.
+    const reads = await Promise.allSettled([
+      fetchApps(),
+      fetchTargets(),
+      fetchFreshness(),
+      listRunners().then(setDevices),
+    ]);
+    const failures = reads.flatMap((read) =>
+      read.status === "rejected" ? [errorText(read.reason)] : []
+    );
+    if (failures.length > 0) {
+      toast.error(`Failed to load fleet data: ${failures.join("; ")}`);
     }
+    setLoading(false);
   }, [fetchApps, fetchTargets, fetchFreshness]);
 
   useEffect(() => {
@@ -293,7 +302,10 @@ export default function FleetSettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div
+        className="flex items-center justify-center py-20"
+        data-testid="fleet-loading"
+      >
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
