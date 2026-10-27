@@ -15890,8 +15890,9 @@ export interface paths {
          *     ``off_vocabulary``, ``unset``) whose sum coord asserts equals
          *     ``row_count``. ``excluded`` is ``{merge_shepherd_bookkeeping}``: coord's
          *     own merge-shepherd bookkeeping units, left out of ``row_count`` and
-         *     every class and counted only there (the ``/overview`` panel states that
-         *     count). ``stalled`` is a MECHANICAL absence-of-recorded-change class
+         *     every class, and counted in ``excluded`` (and in ``does_not_know``'s
+         *     ``work_units`` row as ``rows_excluded``); the ``/overview`` panel states
+         *     that count. ``stalled`` is a MECHANICAL absence-of-recorded-change class
          *     (``stall_rule`` / ``stall_window_secs`` ride the wire); it is not a
          *     verdict and the page does not render the word.
          *
