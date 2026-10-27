@@ -90,22 +90,34 @@ describe("deriveDashboardHealth", () => {
     expect(badge(h, "actions")?.label).toBe("actions –");
   });
 
-  it("is amber when the runner did not answer, and when there is no runner", () => {
-    expect(
-      deriveDashboardHealth(
-        input({
-          health: {
-            state: "failed",
-            issue: {
-              kind: "failed",
-              cause: "x",
-              requestId: null,
-              quotes: true,
-            },
-          },
-        })
-      ).headline
-    ).toBe("Machine A did not answer, so every runner panel is UNKNOWN.");
+  const FAILED = {
+    state: "failed",
+    issue: { kind: "failed", cause: "x", requestId: null, quotes: true },
+  } as const;
+
+  it("says only what a failed health read leaves unknown — the components it did read stand", () => {
+    const h = deriveDashboardHealth(input({ health: FAILED }));
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "Machine A's health did not answer, so its build and SDK features are UNKNOWN."
+    );
+    // The component counts answered and are on the strip: no sentence may
+    // call every runner panel UNKNOWN beside them.
+    expect(h.headline).not.toMatch(/every runner panel/);
+    expect(badge(h, "actions")?.label).toBe("actions 7");
+  });
+
+  it("names the component actions too when they failed beside the health", () => {
+    const h = deriveDashboardHealth(
+      input({ health: FAILED, components: FAILED })
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "Machine A's health did not answer, so its build and SDK features are UNKNOWN. Its component actions are UNKNOWN too — the read failed."
+    );
+  });
+
+  it("is amber when there is no runner", () => {
     const none = deriveDashboardHealth(
       input({ noRunner: "the runner list has not answered yet" })
     );

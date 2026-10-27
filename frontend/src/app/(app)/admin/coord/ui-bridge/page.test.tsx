@@ -408,8 +408,24 @@ describe("an unreachable runner", () => {
     );
     const strip = screen.getByTestId("coord-ui-bridge-health-strip");
     expect(strip).toHaveTextContent(
-      "did not answer, so every runner panel is UNKNOWN"
+      "Build box's health did not answer, so its build and SDK features are UNKNOWN. Its component actions are UNKNOWN too — the read failed."
     );
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+  });
+
+  it("says only the health is unknown when the health alone did not answer — the components it read stand", async () => {
+    state.relay = relayFake({ health: () => json(503, NOT_CONNECTED_BODY) });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    const strip = screen.getByTestId("coord-ui-bridge-health-strip");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(
+        "Build box's health did not answer, so its build and SDK features are UNKNOWN."
+      )
+    );
+    expect(strip).not.toHaveTextContent("every runner panel");
+    expect(strip).not.toHaveTextContent("component actions are UNKNOWN");
+    expect(strip).toHaveTextContent("actions 7");
     expect(strip).toHaveAttribute("data-health-level", "amber");
   });
 

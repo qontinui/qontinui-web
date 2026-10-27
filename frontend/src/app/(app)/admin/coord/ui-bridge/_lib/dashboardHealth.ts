@@ -128,9 +128,19 @@ export function deriveDashboardHealth(
     };
   }
   if (input.health.state === "failed") {
+    // Say what the failed read leaves unknown, and nothing more: the other
+    // runner reads are their own answers, and the badges beside this
+    // sentence show the ones that came back.
+    const components =
+      input.components.state === "failed"
+        ? ` Its component actions are UNKNOWN too — ${issuePhrase(
+            input.components.issue,
+            input.componentsRoute
+          )}.`
+        : "";
     return {
       level: "amber",
-      headline: `${input.machine} did not answer, so every runner panel is UNKNOWN.`,
+      headline: `${input.machine}'s health did not answer, so its build and SDK features are UNKNOWN.${components}`,
       badges,
     };
   }
