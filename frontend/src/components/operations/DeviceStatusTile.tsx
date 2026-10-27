@@ -439,9 +439,17 @@ export function DeviceStatusTile({
                 className="text-yellow-300"
                 data-ui-bridge-id="operations.device-status-connection"
               >
-                {/* The transport is the operator's to know; an outsider reads
-                    that the list is not updating live. */}
-                {presenting ? "live updates paused" : "polling (WS offline)"}
+                {/* The transport is the operator's to know. An outsider reads
+                    what the stream does while the socket is down: it re-reads
+                    the list on its fallback poll
+                    (`DEVICE_STATUS_POLL_FALLBACK_MS`, 5 s; this tile's test
+                    holds it under 10 s) — never that the list stopped. A
+                    re-read that fails is said by the error badge and by the
+                    count and body (unknown, or a past-tense stale list), so
+                    these words hold whether or not a re-read succeeds. */}
+                {presenting
+                  ? "re-read every few seconds"
+                  : "polling (WS offline)"}
               </span>
             </>
           )}

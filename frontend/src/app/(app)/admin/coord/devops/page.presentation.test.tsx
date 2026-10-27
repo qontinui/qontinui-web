@@ -774,8 +774,11 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
         id
       ).toBe("false");
     }
-    // The list is not updating live: said so, without naming the transport.
-    expect(deviceStatusConnection().textContent).toBe("live updates paused");
+    // The socket is down, so the list is re-read on the stream's fallback
+    // poll: said as that cadence, without naming the transport.
+    expect(deviceStatusConnection().textContent).toBe(
+      "re-read every few seconds"
+    );
     // ...and nothing anywhere on the page is coord's own vocabulary.
     expect(engineeringVocabularyOnPage()).toEqual([]);
     expect(screen.getByTestId("fleet-roles-unknown")).toHaveTextContent(

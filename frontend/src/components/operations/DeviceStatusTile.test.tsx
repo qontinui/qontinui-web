@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { DeviceStatusTile } from "./DeviceStatusTile";
 import { FixedPresentationMode } from "@/components/presentation";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DEVICE_STATUS_POLL_FALLBACK_MS } from "./utils";
 import type { DeviceStatus, StalledSession } from "./types";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 
@@ -159,9 +160,11 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(count()).toBe("unknown");
     // The read's own text names a machine: it never reaches an outsider.
     expect(document.body.innerHTML).not.toContain("device-host-4471");
-    // The list is not updating live — said without naming the socket.
-    expect(connection()).toBe("live updates paused");
-    expect(document.body.textContent).not.toMatch(/\bWS\b|polling/);
+    // The socket is down, so the stream re-reads the list on its fallback
+    // poll: said as that cadence, without naming the socket — and never as a
+    // list that stopped updating.
+    expect(connection()).toBe("re-read every few seconds");
+    expect(document.body.textContent).not.toMatch(/\bWS\b|polling|paused/);
   });
 
   it("operator, no read ever answered: UNKNOWN with the read's own text, and the transport named", () => {
@@ -224,5 +227,18 @@ describe("DeviceStatusTile — a failed read is never an empty list", () => {
     expect(document.body.textContent).toContain("Loading device status");
     expect(screen.queryByTestId("device-status-empty")).toBeNull();
     expect(screen.queryByTestId("device-status-unknown")).toBeNull();
+  });
+});
+
+/**
+ * The presented connection line claims a cadence: while the socket is down
+ * the stream re-reads the list on its fallback poll, and the line says "every
+ * few seconds". That sentence is true only while the poll's interval is a few
+ * seconds, so the bound is held here, beside the words, rather than left to
+ * whoever next edits the interval.
+ */
+describe("DeviceStatusTile — the presented connection line", () => {
+  it("'re-read every few seconds' holds: the fallback poll re-reads the list in under ten seconds", () => {
+    expect(DEVICE_STATUS_POLL_FALLBACK_MS).toBeLessThan(10_000);
   });
 });
