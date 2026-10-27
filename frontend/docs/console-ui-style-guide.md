@@ -2080,6 +2080,22 @@ Where a kept reading's dot goes depends on what carries it:
   probe figure and live part is then UNKNOWN with the reason.
   The map's Staleness figure is worded as of the read ("15m stale when read"), since
   in operator mode no chip dates it.
+- **A figure with no notice above it** keeps no reading. On the Twin map the Honesty
+  figure (coord's twin self-check) and the UI Bridge app twin's Observed and Coverage
+  figures (the runner's app registry and its model of its own interface) stand alone.
+  Nothing on their card could name a kept answer as the last one, so a read whose
+  latest attempt failed makes its figure UNKNOWN, dated by that attempt: "the
+  runner's app registry could not be read (HTTP 503)". That holds even where
+  react-query keeps an earlier answer beside the failure
+  (`digital-twin/_lib/twin-aspects.ts` `runnerAnswer`,
+  `digital-twin/_lib/twin-fidelity.ts` `readFidelity`). A read with no answer, no
+  failure and none in flight is not worded as a failure: "no read of the runner's
+  app registry has answered: this browser is offline". The UI Bridge tab reads the
+  same runner reads the same way. Its App field's suggestions and its graph counts
+  are the runner's only while their latest read answered
+  (`digital-twin/_components/UiBridgePanel.tsx`). Its live snapshot is a capture,
+  not a count: one kept after a re-capture failed stays under the failure,
+  introduced as "As last captured, before that failure:".
 
 Where one panel shows two reads of one thing, every line about a read says which read
 it is about. It does so by name ("Coord's live probe's latest read failed", "This

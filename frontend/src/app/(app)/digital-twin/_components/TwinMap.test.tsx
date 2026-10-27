@@ -21,6 +21,7 @@ import {
   renderInPresentationMode,
 } from "@/test/presentation";
 import { isDeclaredProbe, manifest } from "../_lib/resolve";
+import { RunnerRelayError } from "../_lib/runner-relay";
 import { MANIFEST_SNAPSHOT_IDS, catalogDeclaring } from "../_lib/test-catalog";
 import type {
   SubspacesProbeResponse,
@@ -129,7 +130,7 @@ beforeEach(() => {
     ),
   };
   state.workUnits = { ...idle, data: walk(UNITS), dataUpdatedAt: READ_AT };
-  state.appTwin = { deviceId: null, apps: idle, graph: idle };
+  state.appTwin = { deviceId: null, online: true, apps: idle, graph: idle };
 });
 
 function card(aspect: string): HTMLElement {
@@ -865,4 +866,132 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
       "unknown"
     );
   });
+});
+
+/**
+ * The UI Bridge app twin over the runner's two reads, in both modes. A figure
+ * is the runner's answer only while its read's LATEST attempt answered:
+ * react-query keeps an earlier answer beside a failed refetch, and nothing on
+ * the card would say it is not current, so the card shows the failure — dated
+ * by that attempt — and never the kept value. The map has no notice for these
+ * reads, so a failed one adds none.
+ */
+describe("TwinMap — the UI Bridge app twin's figures are the runner's latest answer", () => {
+  const DEVICE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  /** The failed refetch, nine minutes after the answer it would replace. */
+  const FAILED_AT = READ_AT + 9 * 60_000;
+  const DOWN = new RunnerRelayError("runner unreachable", 503);
+  const APPS = { ok: true, apps: [{ app_id: "a" }, { app_id: "b" }] };
+  const GRAPH = {
+    ok: true,
+    pages: [
+      { id: "p1", stateIds: ["s"], transitionIds: [] },
+      { id: "p2", stateIds: [], transitionIds: [] },
+    ],
+  };
+  const answered = (data: unknown) => ({
+    ...idle,
+    data,
+    dataUpdatedAt: READ_AT,
+  });
+  /** A failed read, over `held` when react-query keeps an earlier answer. */
+  const failed = (held?: unknown) => ({
+    ...idle,
+    data: held,
+    dataUpdatedAt: held === undefined ? 0 : READ_AT,
+    isError: true,
+    error: DOWN,
+    errorUpdatedAt: FAILED_AT,
+  });
+
+  /** What a figure says: its value, or the reason it has none. */
+  const REGISTRY_FAILED =
+    "the runner's app registry could not be read (HTTP 503)";
+  const MODEL_FAILED =
+    "the runner's model of its own interface could not be read (HTTP 503)";
+
+  const CASES: readonly {
+    name: string;
+    apps: Record<string, unknown>;
+    graph: Record<string, unknown>;
+    observed: { value: string } | { reason: string };
+    coverage: { value: string } | { reason: string };
+  }[] = [
+    {
+      name: "both answered",
+      apps: answered(APPS),
+      graph: answered(GRAPH),
+      observed: { value: "2 apps" },
+      coverage: { value: "2 of 2" },
+    },
+    {
+      name: "the registry's refetch failed over its last answer",
+      apps: failed(APPS),
+      graph: answered(GRAPH),
+      observed: { reason: REGISTRY_FAILED },
+      coverage: { value: "2 of 2" },
+    },
+    {
+      name: "the model's refetch failed over its last answer",
+      apps: answered(APPS),
+      graph: failed(GRAPH),
+      observed: { value: "2 apps" },
+      coverage: { reason: MODEL_FAILED },
+    },
+    {
+      name: "both refetches failed over their last answers",
+      apps: failed(APPS),
+      graph: failed(GRAPH),
+      observed: { reason: REGISTRY_FAILED },
+      coverage: { reason: MODEL_FAILED },
+    },
+    {
+      name: "both reads failed with nothing held",
+      apps: failed(),
+      graph: failed(),
+      observed: { reason: REGISTRY_FAILED },
+      coverage: { reason: MODEL_FAILED },
+    },
+  ];
+
+  /** The kept values a failed read must never show. */
+  const KEPT = { observed: "2 apps", coverage: "2 of 2" } as const;
+
+  for (const c of CASES) {
+    for (const mode of ["operator", "presenting"] as const) {
+      it(`${c.name} · ${mode}`, () => {
+        state.appTwin = {
+          deviceId: DEVICE,
+          online: true,
+          apps: c.apps,
+          graph: c.graph,
+        };
+        const view = mode === "presenting" ? presentTwinMap() : null;
+        if (mode === "operator") render(<TwinMap />);
+
+        for (const key of ["observed", "coverage"] as const) {
+          const f = figure("ui-bridge", key);
+          const want = c[key];
+          const chip = f.querySelector("[data-provenance]");
+          if ("value" in want) {
+            expect(f, key).toHaveAttribute("data-fidelity-state", "known");
+            expect(f, key).toHaveTextContent(want.value);
+          } else {
+            expect(f, key).toHaveAttribute("data-fidelity-state", "unknown");
+            expect(f, key).toHaveTextContent(`UNKNOWN${want.reason}`);
+            expect(f, key).not.toHaveTextContent(KEPT[key]);
+          }
+          if (mode === "presenting") {
+            // Dated in both arms: by the answer, or by the failed attempt.
+            expect(chip, key).toHaveAttribute("data-provenance-known", "true");
+          } else {
+            expect(chip, key).toBeNull();
+          }
+        }
+        // The map's one notice is the probe's, and the probe answered.
+        expect(screen.queryByTestId("digital-twin-map-probe-held")).toBeNull();
+        if (view) expectPresentationSafe(view, { forbidden: FORBIDDEN });
+      });
+    }
+  }
 });

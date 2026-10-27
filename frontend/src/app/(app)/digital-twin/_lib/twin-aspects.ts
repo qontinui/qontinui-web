@@ -23,6 +23,9 @@
  * live, and a report with no per-part rows are each a labelled UNKNOWN naming
  * why (`verification-and-evidence` `unknown-must-not-render-as-a-default`). A measured zero — "no violations"
  * over parts the self-check judged — is a real zero and says what it covers.
+ * A runner read whose latest attempt failed is UNKNOWN too, dated by that
+ * attempt, even where react-query keeps an earlier answer beside the failure:
+ * nothing on the card would say that answer is not current ({@link runnerAnswer}).
  *
  * Pure functions (unit-tested in `twin-aspects.test.ts`).
  */
@@ -576,6 +579,13 @@ export interface RelayRead<T> {
 export interface AppTwinRead {
   /** The runner the page targets, or `null` when none is connected. */
   readonly deviceId: string | null;
+  /**
+   * Whether react-query's `onlineManager` holds this browser online. It makes
+   * no read while it does not (the app's default `online` network mode), so
+   * this names why a runner read with no answer has none in flight, as it
+   * does for the probe (`probe-read.ts` `probeUnansweredReason`).
+   */
+  readonly online: boolean;
   /** The runner's app registry (`GET /apps`). */
   readonly apps: RelayRead<AppListResponse>;
   /** The state graph of the runner's own interface (`apps/qontinui-runner/spec/graph`). */
@@ -587,86 +597,168 @@ export const NO_RUNNER_REASON =
 
 const at = (ms: number): number | null => (ms > 0 ? ms : null);
 
+/** What one runner read gives its figure. */
+type RunnerAnswer<T> =
+  | { readonly kind: "loading" }
+  | {
+      readonly kind: "unknown";
+      readonly reason: string;
+      /** When the attempt that established it was made, if one was. */
+      readonly asOf: number | null;
+    }
+  | {
+      readonly kind: "answered";
+      /** What the runner answered, which may still lack what is counted. */
+      readonly data: T | null;
+      readonly asOf: number | null;
+    };
+
+/**
+ * One runner read, as its figure reads it; `what` names the read in words.
+ *
+ * A read whose LATEST attempt failed is UNKNOWN, dated by that attempt, even
+ * when react-query keeps an earlier answer beside the failure (it keeps a
+ * query's `data` when a refetch fails). That earlier answer is not shown as
+ * a figure: the UI Bridge tab trusts these reads only while their latest
+ * attempt succeeded (`UiBridgePanel`), and the self-check figure beside them
+ * is UNKNOWN on any failed read (`twin-fidelity.ts` `readFidelity`), so every
+ * figure on the map with no notice above it follows one rule. The probe's
+ * figures keep their last answer only under the map's notice that names it
+ * (`TwinMapHeldNotice`).
+ *
+ * A read with no answer, no failure and none in flight is one react-query is
+ * holding (it makes none while this browser is offline): nothing failed, so
+ * it is not worded as a failure.
+ */
+function runnerAnswer<T>(
+  read: RelayRead<T>,
+  what: string,
+  online: boolean
+): RunnerAnswer<T> {
+  if (read.isLoading) return { kind: "loading" };
+  if (read.isError) {
+    return {
+      kind: "unknown",
+      reason: `${what} could not be read${statusSuffix(read.error)}`,
+      asOf: at(read.errorUpdatedAt),
+    };
+  }
+  if (read.data === undefined) {
+    return {
+      kind: "unknown",
+      reason: online
+        ? `no read of ${what} has answered, and none is in flight`
+        : `no read of ${what} has answered: this browser is offline`,
+      asOf: null,
+    };
+  }
+  return { kind: "answered", data: read.data, asOf: at(read.dataUpdatedAt) };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function appsFigure(read: AppTwinRead): FidelityFigure {
+  const key: FidelityKey = "observed";
   const source = FIDELITY_SOURCE.appRegistry;
   if (!read.deviceId) {
     return {
-      key: "observed",
+      key,
       state: "unknown",
       reason: NO_RUNNER_REASON,
       source,
       asOf: null,
     };
   }
-  const { apps } = read;
-  if (apps.isLoading) return { key: "observed", state: "loading", source };
-  if (!apps.data) {
+  const answer = runnerAnswer(
+    read.apps,
+    "the runner's app registry",
+    read.online
+  );
+  if (answer.kind === "loading") return { key, state: "loading", source };
+  if (answer.kind === "unknown") {
     return {
-      key: "observed",
+      key,
       state: "unknown",
-      reason: `the runner's app registry could not be read${statusSuffix(apps.error)}`,
+      reason: answer.reason,
       source,
-      asOf: at(apps.errorUpdatedAt),
+      asOf: answer.asOf,
     };
   }
-  if (!Array.isArray(apps.data.apps)) {
+  const apps = isObject(answer.data) ? answer.data.apps : undefined;
+  if (!Array.isArray(apps)) {
     return {
-      key: "observed",
+      key,
       state: "unknown",
       reason: "the runner answered without listing its apps",
       source,
-      asOf: at(apps.dataUpdatedAt),
+      asOf: answer.asOf,
     };
   }
   return {
-    key: "observed",
+    key,
     state: "known",
-    value: plural(apps.data.apps.length, "app"),
+    value: plural(apps.length, "app"),
     detail: "registered with the runner's UI Bridge",
     source,
-    asOf: at(apps.dataUpdatedAt),
+    asOf: answer.asOf,
   };
 }
 
 function modelsFigure(read: AppTwinRead): FidelityFigure {
+  const key: FidelityKey = "coverage";
   const source = FIDELITY_SOURCE.appModels;
   if (!read.deviceId) {
     return {
-      key: "coverage",
+      key,
       state: "unknown",
       reason: NO_RUNNER_REASON,
       source,
       asOf: null,
     };
   }
-  const { graph } = read;
-  if (graph.isLoading) return { key: "coverage", state: "loading", source };
-  if (!graph.data) {
+  const answer = runnerAnswer(
+    read.graph,
+    "the runner's model of its own interface",
+    read.online
+  );
+  if (answer.kind === "loading") return { key, state: "loading", source };
+  if (answer.kind === "unknown") {
     return {
-      key: "coverage",
+      key,
       state: "unknown",
-      reason: `the runner's model of its own interface could not be read${statusSuffix(graph.error)}`,
+      reason: answer.reason,
       source,
-      asOf: at(graph.errorUpdatedAt),
+      asOf: answer.asOf,
     };
   }
-  const summary = summarizeSpecGraph(graph.data);
+  if (!isObject(answer.data)) {
+    return {
+      key,
+      state: "unknown",
+      reason: "the runner answered without a model of its own interface",
+      source,
+      asOf: answer.asOf,
+    };
+  }
+  const summary = summarizeSpecGraph(answer.data);
   if (summary.pages === 0) {
     return {
-      key: "coverage",
+      key,
       state: "unknown",
       reason: "the runner has no interface pages modelled yet",
       source,
-      asOf: at(graph.dataUpdatedAt),
+      asOf: answer.asOf,
     };
   }
   return {
-    key: "coverage",
+    key,
     state: "known",
     value: `${summary.pages - summary.unreadablePages} of ${summary.pages}`,
     detail: "pages of the runner's own interface with a readable model",
     source,
-    asOf: at(graph.dataUpdatedAt),
+    asOf: answer.asOf,
   };
 }
 

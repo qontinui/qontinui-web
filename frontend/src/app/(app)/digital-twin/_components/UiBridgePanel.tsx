@@ -69,6 +69,12 @@ function Counter({
   );
 }
 
+/**
+ * The line that introduces a snapshot kept after a re-capture failed: the
+ * failure leads, and the capture below it is the one before it.
+ */
+export const SNAPSHOT_RETAINED_LEAD = "As last captured, before that failure:";
+
 /** An array's length, or undefined when the payload does not carry the key. */
 function lengthOf(v: unknown): number | undefined {
   return Array.isArray(v) ? v.length : undefined;
@@ -279,10 +285,17 @@ function UiBridgeInspector() {
   const specs = useMemo(() => specList.data?.specs ?? [], [specList.data]);
   // States and transitions come from the GRAPH: the spec list's per-page
   // `config` is a projection with no state machine, so counting states from
-  // it read 0 for every app. `null` until the graph has answered.
+  // it read 0 for every app. `null` until the graph has answered, and again
+  // while its latest read has failed: react-query keeps the last good `data`
+  // beside `isError`, and the failure box above the counts names that read,
+  // so the counts are the graph's only while its latest read succeeded (as
+  // the registry's suggestions are, and as the Twin map's app twin card is).
   const graph = useMemo(
-    () => (specGraph.data ? summarizeSpecGraph(specGraph.data) : null),
-    [specGraph.data]
+    () =>
+      specGraph.data && !specGraph.isError
+        ? summarizeSpecGraph(specGraph.data)
+        : null,
+    [specGraph.data, specGraph.isError]
   );
   const snap = snapshot.data;
   // A native window capture has no element tree, so its `elements: []` is
@@ -465,6 +478,18 @@ function UiBridgeInspector() {
           )}
           {snap && (
             <>
+              {snapshot.isError && snapshotRequested && (
+                // React-query keeps the last capture when a re-capture
+                // fails: the failure above leads, and this is the capture
+                // before it, not the window as it is now (style guide R6,
+                // §6.5).
+                <p
+                  data-testid="ui-bridge-snapshot-retained"
+                  className="mb-2 text-xs font-medium text-muted-foreground"
+                >
+                  {SNAPSHOT_RETAINED_LEAD}
+                </p>
+              )}
               <SnapshotSubject snap={snap} />
               {typeof snap.note === "string" && snap.note && (
                 <p className="mb-2 text-xs text-amber-700 dark:text-amber-500">

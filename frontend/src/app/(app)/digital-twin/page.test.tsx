@@ -98,7 +98,14 @@ vi.mock("./_hooks/useAppTwin", () => {
     dataUpdatedAt: 0,
     errorUpdatedAt: 0,
   };
-  return { useAppTwin: () => ({ deviceId: null, apps: idle, graph: idle }) };
+  return {
+    useAppTwin: () => ({
+      deviceId: null,
+      online: true,
+      apps: idle,
+      graph: idle,
+    }),
+  };
 });
 vi.mock("./_hooks/useDeliveryVerdict", () => ({
   useDeliveryVerdict: (slug: string) => ({

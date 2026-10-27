@@ -345,3 +345,75 @@ describe("UiBridgePanel counters (real hooks, real-shaped bodies)", () => {
     }
   );
 });
+
+/**
+ * A read whose refetch failed keeps its last good `data` beside `isError`
+ * (react-query). The failure leads, and nothing below it may read as current:
+ * the graph's counts are the graph's only while its latest read succeeded,
+ * and a snapshot kept after a failed re-capture is introduced as the capture
+ * before that failure (style guide R6, §6.5).
+ */
+describe("UiBridgePanel — a read kept after its latest attempt failed", () => {
+  /** Answer `path` as the runner does `times` times, then fail it with a 503. */
+  function failAfter(path: string, times: number) {
+    let reads = 0;
+    state.fetch = (url) => {
+      const relayPath = url.slice(PROXY.length);
+      requested.push(relayPath);
+      if (relayPath === path && ++reads > times) {
+        return Promise.resolve(json(503, { detail: "runner busy" }));
+      }
+      return runner(url);
+    };
+  }
+
+  const following = (a: Node, b: Node) =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  it("counts nothing from a graph whose refetch failed, and keeps the list's count", async () => {
+    failAfter("apps/qontinui-runner/spec/graph", 1);
+    renderPanel();
+    await waitFor(() => expect(count("states")).toBe("5 states"));
+
+    fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "the state-machine graph for qontinui-runner"
+      )
+    );
+    expect(count("states")).toBe("— states");
+    expect(count("transitions")).toBe("— transitions");
+    expect(count("graph-nodes")).toBe("— graph nodes");
+    // The list's latest read answered, so its count is current.
+    expect(count("pages")).toBe("2 pages");
+    // No page row claims the failed graph's states either.
+    expect(screen.getByText("runs").closest("li")?.textContent).not.toMatch(
+      /states/
+    );
+  });
+
+  it("introduces a snapshot kept after a failed re-capture as the one before that failure", async () => {
+    failAfter("ui-bridge/control/snapshot", 1);
+    renderPanel();
+    const capture = () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: /capture snapshot/i })
+      );
+
+    capture();
+    await waitFor(() => expect(count("elements")).toBe("3 elements"));
+    // The latest capture answered: nothing to introduce.
+    expect(screen.queryByTestId("ui-bridge-snapshot-retained")).toBeNull();
+
+    capture();
+    const lead = await screen.findByTestId("ui-bridge-snapshot-retained");
+    expect(lead.textContent).toBe("As last captured, before that failure:");
+    // The failure leads, then the line, then the kept capture.
+    const failure = within(liveCard()).getByRole("alert");
+    expect(following(failure, lead)).toBe(true);
+    expect(
+      following(lead, screen.getByTestId("ui-bridge-snapshot-subject"))
+    ).toBe(true);
+  });
+});

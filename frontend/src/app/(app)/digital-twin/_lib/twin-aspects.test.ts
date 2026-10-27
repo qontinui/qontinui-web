@@ -21,7 +21,6 @@ import {
   probeFedAspects,
   probeFedContent,
   twinAspect,
-  type AppTwinRead,
   type FidelityFigure,
   type FidelityKey,
   type RelayRead,
@@ -39,6 +38,7 @@ import type {
   TwinCatalogEntry,
   TwinCatalogResponse,
 } from "./types";
+import type { AppListResponse, SpecGraphResponse } from "./ui-bridge-types";
 
 const NOW = Date.parse("2026-10-23T12:00:00Z");
 
@@ -634,87 +634,293 @@ function relay<T>(over: Partial<RelayRead<T>> = {}): RelayRead<T> {
   };
 }
 
-function appFigures(read: AppTwinRead): Record<FidelityKey, FidelityFigure> {
-  const out = {} as Record<FidelityKey, FidelityFigure>;
-  for (const f of appTwinFidelity(read)) out[f.key] = f;
-  return out;
-}
+/**
+ * The UI Bridge app twin's four figures over EVERY state of the two runner
+ * reads behind them — the app registry (Observed) and the model of the
+ * runner's own interface (Coverage) — with this browser online and offline,
+ * and with no runner connected.
+ *
+ * Each read is in flight with nothing held; FAILED with nothing held; failed
+ * with an earlier answer react-query keeps beside the failure, with an HTTP
+ * status and without one (a relay timeout); held by react-query with no
+ * answer, no failure and none in flight; or answered — with what it counts,
+ * without it, or with no body at all. A read can be in flight, failed or
+ * answered whether or not the browser has gone offline since, so every state
+ * occurs in both; only the held read's sentence says which.
+ *
+ * The expectations are written out here, not imported from the module under
+ * test. What every cell checks beyond them: a figure is a number only when
+ * its own read's LATEST attempt answered with what it counts, so a value kept
+ * beside a failure never shows; and neither read decides the other's figure.
+ */
+describe("appTwinFidelity — every state of the runner's two reads", () => {
+  const DEVICE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const READ_AT = NOW - 600_000;
+  const FAILED_AT = NOW - 60_000;
+  const DOWN = new RunnerRelayError("runner unreachable", 503);
+  const TIMED_OUT = new RunnerRelayError("the relay timed out after 8000ms");
 
-describe("appTwinFidelity — the UI Bridge app twin", () => {
-  it("is UNKNOWN throughout with no runner connected", () => {
-    const f = appFigures({ deviceId: null, apps: relay(), graph: relay() });
-    for (const key of ["observed", "coverage", "staleness"] as const) {
-      expectNoZeroFor(f[key]);
-      expect(f[key].state === "unknown" && f[key].reason, key).toBe(
-        NO_RUNNER_REASON
-      );
-    }
-    expectNoZeroFor(f.honesty);
-  });
+  const TWO_APPS = { ok: true, apps: [{ app_id: "a" }, { app_id: "b" }] };
+  /** Three pages, one whose model could not be read: "2 of 3". */
+  const THREE_PAGES = {
+    ok: true,
+    pages: [
+      { id: "p1", stateIds: ["s"], transitionIds: [] },
+      { id: "p2", stateIds: [], transitionIds: [] },
+      { id: "p3", reason: "ir-read-failed", error: "x" },
+    ],
+  };
 
-  it("counts the registered apps and the readable interface pages", () => {
-    const f = appFigures({
-      deviceId: "device-1",
-      apps: relay({
-        data: { ok: true, apps: [{ app_id: "a" }, { app_id: "b" }] },
-        dataUpdatedAt: 7,
-      }),
-      graph: relay({
-        data: {
-          ok: true,
-          pages: [
-            { id: "p1", stateIds: ["s"], transitionIds: [] },
-            { id: "p2", stateIds: [], transitionIds: [] },
-            { id: "p3", reason: "ir-read-failed", error: "x" },
-          ],
-        },
-        dataUpdatedAt: 8,
-      }),
-    });
-    expect(f.observed).toMatchObject({
-      state: "known",
-      value: "2 apps",
-      asOf: 7,
-    });
-    expect(f.coverage).toMatchObject({
-      state: "known",
-      value: "2 of 3",
-      asOf: 8,
-    });
-    // The models carry no time, and no honesty check covers them.
-    expectNoZeroFor(f.staleness);
-    expectNoZeroFor(f.honesty);
-  });
+  type Expected =
+    | { readonly state: "loading" }
+    | {
+        readonly state: "unknown";
+        readonly reason: string;
+        readonly asOf: number | null;
+      }
+    | {
+        readonly state: "known";
+        readonly value: string;
+        readonly detail: string;
+        readonly asOf: number | null;
+      };
 
-  it("is UNKNOWN, with the relay's status, when the runner's reads fail", () => {
-    const f = appFigures({
-      deviceId: "device-1",
-      apps: relay({
-        isError: true,
-        error: new RunnerRelayError("down", 503),
-        errorUpdatedAt: 9,
+  interface Arm<T> {
+    readonly name: string;
+    readonly read: RelayRead<T>;
+    readonly expect: (online: boolean) => Expected;
+  }
+
+  /** The arms both reads share; `what` names the read, `held` its earlier answer. */
+  function sharedArms<T>(what: string, held: T): Arm<T>[] {
+    const failed = (reason: string): Expected => ({
+      state: "unknown",
+      reason,
+      asOf: FAILED_AT,
+    });
+    return [
+      {
+        name: "in flight",
+        read: relay<T>({ isLoading: true }),
+        expect: () => ({ state: "loading" }),
+      },
+      {
+        name: "failed, nothing held",
+        read: relay<T>({
+          isError: true,
+          error: DOWN,
+          errorUpdatedAt: FAILED_AT,
+        }),
+        expect: () => failed(`${what} could not be read (HTTP 503)`),
+      },
+      {
+        name: "failed, an earlier answer held",
+        read: relay<T>({
+          data: held,
+          dataUpdatedAt: READ_AT,
+          isError: true,
+          error: DOWN,
+          errorUpdatedAt: FAILED_AT,
+        }),
+        expect: () => failed(`${what} could not be read (HTTP 503)`),
+      },
+      {
+        name: "timed out, an earlier answer held",
+        read: relay<T>({
+          data: held,
+          dataUpdatedAt: READ_AT,
+          isError: true,
+          error: TIMED_OUT,
+          errorUpdatedAt: FAILED_AT,
+        }),
+        expect: () => failed(`${what} could not be read`),
+      },
+      {
+        name: "held with no answer and none in flight",
+        read: relay<T>(),
+        expect: (online) => ({
+          state: "unknown",
+          reason: online
+            ? `no read of ${what} has answered, and none is in flight`
+            : `no read of ${what} has answered: this browser is offline`,
+          asOf: null,
+        }),
+      },
+    ];
+  }
+
+  const APPS_ARMS: Arm<AppListResponse>[] = [
+    ...sharedArms<AppListResponse>("the runner's app registry", TWO_APPS),
+    {
+      name: "answered",
+      read: relay<AppListResponse>({ data: TWO_APPS, dataUpdatedAt: READ_AT }),
+      expect: () => ({
+        state: "known",
+        value: "2 apps",
+        detail: "registered with the runner's UI Bridge",
+        asOf: READ_AT,
       }),
-      graph: relay({
+    },
+    {
+      name: "answered without its list",
+      read: relay<AppListResponse>({
+        data: { ok: true },
+        dataUpdatedAt: READ_AT,
+      }),
+      expect: () => ({
+        state: "unknown",
+        reason: "the runner answered without listing its apps",
+        asOf: READ_AT,
+      }),
+    },
+    {
+      name: "answered with no body",
+      read: relay<AppListResponse>({
+        data: null as unknown as AppListResponse,
+        dataUpdatedAt: READ_AT,
+      }),
+      expect: () => ({
+        state: "unknown",
+        reason: "the runner answered without listing its apps",
+        asOf: READ_AT,
+      }),
+    },
+  ];
+
+  const GRAPH_ARMS: Arm<SpecGraphResponse>[] = [
+    ...sharedArms<SpecGraphResponse>(
+      "the runner's model of its own interface",
+      THREE_PAGES
+    ),
+    {
+      name: "answered",
+      read: relay<SpecGraphResponse>({
+        data: THREE_PAGES,
+        dataUpdatedAt: READ_AT,
+      }),
+      expect: () => ({
+        state: "known",
+        value: "2 of 3",
+        detail: "pages of the runner's own interface with a readable model",
+        asOf: READ_AT,
+      }),
+    },
+    {
+      name: "answered with no pages",
+      read: relay<SpecGraphResponse>({
         data: { ok: true, pages: [], reason: "no-pages-registered" },
+        dataUpdatedAt: READ_AT,
       }),
-    });
-    expectNoZeroFor(f.observed);
-    expect(f.observed.state === "unknown" && f.observed.reason).toBe(
-      "the runner's app registry could not be read (HTTP 503)"
-    );
-    expectNoZeroFor(f.coverage);
-    expect(f.coverage.state === "unknown" && f.coverage.reason).toMatch(
-      /no interface pages/
-    );
-  });
+      expect: () => ({
+        state: "unknown",
+        reason: "the runner has no interface pages modelled yet",
+        asOf: READ_AT,
+      }),
+    },
+    {
+      name: "answered with no body",
+      read: relay<SpecGraphResponse>({
+        data: null as unknown as SpecGraphResponse,
+        dataUpdatedAt: READ_AT,
+      }),
+      expect: () => ({
+        state: "unknown",
+        reason: "the runner answered without a model of its own interface",
+        asOf: READ_AT,
+      }),
+    },
+  ];
 
-  it("is reading while the runner's reads are in flight", () => {
-    const f = appFigures({
-      deviceId: "device-1",
-      apps: relay({ isLoading: true }),
-      graph: relay({ isLoading: true }),
+  /** The figure an expectation describes, from `source`, under `key`. */
+  function figureOf(
+    key: FidelityKey,
+    source: string,
+    e: Expected
+  ): FidelityFigure {
+    return e.state === "loading"
+      ? { key, state: e.state, source }
+      : { key, source, ...e };
+  }
+
+  /** The two figures no runner read decides. */
+  function fixedFigures(runner: boolean): FidelityFigure[] {
+    return [
+      {
+        key: "staleness",
+        state: "unknown",
+        reason: runner
+          ? "the runner's interface models carry no time they were made"
+          : NO_RUNNER_REASON,
+        source: "the runner's interface models",
+        asOf: null,
+      },
+      {
+        key: "honesty",
+        state: "unknown",
+        reason: "coord's twin self-check does not cover interface models yet",
+        source: "coord's twin self-check",
+        asOf: null,
+      },
+    ];
+  }
+
+  for (const online of [true, false]) {
+    const browser = online ? "online" : "offline";
+
+    it(`is UNKNOWN throughout with no runner connected · ${browser}`, () => {
+      const noRunner: Expected = {
+        state: "unknown",
+        reason: NO_RUNNER_REASON,
+        asOf: null,
+      };
+      expect(
+        appTwinFidelity({
+          deviceId: null,
+          online,
+          apps: relay(),
+          graph: relay(),
+        })
+      ).toEqual([
+        figureOf("observed", "the runner's app registry", noRunner),
+        figureOf("coverage", "the runner's interface models", noRunner),
+        ...fixedFigures(false),
+      ]);
     });
-    expect(f.observed.state).toBe("loading");
-    expect(f.coverage.state).toBe("loading");
-  });
+
+    for (const apps of APPS_ARMS) {
+      for (const graph of GRAPH_ARMS) {
+        it(`apps ${apps.name} · graph ${graph.name} · ${browser}`, () => {
+          const figures = appTwinFidelity({
+            deviceId: DEVICE,
+            online,
+            apps: apps.read,
+            graph: graph.read,
+          });
+          expect(figures).toEqual([
+            figureOf(
+              "observed",
+              "the runner's app registry",
+              apps.expect(online)
+            ),
+            figureOf(
+              "coverage",
+              "the runner's interface models",
+              graph.expect(online)
+            ),
+            ...fixedFigures(true),
+          ]);
+          // No figure states a number it could not read.
+          for (const f of figures) {
+            if (f.state !== "known") expectNoValue(f);
+          }
+        });
+      }
+    }
+  }
 });
+
+/** An unknown or loading figure carries no value at all, never a zero. */
+function expectNoValue(f: FidelityFigure): void {
+  expect(JSON.stringify(f)).not.toMatch(/"value"/);
+  if (f.state === "unknown") expect(f.reason.trim()).not.toBe("");
+}
