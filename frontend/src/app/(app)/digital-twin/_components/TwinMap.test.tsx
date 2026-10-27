@@ -438,6 +438,78 @@ describe("TwinMap — a failed source is a labelled UNKNOWN, never zero", () => 
     );
   });
 
+  it("carries an incomplete read into the drill-down: an unread plan is UNKNOWN, an empty part may be missing plans", async () => {
+    // The walk stopped before the event-log plan's page: its explicit slug
+    // was not read, and neither were the units of the coordination part.
+    state.workUnits = {
+      ...idle,
+      data: {
+        kind: "partial",
+        rows: UNITS.filter((u) => u.slug !== EVENT_LOG),
+        bodySignal: null,
+        pages: 20,
+        reason: "page_cap",
+      } satisfies WalkOutcome,
+      dataUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    // The cards say their counts cover only what was read.
+    expect(
+      screen.getByTestId("digital-twin-aspect-process-plans")
+    ).toHaveTextContent(/\d+ plans? moving it among the work units read/);
+
+    const { user, detail } = await openAspect("process");
+    const eventLog = within(detail)
+      .getAllByTestId("digital-twin-plan")
+      .find((li) => li.textContent?.includes(EVENT_LOG))!;
+    expect(eventLog).toHaveAttribute("data-plan-progress", "unknown");
+    expect(within(eventLog).getByText("UNKNOWN")).toBeInTheDocument();
+    expect(within(eventLog).queryByText("Not a work unit")).toBeNull();
+
+    await user.click(within(detail).getByTestId("digital-twin-part-coord"));
+    expect(
+      within(detail).getByTestId("digital-twin-plans-empty")
+    ).toHaveTextContent(
+      "No plan was found among the work units read — the read was incomplete, so plans may be missing."
+    );
+  });
+
+  it("over a complete read, says a plan missing from coord's list is not a work unit", async () => {
+    state.workUnits = {
+      ...idle,
+      data: walk(UNITS.filter((u) => u.slug !== EVENT_LOG)),
+      dataUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    expect(
+      screen.getByTestId("digital-twin-aspect-process-plans")
+    ).not.toHaveTextContent(/among the work units read/);
+    const { detail } = await openAspect("process");
+    const eventLog = within(detail)
+      .getAllByTestId("digital-twin-plan")
+      .find((li) => li.textContent?.includes(EVENT_LOG))!;
+    expect(within(eventLog).getByText("Not a work unit")).toBeInTheDocument();
+  });
+
+  it("tells the operator a refresh failed, over the last good plans", () => {
+    state.workUnits = {
+      ...idle,
+      data: walk(UNITS),
+      dataUpdatedAt: READ_AT,
+      isError: true,
+      error: new Error("GET /api/v1/operations/plans failed: 503 - {}"),
+      errorUpdatedAt: READ_AT + 120_000,
+    };
+    render(<TwinMap />);
+    expect(screen.getByTestId("digital-twin-plans-stale")).toHaveTextContent(
+      /^The last refresh failed \(.+\); these are the plans from the read before it\.$/
+    );
+    // The plans shown are still the last good read's.
+    expect(screen.getByTestId("digital-twin-plans-read")).toHaveTextContent(
+      "4 work units"
+    );
+  });
+
   it("renders the app twin as UNKNOWN with no runner connected", () => {
     render(<TwinMap />);
     const f = figure("ui-bridge", "observed");

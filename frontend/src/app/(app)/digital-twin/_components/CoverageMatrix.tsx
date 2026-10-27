@@ -95,7 +95,10 @@ export function CoverageMatrix() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end gap-8 rounded-lg border border-border bg-card p-4">
+      <div
+        data-testid="digital-twin-gauges"
+        className="flex flex-wrap items-end gap-8 rounded-lg border border-border bg-card p-4"
+      >
         <Gauge
           testId="digital-twin-gauge-live"
           value={summary.responding}

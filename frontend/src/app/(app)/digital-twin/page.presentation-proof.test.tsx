@@ -184,6 +184,36 @@ const PLAN_NAMES: string[] = (
   unit.title ? [unit.title, unit.slug] : [unit.slug]
 );
 
+const FIGURE_KEYS = ["observed", "coverage", "staleness", "honesty"] as const;
+
+/** Each aspect's four figures' sources, in FIGURE_KEYS order — as the reader sees them. */
+const FIGURE_SOURCES: Record<string, readonly string[]> = {
+  environment: [
+    "coord's live twin probe",
+    "coord's live twin probe",
+    "coord's live twin probe",
+    "coord's twin self-check",
+  ],
+  process: [
+    "coord's live twin probe",
+    "coord's live twin probe",
+    "coord's live twin probe",
+    "coord's twin self-check",
+  ],
+  intent: [
+    "coord's live twin probe",
+    "coord's live twin probe",
+    "coord's live twin probe",
+    "coord's twin self-check",
+  ],
+  "ui-bridge": [
+    "the runner's app registry",
+    "the runner's interface models",
+    "the runner's interface models",
+    "coord's twin self-check",
+  ],
+};
+
 const TWIN_MAP_CAPTIONS: CaptionKey[] = [
   "digital-twin.page",
   "digital-twin.twin-map",
@@ -233,11 +263,32 @@ describe("/digital-twin in presentation mode", () => {
       forbidden: PLAN_NAMES,
     });
     expectOnlyPresentableLinks("Twin map");
-    // Every fidelity figure and plan count carries its source and age.
-    const map = screen.getByTestId("digital-twin-twin-map");
+    // Every fidelity figure carries its own source and age — each one named,
+    // so dropping the chip from any single figure is caught, not hidden in a
+    // count.
+    for (const [aspect, sources] of Object.entries(FIGURE_SOURCES)) {
+      FIGURE_KEYS.forEach((key, i) => {
+        const chip = screen
+          .getByTestId(`digital-twin-aspect-${aspect}-fidelity-${key}`)
+          .querySelector("[data-provenance]");
+        expect(chip, `${aspect}.${key}`).toHaveTextContent(
+          `source: ${sources[i]}`
+        );
+      });
+      // And so does each card's plan count.
+      expect(
+        screen
+          .getByTestId(`digital-twin-aspect-${aspect}-plans`)
+          .querySelector("[data-provenance]"),
+        `${aspect} plans`
+      ).toHaveTextContent("source: coord's work-unit list");
+    }
+    // The line saying where the plans come from carries its own.
     expect(
-      map.querySelectorAll("[data-provenance]").length
-    ).toBeGreaterThanOrEqual(4 * 4 + 4);
+      screen
+        .getByTestId("digital-twin-plans-read")
+        .querySelector("[data-provenance]")
+    ).toHaveTextContent("source: coord's work-unit list");
   });
 
   it("opens an aspect's parts and plans, with plan titles withheld and unlinked", async () => {
@@ -288,6 +339,12 @@ describe("/digital-twin in presentation mode", () => {
     expect(screen.getByTestId("ask-the-twin-presented")).toBeInTheDocument();
     expectPresentationSafe(view, { captions: ["digital-twin.page"] });
     expectOnlyPresentableLinks("Completeness");
+    // The live gauge carries its source and age.
+    expect(
+      screen
+        .getByTestId("digital-twin-gauges")
+        .querySelector("[data-provenance]")
+    ).toHaveTextContent("source: coord's live twin probe");
 
     // A row Ask the Twin can answer: the drawer's ask is held back too.
     await user.click(screen.getByTestId("digital-twin-cell-gates"));
@@ -295,6 +352,17 @@ describe("/digital-twin in presentation mode", () => {
     expect(
       screen.queryByRole("button", { name: /ask the twin about this/i })
     ).toBeNull();
+    expectPresentationSafe(view);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // A row the Delivery tab answers: the drawer's jump there is navigation,
+    // and stays live.
+    await user.click(screen.getByTestId("digital-twin-cell-delivery"));
+    await screen.findByRole("dialog");
+    expect(
+      screen.getByRole("button", { name: /open the delivery tab/i })
+    ).toBeEnabled();
     expectPresentationSafe(view);
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -323,6 +391,12 @@ describe("/digital-twin in presentation mode", () => {
     ).toHaveAttribute("data-lens-link", "unlinked");
     expectOnlyPresentableLinks("Lifecycle");
     expectPresentationSafe(view);
+    // The live counts carry their source and age.
+    expect(
+      document.querySelector(
+        '[aria-labelledby="digital-twin-lifecycle-intro"] [data-provenance]'
+      )
+    ).toHaveTextContent("source: coord's live twin probe");
 
     await user.click(screen.getByRole("tab", { name: "Delivery" }));
     const slug = screen.getByPlaceholderText(/approach-d-conductor-engine/);
@@ -334,6 +408,12 @@ describe("/digital-twin in presentation mode", () => {
     expect(document.querySelector('a[href*="github.com"]')).toBeNull();
     expectPresentationSafe(view);
     expectOnlyPresentableLinks("Delivery");
+    // The verdict's envelope carries its source and age.
+    expect(
+      screen
+        .getByTestId("delivery-verdict-envelope")
+        .querySelector("[data-provenance]")
+    ).toHaveTextContent("source: coord's delivery verdict");
 
     await user.click(screen.getByRole("tab", { name: "UI Bridge" }));
     expect(

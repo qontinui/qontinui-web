@@ -382,7 +382,10 @@ export function DeliveryVerdictCard() {
 
       {verdict && summary && (
         <div className="mt-4 space-y-3 text-sm">
-          <div className="flex items-center gap-2">
+          <div
+            data-testid="delivery-verdict-envelope"
+            className="flex items-center gap-2"
+          >
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badge.cls}`}
             >
