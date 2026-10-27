@@ -182,3 +182,44 @@ describe("OperatorAuditPanel — a page coord cut at its row limit says so", () 
     expect(screen.queryByTestId("operator-audit-truncated")).toBeNull();
   });
 });
+
+describe("OperatorAuditPanel?present=1 — a row whose author was not recorded", () => {
+  /** Coord's nil UUID: the writer resolved no operator. */
+  const NIL_ROW: AuditRow = {
+    ...DRAIN_ROW,
+    audit_id: "aud-nil",
+    operator_id: "00000000-0000-0000-0000-000000000000",
+  };
+
+  /** Open the feed and the nil-operator row; returns its Operator marker. */
+  async function openNilRow(presenting: boolean): Promise<HTMLElement> {
+    getMock.mockResolvedValue({ audit: [NIL_ROW], count: 1 });
+    render(<Panel presenting={presenting} />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    const row = await screen.findByTestId("audit-row-aud-nil");
+    const toggle = row.querySelector("button[aria-expanded]");
+    if (!toggle) throw new Error("the audit row has no disclosure toggle");
+    fireEvent.click(toggle);
+    return screen.getByTestId("audit-nil-operator");
+  }
+
+  it("says so in plain words, with a plain title — never the operator's account of coord's fallback", async () => {
+    const marker = await openNilRow(true);
+    expect(marker).toHaveTextContent("operator not recorded");
+    expect(marker.getAttribute("title")).toBe(
+      "This change was recorded without who made it."
+    );
+    // Not in its text, its title, or anywhere else on the panel.
+    expect(document.body.innerHTML).not.toMatch(
+      /resolve_operator_id|nil UUID|qontinui-web never sends/
+    );
+  });
+
+  it("(operator) keeps coord's explanation of the fallback, where it is a fact to act on", async () => {
+    const marker = await openNilRow(false);
+    expect(marker).toHaveTextContent("operator not recorded");
+    expect(marker.getAttribute("title")).toContain(
+      "`resolve_operator_id(&headers)` fallback"
+    );
+  });
+});

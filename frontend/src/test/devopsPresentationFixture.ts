@@ -42,6 +42,12 @@ export const CI_HOST_LABEL = "ci-box-4410";
 export const DISPLAY_NAME_A = "Acme Corp lab box";
 export const OPERATOR_EMAIL = "operator@example.com";
 export const OPERATOR_ID = "0f0f0f0f-0000-4000-8000-0000000000ff";
+/**
+ * The id coord stamps when a writer resolved no operator (the nil UUID): the
+ * audit row's author was not recorded. Spelled out rather than imported, so
+ * the fixture states coord's value instead of echoing the console's constant.
+ */
+export const NIL_OPERATOR = "00000000-0000-0000-0000-000000000000";
 export const PARTNER_REPO = "acme-partner/secret-repo";
 /** A repository the scope below clears: its name may show. */
 export const FIRST_PARTY_REPO = "qontinui/qontinui-web";
@@ -89,6 +95,7 @@ export const MUST_NOT_APPEAR = [
   "secret",
   OPERATOR_EMAIL,
   OPERATOR_ID,
+  NIL_OPERATOR,
   "tenant-secret",
   "gate-0000",
   // The neutral task and its foreign repository (`NEUTRAL_FOREIGN_TASK`).
@@ -424,8 +431,23 @@ export function mockDevOpsRoutes(
             },
             occurred_at: NOW_ISO(),
           },
+          // A write coord stamped with the nil operator id and no
+          // blast-radius field: neither who made it nor how far it reached
+          // was recorded. The `dev-ops.audit` caption promises the presented
+          // row says both — so the page's checks open it, and its Operator
+          // line must be plain words, not the operator's explanation of
+          // coord's fallback.
+          {
+            audit_id: "audit-6",
+            operator_id: NIL_OPERATOR,
+            action: "fleet.drain.set",
+            resource_kind: "coord.devices",
+            resource_key: DEV_B,
+            metadata: {},
+            occurred_at: NOW_ISO(),
+          },
         ],
-        count: 5,
+        count: 6,
       });
     }
     if (u.includes("fleet/health")) {
@@ -690,7 +712,7 @@ export async function settle() {
   await waitFor(() =>
     expect(
       document.querySelectorAll('[data-testid^="audit-row-"]').length
-    ).toBe(5)
+    ).toBe(6)
   );
   await waitFor(() =>
     expect(screen.getAllByTestId("fleet-resource-row").length).toBeGreaterThan(

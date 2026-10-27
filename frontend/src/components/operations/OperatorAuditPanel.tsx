@@ -46,8 +46,9 @@
  * The feed says what happened and when, in fixed words (`auditPresentation`):
  * a row's resource renders as the machine's alias when it is one of the
  * fleet's devices, and otherwise through `RedactedText` with a structured
- * descriptor; the actor is an alias when it is a machine and withheld when it
- * is a person; the reason is a descriptor; blast-radius values are counts,
+ * descriptor; the actor is an alias when it is a machine, withheld when it is
+ * a person, and "operator not recorded" in plain words when coord stamped the
+ * nil id; the reason is a descriptor; blast-radius values are counts,
  * aliases or redacted; and the raw metadata is not rendered. The view filters
  * and Refresh only change what is shown, so they are marked navigation-only;
  * the resource-key search (it takes device ids) is not rendered.
@@ -63,6 +64,7 @@ import {
   RecordList,
   RecordRow,
   RowTime,
+  UNKNOWN_AMBER,
 } from "@/components/console";
 import {
   MachineName,
@@ -261,6 +263,27 @@ function AuditRowView({
   );
 }
 
+/**
+ * A row coord stamped with the nil operator id, as an outsider reads it: who
+ * made the change was not recorded, and the row says so rather than hiding
+ * the gap (the `dev-ops.audit` caption promises it). Which coord fallback
+ * wrote the nil id is `OperatorCell`'s explanation, in coord's own words, and
+ * stays with the operator (style guide §3.10, "Coord's vocabulary stays with
+ * the operator") — so this cell is not that one, title included.
+ */
+function PresentedNilOperator() {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-sm border px-1 ${UNKNOWN_AMBER}`}
+      title="This change was recorded without who made it."
+      data-testid="audit-nil-operator"
+    >
+      <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+      operator not recorded
+    </span>
+  );
+}
+
 /** What a withheld blast-radius value reads as. */
 const BLAST_VALUE_WITHHELD = "withheld in presentation mode";
 
@@ -423,7 +446,7 @@ function PresentedAuditRow({
               {actor ? (
                 <MachineName identity={actor} />
               ) : isNilOperator(row) ? (
-                <OperatorCell row={row} />
+                <PresentedNilOperator />
               ) : row.operator_id ? (
                 <span className="text-muted-foreground">
                   an operator — withheld in presentation mode

@@ -452,6 +452,31 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     );
   });
 
+  it("says a change was recorded without its author or its reach — in plain words, not the operator's account of coord's fallback", async () => {
+    mockRoutes();
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+
+    // The row coord stamped with the nil operator id, opened.
+    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-6")));
+    const detail = screen.getByTestId("audit-detail-audit-6");
+    expect(detail).toHaveTextContent("Operator: operator not recorded");
+    // Its title says what that means to a reader, and nothing about which
+    // coord fallback wrote it.
+    expect(
+      within(detail).getByTestId("audit-nil-operator").getAttribute("title")
+    ).toBe("This change was recorded without who made it.");
+    // How far it reached was not recorded either, and the row says that too.
+    expect(screen.getByTestId("audit-row-audit-6")).toHaveTextContent(
+      "reach not stated"
+    );
+    expect(screen.getByTestId("audit-blast-audit-6")).toHaveTextContent(
+      "how far this change reached is unknown from this row, not zero"
+    );
+    expect(engineeringVocabularyOnPage()).toEqual([]);
+  });
+
   it("names machines by alias, and one machine by ONE alias across the machine card, the resources table and the worktree slots", async () => {
     mockRoutes();
     seedDeviceStatus();
