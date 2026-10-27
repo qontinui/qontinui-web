@@ -43,7 +43,11 @@ import {
   appTotalValue,
   type AppTotal,
 } from "./appRegistryStatus";
-import type { EffectCounts } from "./componentEffectStatus";
+import {
+  effectCountValue,
+  unreadableEntriesText,
+  type EffectCounts,
+} from "./componentEffectStatus";
 import type { OcclusionKind } from "./occlusionStatus";
 import type { PageHealthKind } from "./pageHealthStatus";
 import type { ReadState } from "./readState";
@@ -121,16 +125,13 @@ export function deriveDashboardHealth(
 ): DashboardHealth {
   const counts = value(input.components);
   // Registry entries no count includes make every count a floor: `≥N`, the
-  // spelling the app total uses, with the reason in the badge's title.
+  // spelling the app total uses, with the reason in the badge's title. The
+  // component panel's header takes the same rule (`effectCountValue`).
   const unreadable = counts?.unreadable ?? 0;
   const count = (n: number | undefined): string | number =>
-    n === undefined ? "–" : unreadable > 0 ? `≥${n}` : n;
+    n === undefined ? "–" : effectCountValue(n, unreadable);
   const floorNote =
-    unreadable > 0
-      ? ` — at least: ${unreadable} registry ${
-          unreadable === 1 ? "entry" : "entries"
-        } could not be read and ${unreadable === 1 ? "is" : "are"} not counted`
-      : "";
+    unreadable > 0 ? ` — at least: ${unreadableEntriesText(unreadable)}` : "";
   const badges: HealthBadge[] = [
     {
       key: "components",

@@ -18,6 +18,8 @@ import {
   componentEffectKind,
   componentStatusWord,
   countEffects,
+  effectCountValue,
+  unreadableEntriesText,
   EFFECT_ATTENTION_BY_KIND,
   EFFECT_BADGE_CLASS,
   EFFECT_PALETTE,
@@ -166,6 +168,25 @@ describe("readComponents", () => {
       ],
     });
     expect(new Set(r?.components.map((c) => c.key)).size).toBe(2);
+  });
+});
+
+describe("a count beside registry entries that could not be read", () => {
+  it("is exact with every entry read, and a floor — `≥N` — with any unread, zero included", () => {
+    expect(effectCountValue(7, 0)).toBe(7);
+    expect(effectCountValue(0, 0)).toBe(0);
+    expect(effectCountValue(7, 1)).toBe("≥7");
+    // An exact zero beside an unread entry would be a floor shown as a fact.
+    expect(effectCountValue(0, 2)).toBe("≥0");
+  });
+
+  it("says why, in the page's own words", () => {
+    expect(unreadableEntriesText(1)).toBe(
+      "1 registry entry could not be read and is not counted"
+    );
+    expect(unreadableEntriesText(3)).toBe(
+      "3 registry entries could not be read and are not counted"
+    );
   });
 });
 

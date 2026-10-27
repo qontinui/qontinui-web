@@ -47,6 +47,8 @@ import {
   EFFECT_MEANING,
   EFFECT_PALETTE,
   countEffects,
+  effectCountValue,
+  unreadableEntriesText,
   wrapperDisclosureText,
   type ComponentActionRecord,
   type ComponentRecord,
@@ -204,6 +206,8 @@ export function ComponentActionsPanel({
     () => (reading ? countEffects(reading) : null),
     [reading]
   );
+  /** Registry entries no count includes: every count is then a floor. */
+  const floor = counts !== null && counts.unreadable > 0;
   const visible = useMemo(
     () => (reading ? reading.components.filter((c) => matches(c, filter)) : []),
     [reading, filter]
@@ -233,12 +237,25 @@ export function ComponentActionsPanel({
         />
       }
       summary={
+        // Shown while the panel is closed (R7), where the floor note in the
+        // body is not: so the header states a floor as one — `≥N`, the
+        // strip's spelling — and says why in its title.
         <span
           className="text-xs text-muted-foreground"
           data-testid="coord-ui-bridge-actions-summary"
+          data-floor={floor ? "" : undefined}
+          title={
+            floor
+              ? `${unreadableEntriesText(counts.unreadable)}, so these counts are floors.`
+              : undefined
+          }
         >
-          {counts ? counts.actions : "–"} actions ·{" "}
-          {counts ? counts.undeclared : "–"} undeclared
+          {counts ? effectCountValue(counts.actions, counts.unreadable) : "–"}{" "}
+          actions ·{" "}
+          {counts
+            ? effectCountValue(counts.undeclared, counts.unreadable)
+            : "–"}{" "}
+          undeclared
         </span>
       }
       data-testid="coord-ui-bridge-actions"

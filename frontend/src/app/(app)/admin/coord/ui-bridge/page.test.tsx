@@ -149,6 +149,10 @@ describe("every panel renders the runner's answers", () => {
     expect(
       within(counts).getByTestId("coord-ui-bridge-actions-count-undeclared")
     ).toHaveTextContent("undeclared actions 3");
+    // Every entry was read, so the header's counts are exact.
+    const summary = screen.getByTestId("coord-ui-bridge-actions-summary");
+    expect(summary).toHaveTextContent(/^7 actions · 3 undeclared$/);
+    expect(summary).not.toHaveAttribute("title");
     expect(
       within(counts).getByTestId("coord-ui-bridge-actions-count-read")
     ).toHaveTextContent("read actions 2");
@@ -1049,6 +1053,53 @@ describe("registry entries the page cannot read", () => {
     );
     expect(strip).toHaveTextContent("actions ≥2");
     expect(strip).toHaveAttribute("data-health-level", "amber");
+    // The panel's header states the same floors as the strip.
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-summary")
+    ).toHaveTextContent("≥2 actions · ≥1 undeclared");
+  });
+
+  it("states the closed panel's header as floors — never an exact zero beside an entry it could not read", async () => {
+    state.relay = relayFake({
+      components: () =>
+        json(200, {
+          success: true,
+          data: {
+            components: [
+              {
+                id: "tabs",
+                name: "Tabs",
+                actions: [{ id: "list", label: "List", effect: "read" }],
+                registeredAt: 1761200000000,
+                mounted: true,
+                scope: "global",
+              },
+              // No `actions` array: its actions are unknown, not none.
+              { id: "broken", name: "Broken" },
+            ],
+            wrapperComponents: "withheld",
+          },
+        }),
+    });
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    // Close the panel: the header is what stays in view (R7), and the body's
+    // floor note goes with the body.
+    const panel = screen.getByTestId("coord-ui-bridge-actions");
+    fireEvent.click(within(panel).getAllByRole("button")[0]);
+    expect(
+      screen.queryByTestId("coord-ui-bridge-actions-unreadable")
+    ).not.toBeInTheDocument();
+    const summary = screen.getByTestId("coord-ui-bridge-actions-summary");
+    expect(summary).toHaveTextContent(/^≥1 actions · ≥0 undeclared$/);
+    expect(summary).toHaveAttribute(
+      "title",
+      "1 registry entry could not be read and is not counted, so these counts are floors."
+    );
+    // …as the strip does.
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-undeclared")
+    ).toHaveTextContent("undeclared actions ≥0");
   });
 });
 

@@ -313,6 +313,27 @@ export interface EffectCounts {
   readonly unreadable: number;
 }
 
+/**
+ * A count as this page states it: exact, or — while registry entries could
+ * not be read (`unreadable` above 0) — a floor, `≥N`, the spelling the app
+ * total uses. The health strip and the panel's header both take it, so the
+ * header shown over a closed panel (R7) never states a floor as an exact
+ * figure beside a strip that calls it one.
+ */
+export function effectCountValue(
+  n: number,
+  unreadable: number
+): number | string {
+  return unreadable > 0 ? `≥${n}` : n;
+}
+
+/** "1 registry entry could not be read and is not counted" — why a count is a floor. */
+export function unreadableEntriesText(unreadable: number): string {
+  return `${unreadable} registry ${unreadable === 1 ? "entry" : "entries"} could not be read and ${
+    unreadable === 1 ? "is" : "are"
+  } not counted`;
+}
+
 /** How many actions carry each kind, across every component read. */
 export function countEffects(
   reading: Pick<ComponentsReading, "components" | "unreadable">
