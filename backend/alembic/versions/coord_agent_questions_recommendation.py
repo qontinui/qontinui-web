@@ -103,9 +103,15 @@ worse than redundant: coord's migration classifier
 (``crates/coord/src/pr_merge/migration_classifier.rs``) admits ``SET LOCAL
 lock_timeout`` / ``statement_timeout`` and fails every ``RESET`` closed, so the
 trailing ``RESET lock_timeout`` both earlier generations carried was the
-escalate-path hit that held their PRs. ``coord_agent_questions_withdrawn`` and
-``coord_agent_questions_audience`` still carry one because they predate the
-hook (``2d8ce1cc3``, 2026-10-08).
+escalate-path hit that held their PRs. coord's merge gate recorded it on each
+as ``migration classifier rejected: RESET LOCK_TIMEOUT``: on #1579's head
+``5e67265c2`` (check run 110379966478, 2026-10-01) and on #1808's head
+``5695334fa`` (check run 114708262430, 2026-10-12). GitHub's check-runs API
+lists the second only with ``filter=all``; by default it returns just the
+newest run, which on that head is a later ``conflicted`` one.
+``coord_agent_questions_withdrawn`` and ``coord_agent_questions_audience``
+still carry a ``RESET`` because they predate the hook (``2d8ce1cc3``,
+2026-10-08).
 
 No index: nothing filters or orders on either column. Both readers above reach
 the rows by primary key (``question_id``) — the needs-me read for rows its
@@ -126,8 +132,12 @@ the two fields carries ``coord:downstream-of`` this PR; the qontinui-runner
 
 Both directions are idempotent (``IF NOT EXISTS`` / ``IF EXISTS``) so a
 canonical database that self-healed ahead of alembic converges and a re-run is
-a no-op — raw ``op.execute`` rather than ``op.add_column`` for exactly that
-reason.
+a no-op. That alone does not need raw SQL: alembic as locked here (1.18.4)
+renders ``op.add_column(..., if_not_exists=True)`` and
+``op.drop_column(..., if_exists=True)`` with the same guards. Raw
+``op.execute`` writes both columns into ONE ``ALTER TABLE`` per direction, as a
+single static literal; ``op.add_column`` / ``op.drop_column`` emit a statement
+per column.
 
 ``down_revision`` is this repo's single alembic head at authoring
 (``presentation_scope_01``, re-pointed 2026-10-27 when the third-generation
