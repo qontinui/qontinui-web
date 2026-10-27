@@ -23,8 +23,7 @@ The generic contract serves list, get and delete. Two routes are this module's:
 ``GET /overview/files/{id}/content``
     Download, streamed through this backend rather than a presigned URL: the
     project is checked on EVERY download (a presigned URL is a bearer link that
-    outlives the reader's access, and the local storage backend's "presigned"
-    URL has no signature at all). Streamed from storage in chunks, never held
+    outlives the reader's access). Streamed from storage in chunks, never held
     whole. Served as an ``attachment`` with ``nosniff`` and a sandboxing
     ``default-src 'none'`` CSP, so nothing uploaded can run in the app's
     origin; only images may be shown inline (``?inline=1``).

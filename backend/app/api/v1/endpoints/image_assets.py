@@ -38,12 +38,11 @@ tenant-scoped: a hash the caller's tenant does not hold answers the same
 ``404`` whether or not another tenant holds it, and every object key names its
 tenant, so no route here reveals or serves another tenant's image.
 
-One exposure sits OUTSIDE this API, and this module does not close it: on the
-LOCAL development backend the objects are files under ``uploads/``, which
-``app.main`` mounts at ``/uploads`` for avatars with no authentication, so
-anyone who knows a tenant id and a hash can fetch an image there. No route
-here hands out such a URL — the local backend's ``GET "/{sha256}"`` points at
-the authenticated content route instead.
+On the LOCAL backend the objects are files under ``uploads/``. Nothing serves
+that directory by path any more (``app/api/local_storage.py`` serves only
+HMAC-signed, expiring URLs, plus avatars), and the local backend's
+``GET "/{sha256}"`` points at the authenticated, tenant-checked content route
+rather than a signed URL, so the tenant is checked on every read.
 """
 
 from __future__ import annotations
@@ -519,9 +518,9 @@ async def get_image_asset(
     url: str
     expires_at: datetime | None
     if isinstance(storage.backend, LocalBackend):
-        # The local backend's own URL is the unauthenticated /uploads static
-        # mount; hand out the tenant-checked content route instead. It does
-        # not expire, so no expiry time is claimed for it.
+        # Hand out the tenant-checked content route rather than a signed
+        # local-storage URL (a bearer link that outlives the reader's access).
+        # It does not expire, so no expiry time is claimed for it.
         url, expires_at = _content_url(row.sha256), None
     else:
         url = storage.generate_presigned_url(row.storage_key, expiration=expires_in)
