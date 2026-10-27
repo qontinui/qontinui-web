@@ -149,8 +149,9 @@ export function ConstraintOverridesEditor({
             className="text-[10px] text-zinc-500"
             data-testid="constraint-overrides-count"
           >
-            This workflow sets {overrideCount} constraint override
-            {overrideCount !== 1 ? "s" : ""}, which still apply.
+            {overrideCount === 1
+              ? "This workflow sets 1 constraint override, which still applies."
+              : `This workflow sets ${overrideCount} constraint overrides, which still apply.`}
           </p>
         )}
       </div>

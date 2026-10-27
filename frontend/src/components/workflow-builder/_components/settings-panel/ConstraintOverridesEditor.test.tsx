@@ -70,7 +70,19 @@ describe("ConstraintOverridesEditor", () => {
     expect(note.textContent).toContain(CONSTRAINTS_ADMIN_ONLY);
     expectNoListAndNoToggle();
     expect(screen.getByTestId("constraint-overrides-count").textContent).toBe(
-      "This workflow sets 1 constraint override, which still apply."
+      "This workflow sets 1 constraint override, which still applies."
+    );
+  });
+
+  it("counts several overrides in the plural", async () => {
+    renderEditor(ADMIN_REFUSED, {
+      [NO_SECRETS.id]: false,
+      "project:no-todos": true,
+    });
+
+    await screen.findByTestId("constraint-overrides-admin-only");
+    expect(screen.getByTestId("constraint-overrides-count").textContent).toBe(
+      "This workflow sets 2 constraint overrides, which still apply."
     );
   });
 
