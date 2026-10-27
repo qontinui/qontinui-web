@@ -132,6 +132,14 @@ export interface ComponentActionRecord {
    * missing one in the detail. `undefined` when absent or a real declaration.
    */
   readonly unrecognisedEffect?: string;
+  /**
+   * Set when the entry in the component's `actions` array was not an action
+   * object at all. It is still an entry in the list of things the component
+   * offers, and nothing about it declares an effect, so it is counted — as
+   * UNDECLARED, never dropped (a dropped entry would undercount the one
+   * number this page exists to show).
+   */
+  readonly unreadable?: true;
 }
 
 export interface ComponentRecord {
@@ -200,7 +208,12 @@ export function wrapperDisclosureText(disclosure: WrapperDisclosure): string {
 
 export interface ComponentsReading {
   readonly components: readonly ComponentRecord[];
-  /** Entries in the array that were not component objects — not listed. */
+  /**
+   * Entries in the array that could not be read as a component — not an
+   * object, or an object whose `actions` is not an array (the runner's
+   * `serializeComponent` always sends one) — so they are not listed and their
+   * actions are not counted: every count is a floor while this is above 0.
+   */
   readonly unreadable: number;
   /** Whose components these are — see {@link WrapperDisclosure}. */
   readonly wrappers: WrapperDisclosure;
@@ -213,8 +226,17 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 const text = (v: unknown): string | null =>
   typeof v === "string" && v.trim() ? v.trim() : null;
 
-function readAction(v: unknown): ComponentActionRecord | null {
-  if (!isRecord(v)) return null;
+/** An action entry that is not an action object: undeclared, nothing more known. */
+const UNREADABLE_ACTION: ComponentActionRecord = {
+  id: null,
+  label: null,
+  description: null,
+  effect: "undeclared",
+  unreadable: true,
+};
+
+function readAction(v: unknown): ComponentActionRecord {
+  if (!isRecord(v)) return UNREADABLE_ACTION;
   const effect = effectKindOf(v.effect);
   const raw = v.effect;
   const unrecognised =
@@ -233,9 +255,11 @@ function readAction(v: unknown): ComponentActionRecord | null {
 /**
  * The components in a `GET /ui-bridge/control/components` payload, or `null`
  * when the payload carries no `components` array — "the registry was not
- * read", which is UNKNOWN and never "no components". An action entry that is
- * not an object is dropped from its component, and a component entry that is
- * not an object is counted in `unreadable` rather than silently lost.
+ * read", which is UNKNOWN and never "no components". Nothing is dropped
+ * silently: an action entry that is not an object is counted as an
+ * UNDECLARED action, and a component entry that is not an object, or whose
+ * `actions` is not an array, is counted in `unreadable` — its actions are
+ * unknown, never "no actions".
  */
 export function readComponents(payload: unknown): ComponentsReading | null {
   const list = isRecord(payload) ? payload.components : undefined;
@@ -243,16 +267,12 @@ export function readComponents(payload: unknown): ComponentsReading | null {
   const components: ComponentRecord[] = [];
   let unreadable = 0;
   list.forEach((entry, index) => {
-    if (!isRecord(entry)) {
+    if (!isRecord(entry) || !Array.isArray(entry.actions)) {
       unreadable += 1;
       return;
     }
     const id = text(entry.id);
-    const actions = Array.isArray(entry.actions)
-      ? entry.actions
-          .map(readAction)
-          .filter((a): a is ComponentActionRecord => a !== null)
-      : [];
+    const actions = entry.actions.map(readAction);
     components.push({
       // The id is the identity; two entries sharing one (the same component
       // registered twice) keep distinct keys by position.
@@ -285,21 +305,28 @@ export interface EffectCounts {
   /** Every action, all four kinds. */
   readonly actions: number;
   readonly components: number;
+  /**
+   * Registry entries that could not be read and so are in none of the counts
+   * above ({@link ComponentsReading.unreadable}): while it is above 0, every
+   * count is a floor.
+   */
+  readonly unreadable: number;
 }
 
-/** How many actions carry each kind, across every component. */
+/** How many actions carry each kind, across every component read. */
 export function countEffects(
-  components: readonly ComponentRecord[]
+  reading: Pick<ComponentsReading, "components" | "unreadable">
 ): EffectCounts {
   const counts = { read: 0, write: 0, destructive: 0, undeclared: 0 };
-  for (const component of components) {
+  for (const component of reading.components) {
     for (const action of component.actions) counts[action.effect] += 1;
   }
   return {
     ...counts,
     actions:
       counts.read + counts.write + counts.destructive + counts.undeclared,
-    components: components.length,
+    components: reading.components.length,
+    unreadable: reading.unreadable,
   };
 }
 

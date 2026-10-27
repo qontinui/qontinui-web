@@ -149,12 +149,26 @@ function ActionLine({
     >
       <EffectBadge kind={action.effect} />
       <span className="text-sm">
-        <RedactedText
-          text={action.label ?? action.id ?? "unnamed action"}
-          repo={null}
-          descriptor={{ kind: "Action", status: EFFECT_LABEL[action.effect] }}
-        />
+        {action.unreadable ? (
+          // The page's own words: the entry carried nothing to quote.
+          "Unreadable entry"
+        ) : (
+          <RedactedText
+            text={action.label ?? action.id ?? "unnamed action"}
+            repo={null}
+            descriptor={{ kind: "Action", status: EFFECT_LABEL[action.effect] }}
+          />
+        )}
       </span>
+      {action.unreadable && (
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid="coord-ui-bridge-action-unreadable"
+        >
+          (the runner sent an entry here that is not an action, so it counts
+          as undeclared)
+        </span>
+      )}
       {!presenting && action.description && (
         <span className="text-xs text-muted-foreground">
           {action.description}
@@ -180,7 +194,7 @@ export function ComponentActionsPanel({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const reading = components.state === "ok" ? components.value : null;
   const counts = useMemo(
-    () => (reading ? countEffects(reading.components) : null),
+    () => (reading ? countEffects(reading) : null),
     [reading]
   );
   const visible = useMemo(

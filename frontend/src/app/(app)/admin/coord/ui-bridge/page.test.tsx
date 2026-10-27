@@ -826,3 +826,57 @@ describe("a refresh that fails after a good read", () => {
     );
   });
 });
+
+describe("registry entries the page cannot read", () => {
+  it("counts an entry that is not an action as undeclared, and states every count as a floor beside an unreadable component", async () => {
+    state.relay = relayFake({
+      components: () =>
+        json(200, {
+          success: true,
+          data: {
+            components: [
+              {
+                id: "tabs",
+                name: "Tabs",
+                actions: [
+                  "junk",
+                  { id: "list", label: "List", effect: "read" },
+                ],
+                registeredAt: 1761200000000,
+                mounted: true,
+                scope: "global",
+              },
+              // No `actions` array: its actions are unknown, not none.
+              { id: "broken", name: "Broken" },
+            ],
+            wrapperComponents: "withheld",
+          },
+        }),
+    });
+    renderPage();
+    const counts = await screen.findByTestId("coord-ui-bridge-actions-counts");
+    expect(
+      within(counts).getByTestId("coord-ui-bridge-actions-count-undeclared")
+    ).toHaveTextContent("undeclared 1");
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-unreadable")
+    ).toHaveTextContent(
+      "1 entry in the registry could not be read and is not counted, so the totals are a floor."
+    );
+    const rows = screen.getAllByTestId("coord-ui-bridge-component-row");
+    expect(rows).toHaveLength(1);
+    fireEvent.click(within(rows[0]).getByRole("button"));
+    expect(
+      within(rows[0]).getByTestId("coord-ui-bridge-action-unreadable")
+    ).toHaveTextContent("so it counts as undeclared");
+
+    const strip = screen.getByTestId("coord-ui-bridge-health-strip");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(
+        "Build box: 1 of 2 actions declare no effect. 1 entry in its component registry could not be read, so both counts are floors."
+      )
+    );
+    expect(strip).toHaveTextContent("actions ≥2");
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+  });
+});

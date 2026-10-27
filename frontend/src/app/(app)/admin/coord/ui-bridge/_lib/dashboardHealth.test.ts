@@ -19,6 +19,7 @@ const COUNTS: EffectCounts = {
   undeclared: 0,
   actions: 7,
   components: 3,
+  unreadable: 0,
 };
 
 function input(over: Partial<DashboardHealthInput> = {}): DashboardHealthInput {
@@ -281,6 +282,47 @@ describe("deriveDashboardHealth — a stale read", () => {
       badge(deriveDashboardHealth(input({ appsStale: true })), "apps")?.title
     ).toBe(
       "Applications across the web and runner registries — from an earlier read: the last refresh of an app registry failed"
+    );
+  });
+});
+
+/**
+ * Registry entries that could not be read are in no count, so every count is
+ * a floor — and "every action declares its effect" is not measured.
+ */
+describe("deriveDashboardHealth — registry entries that could not be read", () => {
+  const ok = (value: EffectCounts) =>
+    ({ state: "ok", value, stale: false, asOf: 1 }) as const;
+
+  it("is never green while an entry could not be read, and says why", () => {
+    const h = deriveDashboardHealth(
+      input({ components: ok({ ...COUNTS, unreadable: 2 }) })
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "Machine A: 2 entries in its component registry could not be read, so whether every action declares its effect is UNKNOWN."
+    );
+  });
+
+  it("states the counts as floors on the badges", () => {
+    const h = deriveDashboardHealth(
+      input({ components: ok({ ...COUNTS, unreadable: 1 }) })
+    );
+    expect(badge(h, "components")?.label).toBe("components ≥3");
+    expect(badge(h, "actions")?.label).toBe("actions ≥7");
+    expect(badge(h, "undeclared")?.label).toBe("undeclared ≥0");
+    expect(badge(h, "undeclared")?.tone).toBe("waiting");
+    expect(badge(h, "actions")?.title).toBe(
+      "Actions across those components — at least: 1 registry entry could not be read and is not counted"
+    );
+  });
+
+  it("calls both counts floors beside undeclared actions", () => {
+    const h = deriveDashboardHealth(
+      input({ components: ok({ ...COUNTS, undeclared: 2, unreadable: 1 }) })
+    );
+    expect(h.headline).toBe(
+      "Machine A: 2 of 7 actions declare no effect. 1 entry in its component registry could not be read, so both counts are floors."
     );
   });
 });

@@ -157,7 +157,7 @@ export default function UiBridgeDashboardPage() {
     machine,
     noRunner,
     health,
-    components: mapRead(components, (c) => countEffects(c.components)),
+    components: mapRead(components, countEffects),
     pageHealth: mapRead(pageHealth, (p) => p.summary),
     occlusion: mapRead(occlusion, (o) => o.kind),
     apps,

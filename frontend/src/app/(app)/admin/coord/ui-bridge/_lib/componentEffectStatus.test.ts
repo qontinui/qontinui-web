@@ -70,13 +70,14 @@ describe("readComponents", () => {
   });
 
   it("counts the undeclared actions — the absent and the malformed alike", () => {
-    expect(countEffects(reading().components)).toEqual({
+    expect(countEffects(reading())).toEqual({
       read: 2,
       write: 1,
       destructive: 1,
       undeclared: 3,
       actions: 7,
       components: 3,
+      unreadable: 0,
     });
   });
 
@@ -110,14 +111,60 @@ describe("readComponents", () => {
   });
 
   it("counts an entry that is not a component instead of dropping it silently", () => {
-    const r = readComponents({ components: ["junk", null, { id: "a" }] });
+    const r = readComponents({
+      components: ["junk", null, { id: "a", actions: [] }],
+    });
     expect(r?.unreadable).toBe(2);
     expect(r?.components).toHaveLength(1);
     expect(r?.components[0].actions).toEqual([]);
   });
 
+  it("reads a component whose actions are not an array as unreadable — its actions are unknown, never 'no actions'", () => {
+    // The runner's `serializeComponent` always sends an `actions` array.
+    for (const actions of [undefined, "x", {}, null, 3]) {
+      const entry: Record<string, unknown> = { id: "c", name: "C" };
+      if (actions !== undefined) entry.actions = actions;
+      const r = readComponents({ components: [entry] });
+      expect(r?.unreadable, String(actions)).toBe(1);
+      expect(r?.components, String(actions)).toEqual([]);
+      if (r === null) throw new Error("not read");
+      expect(countEffects(r).unreadable).toBe(1);
+    }
+  });
+
+  it("counts an action entry that is not an action as UNDECLARED — never drops it", () => {
+    const r = readComponents({
+      components: [{ id: "c", actions: ["junk", null, 7, { id: "a" }] }],
+    });
+    if (r === null) throw new Error("not read");
+    const actions = r.components[0].actions;
+    expect(actions.map((a) => a.effect)).toEqual([
+      "undeclared",
+      "undeclared",
+      "undeclared",
+      "undeclared",
+    ]);
+    expect(actions.map((a) => a.unreadable === true)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    expect(countEffects(r)).toMatchObject({
+      undeclared: 4,
+      actions: 4,
+      unreadable: 0,
+    });
+    expect(actionSplitText(r.components[0])).toBe("4 actions: 4 undeclared");
+  });
+
   it("keeps two entries sharing an id apart", () => {
-    const r = readComponents({ components: [{ id: "x" }, { id: "x" }] });
+    const r = readComponents({
+      components: [
+        { id: "x", actions: [] },
+        { id: "x", actions: [] },
+      ],
+    });
     expect(new Set(r?.components.map((c) => c.key)).size).toBe(2);
   });
 });

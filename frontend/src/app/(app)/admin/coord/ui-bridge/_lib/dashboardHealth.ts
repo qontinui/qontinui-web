@@ -113,25 +113,38 @@ export function deriveDashboardHealth(
   input: DashboardHealthInput
 ): DashboardHealth {
   const counts = value(input.components);
+  // Registry entries no count includes make every count a floor: `≥N`, the
+  // spelling the app total uses, with the reason in the badge's title.
+  const unreadable = counts?.unreadable ?? 0;
+  const count = (n: number | undefined): string | number =>
+    n === undefined ? "–" : unreadable > 0 ? `≥${n}` : n;
+  const floorNote =
+    unreadable > 0
+      ? ` — at least: ${unreadable} registry ${
+          unreadable === 1 ? "entry" : "entries"
+        } could not be read and ${unreadable === 1 ? "is" : "are"} not counted`
+      : "";
   const badges: HealthBadge[] = [
     {
       key: "components",
-      label: `components ${counts?.components ?? "–"}`,
-      title: "Components the runner's interface registers",
+      label: `components ${count(counts?.components)}`,
+      title: `Components the runner's interface registers${floorNote}`,
       "data-testid": "coord-ui-bridge-health-components",
     },
     {
       key: "actions",
-      label: `actions ${counts?.actions ?? "–"}`,
-      title: "Actions across those components",
+      label: `actions ${count(counts?.actions)}`,
+      title: `Actions across those components${floorNote}`,
       "data-testid": "coord-ui-bridge-health-actions",
     },
     {
       key: "undeclared",
-      label: `undeclared ${counts?.undeclared ?? "–"}`,
-      tone: counts === null || counts.undeclared > 0 ? "waiting" : "default",
-      title:
-        "Actions whose author declared no effect — counted as undeclared, never as reads",
+      label: `undeclared ${count(counts?.undeclared)}`,
+      tone:
+        counts === null || counts.undeclared > 0 || unreadable > 0
+          ? "waiting"
+          : "default",
+      title: `Actions whose author declared no effect — counted as undeclared, never as reads${floorNote}`,
       "data-testid": "coord-ui-bridge-health-undeclared",
     },
     {
@@ -235,10 +248,24 @@ export function deriveDashboardHealth(
       badges,
     };
   }
+  const unreadableEntries = `${unreadable} ${
+    unreadable === 1 ? "entry" : "entries"
+  } in its component registry could not be read`;
   if (counts.undeclared > 0) {
     return {
       level: "amber",
-      headline: `${input.machine}: ${counts.undeclared} of ${counts.actions} actions declare no effect.`,
+      headline: `${input.machine}: ${counts.undeclared} of ${counts.actions} actions declare no effect.${
+        unreadable > 0 ? ` ${unreadableEntries}, so both counts are floors.` : ""
+      }`,
+      badges,
+    };
+  }
+  if (unreadable > 0) {
+    // Every action read declares its effect, but the ones in the entries
+    // that could not be read are unknown — so "every action" is not measured.
+    return {
+      level: "amber",
+      headline: `${input.machine}: ${unreadableEntries}, so whether every action declares its effect is UNKNOWN.`,
       badges,
     };
   }
