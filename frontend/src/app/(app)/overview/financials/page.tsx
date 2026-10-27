@@ -195,8 +195,9 @@ export default function CostsPage() {
         : (categoryItems.find((c) => c.id === id)?.name ?? null),
     [categoryItems]
   );
+  // Unknown until the summary loads — never guessed (`recurringBody`).
   const baseCurrency =
-    summary.state === "ready" ? summary.summary.base_currency : "USD";
+    summary.state === "ready" ? summary.summary.base_currency : null;
   const recurringName = useCallback(
     (id: string | null) =>
       id === null
@@ -326,7 +327,7 @@ export default function CostsPage() {
       <Section
         id="overview.costs.section.recurring"
         title="Recurring costs"
-        lede="Subscriptions and bills that fall due on a schedule. One that is the same each time counts automatically every period; one that varies (a usage bill) needs each period's amount, entered below as it arrives. To change a price or billing day from now on, give the cost a last due date and add a new one — earlier periods keep what they cost."
+        lede="Subscriptions and bills that fall due on a schedule. One that is the same each time counts automatically every period; one that varies (a usage bill) needs each period's amount, entered below as it arrives. To change a price or billing day from now on, give the cost a last due date and add a new one — earlier periods keep what they cost. A cost entered wrongly can be removed and added again until one of its bills has been recorded."
       >
         <div className="space-y-6">
           <RecordSection<RecurringCost, RecurringRow>
@@ -337,7 +338,7 @@ export default function CostsPage() {
             writable={RECURRING_WRITABLE}
             matchKey={recurringKey}
             rowProblem={recurringRowProblem}
-            toBody={(fields) => recurringBody(fields, baseCurrency)}
+            toBody={(fields, mode) => recurringBody(fields, baseCurrency, mode)}
             label={(row) => row.name || "A recurring cost"}
             describe={describeRecurring}
             canEdit={canEditRecurring}

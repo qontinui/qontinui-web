@@ -54,8 +54,12 @@ export interface RecordSectionProps<
   matchKey?: (row: Row) => string;
   /** A rule the served schema cannot express, refused before sending. */
   rowProblem?: (row: Row) => string | null;
-  /** A row (or a patch) as the API takes it. */
-  toBody: (fields: Partial<Row>) => Record<string, unknown>;
+  /** A row (a create) or a patch (an update) as the API takes it, or the
+   *  sentence saying why it cannot be sent. */
+  toBody: (
+    fields: Partial<Row>,
+    mode: "create" | "update"
+  ) => Record<string, unknown> | string;
   /** Names the row in a message. */
   label: (row: Row) => string;
   /** The record as text, for the conflict dialog. */
@@ -102,7 +106,12 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   const rows = useMemo(() => records.map(toRow), [records, toRow]);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [pending, setPending] = useState<Pending<Rec, Row> | null>(null);
+  // Every overtaken write of one save, shown one at a time so none is lost.
+  const [conflicts, setConflicts] = useState<Pending<Rec, Row>[]>([]);
+  const pending = conflicts[0] ?? null;
+  const addConflict = (c: Pending<Rec, Row>) =>
+    setConflicts((all) => [...all, c]);
+  const settle = () => setConflicts((all) => all.slice(1));
 
   const recordOf = (id: string) => records.find((r) => r.id === id);
 
@@ -115,7 +124,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
       if (err instanceof VersionConflictError) {
         const theirs = err.current as Rec;
         replace(theirs);
-        setPending({ kind: "delete", theirs });
+        addConflict({ kind: "delete", theirs });
         return null;
       }
       return `${label(toRow(record))}: ${describeWriteFailure(err)}`;
@@ -143,10 +152,12 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
     const failures: string[] = [];
     let wrote = false;
     for (const row of plan.creates) {
-      const result = await create(
-        toBody(bodyOf(row, writable) as Partial<Row>),
-        { source }
-      );
+      const body = toBody(bodyOf(row, writable) as Partial<Row>, "create");
+      if (typeof body === "string") {
+        failures.push(`${label(row)}: ${body}`);
+        continue;
+      }
+      const result = await create(body, { source });
       if (result.ok) wrote = true;
       else if ("error" in result)
         failures.push(`${label(row)}: ${result.error}`);
@@ -154,10 +165,15 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
     for (const { row, patch } of plan.updates) {
       const record = recordOf(row.id);
       if (!record) continue;
-      const result = await update(record, toBody(patch), { source });
+      const body = toBody(patch, "update");
+      if (typeof body === "string") {
+        failures.push(`${label(row)}: ${body}`);
+        continue;
+      }
+      const result = await update(record, body, { source });
       if (result.ok) wrote = true;
       else if ("conflict" in result)
-        setPending({
+        addConflict({
           kind: "update",
           mine: { ...row, ...patch },
           theirs: result.conflict,
@@ -223,15 +239,21 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
           theirsAt={pending.theirs.updated_at}
           onKeepMine={() => {
             const chosen = pending;
-            setPending(null);
+            settle();
             void (async () => {
               if (chosen.kind === "update") {
-                const result = await update(
-                  chosen.theirs,
-                  toBody(bodyOf(chosen.mine, writable) as Partial<Row>)
+                // The whole row as I left it, onto their version.
+                const body = toBody(
+                  bodyOf(chosen.mine, writable) as Partial<Row>,
+                  "update"
                 );
+                if (typeof body === "string") {
+                  setErrors([body]);
+                  return;
+                }
+                const result = await update(chosen.theirs, body);
                 if (!result.ok && "conflict" in result)
-                  setPending({ ...chosen, theirs: result.conflict });
+                  addConflict({ ...chosen, theirs: result.conflict });
                 else if (!result.ok) setErrors([result.error]);
                 else onWritten();
               } else {
@@ -241,9 +263,9 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
               }
             })();
           }}
-          onTakeTheirs={() => setPending(null)}
+          onTakeTheirs={settle}
           // Their version is already in the table; combining is editing it.
-          onMerge={() => setPending(null)}
+          onMerge={settle}
           uiBridgeId={`${uiBridgeId}.conflict`}
         />
       )}

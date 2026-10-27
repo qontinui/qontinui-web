@@ -469,6 +469,65 @@ class TestRecurring:
         )
         assert too_early.status_code == 409
 
+    async def test_a_price_already_counted_is_not_rewritten(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        cost = await _recurring(admin, start_date="2026-01-15")
+        repriced = await _patch(
+            admin, f"recurring-costs/{cost['id']}", {"amount_micros": 250_000_000}, 1
+        )
+        assert repriced.status_code == 409
+        assert repriced.json()["error"] == "price_in_use"
+        renamed = await _patch(
+            admin, f"recurring-costs/{cost['id']}", {"name": "Claude Max"}, 1
+        )
+        assert renamed.status_code == 200, renamed.text
+        future = await _recurring(admin, name="Next year", start_date="2099-01-01")
+        assert (
+            await _patch(
+                admin, f"recurring-costs/{future['id']}", {"amount_micros": 1}, 1
+            )
+        ).status_code == 200
+        variable = await _recurring(
+            admin, name="AWS", amount_kind="variable", amount_micros=None
+        )
+        assert (
+            await _patch(
+                admin,
+                f"recurring-costs/{variable['id']}",
+                {"amount_micros": 400_000_000},
+                1,
+            )
+        ).status_code == 200
+
+    async def test_a_race_past_the_checks_is_a_409_not_a_500(
+        self, admin: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cost = await _recurring(
+            admin,
+            name="AWS",
+            amount_kind="variable",
+            amount_micros=None,
+            start_date="2026-01-01",
+        )
+        body = {
+            "recurring_cost_id": cost["id"],
+            "period_start": "2026-01-01",
+            "incurred_on": "2026-01-01",
+            "description": "AWS Jan",
+            "amount_micros": 1,
+            "currency": "USD",
+        }
+        await _entry(admin, **body)
+
+        async def _nothing_there(*_: Any, **__: Any) -> int:
+            return 0  # as if the other write had not committed yet
+
+        monkeypatch.setattr("app.overview.costs._count", _nothing_there)
+        again = await admin.post(f"{API}/cost-entries", json=body)
+        assert again.status_code == 409
+        assert again.json()["error"] == "period_already_recorded"
+
     async def test_an_unused_recurring_cost_can_be_deleted(
         self, admin: httpx.AsyncClient
     ) -> None:
