@@ -164,6 +164,34 @@ describe("GLOBAL_SERVER_WAIVERS — the registry itself", () => {
   });
 });
 
+describe("isGloballyWaivedServerUrl — the presentation scope read", () => {
+  const SCOPE = "http://localhost:3001/api/v1/presentation/scope";
+
+  it("scopes the entry to exactly 502 and 504", () => {
+    const entry = GLOBAL_SERVER_WAIVERS.find((w) =>
+      w.pattern.includes("/api/v1/presentation/scope")
+    );
+    expect(entry?.statuses).toEqual([502, 504]);
+  });
+
+  it("waives the 502/504 a missing coord produces on the scope read", () => {
+    expect(isGloballyWaivedServerUrl(SCOPE, 502)).toBe(true);
+    expect(isGloballyWaivedServerUrl(`${SCOPE}?x=1`, 504)).toBe(true);
+  });
+
+  it("still gates a 500 on the scope read, and every URL near it", () => {
+    expect(isGloballyWaivedServerUrl(SCOPE, 500)).toBe(false);
+    for (const url of [
+      "http://localhost:3001/api/v1/presentation/scopes",
+      "http://localhost:3001/api/v1/presentation/other",
+      "http://localhost:3001/api/v1/presentation",
+      "http://localhost:3001/api/v1/x?next=/api/v1/presentation/scope",
+    ]) {
+      expect(isGloballyWaivedServerUrl(url, 502), url).toBe(false);
+    }
+  });
+});
+
 describe("isGloballyWaivedServerUrl — the taste inbox read", () => {
   const INBOX = "http://localhost:3001/api/v1/taste/inbox";
 

@@ -413,7 +413,12 @@ async def test_an_identity_naming_no_project_is_refused_presentation(
     harness.coord.memberships = []
     resp = await harness.read(uuid4())
     assert resp.status_code == 403, resp.text
-    assert resp.json()["message"] == "tenant_not_resolved"
+    body = resp.json()
+    # A typed refusal (the D4 ratchet counts bare-string error responses), with
+    # the legacy top-level `error` token kept for clients that match on it.
+    assert body["error"] == "tenant_not_resolved"
+    assert body["refusal"]["discriminator"] == "tenant_not_resolved"
+    assert body["refusal"]["next_action"]["kind"] == "fix_request"
     assert harness.coord.repo_calls == []
 
 

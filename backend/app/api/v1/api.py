@@ -124,6 +124,7 @@ from app.api.v1.endpoints import (
     semantic_search,
     served_routes,
     session_repository,
+    session_runs,
     settings,
     skills,
     snapshots,
@@ -262,6 +263,15 @@ api_router.include_router(
 # `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration` Phase 5.
 api_router.include_router(
     spawn_ledger.router, prefix="/operations", tags=["operations"]
+)
+# Session load reads — how long each work type holds a session slot, how many
+# sessions each machine carries against its configured session budget, and how
+# demanded slot-hours grow against the fleet's. Under `/operations` beside the
+# spawn ledger the Session load page links back to; a sibling module for the
+# same reason. Plan
+# `2026-10-23-session-duration-by-work-type-and-per-device-session-load` Phase 5.
+api_router.include_router(
+    session_runs.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
