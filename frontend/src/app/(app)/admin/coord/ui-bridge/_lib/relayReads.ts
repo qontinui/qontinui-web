@@ -38,9 +38,13 @@
  * change that flips the carriage to `dashboard`, and that flip is what makes
  * the page ask; the allow-list entry it adds names {@link fetchRunnerVisibility}.
  *
- * Every function here is a READ. Two of the routes are registered as POST
- * because they take an options body; the handlers ignore it or read only a
- * threshold, and neither changes runner or app state.
+ * Every function here is a READ: none changes a setting, session, file or
+ * app state. Two of the routes are registered as POST because they take an
+ * options body, which the handlers ignore or read only a threshold from.
+ * Page health and the sweep each send the runner's webview one `discover`,
+ * which rebuilds the SDK's in-memory discovery cache from the live page
+ * (qontinui-runner `relay_path_policy.rs`, the page-health entry) — the one
+ * side effect, and why their buttons do not say "nothing changes".
  */
 
 import {

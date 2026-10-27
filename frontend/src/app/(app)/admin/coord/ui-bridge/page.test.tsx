@@ -982,3 +982,23 @@ describe("one label, one referent", () => {
     ).toHaveTextContent(/^With a destructive action1$/);
   });
 });
+
+describe("the on-demand buttons' titles", () => {
+  it("say exactly what pressing one does on the runner — never that nothing changes", async () => {
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    for (const testId of [
+      "coord-ui-bridge-health-run",
+      "coord-ui-bridge-snapshot-capture",
+    ]) {
+      const title = screen.getByTestId(testId).getAttribute("title") ?? "";
+      expect(title, testId).toContain(
+        "It changes no setting, session, file or app state"
+      );
+      // Page health always, and the snapshot with nothing registered, make
+      // the runner re-read its window — a side effect the title names.
+      expect(title, testId).toMatch(/re-reads/);
+      expect(title, testId).not.toMatch(/nothing on the runner changes/i);
+    }
+  });
+});

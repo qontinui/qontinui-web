@@ -43,7 +43,10 @@
  * `RedactedText` (`_lib/firstParty.ts` says which text can be attributed),
  * and the window's own text left out. There is no write control on the page:
  * the two buttons that are not panel toggles — capture a snapshot, run page
- * health — read, and say so.
+ * health — change no setting, session, file or app state. Each can make the
+ * runner re-read its window's elements (page health always; the snapshot
+ * when nothing is registered yet), which rebuilds the webview's in-memory
+ * discovery cache from the live page, and each button's title says so.
  *
  * Console style (`frontend/docs/console-ui-style-guide.md`, §3.10 for this
  * page): no page title (R9), strip first (R1), panels collapsible with their

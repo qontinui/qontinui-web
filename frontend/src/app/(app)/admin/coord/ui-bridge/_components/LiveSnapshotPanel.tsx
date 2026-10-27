@@ -5,8 +5,11 @@
  * right now, as structured elements (`GET /ui-bridge/control/snapshot`, the
  * digital twin's `useRunnerSnapshot`, reused). Captured ON DEMAND only — it
  * drives the runner's webview — and the capture button is navigation-only:
- * pressing it changes what this page displays and nothing on the runner, so it
- * stays live in presentation mode.
+ * pressing it changes no setting, session, file or app state on the runner,
+ * so it stays live in presentation mode. Its one side effect, when the
+ * runner has no elements registered yet, is a re-read of the window's
+ * elements, which rebuilds the webview's in-memory discovery cache; the
+ * button's title says so.
  *
  * What the panel shows everyone is STRUCTURE: the element and component
  * counts and the element types. A native window capture (the SDK was not
@@ -42,6 +45,15 @@ import {
   SourceUnknown,
   StaleReadNote,
 } from "./SourceUnknown";
+
+/**
+ * The capture button's title: what pressing it does on the runner, exactly —
+ * no setting, session, file or app state changes; with no elements
+ * registered yet, the runner re-reads its window first (qontinui-runner
+ * `relay_path_policy.rs`).
+ */
+export const SNAPSHOT_BUTTON_TITLE =
+  "Capture the runner's window now. It changes no setting, session, file or app state; if no elements are registered yet, the runner re-reads its window first.";
 
 export interface LiveSnapshotPanelProps {
   deviceId: string | null;
@@ -105,7 +117,7 @@ export function LiveSnapshotPanel({
           className="h-7 gap-1.5 text-xs"
           disabled={deviceId === null || snapshot.isFetching}
           onClick={capture}
-          title="Capture the runner's window now. Reads only: nothing on the runner changes."
+          title={SNAPSHOT_BUTTON_TITLE}
           data-testid="coord-ui-bridge-snapshot-capture"
         >
           {snapshot.isFetching ? (

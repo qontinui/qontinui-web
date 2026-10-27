@@ -21,9 +21,12 @@
  * `the-runner-serves-the-occlusion-sweep-and-it-is-currently-vacuous`), and a
  * runner whose relay refuses the sweep says so with its build.
  *
- * The run button is navigation-only: it reads, and changes nothing on the
- * runner. The text the text-signal check quoted from the window, and the
- * runner's engineering detail lines, are the operator's only.
+ * The run button is navigation-only: it changes no setting, session, file or
+ * app state. To answer, the runner re-reads its window's elements, which
+ * rebuilds the webview's in-memory discovery cache — and the button's title
+ * says so rather than "nothing changes". The text the text-signal check
+ * quoted from the window, and the runner's engineering detail lines, are the
+ * operator's only.
  */
 
 import { Loader2, Stethoscope } from "lucide-react";
@@ -69,6 +72,14 @@ export interface PageHealthPanelProps {
   build: BuildReading;
   noRunner: string | null;
 }
+
+/**
+ * The run button's title: what pressing it does on the runner, exactly — no
+ * setting, session, file or app state changes, but the runner re-reads its
+ * window's elements to answer (qontinui-runner `relay_path_policy.rs`).
+ */
+export const PAGE_HEALTH_BUTTON_TITLE =
+  "Check the runner's current screen now. It changes no setting, session, file or app state: the runner re-reads the elements in its window to answer.";
 
 /**
  * Where the occlusion row's reading comes from, for its provenance chip. It
@@ -262,7 +273,7 @@ export function PageHealthPanel({
           onClick={() => {
             void run();
           }}
-          title="Check the runner's current screen now. Reads only: nothing on the runner changes."
+          title={PAGE_HEALTH_BUTTON_TITLE}
           data-testid="coord-ui-bridge-health-run"
         >
           {running ? (
