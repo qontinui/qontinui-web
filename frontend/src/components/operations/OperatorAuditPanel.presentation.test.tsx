@@ -133,3 +133,52 @@ describe("OperatorAuditPanel?present=1 — a narrowed feed says so", () => {
     );
   });
 });
+
+describe("OperatorAuditPanel — a page coord cut at its row limit says so", () => {
+  const rows = (n: number): AuditRow[] =>
+    Array.from({ length: n }, (_, i) => ({
+      ...DRAIN_ROW,
+      audit_id: `aud-${i}`,
+    }));
+
+  async function open(presenting: boolean) {
+    render(<Panel presenting={presenting} />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+  }
+
+  it("says older rows were left out when coord says it truncated — for the operator and, without a count, for an outsider", async () => {
+    getMock.mockResolvedValue({ audit: rows(3), count: 3, truncated: true });
+    await open(false);
+    expect(
+      await screen.findByTestId("operator-audit-truncated")
+    ).toHaveTextContent(
+      "Coord returned the newest 3 matching rows and left older ones out (truncated)"
+    );
+  });
+
+  it("presenting: the same, in fixed words", async () => {
+    getMock.mockResolvedValue({ audit: rows(3), count: 3, truncated: true });
+    await open(true);
+    const note = await screen.findByTestId("operator-audit-truncated");
+    expect(note).toHaveTextContent(
+      "Only the newest changes are shown; older ones were left out of this view."
+    );
+    expect(note.getAttribute("data-truncated")).toBe("true");
+  });
+
+  it("says older rows MAY be missing when coord does not say and a full page came back", async () => {
+    getMock.mockResolvedValue({ audit: rows(100), count: 100 });
+    await open(true);
+    const note = await screen.findByTestId("operator-audit-truncated");
+    expect(note.getAttribute("data-truncated")).toBe("unknown");
+    expect(note).toHaveTextContent(/may have been left out/);
+  });
+
+  it("(control) says nothing when coord says nothing was cut", async () => {
+    getMock.mockResolvedValue({ audit: rows(3), count: 3, truncated: false });
+    await open(true);
+    await screen.findByTestId("audit-row-aud-0");
+    expect(screen.queryByTestId("operator-audit-truncated")).toBeNull();
+  });
+});

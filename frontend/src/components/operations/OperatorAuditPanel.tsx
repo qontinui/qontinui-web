@@ -771,6 +771,31 @@ export function OperatorAuditPanel({
             </div>
           ) : null}
 
+          {/* Coord stops at the row limit and says so (`truncated`). A page
+              cut there must not read as the whole record; a coord that does
+              not say, with a full page back, MAY have cut it. */}
+          {read.state === "ok" &&
+          (read.truncated === true ||
+            (read.truncated === null && allRows.length >= AUDIT_LIMIT)) ? (
+            <p
+              className="text-xs text-muted-foreground"
+              role="status"
+              data-testid="operator-audit-truncated"
+              data-truncated={read.truncated === true ? "true" : "unknown"}
+            >
+              {/* No count while presenting: the rows read include access
+                  checks the view hides, so a number would not match the
+                  list under it. */}
+              {presenting
+                ? read.truncated === true
+                  ? "Only the newest changes are shown; older ones were left out of this view."
+                  : "Only the newest changes may be shown; older ones may have been left out of this view."
+                : read.truncated === true
+                  ? `Coord returned the newest ${allRows.length} matching rows and left older ones out (truncated) — narrow the filter to reach them.`
+                  : `This coord does not say whether older rows were left out; with ${allRows.length} rows back at the ${AUDIT_LIMIT}-row limit, they may have been.`}
+            </p>
+          ) : null}
+
           {confirmedNonAdmin ? (
             <p
               className="text-xs text-muted-foreground"
