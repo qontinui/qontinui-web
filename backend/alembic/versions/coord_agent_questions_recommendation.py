@@ -84,16 +84,28 @@ Locking
 
 ``ADD COLUMN`` with no default is catalog-only on PG 11+ (ACCESS EXCLUSIVE, no
 table rewrite), but a QUEUED ACCESS EXCLUSIVE request blocks every reader and
-writer arriving behind it on a table ~16 autonomous producers write
-continuously. Both directions bound the wait with ``SET LOCAL lock_timeout =
-'3s'`` and end with ``RESET lock_timeout``. ``env.py`` runs every revision of
-one ``upgrade`` in a single transaction, so an unreset ``SET LOCAL`` would leak
-into every later revision; ``env.py``'s
-``on_version_apply=_reset_revision_settings`` hook now resets it (and
-``search_path``) after each applied step, which makes the in-revision ``RESET``
-redundant belt-and-braces rather than load-bearing. It is kept for the same
-convention as ``coord_agent_questions_withdrawn`` and
-``coord_agent_questions_audience``.
+writer arriving behind it, and this table is written continuously. Measured on
+qontinui-coord ``origin/main`` ``d2ac748e0`` (2026-10-27): 20 non-test
+functions INSERT its rows — 16 policy resolvers in ``policies/decide.rs``
+through ``create_escalation_question``, the edit-effect escalation, the
+alert-episode filer, and the ask door over both HTTP and MCP — and 11 more
+UPDATE them (answers, withdrawals, alert closes, predicate retirement). Both
+directions bound the wait with ``SET LOCAL lock_timeout = '3s'``.
+
+Neither direction restores the bound itself. ``env.py`` runs every revision of
+one ``upgrade`` in a single transaction, so an unrestored ``SET LOCAL`` would
+reach every later revision of the batch — but env.py's
+``on_version_apply=_reset_revision_settings`` hook issues ``RESET
+lock_timeout`` (and ``RESET search_path``) after every applied step, up or
+down, online or offline, and ``tests/test_alembic_env_setting_reset.py`` pins
+that. A ``RESET`` in this file would be redundant, and on the upgrade path
+worse than redundant: coord's migration classifier
+(``crates/coord/src/pr_merge/migration_classifier.rs``) admits ``SET LOCAL
+lock_timeout`` / ``statement_timeout`` and fails every ``RESET`` closed, so the
+trailing ``RESET lock_timeout`` both earlier generations carried was the
+escalate-path hit that held their PRs. ``coord_agent_questions_withdrawn`` and
+``coord_agent_questions_audience`` still carry one because they predate the
+hook (``2d8ce1cc3``, 2026-10-08).
 
 No index: nothing filters or orders on either column. Both readers above reach
 the rows by primary key (``question_id``) — the needs-me read for rows its
@@ -145,7 +157,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Add the nullable ``recommendation`` and ``if_overturned`` columns."""
-    # Bound the DDL's lock wait; see the docstring's Locking section.
+    # Bound the DDL's lock wait; see the docstring's Locking section. No RESET
+    # follows: env.py's on_version_apply hook restores lock_timeout after this
+    # step, and coord's migration classifier fails any RESET here closed.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
@@ -154,15 +168,11 @@ def upgrade() -> None:
             ADD COLUMN IF NOT EXISTS if_overturned  TEXT
         """
     )
-    # SET LOCAL is transaction-scoped and env.py wraps the WHOLE run in one
-    # transaction. env.py's on_version_apply hook already resets lock_timeout
-    # after each step; this explicit reset is redundant belt-and-braces, kept
-    # for consistency with the sibling coord_agent_questions_* revisions.
-    op.execute("RESET lock_timeout")
 
 
 def downgrade() -> None:
     """Drop the two columns."""
+    # Bounded as in upgrade(); env.py's hook restores lock_timeout after it too.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
@@ -171,4 +181,3 @@ def downgrade() -> None:
             DROP COLUMN IF EXISTS recommendation
         """
     )
-    op.execute("RESET lock_timeout")
