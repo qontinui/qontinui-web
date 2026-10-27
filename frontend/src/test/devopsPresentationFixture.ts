@@ -218,6 +218,13 @@ export interface DevOpsFixture {
    * health (so the machine cards render around the failures).
    */
   fail?: "all" | "all-but-fleet-health";
+  /**
+   * Reject every read whose URL contains one of these, from then on. Read at
+   * CALL time, so a test can let a read answer first and push its route here
+   * afterwards — the succeed-then-fail sequence a page sees when a poll that
+   * worked starts failing.
+   */
+  failingRoutes?: string[];
 }
 
 export function mockDevOpsRoutes(
@@ -225,11 +232,14 @@ export function mockDevOpsRoutes(
   httpFetch: Mock,
   fixture: DevOpsFixture = {}
 ): void {
+  const failsNow = (u: string) =>
+    (fixture.failingRoutes ?? []).some((route) => u.includes(route));
   httpGet.mockImplementation((url: unknown) => {
     const u = String(url);
     if (
       fixture.fail === "all" ||
-      (fixture.fail === "all-but-fleet-health" && !u.includes("fleet/health"))
+      (fixture.fail === "all-but-fleet-health" && !u.includes("fleet/health")) ||
+      failsNow(u)
     ) {
       return Promise.reject(readFailure(u));
     }
@@ -490,7 +500,7 @@ export function mockDevOpsRoutes(
 
   httpFetch.mockImplementation((url: unknown) => {
     const u = String(url);
-    if (fixture.fail) return Promise.reject(readFailure(u));
+    if (fixture.fail || failsNow(u)) return Promise.reject(readFailure(u));
     const ok = (json: unknown) =>
       Promise.resolve({
         ok: true,
@@ -706,6 +716,23 @@ export const MACHINE_SECTION_SOURCES = [
   DEVOPS_SOURCES.diskTelemetry,
   DEVOPS_SOURCES.drainState,
   DEVOPS_SOURCES.deviceStatus,
+];
+
+/**
+ * Every captioned section of the page and the reads its numbers come from —
+ * one provenance chip each. (`dev-ops.page` is the page's caption and states
+ * no source of its own.)
+ */
+export const SECTION_SOURCES: ReadonlyArray<
+  readonly [CaptionKey, readonly string[]]
+> = [
+  ["dev-ops.health-strip", HEALTH_STRIP_SOURCES],
+  ["dev-ops.conditions", [DEVOPS_SOURCES.fleetHealth]],
+  ["dev-ops.machines", MACHINE_SECTION_SOURCES],
+  ["dev-ops.roles", [DEVOPS_SOURCES.dispatchRoles]],
+  ["dev-ops.resources", [DEVOPS_SOURCES.resourceSamples]],
+  ["dev-ops.worktree-slots", [DEVOPS_SOURCES.worktreeSlots]],
+  ["dev-ops.audit", [DEVOPS_SOURCES.operatorAudit]],
 ];
 
 /**

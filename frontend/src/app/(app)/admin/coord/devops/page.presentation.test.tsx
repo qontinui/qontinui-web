@@ -35,6 +35,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -126,6 +127,7 @@ vi.mock("sonner", () => ({
 
 import CoordDevOpsPage from "./page";
 import {
+  type CaptionKey,
   FixedPresentationMode,
   NAVIGATION_ONLY_ATTRIBUTE,
   PresentationPage,
@@ -143,15 +145,14 @@ import {
   ERROR_DEVICE,
   ERROR_HOST,
   FIRST_PARTY_REPO,
-  HEALTH_STRIP_SOURCES,
   HOST_A,
   HOST_B,
-  MACHINE_SECTION_SOURCES,
   machineSectionChips,
   mockDevOpsRoutes,
   MUST_NOT_APPEAR,
   readFailure,
   SCOPE,
+  SECTION_SOURCES,
   sectionChips,
   seedDeviceStatus as seedDeviceStatusInto,
   settle,
@@ -455,31 +456,105 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       expect(chip).toHaveTextContent(/as of /);
     }
 
-    // The machine list names EVERY read its numbers come from — disk, drain
-    // and device-status times included — and each one answered, so each is
-    // dated.
+    // EVERY captioned section names every read its numbers come from — the
+    // machine list's disk, drain and device-status times included, and the
+    // health strip's device-status reports, which its credential badges count
+    // from — and each one answered, so each is dated. (A chip whose as-of went
+    // missing, or one source too few, fails here by section and source.)
     await waitFor(() => {
-      const chips = machineSectionChips();
-      expect([...chips.keys()].sort()).toEqual(
-        [...MACHINE_SECTION_SOURCES].sort()
-      );
-      for (const [source, chip] of chips) {
-        expect(chip.getAttribute("data-provenance-known"), source).toBe("true");
+      for (const [id, sources] of SECTION_SOURCES) {
+        const chips = sectionChips(id);
+        expect([...chips.keys()].sort(), id).toEqual([...sources].sort());
+        for (const [source, chip] of chips) {
+          expect(
+            chip.getAttribute("data-provenance-known"),
+            `${id}: ${source}`
+          ).toBe("true");
+        }
       }
     });
+    expect(SECTION_SOURCES.map(([id]) => id).sort()).toEqual(
+      DEVOPS_CAPTIONS.filter((id) => id !== "dev-ops.page").sort()
+    );
+  });
 
-    // So does the health strip — its credential badges count from the
-    // runners' own device-status reports, so that read is named and dated
-    // beside fleet health and the fault-to-visibility readout.
-    await waitFor(() => {
-      const chips = sectionChips("dev-ops.health-strip");
-      expect([...chips.keys()].sort()).toEqual(
-        [...HEALTH_STRIP_SOURCES].sort()
+  it("a read that answered and then failed is dated UNKNOWN where its section shows nothing from it — drain, roles, the audit feed", async () => {
+    // The hooks KEEP the last answer's date through a failed poll
+    // (`devOpsAsOf.test.ts`), so only each section's own gate stops an
+    // unknown read being dated by the last good one. Exercised the way the
+    // page meets it: each read answers, then starts failing.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const failingRoutes: string[] = [];
+    try {
+      mockRoutes({ failingRoutes });
+      seedDeviceStatus();
+      const view = renderInPresentationMode(<CoordDevOpsPage />, {
+        scope: SCOPE,
+      });
+      await settle();
+      const known = (id: CaptionKey, source: string) =>
+        sectionChips(id).get(source)?.getAttribute("data-provenance-known");
+      await waitFor(() => {
+        expect(known("dev-ops.machines", DEVOPS_SOURCES.drainState)).toBe(
+          "true"
+        );
+        expect(known("dev-ops.roles", DEVOPS_SOURCES.dispatchRoles)).toBe(
+          "true"
+        );
+        expect(known("dev-ops.audit", DEVOPS_SOURCES.operatorAudit)).toBe(
+          "true"
+        );
+      });
+      const drainedBefore = screen
+        .getAllByTestId("device-drain-status")
+        .filter((s) => s.getAttribute("data-device-drain") === "drained");
+      expect(drainedBefore).toHaveLength(1);
+
+      failingRoutes.push("/fleet/drain", "dispatch-roles", "coord/audit");
+      // The drain and role polls run every 30 s; the audit feed is re-read
+      // by its Refresh (navigation-only, so it is live while presenting).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+      fireEvent.click(screen.getByTestId("operator-audit-refresh"));
+
+      // Each failure has landed — not merely a re-read in flight: the machine
+      // cards stay, each drain UNKNOWN rather than the last state read, and
+      // the roles and the feed say their reads failed...
+      await waitFor(() => {
+        const drains = screen.getAllByTestId("device-drain-status");
+        expect(
+          drains.filter(
+            (s) => s.getAttribute("data-device-drain") === "drained"
+          )
+        ).toHaveLength(0);
+        expect(
+          drains.some((s) => s.getAttribute("data-device-drain") === "unknown")
+        ).toBe(true);
+        expect(screen.getByTestId("fleet-roles-unknown")).toBeTruthy();
+        expect(screen.getByTestId("operator-audit-error")).toBeTruthy();
+      });
+      // ...and none of the three is dated by its last good answer.
+      expect(known("dev-ops.machines", DEVOPS_SOURCES.drainState)).toBe(
+        "false"
       );
-      for (const [source, chip] of chips) {
-        expect(chip.getAttribute("data-provenance-known"), source).toBe("true");
-      }
-    });
+      expect(known("dev-ops.roles", DEVOPS_SOURCES.dispatchRoles)).toBe(
+        "false"
+      );
+      expect(known("dev-ops.audit", DEVOPS_SOURCES.operatorAudit)).toBe(
+        "false"
+      );
+      // The reads that kept answering stay dated.
+      expect(known("dev-ops.machines", DEVOPS_SOURCES.fleetHealth)).toBe(
+        "true"
+      );
+      expect(known("dev-ops.resources", DEVOPS_SOURCES.resourceSamples)).toBe(
+        "true"
+      );
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders a failed poll's figure UNKNOWN with its reason — never zero — and leaves the others standing", async () => {
