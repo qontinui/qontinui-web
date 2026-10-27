@@ -125,13 +125,13 @@ describe("every panel renders the runner's answers", () => {
     // The fixture: 2 read, 1 write, 1 destructive, 3 with no declared effect.
     expect(
       within(counts).getByTestId("coord-ui-bridge-actions-count-undeclared")
-    ).toHaveTextContent("undeclared 3");
+    ).toHaveTextContent("undeclared actions 3");
     expect(
       within(counts).getByTestId("coord-ui-bridge-actions-count-read")
-    ).toHaveTextContent("read 2");
+    ).toHaveTextContent("read actions 2");
     expect(
       within(counts).getByTestId("coord-ui-bridge-actions-count-destructive")
-    ).toHaveTextContent("destructive 1");
+    ).toHaveTextContent("destructive actions 1");
 
     // Each component row's badge is its most consequential action.
     const rows = screen.getAllByTestId("coord-ui-bridge-component-row");
@@ -313,7 +313,7 @@ describe("the wrapper-app disclosure beside the component counts", () => {
       // It qualifies the list; it does not erase it.
       expect(
         screen.getByTestId("coord-ui-bridge-actions-count-undeclared")
-      ).toHaveTextContent("undeclared 3");
+      ).toHaveTextContent("undeclared actions 3");
     }
   );
 
@@ -353,7 +353,7 @@ describe("a runner whose build predates the dashboard's relay entries", () => {
     ).toHaveTextContent("– actions · – undeclared");
     const strip = screen.getByTestId("coord-ui-bridge-health-strip");
     expect(strip).toHaveTextContent("component actions are UNKNOWN");
-    expect(strip).toHaveTextContent("undeclared –");
+    expect(strip).toHaveTextContent("undeclared actions –");
   });
 
   it("says UNKNOWN in the page-health header after a run that failed — never 'not run'", async () => {
@@ -875,7 +875,7 @@ describe("registry entries the page cannot read", () => {
     const counts = await screen.findByTestId("coord-ui-bridge-actions-counts");
     expect(
       within(counts).getByTestId("coord-ui-bridge-actions-count-undeclared")
-    ).toHaveTextContent("undeclared 1");
+    ).toHaveTextContent("undeclared actions 1");
     expect(
       screen.getByTestId("coord-ui-bridge-actions-unreadable")
     ).toHaveTextContent(
@@ -956,5 +956,29 @@ describe("an answer that is not the shape the page reads", () => {
     expect(screen.getAllByTestId("coord-ui-bridge-spec-screen")).toHaveLength(
       2
     );
+  });
+});
+
+describe("one label, one referent", () => {
+  it("names what each count counts — actions in the stats and on the strip, components in the filter tabs", async () => {
+    renderPage();
+    const counts = await screen.findByTestId("coord-ui-bridge-actions-counts");
+    // Three ACTIONS declare no effect…
+    expect(
+      within(counts).getByTestId("coord-ui-bridge-actions-count-undeclared")
+    ).toHaveTextContent("undeclared actions 3");
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-undeclared")
+    ).toHaveTextContent("undeclared actions 3");
+    // …held by two COMPONENTS, which is what the filter tab counts — under a
+    // lead-in that says so, and in words no stat uses.
+    const filters = screen.getByTestId("coord-ui-bridge-actions-filters");
+    expect(filters.textContent?.startsWith("Components:")).toBe(true);
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-filter-undeclared")
+    ).toHaveTextContent(/^With an undeclared action2$/);
+    expect(
+      screen.getByTestId("coord-ui-bridge-actions-filter-destructive")
+    ).toHaveTextContent(/^With a destructive action1$/);
   });
 });

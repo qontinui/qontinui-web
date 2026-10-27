@@ -48,7 +48,7 @@ describe("deriveDashboardHealth", () => {
     expect(h.headline).toBe(
       "Machine A: every one of its 7 actions declares its effect."
     );
-    expect(badge(h, "undeclared")?.label).toBe("undeclared 0");
+    expect(badge(h, "undeclared")?.label).toBe("undeclared actions 0");
   });
 
   it("is amber, naming the count, when any action declares none", () => {
@@ -88,7 +88,7 @@ describe("deriveDashboardHealth", () => {
     expect(h.level).toBe("amber");
     expect(h.headline).toMatch(/component actions are UNKNOWN/);
     expect(h.headline).toMatch(/predates the relay entries/);
-    expect(badge(h, "undeclared")?.label).toBe("undeclared –");
+    expect(badge(h, "undeclared")?.label).toBe("undeclared actions –");
     expect(badge(h, "actions")?.label).toBe("actions –");
   });
 
@@ -244,7 +244,7 @@ describe("deriveDashboardHealth — a stale read", () => {
   it("keeps the earlier figures on the badges — kept, not dashed", () => {
     const h = deriveDashboardHealth(input({ components: stale(COUNTS) }));
     expect(badge(h, "actions")?.label).toBe("actions 7");
-    expect(badge(h, "undeclared")?.label).toBe("undeclared 0");
+    expect(badge(h, "undeclared")?.label).toBe("undeclared actions 0");
   });
 
   it("does not paint red off an earlier read — it says what that read found", () => {
@@ -310,7 +310,7 @@ describe("deriveDashboardHealth — registry entries that could not be read", ()
     );
     expect(badge(h, "components")?.label).toBe("components ≥3");
     expect(badge(h, "actions")?.label).toBe("actions ≥7");
-    expect(badge(h, "undeclared")?.label).toBe("undeclared ≥0");
+    expect(badge(h, "undeclared")?.label).toBe("undeclared actions ≥0");
     expect(badge(h, "undeclared")?.tone).toBe("waiting");
     expect(badge(h, "actions")?.title).toBe(
       "Actions across those components — at least: 1 registry entry could not be read and is not counted"

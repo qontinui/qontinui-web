@@ -214,7 +214,7 @@ describe("the UI Bridge dashboard while presenting", () => {
     await renderPresenting();
     expect(
       screen.getByTestId("coord-ui-bridge-actions-count-undeclared")
-    ).toHaveTextContent("undeclared 3");
+    ).toHaveTextContent("undeclared actions 3");
     expect(
       screen
         .getAllByTestId("coord-ui-bridge-component-row")

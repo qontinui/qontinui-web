@@ -139,7 +139,7 @@ export function deriveDashboardHealth(
     },
     {
       key: "undeclared",
-      label: `undeclared ${count(counts?.undeclared)}`,
+      label: `undeclared actions ${count(counts?.undeclared)}`,
       tone:
         counts === null || counts.undeclared > 0 || unreadable > 0
           ? "waiting"

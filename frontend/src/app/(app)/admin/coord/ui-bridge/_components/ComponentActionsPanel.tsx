@@ -73,12 +73,19 @@ export interface ComponentActionsPanelProps {
 /** The list filter: everything, or the components carrying one kind. */
 type ComponentFilter = "all" | EffectKind;
 
+/**
+ * The filter tabs count COMPONENTS (a component with at least one action of
+ * the kind), where the stats above them count ACTIONS. So each tab names its
+ * referent in words — "With an undeclared action", under a "Components:"
+ * lead-in — and no tab shares a label with a stat (served policy
+ * `ux-priorities` `a-label-names-one-referent-and-a-quantity-names-its-unit`).
+ */
 const FILTERS: ReadonlyArray<{ id: ComponentFilter; label: string }> = [
   { id: "all", label: "All" },
-  { id: "undeclared", label: "Undeclared" },
-  { id: "destructive", label: "Destructive" },
-  { id: "write", label: "Write" },
-  { id: "read", label: "Read" },
+  { id: "undeclared", label: "With an undeclared action" },
+  { id: "destructive", label: "With a destructive action" },
+  { id: "write", label: "With a write action" },
+  { id: "read", label: "With a read action" },
 ];
 
 function matches(component: ComponentRecord, filter: ComponentFilter): boolean {
@@ -276,7 +283,9 @@ export function ComponentActionsPanel({
                 { key: "actions", label: "actions ", value: counts.actions },
                 ...EFFECT_KINDS.map((kind) => ({
                   key: kind,
-                  label: `${EFFECT_LABEL[kind]} `,
+                  // Each counts ACTIONS, and says so: the tabs below count
+                  // components.
+                  label: `${EFFECT_LABEL[kind]} actions `,
                   value: counts[kind],
                   tone:
                     kind === "undeclared" && counts.undeclared > 0
@@ -319,21 +328,28 @@ export function ComponentActionsPanel({
             unit="actions"
             empty={null}
           />
-          <FilterTabs
-            // No tab borrows the attention red: an undeclared action is R3's
-            // ignorance floor (amber), not something a human must act on now.
-            tabs={FILTERS.map((f) => ({
-              id: f.id,
-              label: f.label,
-              count: filterCounts[f.id],
-            }))}
-            active={filter}
-            onChange={(id) => {
-              setFilter(id);
-              setExpandedKey(null);
-            }}
-            testIdPrefix="coord-ui-bridge-actions-filter"
-          />
+          <div
+            className="flex flex-wrap items-center gap-1.5"
+            data-testid="coord-ui-bridge-actions-filters"
+          >
+            <span className="text-xs text-muted-foreground">Components:</span>
+            <FilterTabs
+              // No tab borrows the attention red: an undeclared action is
+              // R3's ignorance floor (amber), not something a human must act
+              // on now.
+              tabs={FILTERS.map((f) => ({
+                id: f.id,
+                label: f.label,
+                count: filterCounts[f.id],
+              }))}
+              active={filter}
+              onChange={(id) => {
+                setFilter(id);
+                setExpandedKey(null);
+              }}
+              testIdPrefix="coord-ui-bridge-actions-filter"
+            />
+          </div>
           <RecordList
             items={visible}
             itemKey={(c) => c.key}
