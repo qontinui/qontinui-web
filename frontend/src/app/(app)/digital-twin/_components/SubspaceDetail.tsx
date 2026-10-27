@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useUIElement } from "@qontinui/ui-bridge/react";
 import {
   Dialog,
   DialogClose,
@@ -12,15 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
-import {
-  ArrowRight,
-  Code2,
-  Loader2,
-  MessageSquare,
-  Sparkles,
-  XIcon,
-} from "lucide-react";
+import { Loader2, Sparkles, XIcon } from "lucide-react";
 import {
   LensLink,
   NAVIGATION_ONLY_PROPS,
@@ -46,6 +37,11 @@ import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
 import { workUnitHref } from "../_lib/twin-plans";
 import type { ResolvedSubspace } from "../_lib/types";
 import { UnknownBadge } from "./FidelityFigures";
+import {
+  DrawerAskButton,
+  DrawerOpenDeliveryButton,
+  DrawerShowRawButton,
+} from "./SubspaceDetailActions";
 
 interface SubspaceDetailProps {
   row: ResolvedSubspace | null;
@@ -153,22 +149,9 @@ export function SubspaceDetail({
     setShowRaw(false);
   }, [row?.id]);
 
-  // UI Bridge: stable id for the raw-data toggle (automation + spec-checks).
-  const { ref: showRawRef } = useUIElement({
-    id: "digital-twin-show-raw",
-    label: "Toggle the raw DriftVerdict JSON in the sub-space drawer",
-    type: "button",
-  });
-  const { ref: askRef } = useUIElement({
-    id: "digital-twin-drawer-ask",
-    label: "Ask the Twin about this sub-space (opens the Completeness tab)",
-    type: "button",
-  });
-  const { ref: openDeliveryRef } = useUIElement({
-    id: "digital-twin-drawer-open-delivery",
-    label: "Open the Delivery tab from the sub-space drawer",
-    type: "button",
-  });
+  // UI Bridge: each button registers its own stable id where it renders
+  // (`SubspaceDetailActions.tsx`), so the drawer holds no registration for a
+  // button it is not showing.
   const navigation = useTwinNavigation();
   // Close the drawer, then go. (The drawer has no DialogTrigger, so Radix
   // returns focus nowhere on close and the destination keeps it.)
@@ -302,34 +285,19 @@ export function SubspaceDetail({
               <div className="flex justify-end pb-1">
                 {row.ask_via === "ask-the-twin" && (
                   <OperatorOnly>
-                    <Button
-                      ref={askRef}
-                      variant="outline"
-                      size="sm"
-                      className="h-7 gap-1.5 text-xs"
+                    <DrawerAskButton
                       onClick={() =>
                         navigate((nav) =>
                           nav.askTheTwin(askTheTwinQuestion(row))
                         )
                       }
-                    >
-                      <MessageSquare aria-hidden="true" className="size-3.5" />
-                      Ask the Twin about this
-                    </Button>
+                    />
                   </OperatorOnly>
                 )}
                 {row.ask_via === "delivery-tab" && (
-                  <Button
-                    ref={openDeliveryRef}
-                    {...NAVIGATION_ONLY_PROPS}
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs"
+                  <DrawerOpenDeliveryButton
                     onClick={() => navigate((nav) => nav.openTab("delivery"))}
-                  >
-                    Open the Delivery tab
-                    <ArrowRight aria-hidden="true" className="size-3.5" />
-                  </Button>
+                  />
                 )}
               </div>
             )}
@@ -417,16 +385,10 @@ export function SubspaceDetail({
                 <span className="text-xs font-semibold text-muted-foreground">
                   {rawReading.kind === "report" ? "Raw report" : "Raw verdict"}
                 </span>
-                <Button
-                  ref={showRawRef}
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={() => setShowRaw((v) => !v)}
-                >
-                  <Code2 className="size-3.5" />
-                  {showRaw ? "Hide raw data" : "Show raw data"}
-                </Button>
+                <DrawerShowRawButton
+                  showRaw={showRaw}
+                  onToggle={() => setShowRaw((v) => !v)}
+                />
               </div>
               <p
                 data-testid="digital-twin-drawer-raw-caption"

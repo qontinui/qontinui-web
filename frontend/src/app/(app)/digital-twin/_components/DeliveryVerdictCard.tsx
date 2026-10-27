@@ -308,11 +308,6 @@ export function DeliveryVerdictCard() {
     label: "Delivery verdict — look up",
     type: "button",
   });
-  const { ref: showRawRef } = useUIElement({
-    id: "digital-twin-delivery-show-raw",
-    label: "Delivery verdict — toggle raw data",
-    type: "button",
-  });
 
   const verdict = data?.verdict;
   const components = (verdict?.components ?? undefined) as
@@ -498,16 +493,10 @@ export function DeliveryVerdictCard() {
                 The exact JSON an AI agent receives from{" "}
                 <code>{data?.tool ?? "coord_query_delivery"}</code>.
               </span>
-              <Button
-                ref={showRawRef}
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={() => setShowRaw((v) => !v)}
-              >
-                <Code2 className="size-3.5" />
-                {showRaw ? "Hide raw data" : "Show raw data"}
-              </Button>
+              <ShowRawToggle
+                showRaw={showRaw}
+                onToggle={() => setShowRaw((v) => !v)}
+              />
             </div>
             {showRaw && (
               <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/50 p-3 text-[11px] leading-relaxed">
@@ -518,6 +507,39 @@ export function DeliveryVerdictCard() {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The raw-data toggle, registering its UI Bridge id where it renders and only
+ * while it does: it shows only beside a verdict, and only to the operator.
+ * A registration with no element on screen is one the SDK polls the DOM for
+ * (`useUIElement`'s `pollForTaggedElement`), and unmounting does not stop the
+ * poll (`SubspaceDetailActions.tsx` says the same of the drawer's buttons).
+ */
+function ShowRawToggle({
+  showRaw,
+  onToggle,
+}: {
+  showRaw: boolean;
+  onToggle: () => void;
+}) {
+  const { ref } = useUIElement({
+    id: "digital-twin-delivery-show-raw",
+    label: "Delivery verdict — toggle raw data",
+    type: "button",
+  });
+  return (
+    <Button
+      ref={ref}
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1.5 text-xs"
+      onClick={onToggle}
+    >
+      <Code2 className="size-3.5" />
+      {showRaw ? "Hide raw data" : "Show raw data"}
+    </Button>
   );
 }
 
