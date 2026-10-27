@@ -356,6 +356,18 @@ describe("a runner whose build predates the dashboard's relay entries", () => {
     expect(strip).toHaveTextContent("undeclared –");
   });
 
+  it("says UNKNOWN in the page-health header after a run that failed — never 'not run'", async () => {
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-unknown");
+    const summary = screen.getByTestId("coord-ui-bridge-health-summary");
+    expect(summary).toHaveTextContent("not run");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    await screen.findByTestId("coord-ui-bridge-health-unknown");
+    expect(summary).toHaveAttribute("data-read-state", "failed");
+    expect(summary).toHaveTextContent("UNKNOWN");
+    expect(summary).not.toHaveTextContent("not run");
+  });
+
   it("renders page health as UNKNOWN naming the build, beside the occlusion row that names no build at all", async () => {
     renderPage();
     await screen.findByTestId("coord-ui-bridge-actions-unknown");
@@ -649,6 +661,10 @@ describe("on-demand reads", () => {
     fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
     await screen.findByTestId("coord-ui-bridge-health-counts");
     expect(asked()).toContain("POST ui-bridge/control/page-health");
+    // The header states the answer, as the closed panel shows it.
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-summary")
+    ).toHaveTextContent("warning");
     // No relay carries the occlusion sweep, so running page health does not
     // ask for it: the occlusion row is decided without a runner's answer.
     expect(asked()).not.toContain("POST ui-bridge/control/visibility");

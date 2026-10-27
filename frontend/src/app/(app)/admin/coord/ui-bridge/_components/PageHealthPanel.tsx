@@ -231,16 +231,26 @@ export function PageHealthPanel({
         <Stethoscope className="h-4 w-4 text-muted-foreground" aria-hidden />
       }
       summary={
-        report ? (
-          <HealthBadge kind={report.summary} />
-        ) : (
-          <span
-            className="text-xs text-muted-foreground"
-            data-testid="coord-ui-bridge-health-summary"
-          >
-            not run
-          </span>
-        )
+        // The header is visible while the panel is closed (R7), so it states
+        // the read as it stands — never "not run" over a run that failed.
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid="coord-ui-bridge-health-summary"
+          data-read-state={pageHealth.state}
+        >
+          {pageHealth.state === "ok" ? (
+            <HealthBadge kind={pageHealth.value.summary} />
+          ) : pageHealth.state === "failed" ? (
+            <HealthBadge
+              kind="unknown"
+              reason="Page health did not answer; the panel says why."
+            />
+          ) : pageHealth.state === "loading" ? (
+            "checking…"
+          ) : (
+            "not run"
+          )}
+        </span>
       }
       headerActions={
         <Button
