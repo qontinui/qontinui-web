@@ -698,6 +698,22 @@ describe("the app registries while presenting", () => {
     expectPresentationSafe(view, { captions: CAPTIONS });
   });
 
+  it("titles Refresh by what its press re-reads — both registries for the operator, neither while presenting", async () => {
+    const view = renderSwitchable();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    const refresh = screen.getByTestId("coord-ui-bridge-refresh");
+    expect(refresh).toHaveAttribute(
+      "title",
+      "Re-reads the runner's health, components and screens and both app registries now. The live snapshot and page health run only from their own buttons."
+    );
+
+    view.present();
+    expect(screen.getByTestId("coord-ui-bridge-refresh")).toHaveAttribute(
+      "title",
+      "Re-reads the runner's health, components and screens now. Neither app registry is read while presenting. The live snapshot and page health run only from their own buttons."
+    );
+  });
+
   it("shows nothing an operator-mode read of the registries left in the cache once presenting begins", async () => {
     const view = renderSwitchable();
     await waitFor(() =>

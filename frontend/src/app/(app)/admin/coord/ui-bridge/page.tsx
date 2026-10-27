@@ -83,6 +83,7 @@ import { buildReadingOf, readRunnerPosture } from "./_lib/runnerHealth";
 import {
   appRegistryReadsOf,
   occlusionReadOf,
+  refreshTitleOf,
   useDashboardRefresh,
   useDashboardRunner,
   useFleetAppsRead,
@@ -202,7 +203,13 @@ export default function UiBridgeDashboardPage() {
         <RefreshButton
           onRefresh={refresh}
           label="Refresh the UI Bridge dashboard"
-          title="Re-reads the runner's health, components and screens and both app registries now. The live snapshot and page health run only from their own buttons."
+          // What THIS press re-reads: chosen from the same answers the reads
+          // are, so it never names a registry the page declines to read.
+          title={refreshTitleOf({
+            runner: deviceId !== null,
+            presenting,
+            webAccess,
+          })}
           data-testid="coord-ui-bridge-refresh"
         />
         <p

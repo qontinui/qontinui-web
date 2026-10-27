@@ -87,6 +87,7 @@ import {
   FLEET_APPS_PATH,
   appRegistryReadsOf,
   occlusionReadOf,
+  refreshTitleOf,
   useDashboardRunner,
   useFleetAppsRead,
   usePageHealthRun,
@@ -693,5 +694,63 @@ describe("occlusionReadOf — the occlusion row's state, decided in one place", 
         read({ error: new Error("boom"), isError: true, asked: true }).state
       ).toBe("failed");
     });
+  });
+});
+
+describe("refreshTitleOf — Refresh's title names only the reads the press makes", () => {
+  const STAFF_READ = webRegistryAccessOf({ presenting: false, staff: true });
+  const NOT_STAFF = webRegistryAccessOf({ presenting: false, staff: false });
+  const LENS = webRegistryAccessOf({ presenting: true, staff: true });
+  const ON_DEMAND =
+    "The live snapshot and page health run only from their own buttons.";
+
+  it.each([
+    [
+      "a runner, staff, operator mode",
+      { runner: true, presenting: false, webAccess: STAFF_READ },
+      `Re-reads the runner's health, components and screens and both app registries now. ${ON_DEMAND}`,
+    ],
+    [
+      "a runner, a viewer who is not staff",
+      { runner: true, presenting: false, webAccess: NOT_STAFF },
+      `Re-reads the runner's health, components and screens and its own app list now. The web app registry is read only for staff. ${ON_DEMAND}`,
+    ],
+    [
+      "a runner, presenting",
+      { runner: true, presenting: true, webAccess: LENS },
+      `Re-reads the runner's health, components and screens now. Neither app registry is read while presenting. ${ON_DEMAND}`,
+    ],
+    [
+      "no runner, staff",
+      { runner: false, presenting: false, webAccess: STAFF_READ },
+      "Re-reads the web app registry now. No runner is targeted, so nothing is asked of a runner.",
+    ],
+    [
+      "no runner, a viewer who is not staff",
+      { runner: false, presenting: false, webAccess: NOT_STAFF },
+      "Re-reads nothing now: no runner is targeted, and the web app registry is read only for staff.",
+    ],
+    [
+      "no runner, presenting",
+      { runner: false, presenting: true, webAccess: LENS },
+      "Re-reads nothing now: no runner is targeted, and neither app registry is read while presenting.",
+    ],
+  ])("with %s", (_label, scope, title) => {
+    expect(refreshTitleOf(scope)).toBe(title);
+  });
+
+  it("never claims a registry read where the page declines it", () => {
+    for (const presenting of [true, false]) {
+      for (const runner of [true, false]) {
+        const declined = webRegistryAccessOf({ presenting, staff: false });
+        const title = refreshTitleOf({
+          runner,
+          presenting,
+          webAccess: declined,
+        });
+        expect(title).not.toMatch(/both app registries/);
+        expect(title).not.toMatch(/^Re-reads the web app registry/);
+      }
+    }
   });
 });

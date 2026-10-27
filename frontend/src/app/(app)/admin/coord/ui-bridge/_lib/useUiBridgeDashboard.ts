@@ -172,8 +172,9 @@ export interface WebRegistryViewer {
 
 /**
  * Whether the page reads the web app registry — decided here, and nowhere
- * else: the read's query function ({@link useFleetAppsRead}) and the half the
- * panel is handed ({@link appRegistryReadsOf}) both take this answer.
+ * else: the read's query function ({@link useFleetAppsRead}), the half the
+ * panel is handed ({@link appRegistryReadsOf}) and Refresh's title
+ * ({@link refreshTitleOf}) all take this answer.
  *
  * `GET /api/v1/fleet/apps` is not partitioned by project: `list_apps`
  * (backend `fleet_targets.py`) answers any signed-in user with every row of
@@ -269,6 +270,48 @@ export function useDashboardRefresh(
       ),
     [queryClient, deviceId]
   );
+}
+
+/** What Refresh re-reads on this render — so, what its title may claim. */
+export interface RefreshScope {
+  /** Whether a runner is targeted: with none, there is no runner read. */
+  readonly runner: boolean;
+  /** Whether the page is presenting: neither app registry is read then. */
+  readonly presenting: boolean;
+  /** Whether the web registry is read ({@link webRegistryAccessOf}). */
+  readonly webAccess: WebRegistryAccess;
+}
+
+const ON_DEMAND_NOTE =
+  "The live snapshot and page health run only from their own buttons.";
+
+/**
+ * Refresh's title — its tooltip, and its accessible description: what
+ * pressing it re-reads on THIS render, and why a registry it skips is skipped
+ * (`RefreshButton`'s contract: the title names what the press does). It is a
+ * claim about the press, so it is chosen from the same answers the reads are
+ * — whether a runner is targeted, whether the page is presenting, and
+ * {@link webRegistryAccessOf} — and never names a read the page declines.
+ */
+export function refreshTitleOf({
+  runner,
+  presenting,
+  webAccess,
+}: RefreshScope): string {
+  if (!runner) {
+    if (presenting) {
+      return "Re-reads nothing now: no runner is targeted, and neither app registry is read while presenting.";
+    }
+    return webAccess.read
+      ? "Re-reads the web app registry now. No runner is targeted, so nothing is asked of a runner."
+      : "Re-reads nothing now: no runner is targeted, and the web app registry is read only for staff.";
+  }
+  if (presenting) {
+    return `Re-reads the runner's health, components and screens now. Neither app registry is read while presenting. ${ON_DEMAND_NOTE}`;
+  }
+  return webAccess.read
+    ? `Re-reads the runner's health, components and screens and both app registries now. ${ON_DEMAND_NOTE}`
+    : `Re-reads the runner's health, components and screens and its own app list now. The web app registry is read only for staff. ${ON_DEMAND_NOTE}`;
 }
 
 /**

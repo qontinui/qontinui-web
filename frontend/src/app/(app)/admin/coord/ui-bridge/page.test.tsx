@@ -550,6 +550,11 @@ describe("a viewer who is not staff", () => {
       expect(
         screen.getByTestId("coord-ui-bridge-health-apps")
       ).toHaveTextContent("apps –");
+      // Refresh's title names the reads its press makes — not the web's.
+      expect(screen.getByTestId("coord-ui-bridge-refresh")).toHaveAttribute(
+        "title",
+        "Re-reads the runner's health, components and screens and its own app list now. The web app registry is read only for staff. The live snapshot and page health run only from their own buttons."
+      );
     }
   );
 
@@ -562,6 +567,10 @@ describe("a viewer who is not staff", () => {
     expect(
       screen.queryByTestId("coord-ui-bridge-apps-web-not-read")
     ).not.toBeInTheDocument();
+    expect(screen.getByTestId("coord-ui-bridge-refresh")).toHaveAttribute(
+      "title",
+      "Re-reads the runner's health, components and screens and both app registries now. The live snapshot and page health run only from their own buttons."
+    );
   });
 });
 
@@ -858,6 +867,11 @@ describe("no runner", () => {
     const { client } = renderPage();
     await waitFor(() =>
       expect(screen.getAllByTestId("coord-ui-bridge-app-row")).toHaveLength(2)
+    );
+    // …and its title claims no runner read either.
+    expect(screen.getByTestId("coord-ui-bridge-refresh")).toHaveAttribute(
+      "title",
+      "Re-reads the web app registry now. No runner is targeted, so nothing is asked of a runner."
     );
     await act(async () => {
       fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
