@@ -527,6 +527,49 @@ class TestRecurring:
         again = await admin.post(f"{API}/cost-entries", json=body)
         assert again.status_code == 409
         assert again.json()["error"] == "period_already_recorded"
+        # Only the savepoint rolled back: the request's transaction still
+        # works, so the commit that follows a refusal cannot fail.
+        assert (await admin.get(f"{API}/cost-entries")).status_code == 200
+
+    async def test_a_reference_removed_mid_write_is_reference_changed(
+        self, admin: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def _looks_fine(*_: Any, **__: Any) -> None:
+            return None  # as if the category were deleted after the check
+
+        monkeypatch.setattr("app.overview.costs._require_category", _looks_fine)
+        response = await admin.post(
+            f"{API}/cost-entries",
+            json={
+                "incurred_on": "2026-10-01",
+                "description": "x",
+                "amount_micros": 1,
+                "currency": "USD",
+                "category_id": str(uuid4()),
+            },
+        )
+        assert response.status_code == 409
+        assert response.json()["error"] == "reference_changed"
+        assert (await admin.get(f"{API}/cost-entries")).status_code == 200
+
+    async def test_a_price_whose_periods_are_all_recorded_can_change(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        cost = await _recurring(admin, start_date="2026-01-15", end_date="2026-02-15")
+        for day in ("2026-01-15", "2026-02-15"):
+            await _entry(
+                admin,
+                recurring_cost_id=cost["id"],
+                period_start=day,
+                incurred_on=day,
+                description="Claude",
+                currency="USD",
+                amount_micros=200_000_000,
+            )
+        repriced = await _patch(
+            admin, f"recurring-costs/{cost['id']}", {"amount_micros": 100_000_000}, 1
+        )
+        assert repriced.status_code == 200, repriced.text
 
     async def test_an_unused_recurring_cost_can_be_deleted(
         self, admin: httpx.AsyncClient

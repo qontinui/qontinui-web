@@ -23,6 +23,7 @@ project's id reads as 404.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
@@ -144,27 +145,67 @@ async def _count(db: AsyncSession, *where: Any) -> int:
     return int((await db.execute(select(func.count()).where(*where))).scalar_one())
 
 
+#: The constraints a concurrent write can trip past the store's checks, and
+#: what each means to the reader.
+_RACES: tuple[tuple[str, str, str], ...] = (
+    (
+        "uq_overview_cost_entries_period",
+        "period_already_recorded",
+        "That period was just recorded by somebody else — reload to see it.",
+    ),
+    (
+        "uq_overview_cost_categories_name",
+        "name_taken",
+        "Somebody else just added a category with that name.",
+    ),
+)
+
+
+def _race_refusal(exc: IntegrityError) -> StoreRefused:
+    text = str(exc.orig)
+    for constraint, error, message in _RACES:
+        if constraint in text:
+            return StoreRefused(409, error, message)
+    if "foreign key" in text:
+        return StoreRefused(
+            409,
+            "reference_changed",
+            "A category or recurring cost this refers to was changed or removed "
+            "at the same time. Reload and try again.",
+        )
+    return StoreRefused(
+        409,
+        "conflict",
+        "Somebody else changed this at the same time. Reload and try again.",
+    )
+
+
 class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
     """Load, version-check and write one table's rows; each subclass adds its
     own rules in ``_check`` (create and update) and ``_before_delete``."""
 
     model: type[Row]
-    #: What a constraint the checks could not see coming (a concurrent write
-    #: won the race between check and flush) is reported as — a 409 the
-    #: reader can act on, never a 500.
-    race_error: str = "conflict"
-    race_message: str = (
-        "Somebody else changed this at the same time. Reload and try again."
-    )
 
-    async def _flush(self, ctx: StoreContext, *, delete: Row | None = None) -> None:
+    async def _write(
+        self,
+        ctx: StoreContext,
+        apply: Callable[[], None] = lambda: None,
+        *,
+        delete: Row | None = None,
+    ) -> None:
+        """Make the change inside a savepoint and flush it there, so a
+        constraint a concurrent write hits past the checks rolls back only
+        the savepoint and answers as a 409 — never an aborted transaction
+        and a 500. The change must be MADE inside: a session flushes what is
+        already pending before it opens the savepoint."""
         try:
             async with ctx.db.begin_nested():
+                apply()
                 if delete is not None:
                     await ctx.db.delete(delete)
                 await ctx.db.flush()
         except IntegrityError as exc:
-            raise StoreRefused(409, self.race_error, self.race_message) from exc
+            raise _race_refusal(exc) from exc
 
     def _read(self, row: Row) -> Any:
         raise NotImplementedError
@@ -205,8 +246,7 @@ class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
             created_by=ctx.access.actor,
             updated_by=ctx.access.actor,
         )
-        ctx.db.add(row)
-        await self._flush(ctx)
+        await self._write(ctx, lambda: ctx.db.add(row))
         return self._read(row)
 
     async def update(
@@ -225,12 +265,15 @@ class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
             return before, before
         stored = {c: getattr(row, c) for c in type(payload).model_fields}
         await self._check(ctx, {**stored, **changes}, row)
-        for key, value in changes.items():
-            setattr(row, key, value)
-        row.version += 1
-        row.updated_by = ctx.access.actor
-        row.updated_at = _now()
-        await self._flush(ctx)
+
+        def apply() -> None:
+            for key, value in changes.items():
+                setattr(row, key, value)
+            row.version += 1
+            row.updated_by = ctx.access.actor
+            row.updated_at = _now()
+
+        await self._write(ctx, apply)
         return before, self._read(row)
 
     async def delete(
@@ -241,16 +284,12 @@ class _Store[Row: (CostCategory, RecurringCost, CostEntry)]:
         if row.version != expected_version:
             raise StaleVersion(before)
         await self._before_delete(ctx, row)
-        await self._flush(ctx, delete=row)
+        await self._write(ctx, delete=row)
         return before
 
 
 class CostCategoryStore(_Store[CostCategory]):
     model = CostCategory
-    race_message = (
-        "Somebody else just added a category with that name, or a cost to "
-        "this category. Reload and try again."
-    )
 
     def _read(self, row: CostCategory) -> CostCategoryRead:
         return category_read(row)
@@ -303,10 +342,6 @@ class CostCategoryStore(_Store[CostCategory]):
 
 class RecurringCostStore(_Store[RecurringCost]):
     model = RecurringCost
-    race_error = "periods_recorded"
-    race_message = (
-        "A period of this cost was recorded at the same time. Reload and try again."
-    )
 
     def _read(self, row: RecurringCost) -> RecurringCostRead:
         return recurring_read(row)
@@ -374,24 +409,43 @@ class RecurringCostStore(_Store[RecurringCost]):
         self, ctx: StoreContext, values: dict[str, Any], row: RecurringCost
     ) -> None:
         """A fixed cost's unrecorded periods are priced from the cost itself,
-        on read. Once one has fallen due, changing the amount, currency or
-        kind would silently re-price spend already counted."""
+        on read. Once one has fallen due unrecorded, changing the amount,
+        currency or kind would silently re-price spend already counted.
+        Periods that are all recorded carry their own amounts, so nothing is
+        rewritten and the change is allowed."""
         if "fixed" not in (row.amount_kind, values["amount_kind"]):
             return  # a variable cost's amount is only a guide
         priced = ("amount_micros", "currency", "amount_kind")
         if all(values[f] == getattr(row, f) for f in priced):
             return
+        recorded = set(
+            (
+                await ctx.db.execute(
+                    select(CostEntry.period_start).where(
+                        CostEntry.tenant_id == ctx.access.tenant_id,
+                        CostEntry.recurring_cost_id == row.id,
+                    )
+                )
+            ).scalars()
+        )
         due = next(
-            due_dates(row.start_date, row.end_date, row.cadence, _now().date()), None
+            (
+                d
+                for d in due_dates(
+                    row.start_date, row.end_date, row.cadence, _now().date()
+                )
+                if d not in recorded
+            ),
+            None,
         )
         if due is None:
             return
         raise StoreRefused(
             409,
             "price_in_use",
-            f"“{row.name}” has already fallen due at its current amount (first "
-            f"on {due.isoformat()}), and those periods count towards what was "
-            "spent. If the price changed, give this cost a last due date and add "
+            f"“{row.name}” has periods counted at its current amount that were "
+            f"never recorded (the first on {due.isoformat()}), and they count "
+            "towards what was spent. If the price changed, give this cost a last due date and add "
             "a new one at the new price. If the amount was entered wrongly, "
             "remove the cost and add it again.",
         )
@@ -413,11 +467,6 @@ class RecurringCostStore(_Store[RecurringCost]):
 
 class CostEntryStore(_Store[CostEntry]):
     model = CostEntry
-    race_error = "period_already_recorded"
-    race_message = (
-        "That period was recorded by somebody else at the same time, or its "
-        "category was just removed. Reload and try again."
-    )
 
     def _read(self, row: CostEntry) -> CostEntryRead:
         return entry_read(row)
