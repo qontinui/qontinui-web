@@ -698,6 +698,31 @@ describe("the app registries while presenting", () => {
     expectPresentationSafe(view, { captions: CAPTIONS });
   });
 
+  it("re-reads neither registry on Refresh once presenting begins — not even the runner list an operator-mode render read, which nothing watches now", async () => {
+    const view = renderSwitchable();
+    const appsAsked = () =>
+      (state.relay?.requests ?? []).filter((r) => r === "GET apps").length;
+    // Operator mode reads both: the runner's list for this device (which the
+    // relay refuses, but the query has run and keeps its function) and the
+    // web registry.
+    await waitFor(() => expect(appsAsked()).toBe(1));
+    await waitFor(() => expect(state.fleetAppsReads).toBe(1));
+
+    view.present();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
+    });
+    await settle();
+    // The refresh did run: the runner reads it covers were asked again.
+    expect(
+      state.relay?.requests.filter((r) => r === "GET health").length
+    ).toBeGreaterThanOrEqual(2);
+    // The device-keyed runner list is cached with a function and has no
+    // observer, so only Refresh's `type: "active"` filter leaves it unasked.
+    expect(appsAsked()).toBe(1);
+    expect(state.fleetAppsReads).toBe(1);
+  });
+
   it("titles Refresh by what its press re-reads — both registries for the operator, neither while presenting", async () => {
     const view = renderSwitchable();
     await screen.findByTestId("coord-ui-bridge-actions-counts");

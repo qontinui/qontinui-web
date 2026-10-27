@@ -245,9 +245,14 @@ export function useRunnerAppListRead(deviceId: string | null) {
  * Only ACTIVE queries are re-read (`refetchQueries({ type: "active" })`). A
  * read the page holds disabled stays unasked: every runner read while no
  * runner is targeted, the web registry for a viewer who is not staff, and
- * both app registries while presenting. A query's own `refetch()` ignores
- * `enabled` and would run it anyway — sending the relay a request with no
- * device id, or making a read the page declines.
+ * both app registries while presenting. So does a query nothing watches any
+ * more, and the filter is the only thing that keeps it so: once presenting
+ * begins, the runner's app list for the device an operator-mode render read
+ * stays cached under that device's key, with its function, and with no
+ * observer — React Query skips only a DISABLED query on its own, and a query
+ * that has run and lost its observers is not one. A query's own `refetch()`
+ * ignores `enabled` and would run a disabled read anyway — sending the relay
+ * a request with no device id, or making a read the page declines.
  */
 export function useDashboardRefresh(
   deviceId: string | null
