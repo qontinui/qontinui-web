@@ -22106,10 +22106,13 @@ export interface paths {
         };
         /**
          * Get Screenshot
-         * @description Serve a screenshot file.
+         * @description Serve one verification screenshot image.
          *
-         *     Attempts to resolve the path locally first (from the .dev-logs directory),
-         *     then falls back to proxying from the runner HTTP API.
+         *     ``path`` is the image's path as the runner recorded it (a leading
+         *     ``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.
+         *     The file is served from the workspace's ``.dev-logs`` when this backend
+         *     runs beside the runner, and fetched from the co-located runner otherwise.
+         *     Anything that is not an image file under ``.dev-logs`` is a 404.
          */
         get: operations["api_v1_screenshots_path_get"];
         put?: never;

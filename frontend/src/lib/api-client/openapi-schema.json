@@ -125605,7 +125605,7 @@
     },
     "/api/v1/screenshots/{path}": {
       "get": {
-        "description": "Serve a screenshot file.\n\nAttempts to resolve the path locally first (from the .dev-logs directory),\nthen falls back to proxying from the runner HTTP API.",
+        "description": "Serve one verification screenshot image.\n\n``path`` is the image's path as the runner recorded it (a leading\n``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.\nThe file is served from the workspace's ``.dev-logs`` when this backend\nruns beside the runner, and fetched from the co-located runner otherwise.\nAnything that is not an image file under ``.dev-logs`` is a 404.",
         "operationId": "api_v1_screenshots_path_get",
         "parameters": [
           {
