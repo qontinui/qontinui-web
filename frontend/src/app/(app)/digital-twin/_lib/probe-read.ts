@@ -79,6 +79,23 @@ export interface ProbeRead {
   readonly failedAt: number | null;
 }
 
+/**
+ * The probe's read without its rows: what the banner and the sub-space drawer
+ * read beside a row — whether the probe holds a reading at all, whether its
+ * last refresh failed over the answer the rows still show, and when each
+ * answer or attempt was made.
+ */
+export type ProbeAttempt = Pick<
+  ProbeRead,
+  | "failed"
+  | "refreshFailed"
+  | "error"
+  | "degraded"
+  | "unanswered"
+  | "asOf"
+  | "failedAt"
+>;
+
 /** Why there is no reading, and when the attempt that established it was made. */
 export interface ProbeSilence {
   readonly reason: string;

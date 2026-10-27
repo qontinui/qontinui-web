@@ -549,6 +549,7 @@ export function LifecycleView() {
 
       <SubspaceDetail
         row={selected}
+        probe={probe}
         onOpenChange={(open) => {
           if (!open) setSelectedId(null);
         }}

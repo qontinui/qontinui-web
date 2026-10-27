@@ -657,4 +657,32 @@ describe("LifecycleView's open drawer follows the probe", () => {
     expect(statusOf(drawer)).toHaveTextContent("Live");
     expect(statusOf(drawer)).not.toHaveTextContent("Probing…");
   });
+
+  it("names the probe's last answer as one after its refresh failed — the drawer reads the view's probe", () => {
+    const readAt = Date.now() - 5.5 * 60_000;
+    state.probe = {
+      data: probeAll(),
+      isLoading: false,
+      isError: true,
+      error: new Error(
+        "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
+      ),
+      dataUpdatedAt: readAt,
+      errorUpdatedAt: Date.now(),
+    } as typeof state.probe;
+    render(<LifecycleView />);
+    fireEvent.click(
+      screen.getByTestId("digital-twin-stage-release-cell-schema")
+    );
+    const drawer = screen.getByRole("dialog");
+    expect(statusOf(drawer)).toHaveTextContent("Last answer: Live");
+    expect(
+      within(drawer).getByTestId("digital-twin-drawer-status-meaning")
+    ).toHaveTextContent(
+      /^Coord's live probe's latest read failed \(HTTP 502\), so this is its last answer, not a current status: it found this observer answering/
+    );
+    expect(
+      within(drawer).getByTestId("digital-twin-drawer-status-provenance")
+    ).toHaveTextContent("source: coord's live twin probe · as of 5m ago");
+  });
 });

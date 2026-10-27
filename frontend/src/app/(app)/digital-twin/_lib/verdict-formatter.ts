@@ -63,6 +63,14 @@ export interface SummaryOptions {
    * `2026-10-23-console-presentation-spaces` D3.3).
    */
   readonly statusWord?: (status: string) => string;
+  /**
+   * How the verdict's own staleness is worded. `present` (the default): "data
+   * is 30s stale" — for a verdict read just now. `when-read`: "its data was
+   * 30s stale when read" — for a reading shown beside the time it was read,
+   * which may be minutes ago (a cached answer, or the last one kept after a
+   * failed read): its staleness then is not its age now.
+   */
+  readonly freshness?: "present" | "when-read";
 }
 
 /** One short instance-specific clause when the components shape is known. */
@@ -160,16 +168,19 @@ export interface VerdictSummary {
 export function summarizeVerdict(
   subspaceId: string,
   verdict: DriftVerdict,
-  options: SummaryOptions = {},
+  options: SummaryOptions = {}
 ): VerdictSummary {
   const name = subspaceId.replace(/_/g, " ");
   const drift = driftClassPhrase(verdict.drift_class);
   const fresh = formatStaleness(verdict.staleness_seconds);
   const provenance = verdict.provenance ?? "unknown source";
+  const whenRead = options.freshness === "when-read";
 
   const sentences = [
     `${capitalize(name)} is ${drift}.`,
-    `${trustPhrase(verdict)}; data is ${fresh}, read from ${provenance}.`,
+    whenRead
+      ? `${trustPhrase(verdict)}; its data was ${fresh} when read, from ${provenance}.`
+      : `${trustPhrase(verdict)}; data is ${fresh}, read from ${provenance}.`,
   ];
   const extra = instanceClause(verdict, options);
   if (extra) sentences.push(extra);
@@ -178,8 +189,10 @@ export function summarizeVerdict(
     { label: "Drift", value: verdict.drift_class ?? "—" },
     { label: "Coverage", value: formatRatio(verdict.coverage) },
     { label: "Credibility", value: formatRatio(verdict.credibility) },
-    { label: "Freshness", value: fresh },
-    { label: "Source", value: provenance },
+    { label: whenRead ? "Freshness when read" : "Freshness", value: fresh },
+    // "Data source", not "Source": beside a provenance chip, whose own
+    // "source:" names who read it, one label names one thing.
+    { label: "Data source", value: provenance },
   ];
   if (verdict.d3_outcome) {
     facts.push({ label: "Effect outcome", value: verdict.d3_outcome });

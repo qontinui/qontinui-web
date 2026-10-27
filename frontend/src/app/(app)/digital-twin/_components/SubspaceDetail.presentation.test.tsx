@@ -17,6 +17,7 @@ import {
   expectPresentationSafe,
   renderInPresentationMode,
 } from "@/test/presentation";
+import type { ProbeAttempt } from "../_lib/probe-read";
 import manifest from "../_lib/subspaces.manifest.json";
 import type { ResolvedSubspace, SubspaceManifestEntry } from "../_lib/types";
 
@@ -60,6 +61,17 @@ const LEAKY = new Error(
   `GET /api/v1/digital-twin/subspace/schema/raw failed: 502 - upstream https://${HOST}:8443 refused the connection for Acme Corp`
 );
 
+/** The probe the rows answer from: current, nothing failed. */
+const PROBE: ProbeAttempt = {
+  failed: false,
+  refreshFailed: false,
+  error: null,
+  degraded: null,
+  unanswered: null,
+  asOf: Date.parse("2026-10-23T12:00:00Z"),
+  failedAt: null,
+};
+
 const SCOPE: PresentationScopeState = {
   status: "ready",
   scope: { firstPartyOwners: ["qontinui"], confidentialTerms: ["Acme Corp"] },
@@ -99,7 +111,9 @@ beforeEach(() => {
 
 describe("SubspaceDetail — a failed live read", () => {
   it("gives the operator the failing read's own message", () => {
-    render(<SubspaceDetail row={liveRow()} onOpenChange={() => {}} />);
+    render(
+      <SubspaceDetail row={liveRow()} probe={PROBE} onOpenChange={() => {}} />
+    );
     expect(
       screen.getByTestId("digital-twin-drawer-read-error")
     ).toHaveTextContent(HOST);
@@ -107,7 +121,7 @@ describe("SubspaceDetail — a failed live read", () => {
 
   it("says only its HTTP status in presentation mode", () => {
     const view = renderInPresentationMode(
-      <SubspaceDetail row={liveRow()} onOpenChange={() => {}} />,
+      <SubspaceDetail row={liveRow()} probe={PROBE} onOpenChange={() => {}} />,
       { scope: SCOPE, uiBridge: UNOBSERVED }
     );
     expect(
@@ -128,7 +142,7 @@ describe("SubspaceDetail — Planned in, while presenting", () => {
     };
     expect(flow.plan).toBeTruthy();
     const view = renderInPresentationMode(
-      <SubspaceDetail row={flow} onOpenChange={() => {}} />,
+      <SubspaceDetail row={flow} probe={PROBE} onOpenChange={() => {}} />,
       { scope: SCOPE, uiBridge: UNOBSERVED }
     );
     const planned = screen.getByTestId("digital-twin-drawer-plan-link");

@@ -594,9 +594,13 @@ describe("/digital-twin in presentation mode, when its sources fail", () => {
 
     await user.click(screen.getByTestId("digital-twin-cell-schema"));
     await screen.findByRole("dialog");
+    // coord's catalog and the probe both failed, so the page does not know
+    // this door's shape: the failure names neither a verdict nor a report.
     expect(
       screen.getByTestId("digital-twin-drawer-read-error")
-    ).toHaveTextContent("Could not read the live verdict (HTTP 502).");
+    ).toHaveTextContent(
+      "Could not read the live verdict or report (HTTP 502)."
+    );
     expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

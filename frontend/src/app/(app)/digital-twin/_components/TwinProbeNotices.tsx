@@ -3,7 +3,11 @@
 import { AlertTriangle, Lock } from "lucide-react";
 import { usePresentationMode } from "@/components/presentation";
 import { statusSuffix } from "../_lib/failure-text";
-import { probeUnread, type ProbeRead } from "../_lib/probe-read";
+import {
+  probeUnread,
+  type ProbeAttempt,
+  type ProbeRead,
+} from "../_lib/probe-read";
 import { upperFirst } from "../_lib/status-presentation";
 import { RESTRICTED_REASON } from "../_lib/twin-aspects";
 import { UnknownBadge } from "./FidelityFigures";
@@ -116,20 +120,7 @@ function operatorText(
  * notice says those are not a current reading rather than that nothing live
  * is shown.
  */
-export function CoordUnreachableBanner({
-  probe,
-}: {
-  probe: Pick<
-    ProbeRead,
-    | "failed"
-    | "refreshFailed"
-    | "error"
-    | "degraded"
-    | "unanswered"
-    | "asOf"
-    | "failedAt"
-  >;
-}) {
+export function CoordUnreachableBanner({ probe }: { probe: ProbeAttempt }) {
   const { presenting } = usePresentationMode();
   const silence = probeUnread(probe);
   if (silence === null && !probe.refreshFailed) return null;

@@ -202,6 +202,7 @@ export function CoverageMatrix() {
 
       <SubspaceDetail
         row={selected}
+        probe={probe}
         onOpenChange={(open) => {
           if (!open) setSelectedId(null);
         }}

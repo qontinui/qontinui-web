@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import type { ProbeAttempt } from "../_lib/probe-read";
 import manifest from "../_lib/subspaces.manifest.json";
 import {
   TwinNavigationContext,
@@ -55,6 +56,17 @@ function rowFor(id: string): ResolvedSubspace {
   return { ...entry, cellStatus: "interactive" };
 }
 
+/** The probe the rows answer from: current, nothing failed. */
+const PROBE: ProbeAttempt = {
+  failed: false,
+  refreshFailed: false,
+  error: null,
+  degraded: null,
+  unanswered: null,
+  asOf: Date.parse("2026-10-23T12:00:00Z"),
+  failedAt: null,
+};
+
 function Harness({
   rowId,
   navigation,
@@ -68,6 +80,7 @@ function Harness({
       <button onClick={() => setRow(rowFor(rowId))}>open cell</button>
       <SubspaceDetail
         row={row}
+        probe={PROBE}
         onOpenChange={(open) => !open && setRow(null)}
       />
     </TwinNavigationContext.Provider>

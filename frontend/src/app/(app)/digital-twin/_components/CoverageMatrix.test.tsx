@@ -110,7 +110,8 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
     error: null,
-    dataUpdatedAt: 0,
+    // An answer has a read time; the drawer dates its Status by it.
+    dataUpdatedAt: Date.now(),
     errorUpdatedAt: 0,
   };
   state.catalog = undefined;
@@ -171,13 +172,14 @@ function probesFor(
   return { subspaces, probed: subspaces.length, restricted };
 }
 
+/** The probe answered `data`, read just now (an answer has a read time). */
 function setProbe(data: SubspacesProbeResponse) {
   state.probe = {
     data,
     isLoading: false,
     isError: false,
     error: null,
-    dataUpdatedAt: 0,
+    dataUpdatedAt: Date.now(),
     errorUpdatedAt: 0,
   };
 }
@@ -682,7 +684,9 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       const drawer = openWorktree();
       expectReportNamed(drawer);
       expect(drawer).toHaveTextContent("The raw data below is the report.");
-      expect(within(drawer).getByText("Raw verdict")).toBeInTheDocument();
+      // A report door's raw data is a report, and its heading says so.
+      expect(within(drawer).getByText("Raw report")).toBeInTheDocument();
+      expect(within(drawer).queryByText("Raw verdict")).toBeNull();
     });
 
     it("never points at a raw report while presenting, where the raw view is not shown", () => {
@@ -692,7 +696,7 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       });
       const drawer = openWorktree();
       expectReportNamed(drawer);
-      expect(within(drawer).queryByText("Raw verdict")).toBeNull();
+      expect(within(drawer).queryByText(/^Raw (verdict|report)$/)).toBeNull();
       expect(drawer.textContent).not.toMatch(/raw data below/i);
       expectPresentationSafe(view);
     });
