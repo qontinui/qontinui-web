@@ -4,12 +4,16 @@
  * `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`,
  * Phase 4).
  *
- * Part of the typed `/operations` client. Unlike its siblings this goes
- * through `httpClient.get` rather than `httpClient.fetch` + `readJson`: both
- * callers classify a failed read with `describeCoordPollError` or show its
- * message, which read the status and body off `httpClient.get`'s error, so the
- * error shape is kept exactly. The body is returned unparsed (`unknown`);
- * `parseProjectState` is the one reader of coord's wire.
+ * Part of the typed `/operations` client, on its one transport (`./base`, D6
+ * and its amendment): a RELATIVE, same-origin `httpClient.fetch`, parsed by
+ * `readJson`. `httpClient.get` would prefix `ApiConfig.getBaseUrl()` and make
+ * this read cross-origin wherever `NEXT_PUBLIC_API_URL` is set. `readJson`
+ * rejects in `httpClient.get`'s own message shape
+ * (`GET /api/v1/operations/project-state failed: <status> - <body>`), so both
+ * callers read a failure exactly as they would from the helpers: the home
+ * page's classification (through `httpStatusOf` / `httpBodyOf`) and the
+ * `/overview` panel's `LoadFailure`. The body is returned unparsed
+ * (`unknown`); `parseProjectState` is the one reader of coord's wire.
  *
  * ## The door is slow by design, so neither caller may multiply it
  *
@@ -25,7 +29,7 @@
 
 import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_BASE } from "./base";
+import { OPERATIONS_BASE, readJson } from "./base";
 
 /** The route, relative like every `/operations` client URL. */
 export const PROJECT_STATE_URL = `${OPERATIONS_BASE}/project-state`;
@@ -43,6 +47,13 @@ export const PROJECT_STATE_ONE_SHOT_OPTIONS: HttpOptions = {
 };
 
 /** `GET /project-state` — coord's body, passed through untouched. */
-export function fetchProjectState(options?: HttpOptions): Promise<unknown> {
-  return httpClient.get<unknown>(PROJECT_STATE_URL, options);
+export async function fetchProjectState(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const res = await httpClient.fetch(PROJECT_STATE_URL, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${PROJECT_STATE_URL}`);
 }

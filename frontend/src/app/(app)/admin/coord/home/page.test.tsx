@@ -26,10 +26,20 @@ import {
   within,
 } from "@testing-library/react";
 
-const httpGet = vi.fn();
+/**
+ * The stubbed transport: `httpClient.fetch`, which `fetchProjectState` calls
+ * with the relative URL and reads through `readJson`. Every answer is a FRESH
+ * `Response`, because a body can be read only once.
+ */
+const httpFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
 }));
+
+/** An answer carrying `body` as JSON. */
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status });
+}
 
 const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 vi.mock("@/contexts/tenant-context", () => ({
@@ -185,9 +195,9 @@ function doorBody(overrides: Record<string, unknown> = {}) {
 }
 
 async function renderWith(body: unknown) {
-  httpGet.mockResolvedValue(body);
+  httpFetch.mockImplementation(async () => jsonResponse(body));
   render(<CoordHomePage />);
-  await waitFor(() => expect(httpGet).toHaveBeenCalled());
+  await waitFor(() => expect(httpFetch).toHaveBeenCalled());
   await waitFor(() =>
     expect(screen.queryByTestId("coord-home.unread")).not.toBeInTheDocument()
   );
@@ -195,7 +205,7 @@ async function renderWith(body: unknown) {
 
 describe("/admin/coord/home", () => {
   beforeEach(() => {
-    httpGet.mockReset();
+    httpFetch.mockReset();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -203,7 +213,7 @@ describe("/admin/coord/home", () => {
 
   it("reads the project-state proxy, and nothing else", async () => {
     await renderWith(doorBody());
-    expect(httpGet.mock.calls.map((c) => c[0])).toEqual([
+    expect(httpFetch.mock.calls.map((c) => c[0])).toEqual([
       "/api/v1/operations/project-state",
     ]);
   });
@@ -217,7 +227,7 @@ describe("/admin/coord/home", () => {
   });
 
   it("renders every region before any read, with no counts", async () => {
-    httpGet.mockReturnValue(new Promise(() => {}));
+    httpFetch.mockReturnValue(new Promise(() => {}));
     render(<CoordHomePage />);
     for (const id of REGIONS)
       expect(screen.getByTestId(id)).toBeInTheDocument();
@@ -232,8 +242,8 @@ describe("/admin/coord/home", () => {
   // Both shapes the browser can receive are pinned: coord's router fallback
   // (`404 {"error":"no_such_route",…}`, re-raised by the web proxy with
   // coord's text as the message), and a web backend that does not mount the
-  // proxy yet. `httpClient.get` rejects with `GET <url> failed: <status> -
-  // <body>` in both cases. Each must render a labelled UNKNOWN, never a calm,
+  // proxy yet. The client rejects with `GET <url> failed: <status> - <body>`
+  // (`readJson`) in both cases. Each must render a labelled UNKNOWN, never a calm,
   // empty page.
   it.each([
     [
@@ -256,10 +266,8 @@ describe("/admin/coord/home", () => {
   ])(
     "renders a labelled UNKNOWN, never an empty healthy page, on a 404 first read (%s)",
     async (_shape, body) => {
-      httpGet.mockRejectedValue(
-        new Error(
-          `GET https://api.example.test/api/v1/operations/project-state failed: 404 - ${body}`
-        )
+      httpFetch.mockImplementation(
+        async () => new Response(body, { status: 404 })
       );
       render(<CoordHomePage />);
       const unread = await screen.findByTestId("coord-home.unread");
@@ -393,7 +401,7 @@ describe("/admin/coord/home", () => {
       /^Nothing needs you$/
     );
 
-    httpGet.mockRejectedValueOnce(new Error("coord unreachable"));
+    httpFetch.mockRejectedValueOnce(new TypeError("coord unreachable"));
     await act(async () => {
       fireEvent.click(screen.getByTestId("coord-home.refresh"));
     });
@@ -584,7 +592,7 @@ describe("/admin/coord/home", () => {
     expect(
       screen.queryByTestId("coord-home.degrading.planes.stale")
     ).not.toBeInTheDocument();
-    httpGet.mockRejectedValueOnce(new Error("coord unreachable"));
+    httpFetch.mockRejectedValueOnce(new TypeError("coord unreachable"));
     await act(async () => {
       fireEvent.click(screen.getByTestId("coord-home.refresh"));
     });
@@ -1047,38 +1055,38 @@ describe("/admin/coord/home", () => {
   // never passes through it. The hook's own guard makes a press during a read
   // JOIN that read: one request, and the button busy until it lands.
   it("joins the outstanding read when refresh is pressed, instead of issuing a second", async () => {
-    let answer!: (body: unknown) => void;
-    httpGet.mockReturnValueOnce(
+    let deliver!: (res: Response) => void;
+    httpFetch.mockReturnValueOnce(
       new Promise((resolve) => {
-        answer = resolve;
+        deliver = resolve;
       })
     );
     render(<CoordHomePage />);
-    await waitFor(() => expect(httpGet).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(httpFetch).toHaveBeenCalledTimes(1));
     const button = screen.getByTestId("coord-home.refresh");
     await act(async () => {
       fireEvent.click(button);
     });
-    expect(httpGet).toHaveBeenCalledTimes(1);
+    expect(httpFetch).toHaveBeenCalledTimes(1);
     expect(button).toHaveAttribute("aria-busy", "true");
     await act(async () => {
-      answer(doorBody());
+      deliver(jsonResponse(doorBody()));
     });
     await waitFor(() =>
       expect(screen.queryByTestId("coord-home.unread")).not.toBeInTheDocument()
     );
     await waitFor(() => expect(button).not.toHaveAttribute("aria-busy"));
     // Nothing is out any more, so the next press reads again.
-    httpGet.mockResolvedValueOnce(doorBody());
+    httpFetch.mockResolvedValueOnce(jsonResponse(doorBody()));
     await act(async () => {
       fireEvent.click(button);
     });
-    await waitFor(() => expect(httpGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(httpFetch).toHaveBeenCalledTimes(2));
   });
 
   it("keeps the last good render on a failed poll and says it is stale", async () => {
     await renderWith(doorBody());
-    httpGet.mockRejectedValueOnce(new Error("coord unreachable"));
+    httpFetch.mockRejectedValueOnce(new TypeError("coord unreachable"));
     await act(async () => {
       fireEvent.click(screen.getByTestId("coord-home.refresh"));
     });

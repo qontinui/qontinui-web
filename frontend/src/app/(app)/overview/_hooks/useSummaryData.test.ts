@@ -6,22 +6,23 @@
  * one slow coord into up to five reads per page load. The read must carry the
  * one-shot options: a `504` (coord used its whole budget) is never retried.
  *
- * `httpClient` is stubbed BELOW `projectState.ts`, and the options are spelled
- * as a literal here, so the test cannot pass by reading back the constant the
- * hook sends. That `noRetryStatuses` does stop the retry is pinned by
+ * `httpClient.fetch` — the client's one transport (`lib/api/operations/base.ts`,
+ * D6) — is stubbed BELOW `projectState.ts`, and the options are spelled as a
+ * literal here, so the test cannot pass by reading back the constant the hook
+ * sends. That `noRetryStatuses` does stop the retry is pinned by
  * `services/http-client.test.ts`.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
-const httpGet = vi.fn();
+const httpFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
 }));
 
 // The "recently finished" read and the intent documents are other sources;
-// they are stubbed so the only `httpClient.get` is the progress read.
+// they are stubbed so the only `httpClient.fetch` is the progress read.
 vi.mock("@/lib/api/operations/coordPlans", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/operations/coordPlans")>()),
   fetchPlans: async () => ({ work_units: [] }),
@@ -38,20 +39,28 @@ import { useSummaryData } from "./useSummaryData";
 
 describe("useSummaryData — the progress read", () => {
   beforeEach(() => {
-    httpGet.mockReset();
+    httpFetch.mockReset();
   });
 
   it("reads the project-state door once, never retrying a 504", async () => {
-    httpGet.mockResolvedValue({ schema: 1, on_track: { state: "unknown" } });
+    httpFetch.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({ schema: 1, on_track: { state: "unknown" } })
+        )
+    );
     const { result } = renderHook(() => useSummaryData("t-1", false));
     await waitFor(() => expect(result.current.progress.state).toBe("ready"));
-    expect(httpGet.mock.calls).toEqual([
-      ["/api/v1/operations/project-state", { noRetryStatuses: [504] }],
+    expect(httpFetch.mock.calls).toEqual([
+      [
+        "/api/v1/operations/project-state",
+        { noRetryStatuses: [504], method: "GET", idempotent: true },
+      ],
     ]);
   });
 
   it("reads nothing while the project list is held", () => {
     renderHook(() => useSummaryData("t-1", true));
-    expect(httpGet).not.toHaveBeenCalled();
+    expect(httpFetch).not.toHaveBeenCalled();
   });
 });

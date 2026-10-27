@@ -19,10 +19,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
-const httpGet = vi.fn();
+/**
+ * The stubbed transport: `httpClient.fetch`, which `fetchProjectState` calls
+ * with the relative URL and reads through `readJson`. Every answer is a FRESH
+ * `Response`, because a body can be read only once.
+ */
+const httpFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...args: unknown[]) => httpGet(...args) },
+  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
 }));
+
+/** An answer carrying `body` as JSON. */
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status });
+}
+
+/** Arrange every read to be answered with `status` and the raw `body` text. */
+function answeredWith(status: number, body: string): () => void {
+  return () =>
+    httpFetch.mockImplementation(async () => new Response(body, { status }));
+}
+
+/** Arrange every read to fail before any answer arrives. */
+function failedWith(err: Error): () => void {
+  return () => httpFetch.mockRejectedValue(err);
+}
 
 const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 vi.mock("@/contexts/tenant-context", () => ({
@@ -131,19 +152,19 @@ function replaced(key: string, value: unknown): Record<string, unknown> {
  * pass on the page's opening state rather than on the body under test.
  */
 async function renderView(body: unknown) {
-  httpGet.mockResolvedValue(body);
+  httpFetch.mockImplementation(async () => jsonResponse(body));
   render(<CoordHomePage />);
-  await waitFor(() => expect(httpGet).toHaveBeenCalled());
+  await waitFor(() => expect(httpFetch).toHaveBeenCalled());
   await waitFor(() =>
     expect(screen.queryByTestId("coord-home.unread")).not.toBeInTheDocument()
   );
 }
 
 /** Render, and wait until the page says its read delivered nothing. */
-async function renderUnread(answer: () => void) {
-  answer();
+async function renderUnread(arrange: () => void) {
+  arrange();
   render(<CoordHomePage />);
-  await waitFor(() => expect(httpGet).toHaveBeenCalled());
+  await waitFor(() => expect(httpFetch).toHaveBeenCalled());
   await waitFor(() =>
     expect(screen.getByTestId("coord-home.unread")).toHaveTextContent(
       "Coord's project state could not be read:"
@@ -181,7 +202,7 @@ function expectNoCalmState() {
 
 describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", () => {
   beforeEach(() => {
-    httpGet.mockReset();
+    httpFetch.mockReset();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -440,7 +461,7 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       "says a body that is %s is not a project state, and paints nothing as read",
       async (_shape, body) => {
         const unread = await renderUnread(() =>
-          httpGet.mockResolvedValue(body)
+          httpFetch.mockImplementation(async () => jsonResponse(body))
         );
         expect(unread).toHaveTextContent(
           "Coord's project state could not be read: coord answered with a body that is not a project state."
@@ -460,28 +481,25 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
     it.each([
       [
         "the proxy relays a coord 500",
-        new Error(
-          'GET /api/v1/operations/project-state failed: 500 - {"error":"INTERNAL","message":"coord: internal"}'
-        ),
+        answeredWith(500, '{"error":"INTERNAL","message":"coord: internal"}'),
         "500",
       ],
       [
         "the proxy cannot reach coord",
-        new Error(
-          'GET /api/v1/operations/project-state failed: 502 - {"error":"BAD_GATEWAY","message":"coord unreachable"}'
+        answeredWith(
+          502,
+          '{"error":"BAD_GATEWAY","message":"coord unreachable"}'
         ),
         "502",
       ],
       [
         "the viewer may not read it",
-        new Error(
-          'GET /api/v1/operations/project-state failed: 403 - {"error":"FORBIDDEN","message":"not a member"}'
-        ),
+        answeredWith(403, '{"error":"FORBIDDEN","message":"not a member"}'),
         "403",
       ],
       [
         "the network failed",
-        new TypeError("Failed to fetch"),
+        failedWith(new TypeError("Failed to fetch")),
         "Failed to fetch",
       ],
       [
@@ -490,8 +508,9 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         // (`_COORD_PROJECT_STATE_TIMEOUT`). The body is the one the backend's
         // refusal handler serves for `_coord_timeout(write=False)`.
         "the proxy gave up after coord's door budget (504 coord_timeout)",
-        new Error(
-          'GET /api/v1/operations/project-state failed: 504 - {"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.example.test/api/v1/operations/project-state"}'
+        answeredWith(
+          504,
+          '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.example.test/api/v1/operations/project-state"}'
         ),
         'failed: 504 - {"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord"',
       ],
@@ -502,22 +521,22 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         // reads. Kept as the shared classifier's generic arm, so a deadline
         // refusal still renders labelled if this read ever meets one.
         "describeCoordPollError's generic deadline arm",
-        new Error(
-          'GET /api/v1/operations/project-state failed: 503 - {"error":"deadline","budget_ms":8000}'
-        ),
+        answeredWith(503, '{"error":"deadline","budget_ms":8000}'),
         "coord read deadline (8000 ms) exceeded — unknown",
       ],
       [
         "the request timed out",
-        new Error(
-          "Request timeout - backend may be starting up. Please try again."
+        failedWith(
+          new Error(
+            "Request timeout - backend may be starting up. Please try again."
+          )
         ),
         "Request timeout",
       ],
     ])(
       "names the failure when %s, and paints nothing as read",
-      async (_case, err, reason) => {
-        const unread = await renderUnread(() => httpGet.mockRejectedValue(err));
+      async (_case, arrange, reason) => {
+        const unread = await renderUnread(arrange);
         expect(unread).toHaveTextContent(reason);
         expect(unread).toHaveTextContent(
           "Every count on this page is a dash, not a zero."
