@@ -45,9 +45,11 @@ import {
   VISIBILITY_CLEAR_OBSERVED,
   VISIBILITY_CLEAR_UNOBSERVED,
   VISIBILITY_HIDES_TEXT,
+  NATIVE_CAPTURE_NOTE,
   SPEC_GRAPH_BODY,
   SPEC_LIST_BODY,
   componentsBodyWithDisclosure,
+  nativeCaptureSnapshotBody,
   pageHealthBodyWith,
 } from "./__fixtures__/runnerBodies";
 import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
@@ -1000,5 +1002,55 @@ describe("the on-demand buttons' titles", () => {
       expect(title, testId).toMatch(/re-reads/);
       expect(title, testId).not.toMatch(/nothing on the runner changes/i);
     }
+  });
+});
+
+/**
+ * A native window capture — the runner's fallback when its webview's SDK did
+ * not answer — carries no element tree, so its counts are UNKNOWN (`–`),
+ * never zero, and the panel says why.
+ */
+describe("a snapshot with no element tree", () => {
+  async function capture() {
+    renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
+    return screen.findByTestId("coord-ui-bridge-snapshot-no-tree");
+  }
+
+  it("says the counts are unknown, with the runner's own note, and dashes them — never zero", async () => {
+    state.relay = relayFake({
+      snapshot: () => json(200, nativeCaptureSnapshotBody()),
+    });
+    const notice = await capture();
+    expect(notice).toHaveTextContent("UNKNOWN");
+    expect(notice).toHaveTextContent(
+      `The runner fell back to a window capture with no element tree, so its element counts are unknown. It said: ${NATIVE_CAPTURE_NOTE}`
+    );
+    const counts = screen.getByTestId("coord-ui-bridge-snapshot-counts");
+    expect(counts).toHaveTextContent("elements –");
+    expect(counts).toHaveTextContent("components –");
+    expect(counts).toHaveTextContent("element types –");
+    expect(counts).not.toHaveTextContent(/elements 0/);
+    expect(
+      screen.getByTestId("coord-ui-bridge-snapshot-summary")
+    ).toHaveTextContent("– elements");
+    expect(
+      screen.queryByTestId("coord-ui-bridge-snapshot-types")
+    ).not.toBeInTheDocument();
+  });
+
+  it("says the same without a note when the runner sent none", async () => {
+    state.relay = relayFake({
+      snapshot: () => json(200, nativeCaptureSnapshotBody(null)),
+    });
+    const notice = await capture();
+    expect(notice).toHaveTextContent(
+      /so its element counts are unknown\.$/
+    );
+    expect(notice).not.toHaveTextContent("It said");
+    expect(screen.getByTestId("coord-ui-bridge-snapshot-counts")).toHaveTextContent(
+      "elements –"
+    );
   });
 });

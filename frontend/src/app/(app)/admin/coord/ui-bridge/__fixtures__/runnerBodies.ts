@@ -420,6 +420,36 @@ export const SNAPSHOT_BODY = {
   },
 };
 
+/**
+ * The runner's own note on its native-capture fallback
+ * (`ui_bridge_get_snapshot_handler`, qontinui-runner `b2b525e0c`).
+ */
+export const NATIVE_CAPTURE_NOTE =
+  "SDK was not connected. This is a native window capture fallback — no element tree is available.";
+
+/**
+ * The snapshot the runner sends when its webview's SDK did not answer: a
+ * native window capture with NO element tree — `elements: []` beside a
+ * `source: "native_capture"`, the error as `reason`, a screenshot and a note.
+ * Its element counts are UNKNOWN, never zero. `note` replaces the runner's
+ * own sentence (a test that pins the note's guard uses one naming a client),
+ * and `null` leaves it out.
+ */
+export function nativeCaptureSnapshotBody(
+  note: string | null = NATIVE_CAPTURE_NOTE
+): Record<string, unknown> {
+  const data: Record<string, unknown> = {
+    source: "native_capture",
+    reason: "UI Bridge request timed out",
+    screenshot: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    width: 1280,
+    height: 800,
+    elements: [],
+  };
+  if (note !== null) data.note = note;
+  return { success: true, data };
+}
+
 /** The same registry with every action declaring its effect. */
 export const COMPONENTS_ALL_DECLARED_BODY = {
   success: true,

@@ -57,6 +57,7 @@ import {
   VISIBILITY_HIDES_TEXT,
   appNotFoundBody,
   componentsBodyWithDisclosure,
+  nativeCaptureSnapshotBody,
   pageHealthBodyWith,
 } from "./__fixtures__/runnerBodies";
 import { json, relayFake, type RelayFake } from "./__fixtures__/relayResponder";
@@ -611,5 +612,38 @@ describe("the app registries while presenting", () => {
     expect(webChip).toHaveAttribute("data-provenance-known", "false");
     await settle();
     expect(state.fleetAppsReads).toBe(1);
+  });
+});
+
+describe("a snapshot with no element tree, while presenting", () => {
+  it("keeps the UNKNOWN notice and its dashes, and withholds the runner's note — runner text the scope cannot clear", async () => {
+    state.relay = relayFake({
+      snapshot: () =>
+        json(
+          200,
+          nativeCaptureSnapshotBody(
+            "SDK was not connected while the window showed the Acme Corp onboarding."
+          )
+        ),
+    });
+    const view = renderInPresentationMode(<UiBridgeDashboardPage />, {
+      scope: SCOPE,
+      wrapper: Queries,
+    });
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
+    const notice = await screen.findByTestId("coord-ui-bridge-snapshot-no-tree");
+    expect(notice).toHaveTextContent("UNKNOWN");
+    expect(notice).toHaveTextContent(
+      "The runner fell back to a window capture with no element tree, so its element counts are unknown."
+    );
+    expect(notice).not.toHaveTextContent("It said");
+    expect(
+      screen.getByTestId("coord-ui-bridge-snapshot-counts")
+    ).toHaveTextContent("elements –");
+    expectPresentationSafe(view, {
+      captions: CAPTIONS,
+      forbidden: ["Acme Corp", "SDK was not connected"],
+    });
   });
 });
