@@ -40,6 +40,8 @@ import {
   type TestTargetRow,
   type UpdateStrategy,
 } from "@/lib/api/fleet";
+import { FleetReadNote } from "./_components/FleetReadNote";
+import { errorText, useFleetRead } from "./_hooks/useFleetRead";
 
 /** Freshness poll cadence — the auto-fresh engine flips states at
  *  pull/build cadence, so 10s is fresh enough without hot-looping. */
@@ -50,11 +52,19 @@ const FRESHNESS_POLL_MS = 10_000;
  *
  * - `pending` — not back yet. `fetchAll` keeps the page's loader up until
  *   EVERY read has settled, so this state is never rendered past the loader.
- * - `read` — `apps` is the registry; an empty list is a real "none".
+ * - `read` — `apps` is the registry; an empty list is a real "none". If a
+ *   later read failed, the registry stays on screen labelled stale.
  * - `admin-only` — REFUSED: the viewer is not a platform admin. The registry
  *   and its editors are replaced by `AppConfigAdminOnly`, never by an empty
  *   list or a generic error.
  * - `failed` — the read failed before it ever succeeded; nothing is known.
+ *
+ * The registry is not a `useFleetRead` like the page's other reads, for two
+ * reasons. A refusal must DROP what an earlier read delivered, and a retained
+ * value cannot be dropped. And its reads cannot overtake each other: only
+ * `fetchAll` reads it, and the loader hides the one control that re-runs
+ * `fetchAll` until it has settled. So one state and one reason
+ * (`registryFailure`) are exact here.
  */
 type AppRegistryRead = "pending" | "read" | "admin-only" | "failed";
 
@@ -63,10 +73,6 @@ interface AppDraft {
   update_strategy: UpdateStrategy;
   build_command: string;
   start_command: string;
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function draftFromApp(app: FleetApp): AppDraft {
@@ -115,19 +121,33 @@ export default function FleetSettingsPage() {
   const [drafts, setDrafts] = useState<Record<string, AppDraft>>({});
   const [savingAppId, setSavingAppId] = useState<string | null>(null);
   const [registry, setRegistry] = useState<AppRegistryRead>("pending");
+  // Why the latest registry read failed; null once one delivers the registry.
+  // Read only by the `failed` state and by `read`'s stale label, so a refusal
+  // leaves it alone: every read after a refusal either delivers or fails anew.
+  const [registryFailure, setRegistryFailure] = useState<string | null>(null);
 
   // ---- Test-target section state ------------------------------------------
-  const [targets, setTargets] = useState<TestTargetRow[]>([]);
-  const [devices, setDevices] = useState<Runner[]>([]);
+  // Each list read keeps its own outcome, so a failed read renders as UNKNOWN
+  // or STALE with its reason, never as the section's "none yet".
+  const targetsRead = useFleetRead<TestTargetRow[]>([]);
+  // The add form's Device choice.
+  const devicesRead = useFleetRead<Runner[]>([]);
   const [addDeviceId, setAddDeviceId] = useState("");
   const [addAppId, setAddAppId] = useState("");
   const [addAutoFresh, setAddAutoFresh] = useState(false);
   const [adding, setAdding] = useState(false);
 
   // ---- Freshness section state --------------------------------------------
-  const [freshness, setFreshness] = useState<FreshnessRow[]>([]);
+  const freshnessRead = useFleetRead<FreshnessRow[]>([]);
 
   const [loading, setLoading] = useState(true);
+
+  const targets = targetsRead.rows;
+  const devices = devicesRead.rows;
+  const freshness = freshnessRead.rows;
+  const { load: loadTargets } = targetsRead;
+  const { load: loadDevices } = devicesRead;
+  const { load: loadFreshness } = freshnessRead;
 
   /** The viewer may not see the registry: drop it and every draft of it. */
   const refuseRegistry = useCallback(() => {
@@ -144,25 +164,30 @@ export default function FleetSettingsPage() {
         Object.fromEntries(rows.map((app) => [app.app_id, draftFromApp(app)]))
       );
       setRegistry("read");
+      setRegistryFailure(null);
     } catch (err) {
       // A refusal is an answer, not a load failure: no "Failed to load" toast.
       if (isAppConfigAdminRefusal(err)) {
         refuseRegistry();
         return;
       }
-      // A registry read earlier stays on screen; one never read is unknown.
+      // A registry read earlier stays on screen, labelled stale; one never
+      // read is unknown. Both say why.
       setRegistry((prev) => (prev === "read" ? prev : "failed"));
+      setRegistryFailure(errorText(err));
       throw err;
     }
   }, [refuseRegistry]);
 
-  const fetchTargets = useCallback(async () => {
-    setTargets(await listTestTargets());
-  }, []);
+  const fetchTargets = useCallback(
+    () => loadTargets(listTestTargets),
+    [loadTargets]
+  );
 
-  const fetchFreshness = useCallback(async () => {
-    setFreshness(await listFreshness());
-  }, []);
+  const fetchFreshness = useCallback(
+    () => loadFreshness(listFreshness),
+    [loadFreshness]
+  );
 
   const fetchAll = useCallback(async () => {
     // `allSettled`, not `all`: the loader comes down only once EVERY read has
@@ -174,7 +199,7 @@ export default function FleetSettingsPage() {
       fetchApps(),
       fetchTargets(),
       fetchFreshness(),
-      listRunners().then(setDevices),
+      loadDevices(() => listRunners()),
     ]);
     const failures = reads.flatMap((read) =>
       read.status === "rejected" ? [errorText(read.reason)] : []
@@ -183,14 +208,16 @@ export default function FleetSettingsPage() {
       toast.error(`Failed to load fleet data: ${failures.join("; ")}`);
     }
     setLoading(false);
-  }, [fetchApps, fetchTargets, fetchFreshness]);
+  }, [fetchApps, fetchTargets, fetchFreshness, loadDevices]);
 
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
 
-  // Poll freshness while mounted — silent on failure (a transient poll
-  // error must not toast-storm; the next tick retries).
+  // Poll freshness while mounted. No toast on failure: a transient poll error
+  // must not toast-storm, and the next tick retries. The Freshness section
+  // still says so (`freshnessRead`), so its rows are never shown as current
+  // after a poll that failed to refresh them.
   useEffect(() => {
     const timer = setInterval(() => {
       fetchFreshness().catch(() => {});
@@ -242,6 +269,13 @@ export default function FleetSettingsPage() {
     }
   };
 
+  /**
+   * Re-read the designations after a write that SUCCEEDED. A failed re-read
+   * is not the write failing, so it is not toasted as one: the section labels
+   * its rows stale, with the reason (`targetsRead`).
+   */
+  const rereadTargets = () => fetchTargets().catch(() => {});
+
   const handleToggleAutoFresh = async (target: TestTargetRow) => {
     try {
       await designateTestTarget(
@@ -249,26 +283,24 @@ export default function FleetSettingsPage() {
         target.app_id,
         !target.auto_fresh
       );
-      await fetchTargets();
     } catch (err) {
-      toast.error(
-        `Failed to toggle auto-fresh: ${err instanceof Error ? err.message : String(err)}`
-      );
+      toast.error(`Failed to toggle auto-fresh: ${errorText(err)}`);
+      return;
     }
+    await rereadTargets();
   };
 
   const handleRemoveTarget = async (target: TestTargetRow) => {
     try {
       await undesignateTestTarget(target.device_id, target.app_id);
-      toast.success(
-        `Removed ${target.device_name} as test host for ${target.app_id}`
-      );
-      await fetchTargets();
     } catch (err) {
-      toast.error(
-        `Failed to remove designation: ${err instanceof Error ? err.message : String(err)}`
-      );
+      toast.error(`Failed to remove designation: ${errorText(err)}`);
+      return;
     }
+    toast.success(
+      `Removed ${target.device_name} as test host for ${target.app_id}`
+    );
+    await rereadTargets();
   };
 
   const handleAddTarget = async () => {
@@ -276,18 +308,17 @@ export default function FleetSettingsPage() {
     setAdding(true);
     try {
       await designateTestTarget(addDeviceId, addAppId, addAutoFresh);
-      toast.success("Test host designated");
-      setAddDeviceId("");
-      setAddAppId("");
-      setAddAutoFresh(false);
-      await fetchTargets();
     } catch (err) {
-      toast.error(
-        `Failed to designate test host: ${err instanceof Error ? err.message : String(err)}`
-      );
-    } finally {
+      toast.error(`Failed to designate test host: ${errorText(err)}`);
       setAdding(false);
+      return;
     }
+    toast.success("Test host designated");
+    setAddDeviceId("");
+    setAddAppId("");
+    setAddAutoFresh(false);
+    await rereadTargets();
+    setAdding(false);
   };
 
   const sortedFreshness = useMemo(
@@ -299,6 +330,11 @@ export default function FleetSettingsPage() {
       ),
     [freshness]
   );
+
+  // The add-designation form is offered only when the registry (its App
+  // choice) and the device list (its Device choice) were both read. Copy that
+  // points at the form says so only while it is there.
+  const addFormOffered = registry === "read" && !devicesRead.unknown;
 
   if (loading) {
     return (
@@ -332,6 +368,8 @@ export default function FleetSettingsPage() {
             fetchAll();
           }}
           className="text-muted-foreground hover:text-foreground"
+          aria-label="Refresh"
+          data-testid="fleet-refresh"
         >
           <RefreshCw className="size-4" />
         </Button>
@@ -350,16 +388,26 @@ export default function FleetSettingsPage() {
             <span className="font-mono">pull_build</span> strategy.
           </p>
         </div>
-        <div className="p-4">
+        <div className="p-4 space-y-3">
+          {registry === "read" && registryFailure !== null && (
+            <FleetReadNote
+              testId="fleet-apps-read-stale"
+              reason={registryFailure}
+            >
+              The latest read of the app registry failed. The apps below are
+              from an earlier read and may be out of date.
+            </FleetReadNote>
+          )}
           {registry === "admin-only" ? (
             <AppConfigAdminOnly />
           ) : registry === "failed" ? (
-            <p
-              className="text-sm text-destructive"
-              data-testid="fleet-apps-read-failed"
+            <FleetReadNote
+              testId="fleet-apps-read-failed"
+              reason={registryFailure}
             >
-              The app registry could not be read. Refresh to try again.
-            </p>
+              The app registry could not be read, so which apps are registered
+              is unknown. Refresh to try again.
+            </FleetReadNote>
           ) : apps.length === 0 ? (
             <div className="text-center py-12">
               <AppWindow className="size-10 mx-auto mb-3 text-muted-foreground" />
@@ -480,18 +528,40 @@ export default function FleetSettingsPage() {
           </div>
         </div>
         <div className="p-4 space-y-4">
-          {/* Add designation — its App choice IS the registry, so it is
-              offered only when the registry was read. Otherwise the choice
-              would be an empty list that reads as "no apps". */}
+          {registry === "read" && devicesRead.stale && (
+            <FleetReadNote
+              testId="fleet-devices-read-stale"
+              reason={devicesRead.failure}
+            >
+              The latest read of your devices failed. The devices offered below
+              are from an earlier read and may be out of date.
+            </FleetReadNote>
+          )}
+          {/* Add designation. Its App choice IS the registry and its Device
+              choice IS the device list, so it is offered only when both were
+              read. Otherwise a choice would be an empty list that reads as
+              "none". */}
           {registry !== "read" ? (
             <p
               className="text-xs text-muted-foreground"
               data-testid="fleet-designate-needs-registry"
             >
               {registry === "admin-only"
-                ? "Adding a designation needs the app registry, which only a platform administrator can read. The designations below can still be changed."
+                ? "Adding a designation needs the app registry, which only a platform administrator can read."
                 : "Adding a designation needs the app registry, which could not be read. Refresh to try again."}
+              {/* Said only when there ARE designations below to change. */}
+              {registry === "admin-only" && targets.length > 0
+                ? " The designations below can still be changed."
+                : null}
             </p>
+          ) : devicesRead.unknown ? (
+            <FleetReadNote
+              testId="fleet-devices-read-unknown"
+              reason={devicesRead.failure}
+            >
+              Adding a designation needs your devices, which could not be read.
+              Refresh to try again.
+            </FleetReadNote>
           ) : (
             <form
               className="flex flex-wrap items-center gap-2"
@@ -501,7 +571,11 @@ export default function FleetSettingsPage() {
               }}
             >
               <Select value={addDeviceId} onValueChange={setAddDeviceId}>
-                <SelectTrigger className="w-48" size="sm">
+                <SelectTrigger
+                  className="w-48"
+                  size="sm"
+                  data-testid="fleet-designate-device"
+                >
                   <SelectValue placeholder="Device" />
                 </SelectTrigger>
                 <SelectContent>
@@ -513,7 +587,11 @@ export default function FleetSettingsPage() {
                 </SelectContent>
               </Select>
               <Select value={addAppId} onValueChange={setAddAppId}>
-                <SelectTrigger className="w-48" size="sm">
+                <SelectTrigger
+                  className="w-48"
+                  size="sm"
+                  data-testid="fleet-designate-app"
+                >
                   <SelectValue placeholder="App" />
                 </SelectTrigger>
                 <SelectContent>
@@ -547,11 +625,34 @@ export default function FleetSettingsPage() {
             </form>
           )}
 
-          {targets.length === 0 ? (
+          {targetsRead.stale && (
+            <FleetReadNote
+              testId="fleet-targets-read-stale"
+              reason={targetsRead.failure}
+            >
+              The latest read of the test-host designations failed. The
+              designations below are from an earlier read and may be out of
+              date.
+            </FleetReadNote>
+          )}
+          {targetsRead.unknown ? (
+            <FleetReadNote
+              testId="fleet-targets-read-unknown"
+              reason={targetsRead.failure}
+            >
+              The test-host designations could not be read, so whether any exist
+              is unknown. Refresh to try again.
+            </FleetReadNote>
+          ) : targets.length === 0 ? (
             <div className="text-center py-8">
               <MonitorCheck className="size-10 mx-auto mb-3 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                No test hosts designated yet. Add one above.
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="fleet-targets-empty"
+              >
+                No test hosts designated yet.
+                {/* Only when the add form above is offered. */}
+                {addFormOffered ? " Add one above." : null}
               </p>
             </div>
           ) : (
@@ -586,6 +687,7 @@ export default function FleetSettingsPage() {
                       <Switch
                         checked={target.auto_fresh}
                         onCheckedChange={() => handleToggleAutoFresh(target)}
+                        data-testid="fleet-target-auto-fresh"
                       />
                       Auto-fresh
                     </label>
@@ -593,6 +695,8 @@ export default function FleetSettingsPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => handleRemoveTarget(target)}
+                      aria-label={`Remove ${target.device_name} as test host for ${target.app_id}`}
+                      data-testid="fleet-target-remove"
                     >
                       <Trash2 className="size-4 text-muted-foreground" />
                     </Button>
@@ -616,8 +720,25 @@ export default function FleetSettingsPage() {
             auto-fresh engine. Refreshes every 10 seconds.
           </p>
         </div>
-        <div className="p-4">
-          {sortedFreshness.length === 0 ? (
+        <div className="p-4 space-y-3">
+          {freshnessRead.stale && (
+            <FleetReadNote
+              testId="fleet-freshness-read-stale"
+              reason={freshnessRead.failure}
+            >
+              The latest read of the deployment state failed. The rows below are
+              from an earlier read and may be out of date.
+            </FleetReadNote>
+          )}
+          {freshnessRead.unknown ? (
+            <FleetReadNote
+              testId="fleet-freshness-read-unknown"
+              reason={freshnessRead.failure}
+            >
+              The deployment state could not be read, so whether any is reported
+              is unknown. It is read again every 10 seconds.
+            </FleetReadNote>
+          ) : sortedFreshness.length === 0 ? (
             <div className="text-center py-8">
               <RefreshCw className="size-10 mx-auto mb-3 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">

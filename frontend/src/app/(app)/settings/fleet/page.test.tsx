@@ -8,7 +8,9 @@
  * labelled "limited to platform administrators" state in place of the
  * registry, no editor and no add-designation form built from an empty app
  * list — never "No apps registered yet" and never a "Failed to load" toast.
- * The designations of the viewer's own devices stay listed.
+ * The designations of the viewer's own devices stay listed, and the copy
+ * around them promises only what is on screen: no "Add one above." without an
+ * add form, no "designations below" when there are none.
  *
  * `httpClient.fetch` is mocked at the service boundary with real `Response`s,
  * so `lib/api/fleet.ts`'s own error handling (`FleetApiError`) runs as in
@@ -42,40 +44,17 @@ vi.mock("sonner", () => ({
 }));
 
 import FleetSettingsPage from "./page";
+import {
+  ADMIN_REFUSAL,
+  APP_ID as APP,
+  DESIGNATION,
+  PULL_BUILD_APP,
+  fleetResponder,
+  json,
+  type FleetReads,
+} from "./__fixtures__/fleetSettings";
 
 const ADMIN_ONLY = "App configuration is limited to platform administrators.";
-const DEVICE = "66666666-6666-6666-6666-666666666666";
-const APP = "qontinui-web";
-
-const ADMIN_REFUSAL = {
-  error: "FORBIDDEN",
-  message: "Not authorized. Admin access required.",
-  timestamp: 1790000000,
-  path: "https://api.test/api/v1/fleet/apps",
-};
-
-const PULL_BUILD_APP = {
-  app_id: APP,
-  display_name: "Qontinui Web",
-  repo_root: "/code/qontinui-web",
-  update_strategy: "pull_build",
-  build_command: "npm run build",
-  start_command: "npm start",
-};
-
-const DESIGNATION = {
-  device_id: DEVICE,
-  app_id: APP,
-  auto_fresh: true,
-  device_name: "build-box",
-  hostname: "build-box.local",
-  derived_status: "healthy",
-  freshness: null,
-  deployed_sha: null,
-  deployed_at: null,
-  created_at: "2026-10-27T12:00:00Z",
-  updated_at: "2026-10-27T12:00:00Z",
-};
 
 /** The app-config editors; a viewer who is not an admin gets none of them. */
 const EDITORS = [
@@ -85,26 +64,15 @@ const EDITORS = [
   "fleet-app-start-command",
 ];
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+/** Serve the page's four reads; `reads` overrides their good defaults. */
+function serve(reads: FleetReads = {}) {
+  fetchMock.mockImplementation(fleetResponder(reads));
 }
 
-/** Serve the page's four reads; `apps` decides the registry's answer. */
-function serve(apps: () => Response) {
-  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-    if (url.endsWith("/fleet/apps") && !init?.method) return apps();
-    if (url.endsWith("/fleet/test-targets")) return json(200, [DESIGNATION]);
-    if (url.endsWith("/fleet/freshness")) return json(200, []);
-    if (url.endsWith("/devices")) return json(200, []);
-    throw new Error(`unexpected ${init?.method ?? "GET"} ${url}`);
-  });
-}
+const REFUSED = { apps: () => json(403, ADMIN_REFUSAL) };
 
 beforeEach(() => {
-  serve(() => json(200, [PULL_BUILD_APP]));
+  serve();
 });
 
 afterEach(() => {
@@ -115,7 +83,7 @@ afterEach(() => {
 
 describe("/settings/fleet app config admin gate", () => {
   it("renders a non-admin's 403 as the labelled state, with no editor and no add form", async () => {
-    serve(() => json(403, ADMIN_REFUSAL));
+    serve(REFUSED);
     render(<FleetSettingsPage />);
 
     const state = await screen.findByTestId("fleet-apps-admin-only");
@@ -128,13 +96,44 @@ describe("/settings/fleet app config admin gate", () => {
     expect(screen.queryByTestId("fleet-apps-read-failed")).toBeNull();
     expect(toastError).not.toHaveBeenCalled();
     // The add form's App choice would be the (unreadable) registry: replaced
-    // by a sentence, so no empty App list is offered.
+    // by a sentence, so no empty App list is offered. There IS a designation
+    // below, so the sentence may say it can still be changed.
     expect(
-      screen.getByTestId("fleet-designate-needs-registry")
-    ).toHaveTextContent(/only a platform administrator can read/);
+      screen.getByTestId("fleet-designate-needs-registry").textContent
+    ).toBe(
+      "Adding a designation needs the app registry, which only a platform administrator can read. The designations below can still be changed."
+    );
     expect(screen.queryByRole("button", { name: /^Add$/ })).toBeNull();
     // The viewer's own designations are still listed.
     expect(screen.getByText("build-box")).toBeInTheDocument();
+  });
+
+  it("promises a non-admin with no designations neither an add form nor designations to change", async () => {
+    serve({ ...REFUSED, targets: () => json(200, []) });
+    render(<FleetSettingsPage />);
+
+    await screen.findByTestId("fleet-apps-admin-only");
+    // No "The designations below can still be changed.": there are none.
+    expect(
+      screen.getByTestId("fleet-designate-needs-registry").textContent
+    ).toBe(
+      "Adding a designation needs the app registry, which only a platform administrator can read."
+    );
+    // No "Add one above.": there is no add form above.
+    expect(screen.getByTestId("fleet-targets-empty").textContent).toBe(
+      "No test hosts designated yet."
+    );
+    expect(screen.queryByRole("button", { name: /^Add$/ })).toBeNull();
+  });
+
+  it("points an admin with no designations at the add form (the control for the test above)", async () => {
+    serve({ targets: () => json(200, []) });
+    render(<FleetSettingsPage />);
+
+    expect((await screen.findByTestId("fleet-targets-empty")).textContent).toBe(
+      "No test hosts designated yet. Add one above."
+    );
+    expect(screen.getByRole("button", { name: /^Add$/ })).toBeInTheDocument();
   });
 
   it("renders an admin's registry with its editors (the control for the test above)", async () => {
@@ -161,7 +160,7 @@ describe("/settings/fleet app config admin gate", () => {
   ])(
     "keeps a 403 that is not the admin refusal (%s) a load failure",
     async (_shape, apps) => {
-      serve(apps);
+      serve({ apps });
       render(<FleetSettingsPage />);
 
       expect(
