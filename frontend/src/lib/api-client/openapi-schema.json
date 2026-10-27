@@ -78645,18 +78645,25 @@
     },
     "/api/v1/constraints/active": {
       "get": {
-        "description": "Proxy to runner: returns active constraints for a project path.",
+        "description": "Proxy to the co-located runner: the active constraints for a project. Platform admins only.",
         "operationId": "api_v1_constraints_active_get",
         "parameters": [
           {
-            "description": "Absolute path to the project",
+            "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
             "in": "query",
             "name": "project_path",
-            "required": true,
+            "required": false,
             "schema": {
-              "description": "Absolute path to the project",
-              "title": "Project Path",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
+              "title": "Project Path"
             }
           }
         ],
@@ -78695,18 +78702,25 @@
     },
     "/api/v1/constraints/config": {
       "get": {
-        "description": "Proxy to runner: returns the constraint TOML config for a project path.",
+        "description": "Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.",
         "operationId": "api_v1_constraints_config_get",
         "parameters": [
           {
-            "description": "Absolute path to the project",
+            "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
             "in": "query",
             "name": "project_path",
-            "required": true,
+            "required": false,
             "schema": {
-              "description": "Absolute path to the project",
-              "title": "Project Path",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
+              "title": "Project Path"
             }
           }
         ],
@@ -78743,7 +78757,7 @@
         ]
       },
       "post": {
-        "description": "Proxy to runner: writes a new constraint TOML config.",
+        "description": "Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.",
         "operationId": "api_v1_constraints_config_post",
         "requestBody": {
           "content": {
@@ -78790,14 +78804,18 @@
     },
     "/api/v1/constraints/results/{task_run_id}": {
       "get": {
-        "description": "Proxy to runner: returns constraint evaluation results for a task run.",
+        "description": "Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.",
         "operationId": "api_v1_constraints_results_task_run_id_get",
         "parameters": [
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "path",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -78856,7 +78874,7 @@
     },
     "/api/v1/constraints/validate": {
       "post": {
-        "description": "Proxy to runner: validates a TOML config string without writing it.",
+        "description": "Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.",
         "operationId": "api_v1_constraints_validate_post",
         "requestBody": {
           "content": {

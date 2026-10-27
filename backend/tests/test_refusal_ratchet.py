@@ -42,7 +42,7 @@ from pathlib import Path
 #: ``origin/main`` it was measured against, 04d134535, before the D2
 #: conversions on the same change). Lower it when a conversion lands; never
 #: raise it.
-BASELINE = 807
+BASELINE = 803
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 

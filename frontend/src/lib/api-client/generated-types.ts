@@ -3803,7 +3803,7 @@ export interface paths {
         };
         /**
          * Get active constraints
-         * @description Proxy to runner: returns active constraints for a project path.
+         * @description Proxy to the co-located runner: the active constraints for a project. Platform admins only.
          */
         get: operations["api_v1_constraints_active_get"];
         put?: never;
@@ -3823,13 +3823,13 @@ export interface paths {
         };
         /**
          * Get constraint config
-         * @description Proxy to runner: returns the constraint TOML config for a project path.
+         * @description Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.
          */
         get: operations["api_v1_constraints_config_get"];
         put?: never;
         /**
          * Write constraint config
-         * @description Proxy to runner: writes a new constraint TOML config.
+         * @description Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.
          */
         post: operations["api_v1_constraints_config_post"];
         delete?: never;
@@ -3847,7 +3847,7 @@ export interface paths {
         };
         /**
          * Get constraint results
-         * @description Proxy to runner: returns constraint evaluation results for a task run.
+         * @description Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.
          */
         get: operations["api_v1_constraints_results_task_run_id_get"];
         put?: never;
@@ -3869,7 +3869,7 @@ export interface paths {
         put?: never;
         /**
          * Validate constraint config
-         * @description Proxy to runner: validates a TOML config string without writing it.
+         * @description Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.
          */
         post: operations["api_v1_constraints_validate_post"];
         delete?: never;
@@ -62819,9 +62819,9 @@ export interface operations {
     };
     api_v1_constraints_active_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62851,9 +62851,9 @@ export interface operations {
     };
     api_v1_constraints_config_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62922,6 +62922,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             cookie?: never;

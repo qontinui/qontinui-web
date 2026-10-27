@@ -195,13 +195,29 @@ class _Env:
 
 
 def _assert_admin_refusal(response: httpx.Response, wire: str) -> None:
-    """The whole body: the sentence the frontend keys on, and no registry row."""
+    """The whole body: the sentence the frontend keys on, and no registry row.
+
+    Production's envelope also nests ``require_admin``'s typed refusal under
+    ``refusal`` (``app.core.refusal``); a bare app serves the sentence alone.
+    """
     body = response.json()
     if wire == "detail":
         assert body == {"detail": REFUSAL_SENTENCE}
     else:
-        assert set(body) == {"error", "message", "timestamp", "path"}, body
-        assert body["message"] == REFUSAL_SENTENCE
+        assert set(body) == {"error", "message", "timestamp", "path", "refusal"}, body
+        assert (body["error"], body["message"]) == ("FORBIDDEN", REFUSAL_SENTENCE)
+        refusal = body["refusal"]
+        assert (
+            refusal["code"],
+            refusal["discriminator"],
+            refusal["next_action"],
+            refusal["detail"],
+        ) == (
+            "permission_denied",
+            "platform_admin_required",
+            {"kind": "none_terminal"},
+            REFUSAL_SENTENCE,
+        )
 
 
 @pytest_asyncio.fixture()

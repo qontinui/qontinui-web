@@ -1,650 +1,299 @@
+"""What the constraints proxy forwards to the co-located runner, for an admin.
+
+``app/api/v1/endpoints/constraints.py`` forwards each route to the runner on
+the backend's own host. Who may call it at all is
+``tests/test_constraints_platform_admin_gate.py``'s subject; this module is
+about what an admin's call does: what reaches the runner, what does not, and
+how each failure of the hop is answered.
+
+The runner is a stand-in, a real HTTP server on loopback that records every
+request (``tests/_constraints_stand_in.py``), reached through real httpx. The
+app is the constraints router behind the production error handler, with
+``current_active_user`` answering an active platform admin: the router's real
+``require_admin`` runs on top of it. No database is needed.
 """
-Integration tests for the constraint engine proxy endpoints.
 
-These endpoints proxy requests from the web frontend to the runner's HTTP API
-(localhost:9876). Tests mock the httpx calls to the runner so no running
-runner instance is required.
+from __future__ import annotations
 
-Uses a lightweight FastAPI app (not the full production app) to avoid needing
-a database connection during test setup. Imports are done lazily inside
-fixtures to prevent the heavy app import chain from hanging when the test
-database is unavailable.
-"""
-
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+import socket
+from collections.abc import Iterator
+from types import SimpleNamespace
+from urllib.parse import quote
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-# ---------------------------------------------------------------------------
-# Lightweight test app — avoids the full app's startup lifecycle (DB, Redis)
-# ---------------------------------------------------------------------------
+from app.api.v1.endpoints import constraints
+from tests._constraints_stand_in import (
+    CONFIG,
+    Scripted,
+    StandInRunner,
+    envelope,
+    serving_stand_in,
+)
+
+PREFIX = "/api/v1/constraints"
+
+ADMIN = SimpleNamespace(
+    id="11111111-1111-1111-1111-111111111111",
+    is_active=True,
+    is_superuser=True,
+)
+
+#: The longest id the runner mints: a replay of a replay of
+#: ``trigger-<uuid>-<ms>-<u8>`` (155 characters).
+_U1 = "0f8c2a4e-7b1d-4c3a-9e5f-2d6b8a1c3e70"
+_U2 = "5a9d3c1b-2e4f-4a6c-8b7d-1c3e5f7a9b20"
+_U3 = "c4e6a8b0-d2f4-4e6a-8c0b-2d4f6a8c0e10"
+LONGEST_MINTED_ID = f"trigger-{_U1}-1700000000000-ab12cd34-replay-{_U2}-replay-{_U3}"
+
+#: ``task_run_id`` values that would steer the runner GET elsewhere, or are no
+#: task-run id. Each reaches the route as ONE path segment: :func:`_segment`
+#: percent-encodes it, dots included, so the test client does not resolve
+#: ``.`` and ``..`` itself before the backend sees them.
+HOSTILE_IDS = [
+    "..",
+    ".",
+    "a#b",
+    "a?b",
+    "a b",
+    "a\\b",
+    "%2e%2e",
+    "a" * 257,
+]
 
 
-def _build_test_app(*, authenticated: bool = True) -> FastAPI:
-    """Create a minimal FastAPI app with just the constraints router.
+def _segment(value: str) -> str:
+    return quote(value, safe="").replace(".", "%2E")
 
-    Imports the router lazily so the module-level import chain
-    (app.core.config → DB init) only runs when tests actually execute.
-    """
+
+@pytest.fixture()
+def runner(monkeypatch: pytest.MonkeyPatch) -> Iterator[StandInRunner]:
+    with serving_stand_in(monkeypatch) as stand_in:
+        yield stand_in
+
+
+@pytest.fixture()
+def admin_client(runner: StandInRunner) -> TestClient:
     from app.api.deps import current_active_user
-    from app.api.v1.endpoints.constraints import router as constraints_router
+    from app.middleware.error_handler import http_exception_handler
 
-    test_app = FastAPI()
-    if authenticated:
-        mock_user = MagicMock()
-        mock_user.id = uuid4()
-        mock_user.email = "testuser@example.com"
-        mock_user.is_active = True
-        mock_user.is_verified = True
-        test_app.dependency_overrides[current_active_user] = lambda: mock_user
-    test_app.include_router(constraints_router, prefix="/api/v1/constraints")
-    return test_app
+    app = FastAPI()
+    app.dependency_overrides[current_active_user] = lambda: ADMIN
+    app.include_router(constraints.router, prefix=PREFIX)
+    app.add_exception_handler(
+        StarletteHTTPException,
+        http_exception_handler,  # type: ignore[arg-type]
+    )
+    return TestClient(app)
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def auth_client() -> TestClient:
-    """Test client with auth dependency overridden (authenticated requests)."""
-    return TestClient(_build_test_app(authenticated=True))
-
-
-@pytest.fixture()
-def unauth_client() -> TestClient:
-    """Test client with NO auth override (unauthenticated requests).
-
-    The constraints router uses ``Depends(current_active_user)`` which will
-    fail because there is no real JWT / cookie — giving us a 401.
-    """
-    return TestClient(_build_test_app(authenticated=False))
+def _refusal(response: httpx.Response) -> tuple[str, str, str]:
+    refusal = response.json()["refusal"]
+    return (refusal["code"], refusal["discriminator"], refusal["next_action"]["kind"])
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-API_PREFIX = "/api/v1/constraints"
-
-
-def _mock_response(status_code: int = 200, json_data=None, text: str = "") -> MagicMock:
-    """Build a fake httpx.Response."""
-    resp = MagicMock(spec=httpx.Response)
-    resp.status_code = status_code
-    resp.json.return_value = json_data
-    resp.text = text or (str(json_data) if json_data else "")
-    return resp
-
-
-def _patch_httpx():
-    """Return a context-manager that patches ``httpx.AsyncClient`` in the
-    constraints module and yields the mock instance."""
-    return patch("app.api.v1.endpoints.constraints.httpx.AsyncClient")
-
-
-def _configure_mock_client(MockClient, mock_instance):
-    """Wire up the async context-manager protocol on the mock client."""
-    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-    mock_instance.__aexit__ = AsyncMock(return_value=False)
-    MockClient.return_value = mock_instance
-
-
-# ---------------------------------------------------------------------------
-# GET /constraints/active
+# What reaches the runner
 # ---------------------------------------------------------------------------
 
 
-class TestGetActiveConstraints:
-    """Tests for GET /api/v1/constraints/active."""
+@pytest.mark.parametrize("route", ["/active", "/config"])
+def test_a_read_without_a_project_path_lets_the_runner_choose(
+    admin_client: TestClient, runner: StandInRunner, route: str
+) -> None:
+    """The runner falls back to its workspace root when no ``project_path``
+    comes, which is how the workflow builder reads it."""
+    response = admin_client.get(f"{PREFIX}{route}")
 
-    def test_returns_constraints_list(self, auth_client: TestClient):
-        """Runner returns a list of active constraints — verify pass-through."""
-        runner_payload = [
-            {"id": "c1", "name": "max-steps", "value": 10},
-            {"id": "c2", "name": "timeout", "value": 300},
-        ]
-        mock_resp = _mock_response(json_data=runner_payload)
+    assert response.status_code == 200, response.text
+    assert [(r.method, r.target) for r in runner.received] == [
+        ("GET", f"/constraints{route}")
+    ]
 
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
 
-            resp = auth_client.get(
-                f"{API_PREFIX}/active", params={"project_path": "/tmp/myproject"}
-            )
+def test_a_read_returns_the_runner_answer_verbatim(
+    admin_client: TestClient, runner: StandInRunner
+) -> None:
+    response = admin_client.get(
+        f"{PREFIX}/config", params={"project_path": "/home/acme/project"}
+    )
 
-        assert resp.status_code == 200
-        assert resp.json() == runner_payload
-        instance.get.assert_called_once()
-        assert "project_path" in str(instance.get.call_args)
+    assert response.json() == envelope(CONFIG)
+    assert [r.target for r in runner.received] == [
+        "/constraints/config?project_path=%2Fhome%2Facme%2Fproject"
+    ]
 
-    def test_returns_empty_list(self, auth_client: TestClient):
-        """Runner returns an empty list — verify empty array response."""
-        mock_resp = _mock_response(json_data=[])
 
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
+def test_a_write_without_a_project_path_sends_none(
+    admin_client: TestClient, runner: StandInRunner
+) -> None:
+    response = admin_client.post(f"{PREFIX}/config", json={"toml": "[c]\nk = 1\n"})
 
-            resp = auth_client.get(
-                f"{API_PREFIX}/active", params={"project_path": "/tmp/myproject"}
-            )
+    assert response.status_code == 200, response.text
+    assert [(r.method, r.target, r.body) for r in runner.received] == [
+        ("POST", "/constraints/config", {"toml": "[c]\nk = 1\n"})
+    ]
 
-        assert resp.status_code == 200
-        assert resp.json() == []
 
-    def test_runner_error_500(self, auth_client: TestClient):
-        """Runner returns 500 — verify error is proxied."""
-        mock_resp = _mock_response(status_code=500, text="Internal Server Error")
+def test_results_without_an_iteration_send_no_query(
+    admin_client: TestClient, runner: StandInRunner
+) -> None:
+    response = admin_client.get(f"{PREFIX}/results/{LONGEST_MINTED_ID}")
 
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
+    assert response.status_code == 200, response.text
+    assert [r.target for r in runner.received] == [
+        f"/constraints/results/{LONGEST_MINTED_ID}"
+    ]
 
-            resp = auth_client.get(
-                f"{API_PREFIX}/active", params={"project_path": "/tmp/myproject"}
-            )
 
-        assert resp.status_code == 500
+@pytest.mark.parametrize("task_run_id", HOSTILE_IDS)
+def test_a_task_run_id_that_is_no_runner_id_is_refused_before_the_runner(
+    admin_client: TestClient, runner: StandInRunner, task_run_id: str
+) -> None:
+    response = admin_client.get(f"{PREFIX}/results/{_segment(task_run_id)}")
 
-    def test_runner_unreachable(self, auth_client: TestClient):
-        """Runner is not running — verify 502 error."""
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.side_effect = httpx.ConnectError("Connection refused")
-            _configure_mock_client(MockClient, instance)
+    assert (response.status_code, runner.received) == (422, []), response.text
 
-            resp = auth_client.get(
-                f"{API_PREFIX}/active", params={"project_path": "/tmp/myproject"}
-            )
 
-        assert resp.status_code == 502
-        assert "Runner is not reachable" in resp.json()["detail"]
+@pytest.mark.parametrize(
+    ("route", "body"), [("/config", {"project_path": "/p"}), ("/validate", {})]
+)
+def test_a_body_without_toml_is_refused_before_the_runner(
+    admin_client: TestClient, runner: StandInRunner, route: str, body: dict
+) -> None:
+    response = admin_client.post(f"{PREFIX}{route}", json=body)
 
-    def test_runner_timeout(self, auth_client: TestClient):
-        """Runner times out — verify 504 error."""
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.side_effect = httpx.TimeoutException("Read timed out")
-            _configure_mock_client(MockClient, instance)
+    assert (response.status_code, runner.received) == (422, []), response.text
 
-            resp = auth_client.get(
-                f"{API_PREFIX}/active", params={"project_path": "/tmp/myproject"}
-            )
 
-        assert resp.status_code == 504
-        assert "Timeout" in resp.json()["detail"]
+def test_the_callers_credentials_and_origin_stay_on_this_side(
+    admin_client: TestClient, runner: StandInRunner
+) -> None:
+    admin_client.get(
+        f"{PREFIX}/active",
+        headers={
+            "Authorization": "Bearer caller-secret",
+            "Cookie": "access_token=caller-cookie",
+            "Origin": "https://evil.example",
+        },
+    )
 
-    def test_project_path_is_required(self, auth_client: TestClient):
-        """project_path is a required query parameter."""
-        resp = auth_client.get(f"{API_PREFIX}/active")
-        assert resp.status_code == 422  # Validation error
+    forwarded = runner.received[0].headers
+    assert not {"authorization", "cookie", "origin"} & set(forwarded)
+    assert "caller-secret" not in str(forwarded)
+    assert "caller-cookie" not in str(forwarded)
 
 
 # ---------------------------------------------------------------------------
-# GET /constraints/config
+# How each failure of the hop is answered: a typed refusal
 # ---------------------------------------------------------------------------
 
 
-class TestGetConstraintConfig:
-    """Tests for GET /api/v1/constraints/config."""
-
-    def test_returns_toml_and_path(self, auth_client: TestClient):
-        """Runner returns TOML content + path — verify pass-through."""
-        runner_payload = {
-            "toml": "[constraints]\nmax_steps = 10\n",
-            "path": "/tmp/myproject/.qontinui/constraints.toml",
-        }
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.get(
-                f"{API_PREFIX}/config", params={"project_path": "/tmp/myproject"}
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["toml"] == runner_payload["toml"]
-        assert data["path"] == runner_payload["path"]
-
-    def test_returns_empty_when_no_config(self, auth_client: TestClient):
-        """Runner returns empty response when no config file exists."""
-        runner_payload = {"toml": "", "path": None}
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.get(
-                f"{API_PREFIX}/config", params={"project_path": "/tmp/myproject"}
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["toml"] == ""
-
-    def test_project_path_forwarded(self, auth_client: TestClient):
-        """Verify project_path query param is forwarded to runner."""
-        mock_resp = _mock_response(json_data={"toml": "", "path": None})
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            auth_client.get(
-                f"{API_PREFIX}/config",
-                params={"project_path": "/home/user/project"},
-            )
-
-        # Verify the runner call URL and params
-        call_args = instance.get.call_args
-        url = call_args.args[0]
-        params = call_args.kwargs.get("params", {})
-        assert url.endswith("/constraints/config")
-        assert params == {"project_path": "/home/user/project"}
-
-    def test_project_path_is_required(self, auth_client: TestClient):
-        """project_path is a required query parameter."""
-        resp = auth_client.get(f"{API_PREFIX}/config")
-        assert resp.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# POST /constraints/config
-# ---------------------------------------------------------------------------
-
-
-class TestWriteConstraintConfig:
-    """Tests for POST /api/v1/constraints/config."""
-
-    def test_write_valid_toml(self, auth_client: TestClient):
-        """Runner accepts valid TOML — verify write response with path."""
-        runner_payload = {
-            "success": True,
-            "path": "/tmp/myproject/.qontinui/constraints.toml",
-        }
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.post(
-                f"{API_PREFIX}/config",
-                json={
-                    "toml": "[constraints]\nmax_steps = 10\n",
-                    "project_path": "/tmp/myproject",
-                },
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-        assert "path" in data
-
-    def test_write_toml_without_project_path(self, auth_client: TestClient):
-        """Writing TOML without project_path — field is optional, excluded via
-        ``exclude_none``."""
-        runner_payload = {"success": True, "path": "/default/constraints.toml"}
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.post(
-                f"{API_PREFIX}/config",
-                json={"toml": "[constraints]\nmax_steps = 5\n"},
-            )
-
-        assert resp.status_code == 200
-
-        # Verify project_path was excluded from the body sent to runner
-        call_args = instance.post.call_args
-        body_sent = call_args.kwargs.get("json", {})
-        assert "project_path" not in body_sent
-
-    def test_runner_rejects_invalid_toml(self, auth_client: TestClient):
-        """Runner rejects invalid TOML — verify error response."""
-        mock_resp = _mock_response(
-            status_code=400, text="Invalid TOML: unexpected character"
-        )
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.post(
-                f"{API_PREFIX}/config",
-                json={"toml": "this is not valid [[[toml"},
-            )
-
-        assert resp.status_code == 400
-
-    def test_body_forwarded_correctly(self, auth_client: TestClient):
-        """Verify the request body (toml + project_path) is forwarded to runner."""
-        mock_resp = _mock_response(json_data={"success": True, "path": "/p"})
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            auth_client.post(
-                f"{API_PREFIX}/config",
-                json={
-                    "toml": "[c]\nk = 1\n",
-                    "project_path": "/my/project",
-                },
-            )
-
-        call_args = instance.post.call_args
-        body_sent = call_args.kwargs.get("json", {})
-        assert body_sent["toml"] == "[c]\nk = 1\n"
-        assert body_sent["project_path"] == "/my/project"
-
-    def test_toml_field_required(self, auth_client: TestClient):
-        """toml field is required in the request body."""
-        resp = auth_client.post(f"{API_PREFIX}/config", json={})
-        assert resp.status_code == 422
-
-    def test_runner_connect_error_on_write(self, auth_client: TestClient):
-        """Runner is unreachable during write — verify 502."""
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.side_effect = httpx.ConnectError("Connection refused")
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.post(
-                f"{API_PREFIX}/config",
-                json={"toml": "[c]\nk = 1\n"},
-            )
-
-        assert resp.status_code == 502
-
-    def test_runner_timeout_on_write(self, auth_client: TestClient):
-        """Runner times out during write — verify 504."""
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.side_effect = httpx.TimeoutException("Timed out")
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.post(
-                f"{API_PREFIX}/config",
-                json={"toml": "[c]\nk = 1\n"},
-            )
-
-        assert resp.status_code == 504
-
-
-# ---------------------------------------------------------------------------
-# POST /constraints/validate
-# ---------------------------------------------------------------------------
-
-
-class TestValidateConstraintConfig:
-    """Tests for POST /api/v1/constraints/validate."""
-
-    def test_valid_toml(self, auth_client: TestClient):
-        """Runner validates valid TOML — verify success response."""
-        runner_payload = {"valid": True, "errors": []}
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.post(
-                f"{API_PREFIX}/validate",
-                json={"toml": "[constraints]\nmax_steps = 10\n"},
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["valid"] is True
-        assert data["errors"] == []
-
-    def test_invalid_toml_returns_errors(self, auth_client: TestClient):
-        """Runner finds validation errors — verify errors passed through."""
-        runner_payload = {
-            "valid": False,
-            "errors": [
-                {"line": 3, "message": "Unknown constraint key: 'foo'"},
-                {"line": 7, "message": "Value must be positive integer"},
-            ],
-        }
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.post(
-                f"{API_PREFIX}/validate",
-                json={"toml": "[bad]\nfoo = bar\n"},
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["valid"] is False
-        assert len(data["errors"]) == 2
-
-    def test_body_forwarded_correctly(self, auth_client: TestClient):
-        """Verify the toml body is forwarded to runner."""
-        mock_resp = _mock_response(json_data={"valid": True, "errors": []})
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            toml_content = "[constraints]\ntimeout = 60\n"
-            auth_client.post(
-                f"{API_PREFIX}/validate",
-                json={"toml": toml_content},
-            )
-
-        call_args = instance.post.call_args
-        body_sent = call_args.kwargs.get("json", {})
-        assert body_sent["toml"] == toml_content
-
-    def test_toml_field_required(self, auth_client: TestClient):
-        """toml field is required in the request body."""
-        resp = auth_client.post(f"{API_PREFIX}/validate", json={})
-        assert resp.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# GET /constraints/results/{task_run_id}
-# ---------------------------------------------------------------------------
-
-
-class TestGetConstraintResults:
-    """Tests for GET /api/v1/constraints/results/{task_run_id}."""
-
-    def test_returns_results(self, auth_client: TestClient):
-        """Runner returns constraint results — verify pass-through."""
-        task_run_id = str(uuid4())
-        runner_payload = {
-            "task_run_id": task_run_id,
-            "results": [
-                {
-                    "constraint": "max-steps",
-                    "passed": True,
-                    "iteration": 1,
-                    "value": 5,
-                    "limit": 10,
-                },
-                {
-                    "constraint": "timeout",
-                    "passed": False,
-                    "iteration": 1,
-                    "value": 350,
-                    "limit": 300,
-                },
-            ],
-        }
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.get(f"{API_PREFIX}/results/{task_run_id}")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["task_run_id"] == task_run_id
-        assert len(data["results"]) == 2
-
-    def test_with_iteration_param(self, auth_client: TestClient):
-        """Verify iteration query param is forwarded to runner."""
-        task_run_id = str(uuid4())
-        runner_payload = {"task_run_id": task_run_id, "results": []}
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.get(
-                f"{API_PREFIX}/results/{task_run_id}",
-                params={"iteration": 3},
-            )
-
-        assert resp.status_code == 200
-
-        # Verify iteration was forwarded
-        call_args = instance.get.call_args
-        params_sent = call_args.kwargs.get("params", {})
-        assert params_sent.get("iteration") == 3
-
-    def test_without_iteration_param(self, auth_client: TestClient):
-        """Without iteration param — params dict should be empty."""
-        task_run_id = str(uuid4())
-        runner_payload = {"task_run_id": task_run_id, "results": []}
-        mock_resp = _mock_response(json_data=runner_payload)
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.get(f"{API_PREFIX}/results/{task_run_id}")
-
-        assert resp.status_code == 200
-
-        call_args = instance.get.call_args
-        params_sent = call_args.kwargs.get("params", {})
-        assert "iteration" not in params_sent
-
-    def test_nonexistent_task_run(self, auth_client: TestClient):
-        """Runner returns 404 for unknown task run — verify proxied."""
-        task_run_id = str(uuid4())
-        mock_resp = _mock_response(status_code=404, text="Task run not found")
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            resp = auth_client.get(f"{API_PREFIX}/results/{task_run_id}")
-
-        assert resp.status_code == 404
-
-    def test_url_includes_task_run_id(self, auth_client: TestClient):
-        """Verify the task_run_id is included in the URL sent to runner."""
-        task_run_id = "abc-123-def"
-        mock_resp = _mock_response(
-            json_data={"task_run_id": task_run_id, "results": []}
-        )
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            auth_client.get(f"{API_PREFIX}/results/{task_run_id}")
-
-        call_args = instance.get.call_args
-        url_called = call_args.args[0]
-        assert task_run_id in url_called
-        assert url_called.endswith(f"/constraints/results/{task_run_id}")
-
-
-# ---------------------------------------------------------------------------
-# Auth tests
-# ---------------------------------------------------------------------------
-
-
-class TestConstraintAuth:
-    """Verify that unauthenticated requests are rejected."""
-
-    def test_active_requires_auth(self, unauth_client: TestClient):
-        """GET /active without auth returns 401."""
-        resp = unauth_client.get(
-            f"{API_PREFIX}/active", params={"project_path": "/tmp/p"}
-        )
-        assert resp.status_code == 401
-
-    def test_config_get_requires_auth(self, unauth_client: TestClient):
-        """GET /config without auth returns 401."""
-        resp = unauth_client.get(
-            f"{API_PREFIX}/config", params={"project_path": "/tmp/p"}
-        )
-        assert resp.status_code == 401
-
-    def test_config_post_requires_auth(self, unauth_client: TestClient):
-        """POST /config without auth returns 401."""
-        resp = unauth_client.post(f"{API_PREFIX}/config", json={"toml": "[c]\nk=1\n"})
-        assert resp.status_code == 401
-
-    def test_validate_requires_auth(self, unauth_client: TestClient):
-        """POST /validate without auth returns 401."""
-        resp = unauth_client.post(f"{API_PREFIX}/validate", json={"toml": "[c]\nk=1\n"})
-        assert resp.status_code == 401
-
-    def test_results_requires_auth(self, unauth_client: TestClient):
-        """GET /results/{id} without auth returns 401."""
-        resp = unauth_client.get(f"{API_PREFIX}/results/{uuid4()}")
-        assert resp.status_code == 401
-
-    def test_auth_token_not_forwarded_to_runner(self, auth_client: TestClient):
-        """Verify the user's auth token is NOT forwarded to the runner."""
-        mock_resp = _mock_response(json_data=[])
-
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-
-            auth_client.get(f"{API_PREFIX}/active", params={"project_path": "/tmp/p"})
-
-        # The runner call should NOT include any Authorization header.
-        call_kwargs = instance.get.call_args.kwargs
-        headers = call_kwargs.get("headers", {})
-        assert "Authorization" not in headers
-        assert "authorization" not in headers
+def test_an_unreachable_runner_is_a_502_retry_later(
+    admin_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+    monkeypatch.setattr(constraints, "RUNNER_PORT", closed_port)
+
+    response = admin_client.get(f"{PREFIX}/active")
+
+    assert response.status_code == 502, response.text
+    assert _refusal(response) == (
+        "upstream_unavailable",
+        "constraints_runner_unreachable",
+        "retry_later",
+    )
+
+
+def test_a_runner_that_does_not_answer_in_time_is_a_504(
+    admin_client: TestClient, runner: StandInRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(constraints, "_TIMEOUT", httpx.Timeout(0.2))
+    runner.script("GET", "/constraints/active", Scripted(200, "[]", delay=1.0))
+
+    response = admin_client.get(f"{PREFIX}/active")
+
+    assert response.status_code == 504, response.text
+    assert _refusal(response) == (
+        "upstream_timeout",
+        "constraints_runner_timeout",
+        "retry_later",
+    )
+
+
+def test_a_runner_refusal_of_the_request_is_relayed_in_its_words(
+    admin_client: TestClient, runner: StandInRunner
+) -> None:
+    runner.script(
+        "POST",
+        "/constraints/config",
+        Scripted(
+            400,
+            "No project_path provided and no workspace root could be detected",
+            content_type="text/plain",
+        ),
+    )
+
+    response = admin_client.post(f"{PREFIX}/config", json={"toml": "[c]\nk = 1\n"})
+
+    assert response.status_code == 400, response.text
+    assert _refusal(response) == (
+        "invalid_request",
+        "constraints_runner_refused",
+        "fix_request",
+    )
+    assert response.json()["message"] == (
+        "The runner refused the request (400): No project_path provided and "
+        "no workspace root could be detected"
+    )
+
+
+@pytest.mark.parametrize("runner_status", [500, 401, 403])
+def test_a_runner_failure_or_credential_refusal_is_a_502(
+    admin_client: TestClient, runner: StandInRunner, runner_status: int
+) -> None:
+    """A 5xx is the runner's failure, not this backend's; a runner 401 or 403
+    relayed as ours would read as the caller's own session failing (a 401 signs
+    the browser out) or as ``require_admin`` refusing them."""
+    runner.script(
+        "GET",
+        "/constraints/config",
+        Scripted(runner_status, "Failed to read", content_type="text/plain"),
+    )
+
+    response = admin_client.get(f"{PREFIX}/config")
+
+    assert response.status_code == 502, response.text
+    assert _refusal(response) == (
+        "upstream_unavailable",
+        "constraints_runner_failed",
+        "retry_later",
+    )
+    body = response.json()
+    assert body["runner_status"] == runner_status
+    assert body["message"] == f"The runner answered {runner_status}: Failed to read"
+
+
+def test_a_runner_answer_that_is_not_json_is_a_502(
+    admin_client: TestClient, runner: StandInRunner
+) -> None:
+    runner.script(
+        "POST",
+        "/constraints/validate",
+        Scripted(200, "<html>runner</html>", content_type="text/html"),
+    )
+
+    response = admin_client.post(f"{PREFIX}/validate", json={"toml": "[c]\n"})
+
+    assert response.status_code == 502, response.text
+    assert _refusal(response) == (
+        "upstream_unavailable",
+        "constraints_runner_unreadable",
+        "report_defect",
+    )
