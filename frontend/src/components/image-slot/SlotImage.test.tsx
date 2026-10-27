@@ -11,9 +11,17 @@ const state = vi.hoisted(() => ({
   manifest: null as ManifestRead | null,
   // What `useSearchParams` answers: the URL's query, or `null` (no router).
   params: new URLSearchParams() as URLSearchParams | null,
+  // When set, `useSearchParams` suspends (a static render bailing out to the
+  // client), so `<SlotImg>` renders its Suspense fallback.
+  suspend: false,
 }));
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => state.params,
+  useSearchParams: () => {
+    if (state.suspend) {
+      throw new Promise(() => {});
+    }
+    return state.params;
+  },
 }));
 vi.mock("@/lib/image-slots/manifest", async (importOriginal) => {
   const actual =
@@ -32,6 +40,7 @@ const B = "b".repeat(64);
 beforeEach(() => {
   state.manifest = null;
   state.params = new URLSearchParams();
+  state.suspend = false;
 });
 
 describe("<SlotImage> with no asset bound", () => {
@@ -183,6 +192,18 @@ describe("<SlotImage> with an asset bound", () => {
     it("renders eager where the URL cannot be read (never lazy on an unknown page)", () => {
       state.params = null;
       expect(ssrLoading()).toBe("eager");
+    });
+
+    it("renders eager while the URL read suspends, whatever the caller asked for", () => {
+      // The Suspense fallback is the HTML a static render ships before the
+      // query string is known, so it must be eager too.
+      state.suspend = true;
+      const markup = renderToStaticMarkup(
+        <SlotImage slot="runs.active.idle" loading="lazy" />
+      );
+      expect(markup).toMatch(/<img [^>]*loading="eager"/);
+      expect(markup).not.toContain('loading="lazy"');
+      expect(markup).toContain('data-media-id="studio-img-runs.active.idle"');
     });
 
     it("honours an explicit eager off a preview", () => {
