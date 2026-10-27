@@ -7,7 +7,7 @@ Create Date: 2026-09-30
 Phase 3 (qontinui-web half) of plan
 ``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``.
 
-Adds two nullable trailing TEXT columns to ``coord.agent_questions`` —
+Adds two nullable TEXT columns to ``coord.agent_questions`` —
 ``recommendation`` and ``if_overturned`` — so a question an agent escalates to
 the operator can arrive as *fork + recommendation* rather than as a bare
 question.
@@ -42,26 +42,42 @@ What each column means
   agent to stop short, which ``decision_record/autonomy-is-the-product``
   forbids trading capability for (the plan's open fork 5).
 * ``if_overturned TEXT`` — what changes if the operator picks something other
-  than the recommendation. Meaningful only beside a recommendation, but not
-  constrained to one at the schema level: the pairing is the writer's contract
-  (``create_agent_question``), and a CHECK here would make the column order of
-  a future writer load-bearing for no reader's benefit.
+  than the recommendation. Meaningful beside a recommendation, but NOTHING
+  pairs the two, and this schema deliberately does not either. coord's writer
+  (``create_agent_question`` → ``record_fork_shape``, read at qontinui-coord
+  ``c65863485``, #3053's head) stores whichever of the two the asker sent and
+  a blank one as NULL, so a row can carry ``if_overturned`` beside a NULL
+  ``recommendation``; coord derives a row's ``shape`` from ``recommendation``
+  alone (``question_shape``), so that row is still served as an open
+  question. A pairing CHECK would rule that row out only by failing its write,
+  and coord writes both fields in ONE ``UPDATE`` after the question's
+  ``INSERT``, so the CHECK would drop BOTH fields (the question itself stays
+  recorded) instead of keeping the one that was sent.
 
 No default, no backfill. A historic row honestly carries no recommendation —
 none was ever recorded — and a backfilled value would be a guess presented as
 a record. ``shape_share`` therefore starts near zero and moves only as agents
 begin sending the fields, which is the honest reading.
 
-Why TWO NULLABLE TRAILING COLUMNS
-=================================
+Why two nullable columns, read BY NAME
+======================================
 
-The same argument the sibling ``coord_agent_questions_withdrawn`` makes, and
-for the same reason: coord decodes ``COLS`` **positionally** in
-``row_to_struct`` and its pre-migration narrowing (``degrade_sql``) relies on
-older projections being strict prefixes of the current one. Appending nullable
-columns preserves every existing ordinal; inserting would not. And nothing is
-ridden on the overloaded ``context`` TEXT field, which already hides one marker
-envelope.
+coord reads both columns **by name**, never through its positional ``COLS``
+projection, so their ordinal is no part of the contract and nothing in the
+``row_to_struct`` / ``degrade_sql`` prefix chain moves. The coord change this
+revision unblocks (read at qontinui-coord ``c65863485``, #3053's head) keeps
+them out of ``COLS`` on purpose: several statements that splice ``{COLS}`` do
+not degrade on a database this revision has not reached yet, so projecting a
+column it adds there would turn the column's absence into a 42703 on an
+authorization-bearing door. Instead both readers name the columns —
+``record_fork_shape``'s ``UPDATE … RETURNING recommendation, if_overturned``
+and the project-state needs-me read's ``SELECT question_id, recommendation,
+if_overturned … WHERE question_id = ANY(…)`` — and decode each with
+``try_get("<column name>")``. The column NAMES and TYPES are the interface,
+which is why the migration test reads both back from the catalogue.
+
+Two columns of their own rather than a marker riding on the overloaded
+``context`` TEXT field, which already hides one envelope.
 
 Locking
 =======
@@ -77,9 +93,12 @@ into every later revision; ``env.py``'s
 ``search_path``) after each applied step, which makes the in-revision ``RESET``
 redundant belt-and-braces rather than load-bearing. It is kept for the same
 convention as ``coord_agent_questions_withdrawn`` and
-``coord_agent_questions_audience``. No index: nothing filters or orders on
-either column; the needs-me read selects them beside rows already chosen by
-``idx_agent_questions_pending_live``.
+``coord_agent_questions_audience``.
+
+No index: nothing filters or orders on either column. Both readers above reach
+the rows by primary key (``question_id``) — the needs-me read for rows its
+pending scan has already chosen, the fork-shape write for the row it just
+inserted.
 
 Ordering — this lands BEFORE coord's PR, by policy
 ==================================================

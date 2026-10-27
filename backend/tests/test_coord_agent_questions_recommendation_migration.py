@@ -7,9 +7,11 @@ because none of it is visible from a passing ``upgrade``:
 
 1. The pinned parent equals the revision's own ``down_revision``, so this test
    rewinds exactly one edge and never replays an unrelated revision.
-2. The column NAMES and TYPES are an interface to coord's positional decode,
-   and ``ADD COLUMN IF NOT EXISTS`` is type-blind — so both are read back from
-   the catalogue.
+2. The column NAMES and TYPES are coord's interface: coord reads both columns
+   BY NAME (``try_get("recommendation")``), outside its positional ``COLS``
+   projection, so a renamed or retyped column breaks it while the ordinal
+   cannot. ``ADD COLUMN IF NOT EXISTS`` is type-blind, so both are read back
+   from the catalogue.
 3. Both columns are nullable with NO default. NULL is the honest value for
    every historic row (no recommendation was ever recorded); a default would
    fabricate one and make ``shape_share`` lie.
