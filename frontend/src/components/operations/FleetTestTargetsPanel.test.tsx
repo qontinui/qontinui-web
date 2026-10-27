@@ -270,6 +270,40 @@ describe("FleetTestTargetsPanel app config admin gate", () => {
     }
   );
 
+  it("does not show an emptied registry as read when a refusal is followed by a failed read", async () => {
+    // An admin read, then the viewer stops being an admin (refused), then the
+    // registry read fails outright: what the panel holds is no registry at all.
+    const answers: Array<() => unknown> = [
+      () => [PULL_BUILD_APP],
+      () => {
+        throw adminRefusal("GET", APPS_URL);
+      },
+      () => {
+        throw new Error(
+          `GET ${APPS_URL} failed: 502 - <html>Bad Gateway</html>`
+        );
+      },
+    ];
+    let reads = 0;
+    serveRegistry(() => answers[Math.min(reads++, answers.length - 1)]!());
+    render(<FleetTestTargetsPanel />);
+
+    await screen.findByTestId("fleet-target-app-card");
+    fireEvent.click(screen.getByTestId("fleet-test-targets-refresh"));
+    expect(await screen.findByTestId("fleet-apps-admin-only")).toBeVisible();
+    fireEvent.click(screen.getByTestId("fleet-test-targets-refresh"));
+
+    expect(
+      await screen.findByText(/Failed to load fleet targets/)
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("fleet-apps-admin-only")).toBeNull();
+    // Unknown, not empty: no "none registered", and the count is a dash.
+    expect(screen.queryByText(/No registered apps/)).toBeNull();
+    expect(screen.getByTestId("fleet-test-targets-count")).toHaveTextContent(
+      "–"
+    );
+  });
+
   it("labels a refused save and replaces the editor with the labelled state", async () => {
     let refused = false;
     serveRegistry(() => {

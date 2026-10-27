@@ -494,9 +494,12 @@ export function FleetTestTargetsPanel() {
     ) {
       // An answer, not a failure: nothing else on this panel is shown to a
       // viewer who may not see the registry, and nothing an earlier read left
-      // (before a role change) stays on screen.
+      // (before a role change) stays on screen. That includes `loaded`: the
+      // emptied `apps` is not a registry anyone read, so a later failed read
+      // must not render it as "No registered apps" or count it as 0.
       setAdminOnly(true);
       setApps([]);
+      setLoaded(false);
       setError(null);
       return;
     }
