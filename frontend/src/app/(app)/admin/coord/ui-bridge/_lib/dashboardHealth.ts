@@ -19,6 +19,15 @@
  * answer never contributes a green — including an occlusion row that is
  * UNKNOWN, which it is on every runner today (no relay carries the sweep), so
  * a strip that has had page health run on it is never green.
+ *
+ * Nor does a STALE read — one whose latest refresh failed, so the page keeps
+ * an earlier read's value (`readState.ts`). Its figures stay on the badges,
+ * kept and labelled, but the verdict is about NOW and the earlier read is not
+ * now (style guide R6: a retained verdict may not look re-confirmed, in either
+ * direction). So a stale read holds the level at amber and the headline says
+ * which figures are from an earlier read — over a green that read would have
+ * given, and over a red: a page an earlier read found broken is reported as
+ * that, at that read, not as broken now.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -51,6 +60,11 @@ export interface DashboardHealthInput {
   readonly occlusion: ReadState<OcclusionKind>;
   /** Apps across both registries — exact, a floor, or unknown. */
   readonly apps: AppTotal;
+  /**
+   * Whether a registry behind `apps` is an earlier read's value (its latest
+   * refresh failed). The total is kept and its badge says so.
+   */
+  readonly appsStale: boolean;
   /** The SDK feature count, or null when not served. */
   readonly sdkFeatures: number | null;
   readonly componentsRoute: RunnerRoute;
@@ -81,6 +95,20 @@ export function issuePhrase(issue: SourceIssue, route: RunnerRoute): string {
 const value = <T>(read: ReadState<T>): T | null =>
   read.state === "ok" ? read.value : null;
 
+/** A read's value only when it is CURRENT: answered, and not kept from earlier. */
+const current = <T>(read: ReadState<T>): T | null =>
+  read.state === "ok" && !read.stale ? read.value : null;
+
+const isStale = (read: ReadState<unknown>): boolean =>
+  read.state === "ok" && read.stale;
+
+/** "a", "a and b", "a, b and c". */
+function listed(items: readonly string[]): string {
+  return items.length <= 1
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 export function deriveDashboardHealth(
   input: DashboardHealthInput
 ): DashboardHealth {
@@ -109,7 +137,11 @@ export function deriveDashboardHealth(
     {
       key: "apps",
       label: `apps ${appTotalValue(input.apps) ?? "–"}`,
-      title: appTotalMeaning(input.apps),
+      title: `${appTotalMeaning(input.apps)}${
+        input.appsStale
+          ? " — from an earlier read: the last refresh of an app registry failed"
+          : ""
+      }`,
       "data-testid": "coord-ui-bridge-health-apps",
     },
     {
@@ -145,8 +177,9 @@ export function deriveDashboardHealth(
     };
   }
 
-  const pageHealth = value(input.pageHealth);
-  const occlusion = value(input.occlusion);
+  // Red is a statement about NOW, so only a current read may make it.
+  const pageHealth = current(input.pageHealth);
+  const occlusion = current(input.occlusion);
   if (pageHealth === "critical") {
     return {
       level: "red",
@@ -169,6 +202,29 @@ export function deriveDashboardHealth(
         input.components.issue,
         input.componentsRoute
       )}.`,
+      badges,
+    };
+  }
+  const stale = [
+    isStale(input.health) ? "health" : null,
+    isStale(input.components) ? "component actions" : null,
+    isStale(input.pageHealth) ? "page health" : null,
+    isStale(input.occlusion) ? "occlusion check" : null,
+  ].filter((name): name is string => name !== null);
+  if (stale.length > 0) {
+    const earlier =
+      value(input.pageHealth) === "critical" && isStale(input.pageHealth)
+        ? " That earlier read reported its page as broken."
+        : value(input.occlusion) === "hides-text" && isStale(input.occlusion)
+          ? " That earlier read found text on its screen hidden behind an overlay."
+          : "";
+    return {
+      level: "amber",
+      headline: `${input.machine}: the last refresh of its ${listed(
+        stale
+      )} failed, so what this page shows of ${
+        stale.length === 1 ? "it" : "them"
+      } is from an earlier read.${earlier}`,
       badges,
     };
   }

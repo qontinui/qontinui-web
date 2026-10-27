@@ -161,6 +161,9 @@ export default function UiBridgeDashboardPage() {
     pageHealth: mapRead(pageHealth, (p) => p.summary),
     occlusion: mapRead(occlusion, (o) => o.kind),
     apps,
+    appsStale:
+      (web.state === "ok" && web.stale) ||
+      (runnerApps.state === "ok" && runnerApps.stale),
     sdkFeatures:
       health.state === "ok" ? (health.value.sdkFeatures?.length ?? null) : null,
     componentsRoute: RUNNER_ROUTES.components,

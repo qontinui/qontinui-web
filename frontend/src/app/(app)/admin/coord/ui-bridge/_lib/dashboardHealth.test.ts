@@ -30,6 +30,7 @@ function input(over: Partial<DashboardHealthInput> = {}): DashboardHealthInput {
     pageHealth: { state: "idle" },
     occlusion: { state: "idle" },
     apps: { kind: "exact", count: 2 },
+    appsStale: false,
     sdkFeatures: 3,
     componentsRoute: RUNNER_ROUTES.components,
     ...over,
@@ -196,6 +197,90 @@ describe("deriveDashboardHealth", () => {
     expect(unknown?.label).toBe("apps –");
     expect(unknown?.title).toBe(
       "The web registry records none and this runner's app list was not read, so how many apps exist is unknown — not none"
+    );
+  });
+});
+
+/**
+ * A STALE read — its latest refresh failed, so the page keeps an earlier
+ * read's value. The figures stay, labelled; the verdict is about now, and the
+ * earlier read is not now (style guide R6), so a stale read is never green —
+ * and never red either.
+ */
+describe("deriveDashboardHealth — a stale read", () => {
+  const stale = <T,>(value: T) =>
+    ({ state: "ok", value, stale: true, asOf: 1 }) as const;
+  const fresh = <T,>(value: T) =>
+    ({ state: "ok", value, stale: false, asOf: 1 }) as const;
+
+  it.each([
+    ["health", { health: stale({}) }, "health"],
+    ["component actions", { components: stale(COUNTS) }, "component actions"],
+    ["page health", { pageHealth: stale("ok" as const) }, "page health"],
+    ["occlusion", { occlusion: stale("clear" as const) }, "occlusion check"],
+  ] as const)(
+    "holds the strip at amber when the %s read is from an earlier read — never green",
+    (_name, over, named) => {
+      // Every other input is the green one.
+      expect(deriveDashboardHealth(input()).level).toBe("green");
+      const h = deriveDashboardHealth(input(over));
+      expect(h.level).toBe("amber");
+      expect(h.headline).toBe(
+        `Machine A: the last refresh of its ${named} failed, so what this page shows of it is from an earlier read.`
+      );
+    }
+  );
+
+  it("names every stale read at once", () => {
+    const h = deriveDashboardHealth(
+      input({ health: stale({}), components: stale(COUNTS) })
+    );
+    expect(h.headline).toBe(
+      "Machine A: the last refresh of its health and component actions failed, so what this page shows of them is from an earlier read."
+    );
+  });
+
+  it("keeps the earlier figures on the badges — kept, not dashed", () => {
+    const h = deriveDashboardHealth(input({ components: stale(COUNTS) }));
+    expect(badge(h, "actions")?.label).toBe("actions 7");
+    expect(badge(h, "undeclared")?.label).toBe("undeclared 0");
+  });
+
+  it("does not paint red off an earlier read — it says what that read found", () => {
+    const page = deriveDashboardHealth(
+      input({ pageHealth: stale("critical" as const) })
+    );
+    expect(page.level).toBe("amber");
+    expect(page.headline).toBe(
+      "Machine A: the last refresh of its page health failed, so what this page shows of it is from an earlier read. That earlier read reported its page as broken."
+    );
+    const hidden = deriveDashboardHealth(
+      input({ occlusion: stale("hides-text" as const) })
+    );
+    expect(hidden.level).toBe("amber");
+    expect(hidden.headline).toMatch(
+      /That earlier read found text on its screen hidden behind an overlay\.$/
+    );
+  });
+
+  it("is still red for a CURRENT broken page beside a stale read", () => {
+    const h = deriveDashboardHealth(
+      input({
+        components: stale(COUNTS),
+        pageHealth: fresh("critical" as const),
+      })
+    );
+    expect(h.level).toBe("red");
+  });
+
+  it("labels the app total when a registry behind it is from an earlier read", () => {
+    expect(badge(deriveDashboardHealth(input()), "apps")?.title).toBe(
+      "Applications across the web and runner registries"
+    );
+    expect(
+      badge(deriveDashboardHealth(input({ appsStale: true })), "apps")?.title
+    ).toBe(
+      "Applications across the web and runner registries — from an earlier read: the last refresh of an app registry failed"
     );
   });
 });

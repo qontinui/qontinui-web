@@ -767,3 +767,62 @@ describe("no runner", () => {
     ).toEqual(runnerReads.map((q) => `${String(q.queryKey[1])} pending`));
   });
 });
+
+describe("a refresh that fails after a good read", () => {
+  it("keeps the earlier figures, labelled, and holds the strip at amber — never the earlier green", async () => {
+    let componentReads = 0;
+    state.relay = relayFake({
+      components: () => {
+        componentReads += 1;
+        return componentReads === 1
+          ? json(200, COMPONENTS_ALL_DECLARED_BODY)
+          : json(503, NOT_CONNECTED_BODY);
+      },
+    });
+    renderPage();
+    const strip = await screen.findByTestId("coord-ui-bridge-health-strip");
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "green")
+    );
+    expect(strip).toHaveTextContent(
+      "every one of its 7 actions declares its effect."
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
+    });
+    // The panel keeps the figures and says they are an earlier read's…
+    await screen.findByTestId("coord-ui-bridge-actions-stale");
+    // …and so does the strip, which no longer calls them current.
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "amber")
+    );
+    expect(strip).toHaveTextContent(
+      "Build box: the last refresh of its component actions failed, so what this page shows of it is from an earlier read."
+    );
+    expect(strip).not.toHaveTextContent("every one of its 7 actions declares");
+    expect(strip).toHaveTextContent("actions 7");
+  });
+
+  it("labels the strip's app total as an earlier read's when the web registry's refresh failed", async () => {
+    let webReads = 0;
+    state.fleetApps = async () => {
+      webReads += 1;
+      if (webReads === 1) return FLEET_APPS;
+      throw new Error("GET /api/v1/fleet/apps failed: 503 - down");
+    };
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-ui-bridge-app-row")).toHaveLength(2)
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-ui-bridge-refresh"));
+    });
+    await screen.findByTestId("coord-ui-bridge-apps-web-stale");
+    const apps = screen.getByTestId("coord-ui-bridge-health-apps");
+    expect(apps).toHaveTextContent("apps ≥2");
+    expect(apps.getAttribute("title")).toMatch(
+      / — from an earlier read: the last refresh of an app registry failed$/
+    );
+  });
+});
