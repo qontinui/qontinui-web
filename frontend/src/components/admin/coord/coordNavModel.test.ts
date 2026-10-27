@@ -118,6 +118,7 @@ describe("coordNavModel", () => {
     expect(labels("devops")).toEqual([
       "Overview",
       "CI",
+      "UI Bridge",
       "Computers",
       "Spawns",
       "Session load",
@@ -145,11 +146,12 @@ describe("coordNavModel", () => {
     // Plain member: exactly Overview and CI (resolved Q3, extended by the
     // CI dashboard plan's D1 — both are member reads).
     expect(visibleLabels("devops", MEMBER)).toEqual(["Overview", "CI"]);
-    // A coord admin who is NOT staff sees Computers, Spawns and Session load
-    // and nothing operator-only.
+    // A coord admin who is NOT staff sees UI Bridge, Computers, Spawns and
+    // Session load and nothing operator-only.
     expect(visibleLabels("devops", COORD_ADMIN)).toEqual([
       "Overview",
       "CI",
+      "UI Bridge",
       "Computers",
       "Spawns",
       "Session load",
@@ -259,6 +261,19 @@ describe("coordNavModel", () => {
       "/admin/coord/agent-registry",
       "/admin/coord/tenant-policy",
     ]);
+  });
+
+  it("offers the UI Bridge dashboard under Dev Ops to a coord admin only — the menu flag; the page gates its unpartitioned read itself", () => {
+    const leaf = group("devops").items.find(
+      (i) => i.href === "/admin/coord/ui-bridge"
+    );
+    expect(leaf?.label).toBe("UI Bridge");
+    expect(leaf?.testId).toBe("coord-nav-ui-bridge");
+    expect(leaf?.coordAdminOnly).toBe(true);
+    expect(leaf?.operatorOnly).toBeUndefined();
+    expect(visibleLabels("devops", MEMBER)).not.toContain("UI Bridge");
+    expect(visibleLabels("devops", COORD_ADMIN)).toContain("UI Bridge");
+    expect(findActiveLeaf("/admin/coord/ui-bridge")?.group?.id).toBe("devops");
   });
 
   it("has unique testIds and no href that prefixes another", () => {

@@ -14,6 +14,7 @@ import { describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 
 import { FleetResourceStrip } from "./FleetResourceStrip";
+import { renderInPresentationMode } from "@/test/presentation";
 import type {
   ResourceSampleRow,
   ResourceSamplesResponse,
@@ -570,6 +571,57 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     expect(floor.textContent).toMatch(/verdict unknown/);
     expect(floor.textContent).toMatch(/rejects\)/);
     expect(floor.textContent).toMatch(/source unknown/);
+  });
+
+  it("says what a red row means without claiming coord stopped placing work there", () => {
+    // Coord ranks lanes by load and only prefers (qontinui-coord
+    // ci_dispatch.rs "Resource headroom is a RANKING input, never a filter");
+    // a breach is a guard on the lane refusing (`headroom_against`).
+    renderStrip({ latest: [sample()], history: [] });
+    const legend =
+      screen.getByTestId("fleet-resource-floors").textContent ?? "";
+    expect(legend).not.toMatch(/stopped electing/i);
+    expect(legend).toMatch(/a red row\s+means a guard on that lane is refusing work/);
+  });
+
+  it("presenting: no operator legend, and its one unknown said in plain words", () => {
+    const memOnly = sample();
+    delete memOnly.disk_floor;
+    renderInPresentationMode(
+      <FleetResourceStrip
+        devices={[{ device_id: DEV, hostname: "msi" }]}
+        resources={{
+          data: { latest: [memOnly], history: [] },
+          loading: false,
+          error: null,
+          fetchedAtMs: Date.now(),
+          refresh: vi.fn(),
+        }}
+      />
+    );
+    expect(screen.queryByTestId("fleet-resource-floors")).toBeNull();
+    const missing = screen.getByTestId("fleet-resource-floors-missing");
+    expect(missing).toHaveTextContent(
+      /1 lane has a limit that was not reported, so room for more work there reads unknown/
+    );
+    expect(missing.textContent).not.toMatch(/coord without these fields/);
+  });
+
+  it("presenting: nothing at all where every limit was reported", () => {
+    renderInPresentationMode(
+      <FleetResourceStrip
+        devices={[{ device_id: DEV, hostname: "msi" }]}
+        resources={{
+          data: { latest: [sample()], history: [] },
+          loading: false,
+          error: null,
+          fetchedAtMs: Date.now(),
+          refresh: vi.fn(),
+        }}
+      />
+    );
+    expect(screen.queryByTestId("fleet-resource-floors")).toBeNull();
+    expect(screen.queryByTestId("fleet-resource-floors-missing")).toBeNull();
   });
 
   it("counts a missing DISK floor in the legend, not only a missing memory one", () => {

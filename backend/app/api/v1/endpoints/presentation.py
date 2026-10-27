@@ -53,7 +53,12 @@ from app.api.v1.endpoints.operations import (
     capture_caller_bearer,
     require_coord_tenant_admin_target,
 )
-from app.core.refusal import NextActionKind, RefusalCode, refusal_error
+from app.core.refusal import (
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.crud import presentation_scope as crud
 from app.models.user import User
 from app.schemas.presentation import (
@@ -90,32 +95,75 @@ def _may_edit(user: User, identity: CoordIdentity, active: str | None) -> bool:
     )
 
 
+#: The ``detail`` of the bare 403 ``get_coord_identity`` raises when coord's
+#: ``/admin/coord/me`` refuses the operator, and the code this route's own
+#: refusal carries for the same condition.
+_TENANT_NOT_RESOLVED = "tenant_not_resolved"
+
+
+def _tenant_not_resolved() -> RefusalHTTPException:
+    """The one answer the read gives when no project resolves for the caller.
+
+    Two arms reach it, and both serve this same refusal:
+
+    * coord's ``/admin/coord/me`` answers 403, as it does for an operator it
+      links to no project, and ``get_coord_identity`` raises that as a bare
+      ``HTTPException(403, "tenant_not_resolved")``;
+    * coord answers, but no project resolves from its answer: the operator
+      has no home project, and the selection names no project they belong to.
+
+    It is a typed refusal, not a bare string, because
+    ``tests/test_refusal_ratchet.py`` counts free-text error responses and that
+    count may only fall. So its wire shape is NOT the one ``coord_identity``
+    and the shared tenant gates in ``operations`` give this condition
+    (``get_tenant_id``, and ``require_coord_tenant_admin``, which also gates
+    this path's PUT). Their bare raise is served as ``error: "FORBIDDEN"``
+    with the token in ``message``. Here the token is in ``error`` and in
+    ``refusal.discriminator``, and ``message`` is the sentence below. A client
+    that matches ``message == "tenant_not_resolved"`` reads their shape and
+    not this one, so converting one of their raises the same way changes what
+    that route's clients match on.
+    """
+    return refusal_error(
+        status.HTTP_403_FORBIDDEN,
+        RefusalCode.permission_denied,
+        NextActionKind.fix_request,
+        "No project could be resolved for this request: select a project "
+        "you belong to, or ask a project admin to add you.",
+        discriminator=_TENANT_NOT_RESOLVED,
+        error_code=_TENANT_NOT_RESOLVED,
+    )
+
+
 async def get_presentation_caller(
     request: Request,
     user: User = Depends(get_current_active_user_async),
 ) -> PresentationCaller:
-    """Resolve the active project (membership-validated) for a read."""
+    """Resolve the active project (membership-validated) for a read.
+
+    No project resolving is refused with :func:`_tenant_not_resolved`, on
+    either arm; every other failure keeps its own answer.
+    """
     # The bearer capture runs first and independently: the repository read
     # forwards it to coord whatever identity resolution does.
     capture_caller_bearer(request)
-    identity = await get_coord_identity(request)
+    try:
+        identity = await get_coord_identity(request)
+    except HTTPException as exc:
+        # Only coord refusing the operator is this condition. A missing bearer
+        # (401), an unreachable or slow coord (502/504) and any other status
+        # coord answers keep their own answer: a coord outage is not a
+        # missing project.
+        if (exc.status_code, exc.detail) == (
+            status.HTTP_403_FORBIDDEN,
+            _TENANT_NOT_RESOLVED,
+        ):
+            raise _tenant_not_resolved() from exc
+        raise
     active = request.headers.get(ACTIVE_TENANT_HEADER)
     tenant_id = _effective_tenant_id(identity, active)
     if tenant_id is None:
-        # A typed refusal, not a bare string: ``tests/test_refusal_ratchet.py``
-        # counts free-text error responses and may only fall. The legacy
-        # top-level ``error`` stays ``tenant_not_resolved`` (what operations
-        # and the other coord-identity routes serve), so a client matching on
-        # it is unchanged; the sentence is for the reader.
-        raise refusal_error(
-            status.HTTP_403_FORBIDDEN,
-            RefusalCode.permission_denied,
-            NextActionKind.fix_request,
-            "No project could be resolved for this request: select a project "
-            "you belong to, or ask a project admin to add you.",
-            discriminator="tenant_not_resolved",
-            error_code="tenant_not_resolved",
-        )
+        raise _tenant_not_resolved()
     return PresentationCaller(
         tenant_id=tenant_id,
         identity=identity,

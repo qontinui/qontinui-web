@@ -10,12 +10,53 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronDown, ChevronRight, Play, Server } from "lucide-react";
+import {
+  MachineName,
+  RedactedText,
+  usePresentationMode,
+} from "@/components/presentation";
 import { OutputViewer } from "./OutputViewer";
 import { relativeTime, truncate } from "./utils";
 import type { RunnerTaskRun } from "./types";
 
 interface TaskRunCardProps {
   task: RunnerTaskRun;
+}
+
+/**
+ * A task run as an outsider sees it (plan
+ * `2026-10-23-console-presentation-spaces` Phase 7): one read-only line — its
+ * status, its workflow's name only when provably the tenant's own (a task run
+ * names no repository, so in practice a descriptor), the machine's alias and
+ * the start time. No prompt and no output: both are free text the run was
+ * given or produced, and expanding the card would fetch and show it (D3.3).
+ */
+function PresentedTaskRun({ task }: TaskRunCardProps) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card/30 px-3 py-2 text-sm"
+      data-testid="task-run-presented"
+    >
+      <Play className="h-4 w-4 text-success shrink-0" />
+      <RedactedText
+        className="min-w-0 truncate font-medium"
+        text={task.workflow_name ?? "Workflow run"}
+        repo={null}
+        descriptor={{
+          kind: "Workflow run",
+          status: task.status,
+          at: task.started_at,
+        }}
+      />
+      <Badge variant={statusVariant(task.status)} className="shrink-0">
+        {task.status}
+      </Badge>
+      <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+        <Server className="h-3 w-3" />
+        <MachineName identity={{ hostname: task.runner_hostname }} />
+      </span>
+    </div>
+  );
 }
 
 function statusVariant(
@@ -31,6 +72,8 @@ function statusVariant(
 
 export function TaskRunCard({ task }: TaskRunCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const { presenting } = usePresentationMode();
+  if (presenting) return <PresentedTaskRun task={task} />;
 
   const hostLabel =
     task.runner_hostname && task.runner_port

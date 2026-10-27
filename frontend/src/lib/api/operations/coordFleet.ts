@@ -351,6 +351,12 @@ export interface FleetHealthPayload {
   runner_reports_scrape_up?: boolean;
   /** See {@link FleetBuildResolvability}. Absent on a coord predating it. */
   build_resolvability?: FleetBuildResolvability | null;
+  /**
+   * When coord's read was true (`fleet_health.rs` `"as_of": now`), RFC 3339.
+   * The console dates this read by it (`servedAsOfMs`); absent on an older
+   * coord, which is then dated by the answer's arrival.
+   */
+  as_of?: string;
 }
 
 /**
