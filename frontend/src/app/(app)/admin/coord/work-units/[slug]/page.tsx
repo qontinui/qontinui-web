@@ -57,6 +57,20 @@
  *   its count stays visible in the collapsed header.
  *
  * Every authored `data-testid` is carried across unchanged (D4a).
+ *
+ * ## KPIs (plan `2026-10-09-kpi-telemetry-and-dashboards` Phase 4)
+ *
+ * A "Delivery KPIs" panel carries every figure coord measures for this unit —
+ * lead time and its two segments, sessions, the four token classes, a
+ * list-price-equivalent cost, CI attempts, red→green iterations, interventions
+ * (with their split) and rework — from a read of its OWN
+ * (`useWorkUnitKpis({ slug })`, `GET /api/v1/operations/kpis?slug=<slug>`):
+ * coord is asked for this unit, and returns it whatever its status and wherever
+ * it sits relative to any window. So an empty answer means coord has no KPI row
+ * for it ("No KPIs recorded"), never zeros, and there is no window control — a
+ * slug read does not depend on one. A failure shows "KPIs unavailable" with no
+ * figure and touches nothing else on this page. The panel is R7's: its state
+ * stays in the header when it is folded.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -73,7 +87,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ArrowRight, GitCommit, History } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BarChart3,
+  GitCommit,
+  History,
+} from "lucide-react";
 import {
   CollapsiblePanel,
   RecordDetail,
@@ -106,6 +126,13 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { KpiBlock } from "@/components/admin/coord/WorkUnitKpiCells";
+import {
+  describeKpiIndex,
+  kpiCell,
+  kpiPanelSummary,
+} from "@/components/admin/coord/workUnitKpis";
+import { useWorkUnitKpis } from "../useWorkUnitKpis";
 
 // Work-unit lifecycle statuses. NB `ready`/`shipped` are coord-DERIVED on
 // the device write path, but the operator-transition route is a trusted
@@ -165,6 +192,10 @@ export default function CoordPlanDetailPage() {
    * behind it.
    */
   const [historyLoaded, setHistoryLoaded] = useState(false);
+
+  // The KPI read is its own: one request, for THIS unit, never one per field.
+  const { index: kpiIndex } = useWorkUnitKpis({ slug });
+  const kpi = kpiCell(kpiIndex, slug);
 
   const [newStatus, setNewStatus] = useState("in_progress");
   const [note, setNote] = useState("");
@@ -435,6 +466,45 @@ export default function CoordPlanDetailPage() {
             </div>
           </section>
           </CoordAdminOnly>
+
+          {/* R7 — the KPIs are supporting material, so they fold; the state
+              stays in the header while folded, and it is a WORD
+              ("unavailable", "none recorded"), never a number that could be
+              read as zero. */}
+          <CollapsiblePanel
+            titleAs="h2"
+            className="p-3"
+            defaultOpen
+            storageKey="coord-plan-kpis"
+            icon={<BarChart3 className="h-3.5 w-3.5" />}
+            title="Delivery KPIs"
+            summary={
+              <Badge
+                variant="outline"
+                className="font-mono text-[11px]"
+                title={describeKpiIndex(kpiIndex)}
+                data-testid="coord-plan-kpis-summary"
+              >
+                {kpiPanelSummary(kpiIndex, kpi)}
+              </Badge>
+            }
+            contentClassName="space-y-2"
+            data-testid="coord-plan-kpis"
+          >
+            {/* The window sentence is for an ANSWER. While pending or
+                unavailable the block below already says so, in the same
+                words, and repeating it would be two lines for one fact. */}
+            {kpiIndex.state === "loaded" && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="coord-plan-kpis-status"
+                data-kpi-state={kpiIndex.state}
+              >
+                {describeKpiIndex(kpiIndex)}
+              </p>
+            )}
+            <KpiBlock cell={kpi} />
+          </CollapsiblePanel>
 
           {/* R7 — the transition log is supporting material, so it folds; its
               count stays visible in the collapsed header so an empty history
