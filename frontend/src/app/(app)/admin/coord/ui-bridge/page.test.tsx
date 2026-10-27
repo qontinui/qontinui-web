@@ -551,10 +551,12 @@ describe("a stale pairing", () => {
 });
 
 /**
- * The web app registry answers any signed-in user with every row of
- * `project.apps`, which is not partitioned by project, and the menu does not
- * stand between a viewer and this page — any signed-in member can open its
- * URL. So the page makes that read only for staff (`webRegistryAccessOf`).
+ * The web app registry (`project.apps`, not partitioned by project) answers
+ * only an active platform admin and refuses anyone else 403, and the menu
+ * does not stand between a viewer and this page — any signed-in member can
+ * open its URL. So the page makes that read only for staff
+ * (`webRegistryAccessOf`), and every other viewer's half says why instead of
+ * showing the refusal.
  */
 describe("a viewer who is not staff", () => {
   /** Let any request a render or a press would start actually start. */
