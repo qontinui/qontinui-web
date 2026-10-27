@@ -4,13 +4,31 @@
  * Per-workflow constraint override editor for the web frontend settings panel.
  * Fetches available constraints from the backend API and displays a 3-state
  * toggle for each: Default (use project config), Force Enable, Force Disable.
+ *
+ * The constraints read is for platform admins only. A viewer who is not one
+ * sees `ConstraintsAdminOnly`, and a read that failed is a labelled UNKNOWN
+ * with its reason; neither is rendered as "No constraints configured", and
+ * neither offers a toggle. Either way the workflow's own overrides still
+ * apply, so their count is said.
  */
 
 import { useState, useEffect } from "react";
-import { ShieldCheck, Loader2, AlertTriangle } from "lucide-react";
-import { fetchActiveConstraints } from "@/lib/constraints-api";
+import { ShieldCheck, Loader2 } from "lucide-react";
+import {
+  fetchActiveConstraints,
+  isConstraintsAdminRefusal,
+} from "@/lib/constraints-api";
 import type { Constraint } from "@qontinui/shared-types/constraints";
+import { ConstraintsAdminOnly } from "../../constraints/ConstraintsAdminOnly";
+import { ConstraintsReadNote } from "../../constraints/ConstraintsReadNote";
 import type { SettingRenderProps } from "./types";
+
+/** What the constraints read answered. */
+type ConstraintsRead =
+  | { state: "loading" }
+  | { state: "read"; constraints: Constraint[] }
+  | { state: "admin-only" }
+  | { state: "unknown"; reason: string };
 
 type OverrideState = "default" | "enable" | "disable";
 
@@ -51,29 +69,28 @@ export function ConstraintOverridesEditor({
 }: SettingRenderProps) {
   const overrides = workflow.constraintOverrides;
 
-  const [constraints, setConstraints] = useState<Constraint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [read, setRead] = useState<ConstraintsRead>({ state: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setRead({ state: "loading" });
 
     fetchActiveConstraints()
       .then((result) => {
         if (!cancelled) {
-          setConstraints(result);
-          setLoading(false);
+          setRead({ state: "read", constraints: result });
         }
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : "Failed to load constraints"
-          );
-          setLoading(false);
+        if (cancelled) return;
+        if (isConstraintsAdminRefusal(err)) {
+          setRead({ state: "admin-only" });
+          return;
         }
+        setRead({
+          state: "unknown",
+          reason: err instanceof Error ? err.message : String(err),
+        });
       });
 
     return () => {
@@ -101,23 +118,46 @@ export function ConstraintOverridesEditor({
 
   const overrideCount = overrides ? Object.keys(overrides).length : 0;
 
-  if (loading) {
+  if (read.state === "loading") {
     return (
-      <div className="flex items-center gap-2 text-xs text-zinc-500 py-2">
+      <div
+        className="flex items-center gap-2 text-xs text-zinc-500 py-2"
+        data-testid="constraint-overrides-loading"
+      >
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Loading constraints...
       </div>
     );
   }
 
-  if (error) {
+  if (read.state !== "read") {
     return (
-      <div className="flex items-center gap-2 text-xs text-amber-400/80 py-2">
-        <AlertTriangle className="w-3.5 h-3.5" />
-        <span>{error}</span>
+      <div className="space-y-2">
+        {read.state === "admin-only" ? (
+          <ConstraintsAdminOnly testId="constraint-overrides-admin-only" />
+        ) : (
+          <ConstraintsReadNote
+            testId="constraint-overrides-read-failed"
+            reason={read.reason}
+          >
+            The constraints could not be read, so which constraints this
+            workflow can override is unknown.
+          </ConstraintsReadNote>
+        )}
+        {overrideCount > 0 && (
+          <p
+            className="text-[10px] text-zinc-500"
+            data-testid="constraint-overrides-count"
+          >
+            This workflow sets {overrideCount} constraint override
+            {overrideCount !== 1 ? "s" : ""}, which still apply.
+          </p>
+        )}
       </div>
     );
   }
+
+  const { constraints } = read;
 
   if (constraints.length === 0) {
     return (

@@ -11,6 +11,12 @@
  *   1. Built-in Constraints -- toggleable, non-editable
  *   2. Custom Constraints -- fully editable cards
  *   3. Resource Limits -- collapsible number inputs
+ *
+ * They render only when the read delivered (`readState === "read"`). A viewer
+ * who is not a platform admin sees `ConstraintsAdminOnly` instead, and a read
+ * that never delivered is a labelled UNKNOWN with its reason, never an empty
+ * list; neither offers an editor or Save. A read that failed after an earlier
+ * one delivered keeps that read's sections, labelled stale.
  */
 
 import { useState } from "react";
@@ -31,9 +37,12 @@ import {
 } from "lucide-react";
 import type { Constraint } from "@qontinui/shared-types/constraints";
 import { generateConstraintId } from "@qontinui/workflow-utils";
+import { RefreshButton } from "@/components/console";
 import { useConstraints } from "@/hooks/useConstraints";
 import { BuiltinConstraintRow } from "./BuiltinConstraintRow";
 import { ConstraintCard } from "./ConstraintCard";
+import { ConstraintsAdminOnly } from "./ConstraintsAdminOnly";
+import { ConstraintsReadNote } from "./ConstraintsReadNote";
 import { ResourceLimitsSection } from "./ResourceLimitsSection";
 
 export function ConstraintsPanel() {
@@ -44,6 +53,8 @@ export function ConstraintsPanel() {
     resourceLimits,
     isDirty,
     loading,
+    readState,
+    readFailure,
     error,
     toggleBuiltin,
     addConstraint,
@@ -52,6 +63,7 @@ export function ConstraintsPanel() {
     promoteConstraint,
     updateResourceLimits,
     save,
+    reload,
   } = useConstraints();
 
   const [isOpen, setIsOpen] = useState(true);
@@ -118,15 +130,49 @@ export function ConstraintsPanel() {
         <CollapsibleContent>
           <div className="px-3 pb-3 space-y-4">
             {/* Loading state */}
-            {loading && (
-              <div className="flex items-center justify-center gap-2 py-6 text-zinc-400">
+            {(loading || readState === "pending") && (
+              <div
+                className="flex items-center justify-center gap-2 py-6 text-zinc-400"
+                data-testid="constraints-loading"
+              >
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span className="text-sm">Loading constraints...</span>
               </div>
             )}
 
-            {!loading && (
+            {/* Refused: the viewer is not a platform admin */}
+            {!loading && readState === "admin-only" && <ConstraintsAdminOnly />}
+
+            {/* No read delivered: what applies is unknown */}
+            {!loading && readState === "unknown" && (
+              <ConstraintsReadNote
+                testId="constraints-read-failed"
+                reason={readFailure}
+                action={
+                  <RefreshButton
+                    onRefresh={reload}
+                    label="Read the constraints again"
+                    title="Asks the runner for this project's constraints again"
+                    data-testid="constraints-read-retry"
+                  />
+                }
+              >
+                The constraints could not be read, so which constraints apply is
+                unknown.
+              </ConstraintsReadNote>
+            )}
+
+            {!loading && readState === "read" && (
               <>
+                {readFailure !== null && (
+                  <ConstraintsReadNote
+                    testId="constraints-read-stale"
+                    reason={readFailure}
+                  >
+                    The latest read of the constraints failed. What is shown
+                    below is from an earlier read and may be out of date.
+                  </ConstraintsReadNote>
+                )}
                 {/* Save button + status */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
