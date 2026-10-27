@@ -118,6 +118,108 @@ function UiBridgePresented() {
   );
 }
 
+/*
+ * The inspector's three controls register their UI Bridge ids (stable, for
+ * automation and spec-checks) where they render, and only while they do: they
+ * render only once a runner is connected. A registration with no element on
+ * screen is one the SDK goes looking for: `useUIElement` polls the DOM for
+ * it, 3 tries 100 ms apart (`pollForTaggedElement`), and unmounting does not
+ * stop the poll (`SubspaceDetailActions.tsx` says the same of the drawer's
+ * buttons). So registered in the inspector, above its no-runner return, all
+ * three ids started a poll on every mount with no runner.
+ */
+
+/** The App field, its suggestions and its Refresh button. */
+function AppIdControls({
+  appId,
+  onAppId,
+  appIdValid,
+  appIdInvalid,
+  suggestions,
+  onRefresh,
+}: {
+  appId: string;
+  onAppId: (appId: string) => void;
+  appIdValid: boolean;
+  appIdInvalid: boolean;
+  suggestions: ReadonlyArray<AppIdSuggestion>;
+  onRefresh: () => void;
+}) {
+  const { ref: appIdRef } = useUIElement({
+    id: "ui-bridge-app-id",
+    label: "UI Bridge app id to inspect",
+    type: "input",
+  });
+  const { ref: refreshRef } = useUIElement({
+    id: "ui-bridge-refresh",
+    label: "Refresh UI Bridge spec list/graph",
+    type: "button",
+  });
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-xs text-muted-foreground" htmlFor="dt-app-id">
+        App
+      </label>
+      <input
+        ref={appIdRef}
+        id="dt-app-id"
+        value={appId}
+        list="dt-app-id-options"
+        onChange={(e) => onAppId(e.target.value.trim())}
+        aria-invalid={appIdInvalid}
+        aria-describedby={appIdInvalid ? "dt-app-id-invalid" : undefined}
+        className={`h-7 w-48 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${appIdInvalid ? "border-amber-500" : "border-input"}`}
+      />
+      <datalist id="dt-app-id-options">
+        {suggestions.map(({ id, note }) => (
+          <option key={id} value={id} label={note} />
+        ))}
+      </datalist>
+      <Button
+        ref={refreshRef}
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 text-xs"
+        disabled={!appIdValid}
+        onClick={onRefresh}
+      >
+        <RefreshCw className="size-3.5" /> Refresh
+      </Button>
+    </div>
+  );
+}
+
+/** The button that captures a live snapshot of the runner's own window. */
+function CaptureSnapshotButton({
+  fetching,
+  onCapture,
+}: {
+  fetching: boolean;
+  onCapture: () => void;
+}) {
+  const { ref } = useUIElement({
+    id: "ui-bridge-capture-snapshot",
+    label: "Capture a live UI Bridge snapshot of the runner's own window",
+    type: "button",
+  });
+  return (
+    <Button
+      ref={ref}
+      size="sm"
+      className="mb-3 gap-1.5"
+      disabled={fetching}
+      onClick={onCapture}
+    >
+      {fetching ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <Network className="size-4" />
+      )}
+      Capture snapshot
+    </Button>
+  );
+}
+
 /**
  * UI Bridge tab, inside the presentation lens's boundary (plan
  * `2026-10-23-console-presentation-spaces` D3): the inspector reads app names
@@ -196,23 +298,6 @@ function UiBridgeInspector() {
     specGraph.isError &&
     sharesRelayCause(specList.error, specGraph.error);
 
-  // UI Bridge: stable ids for the tab's controls (automation + spec-checks).
-  const { ref: appIdRef } = useUIElement({
-    id: "ui-bridge-app-id",
-    label: "UI Bridge app id to inspect",
-    type: "input",
-  });
-  const { ref: refreshRef } = useUIElement({
-    id: "ui-bridge-refresh",
-    label: "Refresh UI Bridge spec list/graph",
-    type: "button",
-  });
-  const { ref: captureRef } = useUIElement({
-    id: "ui-bridge-capture-snapshot",
-    label: "Capture a live UI Bridge snapshot of the runner's own window",
-    type: "button",
-  });
-
   if (!deviceId) {
     return (
       <div className="rounded-lg border border-border bg-card p-4">
@@ -226,39 +311,17 @@ function UiBridgeInspector() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-muted-foreground" htmlFor="dt-app-id">
-          App
-        </label>
-        <input
-          ref={appIdRef}
-          id="dt-app-id"
-          value={appId}
-          list="dt-app-id-options"
-          onChange={(e) => setAppId(e.target.value.trim())}
-          aria-invalid={appIdInvalid}
-          aria-describedby={appIdInvalid ? "dt-app-id-invalid" : undefined}
-          className={`h-7 w-48 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${appIdInvalid ? "border-amber-500" : "border-input"}`}
-        />
-        <datalist id="dt-app-id-options">
-          {appSuggestions.map(({ id, note }) => (
-            <option key={id} value={id} label={note} />
-          ))}
-        </datalist>
-        <Button
-          ref={refreshRef}
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-          disabled={!appIdValid}
-          onClick={() => {
-            specList.refetch();
-            specGraph.refetch();
-          }}
-        >
-          <RefreshCw className="size-3.5" /> Refresh
-        </Button>
-      </div>
+      <AppIdControls
+        appId={appId}
+        onAppId={setAppId}
+        appIdValid={appIdValid}
+        appIdInvalid={appIdInvalid}
+        suggestions={appSuggestions}
+        onRefresh={() => {
+          specList.refetch();
+          specGraph.refetch();
+        }}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* CACHED / processed side */}
@@ -386,23 +449,13 @@ function UiBridgeInspector() {
             shown with the result.
           </p>
 
-          <Button
-            ref={captureRef}
-            size="sm"
-            className="mb-3 gap-1.5"
-            disabled={snapshot.isFetching}
-            onClick={() => {
+          <CaptureSnapshotButton
+            fetching={snapshot.isFetching}
+            onCapture={() => {
               setSnapshotRequested(true);
               if (snapshotRequested) snapshot.refetch();
             }}
-          >
-            {snapshot.isFetching ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Network className="size-4" />
-            )}
-            Capture snapshot
-          </Button>
+          />
 
           {snapshot.isError && snapshotRequested && (
             <RelayFailure
