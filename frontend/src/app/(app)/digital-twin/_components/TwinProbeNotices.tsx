@@ -11,9 +11,9 @@ import {
 } from "../_lib/probe-read";
 import { upperFirst } from "../_lib/status-presentation";
 import {
-  FIDELITY_LABEL,
   FIDELITY_SOURCE,
   RESTRICTED_REASON,
+  probeFedContent,
 } from "../_lib/twin-aspects";
 import { UnknownBadge } from "./FidelityFigures";
 
@@ -157,13 +157,6 @@ export function CoordUnreachableBanner({ probe }: { probe: ProbeAttempt }) {
 }
 
 /**
- * What the Twin map shows from the probe: the three plants' probe figures
- * (the UI Bridge card's come from the runner, and every Honesty figure from
- * the self-check) and the statuses of the live-probed parts in a drill-down.
- */
-const MAP_PROBE_CONTENT = `the environment, process and intent twins' ${FIDELITY_LABEL.observed}, ${FIDELITY_LABEL.coverage} and ${FIDELITY_LABEL.staleness} figures, and the statuses of the live-probed parts below,`;
-
-/**
  * The Twin map's notice for a probe answer kept after its latest read failed
  * (react-query keeps a query's data when a refetch fails: `refreshFailed`,
  * with a reading held, `probeUnread` null). The map's probe figures and its
@@ -174,18 +167,31 @@ const MAP_PROBE_CONTENT = `the environment, process and intent twins' ${FIDELITY
  * `Provenance` chip in both modes, and says it is not a current reading. It
  * is worded for the map: the banner's "cells" and "taxonomy" are not on it.
  *
+ * It names only the twins the probe feeds (`twin-aspects.ts`
+ * `probeFedContent`): those with a live-probed part, as coord's catalog
+ * declares them. A twin with none shows UNKNOWN figures for a reason the
+ * probe's answer has no part in, so calling them that answer would be false;
+ * and with no such twin nothing on the map is the probe's answer, so there is
+ * no notice.
+ *
  * A probe holding no reading at all needs no notice here: every probe figure
  * is then UNKNOWN with the reason, and every live part UNKNOWN with it
  * (`twin-aspects.ts` `probeSilence`, `resolve.ts`). Renders nothing otherwise,
  * so the map mounts it unconditionally. Both modes say the HTTP status only:
  * the failure's own text is the operator's, on the Completeness tab's banner.
  */
-export function TwinMapHeldNotice({ probe }: { probe: ProbeAttempt }) {
+export function TwinMapHeldNotice({
+  probe,
+}: {
+  probe: ProbeAttempt & Pick<ProbeRead, "rows">;
+}) {
   if (!probe.refreshFailed || probeUnread(probe) !== null) return null;
+  const content = probeFedContent(probe.rows);
+  if (content === null) return null;
   return (
     <UnknownReading
       reason={`coord's live probe's latest read failed${statusSuffix(probe.error)}`}
-      consequence={`${MAP_PROBE_CONTENT} are its last answer, not a current reading`}
+      consequence={`${content}, are its last answer, not a current reading`}
       data-testid="digital-twin-map-probe-held"
     >
       <Provenance

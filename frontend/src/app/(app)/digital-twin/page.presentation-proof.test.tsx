@@ -754,10 +754,12 @@ describe("/digital-twin in presentation mode, over a probe answer kept after its
     const view = renderPresenting();
     const user = userEvent.setup();
 
-    // The default tab: the map's own notice, the failure first, dated.
+    // The default tab: the map's own notice, the failure first, dated. It
+    // names the twins the probe feeds. The spec's catalog stub declares no
+    // intent row (nor did coord on 2026-10-27).
     const notice = screen.getByTestId("digital-twin-map-probe-held");
     expect(notice).toHaveTextContent(
-      "Coord's live probe's latest read failed (HTTP 502), so the environment, process and intent twins' Observed, Coverage and Staleness figures, and the statuses of the live-probed parts below, are its last answer, not a current reading."
+      "Coord's live probe's latest read failed (HTTP 502), so the Observed, Coverage and Staleness figures of the environment twin and the process twin, and the statuses of the live-probed parts below, are its last answer, not a current reading."
     );
     expect(
       within(notice).getByTestId("digital-twin-map-probe-held-provenance")

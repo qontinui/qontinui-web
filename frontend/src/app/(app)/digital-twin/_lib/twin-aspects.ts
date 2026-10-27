@@ -13,6 +13,10 @@
  * | staleness | the oldest answering reading (the envelope door's dated by its worst bucket); UNKNOWN when one came with no age served | UNKNOWN: the models carry no time |
  * | honesty | violations among the parts coord's twin self-check measures | UNKNOWN: the self-check does not cover interface models |
  *
+ * A twin with no live-probed part has no probe figure at all: its observed,
+ * coverage and staleness are UNKNOWN because nothing in it is probed live,
+ * whatever the probe answered ({@link probeFedAspects}).
+ *
  * Nothing here is ever a zero standing in for an unknown: a failed read, a
  * degraded probe answer (no probe made — the rule `probe-read.ts`
  * `probeUnread` gives every view of the probe), a refused one, a twin nothing probes
@@ -63,6 +67,13 @@ export interface TwinAspect {
    * noun.
    */
   readonly noun: string;
+  /**
+   * What its Observed, Coverage and Staleness figures are read from: coord's
+   * live twin probe ({@link plantFidelity}) or the runner
+   * ({@link appTwinFidelity}). Its Honesty is coord's twin self-check either
+   * way.
+   */
+  readonly figuresFrom: "probe" | "runner";
   /** Whether a manifest row is one of this aspect's parts. */
   readonly includes: (
     row: Pick<SubspaceManifestEntry, "twin" | "layer">
@@ -81,24 +92,28 @@ export const TWIN_ASPECTS: readonly TwinAspect[] = [
     id: "environment",
     captionKey: "digital-twin.aspect-environment",
     noun: "environment twin",
+    figuresFrom: "probe",
     includes: (row) => row.twin === "environment",
   },
   {
     id: "process",
     captionKey: "digital-twin.aspect-process",
     noun: "process twin",
+    figuresFrom: "probe",
     includes: (row) => row.twin === "process",
   },
   {
     id: "intent",
     captionKey: "digital-twin.aspect-intent",
     noun: "intent twin",
+    figuresFrom: "probe",
     includes: (row) => row.twin === "intent",
   },
   {
     id: "ui-bridge",
     captionKey: "digital-twin.aspect-ui-bridge",
     noun: "UI Bridge app twin",
+    figuresFrom: "runner",
     includes: (row) => row.layer === "ui-bridge",
   },
 ];
@@ -120,6 +135,13 @@ export function aspectRows<
   T extends Pick<SubspaceManifestEntry, "twin" | "layer">,
 >(aspect: TwinAspect, rows: readonly T[]): T[] {
   return rows.filter((row) => aspect.includes(row));
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+function listed(names: readonly string[]): string {
+  return names.length === 1
+    ? names[0]!
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +171,42 @@ export const FIDELITY_SOURCE = {
   appRegistry: "the runner's app registry",
   appModels: "the runner's interface models",
 } as const;
+
+/**
+ * The aspects whose Observed, Coverage and Staleness figures the live probe
+ * feeds, in display order: those read from the probe that have at least one
+ * live-probed part. A part is live-probed when coord's catalog declares it
+ * (`resolve.ts`), so which twins these are is coord's to say, never this
+ * page's. A twin with none is not one: its three figures are UNKNOWN because
+ * nothing in it is probed live, whatever the probe answered (`probeSilence`).
+ * Nor is the UI Bridge app twin, whose figures come from the runner.
+ */
+export function probeFedAspects(
+  rows: readonly ResolvedSubspace[]
+): TwinAspect[] {
+  return TWIN_ASPECTS.filter(
+    (aspect) =>
+      aspect.figuresFrom === "probe" &&
+      coverageOf(aspectRows(aspect, rows)).probed > 0
+  );
+}
+
+/**
+ * What on the Twin map shows the live probe's answer, as the subject of a
+ * sentence: the probe figures of each twin it feeds ({@link probeFedAspects})
+ * and the statuses of the live-probed parts in a drill-down. Every
+ * live-probed part belongs to one of those twins, the UI Bridge app twin's
+ * included (its rows are the environment twin's too). `null` when the probe
+ * feeds no twin, so nothing on the map is its answer.
+ */
+export function probeFedContent(
+  rows: readonly ResolvedSubspace[]
+): string | null {
+  const fed = probeFedAspects(rows);
+  if (fed.length === 0) return null;
+  const twins = listed(fed.map((aspect) => `the ${aspect.noun}`));
+  return `the ${FIDELITY_LABEL.observed}, ${FIDELITY_LABEL.coverage} and ${FIDELITY_LABEL.staleness} figures of ${twins}, and the statuses of the live-probed parts below`;
+}
 
 export type FidelityFigure =
   | {
@@ -363,13 +421,6 @@ function stalenessFigure(
     source,
     asOf: probe.asOf,
   };
-}
-
-/** `a`, `a and b`, `a, b and c`. */
-function listed(names: readonly string[]): string {
-  return names.length === 1
-    ? names[0]!
-    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /**

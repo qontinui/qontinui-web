@@ -103,7 +103,8 @@ function PlanReadLine({ read }: { read: TwinPlanRead }) {
  *
  * A probe answer kept after its latest read failed still feeds the figures
  * and part rows, so the map's own notice leads above them and names them as
- * that last answer (`TwinMapHeldNotice`, style guide R6 and 6.5).
+ * that last answer (`TwinMapHeldNotice`, style guide R6 and 6.5). It names
+ * only the twins the probe feeds, those with a live-probed part.
  */
 export function TwinMap() {
   // The probe as every view of it reads it: a failed or degraded answer
@@ -132,7 +133,7 @@ export function TwinMap() {
         {TWIN_ASPECTS.map((aspect) => {
           const parts = aspectRows(aspect, rows);
           const figures =
-            aspect.id === "ui-bridge"
+            aspect.figuresFrom === "runner"
               ? appTwinFidelity(appTwin)
               : plantFidelity(parts, probe, reportQuery, now);
           return (

@@ -2061,11 +2061,17 @@ Where a kept reading's dot goes depends on what carries it:
 - **The Twin map** has a notice of its own above its cards, worded for the map
   (`TwinMapHeldNotice`), in both modes. Its live-probed part rows keep R6's row arm
   under it. Its probe figures, which draw no dot, keep the last answer's values. The
-  notice names both as that answer ("the environment, process and intent twins'
-  Observed, Coverage and Staleness figures, and the statuses of the live-probed parts
-  below, are its last answer, not a current reading"), and a `Provenance` chip dates
-  it. A probe holding no reading at all needs no notice there: every probe figure and
-  live part is then UNKNOWN with the reason.
+  notice names both as that answer, and only for the twins the probe feeds: those
+  with a live-probed part, as coord's catalog declares them
+  (`digital-twin/_lib/twin-aspects.ts` `probeFedAspects`). A twin with none shows its
+  probe figures as UNKNOWN because nothing in it is probed live, a reason the probe's
+  answer has no part in, so the notice never calls them that answer. Under a catalog
+  that declares no intent row it reads "the Observed, Coverage and Staleness figures
+  of the environment twin and the process twin, and the statuses of the live-probed
+  parts below, are its last answer, not a current reading", and a `Provenance` chip
+  dates it. With no twin fed, nothing on the map is the probe's answer, and there is
+  no notice. A probe holding no reading at all needs no notice there either: every
+  probe figure and live part is then UNKNOWN with the reason.
 
 Where one panel shows two reads of one thing, every line about a read says which read
 it is about. It does so by name ("Coord's live probe's latest read failed", "This

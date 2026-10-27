@@ -18,6 +18,8 @@ import {
   aspectRows,
   partName,
   plantFidelity,
+  probeFedAspects,
+  probeFedContent,
   twinAspect,
   type AppTwinRead,
   type FidelityFigure,
@@ -26,7 +28,10 @@ import {
   type ReportRead,
 } from "./twin-aspects";
 import { probeDegradedReason, probeReadOf, type ProbeRead } from "./probe-read";
-import { outboundEnvelope } from "./test-catalog";
+import {
+  catalogDeclaring as declaring,
+  outboundEnvelope,
+} from "./test-catalog";
 import type {
   RawVerdictResponse,
   ResolvedSubspace,
@@ -289,9 +294,7 @@ describe("plantFidelity — from the live probe", () => {
     expect(reason([probe("workers", "implemented", 1, null), OUTBOUND])).toBe(
       "no age was served for outbound's reading; the other answering probe read live"
     );
-    expect(reason([OUTBOUND])).toBe(
-      "no age was served for outbound's reading"
-    );
+    expect(reason([OUTBOUND])).toBe("no age was served for outbound's reading");
   });
 
   it("renders a failed probe as UNKNOWN with its reason — never as 0 answering", () => {
@@ -396,6 +399,105 @@ describe("plantFidelity — from the live probe", () => {
     expect(f.observed.state === "unknown" && f.observed.reason).toMatch(
       /reports rather than verdicts/
     );
+  });
+});
+
+/**
+ * The twins whose probe figures the live probe feeds — what the Twin map's
+ * held-probe notice may call the probe's answer. Which parts are live-probed
+ * is coord's catalog's to say (`resolve.ts`). Coord declared no intent row
+ * on 2026-10-27, so the intent twin's probe figures were UNKNOWN for a
+ * reason the probe's answer has no part in.
+ */
+describe("probeFedAspects — the twins the live probe feeds", () => {
+  const answered = (ids: readonly string[]): SubspaceProbe[] =>
+    ids.map((id) => probe(id, "implemented", 1));
+  const declared = (ids: readonly string[]) =>
+    resolveSubspaces(answered(ids), false, declaring(ids));
+  // A catalog from a coord that declares the flag on every entry and sets it
+  // on none: nothing is live-probed.
+  const NOTHING_PROBEABLE: TwinCatalogResponse = {
+    entries: declaring(["schema"]).entries.map((entry) => ({
+      ...entry,
+      snapshot: false,
+    })),
+    total: 1,
+  };
+  const FIGURES = "the Observed, Coverage and Staleness figures of";
+  const PARTS = "and the statuses of the live-probed parts below";
+
+  const CASES: readonly {
+    name: string;
+    rows: ResolvedSubspace[];
+    fed: readonly string[];
+    content: string | null;
+  }[] = [
+    {
+      name: "a catalog declaring no intent row",
+      rows: declared(["schema", "workers"]),
+      fed: ["environment", "process"],
+      content: `${FIGURES} the environment twin and the process twin, ${PARTS}`,
+    },
+    {
+      name: "a catalog declaring an intent row",
+      rows: declared(["schema", "workers", "metrics"]),
+      fed: ["environment", "process", "intent"],
+      content: `${FIGURES} the environment twin, the process twin and the intent twin, ${PARTS}`,
+    },
+    {
+      name: "a catalog declaring one twin's rows",
+      rows: declared(["workers"]),
+      fed: ["process"],
+      content: `${FIGURES} the process twin, ${PARTS}`,
+    },
+    {
+      // A UI Bridge layer row is the environment twin's: the app twin's own
+      // figures are the runner's, so it is never named.
+      name: "a catalog declaring a UI Bridge layer row",
+      rows: declared(["dom"]),
+      fed: ["environment"],
+      content: `${FIGURES} the environment twin, ${PARTS}`,
+    },
+    {
+      name: "a catalog declaring nothing probeable",
+      rows: resolveSubspaces(answered(["schema"]), false, NOTHING_PROBEABLE),
+      fed: [],
+      content: null,
+    },
+    {
+      // With no catalog read, the manifest's snapshot rows and any row a
+      // probe came back for are the live-probed ones.
+      name: "no catalog read, and a probe answer for an intent row",
+      rows: resolveSubspaces(answered(["metrics"]), false),
+      fed: ["environment", "process", "intent"],
+      content: `${FIGURES} the environment twin, the process twin and the intent twin, ${PARTS}`,
+    },
+  ];
+
+  for (const c of CASES) {
+    it(`names the twins with a live-probed part: ${c.name}`, () => {
+      expect(probeFedAspects(c.rows).map((aspect) => aspect.id)).toEqual(c.fed);
+      expect(probeFedContent(c.rows)).toBe(c.content);
+    });
+  }
+
+  it("never names a twin whose probe figures say nothing in it is probed live", () => {
+    for (const c of CASES) {
+      const fed = new Set(probeFedAspects(c.rows).map((aspect) => aspect.id));
+      for (const id of ["environment", "process", "intent"] as const) {
+        const silent = plantFidelity(
+          aspectRows(twinAspect(id), c.rows),
+          probeRead({ rows: c.rows }),
+          reportRead(),
+          NOW
+        ).some(
+          (f) =>
+            f.state === "unknown" &&
+            f.reason.startsWith("nothing in this twin is probed live")
+        );
+        expect(fed.has(id), `${c.name}: ${id}`).toBe(!silent);
+      }
+    }
   });
 });
 

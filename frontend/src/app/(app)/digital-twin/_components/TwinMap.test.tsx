@@ -21,6 +21,7 @@ import {
   renderInPresentationMode,
 } from "@/test/presentation";
 import { isDeclaredProbe, manifest } from "../_lib/resolve";
+import { MANIFEST_SNAPSHOT_IDS, catalogDeclaring } from "../_lib/test-catalog";
 import type {
   SubspacesProbeResponse,
   TwinCatalogResponse,
@@ -698,8 +699,12 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
   const PROBE_ERROR = new Error(
     `GET /api/v1/digital-twin/subspaces failed: 502 - ${LEAKY_BODY}`
   );
+  /**
+   * Under the page's own catalog stub, which declares no intent row (nor did
+   * coord on 2026-10-27): the notice names the two twins the probe feeds.
+   */
   const HELD_NOTICE =
-    "Coord's live probe's latest read failed (HTTP 502), so the environment, process and intent twins' Observed, Coverage and Staleness figures, and the statuses of the live-probed parts below, are its last answer, not a current reading.";
+    "Coord's live probe's latest read failed (HTTP 502), so the Observed, Coverage and Staleness figures of the environment twin and the process twin, and the statuses of the live-probed parts below, are its last answer, not a current reading.";
 
   /** The probe holds `data`, read at READ_AT; its refetch a minute later failed. */
   function holdProbe(data?: SubspacesProbeResponse) {
@@ -707,7 +712,9 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
       ...idle,
       data:
         data ??
-        (stubBody("**/api/v1/digital-twin/subspaces") as SubspacesProbeResponse),
+        (stubBody(
+          "**/api/v1/digital-twin/subspaces"
+        ) as SubspacesProbeResponse),
       dataUpdatedAt: READ_AT,
       isError: true,
       error: PROBE_ERROR,
@@ -729,7 +736,9 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
       const chip = within(notice).getByTestId(
         "digital-twin-map-probe-held-provenance"
       );
-      expect(chip).toHaveTextContent(/^source: coord's live twin probe · as of /);
+      expect(chip).toHaveTextContent(
+        /^source: coord's live twin probe · as of /
+      );
       expect(chip).toHaveAttribute("data-provenance-known", "true");
       // It says the HTTP status only, in both modes.
       for (const forbidden of FORBIDDEN) {
@@ -749,6 +758,83 @@ describe("TwinMap — a probe answer kept after its latest read failed", () => {
         "known"
       );
       if (view) expectPresentationSafe(view, { forbidden: FORBIDDEN });
+    });
+  }
+
+  /**
+   * Which twins the probe feeds is coord's catalog's to say: a twin with no
+   * live-probed part shows UNKNOWN figures for a reason the probe's answer
+   * has no part in, so the notice never calls them that answer.
+   */
+  const FED: readonly {
+    catalog: string;
+    declares: () => TwinCatalogResponse;
+    names: string | null;
+    unfed: readonly string[];
+  }[] = [
+    {
+      catalog: "the page's own stub, which declares no intent row",
+      declares: () =>
+        stubBody("**/api/v1/digital-twin/catalog") as TwinCatalogResponse,
+      names: "the environment twin and the process twin",
+      unfed: ["intent"],
+    },
+    {
+      catalog: "one that declares an intent row as well",
+      declares: () => catalogDeclaring([...MANIFEST_SNAPSHOT_IDS, "metrics"]),
+      names: "the environment twin, the process twin and the intent twin",
+      unfed: [],
+    },
+    {
+      catalog: "one that declares only process rows",
+      declares: () =>
+        catalogDeclaring(
+          MANIFEST_SNAPSHOT_IDS.filter(
+            (id) =>
+              manifest.subspaces.find((s) => s.id === id)?.twin === "process"
+          )
+        ),
+      names: "the process twin",
+      unfed: ["environment", "intent"],
+    },
+    {
+      catalog: "one that declares nothing probeable",
+      declares: () => ({
+        entries: catalogDeclaring(["schema"]).entries.map((entry) => ({
+          ...entry,
+          snapshot: false,
+        })),
+        total: 1,
+      }),
+      names: null,
+      unfed: ["environment", "process", "intent"],
+    },
+  ];
+
+  for (const c of FED) {
+    it(`names only the twins the probe feeds, under ${c.catalog}`, () => {
+      state.catalog = c.declares();
+      holdProbe();
+      render(<TwinMap />);
+      const notice = screen.queryByTestId("digital-twin-map-probe-held");
+      if (c.names === null) {
+        // Nothing on the map is the probe's answer: no notice to qualify it.
+        expect(notice).toBeNull();
+      } else {
+        expect(notice).toHaveTextContent(
+          `Coord's live probe's latest read failed (HTTP 502), so the Observed, Coverage and Staleness figures of ${c.names}, and the statuses of the live-probed parts below, are its last answer, not a current reading.`
+        );
+      }
+      // A twin it does not name says why its figures are UNKNOWN: nothing in
+      // it is probed live, which no probe answer decides.
+      for (const aspect of c.unfed) {
+        if (notice) expect(notice.textContent, aspect).not.toContain(aspect);
+        for (const key of ["observed", "coverage", "staleness"]) {
+          expect(figure(aspect, key), `${aspect}.${key}`).toHaveTextContent(
+            "nothing in this twin is probed live yet"
+          );
+        }
+      }
     });
   }
 
