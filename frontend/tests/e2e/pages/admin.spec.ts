@@ -346,7 +346,7 @@ test.describe("Admin - Coord operator console", () => {
     expect(pageContent).not.toContain("Internal Server Error");
   });
 
-  test("should render coord nav shell with five primary tabs", async ({
+  test("should render coord nav shell with its direct tabs", async ({
     page,
   }) => {
     // Opens /admin/coord/pipeline directly (renamed from /admin/coord/fleet
@@ -386,7 +386,10 @@ test.describe("Admin - Coord operator console", () => {
 
       const sidebar = page.locator('aside[data-sidebar="true"]');
       const navItem = (id: string) => sidebar.locator(`[data-nav-id="${id}"]`);
+      // Home (the console landing, `/admin/coord/home`) is the first direct
+      // tab, ahead of the daily destinations.
       for (const id of [
+        "coord-home",
         "coord-pipeline",
         "coord-prs",
         "coord-gates",
@@ -416,6 +419,7 @@ test.describe("Admin - Coord operator console", () => {
   });
 
   for (const { path, testId } of [
+    { path: "/admin/coord/home", testId: "coord-home-page" },
     { path: "/admin/coord/pipeline", testId: "coord-pipeline-page" },
     { path: "/admin/coord/trees", testId: "coord-trees-page" },
     { path: "/admin/coord/runners", testId: "coord-runners-page" },
