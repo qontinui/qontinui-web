@@ -708,10 +708,11 @@ export async function settle() {
  * translation"): coord's snake_case tokens (`closed_by_role`,
  * `pr_merge.kill_switch`), an action family (`fleet.*`), an environment
  * variable (`COORD_MAX_WORKTREES`), a coord table (`coord.ci_dispatches`), an
- * HTTP route (`POST /coord/status`) or a dev host.
+ * HTTP route (`POST /coord/status`), the transport a list updates over
+ * (`WS offline`, a `WebSocket`) or a dev host.
  */
 export const ENGINEERING_VOCABULARY =
-  /\b[a-z]+_[a-z_]+\b|\b[a-z_]+\.\*|\b[A-Z]{2,}_[A-Z_]{2,}\b|\bcoord\.[a-z_]+|\b(?:GET|POST|PUT|PATCH|DELETE) \/|localhost/;
+  /\b[a-z]+_[a-z_]+\b|\b[a-z_]+\.\*|\b[A-Z]{2,}_[A-Z_]{2,}\b|\bcoord\.[a-z_]+|\b(?:GET|POST|PUT|PATCH|DELETE) \/|\bWS\b|\bWebSocket\b|localhost/;
 
 /**
  * Where the page shows engineering vocabulary right now: its text (every

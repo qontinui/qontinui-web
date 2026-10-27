@@ -75,15 +75,22 @@ vi.mock("@/services/service-factory", () => ({
 // The page's one device-status subscription, seeded with rows that carry
 // every free-text field the tile can render.
 const deviceStatusRows = new Map<string, unknown>();
-/** The stream's failure, when a test makes it fail. */
-const deviceStatusState: { error: string | null } = { error: null };
+/**
+ * The stream's read state. A test that makes it fail sets `error`, and sets
+ * `everSeeded` false when no fleet read ever answered — the hook's own report
+ * for a route that has failed from the start.
+ */
+const deviceStatusState: { error: string | null; everSeeded: boolean } = {
+  error: null,
+  everSeeded: true,
+};
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
     byHostname: deviceStatusRows,
     connected: false,
     error: deviceStatusState.error,
     seeded: true,
-    everSeeded: true,
+    everSeeded: deviceStatusState.everSeeded,
     refetch: vi.fn(),
   }),
 }));
@@ -178,12 +185,23 @@ function resetEnvironment() {
   routerPush.mockReset();
   deviceStatusRows.clear();
   deviceStatusState.error = null;
+  deviceStatusState.everSeeded = true;
   window.localStorage.clear();
   window.sessionStorage.clear();
   sessionMachineAliases.reset();
   // The audit panel is collapsed by default; its persisted choice opens it,
   // so its rows are in the document to be checked.
   window.localStorage.setItem("devops:operator-audit", "1");
+}
+
+/** The device-status tile's line saying whether its list updates live. */
+function deviceStatusConnection(): HTMLElement {
+  const line = document.querySelector<HTMLElement>(
+    "[data-ui-bridge-id='operations.device-status-connection']"
+  );
+  if (!line)
+    throw new Error("the device-status connection line did not render");
+  return line;
 }
 
 describe("/admin/coord/devops?present=1 — no drain control, only aliased machines", () => {
@@ -710,13 +728,29 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
     const html = document.body.innerHTML;
     expect(html).not.toContain(ERROR_HOST);
     expect(html).not.toContain(ERROR_DEVICE);
-    // No machine reported its status: said plainly, without the route agents
-    // post to.
-    const empty = screen.getByTestId("device-status-empty");
-    expect(empty).toHaveTextContent(
-      "No machine has reported what it is working on in the last hour."
+    // No device-status read ever answered, so whether any machine reported is
+    // UNKNOWN — said in fixed words, never "no machine has reported", and
+    // never a count of 0.
+    expect(screen.getByTestId("device-status-unknown")).toHaveTextContent(
+      "UNKNOWN — the machines' status reports could not be read, so whether any machine has reported what it is working on is not known."
     );
-    expect(empty.textContent).not.toMatch(/POST|\/coord\//);
+    expect(screen.queryByTestId("device-status-empty")).toBeNull();
+    expect(screen.queryByTestId("device-status-stale-empty")).toBeNull();
+    expect(screen.getByTestId("device-status-count").textContent).toBe(
+      "unknown"
+    );
+    // ...and the sections that count from those reports date them UNKNOWN
+    // too, so the page does not contradict itself.
+    for (const id of ["dev-ops.health-strip", "dev-ops.machines"] as const) {
+      expect(
+        sectionChips(id)
+          .get(DEVOPS_SOURCES.deviceStatus)
+          ?.getAttribute("data-provenance-known"),
+        id
+      ).toBe("false");
+    }
+    // The list is not updating live: said so, without naming the transport.
+    expect(deviceStatusConnection().textContent).toBe("live updates paused");
     // ...and nothing anywhere on the page is coord's own vocabulary.
     expect(engineeringVocabularyOnPage()).toEqual([]);
     expect(screen.getByTestId("fleet-roles-unknown")).toHaveTextContent(
@@ -744,6 +778,8 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
   it("every read fails: no failure's own text reaches the page, and every panel says it failed", async () => {
     mockRoutes({ fail: "all" });
     deviceStatusState.error = readFailure("/coord/device-status").message;
+    // The route has failed from the start: no fleet read ever answered.
+    deviceStatusState.everSeeded = false;
     const view = renderInPresentationMode(<CoordDevOpsPage />, {
       scope: SCOPE,
     });
@@ -772,6 +808,8 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
   it("coord's fleet health answers and every other read fails: the machine cards say so in fixed words too", async () => {
     mockRoutes({ fail: "all-but-fleet-health" });
     deviceStatusState.error = readFailure("/coord/device-status").message;
+    // The route has failed from the start: no fleet read ever answered.
+    deviceStatusState.everSeeded = false;
     const view = renderInPresentationMode(<CoordDevOpsPage />, {
       scope: SCOPE,
     });
@@ -848,6 +886,8 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
   it("(control) the same failures DO carry their own text for the operator", async () => {
     mockRoutes({ fail: "all-but-fleet-health" });
     deviceStatusState.error = readFailure("/coord/device-status").message;
+    // The route has failed from the start: no fleet read ever answered.
+    deviceStatusState.everSeeded = false;
     render(
       <FixedPresentationMode presenting={false}>
         <CoordDevOpsPage />
@@ -871,11 +911,19 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
         .getByTestId("coord-devops-credential-unknown-badge")
         .getAttribute("title")
     ).toContain(ERROR_HOST);
-    // The empty device-status list names the route agents post to — for the
-    // operator only.
-    expect(screen.getByTestId("device-status-empty")).toHaveTextContent(
-      "POST /coord/status"
+    // The device-status read's own failure reaches the operator — and an
+    // empty list over it is UNKNOWN for the operator too, never "no devices
+    // reporting status" (whose route note `FleetOverview.presentation.test`
+    // pins over a read that answered empty).
+    expect(screen.getByTestId("device-status-unknown")).toHaveTextContent(
+      ERROR_HOST
     );
+    expect(screen.queryByTestId("device-status-empty")).toBeNull();
+    expect(screen.getByTestId("device-status-count").textContent).toBe(
+      "unknown"
+    );
+    // The transport is the operator's to know.
+    expect(deviceStatusConnection().textContent).toBe("polling (WS offline)");
     // The machine list's refresh-loop clock is the operator's: shown here,
     // over the same failed inventory read the presentation arm hides it over.
     await waitFor(() =>

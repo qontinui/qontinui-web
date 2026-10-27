@@ -8,7 +8,11 @@ import {
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Activity, AlertTriangle, RefreshCw, WifiOff } from "lucide-react";
-import { NAVIGATION_ONLY_PROPS } from "@/components/console";
+import {
+  NAVIGATION_ONLY_PROPS,
+  UNKNOWN_AMBER,
+  readIsUnknown,
+} from "@/components/console";
 import {
   MachineName,
   RedactedText,
@@ -221,6 +225,137 @@ function PresentedStatusRow({
 }
 
 /**
+ * What the tile can say about the fleet's list, from the stream's own flags —
+ * style guide R6's arms, keyed on whether a fleet read has ANSWERED
+ * (`everSeeded`, through `readIsUnknown`), never on the list being empty:
+ *
+ * - `unknown` — the latest fleet read failed and none has ever answered, so
+ *   whether any machine reported is not known. The count is "unknown", never
+ *   `0`, and an empty list says it could not be read — never that nothing
+ *   reported (plan `2026-10-23-console-presentation-spaces` D3; served policy
+ *   `verification-and-evidence` `silent-empty-is-unknown`).
+ * - `stale` — a fleet read answered earlier and the latest one failed. The
+ *   list holds that answer's rows (and any pushed since); its count stands,
+ *   but an empty one says so in the past tense, qualified by the failure.
+ * - `loading` — nothing has failed, and no fleet read has answered yet. Its
+ *   count is a dash (R6: a count nobody fetched is `–`, never `0`).
+ * - `answered` — the latest fleet read answered: the count and the empty
+ *   sentence are present-tense facts.
+ */
+type DeviceStatusListState = "unknown" | "stale" | "loading" | "answered";
+
+function deviceStatusListState({
+  error,
+  seeded,
+  everSeeded,
+}: Pick<
+  UseDeviceStatusStreamResult,
+  "error" | "seeded" | "everSeeded"
+>): DeviceStatusListState {
+  const failed = error !== null;
+  if (readIsUnknown(everSeeded, failed)) return "unknown";
+  if (failed) return "stale";
+  // `everSeeded` as well as `seeded`: a stream that has settled without a
+  // read ever answering (which the hook never reports) still never reads as
+  // an answered empty list.
+  if (!seeded || !everSeeded) return "loading";
+  return "answered";
+}
+
+/** The header's count: a number only once a fleet read has answered. */
+function deviceStatusCount(
+  state: DeviceStatusListState,
+  rows: number
+): string | number {
+  if (state === "unknown") return "unknown";
+  if (state === "loading") return "–";
+  return rows;
+}
+
+/**
+ * The tile's body when it holds no row: one arm per list state, so the list
+ * is said to be empty only over a read that answered it. This is where the
+ * absence claim is made in words (R6's `empty=` slot), so a failed read never
+ * reaches the present-tense sentence. While presenting, a failure is said in
+ * fixed words — the read's own text can quote a URL or name a machine.
+ */
+function EmptyDeviceStatusList({
+  state,
+  error,
+  presenting,
+}: {
+  state: DeviceStatusListState;
+  error: string | null;
+  presenting: boolean;
+}) {
+  switch (state) {
+    case "loading":
+      return (
+        <p className="text-xs text-muted-foreground italic px-2 py-3">
+          Loading device status&hellip;
+        </p>
+      );
+    case "unknown":
+      return (
+        <div
+          role="status"
+          className={`rounded-md border p-3 text-xs ${UNKNOWN_AMBER}`}
+          data-testid="device-status-unknown"
+        >
+          {presenting ? (
+            "UNKNOWN — the machines' status reports could not be read, so whether any machine has reported what it is working on is not known."
+          ) : (
+            <>
+              UNKNOWN — the device-status read failed ({error}). Whether any
+              device is reporting status is not known; this is not an empty
+              list.
+            </>
+          )}
+        </div>
+      );
+    case "stale":
+      // Nothing is wrong with the machines, so the muted tone stays; the
+      // sentence is past tense and says the latest read failed, because the
+      // last answer is not now.
+      return (
+        <div
+          className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground"
+          data-testid="device-status-stale-empty"
+        >
+          {presenting ? (
+            "No machine had reported what it is working on at the last read that succeeded. The latest read failed, so whether one has reported since is not known."
+          ) : (
+            <>
+              No devices were reporting status at the last read that answered.
+              The latest read failed ({error}), so this may be out of date.
+            </>
+          )}
+        </div>
+      );
+    case "answered":
+      return (
+        <div
+          className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground"
+          data-testid="device-status-empty"
+        >
+          {/* The route agents post to is the operator's; an outsider reads
+              what the empty list means. Rows older than an hour are pruned,
+              so empty is "nothing reported in the last hour". */}
+          {presenting ? (
+            "No machine has reported what it is working on in the last hour."
+          ) : (
+            <>
+              No devices reporting status. Agents post here voluntarily via{" "}
+              <code className="bg-muted px-1 rounded">POST /coord/status</code>;
+              rows older than 1h are pruned.
+            </>
+          )}
+        </div>
+      );
+  }
+}
+
+/**
  * Bottom-of-page device-status list. Renders the SAME tenant-scoped
  * stream the Dev Ops page holds (`useDeviceStatusStream` —
  * authenticated REST seed via `/api/v1/operations/device-status` +
@@ -244,8 +379,9 @@ export function DeviceStatusTile({
 }: {
   stream: UseDeviceStatusStreamResult;
 }) {
-  const { byHostname, connected, error, seeded, refetch } = stream;
+  const { byHostname, connected, error, refetch } = stream;
   const { presenting } = usePresentationMode();
+  const listState = deviceStatusListState(stream);
   const [, setNowTick] = useState(0);
 
   // Tick every 15s so the relative-time labels and staleness tints
@@ -275,8 +411,17 @@ export function DeviceStatusTile({
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             Device status
           </h2>
-          <Badge variant="outline" className="text-[10px]">
-            {sortedRows.length}
+          <Badge
+            variant="outline"
+            className={
+              listState === "unknown"
+                ? `text-[10px] ${UNKNOWN_AMBER}`
+                : "text-[10px]"
+            }
+            data-testid="device-status-count"
+            data-device-status-list={listState}
+          >
+            {deviceStatusCount(listState, sortedRows.length)}
           </Badge>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -294,7 +439,9 @@ export function DeviceStatusTile({
                 className="text-yellow-300"
                 data-ui-bridge-id="operations.device-status-connection"
               >
-                polling (WS offline)
+                {/* The transport is the operator's to know; an outsider reads
+                    that the list is not updating live. */}
+                {presenting ? "live updates paused" : "polling (WS offline)"}
               </span>
             </>
           )}
@@ -317,28 +464,12 @@ export function DeviceStatusTile({
         </div>
       </header>
 
-      {!seeded && sortedRows.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic px-2 py-3">
-          Loading device status&hellip;
-        </p>
-      ) : sortedRows.length === 0 ? (
-        <div
-          className="rounded-md border border-border/40 bg-muted/10 p-3 text-xs text-muted-foreground"
-          data-testid="device-status-empty"
-        >
-          {/* The route agents post to is the operator's; an outsider reads
-              what the empty list means. Rows older than an hour are pruned,
-              so empty is "nothing reported in the last hour". */}
-          {presenting ? (
-            "No machine has reported what it is working on in the last hour."
-          ) : (
-            <>
-              No devices reporting status. Agents post here voluntarily via{" "}
-              <code className="bg-muted px-1 rounded">POST /coord/status</code>
-              ; rows older than 1h are pruned.
-            </>
-          )}
-        </div>
+      {sortedRows.length === 0 ? (
+        <EmptyDeviceStatusList
+          state={listState}
+          error={error}
+          presenting={presenting}
+        />
       ) : (
         <ul
           className="flex flex-col gap-1.5"
