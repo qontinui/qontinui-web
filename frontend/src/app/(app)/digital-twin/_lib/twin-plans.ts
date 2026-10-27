@@ -37,6 +37,7 @@ import {
 import type { RowStatus } from "@/components/console";
 import type { WalkOutcome } from "@/app/(app)/admin/coord/work-units/planWalk";
 import { operationsErrorReading } from "@/lib/api/operations/base";
+import { failureStatus } from "./failure-text";
 import type { SubspaceManifestEntry } from "./types";
 
 /** coord's spelling rule for an `area` an area filter can match. */
@@ -342,7 +343,11 @@ export function workUnitHref(slug: string): string {
 // The read itself.
 // ---------------------------------------------------------------------------
 
-/** What the Twin map knows about the work units. */
+/**
+ * What the Twin map knows about the work units. Its reasons are worded for
+ * the mode it was read in ({@link planReadOf}): every consumer prints them as
+ * they are, so none can show an operator's sentence to an evaluator.
+ */
 export type TwinPlanRead =
   | { readonly kind: "loading" }
   | {
@@ -373,17 +378,33 @@ export interface WorkUnitQueryState {
   readonly errorUpdatedAt: number;
 }
 
-function sentenceOf(error: unknown): string {
-  return operationsErrorReading(error).sentence;
+/** The mode a read's reasons are worded for. */
+export interface PlanReadMode {
+  /**
+   * Presentation mode: a failure says a fixed phrase and its HTTP status,
+   * never the error's sentence, which quotes the upstream response body —
+   * text that can name an internal host, a tenant or a client (D3.3).
+   */
+  readonly presenting: boolean;
+}
+
+/** Why the work-unit read failed, worded for the mode. */
+function failureReason(error: unknown, { presenting }: PlanReadMode): string {
+  if (!presenting) return operationsErrorReading(error).sentence;
+  const status = failureStatus(error);
+  return status === null
+    ? "coord's work-unit list gave no readable answer"
+    : `coord's work-unit list answered HTTP ${status}`;
 }
 
 type PartialWalk = Extract<WalkOutcome, { kind: "partial" }>;
 
-function partialReason(outcome: PartialWalk): string {
+function partialReason(outcome: PartialWalk, mode: PlanReadMode): string {
   const pages = `${outcome.pages} page${outcome.pages === 1 ? "" : "s"}`;
   switch (outcome.reason) {
     case "error":
-      return `coord's work-unit list stopped answering after ${pages}${outcome.error ? `: ${outcome.error}` : ""}`;
+      // The failing read's sentence is the operator's alone (see PlanReadMode).
+      return `coord's work-unit list stopped answering after ${pages}${outcome.error && !mode.presenting ? `: ${outcome.error}` : ""}`;
     case "page_cap":
       return `the read stopped at its ${pages} bound before the end of coord's list`;
     case "stalled":
@@ -392,12 +413,15 @@ function partialReason(outcome: PartialWalk): string {
 }
 
 /** Why a walk outcome is not the whole list, or `null` when it is. */
-export function incompleteReason(outcome: WalkOutcome): string | null {
+export function incompleteReason(
+  outcome: WalkOutcome,
+  mode: PlanReadMode
+): string | null {
   switch (outcome.kind) {
     case "complete":
       return null;
     case "partial":
-      return partialReason(outcome);
+      return partialReason(outcome, mode);
     case "single_page":
       // A page short of the cap held everything the filter matched.
       return outcome.truncated
@@ -406,25 +430,28 @@ export function incompleteReason(outcome: WalkOutcome): string | null {
   }
 }
 
-export function planReadOf(query: WorkUnitQueryState): TwinPlanRead {
+export function planReadOf(
+  query: WorkUnitQueryState,
+  mode: PlanReadMode
+): TwinPlanRead {
   const { data } = query;
   if (!data) {
     if (query.isError) {
       return {
         kind: "error",
-        reason: sentenceOf(query.error),
+        reason: failureReason(query.error, mode),
         at: query.errorUpdatedAt > 0 ? query.errorUpdatedAt : null,
       };
     }
     return { kind: "loading" };
   }
-  const incomplete = incompleteReason(data);
+  const incomplete = incompleteReason(data, mode);
   return {
     kind: "ready",
     index: indexWorkUnits(data.rows, incomplete === null),
     units: data.rows.length,
     incomplete,
-    refreshError: query.isError ? sentenceOf(query.error) : null,
+    refreshError: query.isError ? failureReason(query.error, mode) : null,
     asOf: query.dataUpdatedAt > 0 ? query.dataUpdatedAt : null,
   };
 }

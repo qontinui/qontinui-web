@@ -29,17 +29,23 @@ import type { DeliveryVerdictResponse } from "../_lib/types";
 
 const state = vi.hoisted(() => ({
   verdict: undefined as unknown,
+  /** When set, a lookup fails with this error instead of answering. */
+  error: null as unknown,
 }));
 
 vi.mock("../_hooks/useDeliveryVerdict", () => ({
-  useDeliveryVerdict: (slug: string) => ({
-    data: slug.trim() ? state.verdict : undefined,
-    isLoading: false,
-    isError: false,
-    error: null,
-    isFetching: false,
-    dataUpdatedAt: slug.trim() ? Date.parse("2026-10-23T12:00:00Z") : 0,
-  }),
+  useDeliveryVerdict: (slug: string) => {
+    const asked = slug.trim() !== "";
+    const failed = asked && state.error !== null;
+    return {
+      data: asked && !failed ? state.verdict : undefined,
+      isLoading: false,
+      isError: failed,
+      error: failed ? state.error : null,
+      isFetching: false,
+      dataUpdatedAt: asked && !failed ? Date.parse("2026-10-23T12:00:00Z") : 0,
+    };
+  },
 }));
 
 import { DeliveryVerdictCard } from "./DeliveryVerdictCard";
@@ -103,13 +109,17 @@ function WithBridge({ children }: { children: ReactNode }) {
   return <UIBridgeProvider>{children}</UIBridgeProvider>;
 }
 
-async function lookUp() {
+async function ask() {
   const user = userEvent.setup();
   await user.type(
     screen.getByPlaceholderText(/approach-d-conductor-engine/),
     SLUG
   );
   await user.click(screen.getByRole("button", { name: /look up/i }));
+}
+
+async function lookUp() {
+  await ask();
   await screen.findByText("Cited PRs");
 }
 
@@ -121,7 +131,14 @@ function envTargets(): string[] {
 
 beforeEach(() => {
   state.verdict = verdict();
+  state.error = null;
 });
+
+/** A host and a client named only in the upstream error body. */
+const HOST = "coord.internal.acme-corp.example";
+const LEAKY = new Error(
+  `GET /api/v1/digital-twin/delivery/verdict?work_unit_slug=${SLUG} failed: 502 - upstream https://${HOST}:8443 refused the connection for Acme Corp`
+);
 
 describe("DeliveryVerdictCard — operator mode", () => {
   it("shows every cited PR's repository and link, every deploy target, and the raw JSON", async () => {
@@ -199,5 +216,28 @@ describe("DeliveryVerdictCard — presentation mode", () => {
       screen.queryByText(/The exact JSON an AI agent receives/)
     ).toBeNull();
     expectPresentationSafe(view);
+  });
+});
+
+describe("DeliveryVerdictCard — a failed lookup", () => {
+  it("gives the operator the failing read's own message", async () => {
+    state.error = LEAKY;
+    render(<DeliveryVerdictCard />, { wrapper: WithBridge });
+    await ask();
+    expect(
+      await screen.findByTestId("delivery-verdict-error")
+    ).toHaveTextContent(HOST);
+  });
+
+  it("says only its HTTP status in presentation mode", async () => {
+    state.error = LEAKY;
+    const view = renderInPresentationMode(<DeliveryVerdictCard />, {
+      scope: SCOPE,
+    });
+    await ask();
+    expect(
+      await screen.findByTestId("delivery-verdict-error")
+    ).toHaveTextContent(/^Could not read the delivery verdict \(HTTP 502\)\.$/);
+    expectPresentationSafe(view, { forbidden: [HOST, "acme"] });
   });
 });

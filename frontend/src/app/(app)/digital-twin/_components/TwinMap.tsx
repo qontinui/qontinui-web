@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { UNKNOWN_AMBER } from "@/components/console";
-import { Caption, Provenance } from "@/components/presentation";
+import {
+  Caption,
+  Provenance,
+  usePresentationMode,
+} from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import { useAppTwin } from "../_hooks/useAppTwin";
 import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
@@ -107,6 +111,7 @@ export function TwinMap() {
   const reportQuery = useSubspaceRaw(FIDELITY_SUBSPACE, true);
   const plansQuery = useTwinWorkUnits();
   const appTwin = useAppTwin();
+  const { presenting } = usePresentationMode();
   const [open, setOpen] = useState<TwinAspectId | null>(null);
 
   const rows = useMemo(
@@ -126,7 +131,9 @@ export function TwinMap() {
     asOf: at(probeQuery.dataUpdatedAt),
     failedAt: at(probeQuery.errorUpdatedAt),
   };
-  const read = planReadOf(plansQuery);
+  // Worded for the mode: while presenting, a failure is a fixed phrase and
+  // its HTTP status, never the response body (D3.3).
+  const read = planReadOf(plansQuery, { presenting });
   const now = Date.now();
 
   return (

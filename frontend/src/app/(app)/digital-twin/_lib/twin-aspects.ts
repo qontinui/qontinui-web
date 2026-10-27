@@ -23,17 +23,16 @@
  */
 
 import type { CaptionKey } from "@/components/presentation";
+import { statusSuffix } from "./failure-text";
 import { coverageOf, gradedOf } from "./lifecycle";
 import { formatRatio } from "./status-presentation";
 import {
   formatAge,
-  httpStatusOf,
   readFidelity,
   reportComputedAt,
   reportSubspaces,
   type FidelityQueryState,
 } from "./twin-fidelity";
-import { RunnerRelayError } from "./runner-relay";
 import type { ResolvedSubspace, SubspaceManifestEntry } from "./types";
 import {
   summarizeSpecGraph,
@@ -190,14 +189,6 @@ export interface ReportRead extends FidelityQueryState {
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
-}
-
-function statusSuffix(error: unknown): string {
-  const status =
-    error instanceof RunnerRelayError
-      ? (error.status ?? null)
-      : httpStatusOf(error);
-  return status === null ? "" : ` (HTTP ${status})`;
 }
 
 function isAnswering(row: ResolvedSubspace): boolean {

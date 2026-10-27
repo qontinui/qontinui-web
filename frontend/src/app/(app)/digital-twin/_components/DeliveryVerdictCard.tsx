@@ -23,6 +23,7 @@ import {
 } from "@/components/presentation";
 import { useDeliveryVerdict } from "../_hooks/useDeliveryVerdict";
 import { isRetiredCitation } from "../_lib/delivery-citations";
+import { failureTail } from "../_lib/failure-text";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { formatRatio, formatStaleness } from "../_lib/status-presentation";
 import type {
@@ -241,6 +242,7 @@ function EnvRow({ env }: { env: DeliveryEnv }) {
 }
 
 export function DeliveryVerdictCard() {
+  const { presenting } = usePresentationMode();
   const [input, setInput] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [showRaw, setShowRaw] = useState(false);
@@ -335,9 +337,12 @@ export function DeliveryVerdictCard() {
       )}
 
       {isError && (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Could not read the delivery verdict
-          {error instanceof Error ? `: ${error.message}` : ""}.
+        <p
+          data-testid="delivery-verdict-error"
+          className="mt-3 text-sm text-muted-foreground"
+        >
+          {/* The message quotes the upstream body: the operator's alone. */}
+          Could not read the delivery verdict{failureTail(error, presenting)}.
         </p>
       )}
 

@@ -325,15 +325,28 @@ describe("planReadOf — the read, honest about what it did not see", () => {
     bodySignal: null,
     pages: 1,
   };
+  const OPERATOR = { presenting: false };
+  const PRESENTING = { presenting: true };
+  /** A failed read whose body names a host an evaluator must not see. */
+  const LEAKY = new Error(
+    "GET /api/v1/operations/plans failed: 502 - upstream https://coord.internal.acme-corp.example:8443 refused the connection"
+  );
+  const partial: WalkOutcome = {
+    kind: "partial",
+    rows,
+    bodySignal: null,
+    pages: 3,
+    reason: "error",
+    error: "coord.internal.acme-corp.example refused the connection",
+  };
 
   it("is loading before anything answered, and an error with its reason when nothing did", () => {
-    expect(planReadOf(query({ isLoading: true }))).toEqual({ kind: "loading" });
+    expect(planReadOf(query({ isLoading: true }), OPERATOR)).toEqual({
+      kind: "loading",
+    });
     const read = planReadOf(
-      query({
-        isError: true,
-        error: new Error("GET /api/v1/operations/plans failed: 502 - upstream"),
-        errorUpdatedAt: 5,
-      })
+      query({ isError: true, error: LEAKY, errorUpdatedAt: 5 }),
+      OPERATOR
     );
     expect(read.kind).toBe("error");
     if (read.kind !== "error") return;
@@ -342,7 +355,10 @@ describe("planReadOf — the read, honest about what it did not see", () => {
   });
 
   it("is ready and complete over a walk that reached the end", () => {
-    const read = planReadOf(query({ data: complete, dataUpdatedAt: 42 }));
+    const read = planReadOf(
+      query({ data: complete, dataUpdatedAt: 42 }),
+      OPERATOR
+    );
     expect(read.kind).toBe("ready");
     if (read.kind !== "ready") return;
     expect(read.index.complete).toBe(true);
@@ -353,25 +369,18 @@ describe("planReadOf — the read, honest about what it did not see", () => {
   });
 
   it("says why a partial or truncated read is not the whole list", () => {
-    const partial: WalkOutcome = {
-      kind: "partial",
-      rows,
-      bodySignal: null,
-      pages: 3,
-      reason: "error",
-      error: "coord answered 502",
-    };
-    const read = planReadOf(query({ data: partial }));
+    const read = planReadOf(query({ data: partial }), OPERATOR);
     expect(read.kind === "ready" && read.index.complete).toBe(false);
-    expect(read.kind === "ready" && read.incomplete).toMatch(
-      /after 3 pages: coord answered 502/
+    // The operator reads the failing page's own sentence.
+    expect(read.kind === "ready" && read.incomplete).toBe(
+      "coord's work-unit list stopped answering after 3 pages: coord.internal.acme-corp.example refused the connection"
     );
-    expect(incompleteReason({ ...partial, reason: "page_cap" })).toMatch(
-      /bound/
-    );
-    expect(incompleteReason({ ...partial, reason: "stalled" })).toMatch(
-      /repeated/
-    );
+    expect(
+      incompleteReason({ ...partial, reason: "page_cap" }, OPERATOR)
+    ).toMatch(/bound/);
+    expect(
+      incompleteReason({ ...partial, reason: "stalled" }, OPERATOR)
+    ).toMatch(/repeated/);
 
     const truncated: WalkOutcome = {
       kind: "single_page",
@@ -382,20 +391,77 @@ describe("planReadOf — the read, honest about what it did not see", () => {
       legacyCoord: true,
       total: null,
     };
-    expect(incompleteReason(truncated)).toMatch(/one full page/);
-    expect(incompleteReason({ ...truncated, truncated: false })).toBeNull();
+    expect(incompleteReason(truncated, OPERATOR)).toMatch(/one full page/);
+    expect(
+      incompleteReason({ ...truncated, truncated: false }, OPERATOR)
+    ).toBeNull();
   });
 
   it("keeps the last good read beside a failed refresh, and says so", () => {
     const read = planReadOf(
-      query({ data: complete, isError: true, error: new Error("network down") })
+      query({
+        data: complete,
+        isError: true,
+        error: new Error("network down"),
+      }),
+      OPERATOR
     );
     expect(read.kind === "ready" && read.refreshError).toBe("network down");
   });
 
   it("has no as-of when the query never stamped one", () => {
-    const read = planReadOf(query({ data: complete, dataUpdatedAt: 0 }));
+    const read = planReadOf(
+      query({ data: complete, dataUpdatedAt: 0 }),
+      OPERATOR
+    );
     expect(read.kind === "ready" && read.asOf).toBeNull();
+  });
+
+  describe("while presenting, a failure says its HTTP status — never its text", () => {
+    it("words a failed read as a fixed phrase and its status", () => {
+      const read = planReadOf(
+        query({ isError: true, error: LEAKY, errorUpdatedAt: 5 }),
+        PRESENTING
+      );
+      expect(read).toEqual({
+        kind: "error",
+        reason: "coord's work-unit list answered HTTP 502",
+        at: 5,
+      });
+      const noStatus = planReadOf(
+        query({
+          isError: true,
+          error: new TypeError(
+            "coord.internal.acme-corp.example: ECONNREFUSED"
+          ),
+        }),
+        PRESENTING
+      );
+      expect(noStatus.kind === "error" && noStatus.reason).toBe(
+        "coord's work-unit list gave no readable answer"
+      );
+    });
+
+    it("drops the failing page's sentence from a partial walk's reason", () => {
+      const read = planReadOf(query({ data: partial }), PRESENTING);
+      expect(read.kind === "ready" && read.incomplete).toBe(
+        "coord's work-unit list stopped answering after 3 pages"
+      );
+      // The reasons that are fixed words already read the same in both modes.
+      expect(
+        incompleteReason({ ...partial, reason: "page_cap" }, PRESENTING)
+      ).toBe(incompleteReason({ ...partial, reason: "page_cap" }, OPERATOR));
+    });
+
+    it("words a failed refresh the same way", () => {
+      const read = planReadOf(
+        query({ data: complete, isError: true, error: LEAKY }),
+        PRESENTING
+      );
+      expect(read.kind === "ready" && read.refreshError).toBe(
+        "coord's work-unit list answered HTTP 502"
+      );
+    });
   });
 });
 

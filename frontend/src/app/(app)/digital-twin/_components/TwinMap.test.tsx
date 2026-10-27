@@ -15,6 +15,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import type { WalkOutcome } from "@/app/(app)/admin/coord/work-units/planWalk";
+import type { PresentationScopeState } from "@/components/presentation";
+import {
+  expectPresentationSafe,
+  renderInPresentationMode,
+} from "@/test/presentation";
 import { manifest } from "../_lib/resolve";
 import type {
   SubspacesProbeResponse,
@@ -344,5 +349,112 @@ describe("TwinMap — a failed source is a labelled UNKNOWN, never zero", () => 
     const f = figure("ui-bridge", "observed");
     expect(f).toHaveAttribute("data-fidelity-state", "unknown");
     expect(f).toHaveTextContent("no runner is connected");
+  });
+});
+
+/** A host and a client named only in upstream error text. */
+const HOST = "coord.internal.acme-corp.example";
+const LEAKY_BODY = JSON.stringify({
+  detail: `upstream https://${HOST}:8443 refused the connection for Acme Corp`,
+});
+const leakyError = (status: number) =>
+  new Error(`GET /api/v1/operations/plans failed: ${status} - ${LEAKY_BODY}`);
+/** What the fixture's upstream text names; an evaluator sees none of it. */
+const FORBIDDEN = [HOST, "acme"];
+const ASPECTS = ["environment", "process", "intent", "ui-bridge"];
+const SCOPE: PresentationScopeState = {
+  status: "ready",
+  scope: { firstPartyOwners: ["qontinui"], confidentialTerms: ["Acme Corp"] },
+};
+
+function presentTwinMap() {
+  return renderInPresentationMode(<TwinMap />, {
+    scope: SCOPE,
+    // This file mocks the UI Bridge SDK; the page proof
+    // (`page.presentation-proof.test.tsx`) reads the real registry.
+    uiBridge: {
+      unobservable: "TwinMap.test.tsx mocks @qontinui/ui-bridge/react",
+    },
+  });
+}
+
+describe("TwinMap in presentation mode — a failed read says its HTTP status, never its text", () => {
+  it("words a failed work-unit read by its status on the read line, every card and the drill-down", async () => {
+    state.workUnits = {
+      ...idle,
+      isError: true,
+      error: leakyError(502),
+      errorUpdatedAt: READ_AT,
+    };
+    const view = presentTwinMap();
+    const said = "coord's work-unit list answered HTTP 502";
+    expect(screen.getByTestId("digital-twin-plans-unknown")).toHaveTextContent(
+      `The plans could not be read: ${said}`
+    );
+    for (const aspect of ASPECTS) {
+      expect(
+        screen.getByTestId(`digital-twin-aspect-${aspect}-plans`),
+        aspect
+      ).toHaveTextContent(`The plans could not be read: ${said}`);
+    }
+    const { detail } = await openAspect("process");
+    expect(
+      within(detail).getByTestId("digital-twin-aspect-detail-plans-unknown")
+    ).toHaveTextContent(`UNKNOWN — the plans could not be read: ${said}`);
+    expectPresentationSafe(view, { forbidden: FORBIDDEN });
+  });
+
+  it("names an incomplete read without the failing page's text, in the badge and its title", () => {
+    state.workUnits = {
+      ...idle,
+      data: {
+        kind: "partial",
+        rows: UNITS,
+        bodySignal: null,
+        pages: 2,
+        reason: "error",
+        error: `${HOST} refused the connection for Acme Corp`,
+      } satisfies WalkOutcome,
+      dataUpdatedAt: READ_AT,
+    };
+    const view = presentTwinMap();
+    const badge = screen.getByTestId("digital-twin-plans-incomplete");
+    expect(badge).toHaveTextContent(
+      /^INCOMPLETE — coord's work-unit list stopped answering after 2 pages$/
+    );
+    expect(badge).toHaveAttribute(
+      "title",
+      "The plan counts cover only the work units read: coord's work-unit list stopped answering after 2 pages."
+    );
+    expectPresentationSafe(view, { forbidden: FORBIDDEN });
+  });
+
+  it("words a failed refresh by its status, over the last good plans", () => {
+    state.workUnits = {
+      ...idle,
+      data: walk(UNITS),
+      dataUpdatedAt: READ_AT,
+      isError: true,
+      error: leakyError(503),
+      errorUpdatedAt: READ_AT + 120_000,
+    };
+    const view = presentTwinMap();
+    expect(screen.getByTestId("digital-twin-plans-stale")).toHaveTextContent(
+      "The last refresh failed (coord's work-unit list answered HTTP 503); these are the plans from the read before it."
+    );
+    expectPresentationSafe(view, { forbidden: FORBIDDEN });
+  });
+
+  it("gives the operator the failing read's own text, which is what the lens withholds", () => {
+    state.workUnits = {
+      ...idle,
+      isError: true,
+      error: leakyError(502),
+      errorUpdatedAt: READ_AT,
+    };
+    render(<TwinMap />);
+    expect(screen.getByTestId("digital-twin-plans-unknown")).toHaveTextContent(
+      HOST
+    );
   });
 });

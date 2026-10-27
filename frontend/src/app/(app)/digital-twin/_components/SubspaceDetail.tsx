@@ -21,8 +21,13 @@ import {
   Sparkles,
   XIcon,
 } from "lucide-react";
-import { NAVIGATION_ONLY_PROPS, OperatorOnly } from "@/components/presentation";
+import {
+  NAVIGATION_ONLY_PROPS,
+  OperatorOnly,
+  usePresentationMode,
+} from "@/components/presentation";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
+import { failureTail } from "../_lib/failure-text";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
@@ -64,6 +69,7 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
  * and opening the Delivery tab only change what is displayed.
  */
 export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
+  const { presenting } = usePresentationMode();
   const readsRaw = !!row && row.liveProbed && row.doorShape !== "envelope";
   const isReport = row?.doorShape === "report";
   const isEnvelope = !!row && row.liveProbed && row.doorShape === "envelope";
@@ -166,9 +172,13 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
                 </p>
               )}
               {isError && (
-                <p className="text-sm text-muted-foreground">
+                <p
+                  data-testid="digital-twin-drawer-read-error"
+                  className="text-sm text-muted-foreground"
+                >
+                  {/* The message quotes the upstream body: the operator's alone. */}
                   Could not read the live verdict
-                  {error instanceof Error ? `: ${error.message}` : ""}.
+                  {failureTail(error, presenting)}.
                 </p>
               )}
               {summary && <p className="text-sm">{summary.prose}</p>}
