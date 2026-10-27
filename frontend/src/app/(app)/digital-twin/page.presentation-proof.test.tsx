@@ -742,6 +742,62 @@ describe("/digital-twin in presentation mode, when its sources fail", () => {
   });
 });
 
+describe("/digital-twin in presentation mode, over a probe answer kept after its latest read failed", () => {
+  it("names the Twin map's probe figures and part statuses as that last answer, above them, and on the other tabs says the cells are not current", async () => {
+    // React-query keeps the probe's answer when a refetch fails.
+    state.probe = {
+      ...answered(stubBody("**/api/v1/digital-twin/subspaces")),
+      isError: true,
+      error: leaky("/api/v1/digital-twin/subspaces", 502),
+      errorUpdatedAt: READ_AT + 60_000,
+    };
+    const view = renderPresenting();
+    const user = userEvent.setup();
+
+    // The default tab: the map's own notice, the failure first, dated.
+    const notice = screen.getByTestId("digital-twin-map-probe-held");
+    expect(notice).toHaveTextContent(
+      "Coord's live probe's latest read failed (HTTP 502), so the environment, process and intent twins' Observed, Coverage and Staleness figures, and the statuses of the live-probed parts below, are its last answer, not a current reading."
+    );
+    expect(
+      within(notice).getByTestId("digital-twin-map-probe-held-provenance")
+    ).toHaveTextContent(/^source: coord's live twin probe · as of /);
+    expect(
+      notice.compareDocumentPosition(
+        screen.getByTestId("digital-twin-aspect-card-environment")
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    // The drill-down sits under the same notice.
+    await user.click(
+      within(screen.getByTestId("digital-twin-aspect-card-process")).getByRole(
+        "button",
+        { name: /show its parts and plans/i }
+      )
+    );
+    expect(
+      notice.compareDocumentPosition(
+        screen.getByTestId("digital-twin-aspect-detail-process")
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    // The other views of the probe keep their banner, worded for cells.
+    for (const tab of ["Completeness", "Lifecycle"]) {
+      await user.click(screen.getByRole("tab", { name: tab }));
+      expect(
+        await screen.findByTestId("digital-twin-coord-unreachable"),
+        tab
+      ).toHaveTextContent(
+        "Coord's live probe could not be read (HTTP 502), so the live statuses below are not a current reading."
+      );
+      expect(screen.queryByTestId("digital-twin-map-probe-held")).toBeNull();
+      expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+    }
+  });
+});
+
 describe("/digital-twin restricted, in presentation mode", () => {
   const restricted = (): SubspacesProbeResponse => {
     const body = stubBody(

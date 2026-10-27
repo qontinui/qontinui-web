@@ -1,7 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AlertTriangle, Lock } from "lucide-react";
-import { usePresentationMode } from "@/components/presentation";
+import { Provenance, usePresentationMode } from "@/components/presentation";
 import { statusSuffix } from "../_lib/failure-text";
 import {
   probeUnread,
@@ -9,7 +10,11 @@ import {
   type ProbeRead,
 } from "../_lib/probe-read";
 import { upperFirst } from "../_lib/status-presentation";
-import { RESTRICTED_REASON } from "../_lib/twin-aspects";
+import {
+  FIDELITY_LABEL,
+  FIDELITY_SOURCE,
+  RESTRICTED_REASON,
+} from "../_lib/twin-aspects";
 import { UnknownBadge } from "./FidelityFigures";
 
 /**
@@ -27,6 +32,7 @@ import { UnknownBadge } from "./FidelityFigures";
 export function UnknownReading({
   reason,
   consequence,
+  children,
   "data-testid": testId,
 }: {
   reason: string;
@@ -37,6 +43,8 @@ export function UnknownReading({
    * the view.
    */
   consequence: string;
+  /** After the sentence: what dates it, when something does. */
+  children?: ReactNode;
   "data-testid"?: string;
 }) {
   return (
@@ -49,6 +57,7 @@ export function UnknownReading({
       <span className="text-muted-foreground">
         {upperFirst(reason)}, so {consequence}.
       </span>
+      {children}
     </div>
   );
 }
@@ -144,5 +153,47 @@ export function CoordUnreachableBanner({ probe }: { probe: ProbeAttempt }) {
       <AlertTriangle className="size-4 shrink-0" />
       <span>{operatorText(probe)}</span>
     </div>
+  );
+}
+
+/**
+ * What the Twin map shows from the probe: the three plants' probe figures
+ * (the UI Bridge card's come from the runner, and every Honesty figure from
+ * the self-check) and the statuses of the live-probed parts in a drill-down.
+ */
+const MAP_PROBE_CONTENT = `the environment, process and intent twins' ${FIDELITY_LABEL.observed}, ${FIDELITY_LABEL.coverage} and ${FIDELITY_LABEL.staleness} figures, and the statuses of the live-probed parts below,`;
+
+/**
+ * The Twin map's notice for a probe answer kept after its latest read failed
+ * (react-query keeps a query's data when a refetch fails: `refreshFailed`,
+ * with a reading held, `probeUnread` null). The map's probe figures and its
+ * live-probed part rows still show that answer, so they sit under this
+ * notice. That is R6's row arm, the way the Completeness and Lifecycle cells
+ * sit under {@link CoordUnreachableBanner}. The notice leads with the
+ * failure, names what below is the last answer, dates that answer with a
+ * `Provenance` chip in both modes, and says it is not a current reading. It
+ * is worded for the map: the banner's "cells" and "taxonomy" are not on it.
+ *
+ * A probe holding no reading at all needs no notice here: every probe figure
+ * is then UNKNOWN with the reason, and every live part UNKNOWN with it
+ * (`twin-aspects.ts` `probeSilence`, `resolve.ts`). Renders nothing otherwise,
+ * so the map mounts it unconditionally. Both modes say the HTTP status only:
+ * the failure's own text is the operator's, on the Completeness tab's banner.
+ */
+export function TwinMapHeldNotice({ probe }: { probe: ProbeAttempt }) {
+  if (!probe.refreshFailed || probeUnread(probe) !== null) return null;
+  return (
+    <UnknownReading
+      reason={`coord's live probe's latest read failed${statusSuffix(probe.error)}`}
+      consequence={`${MAP_PROBE_CONTENT} are its last answer, not a current reading`}
+      data-testid="digital-twin-map-probe-held"
+    >
+      <Provenance
+        source={FIDELITY_SOURCE.probe}
+        asOf={probe.asOf}
+        persistent
+        data-testid="digital-twin-map-probe-held-provenance"
+      />
+    </UnknownReading>
   );
 }

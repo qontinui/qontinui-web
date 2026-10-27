@@ -30,6 +30,7 @@ import {
 import { AspectCard, PLAN_SOURCE } from "./AspectCard";
 import { AspectDetail } from "./AspectDetail";
 import { FIGURE_UNKNOWN } from "./FidelityFigures";
+import { TwinMapHeldNotice } from "./TwinProbeNotices";
 
 /** What the plans on this tab were read from, and whether that read is whole. */
 function PlanReadLine({ read }: { read: TwinPlanRead }) {
@@ -99,6 +100,10 @@ function PlanReadLine({ read }: { read: TwinPlanRead }) {
  * catalog and the twin self-check the Completeness tab reads, the UI Bridge
  * tab's runner reads, and the work-unit list `/admin/coord/work-units` walks.
  * The engineering detail behind each number stays one tab away.
+ *
+ * A probe answer kept after its latest read failed still feeds the figures
+ * and part rows, so the map's own notice leads above them and names them as
+ * that last answer (`TwinMapHeldNotice`, style guide R6 and 6.5).
  */
 export function TwinMap() {
   // The probe as every view of it reads it: a failed or degraded answer
@@ -120,6 +125,7 @@ export function TwinMap() {
   return (
     <section data-testid="digital-twin-twin-map" className="space-y-4">
       <Caption id="digital-twin.twin-map" level={2} persistent />
+      <TwinMapHeldNotice probe={probe} />
       <PlanReadLine read={read} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">

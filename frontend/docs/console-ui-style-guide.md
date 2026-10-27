@@ -2058,6 +2058,14 @@ Where a kept reading's dot goes depends on what carries it:
   current reading. In operator mode it says the cells "fall back to their last
   status". While presenting it says "the live statuses below are not a current
   reading". The drawer covers that notice, so it says so itself.
+- **The Twin map** has a notice of its own above its cards, worded for the map
+  (`TwinMapHeldNotice`), in both modes. Its live-probed part rows keep R6's row arm
+  under it. Its probe figures, which draw no dot, keep the last answer's values. The
+  notice names both as that answer ("the environment, process and intent twins'
+  Observed, Coverage and Staleness figures, and the statuses of the live-probed parts
+  below, are its last answer, not a current reading"), and a `Provenance` chip dates
+  it. A probe holding no reading at all needs no notice there: every probe figure and
+  live part is then UNKNOWN with the reason.
 
 Where one panel shows two reads of one thing, every line about a read says which read
 it is about. It does so by name ("Coord's live probe's latest read failed", "This
@@ -2068,8 +2076,8 @@ in the panel does. The sub-space drawer's Status is the page probe's answer, and
 Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
 `drawer-reading.ts`). Every state of both reads that can occur, in both modes, is a
 row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer,
-with its worst bucket's age served and without.
-That file's docblock names the combinations it leaves out because they cannot occur.
+with its worst bucket's age served and without. That file's docblock names the
+combinations it leaves out because they cannot occur.
 
 **Density down.** Presentation mode never adds a record row to a page: what it changes
 is which of the page's own elements render, and how large a caption is. A headline

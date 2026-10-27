@@ -686,3 +686,97 @@ describe("TwinMap in presentation mode — a failed read says its HTTP status, n
     );
   });
 });
+
+/**
+ * The probe's answer kept after its latest read failed (react-query keeps a
+ * query's data when a refetch fails). The figures and the live-probed part
+ * rows still show that answer, so the map's own notice leads above them,
+ * names them as the last answer and dates it, in both modes (style guide R6
+ * and 6.5).
+ */
+describe("TwinMap — a probe answer kept after its latest read failed", () => {
+  const PROBE_ERROR = new Error(
+    `GET /api/v1/digital-twin/subspaces failed: 502 - ${LEAKY_BODY}`
+  );
+  const HELD_NOTICE =
+    "Coord's live probe's latest read failed (HTTP 502), so the environment, process and intent twins' Observed, Coverage and Staleness figures, and the statuses of the live-probed parts below, are its last answer, not a current reading.";
+
+  /** The probe holds `data`, read at READ_AT; its refetch a minute later failed. */
+  function holdProbe(data?: SubspacesProbeResponse) {
+    state.probe = {
+      ...idle,
+      data:
+        data ??
+        (stubBody("**/api/v1/digital-twin/subspaces") as SubspacesProbeResponse),
+      dataUpdatedAt: READ_AT,
+      isError: true,
+      error: PROBE_ERROR,
+      errorUpdatedAt: READ_AT + 60_000,
+    };
+  }
+
+  const following = (a: Node, b: Node) =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  for (const mode of ["operator", "presenting"] as const) {
+    it(`names the figures and part statuses below as the probe's last answer, dated, above them · ${mode}`, async () => {
+      holdProbe();
+      const view = mode === "presenting" ? presentTwinMap() : null;
+      if (mode === "operator") render(<TwinMap />);
+      const notice = screen.getByTestId("digital-twin-map-probe-held");
+      expect(notice).toHaveTextContent(`UNKNOWN${HELD_NOTICE}`);
+      // Dated by when the kept answer was read, in both modes.
+      const chip = within(notice).getByTestId(
+        "digital-twin-map-probe-held-provenance"
+      );
+      expect(chip).toHaveTextContent(/^source: coord's live twin probe · as of /);
+      expect(chip).toHaveAttribute("data-provenance-known", "true");
+      // It says the HTTP status only, in both modes.
+      for (const forbidden of FORBIDDEN) {
+        expect(notice.textContent?.toLowerCase()).not.toContain(
+          forbidden.toLowerCase()
+        );
+      }
+      // It leads: above every card and the drill-down an aspect opens.
+      for (const aspect of ASPECTS) {
+        expect(following(notice, card(aspect)), aspect).toBe(true);
+      }
+      const { detail } = await openAspect("process");
+      expect(following(notice, detail)).toBe(true);
+      // Under it the figures keep the last answer: R6's row arm.
+      expect(figure("process", "observed")).toHaveAttribute(
+        "data-fidelity-state",
+        "known"
+      );
+      if (view) expectPresentationSafe(view, { forbidden: FORBIDDEN });
+    });
+  }
+
+  it("has no notice over an answer the latest read returned", () => {
+    render(<TwinMap />);
+    expect(screen.queryByTestId("digital-twin-map-probe-held")).toBeNull();
+  });
+
+  it("has no notice where the probe holds no reading: every probe figure says UNKNOWN and why", () => {
+    // A failed refresh over a degraded answer: no probe was made, so there
+    // is no last answer to name.
+    const body = stubBody(
+      "**/api/v1/digital-twin/subspaces"
+    ) as SubspacesProbeResponse;
+    holdProbe({
+      ...body,
+      degraded: true,
+      subspaces: body.subspaces.map((cell) => ({
+        id: cell.id,
+        status: "error" as const,
+        error: "coord_unavailable",
+      })),
+    });
+    render(<TwinMap />);
+    expect(screen.queryByTestId("digital-twin-map-probe-held")).toBeNull();
+    expect(figure("process", "observed")).toHaveAttribute(
+      "data-fidelity-state",
+      "unknown"
+    );
+  });
+});
