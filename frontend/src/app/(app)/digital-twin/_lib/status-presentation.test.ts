@@ -7,6 +7,7 @@ import {
   STATUS_STYLES,
   formatRatio,
   pageAccessLabel,
+  presentDrawerStatus,
   presentStatus,
 } from "./status-presentation";
 
@@ -152,6 +153,41 @@ describe("STATUS_STYLES.unknown — a live row the probe holds no reading of", (
     expect(presentStatus({ cellStatus: "unknown" })).toEqual(
       STATUS_STYLES.unknown
     );
+  });
+});
+
+describe("presentDrawerStatus — the drawer's own read beside an UNKNOWN row", () => {
+  const reason = "coord's live probe could not be read (HTTP 502)";
+  const unknownRow = { cellStatus: "unknown" as const, unknownReason: reason };
+
+  it("stops saying there is no reading once the drawer's own read has answered", () => {
+    const style = presentDrawerStatus(unknownRow, true);
+    // The page still has no status for the row: the cell's UNKNOWN stands.
+    expect(style.label).toBe("UNKNOWN");
+    expect(style.dot).toBe(STATUS_STYLES.unknown.dot);
+    expect(style.meaning).toBe(
+      "Coord's live probe could not be read (HTTP 502), so this page has no status for this observer; the Summary above is this drawer's own read of it."
+    );
+    expect(style.meaning).not.toMatch(/no current reading/);
+  });
+
+  it("keeps the row's own meaning while the drawer holds no read of its own", () => {
+    // No read made, one in flight, or one that failed: nothing on the page
+    // has read the observer, so "no current reading" is true.
+    expect(presentDrawerStatus(unknownRow, false)).toEqual(
+      presentStatus(unknownRow)
+    );
+    expect(presentDrawerStatus(unknownRow, false).meaning).toMatch(
+      /so there is no current reading of this observer/
+    );
+  });
+
+  it("changes nothing for a row the probe has a status for", () => {
+    for (const cellStatus of ["implemented", "error", "probing"] as const) {
+      expect(presentDrawerStatus({ cellStatus }, true), cellStatus).toEqual(
+        presentStatus({ cellStatus })
+      );
+    }
   });
 });
 

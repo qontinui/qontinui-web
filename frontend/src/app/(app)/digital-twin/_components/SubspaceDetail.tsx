@@ -32,7 +32,10 @@ import { failureTail } from "../_lib/failure-text";
 import { inLifecycleOrder, stageInfo, twinPlantInfo } from "../_lib/lifecycle";
 import { probeAnswered } from "../_lib/resolve";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
-import { pageAccessLabel, presentStatus } from "../_lib/status-presentation";
+import {
+  pageAccessLabel,
+  presentDrawerStatus,
+} from "../_lib/status-presentation";
 import { askTheTwinQuestion, useTwinNavigation } from "../_lib/twin-navigation";
 import { workUnitHref } from "../_lib/twin-plans";
 import type { DriftVerdict, ResolvedSubspace } from "../_lib/types";
@@ -61,9 +64,14 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
  * summary and credibility envelope come from the probe's own answer for the
  * row, and only once there is one (`probeAnswered`). While the probe is in
  * flight, or holds no reading at all, there is no answer to describe, so the
- * Summary stays shut and the Status says why. For all rows it shows the twin
- * and lifecycle stages, the backing coord tool / observer module, the
- * research doc and, while the row is still being built, the plan building it
+ * Summary stays shut and the Status says why. A twin-door row's raw read is
+ * the drawer's own, made whatever the probe holds: while the probe holds no
+ * reading the row's Status stays UNKNOWN, as its cell does, but once that read
+ * has answered the Status no longer says there is no reading of the observer
+ * — it says the page has no status for it, and points at the Summary
+ * (`presentDrawerStatus`). For all rows it shows the twin and lifecycle
+ * stages, the backing coord tool / observer module, the research doc and,
+ * while the row is still being built, the plan building it
  * — a link to that plan's work unit (plain text while presenting, until that
  * page can be presented: `LensLink`).
  *
@@ -119,8 +127,11 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
   };
 
   if (!row) return null;
-  const style = presentStatus(row);
   const verdict = data?.verdict;
+  // The drawer's own read of the observer has answered — a verdict, or a
+  // report door's report. While the page's probe holds no reading, that read
+  // is the only one on screen, so the Status must not say there is none.
+  const style = presentDrawerStatus(row, readsRaw && !!verdict);
   // An envelope door has no raw read here; the probe already carried its
   // top-level DriftVerdict fields, so its live envelope is those metrics.
   const envelopeVerdict: DriftVerdict | null =
@@ -200,8 +211,10 @@ export function SubspaceDetail({ row, onOpenChange }: SubspaceDetailProps) {
               {isReport && verdict && (
                 <p className="text-sm">
                   coord answers this sub-space with its own report, not a
-                  verdict — served, not graded. The raw data below is the
-                  report.
+                  verdict — served, not graded.
+                  {/* The raw view is the operator's alone, so only there
+                      is there a report below to point at. */}
+                  {!presenting && " The raw data below is the report."}
                 </p>
               )}
             </div>

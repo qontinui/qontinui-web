@@ -177,6 +177,35 @@ export function presentStatus(
 }
 
 /**
+ * The status as the sub-space drawer presents it: {@link presentStatus},
+ * unless the drawer holds a reading the page's probe does not.
+ *
+ * The drawer of a row on coord's twin door makes its own raw read of the
+ * observer, apart from the page's probe. Once that read has answered
+ * (`ownReadAnswered`), an `unknown` row's "there is no current reading of this
+ * observer" would be false beside the Summary that shows it. The page still
+ * has no status for the row, so the Status stays UNKNOWN, as its cell does,
+ * and the meaning names only what is missing: the page's status, not a
+ * reading. In every other case — no read of the drawer's own, one still in
+ * flight, or one that failed — nothing on the page has read the observer, and
+ * the row's own meaning holds.
+ */
+export function presentDrawerStatus(
+  row: Pick<ResolvedSubspace, "cellStatus" | "ask_via" | "unknownReason">,
+  ownReadAnswered: boolean
+): StatusStyle {
+  const style = presentStatus(row);
+  if (row.cellStatus !== "unknown" || !ownReadAnswered) return style;
+  const why = upperFirst(
+    row.unknownReason ?? "coord's live probe holds no reading"
+  );
+  return {
+    ...style,
+    meaning: `${why}, so this page has no status for this observer; the Summary above is this drawer's own read of it.`,
+  };
+}
+
+/**
  * How this page can read a row: what its `query_kind`, refined by `ask_via`,
  * means here (the detail drawer's "On this page" field). The raw `query_kind`
  * would mislead — `parameterized` means "a coord tool answers it, but this

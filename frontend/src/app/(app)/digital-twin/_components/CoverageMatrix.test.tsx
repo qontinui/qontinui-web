@@ -13,10 +13,19 @@ import {
   renderInPresentationMode,
 } from "@/test/presentation";
 import type {
+  RawVerdictResponse,
   SubspaceProbe,
   SubspacesProbeResponse,
   TwinCatalogResponse,
 } from "../_lib/types";
+
+/** What the drawer's raw read (`useSubspaceRaw`) holds for one sub-space. */
+interface RawRead {
+  data?: RawVerdictResponse;
+  isLoading?: boolean;
+  isError?: boolean;
+  error?: unknown;
+}
 
 const state = vi.hoisted(() => ({
   probe: {
@@ -29,6 +38,8 @@ const state = vi.hoisted(() => ({
   },
   /** coord's served catalog; `undefined` = not read (the manifest stands in). */
   catalog: undefined as TwinCatalogResponse | undefined,
+  /** The drawer's raw read per sub-space id; none made unless listed. */
+  raw: {} as Record<string, RawRead>,
 }));
 
 vi.mock("../_hooks/useDigitalTwinSubspaces", () => ({
@@ -43,11 +54,13 @@ vi.mock("../_hooks/useTwinCatalog", () => ({
   }),
 }));
 vi.mock("../_hooks/useSubspaceRaw", () => ({
-  useSubspaceRaw: () => ({
+  // As the real hook: nothing is read unless the drawer enables the read.
+  useSubspaceRaw: (id: string | null, enabled: boolean) => ({
     data: undefined,
     isLoading: false,
     isError: false,
     error: null,
+    ...(enabled && id ? state.raw[id] : undefined),
   }),
 }));
 vi.mock("@qontinui/ui-bridge/react", () => ({
@@ -95,6 +108,7 @@ beforeEach(() => {
     errorUpdatedAt: 0,
   };
   state.catalog = undefined;
+  state.raw = {};
 });
 
 describe("CoverageMatrix gauges", () => {
@@ -313,14 +327,18 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
     };
   }
 
-  /** HTTP 200 with no probe made: a stand-in error per declared id. */
-  function degradedAnswer() {
+  /**
+   * HTTP 200 with no probe made: a stand-in error per declared id, each
+   * carrying the backend's token for why (`digital_twin.py`
+   * `_degraded_matrix`).
+   */
+  function degradedAnswer(token = "coord_unavailable") {
     state.probe = {
       data: {
         subspaces: SNAPSHOT_IDS.map((id) => ({
           id,
           status: "error",
-          error: "coord_unavailable",
+          error: token,
         })),
         probed: 0,
         restricted: false,
@@ -342,11 +360,16 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
     },
     {
       name: "a degraded answer",
-      arrange: degradedAnswer,
+      arrange: () => degradedAnswer(),
       reason:
         "Coord's live probe could not be made: coord could not be reached.",
     },
   ];
+
+  /** The drawer's Status field (its label and value). */
+  function statusOf(drawer: HTMLElement): HTMLElement {
+    return within(drawer).getByText("Status").parentElement!;
+  }
 
   for (const arm of ARMS) {
     it(`shows the live gauge as UNKNOWN with why after ${arm.name}, with no count and no bar`, () => {
@@ -433,10 +456,6 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       ).toBeNull();
     }
 
-    function statusOf(drawer: HTMLElement): HTMLElement {
-      return within(drawer).getByText("Status").parentElement!;
-    }
-
     for (const arm of ARMS) {
       // The reason as the drawer's meaning starts its sentence (no full stop).
       const cause = arm.reason.replace(/\.$/, "");
@@ -499,6 +518,182 @@ describe("CoverageMatrix while the probe holds no reading — UNKNOWN, never 0/N
       expect(
         within(drawer).getByTestId("digital-twin-drawer-summary")
       ).toHaveTextContent("The probe returned no credibility envelope.");
+    });
+  });
+
+  /**
+   * `schema` is on coord's twin door, so its drawer makes its own raw read of
+   * the observer, apart from the probe — and that door can answer while the
+   * probe holds no reading: the backend's `catalog_unavailable` answer is a
+   * coord whose catalog route is down while its twin door still answers. The
+   * drawer's Summary is then a reading of the observer, and its Status, still
+   * UNKNOWN like the cell, must not say there is none.
+   */
+  describe("the schema row's drawer, when its own raw read answers and the probe holds none", () => {
+    const RAW_SCHEMA: RawVerdictResponse = {
+      subspace: "schema",
+      tool: "coord_query_schema",
+      verdict: {
+        coverage: 1,
+        credibility: 0.95,
+        posterior: 0.9,
+        staleness_seconds: 30,
+        provenance: "alembic_graph",
+        drift_class: "none",
+      },
+    };
+
+    const SILENT_ARMS = [
+      ...ARMS,
+      {
+        name: "a degraded answer from a coord whose catalog is down",
+        arrange: () => degradedAnswer("catalog_unavailable"),
+        reason:
+          "Coord's live probe could not be made: coord's catalog of live probes could not be read.",
+      },
+    ];
+
+    const UNOBSERVED = {
+      unobservable: "CoverageMatrix.test.tsx mocks @qontinui/ui-bridge/react",
+    } as const;
+
+    function openSchema(): HTMLElement {
+      fireEvent.click(screen.getByTestId("digital-twin-cell-schema"));
+      return screen.getByRole("dialog");
+    }
+
+    /** The drawer shows its own read, and says the PAGE has no status. */
+    function expectOwnReadNamed(drawer: HTMLElement, cause: string) {
+      const d = within(drawer);
+      expect(d.getByTestId("digital-twin-drawer-summary")).toHaveTextContent(
+        "Coverage 100%, credibility 95%"
+      );
+      expect(d.getByText("Live credibility envelope")).toBeInTheDocument();
+      expect(statusOf(drawer)).toHaveTextContent("UNKNOWN");
+      expect(drawer.textContent).not.toMatch(/no current reading/);
+      expect(drawer).toHaveTextContent(
+        `${cause}, so this page has no status for this observer; the Summary above is this drawer's own read of it.`
+      );
+    }
+
+    for (const arm of SILENT_ARMS) {
+      // The reason as the drawer's meaning starts its sentence (no full stop).
+      const cause = arm.reason.replace(/\.$/, "");
+
+      it(`says the page has no status, not that there is no reading, after ${arm.name} — operator mode`, () => {
+        state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+        arm.arrange();
+        state.raw = { schema: { data: RAW_SCHEMA } };
+        render(<CoverageMatrix />);
+        // The cell has no reading of its own: it stays UNKNOWN.
+        expect(
+          screen.getByTestId("digital-twin-cell-schema")
+        ).toHaveTextContent("UNKNOWN");
+        expectOwnReadNamed(openSchema(), cause);
+      });
+
+      it(`says the page has no status, not that there is no reading, after ${arm.name} — while presenting`, () => {
+        state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+        arm.arrange();
+        state.raw = { schema: { data: RAW_SCHEMA } };
+        const view = renderInPresentationMode(<CoverageMatrix />, {
+          uiBridge: UNOBSERVED,
+        });
+        expectOwnReadNamed(openSchema(), cause);
+        expectPresentationSafe(view);
+      });
+    }
+
+    it("still says there is no current reading while its own read is in flight", () => {
+      state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+      failedRead();
+      state.raw = { schema: { isLoading: true } };
+      render(<CoverageMatrix />);
+      const drawer = openSchema();
+      expect(
+        within(drawer).getByTestId("digital-twin-drawer-summary")
+      ).toHaveTextContent("Reading the observer…");
+      expect(drawer).toHaveTextContent(
+        "Coord's live probe could not be read (HTTP 502), so there is no current reading of this observer"
+      );
+      expect(drawer.textContent).not.toMatch(/drawer's own read/);
+    });
+
+    it("still says there is no current reading when its own read failed too", () => {
+      state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+      failedRead();
+      state.raw = {
+        schema: {
+          isError: true,
+          error: new Error(
+            "GET /api/v1/digital-twin/subspace/schema/raw failed: 502 - upstream"
+          ),
+        },
+      };
+      render(<CoverageMatrix />);
+      const drawer = openSchema();
+      expect(
+        within(drawer).getByTestId("digital-twin-drawer-read-error")
+      ).toBeInTheDocument();
+      expect(drawer).toHaveTextContent(
+        "Coord's live probe could not be read (HTTP 502), so there is no current reading of this observer"
+      );
+      expect(drawer.textContent).not.toMatch(/drawer's own read/);
+      expect(
+        within(drawer).queryByText("Live credibility envelope")
+      ).toBeNull();
+    });
+
+    /** The probe failed; `worktree`'s report door answered the drawer. */
+    function reportDoorAnswered() {
+      state.catalog = catalogDeclaring(MANIFEST_SNAPSHOT_IDS);
+      failedRead();
+      state.raw = {
+        worktree: {
+          data: {
+            subspace: "worktree",
+            tool: "coord_query_worktree",
+            verdict: { worktrees: 3 },
+          },
+        },
+      };
+    }
+
+    function openWorktree(): HTMLElement {
+      fireEvent.click(screen.getByTestId("digital-twin-cell-worktree"));
+      return screen.getByRole("dialog");
+    }
+
+    function expectReportNamed(drawer: HTMLElement) {
+      expect(
+        within(drawer).getByTestId("digital-twin-drawer-summary")
+      ).toHaveTextContent("coord answers this sub-space with its own report");
+      expect(statusOf(drawer)).toHaveTextContent("UNKNOWN");
+      expect(drawer.textContent).not.toMatch(/no current reading/);
+      expect(drawer).toHaveTextContent(
+        "the Summary above is this drawer's own read of it."
+      );
+    }
+
+    it("names a report door's own read the same way, and points the operator at the raw report", () => {
+      reportDoorAnswered();
+      render(<CoverageMatrix />);
+      const drawer = openWorktree();
+      expectReportNamed(drawer);
+      expect(drawer).toHaveTextContent("The raw data below is the report.");
+      expect(within(drawer).getByText("Raw verdict")).toBeInTheDocument();
+    });
+
+    it("never points at a raw report while presenting, where the raw view is not shown", () => {
+      reportDoorAnswered();
+      const view = renderInPresentationMode(<CoverageMatrix />, {
+        uiBridge: UNOBSERVED,
+      });
+      const drawer = openWorktree();
+      expectReportNamed(drawer);
+      expect(within(drawer).queryByText("Raw verdict")).toBeNull();
+      expect(drawer.textContent).not.toMatch(/raw data below/i);
+      expectPresentationSafe(view);
     });
   });
 
