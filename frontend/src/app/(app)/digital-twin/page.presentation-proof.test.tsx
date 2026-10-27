@@ -43,8 +43,20 @@ import {
 import { RESTRICTED_REASON } from "./_lib/twin-aspects";
 import type { SubspacesProbeResponse } from "./_lib/types";
 
+/**
+ * What each data hook answers. `probe` is set before every test; the others
+ * answer the page's own Spec CI stubs unless a test sets them (a failure arm).
+ */
 const state = vi.hoisted(() => ({
   probe: {} as Record<string, unknown>,
+  catalog: null as Record<string, unknown> | null,
+  /** Every raw read fails with this error (the drawer, the fidelity report). */
+  rawError: null as unknown,
+  workUnits: null as Record<string, unknown> | null,
+  /** A Delivery lookup answers this instead of the stub. */
+  delivery: null as Record<string, unknown> | null,
+  /** The runner relay's reads fail with this error. */
+  runnerError: null as unknown,
 }));
 
 const SPEC = JSON.parse(
@@ -79,25 +91,34 @@ const answered = (data: unknown) => ({
 vi.mock("./_hooks/useDigitalTwinSubspaces", () => ({
   useDigitalTwinSubspaces: () => state.probe,
 }));
+const failed = (error: unknown) => ({
+  ...answered(undefined),
+  isError: true,
+  error,
+  dataUpdatedAt: 0,
+  errorUpdatedAt: READ_AT,
+});
+
 vi.mock("./_hooks/useTwinCatalog", () => ({
-  useTwinCatalog: () => answered(stubBody("**/api/v1/digital-twin/catalog")),
+  useTwinCatalog: () =>
+    state.catalog ?? answered(stubBody("**/api/v1/digital-twin/catalog")),
 }));
 vi.mock("./_hooks/useSubspaceRaw", () => ({
-  useSubspaceRaw: (id: string | null, enabled: boolean) =>
-    enabled && id === "schema"
+  useSubspaceRaw: (id: string | null, enabled: boolean) => {
+    if (!enabled) return answered(undefined);
+    if (state.rawError !== null) return failed(state.rawError);
+    return id === "schema"
       ? answered(stubBody("**/api/v1/digital-twin/subspace/schema/raw"))
-      : {
-          ...answered(undefined),
-          isError: enabled,
-          error: enabled
-            ? new Error(
-                `GET /api/v1/digital-twin/subspace/${id}/raw failed: 404 - none`
-              )
-            : null,
-        },
+      : failed(
+          new Error(
+            `GET /api/v1/digital-twin/subspace/${id}/raw failed: 404 - none`
+          )
+        );
+  },
 }));
 vi.mock("./_hooks/useTwinWorkUnits", () => ({
   useTwinWorkUnits: () => {
+    if (state.workUnits !== null) return state.workUnits;
     const body = stubBody("**/api/v1/operations/plans**") as {
       work_units: CoordPlanRow[];
     };
@@ -112,29 +133,31 @@ vi.mock("./_hooks/useTwinWorkUnits", () => ({
 }));
 vi.mock("./_hooks/useDeliveryVerdict", () => ({
   useDeliveryVerdict: (slug: string) =>
-    answered(
-      slug.trim()
-        ? stubBody("**/api/v1/digital-twin/delivery/verdict**")
-        : undefined
-    ),
+    !slug.trim()
+      ? answered(undefined)
+      : (state.delivery ??
+        answered(stubBody("**/api/v1/digital-twin/delivery/verdict**"))),
 }));
 const RUNNER = "device-presentation-test";
 vi.mock("./_hooks/useUiBridge", () => {
-  const idle = {
-    data: undefined,
-    isLoading: false,
-    isError: false,
-    error: null,
-    isFetching: false,
-    dataUpdatedAt: 0,
-    errorUpdatedAt: 0,
-    refetch: () => {},
-  };
+  const read = () =>
+    state.runnerError === null
+      ? {
+          data: undefined,
+          isLoading: false,
+          isError: false,
+          error: null,
+          isFetching: false,
+          dataUpdatedAt: 0,
+          errorUpdatedAt: 0,
+          refetch: () => {},
+        }
+      : { ...failed(state.runnerError), refetch: () => {} };
   return {
-    useRunnerApps: () => idle,
-    useRunnerSpecList: () => idle,
-    useRunnerSpecGraph: () => idle,
-    useRunnerSnapshot: () => idle,
+    useRunnerApps: read,
+    useRunnerSpecList: read,
+    useRunnerSpecGraph: read,
+    useRunnerSnapshot: read,
   };
 });
 vi.mock("@/contexts/active-runner-context", async (importOriginal) => {
@@ -225,6 +248,11 @@ const TWIN_MAP_CAPTIONS: CaptionKey[] = [
 
 beforeEach(() => {
   state.probe = answered(stubBody("**/api/v1/digital-twin/subspaces"));
+  state.catalog = null;
+  state.rawError = null;
+  state.workUnits = null;
+  state.delivery = null;
+  state.runnerError = null;
 });
 
 function renderPresenting() {
@@ -442,6 +470,170 @@ describe("/digital-twin in presentation mode", () => {
     expect(planned.closest("a")).toBeNull();
     expectOnlyPresentableLinks("the drawer");
     expectPresentationSafe(view);
+  });
+});
+
+/**
+ * A host and a client that only upstream error text names — what a failed
+ * read's message would carry onto the screen if the lens printed it.
+ */
+const HOST = "coord.internal.acme-corp.example";
+const UPSTREAM = `upstream https://${HOST}:8443 refused the connection for Acme Corp`;
+const FAILURE_FORBIDDEN = [HOST, "acme"];
+const leaky = (request: string, status: number) =>
+  new Error(`GET ${request} failed: ${status} - ${UPSTREAM}`);
+
+describe("/digital-twin in presentation mode, when its sources fail", () => {
+  it("says what failed and its HTTP status on every tab — never what the failure's text says", async () => {
+    state.probe = failed(leaky("/api/v1/digital-twin/subspaces", 502));
+    state.catalog = failed(leaky("/api/v1/digital-twin/catalog", 502));
+    state.rawError = leaky("/api/v1/digital-twin/subspace/schema/raw", 502);
+    state.workUnits = failed(leaky("/api/v1/operations/plans", 503));
+    state.delivery = failed(
+      leaky("/api/v1/digital-twin/delivery/verdict", 502)
+    );
+    state.runnerError = leaky("/api/v1/runners/device/proxy/apps", 502);
+    const view = renderPresenting();
+    const user = userEvent.setup();
+
+    // The Twin map: the probe, the work-unit read and the runner, each by
+    // its status.
+    expect(
+      screen.getByTestId("digital-twin-aspect-environment-fidelity-observed")
+    ).toHaveTextContent("coord's live probe could not be read (HTTP 502)");
+    expect(screen.getByTestId("digital-twin-plans-unknown")).toHaveTextContent(
+      "The plans could not be read: coord's work-unit list answered HTTP 503"
+    );
+    expect(
+      screen.getByTestId("digital-twin-aspect-ui-bridge-fidelity-observed")
+    ).toHaveTextContent(
+      "the runner's app registry could not be read (HTTP 502)"
+    );
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    await user.click(
+      within(screen.getByTestId("digital-twin-aspect-card-process")).getByRole(
+        "button",
+        { name: /show its parts and plans/i }
+      )
+    );
+    expect(
+      screen.getByTestId("digital-twin-aspect-detail-plans-unknown")
+    ).toHaveTextContent("coord's work-unit list answered HTTP 503");
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    await user.click(screen.getByRole("tab", { name: "Completeness" }));
+    await screen.findByTestId("digital-twin-cell-schema");
+    expect(screen.getByTestId("twin-catalog-error")).toHaveTextContent(
+      "Couldn't load the catalog (HTTP 502)."
+    );
+    expect(
+      screen.getByTestId("digital-twin-coord-unreachable")
+    ).toHaveTextContent("UNKNOWN");
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    await user.click(screen.getByTestId("digital-twin-cell-schema"));
+    await screen.findByRole("dialog");
+    expect(
+      screen.getByTestId("digital-twin-drawer-read-error")
+    ).toHaveTextContent("Could not read the live verdict (HTTP 502).");
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await user.click(screen.getByRole("tab", { name: "Lifecycle" }));
+    await screen.findByTestId("digital-twin-stage-verify");
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    await user.click(screen.getByRole("tab", { name: "Delivery" }));
+    await user.type(
+      screen.getByPlaceholderText(/approach-d-conductor-engine/),
+      "2026-06-15-twin-delivery-verdict-completion-view"
+    );
+    await user.click(screen.getByRole("button", { name: /look up/i }));
+    expect(
+      await screen.findByTestId("delivery-verdict-error")
+    ).toHaveTextContent("Could not read the delivery verdict (HTTP 502).");
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+
+    await user.click(screen.getByRole("tab", { name: "UI Bridge" }));
+    await screen.findByTestId("ui-bridge-presented");
+    expectPresentationSafe(view, { forbidden: FAILURE_FORBIDDEN });
+  });
+
+  it("reads a degraded probe as UNKNOWN, an incomplete or stale plan read without its text, and coord's unit status in fixed words", async () => {
+    const body = stubBody(
+      "**/api/v1/digital-twin/subspaces"
+    ) as SubspacesProbeResponse;
+    state.probe = answered({
+      ...body,
+      degraded: true,
+      subspaces: body.subspaces.map((s) => ({
+        id: s.id,
+        status: "error",
+        error: "coord_unavailable",
+      })),
+    } satisfies SubspacesProbeResponse);
+    const plans = stubBody("**/api/v1/operations/plans**") as {
+      work_units: CoordPlanRow[];
+    };
+    state.workUnits = {
+      ...answered({
+        kind: "partial",
+        rows: plans.work_units,
+        bodySignal: null,
+        pages: 2,
+        reason: "error",
+        error: UPSTREAM,
+      } satisfies WalkOutcome),
+      isError: true,
+      error: leaky("/api/v1/operations/plans", 503),
+      errorUpdatedAt: READ_AT + 120_000,
+    };
+    const verdict = structuredClone(
+      stubBody("**/api/v1/digital-twin/delivery/verdict**")
+    ) as { verdict: { components: Record<string, unknown> } };
+    verdict.verdict.components.status = "waiting-on-acme-corp-legal";
+    state.delivery = answered(verdict);
+    const view = renderPresenting();
+    const user = userEvent.setup();
+
+    for (const key of ["observed", "coverage", "staleness"]) {
+      const figure = screen.getByTestId(
+        `digital-twin-aspect-environment-fidelity-${key}`
+      );
+      expect(figure, key).toHaveAttribute("data-fidelity-state", "unknown");
+      expect(figure, key).toHaveTextContent(
+        "coord's live probe could not be made: coord could not be reached"
+      );
+    }
+    expect(
+      screen.getByTestId("digital-twin-plans-incomplete")
+    ).toHaveTextContent(
+      "INCOMPLETE — coord's work-unit list stopped answering after 2 pages"
+    );
+    expect(screen.getByTestId("digital-twin-plans-stale")).toHaveTextContent(
+      "The last refresh failed (coord's work-unit list answered HTTP 503)"
+    );
+    expectPresentationSafe(view, {
+      forbidden: [...FAILURE_FORBIDDEN, ...PLAN_NAMES],
+    });
+
+    await user.click(screen.getByRole("tab", { name: "Delivery" }));
+    await user.type(
+      screen.getByPlaceholderText(/approach-d-conductor-engine/),
+      "2026-06-15-twin-delivery-verdict-completion-view"
+    );
+    await user.click(screen.getByRole("button", { name: /look up/i }));
+    await screen.findByText("Cited PRs");
+    expect(
+      screen.getByText(
+        /Plan status “Status unknown”; 2 cited PRs, all merged\./
+      )
+    ).toBeInTheDocument();
+    expectPresentationSafe(view, {
+      forbidden: [...FAILURE_FORBIDDEN, "waiting-on"],
+    });
   });
 });
 
