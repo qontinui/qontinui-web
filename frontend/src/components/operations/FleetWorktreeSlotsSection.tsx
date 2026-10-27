@@ -77,18 +77,33 @@ import type {
 } from "./useFleetWorktreeSlots";
 
 /**
- * When an occupant was allocated, from coord's `age_secs` — the descriptor's
- * age in presentation mode. `null` (age unknown) when coord sent none.
+ * When an occupant was allocated — the descriptor's age in presentation mode:
+ * the moment the read ANSWERED, less coord's `age_secs` as of that answer.
+ *
+ * Anchored to the answer, never to `Date.now()`: the page re-renders every
+ * 15 s, so an instant rebuilt from the clock on each render slides with it
+ * and the age stays at whatever coord last said, however long the read has
+ * been failing — the frozen age `presentationClock.ts` exists to prevent ("an
+ * age that stops advancing is a false claim"). `null` (age unknown) when coord
+ * sent no age, or no answer is dated.
  */
-function allocatedAt(ageSecs: number | null): string | null {
-  if (ageSecs === null || !Number.isFinite(ageSecs)) return null;
-  return new Date(Date.now() - Math.max(0, ageSecs) * 1_000).toISOString();
+function allocatedAt(
+  ageSecs: number | null,
+  answeredAtMs: number | null
+): string | null {
+  if (ageSecs === null || !Number.isFinite(ageSecs) || answeredAtMs === null) {
+    return null;
+  }
+  return new Date(answeredAtMs - Math.max(0, ageSecs) * 1_000).toISOString();
 }
 
 function OccupantsDisclosure({
   occupants,
+  answeredAtMs,
 }: {
   occupants: WorktreeSlotDevice["occupants"];
+  /** When the read these occupants came from answered (`fetchedAtMs`). */
+  answeredAtMs: number | null;
 }) {
   const { presenting } = usePresentationMode();
   if (occupants.total === 0) {
@@ -125,7 +140,7 @@ function OccupantsDisclosure({
                 descriptor={{
                   kind: "Agent workspace",
                   status: row.building ? "building" : "allocated",
-                  at: allocatedAt(row.age_secs),
+                  at: allocatedAt(row.age_secs, answeredAtMs),
                 }}
               />
             ) : (
@@ -348,7 +363,10 @@ export function FleetWorktreeSlotsSection({
                             not reported
                           </span>
                         ) : (
-                          <OccupantsDisclosure occupants={entry.occupants} />
+                          <OccupantsDisclosure
+                            occupants={entry.occupants}
+                            answeredAtMs={fetchedAtMs}
+                          />
                         )}
                       </td>
                     </tr>
