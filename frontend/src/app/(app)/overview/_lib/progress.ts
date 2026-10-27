@@ -31,27 +31,30 @@
  * not-started unit whose dependencies are met from one that is merely planned,
  * and rendering a bucket with no source would be a fabricated zero.
  *
- * ## This is a BEHAVIOUR CHANGE, not a like-for-like swap
+ * ## What changed against the old client-side count
  *
  * The count this replaced bucketed by the console's status TONE
- * (`describePlanStatus`), which reads more spellings than the door's
- * eight-word vocabulary does. So for the same corpus the two can differ:
+ * (`describePlanStatus`). The door classifies by its own compiled vocabulary
+ * instead: its eight status words, plus the alias table it serves beside the
+ * counts as `on_track.status_aliases` (qontinui-coord `project_state.rs`
+ * `STATUS_ALIASES` and `IN_FLIGHT_ONLY_WORDS`). That table classes
+ * `in-progress`, `vetted_unattested` and `archived` exactly as `in_progress`,
+ * `vetted` and `obsolete`, and `partial` as in flight outright. Each of those
+ * therefore lands where its old tone put it: In progress, Planned, counted
+ * toward nothing, and In progress. What does differ:
  *
- * - `archived` was a closed tone (counted toward nothing); the door has no
- *   `archived` word, so such a unit reads `off_vocabulary` → Status unknown.
- * - `partial` and `in-progress` were active (In progress), and
- *   `vetted_unattested` was pending (Planned); the door reads each as
- *   `off_vocabulary` → Status unknown unless and until coord classifies those
- *   spellings itself (in flight at authoring). Status unknown stays in the
- *   total, so this can lower the done share but never raise it.
- * - A status with padding or mixed case (`"  Shipped "`) was normalised
- *   client-side; the door classifies the stored value as it is.
+ * - The door matches the stored value exactly, so a status it does not
+ *   recognise reads `off_vocabulary` → Status unknown. That covers a spelling
+ *   the old tone table knew and the alias table does not (`partially`, which
+ *   was In progress), and padding or mixed case (`"  Shipped "`, which was
+ *   normalised client-side). Status unknown stays in the total, so this can
+ *   lower the done share but never raise it. Which spellings the door
+ *   recognises is its served `status_aliases`, not this list.
  * - Merge-shepherd bookkeeping units (`shepherd-*`) were excluded client-side
  *   by slug. The door now excludes them itself and says how many in
  *   `totals.excluded.merge_shepherd_bookkeeping` (and in its `does_not_know`
  *   `work_units` row); the panel's caveat line states that count when it is
- *   above zero. A door predating that exclusion counts them as
- *   `off_vocabulary` → Status unknown.
+ *   above zero.
  * - The old count was bounded by a 500-row page; the door's is not.
  *
  * ## Unknown is not zero
