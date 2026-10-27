@@ -8,6 +8,8 @@
  *
  * - exactly the plan's ten questions, in order, verbatim;
  * - each names the door block that answers it and a page region that exists;
+ * - an answer that turns on coord's `reason` lists that reason among its door
+ *   fields, beside the field it qualifies;
  * - each says what counts as an answer, and admits "not measured / unknown"
  *   ONLY conditioned on that block's door state not being `read`.
  */
@@ -80,6 +82,37 @@ describe("answerability.questions.json", () => {
       expect(q.answer.length).toBeGreaterThan(20);
     }
   );
+
+  // An independent session checks each answer against the door fields the
+  // question names, so a field the right answer turns on must be among them.
+  // q5 and q8 pick their answer by coord's `reason` (the correctness reason;
+  // the initiative's reason, no_declared_link vs work_units_could_not_read).
+  const turnsOnReason = questions.filter((q) =>
+    /coord's reason/.test(q.answer)
+  );
+
+  it("knows which answers turn on coord's reason", () => {
+    expect(turnsOnReason.map((q) => q.id)).toEqual(["q5", "q8"]);
+  });
+
+  it.each(turnsOnReason.map((q) => [q.id, q] as const))(
+    "%s lists the reason its answer turns on, beside the field it qualifies",
+    (_id, q) => {
+      const reasons = q.door_fields.filter((f) => f.endsWith(".reason"));
+      expect(reasons.length).toBeGreaterThan(0);
+      for (const r of reasons) {
+        const parent = r.slice(0, -".reason".length);
+        expect(
+          q.door_fields.filter((f) => f !== r && f.startsWith(`${parent}.`))
+        ).not.toEqual([]);
+      }
+    }
+  );
+
+  it("q8 names the initiative's own reason, the one the page reads", () => {
+    const q8 = questions.find((q) => q.id === "q8")!;
+    expect(q8.door_fields).toContain("on_track.initiative.reason");
+  });
 
   it.each(questions.map((q) => [q.id, q] as const))(
     "%s admits 'unknown' only conditioned on its own block not being read",

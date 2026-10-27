@@ -103,6 +103,7 @@
         "on_track.initiative.in_scope",
         "on_track.initiative.ends",
         "on_track.initiative.alignment",
+        "on_track.initiative.reason",
         "on_track.initiative.in_scope[].units.in_flight"
       ],
       "answer": "The initiative's in-scope items verbatim and its end date; and the attributed in-flight work — when on_track.initiative.alignment is 'read', the in-flight count summed over in_scope[].units (each item's units shown beside it), and when it is 'unknown', the words 'not yet attributable' when coord's reason is no_declared_link (no unit carries a link yet), or 'the work units could not be read, so it was not counted' when it is work_units_could_not_read; each is a correct answer ONLY in its own case.",
