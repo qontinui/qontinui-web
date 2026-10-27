@@ -41,6 +41,20 @@ export interface QueryView<D> {
   readonly asked: boolean;
 }
 
+/**
+ * A read nobody asked for — what an on-demand panel is handed while it has
+ * not been asked for the runner the page reads, whatever the cache holds
+ * (`useOnDemandRequest`). It reads as `idle`.
+ */
+export const NOT_ASKED: QueryView<never> = {
+  data: undefined,
+  error: null,
+  isError: false,
+  isFetching: false,
+  dataUpdatedAt: 0,
+  asked: false,
+};
+
 /** The issue for an answer that arrived but could not be read. */
 export const UNREADABLE_ANSWER: SourceIssue = {
   kind: "failed",

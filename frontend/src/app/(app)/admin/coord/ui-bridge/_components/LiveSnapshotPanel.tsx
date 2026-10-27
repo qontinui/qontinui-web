@@ -16,7 +16,6 @@
  * operator's raw view.
  */
 
-import { useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ShareList, StatCluster } from "@/components/console";
@@ -32,10 +31,11 @@ import {
   type UiBridgeSnapshot,
 } from "@/app/(app)/digital-twin/_lib/ui-bridge-types";
 import { appRepoOf } from "../_lib/firstParty";
-import { queryView, readStateOf } from "../_lib/readState";
+import { NOT_ASKED, queryView, readStateOf } from "../_lib/readState";
 import { RUNNER_ROUTES } from "../_lib/relayReads";
 import { sourceIssueText, type BuildReading } from "../_lib/relaySource";
 import { elementTypeCounts } from "../_lib/snapshotReading";
+import { useOnDemandRequest } from "../_lib/useOnDemandRequest";
 import { DashboardPanel } from "./DashboardPanel";
 import {
   RunnerReadUnknown,
@@ -59,11 +59,12 @@ export function LiveSnapshotPanel({
   noRunner,
 }: LiveSnapshotPanelProps) {
   const { presenting } = usePresentationMode();
-  const [requestedFor, setRequestedFor] = useState<string | null>(null);
-  const requested = deviceId !== null && requestedFor === deviceId;
+  // Asked for THIS runner only; a switch away ends the request, so coming
+  // back neither re-captures nor shows the earlier capture as this one's.
+  const { requested, request } = useOnDemandRequest(deviceId);
   const snapshot = useRunnerSnapshot(deviceId, requested);
   const read = readStateOf<UiBridgeSnapshot, UiBridgeSnapshot>(
-    queryView(snapshot),
+    requested ? queryView(snapshot) : NOT_ASKED,
     (d) => (isRecord(d) ? d : null)
   );
   const snap = read.state === "ok" ? read.value : null;
@@ -78,7 +79,7 @@ export function LiveSnapshotPanel({
   const capture = () => {
     if (deviceId === null) return;
     if (!requested) {
-      setRequestedFor(deviceId);
+      request();
       return;
     }
     return snapshot.refetch();

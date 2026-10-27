@@ -648,6 +648,51 @@ describe("on-demand reads", () => {
     );
   });
 
+  it("re-runs neither when the page comes back to a runner it switched away from — they read as not run until asked", async () => {
+    const view = renderPage();
+    await screen.findByTestId("coord-ui-bridge-actions-counts");
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-snapshot-capture"));
+    fireEvent.click(screen.getByTestId("coord-ui-bridge-health-run"));
+    await screen.findByTestId("coord-ui-bridge-snapshot-counts");
+    await screen.findByTestId("coord-ui-bridge-health-counts");
+    const askedOfA = (route: string) =>
+      (state.relay?.requestsFor ?? []).filter(
+        (r) => r === `${route} for ${DEVICE_ID}`
+      ).length;
+    expect(askedOfA("GET ui-bridge/control/snapshot")).toBe(1);
+    expect(askedOfA("POST ui-bridge/control/page-health")).toBe(1);
+
+    const rerender = () =>
+      view.rerender(
+        <QueryClientProvider client={view.client}>
+          <UiBridgeDashboardPage />
+        </QueryClientProvider>
+      );
+    // Away to another runner, asking nothing there, and back.
+    state.target = {
+      kind: "runner",
+      runner: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Spare box" },
+      locality: "unknown",
+    };
+    rerender();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    state.target = RUNNER;
+    rerender();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+    expect(askedOfA("GET ui-bridge/control/snapshot")).toBe(1);
+    expect(askedOfA("POST ui-bridge/control/page-health")).toBe(1);
+    expect(
+      screen.getByTestId("coord-ui-bridge-snapshot-idle")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-ui-bridge-health-idle")
+    ).toBeInTheDocument();
+  });
+
   it("renders a snapshot the project's egress setting withheld as UNKNOWN with its sentence", async () => {
     state.relay = relayFake({ snapshot: () => json(409, EGRESS_OFF_BODY) });
     renderPage();

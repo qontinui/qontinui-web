@@ -122,14 +122,11 @@ export default function UiBridgeDashboardPage() {
     web: queryView(fleetAppsQuery),
     runner: queryView(runnerAppsQuery),
   });
-  const pageHealth = readStateOf(
-    queryView(healthRun.pageHealth),
-    readPageHealth
-  );
+  const pageHealth = readStateOf(healthRun.pageHealthView, readPageHealth);
   const occlusion = occlusionReadOf({
     sweepRelayed: SWEEP_RELAYED,
     requested: healthRun.requested,
-    sweep: queryView(healthRun.visibility),
+    sweep: healthRun.visibilityView,
   });
 
   const build: BuildReading = buildReadingOf(

@@ -13,12 +13,13 @@
  * build changes, so the page re-reads on the operator's refresh. The live
  * snapshot and page health each drive a full `discover` of the runner's
  * window, so they run ONLY when asked — and only for the runner they were
- * asked for: switching runners never fires them implicitly. The occlusion
- * sweep would too, but no relay carries it, so it is not asked at all
+ * asked for: switching runners never fires them implicitly, and switching
+ * back does not resume a request (`useOnDemandRequest`). The occlusion sweep
+ * would too, but no relay carries it, so it is not asked at all
  * ({@link occlusionReadOf}).
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { httpClient } from "@/services/service-factory";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
@@ -43,7 +44,13 @@ import {
   readOcclusion,
   type OcclusionReading,
 } from "./occlusionStatus";
-import { readStateOf, type QueryView, type ReadState } from "./readState";
+import {
+  NOT_ASKED,
+  queryView,
+  readStateOf,
+  type QueryView,
+  type ReadState,
+} from "./readState";
 import {
   fetchRunnerComponents,
   fetchRunnerHealth,
@@ -51,6 +58,7 @@ import {
   fetchRunnerVisibility,
 } from "./relayReads";
 import { noRunnerReason } from "./relaySource";
+import { useOnDemandRequest } from "./useOnDemandRequest";
 
 /** Every query key on this page starts with it. */
 export const UI_BRIDGE_DASHBOARD_KEY = "ui-bridge-dashboard";
@@ -212,7 +220,11 @@ export function useDashboardRefresh(
  * Page health — and the occlusion sweep, where a relay carries it
  * (`sweepRelayed`) — run together and only on request, for the runner they
  * were requested for. `run()` starts them, and re-runs them once they have
- * answered; its promise settles when every read that was started has.
+ * answered; its promise settles when every read that was started has. The
+ * request ends when the page switches runners (`useOnDemandRequest`), so
+ * switching back neither re-runs them nor shows their earlier answer: the
+ * views the page reads (`pageHealthView`, `visibilityView`) are not asked
+ * until the reads are asked for again.
  *
  * `sweepRelayed` is `isRelayed(RUNNER_ROUTES.visibility)`: a fact about the
  * relay's allow-list, not a switch. While it is false the sweep is not asked
@@ -224,19 +236,20 @@ export function usePageHealthRun(
   deviceId: string | null,
   sweepRelayed: boolean
 ) {
-  const [requestedFor, setRequestedFor] = useState<string | null>(null);
-  const enabled = deviceId !== null && requestedFor === deviceId;
+  const { requested, request } = useOnDemandRequest(deviceId);
   const pageHealth = useQuery({
     queryKey: [UI_BRIDGE_DASHBOARD_KEY, "page-health", deviceId],
-    queryFn: () => fetchRunnerPageHealth(deviceId as string),
-    enabled,
+    queryFn:
+      deviceId === null ? skipToken : () => fetchRunnerPageHealth(deviceId),
+    enabled: requested,
     staleTime: 0,
     ...READ_DEFAULTS,
   });
   const visibility = useQuery({
     queryKey: [UI_BRIDGE_DASHBOARD_KEY, "visibility", deviceId],
-    queryFn: () => fetchRunnerVisibility(deviceId as string),
-    enabled: enabled && sweepRelayed,
+    queryFn:
+      deviceId === null ? skipToken : () => fetchRunnerVisibility(deviceId),
+    enabled: requested && sweepRelayed,
     staleTime: 0,
     ...READ_DEFAULTS,
   });
@@ -244,16 +257,30 @@ export function usePageHealthRun(
   const refetchVisibility = visibility.refetch;
   const run = useCallback((): Promise<unknown> | void => {
     if (deviceId === null) return;
-    if (requestedFor !== deviceId) {
+    if (!requested) {
       // Enabling the queries starts them; nothing to await here.
-      setRequestedFor(deviceId);
+      request();
       return;
     }
     return Promise.all(
       sweepRelayed ? [refetchHealth(), refetchVisibility()] : [refetchHealth()]
     );
-  }, [deviceId, requestedFor, sweepRelayed, refetchHealth, refetchVisibility]);
-  return { pageHealth, visibility, run, requested: enabled };
+  }, [
+    deviceId,
+    requested,
+    request,
+    sweepRelayed,
+    refetchHealth,
+    refetchVisibility,
+  ]);
+  return {
+    pageHealth,
+    visibility,
+    run,
+    requested,
+    pageHealthView: requested ? queryView(pageHealth) : NOT_ASKED,
+    visibilityView: requested ? queryView(visibility) : NOT_ASKED,
+  };
 }
 
 export interface OcclusionReadInput {

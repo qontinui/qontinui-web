@@ -312,6 +312,38 @@ describe("usePageHealthRun — only when asked, only for the runner asked (a rel
     expect(askedFor(SWEEP, DEVICE_ID)).toBe(1);
   });
 
+  it("does not re-run for a runner switched away from and back to with no new request — it reads as not asked", async () => {
+    const { result, rerender } = renderHook(
+      ({ deviceId }: { deviceId: string | null }) =>
+        usePageHealthRun(deviceId, RELAYED),
+      { wrapper: wrapper(), initialProps: { deviceId: DEVICE_ID } }
+    );
+    act(() => {
+      void result.current.run();
+    });
+    await waitFor(() => expect(result.current.pageHealth.isSuccess).toBe(true));
+    await waitFor(() => expect(askedFor(SWEEP, DEVICE_ID)).toBe(1));
+
+    // Away to another runner WITHOUT running there, then back.
+    rerender({ deviceId: OTHER_DEVICE_ID });
+    await settle();
+    rerender({ deviceId: DEVICE_ID });
+    await settle();
+    expect(askedFor(PAGE_HEALTH, DEVICE_ID)).toBe(1);
+    expect(askedFor(SWEEP, DEVICE_ID)).toBe(1);
+    expect(result.current.requested).toBe(false);
+    // The earlier answer is still cached, but the page is not handed it.
+    expect(result.current.pageHealth.data).toBeDefined();
+    expect(result.current.pageHealthView.asked).toBe(false);
+    expect(result.current.pageHealthView.data).toBeUndefined();
+
+    // Asked again, it runs again.
+    act(() => {
+      void result.current.run();
+    });
+    await waitFor(() => expect(askedFor(PAGE_HEALTH, DEVICE_ID)).toBe(2));
+  });
+
   it("re-runs both reads when asked again, and settles when both have", async () => {
     const { result } = renderHook(() => usePageHealthRun(DEVICE_ID, RELAYED), {
       wrapper: wrapper(),
