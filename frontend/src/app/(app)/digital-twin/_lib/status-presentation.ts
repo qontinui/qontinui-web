@@ -346,6 +346,17 @@ export function datesWorstBucket(
 /** How a sentence names the bucket an envelope door's age dates. */
 export const WORST_BUCKET = "worst bucket";
 
+/**
+ * The same bucket named by what makes it the one, for a sentence where
+ * "worst" would read as "oldest": the Twin map's Staleness, whose detail
+ * begins "the oldest of N answering readings". Coord orders the buckets by
+ * drift severity, then by the share of budget left, never by age
+ * (`outbound_budget_read.rs`), so another bucket of the same answer may be
+ * older than this one. The cell and the drawer say {@link WORST_BUCKET}
+ * beside what disambiguates it: the cell's title, the drawer's "classified".
+ */
+export const CLASS_BUCKET = "the bucket its drift class comes from";
+
 /** A {@link ReadingAge} in words: "45s stale", "live" or "UNKNOWN". */
 export function formatReadingAge(age: ReadingAge): string {
   if (age === null) return "UNKNOWN";

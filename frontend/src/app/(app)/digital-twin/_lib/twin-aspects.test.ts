@@ -195,7 +195,10 @@ describe("plantFidelity — from the live probe", () => {
       /3 of 29 parts probed live/
     );
     expect(f.coverage).toMatchObject({ state: "known", value: "80%" });
-    expect(f.staleness).toMatchObject({ state: "known", value: "10m old" });
+    expect(f.staleness).toMatchObject({
+      state: "known",
+      value: "10m stale when read",
+    });
     for (const key of ["observed", "coverage", "staleness"] as const) {
       expect(f[key].source, key).toBe("coord's live twin probe");
       expect(f[key].state === "known" && f[key].asOf, key).toBe(NOW - 5_000);
@@ -235,11 +238,26 @@ describe("plantFidelity — from the live probe", () => {
     expect(f.staleness).toEqual({
       key: "staleness",
       state: "known",
-      value: "15m old",
+      value: "15m stale when read",
       detail:
-        "the oldest of 3 answering readings; outbound's dated by its worst bucket",
+        "the oldest of 3 answering readings; outbound's reading is dated by the bucket its drift class comes from",
       source: "coord's live twin probe",
       asOf: NOW - 5_000,
+    });
+  });
+
+  it("names each reading one bucket dates, in the plural too", () => {
+    const rows = rowsFor([
+      probe("workers", "implemented", 1, 600),
+      { ...OUTBOUND_DATED, id: "webhook_pulse" },
+      OUTBOUND_DATED,
+    ]);
+    const f = figures("process", probeRead({ rows }));
+    expect(f.staleness).toMatchObject({
+      state: "known",
+      value: "15m stale when read",
+      detail:
+        "the oldest of 3 answering readings; the readings of webhook pulse and outbound are each dated by the bucket its drift class comes from",
     });
   });
 
@@ -251,7 +269,7 @@ describe("plantFidelity — from the live probe", () => {
     const f = figures("process", probeRead({ rows }));
     expect(f.staleness).toMatchObject({
       state: "known",
-      value: "10m old",
+      value: "10m stale when read",
       detail: "the oldest of 2 answering readings",
     });
   });
@@ -286,10 +304,10 @@ describe("plantFidelity — from the live probe", () => {
         OUTBOUND,
       ])
     ).toBe(
-      "no age was served for outbound's reading; the oldest of the other 2 answering readings is 10m old"
+      "no age was served for outbound's reading; the oldest of the other 2 answering readings was 10m stale when read"
     );
     expect(reason([probe("workers", "implemented", 1, 600), OUTBOUND])).toBe(
-      "no age was served for outbound's reading; the other answering reading is 10m old"
+      "no age was served for outbound's reading; the other answering reading was 10m stale when read"
     );
     expect(reason([probe("workers", "implemented", 1, null), OUTBOUND])).toBe(
       "no age was served for outbound's reading; the other answering probe read live"

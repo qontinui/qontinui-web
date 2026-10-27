@@ -10,7 +10,7 @@
  * |---|---|---|
  * | observed | live probes answering, of those coord answers this workspace with a verdict (coord's live twin probe) | apps registered with the runner's UI Bridge |
  * | coverage | the answering probes' own average coverage | pages of the runner's own interface with a readable model |
- * | staleness | the oldest answering reading (the envelope door's dated by its worst bucket); UNKNOWN when one came with no age served | UNKNOWN: the models carry no time |
+ * | staleness | the oldest answering reading's staleness when read (the envelope door's dated by the bucket its drift class comes from, which need not be its oldest); UNKNOWN when one came with no age served | UNKNOWN: the models carry no time |
  * | honesty | violations among the parts coord's twin self-check measures | UNKNOWN: the self-check does not cover interface models |
  *
  * A twin with no live-probed part has no probe figure at all: its observed,
@@ -32,13 +32,13 @@ import { statusSuffix } from "./failure-text";
 import { coverageOf, gradedOf } from "./lifecycle";
 import { probeUnread, type ProbeRead, type ProbeSilence } from "./probe-read";
 import {
-  WORST_BUCKET,
+  CLASS_BUCKET,
   datesWorstBucket,
+  formatAgeWhenRead,
   formatRatio,
   readingAge,
 } from "./status-presentation";
 import {
-  formatAge,
   readFidelity,
   reportComputedAt,
   reportSubspaces,
@@ -376,9 +376,12 @@ function stalenessFigure(
       asOf: probe.asOf,
     };
   }
-  // Each reading's age as it was served: coord omits a DriftVerdict's
-  // `staleness_seconds` on an answer it computed live; an envelope door's age
-  // is its worst bucket's, and with none served it is UNKNOWN (`readingAge`).
+  // Each reading's age when it was read, as it was served: coord omits a
+  // DriftVerdict's `staleness_seconds` on an answer it computed live; an
+  // envelope door's age is that of the bucket its drift class comes from, and
+  // with none served it is UNKNOWN (`readingAge`). Every age here is worded
+  // as of that read (`formatAgeWhenRead`): the figure is shown some time
+  // after it, and in operator mode nothing on the card dates it.
   const ages = answering.map((row) => ({
     row,
     age: readingAge(row.metrics?.staleness_seconds, row.doorShape),
@@ -412,15 +415,24 @@ function stalenessFigure(
   return {
     key: "staleness",
     state: "known",
-    value: formatAge(Math.max(...dated)),
+    value: formatAgeWhenRead(Math.max(...dated)),
     detail:
       `the oldest of ${plural(answering.length, "answering reading")}` +
-      (bucketDated.length > 0
-        ? `; ${listed(bucketDated)}'s dated by its ${WORST_BUCKET}`
-        : ""),
+      (bucketDated.length > 0 ? `; ${bucketDatedClause(bucketDated)}` : ""),
     source,
     asOf: probe.asOf,
   };
+}
+
+/**
+ * Which readings are dated by one bucket, named by what makes it that bucket
+ * ({@link CLASS_BUCKET}): beside "the oldest of N answering readings",
+ * "worst" would read as "oldest", and another bucket may be older.
+ */
+function bucketDatedClause(names: readonly string[]): string {
+  return names.length === 1
+    ? `${names[0]}'s reading is dated by ${CLASS_BUCKET}`
+    : `the readings of ${listed(names)} are each dated by ${CLASS_BUCKET}`;
 }
 
 /**
@@ -438,18 +450,19 @@ function undatedReason(
       ? `${names[0]}'s reading`
       : `the readings of ${listed(names)}`;
   const others = answering - undated.length;
-  const oldest = dated.length === 0 ? null : formatAge(Math.max(...dated));
+  const oldest =
+    dated.length === 0 ? null : formatAgeWhenRead(Math.max(...dated));
   let rest = "";
   if (others === 1) {
     rest =
       oldest === null
         ? "; the other answering probe read live"
-        : `; the other answering reading is ${oldest}`;
+        : `; the other answering reading was ${oldest}`;
   } else if (others > 1) {
     rest =
       oldest === null
         ? `; the other ${others} answering probes read live`
-        : `; the oldest of the other ${others} answering readings is ${oldest}`;
+        : `; the oldest of the other ${others} answering readings was ${oldest}`;
   }
   return `no age was served for ${whose}${rest}`;
 }

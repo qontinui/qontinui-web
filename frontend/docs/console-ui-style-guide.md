@@ -2041,11 +2041,17 @@ outbound door's envelope is not one. That door has no answer-level age. Each buc
 carries its own, and its drift class is its worst (first) bucket's. So the web backend
 serves that bucket's age (`digital_twin.py` `_class_bucket_age`), and every sentence
 that shows it names the bucket: "its worst bucket's data was 12s stale when read" in
-the drawer, "worst bucket 12s stale when read" on the matrix cell, "outbound's dated by
-its worst bucket" on the Twin map (`digital-twin/_lib/status-presentation.ts`
-`readingAge`, `datesWorstBucket`). With no age served (no bucket observed, or a backend
-that predates carrying it) all three read UNKNOWN with the reason "no age was served
-for this reading". That reason is true whichever half deploys first, and blames no one.
+the drawer, after "classified", and "worst bucket 12s stale when read" on the matrix
+cell, whose title says the bucket is the one its drift class comes from. On the Twin
+map the Staleness detail begins "the oldest of N answering readings", beside which
+"worst" would read as "oldest". Coord orders the buckets by drift severity, then by
+the share of budget left, never by age, so another bucket may be older. The map
+therefore names the bucket by what makes it that one: "outbound's reading is dated
+by the bucket its drift class comes from" (`digital-twin/_lib/status-presentation.ts`
+`readingAge`, `datesWorstBucket`, `CLASS_BUCKET`). With no age served (no bucket
+observed, or a backend that predates carrying it) all three read UNKNOWN with the
+reason "no age was served for this reading". That reason is true whichever half
+deploys first, and blames no one.
 
 Where a kept reading's dot goes depends on what carries it:
 
@@ -2072,6 +2078,8 @@ Where a kept reading's dot goes depends on what carries it:
   dates it. With no twin fed, nothing on the map is the probe's answer, and there is
   no notice. A probe holding no reading at all needs no notice there either: every
   probe figure and live part is then UNKNOWN with the reason.
+  The map's Staleness figure is worded as of the read ("15m stale when read"), since
+  in operator mode no chip dates it.
 
 Where one panel shows two reads of one thing, every line about a read says which read
 it is about. It does so by name ("Coord's live probe's latest read failed", "This
