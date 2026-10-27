@@ -20,6 +20,8 @@
  * | `LENS_SURFACES`, `TOUR_SURFACE` | the five lens pages in tour order, and the tour |
  * | `usePresentationHref`, `presentationHref` | a link to a lens page that carries `?present=1` while presenting, so a new tab opened from it still presents |
  * | `Provenance` | source + as-of beside a number; UNKNOWN when either is unknown |
+ * | `HeadlineFigures` | a lens page's few screen-share-sized figures, each known with its as-of or UNKNOWN with the reason |
+ * | `SectionCaption` | a section's caption plus one provenance chip per source behind its numbers |
  * | `OperatorOnly` | the boundary every write control sits inside (D3.2) |
  * | `RedactedText`, `useRedactor`, `PresentationScopeProvider` | free text only when provably first-party (D3.3); fails closed while the scope is unknown |
  * | `usePresentationScope`, `defaultPresentationScopeStore` | the tenant's scope, read from `GET /api/v1/presentation/scope` only while presenting — the lens's one read (D3.4) |
@@ -144,6 +146,16 @@ export {
   PRESENTATION_CLOCK_TICK_MS,
   usePresentationClock,
 } from "./presentationClock";
+
+export { HeadlineFigures } from "./HeadlineFigures";
+export type {
+  HeadlineFigure,
+  HeadlineFiguresProps,
+  HeadlineValue,
+} from "./HeadlineFigures";
+
+export { SectionCaption } from "./SectionCaption";
+export type { SectionCaptionProps, SectionSource } from "./SectionCaption";
 
 export { OperatorOnly } from "./OperatorOnly";
 export type { OperatorOnlyProps } from "./OperatorOnly";

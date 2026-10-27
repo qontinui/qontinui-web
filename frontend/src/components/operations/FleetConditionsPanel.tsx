@@ -20,17 +20,28 @@
  *
  * It navigates through `onNavigate` rather than holding a router, so it stays
  * a presentation component the page wires up.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces`
+ * Phase 7) it opens with its caption and the fleet-health read's as-of, and a
+ * setting's `title` drops coord's free-text summary, which can name a machine
+ * or a person (D3.3). The "waiting on you" badge only opens the question
+ * queue, so it is marked navigation-only and stays live.
  */
 
 import { useMemo } from "react";
 import { HealthStrip, StatCluster } from "@/components/console";
 import type { HealthBadge, Stat } from "@/components/console";
+import { SectionCaption, usePresentationMode } from "@/components/presentation";
+import { DEVOPS_SOURCES } from "./devOpsHeadline";
 import { formatAgeSecs, summarizeFleetConditions } from "./fleetConditions";
 import type { UseFleetHealthResult } from "./useFleetHealth";
 
 export interface FleetConditionsPanelProps {
   /** The page's own fleet-health read — never a second fetch. */
-  health: Pick<UseFleetHealthResult, "data" | "loading" | "error">;
+  health: Pick<
+    UseFleetHealthResult,
+    "data" | "loading" | "error" | "asOfMs"
+  >;
   /** The page's clock, so a setting's age advances without a new read. */
   nowMs?: number;
   /** Where a badge click goes (the page passes `router.push`). */
@@ -54,6 +65,7 @@ export function FleetConditionsPanel({
   nowMs,
   onNavigate,
 }: FleetConditionsPanelProps) {
+  const { presenting } = usePresentationMode();
   const summary = useMemo(
     () =>
       summarizeFleetConditions({
@@ -105,6 +117,8 @@ export function FleetConditionsPanel({
             ? "One question only you can answer. Opens it."
             : "Questions only you can answer. Opens the question queue.",
       onClick: () => onNavigate(summary.questionsHref),
+      // Opens the question queue; changes nothing (D3.2).
+      navigationOnly: true,
       "data-testid": "coord-devops-conditions-awaiting-badge",
     });
     // Operator alerts with no OPEN question. Coord's exact counts name the
@@ -167,10 +181,14 @@ export function FleetConditionsPanel({
         label: `${d.label} `,
         value: d.count,
         tone: "default",
-        title: `Unclaimed conditions owned by the ${d.label} agents (${d.domain}).`,
+        // Coord's domain token (`merge_train`) is the operator's filter term,
+        // and vocabulary an outsider cannot read.
+        title: presenting
+          ? `Unclaimed conditions owned by the ${d.label} agents.`
+          : `Unclaimed conditions owned by the ${d.label} agents (${d.domain}).`,
         "data-testid": `coord-devops-conditions-domain-${d.domain}`,
       })),
-    [summary.byDomain]
+    [summary.byDomain, presenting]
   );
 
   const settingStats = useMemo<Stat[]>(
@@ -184,8 +202,13 @@ export function FleetConditionsPanel({
         value: s.sinceLabel,
         tone: "muted",
         title: [
-          s.summary,
-          `${s.kind} — a deliberate setting coord is reflecting back, not a fault.`,
+          // Coord's summary is free text — it can name the machine drained
+          // and who drained it — so an outsider sees only what the label
+          // already says (D3.3); the kind token is the operator's.
+          presenting ? null : s.summary,
+          presenting
+            ? "A deliberate setting coord is reflecting back, not a fault."
+            : `${s.kind} — a deliberate setting coord is reflecting back, not a fault.`,
           s.since ? `In effect since ${s.since}.` : null,
         ]
           .filter(Boolean)
@@ -196,7 +219,7 @@ export function FleetConditionsPanel({
           s.alertId !== null ? s.alertId : `${s.kind}-${i}`
         }`,
       })),
-    [summary.settings]
+    [summary.settings, presenting]
   );
 
   return (
@@ -206,6 +229,12 @@ export function FleetConditionsPanel({
       data-testid="coord-devops-conditions-panel"
       data-conditions-state={summary.state}
     >
+      <SectionCaption
+        id="dev-ops.conditions"
+        sources={[
+          { source: DEVOPS_SOURCES.fleetHealth, asOf: health.asOfMs },
+        ]}
+      />
       <HealthStrip
         data-testid="coord-devops-conditions-strip"
         level={summary.level}

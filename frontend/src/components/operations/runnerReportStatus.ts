@@ -261,6 +261,40 @@ export interface ResolvedRunnerReports {
   capability: RunnerReportView<CapabilityGroup[]>;
 }
 
+/** Why a report is unknown when its own meta cannot say (the operator's words). */
+const REASON_READ_FAILED = "runner-report read failed";
+const REASON_NOT_SERVED_BY_COORD = "coord does not serve runner reports";
+const REASON_NO_PROVENANCE = "no runner-report provenance";
+
+/**
+ * An unknown report's reason in words an outsider reads (plan
+ * `2026-10-23-console-presentation-spaces` Phase 7). The operator reads
+ * coord's own token (`no_publisher`, `build_nameable_key_absent`) or this
+ * module's summary of a missing read; neither is vocabulary for someone
+ * outside the fleet. A token this table does not know is said in fixed words,
+ * never shown: an allowlist, so a new coord token cannot reach an outsider
+ * untranslated.
+ */
+const PRESENTED_REASON: Readonly<Record<string, string>> = {
+  build_nameable_key_absent:
+    "this machine's runner version does not send this report",
+  no_publisher: "nothing on this machine sends this report",
+  malformed: "the machine sent this report in a form that could not be read",
+  publisher_error: "the machine could not check, and said so",
+  [REASON_READ_FAILED]: "the reports could not be read on the latest check",
+  [REASON_NOT_SERVED_BY_COORD]:
+    "the coordination service does not provide these reports yet",
+  [REASON_NO_PROVENANCE]: "no report time came with this machine's reports",
+};
+
+/** What a reason {@link PRESENTED_REASON} does not know reads as. */
+export const PRESENTED_REASON_FALLBACK = "no report arrived for this machine";
+
+/** An unknown report's reason, as presentation mode says it. */
+export function presentedUnknownReason(reason: string): string {
+  return PRESENTED_REASON[reason] ?? PRESENTED_REASON_FALLBACK;
+}
+
 /** Operator-facing explanation per `absent_reason` (the reason itself is shown verbatim). */
 const ABSENCE_DETAIL: Record<string, string> = {
   build_nameable_key_absent:
@@ -288,20 +322,20 @@ function unknownWithoutMeta(
 ): { reason: string; detail: string } {
   if (input.runner_reports_scrape_up === false) {
     return {
-      reason: "runner-report read failed",
+      reason: REASON_READ_FAILED,
       detail:
         "Coord could not read the runner reports on this poll. This is not 'no incidents' — it is no measurement.",
     };
   }
   if (input.runner_reports === undefined) {
     return {
-      reason: "coord does not serve runner reports",
+      reason: REASON_NOT_SERVED_BY_COORD,
       detail:
         "This coord predates the runner-report fields, so nothing about this machine's wedges or capabilities reached the console.",
     };
   }
   return {
-    reason: "no runner-report provenance",
+    reason: REASON_NO_PROVENANCE,
     detail:
       "Coord served no provenance for this machine's runner reports, so their absence cannot be read as 'none'.",
   };
