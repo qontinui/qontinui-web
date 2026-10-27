@@ -455,9 +455,11 @@ describe("/digital-twin in presentation mode", () => {
 
     await user.click(screen.getByRole("tab", { name: "Lifecycle" }));
     await screen.findByTestId("digital-twin-stage-verify");
-    // The stages name the console pages that cover them. None of those pages
-    // can be presented — /sessions is out of the lens, and no listed console
-    // page is presentation-ready — so each is plain text, never a link out.
+    // The stages name the console pages that cover them. A page that cannot
+    // be presented is plain text, never a link out: /sessions is out of the
+    // lens, and Gates is a lens page not registered presentation-ready. Dev
+    // Ops is registered (plan Phase 7), so the operate stage's link to it
+    // stays a link, and it keeps the presentation.
     const sessions = within(
       screen.getByTestId("digital-twin-stage-implement")
     ).getByText("Sessions");
@@ -466,6 +468,11 @@ describe("/digital-twin in presentation mode", () => {
     expect(
       within(screen.getByTestId("digital-twin-stage-verify")).getByText("Gates")
     ).toHaveAttribute("data-lens-link", "unlinked");
+    expect(
+      within(screen.getByTestId("digital-twin-stage-operate"))
+        .getByText("Dev Ops")
+        .closest("a")
+    ).toHaveAttribute("href", "/admin/coord/devops?present=1");
     expectOnlyPresentableLinks("Lifecycle");
     expectPresentationSafe(view);
     // The live counts carry their source and age.

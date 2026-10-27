@@ -2064,9 +2064,11 @@ Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
 row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer.
 That file's docblock names the combinations it leaves out because they cannot occur.
 
-**Density down.** Presentation mode never adds a row to a page: what it changes is
-which of the page's own elements render, and how large a caption is. A page does not
-grow a second presentation layout.
+**Density down.** Presentation mode never adds a record row to a page: what it changes
+is which of the page's own elements render, and how large a caption is. A headline
+strip (`HeadlineFigures`, §3.11) is one such element: a page may render it only while
+presenting, above its health strip, which departs from R1 the way a caption does. A
+page does not grow a second presentation layout.
 
 **Controls off.** Every control that writes renders inside `OperatorOnly` — not
 hidden, unmounted, so its UI Bridge registration goes with it; a `placeholder` that

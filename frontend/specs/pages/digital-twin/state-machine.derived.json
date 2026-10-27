@@ -204,7 +204,7 @@
         },
         {
           "id": "digital-twin-shell-elem-5",
-          "description": "Lifecycle tab trigger (id digital-twin-tab-lifecycle) — the second tab, the stage pipeline of the twin of the software-development process.",
+          "description": "Lifecycle tab trigger (id digital-twin-tab-lifecycle) — the third tab, after the Twin map and Completeness: the stage pipeline of the twin of the software-development process.",
           "category": "navigation",
           "severity": "warning",
           "assertionType": "exists",
