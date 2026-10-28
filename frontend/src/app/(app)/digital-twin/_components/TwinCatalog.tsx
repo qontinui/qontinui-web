@@ -10,7 +10,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { usePresentationMode } from "@/components/presentation";
 import { useTwinCatalog } from "../_hooks/useTwinCatalog";
+import { failureTail } from "../_lib/failure-text";
 import type { TwinCatalogEntry } from "../_lib/types";
 
 /**
@@ -51,6 +53,7 @@ function ObservedBadge({
  */
 export function TwinCatalog() {
   const { data, isLoading, isError, error } = useTwinCatalog();
+  const { presenting } = usePresentationMode();
 
   return (
     <section className="space-y-3">
@@ -75,14 +78,21 @@ export function TwinCatalog() {
           Loading catalog…
         </div>
       ) : isError ? (
-        <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-          Couldn&apos;t load the catalog
-          {error instanceof Error ? `: ${error.message}` : "."}
+        <div
+          data-testid="twin-catalog-error"
+          className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground"
+        >
+          {/* The message quotes the upstream body: the operator's alone. */}
+          Couldn&apos;t load the catalog{failureTail(error, presenting)}.
         </div>
       ) : data?.coord_error ? (
-        <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-          Coord is unavailable — catalog can&apos;t be read right now (
-          {data.coord_error}).
+        <div
+          data-testid="twin-catalog-coord-error"
+          className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground"
+        >
+          Coord is unavailable — catalog can&apos;t be read right now
+          {/* coord's own error text can name a host: the operator's alone. */}
+          {presenting ? "" : ` (${data.coord_error})`}.
         </div>
       ) : !data || data.entries.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">

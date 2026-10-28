@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formatAge, httpStatusOf, readFidelity } from "./twin-fidelity";
+import type { RawVerdictResponse } from "./types";
 
 const idle = { isLoading: false, isError: false, error: null };
 
@@ -18,6 +19,24 @@ describe("readFidelity", () => {
     expect(
       readFidelity({ ...idle, data: undefined, isLoading: true }, 0)
     ).toEqual({ kind: "loading" });
+  });
+
+  it("is UNKNOWN for a read react-query holds — never a report coord did not return", () => {
+    // Pending and not fetching (this browser offline): coord was not asked.
+    expect(readFidelity({ ...idle, data: undefined }, 0)).toEqual({
+      kind: "unknown",
+      reason:
+        "no read of coord's twin-fidelity report has answered, and none is in flight",
+    });
+    // An answer carrying no report is coord's own silence, and says so.
+    const empty = {
+      subspace: "twin_fidelity",
+      tool: "t",
+    } as unknown as RawVerdictResponse;
+    expect(readFidelity({ ...idle, data: empty }, 0)).toEqual({
+      kind: "unknown",
+      reason: "coord returned no report",
+    });
   });
 
   it("is UNKNOWN on a failure other than 403, never a zero report", () => {

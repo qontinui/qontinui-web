@@ -32,7 +32,9 @@
  */
 
 import { memo, useEffect, useState } from "react";
+import { SectionCaption } from "@/components/presentation";
 import { CiRunPanel } from "./CiRunPanel";
+import { DEVOPS_SOURCES } from "./devOpsHeadline";
 import { FleetResourceStrip } from "./FleetResourceStrip";
 import { useFleetResourceSamples } from "./useFleetResourceSamples";
 import type { FleetDeviceRef } from "./fleetResources";
@@ -73,6 +75,18 @@ export const FleetResourcesSection = memo(function FleetResourcesSection({
 
   return (
     <div className="space-y-4" data-testid="fleet-resources-section">
+      {/* Presentation mode only (plan `2026-10-23-console-presentation-spaces`
+          Phase 7): the section's caption and the as-of of the one samples
+          read both panels below render. */}
+      <SectionCaption
+        id="dev-ops.resources"
+        sources={[
+          {
+            source: DEVOPS_SOURCES.resourceSamples,
+            asOf: resources.fetchedAtMs,
+          },
+        ]}
+      />
       <FleetResourceStrip devices={devices} resources={resources} />
       <CiRunPanel
         latest={resources.data?.latest ?? []}

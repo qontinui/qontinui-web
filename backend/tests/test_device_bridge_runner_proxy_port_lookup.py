@@ -28,6 +28,11 @@ import pytest
 from app.api.v1.endpoints import device_bridge_ws
 
 USER_ID = "22222222-2222-2222-2222-222222222222"
+# The co-located arm (no ``X-Qontinui-Device-Id``) is for platform admins
+# only: ``runner_proxy`` refuses anyone else before the hop these tests
+# exercise. That refusal is pinned in
+# ``test_device_bridge_runner_proxy_co_located_admin_gate.py``.
+ADMIN = SimpleNamespace(id=USER_ID, is_superuser=True)
 
 
 class _FakeURL:
@@ -134,9 +139,7 @@ async def test_runner_proxy_uses_coord_routing_port(monkeypatch):
     opened = _install_fake_httpx(monkeypatch)
 
     request = _FakeRequest(headers={"Authorization": "Bearer tok-abc"})
-    resp = await device_bridge_ws.runner_proxy(
-        request, "health", user=SimpleNamespace(id=USER_ID)
-    )
+    resp = await device_bridge_ws.runner_proxy(request, "health", user=ADMIN)
 
     assert resp.status_code == 200
     # The coord-resolved port (9880) is the proxy target.
@@ -163,9 +166,7 @@ async def test_runner_proxy_falls_back_to_default_port_on_none(monkeypatch):
     opened = _install_fake_httpx(monkeypatch)
 
     request = _FakeRequest()
-    resp = await device_bridge_ws.runner_proxy(
-        request, "health", user=SimpleNamespace(id=USER_ID)
-    )
+    resp = await device_bridge_ws.runner_proxy(request, "health", user=ADMIN)
 
     assert resp.status_code == 200
     assert "127.0.0.1:9876/health" in opened["url"]

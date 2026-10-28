@@ -29,6 +29,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints.digital_twin import (
+    _class_bucket_age,
     _classify,
     _declared_probes,
     _is_operator_gated,
@@ -745,6 +746,191 @@ class TestSubspacesEndpoint:
             body = client.get(f"{API_PREFIX}/subspaces").json()
 
         assert body == {"subspaces": [], "probed": 0, "degraded": True}
+
+
+# ---------------------------------------------------------------------------
+# The admin outbound door's age: the bucket its drift class comes from
+#
+# coord's ``OutboundBudgetResponse`` has no answer-level ``staleness_seconds``;
+# each bucket carries its own. ``get_outbound_budget`` sorts the buckets
+# worst-first and takes ``drift_class`` from the first, so that bucket's age
+# dates the class (qontinui-coord ``outbound_budget_read.rs``, read at
+# origin/main 58719876). These bodies are the door's real shape.
+# ---------------------------------------------------------------------------
+
+_OUTBOUND_ONLY_CATALOG = {
+    "total": 2,
+    "entries": [
+        _catalog_entry(
+            "outbound",
+            snapshot=False,
+            door=_OUTBOUND_DOOR,
+            door_shape="envelope",
+            access=None,
+        ),
+        _snapshot("release"),
+    ],
+}
+
+
+_MISSING = object()
+
+
+def _bucket(drift_class: str, age: Any, resource: str = "core:134903706") -> dict:
+    """One served bucket (``OutboundBudgetBucket``), observed ``age`` seconds
+    before the read. ``age`` is sent as given (``_MISSING`` leaves the field
+    out), so a test can send a value coord never would."""
+    bucket = {
+        "dependency": "github",
+        "resource": resource,
+        "installation_id": 134903706,
+        "drift_class": drift_class,
+        "drift_subclass": None,
+        "remaining": 3189,
+        "limit_total": 5850,
+        "remaining_fraction": 0.545,
+        "burn_rate_per_min": 84.8,
+        "paced_rate_per_min": 78.0,
+        "below_low_threshold": False,
+        "low_threshold_kind": "coord_github_ratelimit_low",
+        "cooldown_until": None,
+        "reset_at": None,
+        "serving_stale_reads": None,
+        "observed_at": "2026-10-27T12:00:00+00:00",
+        # coord's own bound: stale past 10 polls of 30 s.
+        "freshness": "stale" if isinstance(age, int) and age > 300 else "fresh",
+        "top_consumers": None,
+        "caller_breakdown": None,
+    }
+    if age is not _MISSING:
+        bucket["staleness_seconds"] = age
+    return bucket
+
+
+def _outbound_body(buckets: list[dict], drift_class: str | None = None) -> dict:
+    """The door's body over ``buckets`` (already worst-first). Its class is
+    the first bucket's unless ``drift_class`` says otherwise, as coord's own
+    rule would not."""
+    if drift_class is None:
+        drift_class = buckets[0]["drift_class"] if buckets else "unknown"
+    return {
+        "dependency": None,
+        "scope_reason": "system_tenant_fleet_wide",
+        "scoped_installation_ids": [],
+        "buckets": buckets,
+        "count": len(buckets),
+        "drift_class": drift_class,
+        "coverage": 1.0 if buckets else 0.0,
+        "staleness_threshold_seconds": 300,
+        "observer_interval_seconds": 30,
+        "low_fraction_threshold": 0.1,
+        "budget_target_fraction": 0.8,
+        "provenance": "persisted_oplog",
+        "credibility": 0.95,
+    }
+
+
+def _matrix_cells(body: dict, release_staleness: Any = 30) -> dict[str, dict]:
+    """GET the matrix over HTTP, coord answering ``body`` at the outbound door
+    and a twin-door verdict aged ``release_staleness`` for ``release``; return
+    the cells by id."""
+    client = TestClient(_build_test_app())
+
+    def route(url):
+        if url.endswith(_CATALOG_PATH):
+            return _catalog_response(_OUTBOUND_ONLY_CATALOG)
+        if url.endswith(_OUTBOUND_DOOR):
+            return _json_response(body)
+        if "/twin/release/" in url:
+            return _json_response(
+                {
+                    "subspace": "release",
+                    "tool": "coord_query_release_state",
+                    "verdict": {
+                        "coverage": 1.0,
+                        "credibility": 0.9,
+                        "provenance": "ecs_describe_tasks",
+                        "drift_class": "none",
+                        "staleness_seconds": release_staleness,
+                        # A wrapper verdict's own bucket-like field is not
+                        # read: only an envelope door's buckets are.
+                        "buckets": [_bucket("none", 999)],
+                    },
+                }
+            )
+        return None
+
+    with _coord(route):
+        resp = client.get(f"{API_PREFIX}/subspaces")
+    assert resp.status_code == 200
+    return {c["id"]: c for c in resp.json()["subspaces"]}
+
+
+def _outbound_cell(body: dict) -> dict:
+    return _matrix_cells(body)["outbound"]
+
+
+class TestOutboundEnvelopeAge:
+    def test_carries_the_age_of_the_bucket_its_class_comes_from(self):
+        # Worst-first: the burning bucket drives the class. Behind it an
+        # orphan last observed weeks ago, which is older but not the class's.
+        cell = _outbound_cell(
+            _outbound_body(
+                [_bucket("burning", 12), _bucket("nominal", 3_009_931, "search:1")]
+            )
+        )
+        assert cell["status"] == "implemented"
+        assert cell["door_shape"] == "envelope"
+        assert cell["metrics"]["drift_class"] == "burning"
+        assert cell["metrics"]["staleness_seconds"] == 12
+
+    def test_an_orphan_bucket_that_drives_the_class_is_dated_by_its_own_age(self):
+        cell = _outbound_cell(
+            _outbound_body([_bucket("exhausted", 3_009_931), _bucket("nominal", 2)])
+        )
+        assert cell["metrics"]["drift_class"] == "exhausted"
+        assert cell["metrics"]["staleness_seconds"] == 3_009_931
+
+    def test_serves_no_age_when_coord_observed_no_bucket(self):
+        cell = _outbound_cell(_outbound_body([]))
+        assert cell["status"] == "blind"
+        assert cell["metrics"]["coverage"] == 0.0
+        assert cell["metrics"]["staleness_seconds"] is None
+
+    def test_serves_no_age_when_the_first_bucket_is_not_where_the_class_comes_from(
+        self,
+    ):
+        # Not coord's rule today; if it changes, no bucket's age is passed off
+        # as the class's.
+        cell = _outbound_cell(
+            _outbound_body([_bucket("nominal", 12)], drift_class="exhausted")
+        )
+        assert cell["metrics"]["drift_class"] == "exhausted"
+        assert cell["metrics"]["staleness_seconds"] is None
+
+    @pytest.mark.parametrize("age", [_MISSING, None, "12", True, -1])
+    def test_serves_no_age_that_is_not_a_number_of_seconds(self, age):
+        cell = _outbound_cell(_outbound_body([_bucket("burning", age)]))
+        assert cell["metrics"]["drift_class"] == "burning"
+        assert cell["metrics"]["staleness_seconds"] is None
+
+    @pytest.mark.parametrize("age", [float("nan"), float("inf"), float("-inf")])
+    def test_takes_no_age_from_a_float_that_is_not_finite(self, age):
+        # Called directly: over HTTP the route's ``-> Any`` serialization
+        # already writes a non-finite float as null, so only the function's
+        # own guard can be seen to hold here.
+        envelope = _outbound_body([_bucket("burning", age)])
+        assert _class_bucket_age(envelope) is None
+        assert _class_bucket_age(_outbound_body([_bucket("burning", 12)])) == 12
+
+    def test_a_twin_door_verdict_keeps_its_own_staleness(self):
+        body = _outbound_body([_bucket("burning", 12)])
+        release = _matrix_cells(body, release_staleness=30)["release"]
+        assert release["door_shape"] == "verdict_wrapper"
+        assert release["metrics"]["staleness_seconds"] == 30
+        # coord omits it on a live answer: passed through as it came.
+        release = _matrix_cells(body, release_staleness=None)["release"]
+        assert release["metrics"]["staleness_seconds"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import type { ProbeAttempt } from "../_lib/probe-read";
 import manifest from "../_lib/subspaces.manifest.json";
 import {
   TwinNavigationContext,
@@ -23,6 +24,9 @@ vi.mock("@/components/ui/dialog", () => ({
     open ? <>{children}</> : null,
   DialogContent: ({ children }: { children: ReactNode }) => (
     <div role="dialog">{children}</div>
+  ),
+  DialogClose: ({ children }: { children: ReactNode }) => (
+    <button type="button">{children}</button>
   ),
   DialogHeader: ({ children }: { children: ReactNode }) => <>{children}</>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
@@ -52,6 +56,17 @@ function rowFor(id: string): ResolvedSubspace {
   return { ...entry, cellStatus: "interactive" };
 }
 
+/** The probe the rows answer from: current, nothing failed. */
+const PROBE: ProbeAttempt = {
+  failed: false,
+  refreshFailed: false,
+  error: null,
+  degraded: null,
+  unanswered: null,
+  asOf: Date.parse("2026-10-23T12:00:00Z"),
+  failedAt: null,
+};
+
 function Harness({
   rowId,
   navigation,
@@ -65,6 +80,7 @@ function Harness({
       <button onClick={() => setRow(rowFor(rowId))}>open cell</button>
       <SubspaceDetail
         row={row}
+        probe={PROBE}
         onOpenChange={(open) => !open && setRow(null)}
       />
     </TwinNavigationContext.Provider>
@@ -122,5 +138,34 @@ describe("SubspaceDetail navigation", () => {
 
     expect(navigation.openTab).toHaveBeenCalledWith("delivery");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("SubspaceDetail — Planned in (plan 2026-10-23-console-presentation-spaces Phase 5)", () => {
+  it("links the plan building a row to its work unit's page", async () => {
+    const user = userEvent.setup();
+    // `flow` is built by an explicit manifest plan slug.
+    const flow = rowFor("flow");
+    expect(flow.plan).toBeTruthy();
+    render(<Harness rowId="flow" navigation={nav()} />);
+    await user.click(screen.getByRole("button", { name: "open cell" }));
+
+    const link = screen.getByRole("link", { name: flow.plan! });
+    expect(link).toHaveAttribute(
+      "href",
+      `/admin/coord/work-units/${encodeURIComponent(flow.plan!)}`
+    );
+    expect(link).toHaveAttribute(
+      "data-testid",
+      "digital-twin-drawer-plan-link"
+    );
+  });
+
+  it("shows no Planned in line for a row no plan is building", async () => {
+    const user = userEvent.setup();
+    render(<Harness rowId="schema" navigation={nav()} />);
+    await user.click(screen.getByRole("button", { name: "open cell" }));
+    expect(screen.queryByText("Planned in")).toBeNull();
+    expect(screen.queryByTestId("digital-twin-drawer-plan-link")).toBeNull();
   });
 });
