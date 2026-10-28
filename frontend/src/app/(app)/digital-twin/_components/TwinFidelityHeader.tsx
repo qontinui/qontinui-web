@@ -1,12 +1,20 @@
 "use client";
 
 import { Gauge, Lock } from "lucide-react";
+import { Provenance, usePresentationMode } from "@/components/presentation";
 import { useSubspaceRaw } from "../_hooks/useSubspaceRaw";
 import { formatRatio } from "../_lib/status-presentation";
-import { formatAge, formatCount, readFidelity } from "../_lib/twin-fidelity";
-
-/** The sub-space whose raw read carries the twin's self-fidelity report. */
-const FIDELITY_SUBSPACE = "twin_fidelity";
+import {
+  FIDELITY_SOURCE,
+  SELF_CHECK_INTERNAL_REASON,
+} from "../_lib/twin-aspects";
+import {
+  FIDELITY_SUBSPACE,
+  formatAge,
+  formatCount,
+  readFidelity,
+  reportComputedAt,
+} from "../_lib/twin-fidelity";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -36,10 +44,23 @@ function Stat({ label, value }: { label: string; value: string }) {
  * (`window_hours`, which that plan's Phase 4b adds). coord's twin door
  * dispatches every read with NO arguments, so the trend stays UNKNOWN until a
  * door forwards that argument; the header says so instead of inventing one.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces`) the
+ * numbers carry their source and as-of time, and a report this workspace may
+ * not read is a labelled UNKNOWN naming why — never the Qontinui-internal
+ * notice, which an outsider would read as a fact about the product.
  */
 export function TwinFidelityHeader() {
   const query = useSubspaceRaw(FIDELITY_SUBSPACE, true);
-  const read = readFidelity(query, Date.now());
+  const { presenting } = usePresentationMode();
+  const now = Date.now();
+  const read = readFidelity(query, now);
+  const asOf =
+    read.kind === "report"
+      ? reportComputedAt(query.data, now)
+      : query.errorUpdatedAt > 0
+        ? query.errorUpdatedAt
+        : null;
 
   return (
     <section
@@ -60,13 +81,23 @@ export function TwinFidelityHeader() {
             report {formatAge(read.report.ageSeconds)}
           </span>
         )}
+        {read.kind !== "loading" && (
+          <Provenance source={FIDELITY_SOURCE.selfCheck} asOf={asOf} />
+        )}
       </div>
 
       {read.kind === "loading" && (
         <p className="text-xs text-muted-foreground">Reading the report…</p>
       )}
 
-      {read.kind === "internal" && (
+      {read.kind === "internal" && presenting && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-semibold">UNKNOWN</span> —{" "}
+          {SELF_CHECK_INTERNAL_REASON}.
+        </p>
+      )}
+
+      {read.kind === "internal" && !presenting && (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Lock className="size-3.5" aria-hidden />
           Qontinui-internal — the twin&apos;s fidelity report covers

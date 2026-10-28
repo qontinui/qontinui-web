@@ -214,6 +214,29 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
       "and every other /api/v1/taste/* route is unwaived. Same reasoning as " +
       "the /api/v1/overview/ entry above.",
   },
+  {
+    // Anchored on the PATH and on the end of it (a query string may follow),
+    // so only this route is covered, not a sibling path and not a URL that
+    // merely carries it in a query value.
+    pattern: "^https?://[^/]+/api/v1/presentation/scope(?:\\?|$)",
+    statuses: [502, 504],
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane), STATUS-SCOPED. GET " +
+      "/api/v1/presentation/scope is the presentation lens's one read (plan " +
+      "2026-10-23-console-presentation-spaces, Phase 1); /admin/coord/" +
+      "tenant-policy reads it on mount for its scope editor. Its caller " +
+      "dependency, get_presentation_caller, resolves the effective tenant " +
+      "through coord (get_coord_identity -> GET /admin/coord/me) before the " +
+      "handler runs. No coord runs in the hermetic Spec CI stack, so " +
+      "coord_identity._fetch_identity answers 502 (connect error) or 504 " +
+      "(timeout). Those two statuses, and only those, are waived: a 500 from " +
+      "authentication, the DB session or the handler still gates, the day a " +
+      "coord stub exists the handler's own failures gate with no change " +
+      "here, and no other /api/v1/presentation/* path is waived. Same " +
+      "reasoning as the /api/v1/overview/ and /api/v1/taste/inbox entries " +
+      "above.",
+  },
 ];
 
 // ---------------------------------------------------------------------------

@@ -20,18 +20,30 @@
  *   resolves; it resolves per service, not per host.
  * - **Not reachable.** Per-job queue wait and duration would come from
  *   `coord.ci_dispatches`, and coord exposes **no read route** for that table
- *   — its only HTTP surface is the two ingest POSTs. The CI-node lane is also
- *   still dark behind `COORD_CI_DISPATCH_TO_RUNNERS_ENABLED`, so the table is
- *   effectively empty. Rendering those columns from anything else available
- *   here would mean inventing them, which is the confidently-wrong dashboard
- *   this plan exists to end. The panel says so instead.
+ *   — its only HTTP surface is the two ingest POSTs. (The CI-node lane that
+ *   writes it is armed in production: `ci_dispatch.rs` module doc. Whether a
+ *   repo is dispatched to it is decided per repo, so the table is not empty
+ *   by construction — it is unreadable from here.) Rendering those columns
+ *   from anything else available here would mean inventing them, which is the
+ *   confidently-wrong dashboard this plan exists to end. The panel says so
+ *   instead — in coord's words for the operator, in plain words for an
+ *   outsider.
  *
  * Occupancy is read from the SAME rows the strip renders and the CI
  * dispatcher ranks on — not derived a second way.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces`
+ * Phase 7) a runner service is named by its position ("service 2") rather
+ * than its `"$RUNNER_NAME/<repo>"` instance, which names a machine and a
+ * repository, and the machine column reads its alias (D3.3).
  */
 
 import { useMemo } from "react";
 import { Server } from "lucide-react";
+import {
+  useMachineAliaser,
+  usePresentationMode,
+} from "@/components/presentation";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -47,6 +59,7 @@ import {
   safeRatio,
 } from "./fleetResources";
 import type { FleetDeviceRef, ResourceSampleRow } from "./fleetResources";
+import { presentedFailureReason } from "./presentedFailure";
 
 export interface CiRunPanelProps {
   /** The same `latest` rows the strip renders. */
@@ -91,6 +104,8 @@ export function CiRunPanel({
   sinceFetchSecs = 0,
   error,
 }: CiRunPanelProps) {
+  const { presenting } = usePresentationMode();
+  const machineName = useMachineAliaser();
   const hostnames = useMemo(() => {
     const m = new Map<string, string>();
     for (const d of devices) {
@@ -151,7 +166,8 @@ export function CiRunPanel({
       >
         {error && (
           <p className="text-sm text-destructive" data-testid="ci-run-error">
-            Resource samples unavailable: {error}. Occupancy below is
+            Resource samples unavailable:{" "}
+            {presentedFailureReason(error, presenting)}. Occupancy below is
             last-known, not current.
           </p>
         )}
@@ -188,7 +204,7 @@ export function CiRunPanel({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {rows.map((r, index) => {
                   const freshness = classifyFreshness(r, sinceFetchSecs);
                   const occupancy = safeRatio(
                     r.build_slots_busy,
@@ -202,23 +218,31 @@ export function CiRunPanel({
                       data-freshness={freshness}
                     >
                       <td className="py-1.5 pr-3 font-mono text-[11px]">
-                        {r.lane_instance ?? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="text-muted-foreground underline decoration-dotted">
-                                sole publisher
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-[20rem] text-[11px]">
-                              This lane has no <code>lane_instance</code>,
-                              meaning one publisher owns the whole pool (the
-                              runner/supervisor case).
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
+                        {r.lane_instance && presenting
+                          ? `service ${index + 1}`
+                          : (r.lane_instance ?? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-muted-foreground underline decoration-dotted">
+                                    sole publisher
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-[20rem] text-[11px]">
+                                  This lane has no <code>lane_instance</code>,
+                                  meaning one publisher owns the whole pool (the
+                                  runner/supervisor case).
+                                </TooltipContent>
+                              </Tooltip>
+                            ))}
                       </td>
                       <td className="py-1.5 pr-3 font-mono text-[11px]">
-                        {hostnames.get(r.device_id) ?? r.device_id}
+                        {machineName(
+                          {
+                            deviceId: r.device_id,
+                            hostname: hostnames.get(r.device_id),
+                          },
+                          hostnames.get(r.device_id) ?? r.device_id
+                        )}
                       </td>
                       <td className="py-1.5 pr-3">
                         <Badge
@@ -295,12 +319,22 @@ export function CiRunPanel({
           className="text-[10px] text-muted-foreground"
           data-testid="ci-run-missing-columns"
         >
-          Per-job <strong>queue wait</strong> and <strong>duration</strong> are
-          not shown because they are not available: they live in{" "}
-          <code>coord.ci_dispatches</code>, which coord exposes no read route
-          for, and the CI-node lane is still dark behind its dispatch flag.
-          Occupancy above is the live per-lane sample — the same rows the CI
-          dispatcher ranks on.
+          {presenting ? (
+            <>
+              Per-job <strong>queue wait</strong> and{" "}
+              <strong>duration</strong> are not shown here: the coordination
+              service does not publish them yet. The occupancy above is each
+              runner&apos;s own latest report.
+            </>
+          ) : (
+            <>
+              Per-job <strong>queue wait</strong> and{" "}
+              <strong>duration</strong> are not shown because they are not
+              available: they live in <code>coord.ci_dispatches</code>, which
+              coord exposes no read route for. Occupancy above is the live
+              per-lane sample — the same rows the CI dispatcher ranks on.
+            </>
+          )}
         </p>
       </CollapsiblePanel>
     </TooltipProvider>

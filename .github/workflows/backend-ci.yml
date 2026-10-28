@@ -37,6 +37,11 @@ on:
       # the ONE gate that refuses a malformed spec, and a spec-only PR must run
       # it. The module asserts this entry appears in BOTH filters.
       - 'frontend/image-slots/**'
+      # PLATFORM_ADMIN_REFUSAL, which tests/test_fleet_apps_platform_admin_gate.py
+      # reads (one line, one exact form): a frontend-only PR that reshapes it
+      # must run the check here, not fail a later backend PR. The module
+      # asserts this entry appears in BOTH filters.
+      - 'frontend/src/lib/api/fleet.ts'
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
@@ -57,6 +62,13 @@ on:
       # edits ONLY web-guards.yml -- e.g. drops a gate step -- would not run
       # the roster tests that exist to catch exactly that.
       - '.github/workflows/web-guards.yml'
+      # tests/test_workflow_lint_drift.py executes workflow-lint.yml's zizmor
+      # `run:` body (the DRIFT base, plan
+      # 2026-10-24-workflow-lint-drift-judged-against-stale-pr-base). The
+      # regression it guards is an edit to that file ALONE, so without this
+      # entry the guard never runs on it. The module asserts this entry
+      # appears in BOTH filters.
+      - '.github/workflows/workflow-lint.yml'
       # The OTHER workflows `backend/tests/test_ci_timeout_marker.py` reads.
       # That module asserts, against the workflow FILES, that every marker
       # carries a job budget matching its job and an EXTERNAL_CANCEL_NOTE
@@ -105,9 +117,14 @@ on:
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'frontend/src/services/http-client.ts'
       - 'frontend/image-slots/**'
+      # Read by tests/test_fleet_apps_platform_admin_gate.py; see the
+      # pull_request filter above.
+      - 'frontend/src/lib/api/fleet.ts'
       - 'scripts/ci/**'
       # See the pull_request filter above (gate lane rosters).
       - '.github/workflows/web-guards.yml'
+      # See the pull_request filter above (workflow-lint DRIFT base).
+      - '.github/workflows/workflow-lint.yml'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
       # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,

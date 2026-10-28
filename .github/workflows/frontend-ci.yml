@@ -11,6 +11,11 @@ on:
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
       - ".github/actions/fleet-nouns-vocab/**"
+      # ADMIN_REQUIRED_DETAIL, which src/lib/api/fleet.test.ts reads (one line,
+      # one exact form): a backend-only PR that reshapes it must run that check
+      # here, not fail a later frontend PR. The test asserts this entry
+      # appears in BOTH filters.
+      - "backend/app/api/admin_deps.py"
   push:
     branches: [main, develop]
     paths:
@@ -21,6 +26,8 @@ on:
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
       - ".github/actions/fleet-nouns-vocab/**"
+      # Read by src/lib/api/fleet.test.ts; see the pull_request filter above.
+      - "backend/app/api/admin_deps.py"
   workflow_dispatch:
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job

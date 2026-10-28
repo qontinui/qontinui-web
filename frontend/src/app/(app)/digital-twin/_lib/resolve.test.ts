@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  NO_ANSWER_REASON,
   allProbesRestricted,
   declaredProbes,
   manifest,
+  probeAnswered,
   resolveSubspaces,
   summarize,
   unlistedDeclaredProbes,
 } from "./resolve";
+import { STATUS_STYLES } from "./status-presentation";
+import { outboundEnvelope } from "./test-catalog";
 import type {
   CellStatus,
   SubspaceProbe,
@@ -128,10 +132,27 @@ describe("resolveSubspaces", () => {
     expect(row.cellStatus).toBe("probing");
   });
 
-  it("shows 'error' for a snapshot row with no probe once loaded", () => {
+  it("shows 'error' for a snapshot row an answer came back without", () => {
     const rows = resolveSubspaces([], false);
     const row = rows.find((r) => r.id === snapshotId)!;
     expect(row.cellStatus).toBe("error");
+  });
+
+  it("shows 'unknown', never 'error', with no answer and no read in flight", () => {
+    // No probe ran, so no row may claim one failed — even from a caller
+    // that names no reason.
+    const rows = resolveSubspaces(undefined, false);
+    const live = rows.filter((r) => r.liveProbed);
+    expect(live.length).toBeGreaterThan(0);
+    for (const row of live) {
+      expect(row.cellStatus, row.id).toBe("unknown");
+      expect(row.unknownReason, row.id).toBe(NO_ANSWER_REASON);
+      expect(probeAnswered(row), row.id).toBe(false);
+    }
+    expect(rows.some((r) => r.cellStatus === "error")).toBe(false);
+    // A caller's own reason outranks the default.
+    const named = resolveSubspaces(undefined, false, undefined, "why");
+    expect(named.find((r) => r.id === snapshotId)!.unknownReason).toBe("why");
   });
 
   it("maps a probe's status onto the snapshot cell and carries metrics", () => {
@@ -360,18 +381,12 @@ describe("resolveSubspaces joined to coord's catalog", () => {
     { id: "release", status: "implemented", door_shape: "verdict_wrapper" },
     { id: "worktree", status: "served", door_shape: "report" },
     { id: "workers", status: "partial", door_shape: "verdict_wrapper" },
+    // coord's admin outbound door, as it really answers (`outboundEnvelope`).
     {
       id: "outbound",
-      status: "partial",
+      status: "implemented",
       door_shape: "envelope",
-      metrics: {
-        coverage: 0.6,
-        credibility: 0.9,
-        posterior: null,
-        staleness_seconds: null,
-        provenance: "outbound_budget_observations",
-        drift_class: "none",
-      },
+      metrics: outboundEnvelope({ drift: "burning", ageSeconds: 12 }),
     },
   ];
 
@@ -396,9 +411,9 @@ describe("resolveSubspaces joined to coord's catalog", () => {
       resolveSubspaces(probes, false, stubCatalog()),
       "outbound"
     );
-    expect(outbound.cellStatus).toBe("partial");
+    expect(outbound.cellStatus).toBe("implemented");
     expect(outbound.doorShape).toBe("envelope");
-    expect(outbound.metrics?.coverage).toBe(0.6);
+    expect(outbound.metrics).toEqual(outboundEnvelope({ drift: "burning", ageSeconds: 12 }));
   });
 
   it("keeps a report door's cell served — neither healthy nor partial", () => {
@@ -440,6 +455,37 @@ describe("resolveSubspaces joined to coord's catalog", () => {
     // ...so the live gauge's denominator leaves the report out.
     expect(summary.served).toBe(1);
     expect(summary.graded).toBe(3);
+  });
+
+  it("resolves every declared row UNKNOWN, with why, while the probe holds no reading", () => {
+    // The backend's degraded matrix: a stand-in error per declared id.
+    const standIns: SubspaceProbe[] = probes.map((p) => ({
+      id: p.id,
+      status: "error",
+      error: "coord_unavailable",
+    }));
+    const reason =
+      "coord's live probe could not be made: coord could not be reached";
+    // Read as an answer, each stand-in is an observer error — the lie.
+    expect(
+      rowById(resolveSubspaces(standIns, false, stubCatalog()), "workers")
+        .cellStatus
+    ).toBe("error");
+    const rows = resolveSubspaces(standIns, false, stubCatalog(), reason);
+    for (const id of ["outbound", "release", "workers", "worktree"]) {
+      const row = rowById(rows, id);
+      expect(row.cellStatus, id).toBe("unknown");
+      expect(row.unknownReason, id).toBe(reason);
+      expect(row.error, id).toBeUndefined();
+    }
+    // Whatever the cells say: a real-looking answer is no reading either.
+    expect(
+      rowById(resolveSubspaces(probes, false, stubCatalog(), reason), "release")
+        .cellStatus
+    ).toBe("unknown");
+    // What is not probed live is the manifest's, reading or not.
+    expect(rowById(rows, "schema").cellStatus).toBe("not-served");
+    expect(rowById(rows, "schema").unknownReason).toBeUndefined();
   });
 
   it("falls back to the manifest's snapshot rows, and any probed row, without a catalog", () => {
@@ -504,5 +550,74 @@ describe("allProbesRestricted", () => {
       })
     ).toBe(false);
     expect(allProbesRestricted(undefined)).toBe(false);
+  });
+});
+
+describe("probeAnswered", () => {
+  // Every cell status there is: STATUS_STYLES is a Record over CellStatus.
+  const ALL = Object.keys(STATUS_STYLES) as CellStatus[];
+
+  it("is true only where the status is the live probe's answer for the row", () => {
+    expect(
+      ALL.filter((cellStatus) =>
+        probeAnswered({ liveProbed: true, cellStatus })
+      ).sort()
+    ).toEqual([
+      "blind",
+      "error",
+      "implemented",
+      "partial",
+      "restricted",
+      "served",
+    ]);
+  });
+
+  it("is false while the probe is in flight or holds no reading — nothing has answered", () => {
+    expect(probeAnswered({ liveProbed: true, cellStatus: "probing" })).toBe(
+      false
+    );
+    expect(probeAnswered({ liveProbed: true, cellStatus: "unknown" })).toBe(
+      false
+    );
+  });
+
+  it("is false for every row this page does not probe", () => {
+    for (const cellStatus of ALL) {
+      expect(probeAnswered({ liveProbed: false, cellStatus }), cellStatus).toBe(
+        false
+      );
+    }
+  });
+
+  it("follows the rows resolveSubspaces makes, with coord's catalog held", () => {
+    const outbound = (rows: ReturnType<typeof resolveSubspaces>) =>
+      rows.find((r) => r.id === "outbound")!;
+    const catalog = stubCatalog();
+    expect(
+      probeAnswered(outbound(resolveSubspaces(undefined, true, catalog)))
+    ).toBe(false);
+    expect(
+      probeAnswered(
+        outbound(
+          resolveSubspaces(
+            undefined,
+            false,
+            catalog,
+            "coord's live probe could not be made: coord could not be reached"
+          )
+        )
+      )
+    ).toBe(false);
+    expect(
+      probeAnswered(
+        outbound(
+          resolveSubspaces(
+            [{ id: "outbound", status: "implemented", door_shape: "envelope" }],
+            false,
+            catalog
+          )
+        )
+      )
+    ).toBe(true);
   });
 });

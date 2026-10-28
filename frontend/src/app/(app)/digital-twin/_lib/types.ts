@@ -86,6 +86,15 @@ export interface SubspaceManifestEntry {
   ask_via?: AskVia;
   /** The plan slug that builds a planned / partial row (shown in the drawer). */
   plan?: string | null;
+  /**
+   * The work-unit areas whose plans move this sub-space: values of coord's
+   * canonical steering key `metadata.area` (kebab-case, matched exactly — the
+   * same key coord's `area` list filter reads). The Twin map resolves a
+   * sub-space's plans as its `plan` slug ∪ every work unit whose area is
+   * listed here (`twin-plans.ts`). Absent = no area is mapped; an area here
+   * that no work unit carries is shown as drift, never as "no plans".
+   */
+  areas?: readonly string[];
 }
 
 export interface SubspaceManifest {
@@ -98,6 +107,11 @@ export interface VerdictMetrics {
   coverage: number | null;
   credibility: number | null;
   posterior: number | null;
+  /**
+   * The reading's age when read. For an `envelope` door, its worst bucket's
+   * age — the bucket its drift class comes from (`digital_twin.py`
+   * `_class_bucket_age`); see {@link DoorShape}.
+   */
   staleness_seconds: number | null;
   provenance: string | null;
   drift_class: string | null;
@@ -108,8 +122,14 @@ export interface VerdictMetrics {
  * `DoorShape`):
  *  - `verdict_wrapper` — `{subspace, tool, verdict}`, the DriftVerdict under
  *    `verdict`;
- *  - `envelope` — the DriftVerdict fields at the top level (the admin outbound
- *    door);
+ *  - `envelope` — some of a DriftVerdict's fields at the top level (the admin
+ *    outbound door's `OutboundBudgetResponse`: `coverage`, `credibility`,
+ *    `provenance`, `drift_class`). It is NOT a DriftVerdict, and has no
+ *    answer-level age: each bucket carries its own, and the class is the
+ *    worst (first) bucket's. The backend serves that bucket's age as the
+ *    reading's `staleness_seconds`, so it dates the worst bucket only, and a
+ *    missing one is no age served, never coord's "fresh live answer"
+ *    (`status-presentation.ts` `readingAge`);
  *  - `report` — `{subspace, tool, verdict}` where `verdict` is the tool's own
  *    report, not a DriftVerdict, so it is never graded.
  */
@@ -163,9 +183,17 @@ export interface SubspacesProbeResponse {
  *
  * Only a live-probed row can be `implemented` / `partial` / `blind` /
  * `served` / `error` / `probing` / `restricted` — those are probe results. A
- * built row this page does not probe is `interactive` (a coord tool answers
- * it) or `unprobed` (no coord tool): either way a manifest claim, never the
- * live vocabulary. `not-served` is a manifest `snapshot` row coord's catalog
+ * live-probed row is `unknown` while the probe holds no reading at all (it
+ * failed with nothing held, answered degraded with stand-in cells, or has no
+ * answer, no failure and no read in flight because react-query is holding it
+ * — `probe-read.ts` `probeUnread`): no probe answered for it, so it has no
+ * status to show, and certainly not the `error` of a probe that was made.
+ * It is `unknown` too while coord refuses EVERY reading (`probeReadOf`): its
+ * observer was not read, and a `restricted` row's own meaning — the others
+ * unaffected — would be false. A refusal of some rows only leaves each of
+ * them `restricted`. A built row this page does not probe is `interactive`
+ * (a coord tool answers it) or `unprobed` (no coord tool): either way a
+ * manifest claim, never the live vocabulary. `not-served` is a manifest `snapshot` row coord's catalog
  * does not declare: the manifest and coord have drifted.
  */
 export type CellStatus =
@@ -180,7 +208,8 @@ export type CellStatus =
   | "unprobed"
   | "error"
   | "probing"
-  | "restricted";
+  | "restricted"
+  | "unknown";
 
 /** A manifest row joined with its resolved display status + any live metrics. */
 export interface ResolvedSubspace extends SubspaceManifestEntry {
@@ -195,6 +224,13 @@ export interface ResolvedSubspace extends SubspaceManifestEntry {
   doorShape?: DoorShape | null;
   metrics?: VerdictMetrics;
   error?: string;
+  /**
+   * Why an `unknown` row has no reading (`probeUnread`'s reason: "coord's
+   * live probe could not be made: coord could not be reached"; or, while
+   * coord refuses every reading, `probe-read.ts` `RESTRICTED_REASON`);
+   * absent on every other status.
+   */
+  unknownReason?: string;
 }
 
 /**

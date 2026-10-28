@@ -9,6 +9,13 @@
  *   coord declares). Its status comes from the live probe (implemented /
  *   partial / blind / served / error / restricted); while the probe is
  *   loading it shows `probing`. These are the only live verdicts on the page.
+ *   While the probe holds NO reading — it failed with nothing held, answered
+ *   degraded with stand-in cells, or has no answer, no failure and no read in
+ *   flight because react-query is holding it (`probe-read.ts` `probeUnread`)
+ *   — every live-probed row is `unknown`, carrying the reason: a stand-in
+ *   cell is not the observer's status, and never the `error` of a probe that
+ *   ran. So is every one while coord refuses every reading
+ *   (`probe-read.ts` `probeReadOf`): no observer was read.
  * - A manifest `snapshot` row coord's catalog does NOT declare shows
  *   `not-served`: the manifest and coord have drifted, and the cell says so
  *   instead of reading as an observer error.
@@ -86,10 +93,12 @@ export function declaredProbes(
 }
 
 /**
- * Whether the views should replace themselves with the whole-view access
- * notice: only when EVERY probe was refused (the coarse twin gate armed
- * against this operator). A single refused sub-space renders as its own
- * `restricted` cell instead.
+ * Whether EVERY probe was refused (the coarse twin gate armed against this
+ * operator). The Completeness and Lifecycle views then replace themselves
+ * with the whole-view access notice; the Twin map keeps its cards, and every
+ * live part on it is UNKNOWN naming the refusal (`probe-read.ts`
+ * `probeReadOf`). A single refused sub-space renders as its own `restricted`
+ * cell instead.
  */
 export function allProbesRestricted(
   data: SubspacesProbeResponse | undefined
@@ -100,11 +109,46 @@ export function allProbesRestricted(
   );
 }
 
+/**
+ * The cell statuses that are the live probe's ANSWER for a row: an
+ * observer's verdict (`implemented` / `partial` / `blind`), a report
+ * (`served`), a refusal (`restricted`), or an `error` — a read the probe made
+ * that failed, or an answer that came back with no cell for the row. A probe
+ * still in flight (`probing`) or holding no reading at all (`unknown`) has
+ * answered nothing, and every other status belongs to a row this page does
+ * not probe. Listed rather than excluded, so a status added later is not an
+ * answer until it is put here.
+ *
+ * {@link resolveSubspaces} keeps `error` to those two: with no answer at all
+ * a row is `probing` while a read is in flight and `unknown` otherwise, so a
+ * missing cell is `error` only beside an answer.
+ */
+const PROBE_ANSWERS: ReadonlySet<CellStatus> = new Set<CellStatus>([
+  "implemented",
+  "partial",
+  "blind",
+  "served",
+  "restricted",
+  "error",
+]);
+
+/**
+ * Whether the live probe has answered for `row` ({@link PROBE_ANSWERS}): the
+ * condition for saying anything about what that answer carried, such as an
+ * `envelope` door's credibility envelope.
+ */
+export function probeAnswered(
+  row: Pick<ResolvedSubspace, "liveProbed" | "cellStatus">
+): boolean {
+  return row.liveProbed && PROBE_ANSWERS.has(row.cellStatus);
+}
+
 function resolveOne(
   entry: SubspaceManifestEntry,
   probesById: Map<string, SubspaceProbe>,
   declared: Map<string, TwinCatalogEntry> | null,
-  isProbing: boolean
+  isProbing: boolean,
+  noReading: string | null
 ): ResolvedSubspace {
   const declaredEntry = declared?.get(entry.id);
   const liveProbed = declared
@@ -114,6 +158,18 @@ function resolveOne(
   if (liveProbed) {
     const probe = probesById.get(entry.id);
     const doorShape = probe?.door_shape ?? declaredEntry?.door_shape ?? null;
+    if (noReading !== null) {
+      // No reading of this row's observer: its cell, if any, is a stand-in,
+      // or a refusal from an answer that refused every reading — neither
+      // carries a status, metrics or error of the observer's own.
+      return {
+        ...entry,
+        liveProbed,
+        doorShape,
+        cellStatus: "unknown",
+        unknownReason: noReading,
+      };
+    }
     if (!probe) {
       return {
         ...entry,
@@ -163,19 +219,35 @@ function resolveOne(
 }
 
 /**
+ * Why there is no reading when a caller hands over no answer, no read in
+ * flight and no reason of its own. `probeReadOf` always names one; this keeps
+ * the rule that no answer is never an `error` true for every caller.
+ */
+export const NO_ANSWER_REASON = "coord's live probe has not answered";
+
+/**
  * Resolve every manifest row. `catalog` is coord's served catalog; without it
  * (or before it loads) the manifest's own `snapshot` rows stand in for coord's
- * declaration.
+ * declaration. `noReading` is why no live-probed row has a reading of its
+ * own — the probe holds none (`probeUnread`), or coord refused every one
+ * (`probe-read.ts` `probeReadOf`) — or `null` when `probes` is an answer that
+ * reads them: given, every live-probed row resolves `unknown` with it,
+ * whatever `probes` holds. With no `probes` and no read in flight there is no
+ * answer either way, so the rows are `unknown` even without a reason
+ * ({@link NO_ANSWER_REASON}).
  */
 export function resolveSubspaces(
   probes: SubspaceProbe[] | undefined,
   isProbing: boolean,
-  catalog?: TwinCatalogResponse
+  catalog?: TwinCatalogResponse,
+  noReading: string | null = null
 ): ResolvedSubspace[] {
   const probesById = new Map((probes ?? []).map((p) => [p.id, p]));
   const declared = declaredProbes(catalog);
+  const silence =
+    noReading ?? (probes === undefined && !isProbing ? NO_ANSWER_REASON : null);
   return manifest.subspaces.map((e) =>
-    resolveOne(e, probesById, declared, isProbing)
+    resolveOne(e, probesById, declared, isProbing, silence)
   );
 }
 
@@ -201,8 +273,10 @@ export interface CompletenessSummary {
    * "responding" rather than only full-coverage, because several observers are
    * narrow-by-design (e.g. infra reports coverage < 1 even when perfectly
    * healthy) — counting only `implemented` would systematically undercount a
-   * working twin. Blind / served / error / restricted / probing are NOT
-   * counted: a `served` report is an answer, but not a verdict to grade.
+   * working twin. Blind / served / error / restricted / probing / unknown
+   * are NOT counted: a `served` report is an answer, but not a verdict to
+   * grade. While the probe holds no reading (every live row `unknown`) this
+   * is no count at all — the gauge shows UNKNOWN instead (`probeUnread`).
    */
   responding: number;
   /**
@@ -233,7 +307,9 @@ export interface CompletenessSummary {
   total: number;
 }
 
-export function summarize(rows: ResolvedSubspace[]): CompletenessSummary {
+export function summarize(
+  rows: readonly ResolvedSubspace[]
+): CompletenessSummary {
   let responding = 0;
   let pending = 0;
   let served = 0;

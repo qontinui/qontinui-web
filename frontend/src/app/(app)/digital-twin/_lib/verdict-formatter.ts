@@ -6,8 +6,16 @@
  */
 
 import { citationCounts } from "./delivery-citations";
-import { formatRatio, formatStaleness } from "./status-presentation";
-import type { DeliveryComponents, DriftVerdict } from "./types";
+import {
+  UNSERVED_AGE,
+  WORST_BUCKET,
+  datesWorstBucket,
+  formatRatio,
+  formatReadingAge,
+  readingAge,
+  type ReadingAge,
+} from "./status-presentation";
+import type { DeliveryComponents, DoorShape, DriftVerdict } from "./types";
 
 /** Plain-language reading of the canonical drift_class. */
 function driftClassPhrase(driftClass: string | undefined): string {
@@ -52,8 +60,32 @@ function trustPhrase(verdict: DriftVerdict): string {
   return `Coverage ${covPct}, credibility ${credPct}`;
 }
 
+/** How a summary words what coord holds. */
+export interface SummaryOptions {
+  /**
+   * The word a work unit's status is shown as. By default coord's own text,
+   * verbatim — the operator must see what coord holds. Presentation mode
+   * passes a fixed vocabulary (`presentedPlanStatus`): coord's status is
+   * opaque text a tenant can write anything into (`waiting-on-<client>`), so
+   * an evaluator is never shown it (plan
+   * `2026-10-23-console-presentation-spaces` D3.3).
+   */
+  readonly statusWord?: (status: string) => string;
+  /**
+   * The shape of the door the verdict was read from; by default coord's twin
+   * door, whose answer is a DriftVerdict. An `envelope` door's answer is not
+   * one: its age, when one is served, is its worst bucket's — the bucket its
+   * drift class comes from — and is named so; with none served its freshness
+   * is UNKNOWN, never "live" (`status-presentation.ts` `readingAge`).
+   */
+  readonly doorShape?: DoorShape | null;
+}
+
 /** One short instance-specific clause when the components shape is known. */
-function instanceClause(verdict: DriftVerdict): string | null {
+function instanceClause(
+  verdict: DriftVerdict,
+  { statusWord = (status) => status }: SummaryOptions
+): string | null {
   const c = verdict.components;
   if (!c || typeof c !== "object") return null;
   const comp = c as Record<string, unknown>;
@@ -85,7 +117,10 @@ function instanceClause(verdict: DriftVerdict): string | null {
       const noun = anchorKind === "work_unit" ? "work unit" : "plan";
       const statusLabel =
         anchorKind === "work_unit" ? "Unit status" : "Plan status";
-      const status = comp.status;
+      const status =
+        comp.status === undefined || comp.status === null
+          ? null
+          : statusWord(String(comp.status));
       // Every citation bucket is resolved by ONE reader shared with the card
       // (`delivery-citations.ts`) — count first, list second — so the prose and
       // the per-PR badges can never disagree about which citations blocked.
@@ -100,8 +135,8 @@ function instanceClause(verdict: DriftVerdict): string | null {
       // unmerged" clause.
       const delivered = comp.all_merged;
       if (counts.total === 0) {
-        return status !== undefined && status !== null
-          ? `${statusLabel} “${String(status)}”; no cited PRs found.`
+        return status !== null
+          ? `${statusLabel} “${status}”; no cited PRs found.`
           : `No cited PRs found for this ${noun}.`;
       }
       const retiredClause =
@@ -123,10 +158,7 @@ function instanceClause(verdict: DriftVerdict): string | null {
               : counts.retired > 0
                 ? `none landed${retiredClause}`
                 : "merge state mixed";
-      const statusPart =
-        status !== undefined && status !== null
-          ? `${statusLabel} “${String(status)}”; `
-          : "";
+      const statusPart = status !== null ? `${statusLabel} “${status}”; ` : "";
       return `${statusPart}${counts.total} cited PR${counts.total === 1 ? "" : "s"}, ${mergeClause}.`;
     }
     default:
@@ -134,35 +166,79 @@ function instanceClause(verdict: DriftVerdict): string | null {
   }
 }
 
+/** One key fact of a verdict, for a definition list. */
+export interface VerdictFact {
+  readonly label: string;
+  /** The value in words ("UNKNOWN" for one with an `unknownReason`). */
+  readonly value: string;
+  /**
+   * Why the value is UNKNOWN, when it is: a renderer puts it on the
+   * ignorance floor, never as a plain value.
+   */
+  readonly unknownReason?: string;
+}
+
 export interface VerdictSummary {
   /** A one/two-sentence plain-language reading. */
   prose: string;
   /** Compact key facts for a definition list. */
-  facts: { label: string; value: string }[];
+  facts: VerdictFact[];
+}
+
+/**
+ * The sentence on the verdict's trust, freshness and source. The staleness is
+ * the verdict's age when it was read, never its age now: every summary is
+ * shown beside, or after, the time it was read — a cached answer, one kept
+ * after a failed read, or a lookup left on screen (`formatAgeWhenRead`).
+ */
+function trustSentence(
+  verdict: DriftVerdict,
+  age: ReadingAge,
+  doorShape: DoorShape | null | undefined
+): string {
+  const trust = trustPhrase(verdict);
+  const provenance = verdict.provenance ?? "unknown source";
+  if (age === null) {
+    return `${trust}, from ${provenance}; ${UNSERVED_AGE}, so its freshness when read is UNKNOWN.`;
+  }
+  // An envelope door's age dates its worst bucket, not the whole answer.
+  const whose = datesWorstBucket(age, doorShape)
+    ? `its ${WORST_BUCKET}'s data`
+    : "its data";
+  return `${trust}; ${whose} was ${formatReadingAge(age)} when read, from ${provenance}.`;
 }
 
 export function summarizeVerdict(
   subspaceId: string,
   verdict: DriftVerdict,
+  options: SummaryOptions = {}
 ): VerdictSummary {
   const name = subspaceId.replace(/_/g, " ");
   const drift = driftClassPhrase(verdict.drift_class);
-  const fresh = formatStaleness(verdict.staleness_seconds);
+  const age = readingAge(verdict.staleness_seconds, options.doorShape);
   const provenance = verdict.provenance ?? "unknown source";
 
   const sentences = [
     `${capitalize(name)} is ${drift}.`,
-    `${trustPhrase(verdict)}; data is ${fresh}, read from ${provenance}.`,
+    trustSentence(verdict, age, options.doorShape),
   ];
-  const extra = instanceClause(verdict);
+  const extra = instanceClause(verdict, options);
   if (extra) sentences.push(extra);
 
-  const facts: VerdictSummary["facts"] = [
+  const facts: VerdictFact[] = [
     { label: "Drift", value: verdict.drift_class ?? "—" },
     { label: "Coverage", value: formatRatio(verdict.coverage) },
     { label: "Credibility", value: formatRatio(verdict.credibility) },
-    { label: "Freshness", value: fresh },
-    { label: "Source", value: provenance },
+    {
+      label: "Freshness when read",
+      value: datesWorstBucket(age, options.doorShape)
+        ? `${formatReadingAge(age)} (${WORST_BUCKET})`
+        : formatReadingAge(age),
+      ...(age === null ? { unknownReason: UNSERVED_AGE } : {}),
+    },
+    // "Data source", not "Source": beside a provenance chip, whose own
+    // "source:" names who read it, one label names one thing.
+    { label: "Data source", value: provenance },
   ];
   if (verdict.d3_outcome) {
     facts.push({ label: "Effect outcome", value: verdict.d3_outcome });

@@ -41,13 +41,34 @@
 # an unrelated upstream push can turn red holds the whole train (plan D2), so
 # a finding of an audit in DRIFT_AUDITS is reported as DRIFT(n) (annotated as
 # a warning, never failing the step) ONLY when a line identical to the flagged
-# source line already exists in the BASE version of that file (the PR's base
-# sha, or the default branch for a candidate/dispatch run) -- so the pin is not
-# new, and only the upstream moved. The same audit on a line this change
+# source line already exists in the BASE version of that file -- so the pin is
+# not new, and only the upstream moved. The same audit on a line this change
 # added or edited (a pin whose sha is not the release its comment claims), or
 # one whose base could not be read, counts as FINDINGS. The scheduled org scan
 # is where upstream drift is acted on. Every other audit, including the online
 # known-vulnerable-actions and impostor-commit, counts as FINDINGS.
+#
+# THE BASE, on a pull_request run, is the FIRST PARENT of the checked-out
+# merge commit (`HEAD^1`): the base-branch tip the PR head was merged onto to
+# make the very tree zizmor scans. It is never
+# `github.event.pull_request.base.sha`. On a PR that is behind its base that
+# sha is the stale merge base, while the checkout is the merge ref -- the PR
+# head merged onto the CURRENT base -- so every pin main has gained since the
+# branch point is present in the checkout and absent from the stale base, and
+# read as introduced by the PR. Measured 2026-10-24 on qontinui-web#1689 (merge
+# base bc3f44d0, 2026-10-05): style-gate.yml's dtolnay/rust-toolchain pin,
+# added to main in 27f18555 on 2026-10-14, went FINDINGS the moment upstream
+# moved `v1`, and coord refused the PR as ci-failed. `HEAD^1` rather than the
+# live branch tip: it is the exact tree the checkout was merged onto, so a line
+# is DRIFT iff the PR did not bring it, and a re-run (which reuses the same
+# merge commit) gets the same answer even after main moves again. The checkout
+# fetches depth 2 for it. A checkout that is not a two-parent merge whose
+# second parent is the PR head leaves no base, and every DRIFT_AUDITS finding
+# is then blocking (fail closed). A candidate/dispatch run uses the default
+# branch, by name, as before. Same defect class as migration-reversal.yml (plan
+# 2026-10-24-migration-reversal-overlays-onto-stale-pr-base-not-base-tip);
+# this one is plan 2026-10-24-workflow-lint-drift-judged-against-stale-pr-base,
+# tested by backend/tests/test_workflow_lint_drift.py.
 #
 # VISIBILITY: each finding is a workflow-command
 # annotation (::error for a finding, ::warning for DRIFT) on the run and the
@@ -123,6 +144,9 @@ jobs:
         timeout-minutes: 2
         with:
           persist-credentials: false
+          # The merge commit plus its parents: HEAD^1 is the DRIFT base on a
+          # pull_request run (see header).
+          fetch-depth: 2
       - name: Check host architecture (release tarballs below are x86_64)
         id: arch
         if: steps.checkout.outcome == 'success'
@@ -203,9 +227,12 @@ jobs:
           # Online audits (impostor-commit, known-vulnerable-actions) read
           # public action repos; the job token is read-only.
           GH_TOKEN: ${{ github.token }}
-          # Base for the DRIFT test (see header): the PR's base sha, else the
-          # default branch (merge-candidate pushes, workflow_dispatch).
-          DRIFT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          # Inputs of the DRIFT base (see header), resolved in the run body:
+          # HEAD^1 on a pull_request run, verified against the PR head; the
+          # default branch otherwise (merge-candidate pushes, workflow_dispatch).
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         # One `--format json` run drives both the verdict and the annotations:
         # each finding not in DRIFT_AUDITS becomes an ::error annotation and
         # counts as FINDINGS; each DRIFT_AUDITS finding becomes a ::warning
@@ -221,8 +248,9 @@ jobs:
         # DRIFT test: the finding's source line (cut from this checkout at
         # zizmor's byte offset, and required to contain the flagged version
         # text) must occur verbatim in DRIFT_BASE_REF's copy of the same file, fetched
-        # read-only from the contents API with the job token; a fetch failure
-        # makes the finding blocking (fail closed).
+        # read-only from the contents API ($GITHUB_API_URL, which the runner
+        # sets) with the job token; a fetch failure makes the finding blocking
+        # (fail closed).
         # `--cache-dir` under $RUNNER_TEMP (wiped per job): the public-pool
         # runners are PERSISTENT services, so zizmor's default HTTP cache
         # (~/.cache/zizmor of the runner user) is shared by every job on the
@@ -230,6 +258,20 @@ jobs:
         # online audits (impostor-commit, known-vulnerable-actions) of later
         # runs. A cold cache costs only the few action lookups this repo makes.
         run: |
+          DRIFT_BASE_REF=""
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            first="$(git rev-parse --verify -q 'HEAD^1^{commit}' || true)"
+            second="$(git rev-parse --verify -q 'HEAD^2^{commit}' || true)"
+            if [[ "$first" =~ ^[0-9a-f]{40}$ && -n "$second" && "$second" == "$PR_HEAD_SHA" ]]; then
+              DRIFT_BASE_REF="$first"
+            else
+              echo "::warning::workflow-lint: the checkout is not the PR's merge commit (HEAD^1=${first:-none} HEAD^2=${second:-none}), so there is no DRIFT base and every ${DRIFT_AUDITS} finding is blocking"
+            fi
+          else
+            DRIFT_BASE_REF="$DEFAULT_BRANCH"
+          fi
+          export DRIFT_BASE_REF
+          echo "DRIFT base: ${DRIFT_BASE_REF:-none}"
           mapfile -t files < <(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
           mapfile -t -O "${#files[@]}" files < <(find .github/actions -type f \( -name 'action.yml' -o -name 'action.yaml' \) | sort)
           files+=(.github/dependabot.yml)
@@ -255,7 +297,10 @@ jobs:
           def base_lines(path):
               if path not in base_cache:
                   try:
-                      url = "https://api.github.com/repos/%s/contents/%s?ref=%s" % (
+                      if not os.environ.get("DRIFT_BASE_REF"):
+                          raise ValueError("no DRIFT base")  # fail closed
+                      url = "%s/repos/%s/contents/%s?ref=%s" % (
+                          os.environ.get("GITHUB_API_URL") or "https://api.github.com",
                           os.environ["GITHUB_REPOSITORY"], urllib.parse.quote(path),
                           urllib.parse.quote(os.environ["DRIFT_BASE_REF"], safe=""))
                       req = urllib.request.Request(url, headers={

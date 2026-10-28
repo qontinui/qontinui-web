@@ -26,7 +26,14 @@ vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "https://api.test" },
 }));
 
-import { runnerProxyGet, RunnerRelayError } from "./runner-relay";
+import { RUNNER_NEEDS_LOCAL } from "@/lib/runner/api-client";
+import {
+  EGRESS_OFF_REFUSAL,
+  readRunnerRefusal,
+  runnerProxyGet,
+  runnerProxyPost,
+  RunnerRelayError,
+} from "./runner-relay";
 
 /**
  * A real `Response` (the relay client clones it to read the runner's half of
@@ -330,5 +337,196 @@ describe("runnerProxyGet unwraps the runner's ApiResponse envelope", () => {
     expect(err.runner?.message).toBe(
       "UI Bridge request timed out after 10000ms"
     );
+  });
+});
+
+/** The `[url, init]` the relay client handed to `httpClient.fetch`. */
+function sentRequest(): { url: string; init: RequestInit } {
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  return { url, init };
+}
+
+function headerOf(init: RequestInit, name: string): string | undefined {
+  const headers = (init.headers ?? {}) as Record<string, string>;
+  const key = Object.keys(headers).find(
+    (k) => k.toLowerCase() === name.toLowerCase()
+  );
+  return key === undefined ? undefined : headers[key];
+}
+
+/**
+ * The runner's `POST /ui-bridge/control/page-health` answer
+ * (`Json<ApiResponse<…>>`, qontinui-runner `ui_bridge/screenshots.rs`
+ * `ui_bridge_page_health_handler`), trimmed to one finding.
+ */
+const PAGE_HEALTH_ENVELOPE = {
+  success: true,
+  data: {
+    summary: "OK",
+    findings: [
+      {
+        check: "spatial_coverage",
+        severity: "OK",
+        detail: "Elements cover 64% of viewport. Left=70%, Right=58%",
+        data: { coverage_pct: 64, left_half_pct: 70, right_half_pct: 58 },
+      },
+    ],
+    heatmap: ["####......"],
+    element_count: 120,
+    visible_count: 96,
+  },
+};
+
+describe("runnerProxyPost", () => {
+  it("sends POST with the JSON body and an explicit Content-Type, over the relay to the device", async () => {
+    fetchMock.mockResolvedValue(response(200, PAGE_HEALTH_ENVELOPE));
+
+    await runnerProxyPost("dev-1", "ui-bridge/control/page-health", {
+      options: { x: 1 },
+    });
+
+    const { url, init } = sentRequest();
+    expect(url).toBe(
+      "https://api.test/api/v1/device-bridge/runner-proxy/ui-bridge/control/page-health"
+    );
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe('{"options":{"x":1}}');
+    expect(headerOf(init, "Content-Type")).toBe("application/json");
+    expect(headerOf(init, "X-Qontinui-Device-Id")).toBe("dev-1");
+  });
+
+  it("sends an empty object body as `{}`, never an empty body", async () => {
+    fetchMock.mockResolvedValue(response(200, PAGE_HEALTH_ENVELOPE));
+
+    await runnerProxyPost("dev-1", "/ui-bridge/control/page-health", {});
+
+    const { url, init } = sentRequest();
+    // A leading slash on the runner path is not doubled into the relay URL.
+    expect(url).toMatch(/runner-proxy\/ui-bridge\/control\/page-health$/);
+    expect(init.body).toBe("{}");
+  });
+
+  it("unwraps the ApiResponse envelope exactly as a GET does", async () => {
+    fetchMock.mockResolvedValue(response(200, PAGE_HEALTH_ENVELOPE));
+
+    const report = await runnerProxyPost<{
+      summary?: string;
+      element_count?: number;
+    }>("dev-1", "ui-bridge/control/page-health", {});
+
+    expect(report.summary).toBe("OK");
+    expect(report.element_count).toBe(120);
+    expect(report).not.toHaveProperty("success");
+  });
+
+  it("rejects a route the runner's relay does not carry as RUNNER_NEEDS_LOCAL, with its 403", async () => {
+    // The runner's `http_relay_error` for a path off `RELAY_ALLOWED` — what a
+    // runner built before the dashboard's relay entries answers.
+    fetchMock.mockResolvedValue(
+      response(403, {
+        error:
+          "this path is not carried by the HTTP relay — it needs the runner on this machine",
+      })
+    );
+
+    const err = await rejection(
+      runnerProxyPost("dev-1", "ui-bridge/control/page-health", {})
+    );
+
+    expect(err).toBeInstanceOf(RunnerRelayError);
+    expect(err.status).toBe(403);
+    expect(err.code).toBe(RUNNER_NEEDS_LOCAL);
+  });
+
+  it("carries the relay's egress refusal as the runner's own refusal", async () => {
+    // `backend_relay.rs` `egress_off_http_response`: a 409 with a fixed
+    // `error` token and no `success: false`.
+    fetchMock.mockResolvedValue(
+      response(409, {
+        error: "egress_off",
+        flow: "terminal_stream",
+        domain: "egress_terminal_stream",
+        message: "Terminal streaming is off for this project",
+      })
+    );
+
+    const err = await rejection(
+      runnerProxyPost("dev-1", "ui-bridge/control/page-health", {})
+    );
+
+    expect(err.status).toBe(409);
+    expect(err.runner).toEqual({
+      reason: EGRESS_OFF_REFUSAL,
+      message: "Terminal streaming is off for this project",
+      detail: { flow: "terminal_stream", domain: "egress_terminal_stream" },
+    });
+    expect(err.message).toContain("Terminal streaming is off for this project");
+  });
+});
+
+describe("readRunnerRefusal", () => {
+  it("reads an egress refusal by its token even with no flow or domain", () => {
+    expect(readRunnerRefusal({ error: "egress_off" })).toEqual({
+      reason: "egress_off",
+      message: undefined,
+      detail: undefined,
+    });
+  });
+
+  it("does not read a bare `error` string as a refusal on its own", () => {
+    // Only the `egress_off` token and an explicit `ok`/`success: false` say
+    // the runner refused; any other `error` key is not enough.
+    expect(readRunnerRefusal({ error: "something" })).toBeUndefined();
+  });
+});
+
+describe("runnerProxyGet envelope: keep", () => {
+  /**
+   * `GET /health` (qontinui-runner `mcp_api.rs` `health`): `sdkFeatures`,
+   * `uiBridge` and `buildId` sit BESIDE `data`, not inside it.
+   */
+  const HEALTH = {
+    success: true,
+    data: { status: "ok", gitSha: "be39991d2fe9", buildId: "be39991d2fe9-1" },
+    uiBridge: { appId: "qontinui-runner" },
+    buildId: "be39991d2fe9-1",
+    sdkFeatures: ["softNavigate", "snapshotF3"],
+    timestamp: 1760190000000,
+  };
+
+  it("hands back the whole body, top-level fields included", async () => {
+    fetchMock.mockResolvedValue(response(200, HEALTH));
+
+    const body = await runnerProxyGet<typeof HEALTH>("dev-1", "health", {
+      envelope: "keep",
+    });
+
+    expect(body.sdkFeatures).toEqual(["softNavigate", "snapshotF3"]);
+    expect(body.data.gitSha).toBe("be39991d2fe9");
+  });
+
+  it("unwraps by default, which is why /health needs `keep`", async () => {
+    fetchMock.mockResolvedValue(response(200, HEALTH));
+
+    const body = await runnerProxyGet<Record<string, unknown>>(
+      "dev-1",
+      "health"
+    );
+
+    expect(body).not.toHaveProperty("sdkFeatures");
+    expect(body.gitSha).toBe("be39991d2fe9");
+  });
+
+  it("still rejects a failed body when keeping the envelope", async () => {
+    fetchMock.mockResolvedValue(
+      response(200, { success: false, error: "not ready" })
+    );
+
+    const err = await rejection(
+      runnerProxyGet("dev-1", "health", { envelope: "keep" })
+    );
+
+    expect(err.runner?.message).toBe("not ready");
   });
 });

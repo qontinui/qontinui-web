@@ -1162,6 +1162,12 @@ export interface StripRow {
 /** One machine's block: its display name plus its per-lane rows. */
 export interface MachineGroup {
   deviceId: string;
+  /**
+   * Coord's hostname for the device, when its device list carries one — what
+   * a presentation alias links on, beside the device id, so this block reads
+   * as the same machine every other panel names.
+   */
+  hostname?: string;
   displayName: string;
   state?: string;
   rows: StripRow[];
@@ -1241,7 +1247,13 @@ export function buildMachineGroups(
             },
           ];
 
-    groups.push({ deviceId, displayName, state: device.state, rows });
+    groups.push({
+      deviceId,
+      ...(device.hostname ? { hostname: device.hostname } : {}),
+      displayName,
+      state: device.state,
+      rows,
+    });
   }
 
   groups.sort((a, b) => a.displayName.localeCompare(b.displayName));

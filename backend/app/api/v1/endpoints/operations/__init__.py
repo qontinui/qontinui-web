@@ -20,7 +20,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, NoReturn
+from typing import Annotated, Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
 
@@ -858,10 +858,38 @@ async def _caller_owns_runner_host(
     return any((r.hostname or "").lower() == host for r in runners)
 
 
+#: A runner task-run id, as the two per-runner proxies below take it.
+#:
+#: The id is spliced into the path those proxies GET from the runner
+#: (``/task-runs/{id}/output``), and httpx resolves ``.`` and ``..`` segments
+#: and honours a ``?`` or ``#`` it finds in that path. A free string therefore
+#: let the caller choose ANY runner GET: ``../../apps#`` sent ``GET /apps`` (the
+#: app registry, every build and start command included) to whatever address
+#: the unauthenticated beacon registry holds for a host the caller owns a
+#: device on. The runner mints its ids as UUIDs or as ``-``-joined composites
+#: of words, UUIDs, timestamps, numbers and workflow ids, and it gives every
+#: saved workflow a UUID (``trigger-<workflow>-<ms>-<u8>``,
+#: ``<id>-replay-<uuid>``), so letters, digits, ``-`` and ``_`` are the
+#: characters a minted id carries. Anything else is a 422 naming this rule,
+#: before the runner is contacted. The length bound is a bound, not a format.
+#: The longest bases the runner mints are 67 characters
+#: (``trigger-<uuid>-<ms>-<u8>`` and ``unified-workflow-<uuid>-<ms>``), and a
+#: replay appends ``-replay-<uuid>`` (44 more), so a replay of a replay of one
+#: is 155 characters. Four levels (243) fit; five (287) do not.
+_TaskRunIdQuery = Annotated[
+    str,
+    Query(
+        max_length=256,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="A runner task-run id: letters, digits, '-' and '_' only.",
+    ),
+]
+
+
 @router.get("/fleet/runners/{runner_id}/output")
 async def get_runner_task_output(
     runner_id: str,
-    task_run_id: str = Query(...),
+    task_run_id: _TaskRunIdQuery,
     tail_chars: int = Query(default=5000),
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
@@ -888,7 +916,7 @@ async def get_runner_task_output(
 @router.get("/fleet/runners/{runner_id}/workflow-state")
 async def get_runner_workflow_state(
     runner_id: str,
-    task_run_id: str = Query(...),
+    task_run_id: _TaskRunIdQuery,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
@@ -11045,6 +11073,283 @@ async def get_ci_hosting(
     return _ci_hosting_view(payload, can_edit=can_edit)
 
 
+# ---- Secrets broker device (fleet-policy column) ---------------------------
+#
+# Plan ``2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them``
+# Phase 3. The tenant's designated secrets-broker device lives in the typed,
+# versioned column ``coord.fleet_runtime_policy.secrets_broker_device_id``
+# (alembic ``secrets_broker_01``), on the TENANT-band row of the
+# ``secrets_broker`` domain. coord admits a broker report on
+# ``POST /coord/secrets-broker/events`` only from a device JWT whose
+# ``device_id`` equals it, so setting it is an authorization decision and an
+# operator action.
+#
+# This is a dedicated door onto a dedicated coord route, rather than a field on
+# the generic ``PUT /fleet-policy`` above, because the value is a DEVICE, not a
+# level: it is proven bound to the tenant before it is written (below), and the
+# write must touch NOTHING but the device column. The generic PUT writes a whole
+# row (level, master_enabled, controls), and any door that re-sends a level it
+# read first is a read-then-overwrite race and, worse, freezes the system band
+# into a copy on the tenant row. So this door never reads, sends or preserves a
+# level.
+#
+# Coord wire contract this encodes (the qontinui-coord half of Phase 3):
+#
+# * ``PUT /coord/fleet-policy/secrets-broker-device`` with exactly
+#   ``{"device_id": <uuid | null>}`` (``null`` clears). coord re-checks the
+#   device's tenant binding and writes ONLY the ``secrets_broker_device_id``
+#   column of the tenant-band ``secrets_broker`` row. It never touches
+#   ``level`` or ``master_enabled``. When no tenant row exists it creates one
+#   whose level does not govern, so the system band (or the domain's no-row
+#   default) still does. The schema has no NULL level (``level`` and
+#   ``master_enabled`` are NOT NULL), so "inherit" is spelled the way the store
+#   already spells it for the repo band: ``level = 'inherit'``, which coord's
+#   resolver must then also skip at the tenant band. It answers 503
+#   ``column_not_present`` while ``secrets_broker_01`` has not reached its
+#   database.
+# * ``GET /coord/fleet-policy?domain=secrets_broker`` answers, beside the usual
+#   resolved fields, ``secrets_broker_device_id``: the TENANT-band row's value
+#   (a UUID string) or ``null``. A coord whose answer carries NO such key
+#   predates the column's reader: UNKNOWN, never "no broker".
+#
+# Until that coord route is deployed, coord answers this door 404 or 405. That
+# is surfaced as 502 ``coord_secrets_broker_device_route_missing``, never as
+# written.
+
+#: The fleet-policy domain whose tenant-band row carries the broker device.
+SECRETS_BROKER_DOMAIN = "secrets_broker"
+#: coord's device-only write route (writes the device column and nothing else).
+_SECRETS_BROKER_DEVICE_ROUTE = "/coord/fleet-policy/secrets-broker-device"
+#: The key coord's fleet-policy GET carries the device under.
+_SECRETS_BROKER_DEVICE_KEY = "secrets_broker_device_id"
+
+
+class SecretsBrokerDeviceView(BaseModel):
+    """The tenant's designated secrets-broker device, as coord resolves it."""
+
+    #: The designated device, or ``None`` when none is designated, in which
+    #: case coord refuses every broker report for this tenant. Meaningful only
+    #: when ``reported`` is true.
+    device_id: UUID | None = None
+    #: ``False`` when coord's answer carried no ``secrets_broker_device_id`` key
+    #: at all (a coord predating the column's reader) or carried one this proxy
+    #: could not parse. That is UNKNOWN, never "no broker designated".
+    reported: bool
+    #: The ``secrets_broker`` domain's resolved level (``off`` under a disabled
+    #: master), and the band it came from (``"none"`` when no row exists).
+    effective_level: str
+    master_enabled: bool
+    resolved_scope: str
+    #: Whether the caller may write: the SAME effective-tenant rule
+    #: ``require_coord_tenant_admin`` applies to the PUT. UI gating only;
+    #: coord re-checks with ``rbac::is_tenant_admin``.
+    can_edit: bool
+
+
+class SecretsBrokerDevicePut(BaseModel):
+    """Closed body for the broker-device write.
+
+    ``device_id: null`` clears the designation (every broker report is then
+    refused). The field is REQUIRED, so an empty body is a 422 rather than a
+    silent clear.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID | None
+
+
+class SecretsBrokerDeviceWriteResult(BaseModel):
+    """What was written, and, separately, what coord now resolves.
+
+    ``effective`` is ``None`` with ``readback_error`` set when the write landed
+    but the re-read failed. That is UNKNOWN, not "applied".
+    """
+
+    ok: bool
+    written_device_id: UUID | None
+    versioned: bool | None = None
+    version: int | None = None
+    updated_by: str | None = None
+    effective: SecretsBrokerDeviceView | None = None
+    readback_error: str | None = None
+
+
+def _secrets_broker_device_view(
+    payload: Any, *, can_edit: bool
+) -> SecretsBrokerDeviceView:
+    """Project coord's ``secrets_broker`` fleet-policy body onto the device view."""
+    body = payload if isinstance(payload, dict) else {}
+    view = _fleet_policy_view(body, domain=SECRETS_BROKER_DOMAIN, can_edit=can_edit)
+    reported = _SECRETS_BROKER_DEVICE_KEY in body
+    device_id: UUID | None = None
+    raw = body.get(_SECRETS_BROKER_DEVICE_KEY)
+    if raw is not None:
+        try:
+            device_id = UUID(str(raw))
+        except (TypeError, ValueError):
+            # An unparseable device is not "none designated": it is UNKNOWN.
+            reported = False
+    return SecretsBrokerDeviceView(
+        device_id=device_id,
+        reported=reported,
+        effective_level=view.effective_level,
+        master_enabled=view.master_enabled,
+        resolved_scope=view.resolved_scope,
+        can_edit=can_edit,
+    )
+
+
+def _secrets_broker_refusal(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"error": code, "code": code, "message": message},
+    )
+
+
+async def _require_device_bound_to_tenant(device_id: UUID, tenant_id: UUID) -> None:
+    """Refuse unless coord PROVES ``device_id`` is bound to ``tenant_id``.
+
+    Reads coord's single-device ``GET /coord/devices/:id/state`` on the
+    operator's bearer (coord's ``FleetPrincipal`` accepts it). That read
+    HYDRATES ``tenant_ids`` from ``coord.tenant_devices``, and its tri-state is
+    the point: ``null`` is "coord could not read the binding set" (UNKNOWN), so
+    the write is refused rather than trusted. Designating a broker is an
+    authorization, and an unproven one fails closed. ``[]`` and a list without
+    this tenant are a proven "not bound".
+    """
+    try:
+        row = await _proxy_coord_get(
+            f"/coord/devices/{device_id}/state", tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise _secrets_broker_refusal(
+                422,
+                "device_not_found",
+                "Coord knows no device with this id.",
+            ) from exc
+        raise
+    body = row if isinstance(row, dict) else {}
+    if str(body.get("device_id")) != str(device_id):
+        raise _secrets_broker_refusal(
+            502,
+            "coord_device_state_malformed",
+            "Coord answered for a different device.",
+        )
+    bindings = body.get("tenant_ids")
+    if not isinstance(bindings, list):
+        raise _secrets_broker_refusal(
+            503,
+            "device_binding_unknown",
+            "Coord could not say which tenants this device is bound to, so the "
+            "designation was not written. Retry once coord answers.",
+        )
+    if str(tenant_id) not in {str(t) for t in bindings}:
+        raise _secrets_broker_refusal(
+            422,
+            "device_not_in_tenant",
+            "This device is not bound to this tenant, so it cannot be its "
+            "secrets broker.",
+        )
+
+
+@router.get("/secrets-broker/device", response_model=SecretsBrokerDeviceView)
+async def get_secrets_broker_device(
+    request: Request,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> SecretsBrokerDeviceView:
+    """Read the tenant's designated secrets-broker device.
+
+    ``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the
+    superuser bypass), the same rule ``require_coord_tenant_admin`` applies to
+    this door's PUT, which writes through coord's device-only
+    ``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).
+    ``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be
+    wrong.
+    """
+    payload = await _proxy_coord_get(
+        "/coord/fleet-policy",
+        params={"domain": SECRETS_BROKER_DOMAIN},
+        tenant_id=tenant_id,
+    )
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _secrets_broker_device_view(payload, can_edit=can_edit)
+
+
+@router.put("/secrets-broker/device", response_model=SecretsBrokerDeviceWriteResult)
+async def put_secrets_broker_device(
+    body: SecretsBrokerDevicePut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> SecretsBrokerDeviceWriteResult:
+    """Designate (or clear) the tenant's secrets-broker device, then READ BACK.
+
+    Tenant-admin gated web-side; coord re-checks admin and the device's tenant
+    binding. The order is: prove the binding, write the device column alone,
+    re-read. A failed proof writes nothing; nothing but the device is ever
+    sent, so no level is read, carried or overwritten. A coord without the
+    route (404/405) is an error, never "written". A failed re-read after a
+    landed write is UNKNOWN (``readback_error``), not "applied".
+    """
+    if body.device_id is not None:
+        await _require_device_bound_to_tenant(body.device_id, tenant_id)
+
+    device = str(body.device_id) if body.device_id is not None else None
+    try:
+        written = await _proxy_coord_put(
+            _SECRETS_BROKER_DEVICE_ROUTE,
+            {"device_id": device},
+            tenant_id=tenant_id,
+            structured_errors=True,
+        )
+    except HTTPException as exc:
+        if exc.status_code in (404, 405):
+            raise _secrets_broker_refusal(
+                502,
+                "coord_secrets_broker_device_route_missing",
+                "This coord does not serve the secrets-broker device route yet, "
+                "so nothing was written.",
+            ) from exc
+        raise
+    echo = written if isinstance(written, dict) else {}
+
+    effective: SecretsBrokerDeviceView | None = None
+    readback_error: str | None = None
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/fleet-policy",
+            params={"domain": SECRETS_BROKER_DOMAIN},
+            tenant_id=tenant_id,
+        )
+        effective = _secrets_broker_device_view(payload, can_edit=True)
+    except HTTPException as exc:
+        readback_error = f"read-back failed: coord returned {exc.status_code}"
+    except Exception as exc:  # noqa: BLE001 — the WRITE succeeded; don't lose it
+        readback_error = f"read-back failed: {exc}"
+
+    if readback_error is not None:
+        logger.warning("secrets_broker_device.readback_failed", detail=readback_error)
+
+    version = echo.get("version")
+    versioned = echo.get("versioned")
+    updated_by = echo.get("updated_by")
+    return SecretsBrokerDeviceWriteResult(
+        ok=bool(echo.get("ok", True)),
+        written_device_id=body.device_id,
+        versioned=versioned if isinstance(versioned, bool) else None,
+        version=version if isinstance(version, int) else None,
+        updated_by=updated_by if isinstance(updated_by, str) else None,
+        effective=effective,
+        readback_error=readback_error,
+    )
+
+
 # ---- Unfinished sessions + auto-resume toggle proxy ---------------------
 #
 # Plan ``2026-10-06-closed-sessions-whose-work-is-unfinished-are-found-fleet-wide-and-resumed``
@@ -13540,6 +13845,214 @@ async def get_coord_findings(
             "unavailable": (
                 "coord reports its findings store is not provisioned "
                 "(`available: false`). Findings cannot be listed, which is not "
+                "the same as there being none."
+            ),
+            "unavailable_kind": "unprovisioned",
+        }
+    return body
+
+
+# ---------------------------------------------------------------------------
+# Dossiers — `GET /operations/coord/dossiers` → coord `GET /coord/dossiers`
+#
+# Backs `/admin/coord/dossiers`, the list of every dossier head: filter by
+# readiness, live remediation-plan state, recurrence, dates and slug; sort;
+# page with a keyset cursor. Plan
+# `2026-10-03-dossier-query-door-filters-sort-cursor`, Phase 5. coord's door is
+# `findings::dossiers::get_dossiers` (qontinui-coord#3421), the operator twin of
+# the agent door `GET /coord/agent-dossiers` and the MCP tool
+# `coord_list_dossiers`; all three run one `dossiers_answer`.
+#
+# **Verbatim forward, and the refusal is coord's** — the same contract as the
+# findings proxy above. Every one of coord's eighteen accepted keys
+# (`DOSSIER_QUERY_KEYS`) is declared here and forwarded ONLY when the caller set
+# it. The string and date values are not re-validated at this hop: coord answers
+# a malformed value with a typed `400 invalid_query_parameter` and a foreign or
+# stale cursor with `400 cursor_malformed`, and a second validator here would
+# drift from coord's. The typed params (`limit`, `recurrence_min/max`,
+# `has_open_remediation`, `include_body`) are parsed by FastAPI, so a
+# non-integer `limit` is a 422 here. `readiness` and `remediation_state` are
+# LISTS, so a repeated key stays repeated on the wire, which coord accepts as
+# well as a comma-joined value.
+#
+# Degrade rather than 502, exactly as the findings proxy: a coord that predates
+# the door answers 404, and that must read as "not answering", never as an
+# empty dossier list. coord's own `200 {"available": false}` (store not
+# provisioned) gets the same degrade pair.
+# ---------------------------------------------------------------------------
+
+_COORD_DOSSIERS_PATH = "/coord/dossiers"
+
+
+@router.get("/coord/dossiers")
+async def get_coord_dossiers(
+    readiness: list[str] | None = Query(
+        default=None,
+        description=(
+            "Repeatable (or comma-separated). Exact readiness match; ``none`` "
+            "selects heads whose readiness is NULL (UNKNOWN)."
+        ),
+    ),
+    slug: str | None = Query(default=None, description="Exact dossier slug."),
+    q: str | None = Query(
+        default=None,
+        description="Case-insensitive substring over slug and title.",
+    ),
+    recurrence_min: int | None = Query(
+        default=None,
+        description="Inclusive lower bound on ``recurrence_count``.",
+    ),
+    recurrence_max: int | None = Query(
+        default=None,
+        description="Inclusive upper bound on ``recurrence_count``.",
+    ),
+    last_seen_since: str | None = Query(default=None, description="ISO date."),
+    last_seen_until: str | None = Query(default=None, description="ISO date."),
+    first_seen_since: str | None = Query(default=None, description="ISO date."),
+    first_seen_until: str | None = Query(default=None, description="ISO date."),
+    updated_since: str | None = Query(default=None, description="ISO date."),
+    updated_until: str | None = Query(default=None, description="ISO date."),
+    has_open_remediation: bool | None = Query(
+        default=None,
+        description=(
+            "Ledger-derived (free text, lags the plan); ``remediation_state`` "
+            "is the live one."
+        ),
+    ),
+    remediation_state: list[str] | None = Query(
+        default=None,
+        description=(
+            "Repeatable. The LIVE roll-up of the dossier's remediation plans "
+            "against coord's work units: none | draft | vetted | in_progress | "
+            "shipped | closed | unknown."
+        ),
+    ),
+    sort: str | None = Query(
+        default=None,
+        description=(
+            "last_seen (coord's default) | first_seen | updated | "
+            "recurrence_count | slug."
+        ),
+    ),
+    order: str | None = Query(default=None, description="desc (default) | asc."),
+    limit: int | None = Query(
+        default=None,
+        description=(
+            "Page size. Forwarded verbatim — coord owns the default and the clamp."
+        ),
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "The previous answer's ``next_cursor``, verbatim, under the SAME "
+            "filters and sort. A foreign or stale one is coord's typed 400."
+        ),
+    ),
+    include_body: bool | None = Query(
+        default=None,
+        description="``true`` adds each head's body (coord caps the page at 20).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return one page of dossier heads for the calling operator's tenant.
+
+    The body is coord's, verbatim: ``{"dossiers": [...], "facets":
+    {"readiness", "remediation_state"}, "facets_scope", "dedup",
+    "*_applied" echoes, ...}`` plus the bounded-read envelope (``available``,
+    ``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,
+    ``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant
+    is coord's to resolve from the forwarded bearer; nothing in the request
+    names it.
+
+    Degraded answers carry every envelope key as UNKNOWN (``null``), ``facets``
+    as ``null`` and ``dossiers`` empty, plus ``unavailable`` /
+    ``unavailable_kind`` — a page reading that body must say "could not read",
+    never "no dossiers".
+    """
+    params: dict[str, Any] = {}
+    if readiness:
+        params["readiness"] = readiness
+    if slug is not None:
+        params["slug"] = slug
+    if q is not None:
+        params["q"] = q
+    if recurrence_min is not None:
+        params["recurrence_min"] = recurrence_min
+    if recurrence_max is not None:
+        params["recurrence_max"] = recurrence_max
+    for key, value in (
+        ("last_seen_since", last_seen_since),
+        ("last_seen_until", last_seen_until),
+        ("first_seen_since", first_seen_since),
+        ("first_seen_until", first_seen_until),
+        ("updated_since", updated_since),
+        ("updated_until", updated_until),
+    ):
+        if value is not None:
+            params[key] = value
+    if has_open_remediation is not None:
+        params["has_open_remediation"] = has_open_remediation
+    if remediation_state:
+        params["remediation_state"] = remediation_state
+    if sort is not None:
+        params["sort"] = sort
+    if order is not None:
+        params["order"] = order
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    if include_body is not None:
+        params["include_body"] = include_body
+    try:
+        body = await _proxy_coord_get(
+            _COORD_DOSSIERS_PATH, params=params or None, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "available": False,
+                # null, not 0: nothing was counted.
+                "count": None,
+                "dossiers": [],
+                # UNKNOWN, not zero: no facet was counted.
+                "facets": None,
+                "truncated": None,
+                "bound_kind": "unknown",
+                "next_cursor": None,
+                "total": None,
+                "shown": 0,
+                # null, not the caller's request: no page was read, so no cap
+                # was applied (the findings proxy's reasoning).
+                "limit": None,
+                "filter_narrowed": None,
+                "enumerate_via": None,
+                "unavailable": (
+                    "coord's dossier door is not answering — its "
+                    "`/coord/dossiers` route returned 404, so the deployed "
+                    "coord predates it or the route is misrouted. Dossiers "
+                    "cannot be listed, which is not the same as there being none."
+                    if exc.status_code == 404
+                    else (
+                        "coord did not answer the dossier door "
+                        f"(HTTP {exc.status_code})."
+                    )
+                ),
+                "unavailable_kind": (
+                    "not_deployed" if exc.status_code == 404 else "unreachable"
+                ),
+            }
+        raise
+    if (
+        isinstance(body, dict)
+        and body.get("available") is False
+        and not body.get("unavailable")
+    ):
+        return {
+            **body,
+            "unavailable": (
+                "coord reports its findings store is not provisioned "
+                "(`available: false`). Dossiers cannot be listed, which is not "
                 "the same as there being none."
             ),
             "unavailable_kind": "unprovisioned",
