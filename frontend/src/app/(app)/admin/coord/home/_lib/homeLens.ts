@@ -22,6 +22,8 @@ import {
   type SectionSource,
 } from "@/components/presentation";
 import {
+  decisionDomainLabel,
+  isKnownDecisionDomain,
   planeLabel,
   type DegradationView,
   type NamedUnit,
@@ -211,6 +213,51 @@ export function reasonDescriptor(
   at: string | null
 ): RedactionDescriptor {
   return { kind: "Reason", area: null, status, at };
+}
+
+// ---------------------------------------------------------------------------
+// The decisions waiting, by kind — a table's words, or fixed words
+// ---------------------------------------------------------------------------
+
+/** One decision kind the page's table does not name, while presenting. */
+export const UNNAMED_DECISION_KIND = "a kind not named here";
+
+/** Several decision kinds the page's table does not name, while presenting. */
+export const UNNAMED_DECISION_KINDS = "kinds not named here";
+
+/**
+ * The "By kind of decision" entries while presenting, each `<words> <count>`.
+ *
+ * Coord's `needs_me.by_domain` keys are its own buckets (`operator_gate`,
+ * `unscanned`, `unclassified`) and, for every other question, the domain it
+ * parsed out of the question's TEXT (`escalation_domain`) — which coord calls
+ * caller-controlled. So a key shows only when the page's table names it
+ * (`isKnownDecisionDomain`), in the table's words and in coord's order; every
+ * other key, whatever it spells, is folded into ONE entry in fixed words,
+ * last, carrying their summed count — the questions are still counted, and
+ * no word of theirs is on the screen. An allowlist, so a domain coord starts
+ * serving tomorrow reads as "a kind not named here" until the table names it.
+ */
+export function presentedDecisionDomains(
+  byDomain: Readonly<Record<string, number>>
+): string[] {
+  const named: string[] = [];
+  let unnamedKinds = 0;
+  let unnamedCount = 0;
+  for (const [domain, n] of Object.entries(byDomain)) {
+    if (isKnownDecisionDomain(domain)) {
+      named.push(`${decisionDomainLabel(domain)} ${n}`);
+    } else {
+      unnamedKinds += 1;
+      unnamedCount += n;
+    }
+  }
+  if (unnamedKinds > 0) {
+    named.push(
+      `${unnamedKinds === 1 ? UNNAMED_DECISION_KIND : UNNAMED_DECISION_KINDS} ${unnamedCount}`
+    );
+  }
+  return named;
 }
 
 // ---------------------------------------------------------------------------

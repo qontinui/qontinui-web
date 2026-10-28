@@ -16,6 +16,8 @@ import { WITHHELD } from "@/components/presentation";
 import {
   PROJECT_STATE_KEPT_SOURCE,
   PROJECT_STATE_SOURCE,
+  UNNAMED_DECISION_KIND,
+  UNNAMED_DECISION_KINDS,
   degradationDescriptor,
   degradationRepo,
   isMachineSubject,
@@ -23,6 +25,7 @@ import {
   namedUnitRepos,
   needsDescriptor,
   needsStatusWord,
+  presentedDecisionDomains,
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
@@ -184,6 +187,47 @@ describe("descriptors — built from fixed fields, never from the text", () => {
       status: "excluded",
       at: AT,
     });
+  });
+});
+
+describe("presentedDecisionDomains — the table's words, or fixed words", () => {
+  it("names a kind the table holds, in coord's order", () => {
+    expect(
+      presentedDecisionDomains({ pr_fix: 2, operator_gate: 1, unscanned: 4 })
+    ).toEqual([
+      "fixing a pull request 2",
+      "operator approval gate 1",
+      "not yet scanned 4",
+    ]);
+  });
+
+  it("folds every kind the table does not name into one fixed entry, last, with their summed count", () => {
+    expect(
+      presentedDecisionDomains({
+        "Acme Corp contract renewal": 1,
+        operator_gate: 2,
+        quarterly_board_pack: 3,
+      })
+    ).toEqual(["operator approval gate 2", `${UNNAMED_DECISION_KINDS} 4`]);
+    expect(presentedDecisionDomains({ "Globex merger": 5 })).toEqual([
+      `${UNNAMED_DECISION_KIND} 5`,
+    ]);
+    // None of a folded key's words reach the line, however it is spelled.
+    const line = presentedDecisionDomains({
+      "Acme Corp contract renewal": 1,
+      acme_audit: 1,
+    }).join(" · ");
+    expect(line).not.toMatch(/acme|contract|audit/i);
+  });
+
+  it("does not take a key Object.prototype carries for one the table names", () => {
+    expect(
+      presentedDecisionDomains({ constructor: 1, toString: 2, valueOf: 4 })
+    ).toEqual([`${UNNAMED_DECISION_KINDS} 7`]);
+  });
+
+  it("is empty for no kinds", () => {
+    expect(presentedDecisionDomains({})).toEqual([]);
   });
 });
 

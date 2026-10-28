@@ -60,6 +60,7 @@ import {
   type PresentationRenderResult,
 } from "@/test/presentation";
 import {
+  CLIENT_DOMAIN,
   FIRST_PARTY_HEADLINE,
   FIRST_PARTY_REPO,
   FIRST_PARTY_UNIT_TITLE,
@@ -434,6 +435,14 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
   it("needs you: every text of a decision is its descriptor, its ids are gone, and answering it is not offered", async () => {
     const view = await renderPresenting(fullBody());
     const region = screen.getByTestId("coord-home.needs-you");
+    // The decision kinds: coord's own bucket in the table's words; the two
+    // kinds coord parsed out of question text — one naming a client, one
+    // naming no one — folded into fixed words with their summed count.
+    expect(
+      screen.getByTestId("coord-home.needs-you.by-domain")
+    ).toHaveTextContent(
+      /^By kind of decision: operator approval gate 1 · kinds not named here 2$/
+    );
     const [question, gate] = screen.getAllByTestId("coord-home.needs-you.row");
     expect(question).toHaveTextContent(/Question · area unknown · decide · /);
     expect(gate).toHaveTextContent(/Approval · area unknown · approval · /);
@@ -810,6 +819,11 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     const needs = screen.getByTestId("coord-home.needs-you");
     expect(needs).toHaveTextContent(
       "Ship the Acme Corp pilot before the audit?"
+    );
+    expect(
+      screen.getByTestId("coord-home.needs-you.by-domain")
+    ).toHaveTextContent(
+      `By kind of decision: ${CLIENT_DOMAIN} 1 · operator approval gate 1 · quarterly board pack 1`
     );
     const detail = expandRow(needs, "Ship the Acme Corp pilot");
     expect(

@@ -6,7 +6,9 @@
  * Coord's project-state bodies that feed EVERY free-text carrier
  * `/admin/coord/home` can render, each holding an identifier no evaluator
  * may see: the tenant's name and id; a question's text, recommendation,
- * consequence, options and the work unit it blocks; an approval's text;
+ * consequence, options and the work unit it blocks; the decision kinds coord
+ * parsed out of question text (`needs_me.by_domain` keys its table does not
+ * name — one with a client's name, one without); an approval's text;
  * degradation headlines and subjects of every kind (a machine, a repository,
  * a cloud resource, an alert key, a drained machine); watcher names; coord's
  * reasons and error chains; repository names; unit titles and slugs; the
@@ -52,6 +54,15 @@ export const HIDDEN_UNIT_TITLE = "Web release gate wait";
 /** A first-party headline the scope clears, so it shows while presenting. */
 export const FIRST_PARTY_HEADLINE = "A repo's merge train is wedged";
 
+/**
+ * Decision kinds coord parsed out of escalation questions' text
+ * (`escalation_domain`, "caller-controlled"): one names a client, one names
+ * no one — and neither is in the page's table, so both are folded into fixed
+ * words while presenting. `operator_gate` is coord's own bucket and shows.
+ */
+export const CLIENT_DOMAIN = "Acme Corp contract renewal";
+export const UNNAMED_DOMAIN = "quarterly_board_pack";
+
 /** What a refresh that fails says for itself — a host and coord's body. */
 export const REFRESH_FAILURE =
   'GET https://coord.globex.internal/coord/project-state failed: 502 - {"error":"upstream build-host-acme-07"}';
@@ -94,6 +105,10 @@ export const MUST_NOT_APPEAR: readonly string[] = [
   "Rotate the signing key",
   "Remote runner access",
   "remote-runner",
+  // A decision kind coord parsed out of a question's text, with no client
+  // name in it: withheld because the page's table does not name it.
+  UNNAMED_DOMAIN,
+  "quarterly board pack",
   // Coord's own tokens: row ids, source ids, reason and response tokens.
   "alert:",
   "train_health",
@@ -155,7 +170,12 @@ export function fullBody(overrides: Record<string, unknown> = {}) {
       state: "read",
       total: 3,
       omitted: 0,
-      by_domain: { implementation: 1, operator_gate: 1, pr_fix: 1 },
+      // Every row in exactly one bucket, so the buckets sum to `total`.
+      by_domain: {
+        [CLIENT_DOMAIN]: 1,
+        operator_gate: 1,
+        [UNNAMED_DOMAIN]: 1,
+      },
       retirement: "unknown",
       items: [
         {

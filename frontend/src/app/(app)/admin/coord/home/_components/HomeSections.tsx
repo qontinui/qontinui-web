@@ -68,6 +68,7 @@ import {
   namedUnitRepos,
   needsDescriptor,
   needsStatusWord,
+  presentedDecisionDomains,
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
@@ -517,9 +518,14 @@ export function NeedsYouSection({
           data-testid="coord-home.needs-you.by-domain"
         >
           By kind of decision:{" "}
-          {Object.entries(needs.byDomain)
-            .map(([domain, n]) => `${decisionDomainLabel(domain)} ${n}`)
-            .join(" · ")}
+          {(presenting
+            ? // A key the table does not name is a substring of a
+              // question's text: fixed words while presenting (D3.3).
+              presentedDecisionDomains(needs.byDomain)
+            : Object.entries(needs.byDomain).map(
+                ([domain, n]) => `${decisionDomainLabel(domain)} ${n}`
+              )
+          ).join(" · ")}
         </p>
       )}
       {read && needs.retirement === "unsupported" && (

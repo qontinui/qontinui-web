@@ -919,6 +919,17 @@ export function decisionDomainLabel(domain: string): string {
   return DECISION_DOMAIN_LABEL[domain] ?? domain.replace(/_/g, " ");
 }
 
+/**
+ * Whether the page's table names `domain` — its own key, never one inherited
+ * from `Object.prototype`. A key it does not name is coord's parse of an
+ * escalation question's text (`agent_questions.rs` `escalation_domain`), which
+ * coord itself calls caller-controlled text: the presentation lens folds every
+ * such key into fixed words (`_lib/homeLens.ts` `presentedDecisionDomains`).
+ */
+export function isKnownDecisionDomain(domain: string): boolean {
+  return Object.prototype.hasOwnProperty.call(DECISION_DOMAIN_LABEL, domain);
+}
+
 export interface DegradationsView {
   state: BlockState;
   /** `degraded` | `none` | `unknown` — coord's own headline rule. */
