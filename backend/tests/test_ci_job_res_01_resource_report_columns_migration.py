@@ -101,6 +101,15 @@ def _expected_comment(column: str) -> str:
     return comment_body_from_source(_revision_source(), f"coord.{_TABLE}.{column}")
 
 
+def _ci_job_mem_01_comment(column: str) -> str:
+    """The COMMENT ``ci_job_mem_01`` gave ``column``, from that revision's own
+    source, its one author. This test holds no copy of it."""
+    source = (
+        backend_root() / "alembic" / "versions" / "ci_job_mem_01_memory_headroom_columns.py"
+    ).read_text(encoding="utf-8")
+    return comment_body_from_source(source, f"coord.{_TABLE}.{column}")
+
+
 # ---------------------------------------------------------------------------
 # Guards — no database, so these never skip.
 # ---------------------------------------------------------------------------
@@ -141,6 +150,37 @@ def test_peak_anon_mem_is_documented_as_anon_not_the_cgroup_charge() -> None:
     assert "peak_rss_mb" in body and "memory.stat anon" in body
     assert "NOT system-wide" in body
     assert "page cache EXCLUDED" in body and "not ingested" in body
+
+
+def test_mem_total_is_recommented_as_job_memory_not_host_ram() -> None:
+    """The report's phys_mem_mb is memory available to the JOB (min of MemTotal
+    and the tightest finite cgroup memory.high/max). ci_job_mem_01's COMMENT on
+    the column it lands in says "Total system memory", so this revision must
+    rewrite it rather than let coord's rows contradict the catalog."""
+    body = _expected_comment("mem_total_mb")
+    assert body, "the revision does not re-COMMENT mem_total_mb"
+    assert "AVAILABLE TO THE JOB" in body
+    assert "memory.high" in body and "memory.max" in body and "MemTotal" in body
+    assert "NOT the host's RAM" in body
+    assert "resource_source" in body and "phys_mem_mb" in body
+    assert "NULL = UNKNOWN" in body
+    assert "Total system memory" not in body
+    assert body != _ci_job_mem_01_comment("mem_total_mb")
+
+
+def test_downgrade_restores_ci_job_mem_01s_mem_total_comment_verbatim() -> None:
+    module = load_revision_module(_revision_path(), "_ci_job_res_01_restore_under_test")
+    prior = _ci_job_mem_01_comment("mem_total_mb")
+    assert prior.startswith("Total system memory"), "ci_job_mem_01's comment moved"
+    assert module._MEM_TOTAL_PRIOR_COMMENT == prior, (
+        "downgrade() would restore a mem_total_mb COMMENT that is not "
+        "ci_job_mem_01's"
+    )
+
+
+def test_peak_anon_mem_comment_names_the_saturation_reading() -> None:
+    body = _expected_comment("peak_anon_mem_mb")
+    assert "levels off at memory.high" in body and "saturated" in body
 
 
 def test_oom_kills_comment_says_zero_is_a_real_reading() -> None:
@@ -185,7 +225,7 @@ def _assert_columns_present(engine: Engine) -> None:
 
 
 def _assert_columns_commented(engine: Engine) -> None:
-    for name, _ in _EXPECTED:
+    for name in [n for n, _ in _EXPECTED] + ["mem_total_mb"]:
         actual = column_comment(engine, _TABLE, name)
         assert actual == _expected_comment(name), (
             f"coord.{_TABLE}.{name}'s COMMENT is not what the revision emits:\n"
@@ -342,6 +382,9 @@ def test_up_down_up_removes_only_these_six(_admin_url: str) -> None:
             assert name not in cols, f"coord.{_TABLE}.{name} survived downgrade()"
         for name in _PRIOR_COLUMNS:
             assert name in cols, f"downgrade() removed ci_job_mem_01's {name}"
+        assert column_comment(engine, _TABLE, "mem_total_mb") == _ci_job_mem_01_comment(
+            "mem_total_mb"
+        ), "downgrade() did not restore ci_job_mem_01's mem_total_mb COMMENT"
         assert table_exists(engine, "coord", _TABLE)
         assert _job_row(engine, 1) == before
 

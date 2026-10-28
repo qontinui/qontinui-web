@@ -33,7 +33,8 @@ row (``ci_job_mem_01``) and need no column:
 ==================  =====================  ==========================================
 report key          column                 why it is the same quantity
 ==================  =====================  ==========================================
-phys_mem_mb         mem_total_mb           total physical memory, the denominator
+phys_mem_mb         mem_total_mb           memory AVAILABLE TO THE JOB, the
+                                           headroom denominator (see below)
 pagefile_alloc_mb   swap_total_mb          the backing-store capacity the job RAN
                                            WITH, including any swap or pagefile the
                                            job added itself
@@ -41,6 +42,19 @@ pagefile_peak_mb    peak_swap_used_mb      peak backing-store use (Windows PeakU
                                            omitted on non-GitHub-hosted Windows)
 disk_free_min_mb    min_disk_avail_mb      free disk at the job's fullest point
 ==================  =====================  ==========================================
+
+``phys_mem_mb`` is the memory available to the JOB, not the host's RAM
+=====================================================================
+
+On Linux the report's ``phys_mem_mb`` is the lower of the host's ``MemTotal``
+and the tightest finite cgroup v2 ``memory.high`` or ``memory.max``, taken from
+the job's cgroup up to the root. On a self-hosted runner that is the runner
+unit's budget (for example 48 GiB on a host with 377 GB). On a GitHub-hosted VM,
+which sets no finite limit, it is ``MemTotal``. ``ci_job_mem_01``'s COMMENT on
+``mem_total_mb`` says "Total system memory" and "EXPECTED TO BE NULL", and
+coord's rows would contradict both. So this revision REWRITES that one COMMENT
+(the column's type and data are untouched), and ``downgrade()`` restores
+``ci_job_mem_01``'s text byte for byte.
 
 The other six have no home, so this revision adds them:
 
@@ -151,6 +165,29 @@ _REPORT_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
+# ``ci_job_mem_01``'s COMMENT on ``mem_total_mb``, which ``upgrade()`` rewrites
+# (module docstring) and ``downgrade()`` restores. It is byte-identical on
+# purpose. The companion test checks it against ``ci_job_mem_01``'s own source,
+# which is its one author, so a drift reds there.
+_MEM_TOTAL_PRIOR_COMMENT = (
+    "Total system memory in MEGABYTES - the denominator a memory headroom "
+    "percentage would need. EXPECTED TO BE NULL for now, and that is the honest "
+    "state rather than a gap to paper over: resource-sampler.sh resolves used "
+    "and available from the Mem: row of free by column NAME and never reads "
+    "total, so there is no mem_total= key in the wire format for a parser to "
+    "find. Memory headroom as a percentage is therefore NOT computable today. "
+    "SWAP headroom is, because swap_used and swap_total are both emitted, and "
+    "the dossier argues swap is the better axis anyway - on a saturated box "
+    "mem_used and mem_avail are pinned flat by the kernel reserve while swap "
+    "moved +138.6 MB/day. A consumer renders memory headroom UNKNOWN with the "
+    "reason named; it must never fabricate a percentage against a hardcoded 7 "
+    "GB, which would silently become wrong the day coord-db-tests moves to the "
+    "self-hosted box. Phase 5 of plan "
+    "2026-09-20-ci-memory-headroom-in-the-dev-ops-console adds the key. NULL = "
+    "UNKNOWN, never 0."
+)
+
+
 def _add_columns(table: str) -> str:
     """One ALTER carrying every column, so the table can never get a subset."""
     adds = ",\n            ".join(
@@ -215,7 +252,29 @@ def upgrade() -> None:
             'not written into peak_mem_used_mb, whose meaning is system-wide '
             'free -m - and NOT the cgroup memory.peak charge, which includes '
             'page cache and is not ingested. Linux only; may be absent on some '
-            'jobs; NULL on Windows. NULL = UNKNOWN, NEVER 0.'
+            'jobs; NULL on Windows. It levels off at memory.high on a throttled '
+            'runner, so a value near mem_total_mb means the job was saturated. '
+            'NULL = UNKNOWN, NEVER 0.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.ci_job_observations.mem_total_mb IS
+            'Memory AVAILABLE TO THE JOB, in MEGABYTES - the denominator a '
+            'memory headroom percentage needs. On a row with resource_source = '
+            'job_annotation it is the qontinui-resource-report key phys_mem_mb. '
+            'On Linux that key is the lower of the host MemTotal and the tightest '
+            'finite cgroup v2 memory.high or memory.max from the job''s cgroup up '
+            'to the root. On a self-hosted runner that is the runner unit''s '
+            'budget (e.g. 48 GiB on a 377 GB host), NOT the host''s RAM. On a '
+            'GitHub-hosted VM with no finite limit it is MemTotal, and on '
+            'Windows it is the visible physical memory. peak_anon_mem_mb levels '
+            'off at memory.high on a throttled runner, so a peak near this value '
+            'means the job was saturated. No other source writes this column '
+            'yet. Plan 2026-09-20-ci-memory-headroom-in-the-dev-ops-console '
+            'Phase 5 would add a free -m total, which is a HOST figure, so read '
+            'this column together with resource_source. Never divide by a '
+            'hardcoded ceiling. NULL = UNKNOWN, never 0.'
         """
     )
     op.execute(
@@ -260,8 +319,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove the six resource-report columns. Exact reverse of upgrade().
 
-    The TABLE and the ci_job_mem_01 columns are untouched.
+    The TABLE and the ci_job_mem_01 columns are untouched, except that
+    ``mem_total_mb``'s COMMENT goes back to ``ci_job_mem_01``'s text.
     """
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(_drop_columns(_TABLE))
+    prior = _MEM_TOTAL_PRIOR_COMMENT.replace("'", "''")
+    op.execute(f"COMMENT ON COLUMN {_TABLE}.mem_total_mb IS '{prior}'")
     op.execute("SET LOCAL lock_timeout = DEFAULT")
