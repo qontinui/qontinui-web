@@ -1018,9 +1018,56 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
       `repo-binding-unbind-error-unread-${BOUND_HERE.repo}`
     );
     expect(unread.dataset.mayHaveLanded).toBe("false");
+    expect(unread.textContent).toContain("was not applied");
+    expect(unread.textContent).not.toContain("refused");
     expect(unread.textContent).toContain("nothing was written");
     expect(unread.textContent).not.toContain("is UNKNOWN");
     expect(unread.textContent).toContain("coord_db_unavailable");
+  });
+
+  it("a failed binding write whose re-read fails is UNKNOWN, and says why", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json(
+            { error: "coord_db_unavailable", message: "coord DB pool down" },
+            503
+          ),
+      ],
+      () =>
+        json(
+          {
+            error: "repo_binding_write_failed",
+            message:
+              "the binding transaction failed and was rolled back; nothing was written",
+          },
+          500
+        )
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    const unread = await screen.findByTestId(
+      `repo-binding-unbind-error-unread-${BOUND_HERE.repo}`
+    );
+    expect(unread.dataset.mayHaveLanded).toBe("true");
+    expect(unread.textContent).toContain("is UNKNOWN");
+    expect(unread.textContent).not.toContain("got no answer");
+    expect(unread.textContent).toContain("is not established");
   });
 
   it("writeMayHaveLanded: decided by which side answered and what it meant", () => {
@@ -1053,7 +1100,8 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(f(422, null)).toBe(false);
     // A 5xx is "nothing written" only for the bind door's own codes.
     expect(f(503, "coord_db_unavailable")).toBe(false);
-    expect(f(500, "repo_binding_write_failed")).toBe(false);
+    // A failed COMMIT maps to this code, and a lost COMMIT ack may have applied.
+    expect(f(500, "repo_binding_write_failed")).toBe(true);
     expect(f(500, "internal_panic")).toBe(true);
     expect(f(500, null)).toBe(true);
     // An envelope from any other source falls through to the status rules.
@@ -1355,8 +1403,13 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
     ).toBe(`Coord has no tenant ${BOUND_TENANT}.`);
     // A code with no extras adds no sentence.
     expect(
-      detailOf(500, { error: "repo_binding_write_failed", message: "m" })
+      detailOf(500, { error: "repo_binding_read_failed", message: "m" })
     ).toBeNull();
+    // A failed write's "nothing was written" is not established: coord maps a
+    // failed COMMIT to it, and a lost COMMIT ack may have applied.
+    expect(
+      detailOf(500, { error: "repo_binding_write_failed", message: "m" })
+    ).toContain("is not established");
   });
 
   it("the operator layer's shapes: hint, sentence-error, role gate", () => {

@@ -50,7 +50,8 @@
  * A write answered 2xx is a success whatever its body says. A failed write is
  * followed by a re-read, because a write that timed out may still have landed
  * (the web's `coord_write_timeout` refusal says so, and is rendered with its
- * next action).
+ * next action), and so may one whose COMMIT acknowledgement coord lost (coord
+ * answers that `repo_binding_write_failed`; see {@link writeMayHaveLanded}).
  *
  * Rows compose the console primitives (`RecordList` / `RecordRow` /
  * `RecordDetail`, style guide R2/R5): one line per binding, detail and the
@@ -225,6 +226,11 @@ export function refusalDetail(
       const ids = b.proposal_ids.map(String);
       return `${ids.length} merge ${ids.length === 1 ? "proposal is" : "proposals are"} in flight${ids.length > 0 ? `: ${ids.join(", ")}` : ""}. Wait for ${ids.length === 1 ? "it" : "them"} to land or cancel ${ids.length === 1 ? "it" : "them"}, then retry.`;
     }
+    case "repo_binding_write_failed":
+      // Coord's message says the transaction rolled back, but coord maps a
+      // failed COMMIT to this code too, and a COMMIT whose acknowledgement
+      // was lost may have applied.
+      return 'Coord reports this code for a failed COMMIT too, and a COMMIT whose acknowledgement was lost may have applied — so "nothing was written" is not established. Check the re-read list before retrying.';
     case "org_unbound": {
       const org = nonBlank(b.org) ?? "(org not reported)";
       const remedy = nonBlank(b.remedy);
@@ -297,11 +303,14 @@ const WEB_MAY_HAVE_LANDED = new Set([
  * (qontinui-coord#3522 `BindingError`). An allowlist, not "any coord code": a
  * code outside it — `internal_panic` from coord's panic guard, which can fire
  * after the commit, or a code coord adds later — stays ambiguous.
+ *
+ * `repo_binding_write_failed` is deliberately NOT here. Coord maps a failed
+ * COMMIT to it too, and a COMMIT whose acknowledgement was lost may have
+ * applied — coord's own MCP tool descriptions call that code "UNKNOWN".
  */
 const NOTHING_WRITTEN_5XX = new Set([
   "authz_lookup_failed",
   "repo_binding_read_failed",
-  "repo_binding_write_failed",
   "migration_pending",
   "schema_settling",
   "coord_db_unavailable",
@@ -1227,8 +1236,8 @@ export function RepoTenantBindings({
                 >
                   {maybe
                     ? listUnread
-                      ? `Unbind of ${repo} got no answer saying whether it was applied, and the bindings could not be re-read, so whether the change was applied is UNKNOWN: `
-                      : `Unbind of ${repo} got no answer saying whether it was applied, and the re-read no longer lists the binding, so the change may have been applied: `
+                      ? `The unbind of ${repo} failed in a way that does not establish whether it was applied, and the bindings could not be re-read, so whether the change was applied is UNKNOWN: `
+                      : `The unbind of ${repo} failed in a way that does not establish whether it was applied, and the re-read no longer lists the binding, so the change may have been applied: `
                     : listUnread
                       ? `The unbind of ${repo} was not applied, so nothing was written by it; the bindings could not be re-read: `
                       : `The unbind of ${repo} was not applied, so nothing was written by it, and the re-read no longer lists the binding: `}
