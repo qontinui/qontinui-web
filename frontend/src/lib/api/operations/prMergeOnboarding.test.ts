@@ -355,11 +355,19 @@ describe("fetchRepoTenantBindings", () => {
     fetchMock.mockResolvedValueOnce(
       answer({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })
     );
-    await fetchRepoTenantBindings({ noRetryStatuses: [429, 503] });
+    await fetchRepoTenantBindings({ noRetryStatuses: [429] });
     expect(fetchMock.mock.calls[0]![1]).toEqual({
       method: "GET",
       idempotent: true,
       noRetryStatuses: [429, 503],
+    });
+    // A caller that already names 503 gets it once.
+    fetchMock.mockResolvedValueOnce(
+      answer({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })
+    );
+    await fetchRepoTenantBindings({ noRetryStatuses: [503] });
+    expect(fetchMock.mock.calls[1]![1]).toMatchObject({
+      noRetryStatuses: [503],
     });
   });
 });

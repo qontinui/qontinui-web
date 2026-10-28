@@ -1230,8 +1230,8 @@ export function RepoTenantBindings({
                       ? `Unbind of ${repo} got no answer saying whether it was applied, and the bindings could not be re-read, so whether the change was applied is UNKNOWN: `
                       : `Unbind of ${repo} got no answer saying whether it was applied, and the re-read no longer lists the binding, so the change may have been applied: `
                     : listUnread
-                      ? `The unbind of ${repo} was refused, so nothing was written by it; the bindings could not be re-read: `
-                      : `The unbind of ${repo} was refused, so nothing was written by it, and the re-read no longer lists the binding: `}
+                      ? `The unbind of ${repo} was not applied, so nothing was written by it; the bindings could not be re-read: `
+                      : `The unbind of ${repo} was not applied, so nothing was written by it, and the re-read no longer lists the binding: `}
                   <FailureText failure={s.error} />
                 </p>
               );

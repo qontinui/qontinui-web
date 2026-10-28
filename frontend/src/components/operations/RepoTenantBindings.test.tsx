@@ -1027,7 +1027,8 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     const f = (
       status: number | null,
       code: string | null,
-      discriminator: string | null = null
+      discriminator: string | null = null,
+      source = "web_backend"
     ) =>
       writeMayHaveLanded({
         refusal: { status, code, message: "m", body: {} },
@@ -1037,7 +1038,7 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
             : ({
                 kind: "refusal",
                 sentence: "s",
-                refusal: { discriminator, source: "web_backend" },
+                refusal: { discriminator, source },
               } as never),
       });
     // The web backend's own envelopes decide from their discriminator.
@@ -1055,6 +1056,9 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(f(500, "repo_binding_write_failed")).toBe(false);
     expect(f(500, "internal_panic")).toBe(true);
     expect(f(500, null)).toBe(true);
+    // An envelope from any other source falls through to the status rules.
+    expect(f(500, null, "x", "coord")).toBe(true);
+    expect(f(409, null, "x", "unrecognised")).toBe(false);
   });
 });
 
