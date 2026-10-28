@@ -956,7 +956,11 @@ type UnitRepos = Readonly<
  * One named unit. Its title — or its slug when it has none — is free text
  * attributed to every repository it may belong to (`namedUnitRepos`), so
  * while presenting it shows only when all of them are first-party. Its link's
- * URL carries the slug, so a unit whose title is withheld is not linked.
+ * URL carries the slug, so a unit whose title is withheld is not linked — not
+ * even handed to `LensLink`, which renders plain text today (the unit's page
+ * is not presentation-ready) and would render an anchor carrying the slug the
+ * day `/admin/coord/work-units/[slug]` is registered. `page.presentation.test`
+ * pins that by `data-lens-link`, so the guard is not dormant until then.
  */
 function NamedUnitItem({
   u,

@@ -66,6 +66,7 @@ import {
   CLIENT_DOMAIN,
   FIRST_PARTY_HEADLINE,
   FIRST_PARTY_REPO,
+  FIRST_PARTY_SHAPED_SERVICE,
   FIRST_PARTY_UNIT_TITLE,
   GATE_ID,
   HIDDEN_UNIT_TITLE,
@@ -251,7 +252,7 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     expect(screen.getAllByTestId("coord-home.needs-you.row")).toHaveLength(3);
     expect(
       screen.getAllByTestId("coord-home.degrading.degrading")
-    ).toHaveLength(5);
+    ).toHaveLength(6);
     expect(screen.getAllByTestId("coord-home.degrading.declared")).toHaveLength(
       1
     );
@@ -462,6 +463,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // a phase that is not a number is withheld.
     expect(detail).toHaveTextContent(/Blocks: Work unit · .*, phase withheld/);
     expect(within(detail).queryByRole("link")).toBeNull();
+    expect(detail.querySelector("[data-lens-link]")).toBeNull();
     // Answering is the operator's: no link, no sentence about it.
     expect(screen.queryByTestId("coord-home.needs-you.answer")).toBeNull();
     expect(region.textContent).not.toMatch(/Answer it|served no page/);
@@ -507,6 +509,21 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // A cloud resource and an alert key: descriptors.
     expect(region).toHaveTextContent(/Service · cloud service · degrading/);
     expect(region).toHaveTextContent(/Alert · credential · degrading/);
+    // Both services — one of them NAMED like a first-party repository — are
+    // services, not repositories: only coord's `repo` subject binds a
+    // repository, so neither the headline nor the subject shows.
+    const services = rows.filter((r) =>
+      /^cloud serviceDegradation · cloud service · degrading/.test(
+        r.textContent ?? ""
+      )
+    );
+    expect(services).toHaveLength(2);
+    for (const service of services) {
+      expect(within(service).getByTestId("row-reason")).toHaveTextContent(
+        /^Service · cloud service · degrading · /
+      );
+    }
+    expect(region.textContent).not.toContain(FIRST_PARTY_SHAPED_SERVICE);
     // The gap sentence keeps its words and drops coord's reason (the title).
     const gap = screen.getByTestId("coord-home.degrading.incomplete");
     expect(gap).toHaveTextContent(/Incomplete view — /);
@@ -523,7 +540,9 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(
       within(detail).getByRole("link", { name: /Open devops/ })
     ).toHaveAttribute("href", "/admin/coord/devops?present=1");
-    expectPresentationSafe(view, { forbidden: [HOST_BUILD, "acme", "globex"] });
+    expectPresentationSafe(view, {
+      forbidden: [HOST_BUILD, FIRST_PARTY_SHAPED_SERVICE, "acme", "globex"],
+    });
   });
 
   it("on track: a repository and a unit show only when the scope clears every repository they belong to", async () => {
@@ -550,6 +569,22 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(own).not.toHaveTextContent(HIDDEN_UNIT_TITLE);
     expect(own).toHaveTextContent(/Work unit · area unknown · waiting · /);
     expect(within(own).queryByRole("link")).toBeNull();
+    // A withheld unit is never handed to a link at all — its URL carries the
+    // slug its descriptor withholds — while the unit the scope clears is
+    // (plain text today: its page is not presentation-ready yet).
+    const unitNames = (redacted: "true" | "false") => [
+      ...own.querySelectorAll(
+        `[data-testid^="coord-home.on-track.named."] [data-redacted="${redacted}"]`
+      ),
+    ];
+    expect(unitNames("true").length).toBeGreaterThanOrEqual(2);
+    for (const name of unitNames("true")) {
+      expect(name.closest("[data-lens-link]")).toBeNull();
+    }
+    expect(unitNames("false").map((n) => n.textContent)).toEqual([
+      FIRST_PARTY_UNIT_TITLE,
+    ]);
+    expect(unitNames("false")[0]!.closest("[data-lens-link]")).not.toBeNull();
     const foreign = expandRow(region, /^Repository · /);
     expect(foreign).toHaveTextContent("Work units that name this repository.");
     // The initiative: items and keys are descriptors, the end date (not a

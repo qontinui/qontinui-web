@@ -10,7 +10,8 @@
  * parsed out of question text (`needs_me.by_domain` keys its table does not
  * name — one with a client's name, one without); an approval's text;
  * degradation headlines and subjects of every kind (a machine, a repository,
- * a cloud resource, an alert key, a drained machine); watcher names; coord's
+ * a cloud resource — one of them named like a first-party repository — an
+ * alert key, a drained machine); watcher names; coord's
  * reasons and error chains; repository names; unit titles and slugs; the
  * initiative's items, keys, status, dates and reasons; and a failed read's
  * own text. Every such identifier carries a client name (`Acme`, `Globex` —
@@ -53,6 +54,14 @@ export const SHARED_UNIT_TITLE = "Shared rollout across two repositories";
 export const HIDDEN_UNIT_TITLE = "Web release gate wait";
 /** A first-party headline the scope clears, so it shows while presenting. */
 export const FIRST_PARTY_HEADLINE = "A repo's merge train is wedged";
+
+/**
+ * A cloud service whose NAME parses as a first-party repository. It is a
+ * service, not a repository, so neither its name nor its headline is bound
+ * to one: both are withheld while presenting, though the scope would clear
+ * `qontinui/…` as a repository.
+ */
+export const FIRST_PARTY_SHAPED_SERVICE = "qontinui/ledger-db";
 
 /**
  * Decision kinds coord parsed out of escalation questions' text
@@ -109,6 +118,8 @@ export const MUST_NOT_APPEAR: readonly string[] = [
   // name in it: withheld because the page's table does not name it.
   UNNAMED_DOMAIN,
   "quarterly board pack",
+  // A service named like a first-party repository: still not a repository.
+  FIRST_PARTY_SHAPED_SERVICE,
   // Coord's own tokens: row ids, source ids, reason and response tokens.
   "alert:",
   "train_health",
@@ -282,6 +293,22 @@ export function fullBody(overrides: Record<string, unknown> = {}) {
           age_secs: null,
           auto_remediation: null,
           drill: "//elsewhere.example/console",
+          declared: false,
+        },
+        {
+          id: `infra_health:${FIRST_PARTY_SHAPED_SERVICE}`,
+          plane: "cloud_service",
+          subject: {
+            kind: "service",
+            name: FIRST_PARTY_SHAPED_SERVICE,
+            id: FIRST_PARTY_SHAPED_SERVICE,
+          },
+          headline: `A cloud service is hard-down: ${FIRST_PARTY_SHAPED_SERVICE}`,
+          onset_observed_at: ago(45),
+          last_seen_at: ago(1),
+          age_secs: 2700,
+          auto_remediation: null,
+          drill: "/admin/coord/devops",
           declared: false,
         },
         {
