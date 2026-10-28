@@ -410,6 +410,28 @@ describe("/admin/coord/spawns?present=1", () => {
     ).toContain("does not offer that figure");
   });
 
+  it("says a failed ledger, stats or role read in fixed words — never the failure's own text", async () => {
+    const failing = {
+      status: 502,
+      body: { detail: `coord unreachable at ${FAILED_URL}` },
+    };
+    routes.list = () => failing;
+    routes.pending = () => failing;
+    routes.stats = () => failing;
+    routes.roles = () => failing;
+    const view = renderInPresentationMode(<CoordSpawnsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    expect(screen.getByTestId("coord-spawns-unknown-banner").textContent).toBe(
+      "The record of spawn requests could not be read, so which spawns were requested is unknown."
+    );
+    expect(
+      screen.getByTestId("coord-spawns-reserve-note").textContent
+    ).toContain("The machines' roles could not be read.");
+    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+  });
+
   it("carries every section's caption and the provenance of its reads", async () => {
     renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
     await settle();

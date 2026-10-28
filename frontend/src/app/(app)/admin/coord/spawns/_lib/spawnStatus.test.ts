@@ -58,10 +58,13 @@ import {
   spawnFilterCounts,
   spawnFilterEmptyText,
   spawnFilterUnknownText,
+  spawnIssueText,
+  spawnIssueTextFor,
   timeToSpawnText,
   type DeviceNaming,
   type DeviceRoles,
   type SpawnKind,
+  type SpawnReadIssue,
 } from "./spawnStatus";
 
 const NOW = Date.parse(AS_OF);
@@ -279,6 +282,45 @@ describe("classifySpawnError", () => {
     const issue = classifySpawnError(err(502, '{"detail":"Bad gateway"}'));
     expect(issue.kind).toBe("error");
     expect(issue.kind === "error" && issue.message).not.toContain("GET /api");
+  });
+});
+
+describe("spawnIssueTextFor — a ledger issue in front of an outsider", () => {
+  const SECRET = "http://10.0.0.5:8080/coord says schema_missing";
+  const ISSUES: SpawnReadIssue[] = [
+    { kind: "ledger_not_deployed", reason: SECRET },
+    { kind: "route_unavailable" },
+    { kind: "route_disabled" },
+    { kind: "forbidden" },
+    { kind: "tenant_not_resolved" },
+    { kind: "not_found" },
+    { kind: "deadline", budgetMs: 2500 },
+    { kind: "window_mismatch", asked: "7d", answered: "24h" },
+    { kind: "malformed" },
+    { kind: "error", message: `GET ${SECRET} failed: 502` },
+  ];
+
+  it("says every kind in fixed words while presenting: no failure text, no reason token, never 'coord'", () => {
+    for (const issue of ISSUES) {
+      const text = spawnIssueTextFor(
+        issue,
+        "which spawns were requested",
+        true
+      );
+      expect(text, issue.kind).not.toContain("10.0.0.5");
+      expect(text, issue.kind).not.toContain("schema_missing");
+      expect(text, issue.kind).not.toMatch(/\bcoord\b/i);
+      expect(text.length, issue.kind).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the operator's own words — the reason and the failure — outside presentation", () => {
+    for (const issue of ISSUES) {
+      expect(spawnIssueTextFor(issue, "x", false)).toBe(
+        spawnIssueText(issue, "x")
+      );
+    }
+    expect(spawnIssueTextFor(ISSUES[9]!, "x", false)).toContain("10.0.0.5");
   });
 });
 
