@@ -1738,6 +1738,7 @@ async def _proxy_coord_verbatim(
     tenant_id: UUID,
     params: dict[str, Any] | None = None,
     json_body: dict[str, Any] | None = None,
+    timeout: httpx.Timeout = _COORD_TIMEOUT,
 ) -> JSONResponse:
     """Forward a request to coord, passing status + JSON body through verbatim.
 
@@ -1750,10 +1751,12 @@ async def _proxy_coord_verbatim(
     non-JSON coord payload is wrapped as ``{"detail": <text>}``. Coord's
     ``Retry-After`` (a ``503`` that says when to come back, e.g. the bind
     door's ``schema_settling``) is echoed too; no other upstream header is.
+    ``timeout`` defaults to the small-read budget; a write that does more work
+    before it answers passes its own (see ``_COORD_REPO_BINDING_WRITE_TIMEOUT``).
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id)
-    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             resp = await client.request(
                 method, url, params=params, json=json_body, headers=headers
@@ -2908,6 +2911,15 @@ async def post_pr_merge_onboarding_restore_repo(
 # pass through the same way.
 COORD_REPO_BINDINGS_PATH = "/coord/onboarding/repo-bindings"
 
+#: Timeout for a bind / unbind. Neither is a small read: before answering,
+#: coord runs the fleet census, a tenancy read, up to three admin lookups and a
+#: target-exists read, then a row-locking move across three tables plus audit
+#: and notification rows (and possibly an enrollment spawn). At the 5s read
+#: budget the "may have landed" 504 would be an ordinary outcome rather than an
+#: exceptional one. 30s stays under the frontend's 60s request default, so the
+#: proxy's own 504 envelope still reaches the page.
+_COORD_REPO_BINDING_WRITE_TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+
 
 #: Length caps on the binding bodies. Like :class:`OnboardingClaimRequest`'s,
 #: they only keep an unbounded blob out of a proxied request body — coord stays
@@ -3006,6 +3018,7 @@ async def post_pr_merge_onboarding_repo_binding(
         "POST",
         COORD_REPO_BINDINGS_PATH,
         tenant_id=tenant_id,
+        timeout=_COORD_REPO_BINDING_WRITE_TIMEOUT,
         json_body=body.model_dump(exclude_none=True),
     )
 
@@ -3028,6 +3041,7 @@ async def delete_pr_merge_onboarding_repo_binding(
         "DELETE",
         COORD_REPO_BINDINGS_PATH,
         tenant_id=tenant_id,
+        timeout=_COORD_REPO_BINDING_WRITE_TIMEOUT,
         json_body=body.model_dump(),
     )
 

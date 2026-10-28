@@ -575,6 +575,36 @@ def test_coord_timeout_carries_the_refusal_envelope(
         assert refusal["next_action"]["target"] == "whether the change was applied"
 
 
+@pytest.mark.parametrize(
+    ("method", "body", "read_secs"),
+    [
+        ("GET", None, 5.0),
+        (
+            "POST",
+            {"repo": REPO, "target_tenant": TARGET_TENANT, "reason": "r"},
+            30.0,
+        ),
+        ("DELETE", {"repo": REPO, "reason": "r"}, 30.0),
+    ],
+)
+def test_writes_get_the_longer_coord_budget(
+    auth_client: TestClient,
+    method: str,
+    body: dict[str, Any] | None,
+    read_secs: float,
+) -> None:
+    """A bind / unbind does a census, admin lookups and a three-table move
+    before it answers, so it is not held to the 5s small-read budget the list
+    uses — at that budget the "may have landed" 504 would be routine."""
+    client = _patched_client(_mock_response(200, LIST_BODY))
+    with patch("httpx.AsyncClient", return_value=client) as ctor:
+        res = _call(auth_client, method, json=body)
+    assert res.status_code == 200
+    timeout = ctor.call_args.kwargs["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.read == read_secs
+
+
 # ---------------------------------------------------------------------------
 # Length caps — an over-long field is a 422 and never reaches coord
 # ---------------------------------------------------------------------------

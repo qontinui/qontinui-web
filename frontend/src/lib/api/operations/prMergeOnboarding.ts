@@ -266,12 +266,17 @@ export interface BoundAwayRepo {
 /**
  * `get_pr_merge_onboarding_accounts`'s body. `bound_away` is ABSENT on a coord
  * that predates the binding plan's Phase 5 — absent means "not reported",
- * never "none", so a reader renders nothing new for it. (Repos bound TO the
- * active tenant are read from the bindings list door, not from here.)
+ * never "none", so a reader renders nothing new for it. A coord that has the
+ * field but could not read the bindings omits it and sends `bindings_error`
+ * instead (coord#3518 `ConnectedOrgsSummary`): the bound-away repos are then
+ * UNKNOWN, and a reader must say so — a bound repo's `tenant_repos` row has
+ * moved to the other tenant, so it is missing from `accounts` too. (Repos
+ * bound TO the active tenant are read from the bindings list door, not here.)
  */
 export interface AccountsResponse {
   accounts: ConnectedAccount[];
   bound_away?: BoundAwayRepo[];
+  bindings_error?: string;
 }
 
 /**
@@ -450,6 +455,8 @@ export interface RepoBindingRefusalBody {
  * active tenant is the bound tenant or the org's tenant. `[]` is a MEASURED
  * empty set; a failed read is a rejection (never an empty list) carrying
  * coord's typed error body ({@link RepoBindingRefusalBody}) for `httpBodyOf`.
+ * A `503` is not retried: coord answers it deliberately (`migration_pending`,
+ * `coord_db_unavailable`), so a retry chain only delays the UNKNOWN it ends in.
  */
 export async function fetchRepoTenantBindings(
   options: HttpOptions = {}
@@ -459,6 +466,7 @@ export async function fetchRepoTenantBindings(
     ...options,
     method: "GET",
     idempotent: true,
+    noRetryStatuses: [503],
   });
   return readJson<RepoBindingsResponse>(res, `GET ${url}`);
 }

@@ -560,6 +560,32 @@ describe("<ConnectedOrgs> repos bound to another tenant", () => {
     ).toBeTruthy();
   });
 
+  it("says the bound-away repos are UNKNOWN when coord sends bindings_error", async () => {
+    accountsMock.mockResolvedValue({
+      accounts: [MERYTS_ORG],
+      bindings_error: "the per-repo binding list could not be read",
+    });
+    render(<ConnectedOrgs />);
+
+    const unknown = await screen.findByTestId(
+      "connected-orgs-bindings-unknown"
+    );
+    expect(unknown.textContent).toContain("UNKNOWN");
+    expect(unknown.textContent).toContain(
+      "the per-repo binding list could not be read"
+    );
+    // The accounts still render; nothing is drawn as bound away.
+    expect(screen.getByTestId("connected-org-repo-Meryts/site")).toBeTruthy();
+    expect(screen.queryByText(/bound to bauhaus/)).toBeNull();
+  });
+
+  it("an older coord that sends neither key says nothing about bindings", async () => {
+    accountsMock.mockResolvedValue({ accounts: [MERYTS_ORG] });
+    render(<ConnectedOrgs />);
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(screen.queryByTestId("connected-orgs-bindings-unknown")).toBeNull();
+  });
+
   it("renders a bound-away repo no listed org owns, beside the account list", async () => {
     const stray = {
       repo: "elsewhere/repo",

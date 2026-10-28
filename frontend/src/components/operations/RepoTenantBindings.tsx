@@ -211,7 +211,7 @@ export function refusalDetail(
         typeof b.retry_after_secs === "number" &&
         Number.isFinite(b.retry_after_secs)
           ? `Nothing was written; retry in about ${b.retry_after_secs} s.`
-          : "Nothing was written; retry shortly (coord did not say when).";
+          : "Nothing was written; retry shortly (the body named no delay).";
       const census =
         b.live_replicas == null && b.not_ready_replicas == null
           ? "The replica census is UNKNOWN — coord could not read it."
@@ -555,10 +555,24 @@ function BindingRow({
   unbindState: UnbindState;
   onUnbind: (repo: string, reason: string) => Promise<void>;
 }) {
+  // A null `org_tenant_id` is coord saying the org has no tenant account at
+  // all (`LIST_SQL`'s LEFT JOIN found none), not that the tenant is hidden.
   const label =
     binding.caller_side === "bound"
-      ? `from ${slugOrUnknown(binding.org_tenant_slug)}`
+      ? binding.org_tenant_id == null
+        ? "from an org bound to no tenant"
+        : `from ${slugOrUnknown(binding.org_tenant_slug)}`
       : `bound to ${slugOrUnknown(binding.tenant_slug)}`;
+  // The unbind's progress and failure render inside the detail; a collapsed
+  // row still says one is in flight or failed, so neither is hidden by
+  // opening another row.
+  const collapsedStatus = expanded
+    ? null
+    : unbindState.busy
+      ? "unbinding…"
+      : unbindState.error
+        ? "unbind failed — expand for details"
+        : null;
   return (
     <div
       data-ui-bridge-id="operations.repo-binding-row"
@@ -567,7 +581,24 @@ function BindingRow({
     >
       <RecordRow
         identity={binding.repo}
-        label={<span title={label}>{label}</span>}
+        label={
+          <span title={label}>
+            {label}
+            {collapsedStatus && (
+              <span
+                className={
+                  unbindState.busy
+                    ? "text-muted-foreground"
+                    : "text-destructive"
+                }
+                data-testid={`repo-binding-row-status-${binding.repo}`}
+              >
+                {" "}
+                · {collapsedStatus}
+              </span>
+            )}
+          </span>
+        }
         reason={binding.reason}
         reasonTestId={`repo-binding-reason-${binding.repo}`}
         time={<RowTime at={binding.created_at} verb="Bound" />}
@@ -585,7 +616,11 @@ function BindingRow({
               <dt className="text-muted-foreground">Bound to</dt>
               <dd>{slugOrUnknown(binding.tenant_slug)}</dd>
               <dt className="text-muted-foreground">Org&apos;s tenant</dt>
-              <dd>{slugOrUnknown(binding.org_tenant_slug)}</dd>
+              <dd>
+                {binding.org_tenant_id == null
+                  ? "none — the org is bound to no tenant"
+                  : slugOrUnknown(binding.org_tenant_slug)}
+              </dd>
               <dt className="text-muted-foreground">Bound by</dt>
               <dd className="font-mono">{binding.bound_by}</dd>
               <dt className="text-muted-foreground">When</dt>
@@ -616,7 +651,12 @@ function BindingRow({
 }
 
 function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
-  const { tenants, loading: tenantsLoading, error: tenantsError } = useTenant();
+  const {
+    tenants,
+    activeTenantId,
+    loading: tenantsLoading,
+    error: tenantsError,
+  } = useTenant();
   const options = useMemo(() => bindTargetOptions(tenants), [tenants]);
   const tenantLabel = useMemo(() => tenantLabelFrom(tenants), [tenants]);
   const [values, setValues] = useState<BindFormValues>({
@@ -631,6 +671,11 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
   // see a stale `busy === false` and send two POSTs.
   const busyRef = useRef(false);
   const [outcome, setOutcome] = useState<ActionOutcome | null>(null);
+  // An outcome belongs to the tenant it was reached in (as the card's unbind
+  // outcomes do); a bind still in flight keeps its result for when it lands.
+  useEffect(() => {
+    if (!busyRef.current) setOutcome(null);
+  }, [activeTenantId]);
   const errors = validateBindForm(values);
   const shown = touched ? errors : {};
 
@@ -1038,19 +1083,24 @@ export function RepoTenantBindings({
     read.state === "loaded"
       ? read.data.bindings.filter((b) => b.caller_side === "org")
       : [];
-  // An unbind failure whose row the re-read no longer lists has no row to
-  // render on — the timeout case, where the unbind landed after all. It is
-  // shown at card level instead of being dropped.
+  // An unbind failure with no row to render on is shown at card level instead
+  // of being dropped: either the re-read no longer lists the binding (the
+  // timeout case, where the unbind landed after all), or the re-read failed
+  // too and there are no rows at all — the likely pairing, since a coord or
+  // DB outage fails both.
   const listed = new Set(
     read.state === "loaded" ? read.data.bindings.map((b) => b.repo) : []
   );
   const orphanFailures =
-    read.state === "loaded"
-      ? Object.entries(unbindStates).filter(
+    read.state === "loading"
+      ? []
+      : Object.entries(unbindStates).filter(
           (entry): entry is [string, UnbindState & { error: CardFailure }] =>
-            entry[1].error !== null && !entry[1].busy && !listed.has(entry[0])
-        )
-      : [];
+            entry[1].error !== null &&
+            !entry[1].busy &&
+            (read.state !== "loaded" || !listed.has(entry[0]))
+        );
+  const listUnread = read.state !== "loaded";
 
   return (
     <Card
@@ -1115,19 +1165,33 @@ export function RepoTenantBindings({
                 {unbindNotice}
               </p>
             )}
-            {orphanFailures.map(([repo, s]) => (
-              <p
-                key={repo}
-                className="text-xs text-destructive"
-                role="alert"
-                data-testid={`repo-binding-unbind-error-unlisted-${repo}`}
-                data-ui-bridge-id="operations.repo-binding-unbind-error-unlisted"
-              >
-                Unbind of {repo} reported a failure, and the re-read no longer
-                lists the binding, so the change may have been applied:{" "}
-                <FailureText failure={s.error} />
-              </p>
-            ))}
+            {orphanFailures.map(([repo, s]) =>
+              listUnread ? (
+                <p
+                  key={repo}
+                  className="text-xs text-destructive"
+                  role="alert"
+                  data-testid={`repo-binding-unbind-error-unread-${repo}`}
+                  data-ui-bridge-id="operations.repo-binding-unbind-error-unread"
+                >
+                  Unbind of {repo} reported a failure, and the bindings could
+                  not be re-read, so whether the change was applied is UNKNOWN:{" "}
+                  <FailureText failure={s.error} />
+                </p>
+              ) : (
+                <p
+                  key={repo}
+                  className="text-xs text-destructive"
+                  role="alert"
+                  data-testid={`repo-binding-unbind-error-unlisted-${repo}`}
+                  data-ui-bridge-id="operations.repo-binding-unbind-error-unlisted"
+                >
+                  Unbind of {repo} reported a failure, and the re-read no longer
+                  lists the binding, so the change may have been applied:{" "}
+                  <FailureText failure={s.error} />
+                </p>
+              )
+            )}
             {read.state === "unknown" && (
               <p
                 className={`rounded-md border px-3 py-2 text-sm ${UNKNOWN_AMBER}`}

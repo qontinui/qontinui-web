@@ -254,6 +254,24 @@ describe("<RepoTenantBindings> read states", () => {
     expect(detail.textContent).toContain(BOUND_HERE.decision_ref);
   });
 
+  it("an org with no tenant account is said to be bound to no tenant", async () => {
+    routeFetch([
+      () =>
+        json({
+          bindings: [
+            { ...BOUND_HERE, org_tenant_id: null, org_tenant_slug: null },
+          ],
+          measured_at: "2026-10-24T08:00:00Z",
+        }),
+    ]);
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    expect(row.textContent).toContain("from an org bound to no tenant");
+    expect(row.textContent).not.toContain("unknown tenant");
+  });
+
   it("EMPTY-MEASURED: says none were measured, rather than rendering nothing", async () => {
     routeFetch([
       () => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" }),
@@ -394,19 +412,19 @@ describe("bind form validation", () => {
   });
 });
 
-describe("bind action", () => {
-  function fillValidBind() {
-    fireEvent.change(screen.getByTestId("repo-binding-bind-repo"), {
-      target: { value: "Meryts/bauhaus-b2b-shop" },
-    });
-    fireEvent.change(screen.getByTestId("repo-binding-bind-target"), {
-      target: { value: BOUND_TENANT },
-    });
-    fireEvent.change(screen.getByTestId("repo-binding-bind-reason"), {
-      target: { value: "operator decision 2026-10-17" },
-    });
-  }
+function fillValidBind() {
+  fireEvent.change(screen.getByTestId("repo-binding-bind-repo"), {
+    target: { value: "Meryts/bauhaus-b2b-shop" },
+  });
+  fireEvent.change(screen.getByTestId("repo-binding-bind-target"), {
+    target: { value: BOUND_TENANT },
+  });
+  fireEvent.change(screen.getByTestId("repo-binding-bind-reason"), {
+    target: { value: "operator decision 2026-10-17" },
+  });
+}
 
+describe("bind action", () => {
   it("acknowledges itself, POSTs once, and lands in a success state", async () => {
     let release: (r: Response) => void = () => undefined;
     routeFetch(
@@ -666,6 +684,23 @@ describe("who sees the card: admin IN THE ACTIVE TENANT", () => {
     expect(callsOf("GET")).toHaveLength(1);
     expect(screen.getByTestId("repo-binding-bind-form")).toBeTruthy();
   });
+
+  it("a bind outcome does not survive a switch to another tenant", async () => {
+    routeFetch(
+      [() => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })],
+      () => json(MOVE_RESULT)
+    );
+    const { rerender } = render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+    fillValidBind();
+    fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
+    await screen.findByTestId("repo-binding-bind-outcome");
+
+    tenantState.activeTenantId = BOUND_TENANT;
+    rerender(<RepoTenantBindings />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+    expect(screen.queryByTestId("repo-binding-bind-outcome")).toBeNull();
+  });
 });
 
 describe("a 2xx write is a success, whatever its body", () => {
@@ -892,6 +927,54 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     ).toContain("coord_write_timeout");
     await screen.findByTestId("repo-bindings-bound-here-empty");
   });
+
+  it("an unbind failure whose re-read ALSO fails is still shown, as UNKNOWN", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json(
+            {
+              error: "migration_pending",
+              message: "coord.repo_tenant_bindings is missing",
+              missing: "coord.repo_tenant_bindings",
+            },
+            503
+          ),
+      ],
+      () => writeTimeout()
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    // No rows to render on: the unbind's own outcome is at card level, and
+    // says whether it landed is UNKNOWN rather than vanishing.
+    const unread = await screen.findByTestId(
+      `repo-binding-unbind-error-unread-${BOUND_HERE.repo}`
+    );
+    expect(unread.textContent).toContain("UNKNOWN");
+    expect(
+      unread.querySelector('[data-refusal="structured"]')?.textContent
+    ).toContain("coord_write_timeout");
+    expect(
+      screen.getByTestId("repo-tenant-bindings-unknown").textContent
+    ).toContain("migration_pending");
+    // A deliberate 503 is not retried: one read on mount, one re-read.
+    expect(callsOf("GET")).toHaveLength(2);
+  });
 });
 
 describe("unbind state lives at card level", () => {
@@ -933,6 +1016,11 @@ describe("unbind state lives at card level", () => {
     expect(
       screen.queryByTestId(`repo-binding-unbind-form-${BOUND_HERE.repo}`)
     ).toBeNull();
+    // The collapsed row still says its unbind is in flight.
+    expect(
+      screen.getByTestId(`repo-binding-row-status-${BOUND_HERE.repo}`)
+        .textContent
+    ).toContain("unbinding…");
 
     // Back to the first row while its DELETE is still pending: still busy.
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
@@ -957,6 +1045,13 @@ describe("unbind state lives at card level", () => {
       json({ error: "binding_not_found", message: "no binding" }, 404)
     );
     await waitFor(() => expect(callsOf("GET")).toHaveLength(2));
+    // Collapsed, the row says its unbind failed instead of hiding it.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId(`repo-binding-row-status-${BOUND_HERE.repo}`)
+          .textContent
+      ).toContain("unbind failed")
+    );
 
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
     const err = await screen.findByTestId(
@@ -1083,7 +1178,7 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
       "Nothing was written; retry in about 30 s. Replicas: 2 live, UNKNOWN not yet applying bindings."
     );
     expect(detailOf(503, { error: "schema_settling", message: "m" })).toContain(
-      "retry shortly (coord did not say when)"
+      "retry shortly (the body named no delay)"
     );
   });
 

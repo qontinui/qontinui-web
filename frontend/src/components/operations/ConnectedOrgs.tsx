@@ -60,6 +60,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, CheckCircle2 } from "lucide-react";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { absoluteTime } from "@/components/console/time";
+import { UNKNOWN_AMBER } from "@/components/console";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   enrollInstallation,
@@ -613,6 +614,10 @@ export function ConnectedOrgs({ bindingsVersion }: ConnectedOrgsProps = {}) {
   const [boundAway, setBoundAway] = useState<BoundAwayRepo[] | undefined>(
     undefined
   );
+  // coord's `bindings_error`: it has the field but could not read the
+  // bindings, so the bound-away repos are UNKNOWN — not "none", and not
+  // listed under their org either (their `tenant_repos` rows moved away).
+  const [bindingsError, setBindingsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -624,6 +629,13 @@ export function ConnectedOrgs({ bindingsVersion }: ConnectedOrgsProps = {}) {
       setAccounts(body.accounts ?? []);
       setBoundAway(
         Array.isArray(body.bound_away) ? body.bound_away : undefined
+      );
+      setBindingsError(
+        Array.isArray(body.bound_away)
+          ? null
+          : typeof body.bindings_error === "string"
+            ? body.bindings_error.trim() || "coord gave no reason"
+            : null
       );
       setError(null);
     } catch (e) {
@@ -704,6 +716,18 @@ export function ConnectedOrgs({ bindingsVersion }: ConnectedOrgsProps = {}) {
               </Link>
             </Button>
           </div>
+        )}
+        {!loading && !error && bindingsError && (
+          <p
+            className={`rounded-md border px-3 py-2 text-xs ${UNKNOWN_AMBER}`}
+            role="status"
+            data-testid="connected-orgs-bindings-unknown"
+            data-ui-bridge-id="operations.connected-orgs-bindings-unknown"
+          >
+            Repositories bound to other tenants: UNKNOWN — coord could not read
+            the per-repo bindings ({bindingsError}). A repository of these
+            organizations that is bound elsewhere is not listed above.
+          </p>
         )}
         {!loading && !error && (
           <UnmatchedBoundAway entries={grouped.unmatched} />
