@@ -21,8 +21,8 @@ if the call site were reverted to ``raw or None`` — the shipped bug lived at t
 call site, so the endpoint test is the one that actually pins the regression.
 """
 
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -88,7 +88,12 @@ def _client(row: _FakeApp | None) -> tuple[TestClient, _FakeSession]:
     app = FastAPI()
     app.include_router(router, prefix="/fleet")
     app.dependency_overrides[get_async_db] = lambda: session
-    app.dependency_overrides[get_current_active_user_async] = lambda: MagicMock()
+    # The PATCH is platform-admin only (`require_admin`, which still runs): the
+    # caller here is an active superuser, so these tests reach the handler. The
+    # gate itself is pinned by `test_fleet_apps_platform_admin_gate.py`.
+    app.dependency_overrides[get_current_active_user_async] = lambda: SimpleNamespace(
+        is_active=True, is_superuser=True
+    )
     return TestClient(app), session
 
 

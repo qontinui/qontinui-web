@@ -177,14 +177,15 @@ export interface WebRegistryViewer {
  * ({@link refreshTitleOf}) all take this answer.
  *
  * `GET /api/v1/fleet/apps` is not partitioned by project: `list_apps`
- * (backend `fleet_targets.py`) answers any signed-in user with every row of
- * `project.apps`, so it can hold other projects' applications. And the menu
- * does not stand between a viewer and the read — any signed-in member can open
- * this page's URL. So until the route is scoped to the acting organisation,
- * the page makes the read only for staff (`is_superuser`, the gate Test
- * Targets — the route's other reader — has in the menu), and never while
- * presenting (plan `2026-10-23-console-presentation-spaces` D3.4), whoever is
- * viewing.
+ * (backend `fleet_targets.py`) answers an active platform admin with every
+ * row of `project.apps`, so it can hold other projects' applications, and
+ * refuses anyone else 403 (`require_admin`). The menu does not stand between
+ * a viewer and the read — any signed-in member can open this page's URL — so
+ * the page makes the read only for staff (`is_superuser`, the population the
+ * route admits, and the gate Test Targets — the route's other reader — has in
+ * the menu), and every other viewer's half says why it was not read instead
+ * of showing a refusal. Nor is it read while presenting (plan
+ * `2026-10-23-console-presentation-spaces` D3.4), whoever is viewing.
  */
 export function webRegistryAccessOf({
   presenting,
@@ -440,10 +441,11 @@ export interface AppRegistryReadsInput {
  * nowhere else.
  *
  * Neither registry is partitioned by project. The web's `GET
- * /api/v1/fleet/apps` returns every row of `project.apps` to any signed-in
- * user (backend `fleet_targets.py` `list_apps`), and the runner's `GET /apps`
- * lists every row of its own database's apps table, which on a runner bound
- * to the shared database is that same table. A lens page fetches only the
+ * /api/v1/fleet/apps` returns every row of `project.apps` to an active
+ * platform admin and refuses anyone else 403 (backend `fleet_targets.py`
+ * `list_apps`, behind `require_admin`), and the runner's `GET /apps` lists
+ * every row of its own database's apps table, which on a runner bound to the
+ * shared database is that same table. A lens page fetches only the
  * acting organisation's data (plan `2026-10-23-console-presentation-spaces`
  * D3.4), so while presenting neither is READ — their hooks hold the queries
  * disabled — and neither is SHOWN: a value an operator-mode read left in the
