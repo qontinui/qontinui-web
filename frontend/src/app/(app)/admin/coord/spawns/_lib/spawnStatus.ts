@@ -410,6 +410,30 @@ export function spawnIssueText(issue: SpawnReadIssue, subject: string): string {
   }
 }
 
+/**
+ * {@link spawnIssueText} for the mode on screen. While presenting, the two
+ * arms that QUOTE are said in fixed words: `error` carries the client's
+ * failure text (`GET <url> failed …`, coord's body), and `ledger_not_deployed`
+ * coord's own reason token — neither was written for an outsider (plan
+ * `2026-10-23-console-presentation-spaces` D3.3). Every other arm is fixed
+ * words already, and reads the same in both modes.
+ */
+export function spawnIssueTextFor(
+  issue: SpawnReadIssue,
+  subject: string,
+  presenting: boolean
+): string {
+  if (!presenting) return spawnIssueText(issue, subject);
+  switch (issue.kind) {
+    case "ledger_not_deployed":
+      return `The record of spawn requests is not deployed yet, so ${subject} is unknown, not empty.`;
+    case "error":
+      return `The record of spawn requests could not be read, so ${subject} is unknown.`;
+    default:
+      return spawnIssueText(issue, subject);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Words — every wire token gets a human label, and keeps its token as a title
 // ---------------------------------------------------------------------------
@@ -543,6 +567,17 @@ export function deviceName(
   const hit = roster.find((d) => sameId(d.device_id, deviceId));
   if (hit?.hostname) return hit.hostname;
   return `device ${deviceId.slice(0, 8)}`;
+}
+
+/**
+ * How a surface names devices: the roster's hostname for the operator, the
+ * session alias while presenting (`useMachineAliaser`, D3.3) — and whether a
+ * device id may appear at all (never while presenting: it is an internal
+ * identifier, and the lens's identity check refuses it).
+ */
+export interface DeviceNaming {
+  nameOf: (deviceId: string) => string;
+  showIds: boolean;
 }
 
 /**
@@ -760,11 +795,26 @@ function pendingStatus(row: SpawnRowWire, nowMs: number): RowStatus<SpawnKind> {
   }
 }
 
+/** How {@link deriveSpawnStatus} may word a status. */
+export interface SpawnStatusOptions {
+  /**
+   * Quote coord's own text — a `terminal_reason`, an unrecognised state or
+   * outcome token. Default `true`. Presentation mode passes `false`: coord's
+   * reason can name a pull request, a repository or a machine, so the fixed
+   * sentence each arm already falls back to is used instead (D3.3).
+   */
+  quoteCoord?: boolean;
+}
+
 /** One request's status — the gates page's words, aged as the module header says. */
 export function deriveSpawnStatus(
   row: SpawnRowWire,
-  nowMs: number
+  nowMs: number,
+  options: SpawnStatusOptions = {}
 ): RowStatus<SpawnKind> {
+  const quote = options.quoteCoord ?? true;
+  const reasonOr = (fallback: string): string =>
+    quote && row.terminal_reason ? row.terminal_reason : fallback;
   switch (row.state) {
     case "queued":
     case "dispatched":
@@ -807,39 +857,42 @@ export function deriveSpawnStatus(
           return status(
             "unknown",
             "Started · outcome unreadable",
-            `coord reported an outcome this page has no reading for: ${row.session_outcome}`
+            quote
+              ? `coord reported an outcome this page has no reading for: ${row.session_outcome}`
+              : "coord reported an outcome this page has no reading for"
           );
       }
     case "failed":
       return status(
         "spawn_failed",
         "Failed to start",
-        row.terminal_reason ?? "no session opened; coord recorded no reason"
+        reasonOr("no session opened; coord recorded no reason")
       );
     case "expired":
       return status(
         "expired",
         "Expired",
-        row.terminal_reason ??
-          "coord gave up placing it; nothing will start it now"
+        reasonOr("coord gave up placing it; nothing will start it now")
       );
     case "cancelled":
       return status(
         "cancelled",
         "Cancelled",
-        row.terminal_reason ?? "withdrawn before it started"
+        reasonOr("withdrawn before it started")
       );
     case "superseded":
       return status(
         "superseded",
         "Superseded",
-        row.terminal_reason ?? "a newer request for the same work replaced it"
+        reasonOr("a newer request for the same work replaced it")
       );
     default:
       return status(
         "unknown",
         "Unknown state",
-        `coord reported a state this page has no reading for: ${row.state}`
+        quote
+          ? `coord reported a state this page has no reading for: ${row.state}`
+          : "coord reported a state this page has no reading for"
       );
   }
 }
@@ -1113,6 +1166,11 @@ export interface SpawnsHealthInput {
   nowMs: number;
   /** The browser clock's rendering of an instant (injected for tests). */
   clock: (iso: string) => string;
+  /**
+   * Presentation mode: a failed read's sentence is said in fixed words
+   * (`spawnIssueTextFor`). Default `false`.
+   */
+  presenting?: boolean;
 }
 
 export interface SpawnsHealth {
@@ -1283,7 +1341,11 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
         detail:
           issue === null
             ? `Aggregates over the ${spec.label} appear once coord answers.`
-            : spawnIssueText(issue, "every aggregate on this strip"),
+            : spawnIssueTextFor(
+              issue,
+              "every aggregate on this strip",
+              input.presenting ?? false
+            ),
         badges: [],
         verdict: "red",
       };
@@ -1300,7 +1362,11 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
     return {
       level: "amber",
       headline: headlineForIssue(issue),
-      detail: spawnIssueText(issue, "every aggregate on this strip"),
+      detail: spawnIssueTextFor(
+              issue,
+              "every aggregate on this strip",
+              input.presenting ?? false
+            ),
       badges: [],
       verdict: "unknown",
     };
@@ -1460,17 +1526,22 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
  */
 export function perDeviceShares(
   stats: SpawnStatsWire,
-  roster: ReadonlyArray<RosterDevice>,
-  roles: DeviceRoles
+  roles: DeviceRoles,
+  naming: DeviceNaming
 ): { items: ShareListItem[]; total: number | null } {
   const rows = Array.isArray(stats.per_device) ? stats.per_device : [];
   const total = rows.reduce((sum, d) => sum + (count(d.placed) ?? 0), 0);
   const items = rows.map((d) => {
-    const name = deviceName(d.device_id, roster);
+    const name = naming.nameOf(d.device_id);
     const role = deviceRoleText(d.device_id, roles);
     const wait = formatWait(d.wait_p50_secs);
     const split = `${countText(d.started)}/${countText(d.refused)}/${countText(d.deferred)}`;
-    const full = `${name} (${d.device_id}) — role: ${role}. Placed ${countText(d.placed)}, started ${countText(d.started)}, refused ${countText(d.refused)}, deferred ${countText(d.deferred)}; time to spawn p50 ${wait}. Reserve and ceilings: not served yet.${roles.kind === "unknown" ? ` Role unknown: ${roles.reason}` : ""}`;
+    const id = naming.showIds ? ` (${d.device_id})` : "";
+    const roleWhy =
+      roles.kind === "unknown" && naming.showIds
+        ? ` Role unknown: ${roles.reason}`
+        : "";
+    const full = `${name}${id} — role: ${role}. Placed ${countText(d.placed)}, started ${countText(d.started)}, refused ${countText(d.refused)}, deferred ${countText(d.deferred)}; time to spawn p50 ${wait}. Reserve and ceilings: not served yet.${roleWhy}`;
     return {
       key: d.device_id,
       label: `${name} · ${role}`,

@@ -8,6 +8,12 @@
  * The device list never overflows its row: on the row it is one truncating
  * span whose `title` holds every device, and in the detail it is a wrapping
  * list.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3.3)
+ * every device reads as its session alias (`naming`), no device id appears in
+ * text or in a title, coord's own words — a terminal reason, an event's
+ * reason, an unrecognised token — are not quoted, the admission class reads as
+ * words, and the raw ids line is not rendered (`OperatorOnly`).
  */
 
 import {
@@ -17,54 +23,56 @@ import {
   StatusBadge,
   absoluteTime,
 } from "@/components/console";
+import { OperatorOnly, usePresentationMode } from "@/components/presentation";
 import {
   SPAWN_STATUS_PALETTE,
   deriveSpawnStatus,
-  deviceName,
   eventKindLabel,
   originLabel,
   placementBasisLabel,
   rowDevices,
-  spawnIssueText,
+  spawnIssueTextFor,
   timeToSpawnText,
-  type RosterDevice,
+  type DeviceNaming,
   type SpawnEventWire,
   type SpawnRowWire,
 } from "../_lib/spawnStatus";
 import { useSpawnDetail } from "../_lib/useSpawnLedger";
 
-/** The row's device words: `msi-wsl → pinned to spaceship`. */
-function devicesText(
-  row: SpawnRowWire,
-  roster: ReadonlyArray<RosterDevice>
-): string {
-  const devices = rowDevices(row);
-  if (devices.length === 0) return "no device yet";
-  return devices
-    .map((d) => `${d.role} ${deviceName(d.id, roster)}`)
-    .join(" · ");
+/** A wire token in words: an outsider reads `continuation`, not `re_try_class`. */
+function tokenWords(token: string): string {
+  return token.replace(/[_-]+/g, " ").trim();
 }
 
-function devicesTitle(
-  row: SpawnRowWire,
-  roster: ReadonlyArray<RosterDevice>
-): string {
+/** The row's device words: `msi-wsl → pinned to spaceship`. */
+function devicesText(row: SpawnRowWire, naming: DeviceNaming): string {
+  const devices = rowDevices(row);
+  if (devices.length === 0) return "no device yet";
+  return devices.map((d) => `${d.role} ${naming.nameOf(d.id)}`).join(" · ");
+}
+
+function devicesTitle(row: SpawnRowWire, naming: DeviceNaming): string {
   const devices = rowDevices(row);
   if (devices.length === 0)
     return "coord has not chosen a device for this request";
   return devices
-    .map((d) => `${d.role} ${deviceName(d.id, roster)} (${d.id})`)
+    .map(
+      (d) =>
+        `${d.role} ${naming.nameOf(d.id)}${naming.showIds ? ` (${d.id})` : ""}`
+    )
     .join("\n");
 }
 
 function Timeline({
   spawnId,
   version,
-  roster,
+  naming,
+  presenting,
 }: {
   spawnId: string;
   version: string;
-  roster: ReadonlyArray<RosterDevice>;
+  naming: DeviceNaming;
+  presenting: boolean;
 }) {
   const read = useSpawnDetail(spawnId, version);
   if (read.kind === "loading") {
@@ -84,7 +92,7 @@ function Timeline({
         data-testid="coord-spawn-timeline-unknown"
         data-issue={read.issue.kind}
       >
-        {spawnIssueText(read.issue, "where this request was sent")}
+        {spawnIssueTextFor(read.issue, "where this request was sent", presenting)}
       </p>
     );
   }
@@ -113,18 +121,26 @@ function Timeline({
               >
                 {absoluteTime(e.at)}
               </span>
-              <span className="font-medium" title={e.kind}>
+              <span
+                className="font-medium"
+                title={presenting ? undefined : e.kind}
+              >
                 {eventKindLabel(e.kind)}
               </span>
               {e.device_id && (
-                <span className="min-w-0 break-all" title={e.device_id}>
-                  {deviceName(e.device_id, roster)}
+                <span
+                  className="min-w-0 break-all"
+                  title={naming.showIds ? e.device_id : undefined}
+                >
+                  {naming.nameOf(e.device_id)}
                 </span>
               )}
               {e.reason && (
-                <span className="min-w-0 break-words text-muted-foreground">
-                  {e.reason}
-                </span>
+                <OperatorOnly>
+                  <span className="min-w-0 break-words text-muted-foreground">
+                    {e.reason}
+                  </span>
+                </OperatorOnly>
               )}
             </li>
           ))}
@@ -138,18 +154,20 @@ export function SpawnRow({
   row,
   expanded,
   onToggle,
-  roster,
+  naming,
   nowMs,
 }: {
   row: SpawnRowWire;
   expanded: boolean;
   onToggle: () => void;
-  roster: ReadonlyArray<RosterDevice>;
+  naming: DeviceNaming;
   nowMs: number;
 }) {
-  const status = deriveSpawnStatus(row, nowMs);
+  const { presenting } = usePresentationMode();
+  const status = deriveSpawnStatus(row, nowMs, { quoteCoord: !presenting });
   const devices = rowDevices(row);
   const wait = timeToSpawnText(row, nowMs);
+  const cls = presenting ? tokenWords(row.class) : row.class;
   return (
     <RecordRow
       data-testid="coord-spawn-row"
@@ -157,11 +175,13 @@ export function SpawnRow({
       onToggle={onToggle}
       attention={status.attention}
       identity={
-        <span title={`admission class: ${row.class}`}>{row.class}</span>
+        <span title={presenting ? undefined : `admission class: ${row.class}`}>
+          {cls}
+        </span>
       }
       label={
         <span
-          title={`${originLabel(row.origin)} — ${devicesTitle(row, roster)}`}
+          title={`${originLabel(row.origin)} — ${devicesTitle(row, naming)}`}
         >
           <span className="font-medium">{originLabel(row.origin)}</span>
           <span
@@ -169,7 +189,7 @@ export function SpawnRow({
             data-testid="coord-spawn-devices"
           >
             {" "}
-            · {devicesText(row, roster)}
+            · {devicesText(row, naming)}
           </span>
         </span>
       }
@@ -197,7 +217,7 @@ export function SpawnRow({
         data-testid="coord-spawn-detail"
         why={
           <p className="text-[13px] text-foreground/85 m-0">
-            A {row.class} spawn requested by {originLabel(row.origin)} at{" "}
+            A {cls} spawn requested by {originLabel(row.origin)} at{" "}
             {absoluteTime(row.requested_at)}: {status.label.toLowerCase()} —{" "}
             {status.reason}. Time to spawn: {wait}.
           </p>
@@ -224,8 +244,12 @@ export function SpawnRow({
                 data-testid="coord-spawn-device-list"
               >
                 {devices.map((d) => (
-                  <li key={d.id} className="min-w-0 break-all" title={d.id}>
-                    {d.role} {deviceName(d.id, roster)}
+                  <li
+                    key={d.id}
+                    className="min-w-0 break-all"
+                    title={naming.showIds ? d.id : undefined}
+                  >
+                    {d.role} {naming.nameOf(d.id)}
                   </li>
                 ))}
               </ul>
@@ -233,21 +257,31 @@ export function SpawnRow({
           </div>
         }
         history={
-          <Timeline spawnId={row.id} version={row.updated_at} roster={roster} />
+          <Timeline
+            spawnId={row.id}
+            version={row.updated_at}
+            naming={naming}
+            presenting={presenting}
+          />
         }
         raw={
-          <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
-            spawn_request: {row.id} · state: {row.state}
-            {row.session_outcome
-              ? ` · session_outcome: ${row.session_outcome}`
-              : ""}
-            {row.source_ref ? ` · source_ref: ${row.source_ref}` : ""}
-            {row.claude_code_session_id
-              ? ` · session: ${row.claude_code_session_id}`
-              : ""}
-            {row.claude_account ? ` · account: ${row.claude_account}` : ""}
-            {row.lease_id ? ` · lease: ${row.lease_id}` : ""}
-          </p>
+          <OperatorOnly>
+            <p
+              className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all"
+              data-testid="coord-spawn-raw"
+            >
+              spawn_request: {row.id} · state: {row.state}
+              {row.session_outcome
+                ? ` · session_outcome: ${row.session_outcome}`
+                : ""}
+              {row.source_ref ? ` · source_ref: ${row.source_ref}` : ""}
+              {row.claude_code_session_id
+                ? ` · session: ${row.claude_code_session_id}`
+                : ""}
+              {row.claude_account ? ` · account: ${row.claude_account}` : ""}
+              {row.lease_id ? ` · lease: ${row.lease_id}` : ""}
+            </p>
+          </OperatorOnly>
         }
       />
     </RecordRow>

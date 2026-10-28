@@ -1,0 +1,175 @@
+"use client";
+
+/**
+ * Machines — one line per machine: whether it takes new work, the work it
+ * may take, how much automated work it carries against its ceiling, and how
+ * many sessions it has open now (`machineStatus.ts` derives every word).
+ *
+ * The in-flight column has no source the console can read yet, so the list
+ * says so ONCE above its lines and each line's cell repeats it in its title —
+ * the §3.8 "a fact the wire does not serve yet, stated once for the list"
+ * pattern, never a column of zeros.
+ *
+ * Machines are named through `MachineName` (D3.3): their real name for the
+ * operator, their session alias ("Machine A") while presenting, from the one
+ * registry every lens panel shares — and no device id renders while
+ * presenting, in text or in a title.
+ */
+
+import { Server } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { UNKNOWN_AMBER } from "@/components/console";
+import {
+  MachineName,
+  SectionCaption,
+  captionEntry,
+  type SectionSource,
+} from "@/components/presentation";
+import { cn } from "@/lib/utils";
+import {
+  IN_FLIGHT_UNKNOWN,
+  type MachineCell,
+  type MachineStatusLine,
+} from "../_lib/machineStatus";
+
+function CellValue({ cell, testId }: { cell: MachineCell; testId: string }) {
+  if (cell.unknown) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn("text-[11px] font-medium whitespace-normal", UNKNOWN_AMBER)}
+        title={cell.title}
+        data-testid={testId}
+        data-machine-state={cell.state}
+      >
+        {cell.text}
+      </Badge>
+    );
+  }
+  return (
+    <span
+      className="text-xs"
+      title={cell.title}
+      data-testid={testId}
+      data-machine-state={cell.state}
+    >
+      {cell.text}
+    </span>
+  );
+}
+
+export function MachineStatusSection({
+  lines,
+  listUnknown,
+  presenting,
+  sources,
+}: {
+  /** `null` while the roster is unknown — `listUnknown` says why. */
+  lines: MachineStatusLine[] | null;
+  listUnknown: string | null;
+  presenting: boolean;
+  sources: readonly SectionSource[];
+}) {
+  const title = captionEntry("agentic-activity.machines").title;
+  return (
+    <section
+      className="space-y-2"
+      data-testid="coord-spawns-machines-section"
+      data-ui-bridge-id="coord-spawns-machines-section"
+    >
+      <SectionCaption
+        id="agentic-activity.machines"
+        sources={sources}
+        data-testid="coord-spawns-machines-caption"
+      />
+      {!presenting && (
+        <h2 className="text-sm font-medium flex items-center gap-1.5">
+          <Server className="h-4 w-4 text-muted-foreground" aria-hidden />
+          {title}
+        </h2>
+      )}
+      <p
+        className="text-xs text-muted-foreground m-0"
+        data-testid="coord-spawns-inflight-note"
+      >
+        In flight against ceiling, and the reasons work was held: UNKNOWN —{" "}
+        {presenting ? IN_FLIGHT_UNKNOWN.presented : IN_FLIGHT_UNKNOWN.operator}
+      </p>
+      {lines === null ? (
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-spawns-machines-unknown"
+        >
+          {listUnknown}
+        </p>
+      ) : lines.length === 0 ? (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="coord-spawns-machines-empty"
+        >
+          Coord&apos;s fleet roster lists no machine.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table
+            className="w-full text-sm"
+            data-testid="coord-spawns-machine-table"
+          >
+            <thead>
+              <tr className="text-left text-[11px] text-muted-foreground">
+                <th className="py-1 pr-3 font-medium">Machine</th>
+                <th className="py-1 pr-3 font-medium">New work</th>
+                <th className="py-1 pr-3 font-medium">Dispatch role</th>
+                <th className="py-1 pr-3 font-medium">In flight vs ceiling</th>
+                <th className="py-1 pr-3 font-medium">Sessions open now</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line) => (
+                <tr
+                  key={line.key}
+                  className="align-top border-t border-border"
+                  data-testid="coord-spawns-machine"
+                >
+                  <td
+                    className="py-1.5 pr-3 font-medium"
+                    title={presenting ? undefined : line.key}
+                  >
+                    <MachineName
+                      identity={line.identity}
+                      data-testid="coord-spawns-machine-name"
+                    />
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <CellValue
+                      cell={line.drain}
+                      testId="coord-spawns-machine-drain"
+                    />
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <CellValue
+                      cell={line.role}
+                      testId="coord-spawns-machine-role"
+                    />
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <CellValue
+                      cell={line.inFlight}
+                      testId="coord-spawns-machine-inflight"
+                    />
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <CellValue
+                      cell={line.sessions}
+                      testId="coord-spawns-machine-sessions"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
