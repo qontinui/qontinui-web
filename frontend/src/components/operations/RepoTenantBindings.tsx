@@ -61,6 +61,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -220,14 +221,12 @@ export function refusalDetail(
       return `${secs} ${census}`;
     }
     case "in_flight_merge_proposals": {
-      if (!Array.isArray(b.proposal_ids)) {
+      // An empty list cannot be "0 in flight" while refusing for in-flight work.
+      if (!Array.isArray(b.proposal_ids) || b.proposal_ids.length === 0) {
         return "The in-flight proposals were not reported. Wait for them to land or cancel them, then retry.";
       }
       const ids = b.proposal_ids.map(String);
-      if (ids.length === 0) {
-        return "The in-flight proposals were not reported. Wait for them to land or cancel them, then retry.";
-      }
-      return `${ids.length} merge ${ids.length === 1 ? "proposal is" : "proposals are"} in flight${ids.length > 0 ? `: ${ids.join(", ")}` : ""}. Wait for ${ids.length === 1 ? "it" : "them"} to land or cancel ${ids.length === 1 ? "it" : "them"}, then retry.`;
+      return `${ids.length} merge ${ids.length === 1 ? "proposal is" : "proposals are"} in flight: ${ids.join(", ")}. Wait for ${ids.length === 1 ? "it" : "them"} to land or cancel ${ids.length === 1 ? "it" : "them"}, then retry.`;
     }
     case "repo_binding_write_failed":
       // Coord's message says the transaction rolled back, but coord maps a
@@ -253,7 +252,10 @@ export function refusalDetail(
       return `You are not an administrator in ${side} (${tenant}).`;
     }
     case "caller_tenant_not_a_party":
-      return "Switch the active tenant to one of the binding's two tenants (the governing tenant, or for a bind the tenant you chose), then retry.";
+      // Coord returns this from a bind only (an unbind by a non-party is
+      // `binding_not_found`); its parties are the governing tenant and the
+      // target.
+      return "Switch the active tenant to the repository's governing tenant (the tenant it is bound to, or, if it is unbound, its GitHub organization's tenant) or to the tenant you are binding it to, then retry.";
     case "binding_not_found": {
       const repo = nonBlank(b.repo) ?? "The repository";
       return `${repo} has no binding visible to this tenant — it may already have been unbound. Re-read the bindings (the refresh button at the top of this card) to confirm.`;
@@ -499,22 +501,31 @@ type ListRead =
 type ActionOutcome =
   | { kind: "ok"; text: string }
   | { kind: "error"; failure: CardFailure }
-  /** The write settled after the active tenant changed: not checked here. */
+  /** The write was sent under another tenant: not checked here. */
   | { kind: "elsewhere"; text: string };
 
+/** A bind's outcome, tagged with the tenant it was sent under. */
+type BindOutcome = (
+  | { kind: "ok"; text: string }
+  | { kind: "error"; failure: CardFailure }
+) & { tenant: string | null; repo: string };
+
 /**
- * What a write that settled after a tenant switch says instead of its
- * outcome: this card now shows another tenant's list, whose silence about the
- * repo says nothing about the write.
+ * What a write sent under another tenant says instead of its outcome: this
+ * card now shows a different tenant's list, which is not the one the write's
+ * outcome would be read from.
  */
 export function settledElsewhereText(verb: "bind" | "unbind", repo: string) {
-  return `The ${verb} of ${repo} was sent under another tenant, and this card now shows a different one, so its outcome is not checked here. Switch back to that tenant to see it.`;
+  return `The ${verb} of ${repo} was sent under another tenant, and this card now shows a different one, so its outcome is not checked here. Switch back to that tenant and re-read its bindings to see whether it landed.`;
 }
 
-/** The active tenant as of the latest commit, readable after an await. */
+/**
+ * The active tenant as of the latest commit, readable after an await. A layout
+ * effect, so the ref is current before any promise can resolve after a commit.
+ */
 function useLatestTenant(activeTenantId: string | null | undefined) {
   const ref = useRef(activeTenantId);
-  useEffect(() => {
+  useLayoutEffect(() => {
     ref.current = activeTenantId;
   }, [activeTenantId]);
   return ref;
@@ -746,13 +757,26 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
   // The re-entry guard reads a ref: two submits inside one render would both
   // see a stale `busy === false` and send two POSTs.
   const busyRef = useRef(false);
-  const [outcome, setOutcome] = useState<ActionOutcome | null>(null);
+  const [outcome, setOutcome] = useState<BindOutcome | null>(null);
   // An outcome belongs to the tenant it was reached in (as the card's unbind
   // outcomes do); a bind still in flight keeps its result for when it lands.
   useEffect(() => {
     if (!busyRef.current) setOutcome(null);
   }, [activeTenantId]);
-  const tenantRef = useLatestTenant(activeTenantId);
+  // Decided at render against the CURRENT tenant, so no window between a
+  // switch and the write (or its re-read) settling can show one tenant's
+  // outcome on another's card. Switching back while the write is still in
+  // flight shows the real outcome; once it has settled, the switch-clear
+  // above has removed it, and the list is what says whether it landed.
+  const shownOutcome: ActionOutcome | null =
+    outcome === null
+      ? null
+      : outcome.tenant !== activeTenantId
+        ? {
+            kind: "elsewhere",
+            text: settledElsewhereText("bind", outcome.repo),
+          }
+        : outcome;
   const errors = validateBindForm(values);
   const shown = touched ? errors : {};
 
@@ -765,7 +789,7 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
     setOutcome(null);
     const repo = values.repo.trim();
     const ref = decisionRef.trim();
-    const sentUnder = tenantRef.current;
+    const sentUnder = activeTenantId;
     let result: RepoBindingResult | null;
     try {
       result = await bindRepoTenant({
@@ -776,13 +800,13 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
       });
     } catch (err) {
       // Bind stays disabled until the re-read lands: a timed-out write may
-      // already have been applied, and the list is what says so. A failure
-      // that lands after a tenant switch is not this tenant's to report.
-      setOutcome(
-        tenantRef.current === sentUnder
-          ? { kind: "error", failure: failureOf(err) }
-          : { kind: "elsewhere", text: settledElsewhereText("bind", repo) }
-      );
+      // already have been applied, and the list is what says so.
+      setOutcome({
+        kind: "error",
+        failure: failureOf(err),
+        tenant: sentUnder,
+        repo,
+      });
       await afterWrite();
       busyRef.current = false;
       setBusy(false);
@@ -790,14 +814,12 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
     }
     // Any 2xx is the success — the summary and the re-read sit outside the
     // failure path so neither can turn a landed bind into a reported failure.
-    setOutcome(
-      tenantRef.current === sentUnder
-        ? {
-            kind: "ok",
-            text: resultSummary("Bound", result, repo, tenantLabel),
-          }
-        : { kind: "elsewhere", text: settledElsewhereText("bind", repo) }
-    );
+    setOutcome({
+      kind: "ok",
+      text: resultSummary("Bound", result, repo, tenantLabel),
+      tenant: sentUnder,
+      repo,
+    });
     setValues({ repo: "", targetTenant: "", reason: "" });
     setDecisionRef("");
     setTouched(false);
@@ -957,22 +979,22 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
         {busy ? "Binding…" : "Bind"}
       </Button>
-      {outcome && (
+      {shownOutcome && (
         <p
           className={
-            outcome.kind === "error"
+            shownOutcome.kind === "error"
               ? "text-xs text-destructive"
               : "text-xs text-muted-foreground"
           }
-          role={outcome.kind === "error" ? "alert" : "status"}
+          role={shownOutcome.kind === "error" ? "alert" : "status"}
           data-testid="repo-binding-bind-outcome"
           data-ui-bridge-id="operations.repo-binding-bind-outcome"
-          data-outcome={outcome.kind}
+          data-outcome={shownOutcome.kind}
         >
-          {outcome.kind === "error" ? (
-            <FailureText failure={outcome.failure} />
+          {shownOutcome.kind === "error" ? (
+            <FailureText failure={shownOutcome.failure} />
           ) : (
-            outcome.text
+            shownOutcome.text
           )}
         </p>
       )}
@@ -1123,7 +1145,7 @@ export function RepoTenantBindings({
 
   // An unbind still in flight across a tenant switch keeps its busy guard, but
   // its outcome is not the new tenant's: the re-read is the new tenant's list,
-  // whose silence about the repo says nothing about the write.
+  // not the one the write's outcome would be read from.
   const tenantRef = useLatestTenant(activeTenantId);
   const dropElsewhere = useCallback((repo: string) => {
     unbindBusy.current.delete(repo);
