@@ -45,7 +45,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "ci_job_res_01"
-_PARENT_REVISION_ID = "coord_agent_questions_recommendation"
+_PARENT_REVISION_ID = "journey_02_explorations"
 _REVISION_FILENAME = "ci_job_res_01_resource_report_columns.py"
 
 _TABLE = "ci_job_observations"

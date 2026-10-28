@@ -1,7 +1,7 @@
 """coord.ci_job_observations — the columns a CI job's resource report fills
 
 Revision ID: ci_job_res_01
-Revises: coord_agent_questions_recommendation
+Revises: journey_02_explorations
 Create Date: 2026-10-28
 
 Phase 3 of plan ``2026-10-27-coord-routes-ci-jobs-by-runner-capability``,
@@ -116,9 +116,11 @@ Head choice
 ===========
 
 ``down_revision`` is the LOCAL single alembic head on ``origin/main`` at
-``8b59aa675`` (711 revisions, exactly 1 head, derived by parsing every file's
-``revision`` / ``down_revision`` with ``ast``). If another alembic PR lands
-first, re-point ``down_revision``, the ``Revises:`` header and
+``56f88b787`` (712 revisions, exactly 1 head, derived by parsing every file's
+``revision`` / ``down_revision``). It was first chained off
+``coord_agent_questions_recommendation`` at ``8b59aa675`` and re-pointed when
+``journey_02_explorations`` landed on that same parent. If another alembic PR
+lands first, re-point ``down_revision``, the ``Revises:`` header and
 ``_PARENT_REVISION_ID`` in the companion test together. No ``alembic merge``.
 
 Deploy ordering
@@ -146,7 +148,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ci_job_res_01"
-down_revision: str | Sequence[str] | None = "coord_agent_questions_recommendation"
+down_revision: str | Sequence[str] | None = "journey_02_explorations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
