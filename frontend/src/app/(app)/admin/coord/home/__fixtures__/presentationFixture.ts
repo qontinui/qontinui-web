@@ -92,7 +92,7 @@ export const ROUTE_UNAVAILABLE_BODY =
  * refusal's rendered sentence, which carries coord's discriminator token.
  */
 export const PROXY_TIMEOUT_REFUSAL_BODY =
-  '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.globex.internal/api/v1/operations/project-state"}';
+  '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.globex.internal/project-state"}';
 
 /** `does_not_know` sources the page's table does not label (coord's successor). */
 export const UNLABELLED_ALERTS_SOURCE =
