@@ -23,8 +23,10 @@ import { describe, expect, it } from "vitest";
 import {
   LENS_SURFACES,
   TOUR_LINK_ACTION_DESCRIPTION,
+  TOUR_SURFACE,
   isPresentationReady,
   presentationHref,
+  tourStart,
   type CaptionKey,
 } from "@/components/presentation";
 import {
@@ -60,6 +62,11 @@ function registryOf(view: { uiBridge: unknown }): UiBridgeRegistryView {
 }
 
 describe("/admin/coord/tour in presentation mode", () => {
+  it("is registered presentation-ready, so presenting never withholds it and the tour can lead back to it", () => {
+    expect(isPresentationReady(TOUR_SURFACE.route)).toBe(true);
+    expect(tourStart()?.href).toBe("/admin/coord/tour?present=1&tour=1");
+  });
+
   it("is safe to show: its captions, every stop, no control but a tour link, no cost, no identity", () => {
     const view = renderInPresentationMode(<TourPage />);
     expect(screen.getByTestId("coord-tour-page")).toBeTruthy();
