@@ -24,9 +24,10 @@
  * preference, and no server ever sees it.
  *
  * `getSnapshot` returns a short primitive string (stable under `Object.is`);
- * `getServerSnapshot` returns "not on tour", so a server or hydration render
- * shows no tour bar — the bar is navigation chrome, and showing none is the
- * safe arm.
+ * `getServerSnapshot` returns "not on tour": a server or hydration render
+ * cannot read the tab, so there the tab's state never puts up a tour bar and
+ * only a URL carrying the marker draws one (`TourBar`). Off is the safe arm
+ * for a state that cannot be read — the bar is navigation chrome.
  */
 
 import { LENS_SURFACES, type LensSurfaceId } from "../lensSurfaces";

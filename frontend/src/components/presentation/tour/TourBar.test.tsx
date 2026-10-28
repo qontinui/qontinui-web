@@ -1,16 +1,28 @@
 /**
  * The tour bar (plan `2026-10-23-console-presentation-spaces` D5, Phase 8):
  * when it renders — presenting AND on the tour, never in operator mode,
- * never under `?present=0` — what it says, where its controls lead, End
- * tour, and that it is safe to show with every control registered with the
- * UI Bridge as navigation-only. The arrow keys are `TourBar.keys.test.tsx`.
+ * never under `?present=0`, and on the URL's marker alone until the client
+ * can read the tab — what it says, where its controls lead, End tour, and
+ * that it is safe to show, with every control that does something
+ * registered with the UI Bridge as navigation-only. The arrow keys are
+ * `TourBar.keys.test.tsx`.
  *
  * The readiness registry is the test's to state (`readiness.routes`), through
  * the real `isPresentationReady`.
  */
 
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 import type { PresentationReadyRoute } from "@/components/presentation/presentationReadiness";
 
 vi.mock("next/navigation", () => ({
@@ -42,6 +54,7 @@ import {
   createPresentationModeStore,
   createTourStore,
   decodeTourState,
+  type TourStore,
 } from "@/components/presentation";
 import {
   expectPresentationSafe,
@@ -103,6 +116,48 @@ describe("TourBar — when it renders", () => {
     visit("/admin/coord/devops?tour=1");
     const { store } = renderBar(false);
     expect(decodeTourState(store.getSnapshot()).onTour).toBe(false);
+  });
+});
+
+describe("TourBar — before the client knows (server and hydration renders)", () => {
+  // The real mode provider: on the server its stores read as unresolved, so
+  // the URL's `?present=1` is what presents here.
+  const lens = (store: TourStore) => (
+    <PresentationModeProvider store={createPresentationModeStore()}>
+      <TourBar store={store} />
+    </PresentationModeProvider>
+  );
+  const BAR = '[data-testid="tour-bar"]';
+
+  it("draws the bar from a URL carrying the marker, with no state to read", () => {
+    visit("/admin/coord/ui-bridge?present=1&tour=1");
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(lens(createTourStore()));
+    expect(container.querySelector(BAR)).not.toBeNull();
+  });
+
+  it("reads the tab's state as off until hydration, then shows the bar it asks for, without a mismatch", async () => {
+    visit("/admin/coord/devops?present=1");
+    const store = onTourStore();
+    const container = document.createElement("div");
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    // Torn down even when an assertion fails, so a failure here never
+    // leaves a bar in the document for a later test's `screen` to find.
+    onTestFinished(() => {
+      act(() => root?.unmount());
+      container.remove();
+    });
+    container.innerHTML = renderToString(lens(store));
+    // On the tour, but the server cannot know: no marker, so no bar.
+    expect(container.querySelector(BAR)).toBeNull();
+
+    document.body.appendChild(container);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await act(async () => {
+      root = hydrateRoot(container, lens(store));
+    });
+    expect(errors).not.toHaveBeenCalled();
+    expect(container.querySelector(BAR)).not.toBeNull();
   });
 });
 

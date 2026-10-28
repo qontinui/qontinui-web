@@ -1664,17 +1664,20 @@ shipped silently:
 | **A count that names its population** | `TourBar` (`TourPosition`), `TOUR_LABELS` in `captions/tourCaptions.ts` | "Stop k of N" counts the presentable stops. While any stop is not presentable the bar says how many more there are, beside the count ("Stop 2 of 3 · 2 more are not yet presentable"), because the strip under it shows all of them. The strip carries no numbers, so no stop has two. | Served policy `ux-priorities` `a-label-names-one-referent-and-a-quantity-names-its-unit`: a bare "of 3" above a strip of five reads either way. |
 | **A control with nowhere to go is disabled, and says why** | `tour/TourStepControl.tsx` | With a target, previous and next are tour links, each declaring its arrow key (`aria-keyshortcuts`). Without one, each is a DISABLED button whose accessible name begins with its visible word and says why ("Previous: this is the first stop"). It is never a dead link, and it makes no UI Bridge registration. Next at the last stop leads back to the tour's start. | R6's dash rule covers a count nobody read. This is its control form: say there is nothing there, never imply a way on. |
 | **Keys that never take one the page is using** | `tour/tourKeys.ts`, `tour/useTourKeys.ts` | ArrowLeft and ArrowRight follow the previous and next LINK on screen, so a key goes exactly where the control says. They act only when nothing handled the press first, no modifier is held, it is not a repeat or a composition, and focus is not in an editable control or a composite widget (the twin's tabs move on the arrows themselves). The window listener exists only while the bar renders. | No console surface bound a global key before. |
-| **Tab-scoped state, never a preference** | `tour/tourStore.ts` | "On the tour" belongs to the tab: sessionStorage mirrored in memory, every access guarded. The `?tour=1` marker every tour link carries sets it, and End tour clears it and drops the marker from the URL. It never touches localStorage, and `?present=0` turns the bar off whatever it says. | It reuses the tab half of the mode store (§6.5) for a second fact. The viewer-convenience half is deliberately not reused: a tour is never remembered for the next tab. |
+| **Tab-scoped state, never a preference** | `tour/tourStore.ts` | "On the tour" belongs to the tab: sessionStorage mirrored in memory, every access guarded. The `?tour=1` marker every tour link carries sets it, and End tour clears it and drops the marker from the URL. It never touches localStorage, and `?present=0` turns the bar off whatever it says. | It follows the pattern of the mode store's tab half (§6.5), in a store and a sessionStorage key of its own (`qontinui.presentation-tour`), for a second fact. The viewer-convenience half is deliberately not followed: a tour is never remembered for the next tab. |
 | **Two calm states, told apart in words** | `tour/_components/TourStopList.tsx`, `tour/TourProgress.tsx` | "Ready to present" is `INERT`. "Not yet presentable" is `INERT` with the dashed edge `draft` uses: provisional, not wrong. Neither is anyone's move now, so neither is red or amber. The stop on screen takes the toggle's active treatment (`bg-primary`), and a key under the list explains each state that occurs. | R3 assigns hues by whose move it is; this records that a known, self-describing state the audience is shown takes no attention hue at all. |
 | **A caption whose title is already on screen** | `Caption` `untitled`; `TourStart.tsx`, `TourStopList.tsx` | The start link's text is `tour.start`'s title, and each state badge's text is its caption's title, so their sentences render `untitled` beneath them: one entry, one title on screen. A stop that is not presentable shows its page caption `brief`, because why its content matters would describe content the tour does not show (the rule `PresentationPage`'s placeholder follows). | §6.5's captions always lead with their title. A control or a badge that IS the title would repeat it. |
 
-Every tour control is navigation-only, and says so twice: on screen it is a link
-that keeps the presentation (End tour, the one button, carries
-`NAVIGATION_ONLY_PROPS` and changes only what the tab shows), and to the UI
-Bridge it registers where it renders with one custom action declared
-`effect: "read"`, which follows the anchor itself. The bar does not repeat a
-stop's one sentence: the stop page renders its own `<surface>.page` caption,
-and that IS the stop's sentence.
+Every tour control that does something is navigation-only, and says so twice.
+On screen it is a link that keeps the presentation, or End tour, the one
+enabled button, which carries `NAVIGATION_ONLY_PROPS` and changes only what the
+tab shows. To the UI Bridge it registers where it renders with one custom
+action declared `effect: "read"`: a link's action follows the anchor itself,
+and End tour's does what pressing it does. A previous or next with nowhere to
+go does nothing: it is a disabled button that makes no registration (the row
+"A control with nowhere to go is disabled, and says why"). The bar does not
+repeat a stop's one sentence: the stop page renders its own `<surface>.page`
+caption, and that IS the stop's sentence.
 
 ---
 

@@ -16,7 +16,8 @@
  * (`?tour=1`, beside `?present=1` on every tour link) puts the tab on it, and
  * End tour takes it off — dropping the marker from the URL too, so the URL
  * does not put it straight back. A server or hydration render reads the store
- * as off, so no bar is drawn before the client knows.
+ * as off (`getServerSnapshot`), so before the client knows, only a URL
+ * carrying the marker draws the bar.
  *
  * The gate reads only the mode and the search params. The body — the path,
  * the controls, the arrow keys — mounts only past it, so a tab that is not
@@ -35,9 +36,11 @@
  * to where the tour left off: the last presentable stop the tab visited,
  * which the store remembers for that alone, or the tour's start.
  *
- * Every control is navigation-only (D3.2): links that carry the
- * presentation, and End tour, which changes only what this tab shows. Each
- * registers with the UI Bridge where it renders, declaring `effect: "read"`.
+ * Every control that does something is navigation-only (D3.2): links that
+ * carry the presentation, and End tour, which changes only what this tab
+ * shows. Each registers with the UI Bridge where it renders, declaring
+ * `effect: "read"`. A previous or next with nowhere to go does nothing: it is
+ * a disabled button, and it makes no registration (`TourStepControl`).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
