@@ -411,7 +411,7 @@ function NeedsYouRow({
             {blocking && (blocking.workUnitSlug || blocking.planPhase) && (
               <p className="m-0 text-muted-foreground">
                 Blocks:{" "}
-                {blocking.workUnitSlug === null ? (
+                {!blocking.workUnitSlug ? (
                   "a piece of work"
                 ) : presenting ? (
                   // Its URL would carry the slug the descriptor withholds,
