@@ -106,6 +106,17 @@ function parseBody(init?: RequestInit): unknown {
   }
 }
 
+/**
+ * The path below the `/operations` mount the typed client calls under (its
+ * `OPERATIONS_BASE`), or `null` for a URL outside it — so the table routes on
+ * each route's own path and never restates the client's prefix.
+ */
+function operationsPath(url: string): string | null {
+  const mount = "/operations/";
+  const at = url.indexOf(mount);
+  return at < 0 ? null : url.slice(at + mount.length - 1);
+}
+
 /** Route one request through `routes`. Throws on a URL nobody answers. */
 export function answerSpawnsRequest(
   routes: SpawnsRoutes,
@@ -113,20 +124,20 @@ export function answerSpawnsRequest(
   init?: RequestInit
 ): Response {
   const method = (init?.method ?? "GET").toUpperCase();
+  const op = operationsPath(url);
   let answer: Answer;
-  if (url.startsWith("/api/v1/operations/spawns/stats"))
-    answer = routes.stats(url);
-  else if (url.startsWith("/api/v1/operations/spawns?"))
+  if (op?.startsWith("/spawns/stats")) answer = routes.stats(url);
+  else if (op?.startsWith("/spawns?"))
     answer = url.includes("state=") ? routes.pending(url) : routes.list(url);
-  else if (url.startsWith("/api/v1/operations/spawns/"))
+  else if (op?.startsWith("/spawns/"))
     answer = routes.detail(decodeURIComponent(url.split("/").pop() ?? ""));
-  else if (url.startsWith("/api/v1/operations/fleet/health"))
-    answer = routes.fleet();
-  else if (url.startsWith("/api/v1/operations/fleet/dispatch-roles"))
-    answer = routes.roles();
-  else if (url.startsWith("/api/v1/operations/fleet/drain"))
-    answer = routes.drain();
-  else if (url.startsWith("/api/v1/agent-registry/admin/registry/") && method === "PUT")
+  else if (op?.startsWith("/fleet/health")) answer = routes.fleet();
+  else if (op?.startsWith("/fleet/dispatch-roles")) answer = routes.roles();
+  else if (op?.startsWith("/fleet/drain")) answer = routes.drain();
+  else if (
+    url.startsWith("/api/v1/agent-registry/admin/registry/") &&
+    method === "PUT"
+  )
     answer = routes.putRegistry(
       decodeURIComponent(url.split("/").pop() ?? ""),
       parseBody(init)
@@ -134,18 +145,18 @@ export function answerSpawnsRequest(
   else if (url === "/api/v1/agent-registry/admin/registry")
     answer = routes.defaults();
   else if (url === "/api/v1/agent-registry") answer = routes.effective();
-  else if (url.startsWith("/api/v1/operations/coord/next-step-settings"))
+  else if (op?.startsWith("/coord/next-step-settings"))
     answer =
       method === "PUT" ? routes.putNextStep(parseBody(init)) : routes.nextStep();
-  else if (url.startsWith("/api/v1/operations/pr-merge/settings"))
+  else if (op?.startsWith("/pr-merge/settings"))
     answer =
       method === "PATCH" ? routes.patchMerge(parseBody(init)) : routes.merge();
-  else if (url.startsWith("/api/v1/operations/repos")) answer = routes.repos();
-  else if (url.startsWith("/api/v1/operations/post-merge-followup-scope"))
+  else if (op?.startsWith("/repos")) answer = routes.repos();
+  else if (op?.startsWith("/post-merge-followup-scope"))
     answer = routes.scope(queryParam(url, "repo"));
-  else if (url.startsWith("/api/v1/operations/continuation-delivery-mode"))
+  else if (op?.startsWith("/continuation-delivery-mode"))
     answer = routes.delivery(queryParam(url, "repo"));
-  else if (url.startsWith("/api/v1/operations/session-runs/concurrency"))
+  else if (op?.startsWith("/session-runs/concurrency"))
     answer = routes.concurrency(url);
   else throw new Error(`unexpected fetch ${method} ${url}`);
   return new Response(JSON.stringify(answer.body), {
