@@ -571,12 +571,19 @@ describe("<ConnectedOrgs> repos bound to another tenant", () => {
       "connected-orgs-bindings-unknown"
     );
     expect(unknown.textContent).toContain("UNKNOWN");
-    expect(unknown.textContent).toContain(
+    // coord's own reason travels in the title, not as wire jargon in the line.
+    expect(unknown.getAttribute("title")).toBe(
       "the per-repo binding list could not be read"
     );
-    // The accounts still render; nothing is drawn as bound away.
+    // The accounts still render beside it.
     expect(screen.getByTestId("connected-org-repo-Meryts/site")).toBeTruthy();
-    expect(screen.queryByText(/bound to bauhaus/)).toBeNull();
+  });
+
+  it("a measured-empty bound_away is not UNKNOWN", async () => {
+    accountsMock.mockResolvedValue({ accounts: [MERYTS_ORG], bound_away: [] });
+    render(<ConnectedOrgs />);
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(screen.queryByTestId("connected-orgs-bindings-unknown")).toBeNull();
   });
 
   it("an older coord that sends neither key says nothing about bindings", async () => {

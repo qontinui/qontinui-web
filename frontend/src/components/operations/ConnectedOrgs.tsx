@@ -721,12 +721,13 @@ export function ConnectedOrgs({ bindingsVersion }: ConnectedOrgsProps = {}) {
           <p
             className={`rounded-md border px-3 py-2 text-xs ${UNKNOWN_AMBER}`}
             role="status"
+            title={bindingsError}
             data-testid="connected-orgs-bindings-unknown"
             data-ui-bridge-id="operations.connected-orgs-bindings-unknown"
           >
             Repositories bound to other tenants: UNKNOWN — coord could not read
-            the per-repo bindings ({bindingsError}). A repository of these
-            organizations that is bound elsewhere is not listed above.
+            the per-repo bindings, so a repository bound elsewhere is not shown
+            here.
           </p>
         )}
         {!loading && !error && (

@@ -87,6 +87,7 @@ import {
   resultSummary,
   tenantLabelFrom,
   validateBindForm,
+  writeMayHaveLanded,
 } from "./RepoTenantBindings";
 
 const BOUND_TENANT = "ce1ec20c-9cf1-427a-857d-81d6449cc6e4";
@@ -969,11 +970,83 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(
       unread.querySelector('[data-refusal="structured"]')?.textContent
     ).toContain("coord_write_timeout");
+    expect(unread.dataset.mayHaveLanded).toBe("true");
     expect(
       screen.getByTestId("repo-tenant-bindings-unknown").textContent
     ).toContain("migration_pending");
-    // A deliberate 503 is not retried: one read on mount, one re-read.
-    expect(callsOf("GET")).toHaveLength(2);
+    // The list read opts coord's deliberate 503s out of the client's retries.
+    const [, getOpts] = callsOf("GET")[0]! as unknown as [
+      string,
+      { noRetryStatuses?: number[] },
+    ];
+    expect(getOpts.noRetryStatuses).toContain(503);
+  });
+
+  it("a definite coord refusal whose re-read fails says nothing was written, not UNKNOWN", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json(
+            { error: "coord_db_unavailable", message: "coord DB pool down" },
+            503
+          ),
+      ],
+      () =>
+        json(
+          { error: "coord_db_unavailable", message: "coord DB pool down" },
+          503
+        )
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    const unread = await screen.findByTestId(
+      `repo-binding-unbind-error-unread-${BOUND_HERE.repo}`
+    );
+    expect(unread.dataset.mayHaveLanded).toBe("false");
+    expect(unread.textContent).toContain("nothing was written");
+    expect(unread.textContent).not.toContain("is UNKNOWN");
+    expect(unread.textContent).toContain("coord_db_unavailable");
+  });
+
+  it("writeMayHaveLanded: only a write timeout, no answer, or an uncoded 5xx", () => {
+    const f = (
+      status: number | null,
+      code: string | null,
+      discriminator: string | null = null
+    ) =>
+      writeMayHaveLanded({
+        refusal: { status, code, message: "m", body: {} },
+        envelope:
+          discriminator === null
+            ? null
+            : ({
+                kind: "refusal",
+                sentence: "s",
+                refusal: { discriminator },
+              } as never),
+      });
+    expect(f(504, null, "coord_write_timeout")).toBe(true);
+    expect(f(null, null)).toBe(true);
+    expect(f(500, null)).toBe(true);
+    expect(f(503, "coord_db_unavailable")).toBe(false);
+    expect(f(500, "repo_binding_write_failed")).toBe(false);
+    expect(f(409, "tenancy_changed")).toBe(false);
+    expect(f(404, "binding_not_found")).toBe(false);
   });
 });
 

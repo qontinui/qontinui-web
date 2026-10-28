@@ -280,6 +280,25 @@ export interface CardFailure {
   envelope: BackendErrorReading | null;
 }
 
+/**
+ * Whether a failed WRITE may still have been applied. Only three failures are
+ * ambiguous: the web's own write-timeout 504 (`coord_write_timeout`), a request
+ * that got no HTTP answer at all (`status === null`: an abort or a network
+ * error), and a 5xx carrying no coord code. Every typed coord refusal of the
+ * bind door is a "nothing was written" answer (qontinui-coord#3522
+ * `BindingError`), so reporting one as UNKNOWN would misstate a known state.
+ */
+export function writeMayHaveLanded(f: CardFailure): boolean {
+  if (
+    f.envelope?.kind === "refusal" &&
+    f.envelope.refusal.discriminator === "coord_write_timeout"
+  ) {
+    return true;
+  }
+  if (f.refusal.status === null) return true;
+  return f.refusal.code === null && f.refusal.status >= 500;
+}
+
 export function failureOf(err: unknown): CardFailure {
   const reading = operationsErrorReading(err);
   return {
@@ -564,8 +583,8 @@ function BindingRow({
         : `from ${slugOrUnknown(binding.org_tenant_slug)}`
       : `bound to ${slugOrUnknown(binding.tenant_slug)}`;
   // The unbind's progress and failure render inside the detail; a collapsed
-  // row still says one is in flight or failed, so neither is hidden by
-  // opening another row.
+  // row still says one is in flight or failed (in RecordRow's non-truncating
+  // status slot), so neither is hidden by opening another row.
   const collapsedStatus = expanded
     ? null
     : unbindState.busy
@@ -581,23 +600,21 @@ function BindingRow({
     >
       <RecordRow
         identity={binding.repo}
-        label={
-          <span title={label}>
-            {label}
-            {collapsedStatus && (
-              <span
-                className={
-                  unbindState.busy
-                    ? "text-muted-foreground"
-                    : "text-destructive"
-                }
-                data-testid={`repo-binding-row-status-${binding.repo}`}
-              >
-                {" "}
-                · {collapsedStatus}
-              </span>
-            )}
-          </span>
+        label={<span title={label}>{label}</span>}
+        status={
+          collapsedStatus ? (
+            <span
+              className={`whitespace-nowrap text-xs ${
+                unbindState.busy ? "text-muted-foreground" : "text-destructive"
+              }`}
+              data-testid={`repo-binding-row-status-${binding.repo}`}
+            >
+              {collapsedStatus}
+            </span>
+          ) : undefined
+        }
+        attention={
+          unbindState.error && !unbindState.busy ? "author" : undefined
         }
         reason={binding.reason}
         reasonTestId={`repo-binding-reason-${binding.repo}`}
@@ -1165,33 +1182,33 @@ export function RepoTenantBindings({
                 {unbindNotice}
               </p>
             )}
-            {orphanFailures.map(([repo, s]) =>
-              listUnread ? (
+            {orphanFailures.map(([repo, s]) => {
+              const maybe = writeMayHaveLanded(s.error);
+              const where = listUnread ? "unread" : "unlisted";
+              return (
                 <p
                   key={repo}
-                  className="text-xs text-destructive"
+                  className={
+                    maybe && listUnread
+                      ? `rounded-md border px-3 py-2 text-xs ${UNKNOWN_AMBER}`
+                      : "text-xs text-destructive"
+                  }
                   role="alert"
-                  data-testid={`repo-binding-unbind-error-unread-${repo}`}
-                  data-ui-bridge-id="operations.repo-binding-unbind-error-unread"
+                  data-testid={`repo-binding-unbind-error-${where}-${repo}`}
+                  data-ui-bridge-id={`operations.repo-binding-unbind-error-${where}`}
+                  data-may-have-landed={maybe ? "true" : "false"}
                 >
-                  Unbind of {repo} reported a failure, and the bindings could
-                  not be re-read, so whether the change was applied is UNKNOWN:{" "}
+                  {maybe
+                    ? listUnread
+                      ? `Unbind of ${repo} got no answer saying whether it was applied, and the bindings could not be re-read, so whether the change was applied is UNKNOWN: `
+                      : `Unbind of ${repo} got no answer saying whether it was applied, and the re-read no longer lists the binding, so the change may have been applied: `
+                    : listUnread
+                      ? `Coord refused the unbind of ${repo}, so nothing was written by it; the bindings could not be re-read: `
+                      : `Coord refused the unbind of ${repo}, so nothing was written by it, and the re-read no longer lists the binding: `}
                   <FailureText failure={s.error} />
                 </p>
-              ) : (
-                <p
-                  key={repo}
-                  className="text-xs text-destructive"
-                  role="alert"
-                  data-testid={`repo-binding-unbind-error-unlisted-${repo}`}
-                  data-ui-bridge-id="operations.repo-binding-unbind-error-unlisted"
-                >
-                  Unbind of {repo} reported a failure, and the re-read no longer
-                  lists the binding, so the change may have been applied:{" "}
-                  <FailureText failure={s.error} />
-                </p>
-              )
-            )}
+              );
+            })}
             {read.state === "unknown" && (
               <p
                 className={`rounded-md border px-3 py-2 text-sm ${UNKNOWN_AMBER}`}

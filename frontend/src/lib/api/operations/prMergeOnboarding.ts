@@ -466,7 +466,7 @@ export async function fetchRepoTenantBindings(
     ...options,
     method: "GET",
     idempotent: true,
-    noRetryStatuses: [503],
+    noRetryStatuses: [...new Set([...(options.noRetryStatuses ?? []), 503])],
   });
   return readJson<RepoBindingsResponse>(res, `GET ${url}`);
 }
