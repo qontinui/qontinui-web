@@ -281,22 +281,51 @@ export interface CardFailure {
 }
 
 /**
- * Whether a failed WRITE may still have been applied. Only three failures are
- * ambiguous: the web's own write-timeout 504 (`coord_write_timeout`), a request
- * that got no HTTP answer at all (`status === null`: an abort or a network
- * error), and a 5xx carrying no coord code. Every typed coord refusal of the
- * bind door is a "nothing was written" answer (qontinui-coord#3522
- * `BindingError`), so reporting one as UNKNOWN would misstate a known state.
+ * The web backend's own refusals that say the change MAY have been applied:
+ * the write timed out after it was sent, or coord's answer was lost or not
+ * JSON. Every other web-side refusal (`coord_unreachable`: coord never saw
+ * the request) is a definite "nothing changed".
+ */
+const WEB_MAY_HAVE_LANDED = new Set([
+  "coord_write_timeout",
+  "answer_lost",
+  "answer_not_json",
+]);
+
+/**
+ * The bind door's 5xx codes whose contract is "nothing was written"
+ * (qontinui-coord#3522 `BindingError`). An allowlist, not "any coord code": a
+ * code outside it — `internal_panic` from coord's panic guard, which can fire
+ * after the commit, or a code coord adds later — stays ambiguous.
+ */
+const NOTHING_WRITTEN_5XX = new Set([
+  "authz_lookup_failed",
+  "repo_binding_read_failed",
+  "repo_binding_write_failed",
+  "migration_pending",
+  "schema_settling",
+  "coord_db_unavailable",
+]);
+
+/**
+ * Whether a failed WRITE may still have been applied, decided by which side
+ * answered and what that side meant:
+ * - the web backend's own refusal envelope decides from its discriminator;
+ * - no HTTP answer at all (`status === null`: an abort or a network error) is
+ *   ambiguous;
+ * - a 4xx is a refusal before anything was written;
+ * - a 5xx is "nothing written" only for a code on {@link NOTHING_WRITTEN_5XX}.
  */
 export function writeMayHaveLanded(f: CardFailure): boolean {
   if (
     f.envelope?.kind === "refusal" &&
-    f.envelope.refusal.discriminator === "coord_write_timeout"
+    f.envelope.refusal.source === "web_backend"
   ) {
-    return true;
+    return WEB_MAY_HAVE_LANDED.has(f.envelope.refusal.discriminator ?? "");
   }
   if (f.refusal.status === null) return true;
-  return f.refusal.code === null && f.refusal.status >= 500;
+  if (f.refusal.status < 500) return false;
+  return !(f.refusal.code !== null && NOTHING_WRITTEN_5XX.has(f.refusal.code));
 }
 
 export function failureOf(err: unknown): CardFailure {
@@ -613,9 +642,7 @@ function BindingRow({
             </span>
           ) : undefined
         }
-        attention={
-          unbindState.error && !unbindState.busy ? "author" : undefined
-        }
+        attention={unbindState.error && !unbindState.busy ? "author" : "none"}
         reason={binding.reason}
         reasonTestId={`repo-binding-reason-${binding.repo}`}
         time={<RowTime at={binding.created_at} verb="Bound" />}
@@ -1189,7 +1216,7 @@ export function RepoTenantBindings({
                 <p
                   key={repo}
                   className={
-                    maybe && listUnread
+                    maybe
                       ? `rounded-md border px-3 py-2 text-xs ${UNKNOWN_AMBER}`
                       : "text-xs text-destructive"
                   }
@@ -1203,8 +1230,8 @@ export function RepoTenantBindings({
                       ? `Unbind of ${repo} got no answer saying whether it was applied, and the bindings could not be re-read, so whether the change was applied is UNKNOWN: `
                       : `Unbind of ${repo} got no answer saying whether it was applied, and the re-read no longer lists the binding, so the change may have been applied: `
                     : listUnread
-                      ? `Coord refused the unbind of ${repo}, so nothing was written by it; the bindings could not be re-read: `
-                      : `Coord refused the unbind of ${repo}, so nothing was written by it, and the re-read no longer lists the binding: `}
+                      ? `The unbind of ${repo} was refused, so nothing was written by it; the bindings could not be re-read: `
+                      : `The unbind of ${repo} was refused, so nothing was written by it, and the re-read no longer lists the binding: `}
                   <FailureText failure={s.error} />
                 </p>
               );

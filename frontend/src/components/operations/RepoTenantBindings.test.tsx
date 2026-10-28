@@ -1023,7 +1023,7 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(unread.textContent).toContain("coord_db_unavailable");
   });
 
-  it("writeMayHaveLanded: only a write timeout, no answer, or an uncoded 5xx", () => {
+  it("writeMayHaveLanded: decided by which side answered and what it meant", () => {
     const f = (
       status: number | null,
       code: string | null,
@@ -1037,16 +1037,24 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
             : ({
                 kind: "refusal",
                 sentence: "s",
-                refusal: { discriminator },
+                refusal: { discriminator, source: "web_backend" },
               } as never),
       });
+    // The web backend's own envelopes decide from their discriminator.
     expect(f(504, null, "coord_write_timeout")).toBe(true);
+    expect(f(504, null, "answer_lost")).toBe(true);
+    expect(f(502, null, "coord_unreachable")).toBe(false);
+    // No HTTP answer at all.
     expect(f(null, null)).toBe(true);
-    expect(f(500, null)).toBe(true);
-    expect(f(503, "coord_db_unavailable")).toBe(false);
-    expect(f(500, "repo_binding_write_failed")).toBe(false);
+    // A 4xx was refused before anything was written.
     expect(f(409, "tenancy_changed")).toBe(false);
     expect(f(404, "binding_not_found")).toBe(false);
+    expect(f(422, null)).toBe(false);
+    // A 5xx is "nothing written" only for the bind door's own codes.
+    expect(f(503, "coord_db_unavailable")).toBe(false);
+    expect(f(500, "repo_binding_write_failed")).toBe(false);
+    expect(f(500, "internal_panic")).toBe(true);
+    expect(f(500, null)).toBe(true);
   });
 });
 
@@ -1125,6 +1133,21 @@ describe("unbind state lives at card level", () => {
           .textContent
       ).toContain("unbind failed")
     );
+    // The failed row carries the "author" accent; its neighbour stays calm.
+    expect(
+      row.querySelector('[data-attention="author"]') ??
+        (row.matches('[data-attention="author"]') ? row : null)
+    ).not.toBeNull();
+    expect(
+      other.querySelector('[data-attention="author"]') ??
+        (other.matches('[data-attention="author"]') ? other : null)
+    ).toBeNull();
+    // The marker sits in the status slot, not inside the truncating label.
+    expect(
+      screen
+        .getByTestId(`repo-binding-row-status-${BOUND_HERE.repo}`)
+        .closest("[title]")
+    ).toBeNull();
 
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
     const err = await screen.findByTestId(
