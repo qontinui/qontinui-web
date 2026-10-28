@@ -34,7 +34,7 @@ export default function DigitalTwinLayout({
   return (
     <PresentationLens>
       <div
-        className="flex h-[calc(100vh-44px)] flex-col overflow-hidden bg-background"
+        className="flex h-full flex-col overflow-hidden bg-background"
         data-testid="digital-twin-layout"
       >
         <div

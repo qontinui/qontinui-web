@@ -53,6 +53,13 @@ export interface CaptionProps {
    * line says is off screen. Default false.
    */
   brief?: boolean;
+  /**
+   * The one-liner (and, presenting, why it matters) without the title — for
+   * a caption whose title is already on screen as the thing it explains: the
+   * control it describes (the tour's "Start the tour" link) or the badge it
+   * defines. Default false.
+   */
+  untitled?: boolean;
   className?: string;
   "data-testid"?: string;
 }
@@ -98,6 +105,7 @@ export function Caption({
   level = 2,
   persistent = false,
   brief = false,
+  untitled = false,
   className,
   "data-testid": testId,
 }: CaptionProps) {
@@ -113,9 +121,11 @@ export function Caption({
       data-presentation-caption={id}
       data-caption-mode={presenting ? "presentation" : "operator"}
     >
-      <Heading className={presenting ? sizes.presentation : sizes.operator}>
-        {entry.title}
-      </Heading>
+      {!untitled && (
+        <Heading className={presenting ? sizes.presentation : sizes.operator}>
+          {entry.title}
+        </Heading>
+      )}
       <p
         className={
           presenting

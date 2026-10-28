@@ -107,6 +107,13 @@ export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
     route: "/digital-twin",
     provenBy: "app/(app)/digital-twin/page.presentation-proof.test.tsx",
   },
+  // Phase 8: the tour's start page — its caption, the start link and every
+  // stop with its state, read from this list. Its proof renders the real page
+  // over the real registry.
+  {
+    route: "/admin/coord/tour",
+    provenBy: "app/(app)/admin/coord/tour/page.presentation.test.tsx",
+  },
 ];
 
 /** `pathname` without its query, hash and trailing slash. */

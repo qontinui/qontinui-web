@@ -107,6 +107,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
       "Gates",
       "Notifications",
       "Action items",
+      "Tour",
       "Work",
       "Merge",
       "Intent",
