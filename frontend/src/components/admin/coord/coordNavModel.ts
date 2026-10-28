@@ -10,7 +10,8 @@
  * The groups are persona-shaped (developer / merge maintainer / fleet
  * operator), carried over unchanged from the console's own dropdown nav:
  *
- *   Pipeline · Pull Requests · Gates · Notifications · Action items   ← direct
+ *   Pipeline · Pull Requests · Gates · Notifications · Action items ·
+ *   Tour                                                               ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Operator Touches /
@@ -92,6 +93,7 @@ import {
   Puzzle,
   RotateCcw,
   Rocket,
+  Route,
   Scale,
   ScrollText,
   SearchCheck,
@@ -219,6 +221,21 @@ export const DIRECT_TABS: NavLeaf[] = [
     label: "Action items",
     icon: BellRing,
     testId: "coord-nav-action-items",
+  },
+  {
+    // Sixth direct tab by argued exception — not a daily destination, but
+    // the presenter's way in (plan `2026-10-23-console-presentation-spaces`
+    // Phase 8). It is opened at the start of a presentation, often with the
+    // audience already watching, so it must be one click from anywhere in
+    // the console, presenting or not: as a group leaf it would mean opening a
+    // section on screen to find it. It is in the lens tree, so the sidebar
+    // keeps it while presenting (`presentationNav.ts`), and it is
+    // member-visible: the page reads nothing, and the stops it leads to guard
+    // their own reads.
+    href: "/admin/coord/tour",
+    label: "Tour",
+    icon: Route,
+    testId: "coord-nav-tour",
   },
 ];
 

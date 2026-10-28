@@ -1641,6 +1641,44 @@ silently:
 | **An allowlist, not a blocklist, for values shown verbatim** | `OperatorAuditPanel.tsx` (`PresentedAuditRow`), `operations/auditPresentation.ts` (`VERBATIM_BLAST_KEYS`, `auditScope`) | The presented audit feed says what happened and when in fixed words. A blast-radius value is shown as it is only when its key is vouched for as coord's fixed vocabulary, a time or a number; repositories, scopes (coord's `tenant` / `repo:<owner>/<name>`), devices, tenants and people each have a redacting arm, and a key added later without one is withheld. | D3's "a blocklist alone fails open", applied to a key list: a default arm that shows every value it does not recognise shows coord's `repo:` scope — a partner's repository — the first time a kill switch is pulled on one. |
 | **Coord's vocabulary stays with the operator** | `presentedAuditActionLabel` (`auditPresentation.ts`), `presentedUnknownReason` (`runnerReportStatus.ts`), the audit feed's presented nil-operator cell (`OperatorAuditPanel.tsx`), the device-status tile's connection line (`DeviceStatusTile.tsx`), the roles lane table, the Conditions panel's labels and titles (`FleetConditionsPanel.tsx` over `fleetConditions.ts`), `faultToVisibilityBadge`'s `plainKinds`; guarded by the page test's `ENGINEERING_VOCABULARY` scan | While presenting, nothing the page shows — its text behind every disclosure, every `title`, every `aria-label` — is a coord token (`closed_by_role`), an action id or family (`pr_merge.kill_switch`, `fleet.*`), a variable, a table, a route or the transport a list updates over (`WS`): each is said in words, or not said. Where the console holds a closed table — an audit action's label and family, an unknown report's reason — a value the table does not know reads in fixed words ("A recorded change", "no report arrived for this machine"), never as itself. A role lane's state, a slowest fault kind, and a condition domain or setting kind the Conditions panel has no label for are coord's own closed vocabularies, which name no machine and no person: they read as coord's word with its underscores (and, for a domain or a setting kind, its hyphens) replaced by spaces ("closed by role"). The operator keeps every token, because to the operator it is a filter term and a fact. The resource strip's hover cards, which explain each figure's formula in coord's column names, are left as evidence one hover down, and the scan does not read them. | R8 keeps internal vocabulary off a primary surface; an evaluator reads every surface as primary, and `audience_profile/external-evaluator` names "internal status words shown without translation" as something it will not tolerate. |
 
+### 3.12 The presentation tour — recorded under §6.4
+
+`/admin/coord/tour` and the tour bar (plan
+`2026-10-23-console-presentation-spaces` D5, Phase 8) walk the lens surfaces in
+presentation mode. Each stop is the surface's own route (`LENS_SURFACES`, in
+that order), opened with `?present=1&tour=1`: never embedded, re-rendered or
+forked. The page composes the lens's primitives (`Caption`, with the new
+`untitled` option recorded below) and the console's (`Badge` on `INERT`,
+`buttonVariants`); the bar lives in the lens itself
+(`components/presentation/tour/`), mounted once by `PresentationLens`. The page
+renders in presentation mode because it is registered in
+`PRESENTATION_READY_ROUTES` on the strength of `tour/page.presentation.test.tsx`,
+the run-proven page test §6.5 describes. Nine things are recorded rather than
+shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Chrome the lens owns, and the height that comes with it** | `presentation/PresentationLens.tsx`, `presentation/tour/TourBar.tsx`, both lens layouts' roots | The tour bar is mounted ONCE, by `PresentationLens`, above the layout and outside its `PresentationPage` gate: a withheld stop keeps its bar, and pressing the bar never unmounts it (the toggle's rule, §6.5). It takes a row, so the lens is a column (`flex h-full flex-col`: the bar, then the layout in the space left) and a lens layout's root fills it (`h-full`). A root fixed at `h-[calc(100vh-44px)]` under a bar would overflow the shell's `overflow-hidden` `<main>` and cut the bottom off every scroll area. In operator mode the bar renders nothing and the layout fills `<main>`. | R9 governs a page's own chrome. This is chrome of the lens, shared by two trees, so it can live in neither layout. |
+| **A sequence whose reach is the readiness registry** | `presentation/tour/tourModel.ts` (`tourStops`, `tourView`, `tourHref`) | The tour keeps no list of its own. Its stops are `LENS_SURFACES`, titled from the caption registry, and a stop is reachable only where `lensLinkTarget` lets its page be presented. A stop that is not stays in its place on the page and in the strip, labelled "Not yet presentable", and is never linked; previous and next skip it. A page joins the tour by itself the day its phase registers it. | `LensLink` (§6.5) withholds ONE link. A sequence also has to keep the withheld member visible in its place, or its order and count would change silently in front of the audience. |
+| **Position derived, never stored** | `tourView` | The current stop is the page on screen: the path, normalised, EXACTLY a stop's route. A page below a stop's route (a detail page) is "off the tour route", because readiness is exact and that page is withheld under any bar that called it the stop. The one thing remembered is the last presentable stop shown, as the way back from off the route. | A stored position can disagree with the page under it; a derived one cannot. Served policy `ux-priorities` `a-status-signal-must-observe-the-state-it-names`, applied to "you are here". |
+| **A count that names its population** | `TourBar` (`TourPosition`), `TOUR_LABELS` in `captions/tourCaptions.ts` | "Stop k of N" counts the presentable stops. While any stop is not presentable the bar says how many more there are, beside the count ("Stop 2 of 3 · 2 more are not yet presentable"), because the strip under it shows all of them. The strip carries no numbers, so no stop has two. | Served policy `ux-priorities` `a-label-names-one-referent-and-a-quantity-names-its-unit`: a bare "of 3" above a strip of five reads either way. |
+| **A control with nowhere to go is disabled, and says why** | `tour/TourStepControl.tsx` | With a target, previous and next are tour links, each declaring its arrow key (`aria-keyshortcuts`). Without one, each is a DISABLED button whose accessible name begins with its visible word and says why ("Previous: this is the first stop"). It is never a dead link, and it makes no UI Bridge registration. Next at the last stop leads back to the tour's start. | R6's dash rule covers a count nobody read. This is its control form: say there is nothing there, never imply a way on. |
+| **Keys that never take one the page is using** | `tour/tourKeys.ts`, `tour/useTourKeys.ts` | ArrowLeft and ArrowRight follow the previous and next LINK on screen, so a key goes exactly where the control says. They act only when nothing handled the press first, no modifier is held, it is not a repeat or a composition, and focus is not in an editable control or a composite widget (the twin's tabs move on the arrows themselves). The window listener exists only while the bar renders. | No console surface bound a global key before. |
+| **Tab-scoped state, never a preference** | `tour/tourStore.ts` | "On the tour" belongs to the tab: sessionStorage mirrored in memory, every access guarded. The `?tour=1` marker every tour link carries sets it, and End tour clears it and drops the marker from the URL. It never touches localStorage, and `?present=0` turns the bar off whatever it says. | It follows the pattern of the mode store's tab half (§6.5), in a store and a sessionStorage key of its own (`qontinui.presentation-tour`), for a second fact. The viewer-convenience half is deliberately not followed: a tour is never remembered for the next tab. |
+| **Two calm states, told apart in words** | `tour/_components/TourStopList.tsx`, `tour/TourProgress.tsx` | "Ready to present" is `INERT`. "Not yet presentable" is `INERT` with the dashed edge `draft` uses: provisional, not wrong. Neither is anyone's move now, so neither is red or amber. The stop on screen takes the toggle's active treatment (`bg-primary`), and a key under the list explains each state that occurs. | R3 assigns hues by whose move it is; this records that a known, self-describing state the audience is shown takes no attention hue at all. |
+| **A caption whose title is already on screen** | `Caption` `untitled`; `TourStart.tsx`, `TourStopList.tsx` | The start link's text is `tour.start`'s title, and each state badge's text is its caption's title, so their sentences render `untitled` beneath them: one entry, one title on screen. A stop that is not presentable shows its page caption `brief`, because why its content matters would describe content the tour does not show (the rule `PresentationPage`'s placeholder follows). | §6.5's captions always lead with their title. A control or a badge that IS the title would repeat it. |
+
+Every tour control that does something is navigation-only, and says so twice.
+On screen it is a link that keeps the presentation, or End tour, the one
+enabled button, which carries `NAVIGATION_ONLY_PROPS` and changes only what the
+tab shows. To the UI Bridge it registers where it renders with one custom
+action declared `effect: "read"`: a link's action follows the anchor itself,
+and End tour's does what pressing it does. A previous or next with nowhere to
+go does nothing: it is a disabled button that makes no registration (the row
+"A control with nowhere to go is disabled, and says why"). The bar does not
+repeat a stop's one sentence: the stop page renders its own `<surface>.page`
+caption, and that IS the stop's sentence.
+
 ---
 
 ## 4. The attention palette
@@ -1963,6 +2001,13 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   text (`data-lens-link="unlinked"`) — never a click that leaves the lens or
   lands on "Shown in the operator view only" — and the link returns by itself
   the day its destination is registered.
+- The tour (`/admin/coord/tour`, §3.12) walks the lens surfaces while
+  presenting. Its bar is the lens's own chrome, mounted once by
+  `PresentationLens` outside the page gate, and it renders only while
+  presenting on the tour (`?tour=1`, then the tab's state). Operator mode and
+  `?present=0` never show it. Because the bar takes a row, the lens owns the
+  height: a lens layout's root fills the lens (`h-full`) instead of fixing its
+  own.
 - It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
   to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
   while presenting, the sidebar names only the active project, aliases the runner,
@@ -2013,7 +2058,8 @@ three lines of chrome above R1's health strip. That is the point of the lens —
 evaluator does not share the vocabulary, and the caption is the translation — and
 it is why it is confined to presentation mode: in operator mode a caption renders
 nothing (or, `persistent`, the title and one-liner at the console's sizes, for a
-page whose own heading is its caption). Copy lives in ONE registry composed of one
+page whose own heading is its caption; or, `untitled`, its sentences alone, beneath
+the control or badge whose text is its title, §3.12). Copy lives in ONE registry composed of one
 file per lens surface (`captions/`); product terms in it go through `GlossaryTerm`
 via `term(...)`, never as plain text (the registry's test fails a glossary term's
 name left plain, singular or plural — a synonym, such as "machine" for a device,

@@ -60,7 +60,7 @@ export default function CoordLayout({
     <PresentationLens>
       <div
         data-testid="coord-layout"
-        className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
+        className="h-full flex flex-col bg-background overflow-hidden"
       >
         {/* One chrome row: title + the status row (crumb and live badges). The
             console's page links live in the app sidebar, and the project

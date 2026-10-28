@@ -21,6 +21,7 @@ import {
   CAPTIONS,
   CAPTION_SURFACES,
   captionEntry,
+  captionPlainText,
   captionSegments,
   copy,
   isCaptionKey,
@@ -268,5 +269,12 @@ describe("copy / term", () => {
 
   it("reads a plain string as one segment", () => {
     expect(captionSegments("Plain.")).toEqual(["Plain."]);
+  });
+
+  it("flattens copy to plain text for an attribute, a term as its words or else the glossary's name", () => {
+    expect(
+      captionPlainText(copy`Every ${term("gate", "gates")} and ${term("plan")}.`)
+    ).toBe(`Every gates and ${GLOSSARY.plan.term}.`);
+    expect(captionPlainText("Plain.")).toBe("Plain.");
   });
 });

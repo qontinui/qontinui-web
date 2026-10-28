@@ -28,6 +28,14 @@
  *
  * The scope is the lens's ONE read, made only while presenting (D3.4):
  * presentation mode changes what renders, never what is read beyond it.
+ *
+ * And the tour's chrome: the `TourBar` is mounted here, ONCE, so both lens
+ * trees carry it, above the layout and outside its `PresentationPage` gate.
+ * It renders only while presenting on the tour (`tour/TourBar.tsx`). Because
+ * the bar takes a row of its own, the lens owns the height: it is a column
+ * filling its parent — the bar, then the layout in the space left — and a
+ * lens layout's root fills the lens (`h-full`) instead of fixing its own
+ * height, which a bar above it would push off the bottom of the screen.
  */
 
 import type { ReactNode } from "react";
@@ -37,6 +45,7 @@ import {
 } from "./PresentationModeProvider";
 import { PresentationScopeProvider } from "./presentationScope";
 import { usePresentationScope } from "./presentationScopeLoader";
+import { TourBar } from "./tour/TourBar";
 
 function PresentationScopeFromServer({ children }: { children: ReactNode }) {
   return (
@@ -49,7 +58,15 @@ function PresentationScopeFromServer({ children }: { children: ReactNode }) {
 export function PresentationLens({ children }: { children: ReactNode }) {
   const outer = usePresentationMode();
   const lens = (
-    <PresentationScopeFromServer>{children}</PresentationScopeFromServer>
+    <PresentationScopeFromServer>
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-testid="presentation-lens"
+      >
+        <TourBar />
+        <div className="min-h-0 flex-1">{children}</div>
+      </div>
+    </PresentationScopeFromServer>
   );
   // The shell's provider is above every lens tree in the app; a second one
   // here would resolve the same store twice.
