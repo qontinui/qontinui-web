@@ -554,6 +554,27 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
   });
 
+  it("on track: an initiative status a person typed is worded live or not, never quoted", async () => {
+    const body = fullBody();
+    const view = await renderPresenting({
+      ...body,
+      on_track: {
+        ...body.on_track,
+        initiative: {
+          ...body.on_track.initiative,
+          status: "paused for the Globex audit",
+          alignment: "unknown",
+          reason: "no_declared_link",
+        },
+      },
+    });
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative")
+    ).toHaveTextContent(/^Current initiativeStatus not live · from 2026-10-01/);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+    expect(leakedIdentifiers()).toEqual([]);
+  });
+
   it("correct: the row and its why; coord's reason token is not rendered", async () => {
     const view = await renderPresenting(fullBody());
     const region = screen.getByTestId("coord-home.correct");
