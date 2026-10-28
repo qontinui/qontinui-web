@@ -34,10 +34,12 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     // Questions and operator approval gates, in coord's order (oldest
     // first). An approval carries no recommendation, and the row says so.
     oneLiner: copy`The questions and approvals waiting on the ${term("operator")}, oldest first, each shown with the agents' recommendation when one was given.`,
-    // The detail lines "Recommended" and "If you overturn it"; the count is
-    // coord's own total (`needsDisplayCount`), and "Nothing needs you" is
-    // said only over a read block with a zero (`nothingNeedsYou`).
-    whyItMatters: copy`Each decision carries what the agents recommend and what changes if it is overturned, so it can be settled in one read; the ${term("coord", "coordination service")} counts them itself, so a list it could not read is shown as ${term("unknown")} rather than as empty.`,
+    // The detail lines "Recommended" and "If you overturn it", each "none
+    // given" / "not stated" when absent: coord serves both as null for every
+    // operator gate, and an agent may give either without the other. The
+    // count is coord's own total (`needsDisplayCount`), and "Nothing needs
+    // you" is said only over a read block with a zero (`nothingNeedsYou`).
+    whyItMatters: copy`A decision the agents made a recommendation on carries it, and what changes if it is overturned where they said, so it can be settled in one read; an approval carries neither. The ${term("coord", "coordination service")} counts them itself, so a list it could not read is shown as ${term("unknown")} rather than as empty.`,
   },
   "coordination-overview.degrading": {
     title: "What is degrading",
@@ -53,9 +55,13 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     // One row per repository coord groups the units under (plus the units
     // that name none), its summary the four classes `groupSummary` prints.
     oneLiner: copy`Every repository's ${term("work_unit", "work units")} counted by state (shipped, in flight, waiting, or without a recorded change), with the current initiative below.`,
-    // A repo row's detail names the units of its two named classes
-    // (`NamedUnits`); a count coord did not serve is a dash.
-    whyItMatters: copy`The units with no recorded change are named one click down, so slow work is visible by name rather than lost in a total; a count that was not read shows as ${term("unknown")}, never as zero.`,
+    // A repo row's detail lists the units of its two named classes
+    // (`NamedUnits`), each with its age (`namedUnitAgePhrase`). While
+    // presenting a unit's title shows only when every repository it may
+    // belong to is first-party (`namedUnitRepos`); coord groups units under
+    // bare repository names today, so most read as their descriptor. A count
+    // coord did not serve is a dash.
+    whyItMatters: copy`The units with no recorded change are listed one click down, each with how long it has gone without one, so slow work is visible rather than lost in a total; a unit is named only where it can be attributed to the ${term("tenant", "tenant")}'s own repositories, and a count that was not read shows as ${term("unknown")}, never as zero.`,
   },
   "coordination-overview.correct": {
     title: "Is the verified work correct?",
