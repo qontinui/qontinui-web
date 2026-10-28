@@ -33,8 +33,9 @@
  * the last one and never as current, free text is redacted, machines are
  * aliased, raw ids and coord's quoted errors are not rendered — a failed read
  * is explained in the page's own fixed words where its reason allows, and
- * withheld otherwise — and answering a decision is the operator's alone. Nothing new is fetched. Style guide
- * §3.13 records it; in operator mode the page is unchanged.
+ * withheld otherwise — and answering a decision is the operator's alone.
+ * Nothing new is fetched. Style guide §3.13 records it; in operator mode the
+ * page is unchanged.
  */
 
 import { useMemo, useState } from "react";
