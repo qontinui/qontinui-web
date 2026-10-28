@@ -59,8 +59,10 @@ export const TOUR_CAPTIONS = {
     title: "Not yet presentable",
     oneLiner:
       "Its page is not prepared for presentation yet, so the tour lists it but never opens it.",
-    whyItMatters:
-      "Presentation mode keeps an unprepared page off screen, so the tour skips the stop instead of leading to an empty placeholder.",
+    // What opening it would show is `PresentationPage`'s placeholder: the
+    // page's title and one-liner, then "Shown in the operator view only" —
+    // never a blank, so never "empty".
+    whyItMatters: copy`Presentation mode keeps an unprepared page off screen, so the tour skips the stop instead of opening a page that, in place of its content, shows its title, one sentence about it and a note that it is shown in the ${term("operator", "operator")} view only.`,
   },
   "tour.no-stops": {
     title: "No stop can be presented yet",

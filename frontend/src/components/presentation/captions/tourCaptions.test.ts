@@ -10,12 +10,16 @@
  * - "ready" says what the readiness proof checks (`expectPresentationSafe`:
  *   controls, cost, names) and that every full run checks it again (the
  *   armed readiness reporter) — no more;
- * - "not yet presentable" says the tour never opens such a stop;
+ * - "not yet presentable" says the tour never opens such a stop, and
+ *   describes the page it would open the way that page describes itself
+ *   (`PresentationPage`'s placeholder, "Shown in the operator view only") —
+ *   never as an "empty placeholder", which it is not;
  * - the bar's "Stop k of N" counts the presentable stops, and the
  *   accessible name of every control begins with its visible word.
  */
 
 import { describe, expect, it } from "vitest";
+import { WITHHELD_PAGE_TITLE } from "../PresentationPage";
 import { captionPlainText } from "./captionTypes";
 import { TOUR_CAPTIONS, TOUR_LABELS } from "./tourCaptions";
 
@@ -57,6 +61,18 @@ describe("tour.ready / tour.not-presentable — what being prepared means", () =
     const text = copyOf("tour.not-presentable");
     expect(text).toMatch(/lists it but never opens it/);
     expect(text).toMatch(/keeps an unprepared page off screen/);
+  });
+
+  it("describes the page it would open as that page describes itself, never as empty", () => {
+    const text = copyOf("tour.not-presentable");
+    // Opened while presenting, an unprepared page is `PresentationPage`'s
+    // placeholder: the page's title and one-liner, then a note headed
+    // WITHHELD_PAGE_TITLE. A new heading there makes this sentence stale.
+    expect(text.toLowerCase()).toContain(WITHHELD_PAGE_TITLE.toLowerCase());
+    // The placeholder is "an honest 'not part of the presentation', never a
+    // blank" (`PresentationPage.tsx`): a caption calling it empty contradicts
+    // the screen a presenter reaches from the sidebar.
+    expect(text).not.toMatch(/\b(empty|blank)\b/i);
   });
 });
 
