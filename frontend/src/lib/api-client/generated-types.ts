@@ -3803,7 +3803,7 @@ export interface paths {
         };
         /**
          * Get active constraints
-         * @description Proxy to runner: returns active constraints for a project path.
+         * @description Proxy to the co-located runner: the active constraints for a project. Platform admins only.
          */
         get: operations["api_v1_constraints_active_get"];
         put?: never;
@@ -3823,13 +3823,13 @@ export interface paths {
         };
         /**
          * Get constraint config
-         * @description Proxy to runner: returns the constraint TOML config for a project path.
+         * @description Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.
          */
         get: operations["api_v1_constraints_config_get"];
         put?: never;
         /**
          * Write constraint config
-         * @description Proxy to runner: writes a new constraint TOML config.
+         * @description Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.
          */
         post: operations["api_v1_constraints_config_post"];
         delete?: never;
@@ -3847,7 +3847,7 @@ export interface paths {
         };
         /**
          * Get constraint results
-         * @description Proxy to runner: returns constraint evaluation results for a task run.
+         * @description Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.
          */
         get: operations["api_v1_constraints_results_task_run_id_get"];
         put?: never;
@@ -3869,7 +3869,7 @@ export interface paths {
         put?: never;
         /**
          * Validate constraint config
-         * @description Proxy to runner: validates a TOML config string without writing it.
+         * @description Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.
          */
         post: operations["api_v1_constraints_validate_post"];
         delete?: never;
@@ -5024,7 +5024,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5051,7 +5054,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5078,7 +5084,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5105,7 +5114,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5134,7 +5146,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -7548,11 +7563,12 @@ export interface paths {
         };
         /**
          * List Apps
-         * @description List registered apps + their fleet-fresh config.
+         * @description List registered apps + their fleet-fresh config. Platform admins only.
          *
          *     ``project.apps`` is not user-partitioned (it is the runner-local app
          *     registry mirrored on shared Postgres), so this returns every registered
-         *     app — the fleet UI is an operator surface.
+         *     app, build and start commands included — which is why it is gated on
+         *     :func:`require_admin` rather than on any signed-in user.
          */
         get: operations["api_v1_fleet_apps_get"];
         put?: never;
@@ -7578,10 +7594,15 @@ export interface paths {
         head?: never;
         /**
          * Update App Config
-         * @description Edit an app's update strategy + build/start commands.
+         * @description Edit an app's update strategy + build/start commands. Platform admins only.
          *
          *     Fields left ``None`` are unchanged. ``build_command`` / ``start_command``
          *     are cleared by sending a blank value (empty or whitespace-only).
+         *
+         *     Gated on :func:`require_admin`: a stored command is executed by the
+         *     auto-fresh engine on every fleet machine that auto-freshes this app, and
+         *     ``project.apps`` is shared across tenants. The refusal comes from the
+         *     dependency, before this body reads or touches the row.
          */
         patch: operations["api_v1_fleet_apps_app_id_patch"];
         trace?: never;
@@ -22123,10 +22144,18 @@ export interface paths {
         };
         /**
          * Get Screenshot
-         * @description Serve a screenshot file.
+         * @description Serve one verification screenshot image.
          *
-         *     Attempts to resolve the path locally first (from the .dev-logs directory),
-         *     then falls back to proxying from the runner HTTP API.
+         *     ``path`` is the image's path as the runner recorded it (a leading
+         *     ``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.
+         *     It is served from this workspace's ``.dev-logs`` when this backend runs
+         *     from a checkout and the image is there, and asked of the co-located
+         *     runner otherwise. The runner writes its screenshots into its own
+         *     dev-logs directory, which is this ``.dev-logs`` only where its
+         *     ``dev_logs_dir`` setting says so, and serves none under
+         *     ``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every
+         *     runner screenshot is a 404. So is anything that is not an image file
+         *     under ``.dev-logs``.
          */
         get: operations["api_v1_screenshots_path_get"];
         put?: never;
@@ -47337,7 +47366,10 @@ export interface components {
             hostname: string;
             /** Instance Name */
             instance_name?: string | null;
-            /** Ip */
+            /**
+             * Ip
+             * @description The runner's IPv4 or IPv6 address literal, with no zone id.
+             */
             ip: string;
             /** Lan Reachable */
             lan_reachable?: boolean | null;
@@ -62787,9 +62819,9 @@ export interface operations {
     };
     api_v1_constraints_active_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62819,9 +62851,9 @@ export interface operations {
     };
     api_v1_constraints_config_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62890,6 +62922,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             cookie?: never;
@@ -76093,6 +76126,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_output_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
                 tail_chars?: number;
             };
@@ -76129,6 +76163,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_workflow_state_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             header?: never;

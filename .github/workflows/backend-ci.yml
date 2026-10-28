@@ -37,6 +37,11 @@ on:
       # the ONE gate that refuses a malformed spec, and a spec-only PR must run
       # it. The module asserts this entry appears in BOTH filters.
       - 'frontend/image-slots/**'
+      # PLATFORM_ADMIN_REFUSAL, which tests/test_fleet_apps_platform_admin_gate.py
+      # reads (one line, one exact form): a frontend-only PR that reshapes it
+      # must run the check here, not fail a later backend PR. The module
+      # asserts this entry appears in BOTH filters.
+      - 'frontend/src/lib/api/fleet.ts'
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
@@ -112,6 +117,9 @@ on:
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'frontend/src/services/http-client.ts'
       - 'frontend/image-slots/**'
+      # Read by tests/test_fleet_apps_platform_admin_gate.py; see the
+      # pull_request filter above.
+      - 'frontend/src/lib/api/fleet.ts'
       - 'scripts/ci/**'
       # See the pull_request filter above (gate lane rosters).
       - '.github/workflows/web-guards.yml'

@@ -5,9 +5,10 @@ These schemas handle runner fleet monitoring across multiple machines.
 No authentication required — dev-only, LAN-accessible.
 """
 
+import ipaddress
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.base import IsoDatetime
 
@@ -156,7 +157,9 @@ class RunnerHeartbeat(BaseModel):
     """Sent by runners every 30s."""
 
     hostname: str
-    ip: str
+    ip: str = Field(
+        description="The runner's IPv4 or IPv6 address literal, with no zone id."
+    )
     port: int
     instance_name: str | None = None
     os: str  # "windows", "macos", "linux"
@@ -174,6 +177,30 @@ class RunnerHeartbeat(BaseModel):
     # Native UI-thread liveness — see ``RunnerUiThread``. ``None`` when the
     # runner predates the block, which is UNKNOWN and never "not wedged".
     ui_thread: RunnerUiThread | None = None
+
+    @field_validator("ip")
+    @classmethod
+    def _ip_is_an_address_literal(cls, value: str) -> str:
+        """Refuse an ``ip`` that is not one IP address; store its canonical form.
+
+        The beacon is unauthenticated, and the backend later GETs the stored
+        address on a signed-in user's behalf. Taken as a free string, an
+        ``ip`` such as ``127.0.0.1:9876/apps#`` chose the port and the path of
+        that request as well as its host: ``GET /apps``, the app registry with
+        every build and start command, for a caller who only had to own a
+        device on the host the entry is filed under. Every runner sends the
+        literal its socket reports (``heartbeat.rs`` ``get_local_ip``, falling
+        back to ``127.0.0.1``). A zone id (``fe80::1%eth0``) names an interface
+        on the RUNNER's host, which means nothing to this backend, so it is
+        refused too.
+        """
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError as exc:
+            raise ValueError("ip must be an IPv4 or IPv6 address literal") from exc
+        if isinstance(address, ipaddress.IPv6Address) and address.scope_id:
+            raise ValueError("ip must not carry an IPv6 zone id")
+        return str(address)
 
 
 class RegisteredRunner(BaseModel):

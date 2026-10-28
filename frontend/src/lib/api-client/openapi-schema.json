@@ -46040,6 +46040,7 @@
             "title": "Instance Name"
           },
           "ip": {
+            "description": "The runner's IPv4 or IPv6 address literal, with no zone id.",
             "title": "Ip",
             "type": "string"
           },
@@ -78644,18 +78645,25 @@
     },
     "/api/v1/constraints/active": {
       "get": {
-        "description": "Proxy to runner: returns active constraints for a project path.",
+        "description": "Proxy to the co-located runner: the active constraints for a project. Platform admins only.",
         "operationId": "api_v1_constraints_active_get",
         "parameters": [
           {
-            "description": "Absolute path to the project",
+            "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
             "in": "query",
             "name": "project_path",
-            "required": true,
+            "required": false,
             "schema": {
-              "description": "Absolute path to the project",
-              "title": "Project Path",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
+              "title": "Project Path"
             }
           }
         ],
@@ -78694,18 +78702,25 @@
     },
     "/api/v1/constraints/config": {
       "get": {
-        "description": "Proxy to runner: returns the constraint TOML config for a project path.",
+        "description": "Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.",
         "operationId": "api_v1_constraints_config_get",
         "parameters": [
           {
-            "description": "Absolute path to the project",
+            "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
             "in": "query",
             "name": "project_path",
-            "required": true,
+            "required": false,
             "schema": {
-              "description": "Absolute path to the project",
-              "title": "Project Path",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
+              "title": "Project Path"
             }
           }
         ],
@@ -78742,7 +78757,7 @@
         ]
       },
       "post": {
-        "description": "Proxy to runner: writes a new constraint TOML config.",
+        "description": "Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.",
         "operationId": "api_v1_constraints_config_post",
         "requestBody": {
           "content": {
@@ -78789,14 +78804,18 @@
     },
     "/api/v1/constraints/results/{task_run_id}": {
       "get": {
-        "description": "Proxy to runner: returns constraint evaluation results for a task run.",
+        "description": "Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.",
         "operationId": "api_v1_constraints_results_task_run_id_get",
         "parameters": [
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "path",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -78855,7 +78874,7 @@
     },
     "/api/v1/constraints/validate": {
       "post": {
-        "description": "Proxy to runner: validates a TOML config string without writing it.",
+        "description": "Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.",
         "operationId": "api_v1_constraints_validate_post",
         "requestBody": {
           "content": {
@@ -82211,7 +82230,7 @@
     },
     "/api/v1/device-bridge/runner-proxy/{path}": {
       "delete": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_delete",
         "parameters": [
           {
@@ -82255,7 +82274,7 @@
         ]
       },
       "get": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_get",
         "parameters": [
           {
@@ -82299,7 +82318,7 @@
         ]
       },
       "patch": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_patch",
         "parameters": [
           {
@@ -82343,7 +82362,7 @@
         ]
       },
       "post": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_post",
         "parameters": [
           {
@@ -82387,7 +82406,7 @@
         ]
       },
       "put": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_put",
         "parameters": [
           {
@@ -89373,7 +89392,7 @@
     },
     "/api/v1/fleet/apps": {
       "get": {
-        "description": "List registered apps + their fleet-fresh config.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp \u2014 the fleet UI is an operator surface.",
+        "description": "List registered apps + their fleet-fresh config. Platform admins only.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp, build and start commands included \u2014 which is why it is gated on\n:func:`require_admin` rather than on any signed-in user.",
         "operationId": "api_v1_fleet_apps_get",
         "responses": {
           "200": {
@@ -89404,7 +89423,7 @@
     },
     "/api/v1/fleet/apps/{app_id}": {
       "patch": {
-        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).",
+        "description": "Edit an app's update strategy + build/start commands. Platform admins only.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).\n\nGated on :func:`require_admin`: a stored command is executed by the\nauto-fresh engine on every fleet machine that auto-freshes this app, and\n``project.apps`` is shared across tenants. The refusal comes from the\ndependency, before this body reads or touches the row.",
         "operationId": "api_v1_fleet_apps_app_id_patch",
         "parameters": [
           {
@@ -102296,10 +102315,14 @@
             }
           },
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "query",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -102365,10 +102388,14 @@
             }
           },
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "query",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -125818,7 +125845,7 @@
     },
     "/api/v1/screenshots/{path}": {
       "get": {
-        "description": "Serve a screenshot file.\n\nAttempts to resolve the path locally first (from the .dev-logs directory),\nthen falls back to proxying from the runner HTTP API.",
+        "description": "Serve one verification screenshot image.\n\n``path`` is the image's path as the runner recorded it (a leading\n``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.\nIt is served from this workspace's ``.dev-logs`` when this backend runs\nfrom a checkout and the image is there, and asked of the co-located\nrunner otherwise. The runner writes its screenshots into its own\ndev-logs directory, which is this ``.dev-logs`` only where its\n``dev_logs_dir`` setting says so, and serves none under\n``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every\nrunner screenshot is a 404. So is anything that is not an image file\nunder ``.dev-logs``.",
         "operationId": "api_v1_screenshots_path_get",
         "parameters": [
           {
