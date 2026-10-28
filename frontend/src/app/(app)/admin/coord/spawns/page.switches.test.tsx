@@ -181,6 +181,15 @@ describe("the spawn-path matrix — what coord serves", () => {
     expect(within(runner).queryByRole("button")).toBeNull();
   });
 
+  it("links the operator to where a per-repository switch is set", async () => {
+    await renderPage();
+    await openPath("post_merge_followup");
+    const link = screen.getByTestId("coord-spawns-path-set-on-post_merge_followup");
+    expect(link.tagName).toBe("A");
+    expect(link.getAttribute("href")).toBe("/admin/coord/agent-registry");
+    expect(within(gate("scope:post_merge_followup")).queryByRole("button")).toBeNull();
+  });
+
   it("states the in-flight UNKNOWN once for the machine list, and names machines for the operator", async () => {
     await renderPage();
     expect(screen.getByTestId("coord-spawns-inflight-note").textContent).toContain(
