@@ -923,6 +923,7 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
       `repo-binding-unbind-error-unlisted-${BOUND_HERE.repo}`
     );
     expect(orphan.textContent).toContain("may have been applied");
+    expect(orphan.textContent).not.toContain("got no answer");
     expect(
       orphan.querySelector('[data-refusal="structured"]')?.textContent
     ).toContain("coord_write_timeout");
@@ -1041,7 +1042,7 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
           {
             error: "repo_binding_write_failed",
             message:
-              "the binding transaction failed and was rolled back; nothing was written",
+              "the binding transaction failed and was rolled back; nothing was written — retry",
           },
           500
         )
@@ -1068,6 +1069,8 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(unread.textContent).toContain("is UNKNOWN");
     expect(unread.textContent).not.toContain("got no answer");
     expect(unread.textContent).toContain("is not established");
+    // The list could not be re-read, so the sentence must not point at one.
+    expect(unread.textContent).not.toContain("Check the re-read list");
   });
 
   it("writeMayHaveLanded: decided by which side answered and what it meant", () => {
@@ -1389,7 +1392,7 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
       "meryts/x has no binding visible to this tenant — it may already have been unbound. The list has been re-read."
     );
     expect(detailOf(409, { error: "tenancy_changed", message: "m" })).toBe(
-      "The binding changed while coord was authorizing this request; nothing was written. Check the re-read list, then retry."
+      "The binding changed while coord was authorizing this request; nothing was written. Re-read the bindings (Refresh), then retry."
     );
     expect(
       detailOf(403, { error: "caller_tenant_not_a_party", message: "m" })
