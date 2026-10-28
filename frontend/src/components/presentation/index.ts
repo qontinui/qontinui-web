@@ -18,6 +18,7 @@
  * | `PresentationModeToggle` | the header control; the "Presentation mode" chip while presenting |
  * | `Caption` + `./captions` | captions from ONE registry composed of one file per lens surface (D5) |
  * | `LENS_SURFACES`, `TOUR_SURFACE` | the five lens pages in tour order, and the tour |
+ * | `TourBar`, `tourView`, `tourStops`, `TourLink`, `defaultTourStore` | the tour (`tour/`): its stops are the lens surfaces, reached only where presentable; the bar `PresentationLens` mounts while presenting on the tour; the tab's tour state; the tour's links (`?present=1&tour=1`, navigation-only to the UI Bridge) |
  * | `usePresentationHref`, `presentationHref` | a link to a lens page that carries `?present=1` while presenting, so a new tab opened from it still presents |
  * | `LensLink`, `lensLinkTarget` | a link to a page that may not be presentable: while presenting it carries `?present=1` where its page can be presented, and is plain text where it cannot (out of the lens trees, or not registered ready) — never a click out of the lens or into a withheld page (D3) |
  * | `Provenance` | source + as-of beside a number; UNKNOWN when either is unknown |
@@ -111,11 +112,13 @@ export {
   CAPTIONS,
   CAPTION_SURFACES,
   captionEntry,
+  captionPlainText,
   captionSegments,
   copy,
   isCaptionKey,
   term,
 } from "./captions";
+export { TOUR_LABELS } from "./captions/tourCaptions";
 export type {
   CaptionEntry,
   CaptionKey,
@@ -142,6 +145,45 @@ export {
 
 export { LensLink } from "./LensLink";
 export type { LensLinkProps } from "./LensLink";
+
+export { TourBar } from "./tour/TourBar";
+export type { TourBarProps } from "./tour/TourBar";
+export { TourLink, TOUR_LINK_ACTION_DESCRIPTION } from "./tour/TourLink";
+export type { TourLinkProps } from "./tour/TourLink";
+export {
+  TOUR_MARKER,
+  TOUR_PARAM,
+  isReachableStop,
+  isTourMarker,
+  tourHref,
+  tourStart,
+  tourStops,
+  tourView,
+} from "./tour/tourModel";
+export type {
+  ReachableTourStop,
+  TourMissingReason,
+  TourPlace,
+  TourStop,
+  TourTarget,
+  TourView,
+} from "./tour/tourModel";
+export {
+  OFF_TOUR_SNAPSHOT,
+  TOUR_STORAGE_KEY,
+  createTourStore,
+  decodeTourState,
+  defaultTourStore,
+  encodeTourState,
+} from "./tour/tourStore";
+export type { TourState, TourStore, TourStoreOptions } from "./tour/tourStore";
+export {
+  ARROW_KEY_WIDGET_ROLES,
+  ARROW_KEY_WIDGET_SELECTOR,
+  focusKeepsArrowKeys,
+  tourKeyDirection,
+} from "./tour/tourKeys";
+export type { TourDirection, TourKeyEvent } from "./tour/tourKeys";
 
 export {
   PROVENANCE_UNKNOWN,

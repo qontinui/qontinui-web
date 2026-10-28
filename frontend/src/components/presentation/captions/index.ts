@@ -32,6 +32,7 @@ import { TOUR_CAPTIONS } from "./tourCaptions";
 import { UI_BRIDGE_CAPTIONS } from "./uiBridgeCaptions";
 
 export {
+  captionPlainText,
   captionSegments,
   copy,
   term,
