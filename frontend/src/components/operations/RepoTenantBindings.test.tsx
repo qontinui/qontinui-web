@@ -456,7 +456,7 @@ describe("bind action", () => {
     expect(outcome.textContent).toContain("Bound Meryts/bauhaus-b2b-shop");
     // Tenant ids are named by slug from the operator's own tenants.
     expect(outcome.textContent).toContain(
-      "now governed by bauhaus-b2b (was meryts-2-0)"
+      "governed by bauhaus-b2b after this write (was meryts-2-0)"
     );
     expect(outcome.textContent).toContain("2 audit rows");
 
@@ -686,6 +686,48 @@ describe("who sees the card: admin IN THE ACTIVE TENANT", () => {
     expect(screen.getByTestId("repo-binding-bind-form")).toBeTruthy();
   });
 
+  it("an unbind that settles after a tenant switch makes no claim about the new list", async () => {
+    let settle: (r: Response) => void = () => undefined;
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () => json({ bindings: [], measured_at: "2026-10-24T08:01:00Z" }),
+      ],
+      () => new Promise<Response>((r) => (settle = r))
+    );
+    const { rerender } = render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+    await waitFor(() => expect(callsOf("DELETE")).toHaveLength(1));
+
+    // Switch while the DELETE is pending; the new tenant lists nothing.
+    tenantState.activeTenantId = BOUND_TENANT;
+    rerender(<RepoTenantBindings />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+    settle(writeTimeout());
+
+    const notice = await screen.findByTestId("repo-binding-unbind-outcome");
+    expect(notice.textContent).toContain("sent under another tenant");
+    expect(
+      screen.queryByTestId(
+        `repo-binding-unbind-error-unlisted-${BOUND_HERE.repo}`
+      )
+    ).toBeNull();
+    expect(screen.queryByText(/no longer lists/)).toBeNull();
+  });
+
   it("a bind outcome does not survive a switch to another tenant", async () => {
     routeFetch(
       [() => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })],
@@ -722,7 +764,7 @@ describe("a 2xx write is a success, whatever its body", () => {
         "x/y"
       )
     ).toBe(
-      `Bound Meryts/bauhaus-b2b-shop — now governed by ${BOUND_TENANT} (was ${ORG_TENANT}); moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified.`
+      `Bound Meryts/bauhaus-b2b-shop — governed by ${BOUND_TENANT} after this write (was ${ORG_TENANT}); moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified.`
     );
   });
 
@@ -739,7 +781,7 @@ describe("a 2xx write is a success, whatever its body", () => {
       enrollment_spawned: true,
     } as Parameters<typeof resultSummary>[1];
     expect(resultSummary("Unbound", unbound, "x/y", label)).toBe(
-      "Unbound Meryts/bauhaus-b2b-shop — now governed by meryts-2-0 (was bauhaus-b2b); moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified; binding deleted; un-enrollment tombstone cleared; enrollment started for the new tenant."
+      "Unbound Meryts/bauhaus-b2b-shop — governed by meryts-2-0 after this write (was bauhaus-b2b); moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified; binding deleted; un-enrollment tombstone cleared; enrollment started for the new tenant."
     );
     // A tenant the operator does not belong to is named by its id.
     expect(label("ffffffff-0000-4000-8000-000000000000")).toBe(
@@ -1394,6 +1436,14 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
     expect(
       detailOf(409, { error: "in_flight_merge_proposals", message: "m" })
     ).toContain("were not reported");
+    // An empty list cannot be "0 in flight" while refusing for in-flight work.
+    const empty = detailOf(409, {
+      error: "in_flight_merge_proposals",
+      message: "m",
+      proposal_ids: [],
+    });
+    expect(empty).toContain("were not reported");
+    expect(empty).not.toMatch(/\b0 merge/);
   });
 
   it("422 org_unbound: names the org and coord's remedy", () => {
@@ -1444,7 +1494,7 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
     );
     expect(
       detailOf(403, { error: "caller_tenant_not_a_party", message: "m" })
-    ).toContain("Switch the active tenant");
+    ).toContain("one of the binding's two tenants");
     expect(
       detailOf(404, {
         error: "tenant_not_found",

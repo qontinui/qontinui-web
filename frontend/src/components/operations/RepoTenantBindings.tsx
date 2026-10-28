@@ -224,6 +224,9 @@ export function refusalDetail(
         return "The in-flight proposals were not reported. Wait for them to land or cancel them, then retry.";
       }
       const ids = b.proposal_ids.map(String);
+      if (ids.length === 0) {
+        return "The in-flight proposals were not reported. Wait for them to land or cancel them, then retry.";
+      }
       return `${ids.length} merge ${ids.length === 1 ? "proposal is" : "proposals are"} in flight${ids.length > 0 ? `: ${ids.join(", ")}` : ""}. Wait for ${ids.length === 1 ? "it" : "them"} to land or cancel ${ids.length === 1 ? "it" : "them"}, then retry.`;
     }
     case "repo_binding_write_failed":
@@ -250,7 +253,7 @@ export function refusalDetail(
       return `You are not an administrator in ${side} (${tenant}).`;
     }
     case "caller_tenant_not_a_party":
-      return "Switch the active tenant to the repository's governing tenant or to the target tenant, then retry.";
+      return "Switch the active tenant to one of the binding's two tenants (the governing tenant, or for a bind the tenant you chose), then retry.";
     case "binding_not_found": {
       const repo = nonBlank(b.repo) ?? "The repository";
       return `${repo} has no binding visible to this tenant — it may already have been unbound. Re-read the bindings (the refresh button at the top of this card) to confirm.`;
@@ -476,7 +479,7 @@ export function resultSummary(
   const from = nonBlank(res.from_tenant);
   const governance =
     to !== null
-      ? `now governed by ${tenantLabel(to)}${from !== null ? ` (was ${tenantLabel(from)})` : ""}`
+      ? `governed by ${tenantLabel(to)} after this write${from !== null ? ` (was ${tenantLabel(from)})` : ""}`
       : "governing tenant not reported";
   const flags = [
     res.binding_deleted === true ? "binding deleted" : null,
@@ -495,7 +498,27 @@ type ListRead =
 
 type ActionOutcome =
   | { kind: "ok"; text: string }
-  | { kind: "error"; failure: CardFailure };
+  | { kind: "error"; failure: CardFailure }
+  /** The write settled after the active tenant changed: not checked here. */
+  | { kind: "elsewhere"; text: string };
+
+/**
+ * What a write that settled after a tenant switch says instead of its
+ * outcome: this card now shows another tenant's list, whose silence about the
+ * repo says nothing about the write.
+ */
+export function settledElsewhereText(verb: "bind" | "unbind", repo: string) {
+  return `The ${verb} of ${repo} was sent under another tenant, and this card now shows a different one, so its outcome is not checked here. Switch back to that tenant to see it.`;
+}
+
+/** The active tenant as of the latest commit, readable after an await. */
+function useLatestTenant(activeTenantId: string | null | undefined) {
+  const ref = useRef(activeTenantId);
+  useEffect(() => {
+    ref.current = activeTenantId;
+  }, [activeTenantId]);
+  return ref;
+}
 
 /** An unbind's in-flight state, kept per repo at CARD level (see UnbindForm). */
 export interface UnbindState {
@@ -729,6 +752,7 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
   useEffect(() => {
     if (!busyRef.current) setOutcome(null);
   }, [activeTenantId]);
+  const tenantRef = useLatestTenant(activeTenantId);
   const errors = validateBindForm(values);
   const shown = touched ? errors : {};
 
@@ -741,6 +765,7 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
     setOutcome(null);
     const repo = values.repo.trim();
     const ref = decisionRef.trim();
+    const sentUnder = tenantRef.current;
     let result: RepoBindingResult | null;
     try {
       result = await bindRepoTenant({
@@ -751,8 +776,13 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
       });
     } catch (err) {
       // Bind stays disabled until the re-read lands: a timed-out write may
-      // already have been applied, and the list is what says so.
-      setOutcome({ kind: "error", failure: failureOf(err) });
+      // already have been applied, and the list is what says so. A failure
+      // that lands after a tenant switch is not this tenant's to report.
+      setOutcome(
+        tenantRef.current === sentUnder
+          ? { kind: "error", failure: failureOf(err) }
+          : { kind: "elsewhere", text: settledElsewhereText("bind", repo) }
+      );
       await afterWrite();
       busyRef.current = false;
       setBusy(false);
@@ -760,10 +790,14 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
     }
     // Any 2xx is the success — the summary and the re-read sit outside the
     // failure path so neither can turn a landed bind into a reported failure.
-    setOutcome({
-      kind: "ok",
-      text: resultSummary("Bound", result, repo, tenantLabel),
-    });
+    setOutcome(
+      tenantRef.current === sentUnder
+        ? {
+            kind: "ok",
+            text: resultSummary("Bound", result, repo, tenantLabel),
+          }
+        : { kind: "elsewhere", text: settledElsewhereText("bind", repo) }
+    );
     setValues({ repo: "", targetTenant: "", reason: "" });
     setDecisionRef("");
     setTouched(false);
@@ -926,19 +960,19 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
       {outcome && (
         <p
           className={
-            outcome.kind === "ok"
-              ? "text-xs text-muted-foreground"
-              : "text-xs text-destructive"
+            outcome.kind === "error"
+              ? "text-xs text-destructive"
+              : "text-xs text-muted-foreground"
           }
           role={outcome.kind === "error" ? "alert" : "status"}
           data-testid="repo-binding-bind-outcome"
           data-ui-bridge-id="operations.repo-binding-bind-outcome"
           data-outcome={outcome.kind}
         >
-          {outcome.kind === "ok" ? (
-            outcome.text
-          ) : (
+          {outcome.kind === "error" ? (
             <FailureText failure={outcome.failure} />
+          ) : (
+            outcome.text
           )}
         </p>
       )}
@@ -1087,10 +1121,25 @@ export function RepoTenantBindings({
     await refetch();
   }, [onChanged, refetch]);
 
+  // An unbind still in flight across a tenant switch keeps its busy guard, but
+  // its outcome is not the new tenant's: the re-read is the new tenant's list,
+  // whose silence about the repo says nothing about the write.
+  const tenantRef = useLatestTenant(activeTenantId);
+  const dropElsewhere = useCallback((repo: string) => {
+    unbindBusy.current.delete(repo);
+    setUnbindStates((prev) => {
+      const next = { ...prev };
+      delete next[repo];
+      return next;
+    });
+    setUnbindNotice(settledElsewhereText("unbind", repo));
+  }, []);
+
   const onUnbind = useCallback(
     async (repo: string, reason: string) => {
       if (unbindBusy.current.has(repo)) return;
       unbindBusy.current.add(repo);
+      const sentUnder = tenantRef.current;
       setUnbindStates((prev) => ({
         ...prev,
         [repo]: { busy: true, error: null },
@@ -1100,18 +1149,29 @@ export function RepoTenantBindings({
         result = await unbindRepoTenant({ repo, reason });
       } catch (err) {
         const failure = failureOf(err);
-        setUnbindStates((prev) => ({
-          ...prev,
-          [repo]: { busy: true, error: failure },
-        }));
+        if (tenantRef.current === sentUnder) {
+          setUnbindStates((prev) => ({
+            ...prev,
+            [repo]: { busy: true, error: failure },
+          }));
+        }
         // Re-read before the control re-enables: a timed-out unbind may have
         // landed, and the list is what says so.
         await afterWrite();
+        if (tenantRef.current !== sentUnder) {
+          dropElsewhere(repo);
+          return;
+        }
         unbindBusy.current.delete(repo);
         setUnbindStates((prev) => ({
           ...prev,
           [repo]: { busy: false, error: failure },
         }));
+        return;
+      }
+      if (tenantRef.current !== sentUnder) {
+        dropElsewhere(repo);
+        await afterWrite();
         return;
       }
       // Any 2xx is the success; summary and re-read are outside the failure
@@ -1125,7 +1185,7 @@ export function RepoTenantBindings({
       });
       await afterWrite();
     },
-    [afterWrite, tenantLabel]
+    [afterWrite, tenantLabel, tenantRef, dropElsewhere]
   );
 
   const boundHere =
